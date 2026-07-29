@@ -1,9 +1,15 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
+
+const TOOL_ROUTES: Record<string, string> = {
+  braking: 'braking', hydraulic: 'hydraulic', qmax: 'qmax', load_distribution: 'load-distribution',
+  tractive_effort: 'tractive-effort', vehicle_performance: 'vehicle-performance', spline: 'spline',
+}
 
 interface HistoryRecord {
   id: number
@@ -33,6 +39,7 @@ const TOOL_COLORS: Record<string, { bg: string; color: string }> = {
 export default function RndHistoryPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const { user } = useAuth()
+  const router = useRouter()
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
 
   const [adminMode, setAdminMode] = useState(false)
@@ -45,7 +52,6 @@ export default function RndHistoryPage() {
   const [search, setSearch] = useState('')
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [viewing, setViewing] = useState<Record<string, unknown> | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -79,7 +85,10 @@ export default function RndHistoryPage() {
   const startRename = (r: HistoryRecord) => { setRenamingId(r.id); setRenameValue(r.calculation_name || '') }
   const confirmRename = async (id: number) => { await rndApi.renameHistory(id, renameValue); setRenamingId(null); load() }
   const remove = async (id: number) => { if (!confirm('Delete this saved calculation?')) return; await rndApi.deleteHistory(id); load() }
-  const view = async (id: number) => setViewing(await rndApi.getHistoryDetail(id))
+  const openInTool = (r: HistoryRecord) => {
+    const route = TOOL_ROUTES[r.tool_name]
+    if (route) router.push(`/dashboard/rnd/${route}?load=${r.id}`)
+  }
 
   const filtered = useMemo(
     () => records.filter((r) => !search || (r.calculation_name || '').toLowerCase().includes(search.toLowerCase())),
@@ -197,7 +206,7 @@ export default function RndHistoryPage() {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => view(r.id)} title="View" style={iconBtnStyle('#2563eb')}><EyeIcon /></button>
+                        <button onClick={() => openInTool(r)} title="Open in tool &amp; recalculate" style={iconBtnStyle('#2563eb')}><EyeIcon /></button>
                         <button onClick={() => startRename(r)} title="Rename" style={iconBtnStyle('#7c3aed')}><PencilIcon /></button>
                         <button onClick={() => remove(r.id)} title="Delete" style={iconBtnStyle('#dc2626')}><TrashIcon /></button>
                       </div>
@@ -209,18 +218,6 @@ export default function RndHistoryPage() {
           </tbody>
         </table>
       </div>
-
-      {viewing && (
-        <div onClick={() => setViewing(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12, padding: 20, maxWidth: 560, width: '90%', maxHeight: '80vh', overflow: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Calculation Detail</h3>
-              <button onClick={() => setViewing(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><CloseIcon size={16} /></button>
-            </div>
-            <pre style={{ fontSize: 11.5, background: '#f8fafc', padding: 12, borderRadius: 8, overflow: 'auto' }}>{JSON.stringify(viewing, null, 2)}</pre>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

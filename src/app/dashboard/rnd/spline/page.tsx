@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
@@ -22,6 +23,7 @@ const VERDICT_STYLE: Record<string, { bg: string; text: string }> = {
 
 export default function SplinePage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const searchParams = useSearchParams()
 
   const [docNo, setDocNo] = useState('PEW57-003-00')
   const [madeBy, setMadeBy] = useState('')
@@ -49,8 +51,6 @@ export default function SplinePage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (isLoading || !isAuthorized) return null
-
   const payload = () => ({
     calc_mode: 'calc_spline',
     doc_no: docNo, made_by: madeBy, checked_by: checkedBy, approved_by: approvedBy,
@@ -61,6 +61,38 @@ export default function SplinePage() {
     speed, wheel_diameter: wheelDiameter, friction_coeff: frictionCoeff,
   })
 
+  // Deep-link from History's "open in tool" action: ?load=<history id>.
+  useEffect(() => {
+    if (!isAuthorized) return
+    const loadId = searchParams.get('load')
+    if (!loadId) return
+    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+      const i = detail.inputs as Record<string, any>
+      if (i.doc_no != null) setDocNo(String(i.doc_no))
+      if (i.made_by != null) setMadeBy(String(i.made_by))
+      if (i.checked_by != null) setCheckedBy(String(i.checked_by))
+      if (i.approved_by != null) setApprovedBy(String(i.approved_by))
+      if (i.number_teeth != null) setNumberTeeth(String(i.number_teeth))
+      if (i.diametral_pitch != null) setDiametralPitch(String(i.diametral_pitch))
+      if (i.pressure_angle != null) setPressureAngle(String(i.pressure_angle))
+      if (i.outer_diameter != null) setOuterDiameter(String(i.outer_diameter))
+      if (i.inner_diameter != null) setInnerDiameter(String(i.inner_diameter))
+      if (i.length_engagement != null) setLengthEngagement(String(i.length_engagement))
+      if (i.yield_strength != null) setYieldStrength(String(i.yield_strength))
+      if (i.material_type != null) setMaterialType(String(i.material_type))
+      if (i.loco_weight != null) setLocoWeight(String(i.loco_weight))
+      if (i.number_axles != null) setNumberAxles(String(i.number_axles))
+      if (i.wheels_per_axle != null) setWheelsPerAxle(String(i.wheels_per_axle))
+      if (i.speed != null) setSpeed(String(i.speed))
+      if (i.wheel_diameter != null) setWheelDiameter(String(i.wheel_diameter))
+      if (i.friction_coeff != null) setFrictionCoeff(String(i.friction_coeff))
+      calculate(i as ReturnType<typeof payload>)
+    }).catch(() => setError('Could not load the saved calculation.'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthorized])
+
+  if (isLoading || !isAuthorized) return null
+
   const required: [string, string][] = [
     [numberTeeth, 'Number of Teeth'], [diametralPitch, 'Diametral Pitch'], [outerDiameter, 'Outer Diameter'],
     [innerDiameter, 'Inner Diameter'], [lengthEngagement, 'Length of Engagement'], [yieldStrength, 'Yield Strength'],
@@ -68,19 +100,25 @@ export default function SplinePage() {
     [wheelDiameter, 'Wheel Diameter'], [frictionCoeff, 'Friction Coefficient'],
   ]
 
-  const calculate = async () => {
-    for (const [val, label] of required) {
-      if (!val || Number.isNaN(parseFloat(val)) || parseFloat(val) <= 0) {
-        setError(`Invalid value for ${label}`)
-        return
+  const calculate = async (overridePayload?: ReturnType<typeof payload>) => {
+    const isFromHistory = !!overridePayload
+    if (!isFromHistory) {
+      for (const [val, label] of required) {
+        if (!val || Number.isNaN(parseFloat(val)) || parseFloat(val) <= 0) {
+          setError(`Invalid value for ${label}`)
+          return
+        }
       }
     }
     setBusy(true)
     setError('')
     try {
-      const data = await rndApi.calculateSpline(payload())
+      const usedPayload = overridePayload || payload()
+      const data = await rndApi.calculateSpline(usedPayload)
       setResult(data)
-      rndApi.saveHistory({ tool_name: 'spline', inputs: payload(), results: data, calculation_name: `Spline — ${docNo}` }).catch(() => {})
+      if (!isFromHistory) {
+        rndApi.saveHistory({ tool_name: 'spline', inputs: usedPayload, results: data, calculation_name: `Spline — ${docNo}` }).catch(() => {})
+      }
     } catch {
       setError('Calculation failed. Check your inputs.')
     } finally {
@@ -206,7 +244,7 @@ export default function SplinePage() {
           </div>
 
           {error && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{error}</p>}
-          <button onClick={calculate} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Execute Calculation'}</button>
+          <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Execute Calculation'}</button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

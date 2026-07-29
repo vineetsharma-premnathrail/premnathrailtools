@@ -81,12 +81,12 @@ export default function RndLandingPage() {
               background: 'rgba(255,255,255,.16)',
               backdropFilter: 'blur(28px)',
               WebkitBackdropFilter: 'blur(28px)',
-              border: '1px solid rgba(255,255,255,.24)',
+              border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)',
               cursor: 'pointer',
               transition: 'box-shadow .15s, transform .15s',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 10px 24px rgba(224,98,31,0.12)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'none' }}
+            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 20px 44px rgba(15,23,42,0.22), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)'; e.currentTarget.style.transform = 'none' }}
           >
             <div
               style={{

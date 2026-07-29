@@ -157,7 +157,7 @@ export default function ToolCalculatorPage({
       <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>{description}</p>
 
       <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 24, alignItems: 'start' }}>
-        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
           {fields.map((f) => (
             <div key={f.key}>
               <label style={labelStyle}>{f.label}</label>
@@ -194,7 +194,7 @@ export default function ToolCalculatorPage({
           </button>
         </div>
 
-        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', padding: 20 }}>
+        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 20 }}>
           {!result ? (
             <p style={{ fontSize: 13, color: '#a8a29e', margin: 0 }}>Enter parameters and calculate to see results.</p>
           ) : (

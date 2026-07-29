@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
@@ -21,6 +22,7 @@ const RESISTANCE_LABELS: [key: 'T1' | 'T2' | 'T3' | 'T4', label: string, color: 
 
 export default function TractiveEffortPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const searchParams = useSearchParams()
 
   const [mode, setMode] = useState<'Start' | 'Running'>('Running')
   const [load, setLoad] = useState('2400')
@@ -35,16 +37,40 @@ export default function TractiveEffortPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (isLoading || !isAuthorized) return null
-
   const payload = () => ({
     load: Number(load), loco_weight: Number(locoWeight), gradient: Number(gradient), curvature: Number(curvature),
     speed: Number(speed), mode, grad_type: gradType, curvature_unit: curvatureUnit,
   })
 
-  const calculate = async () => {
-    const p = payload()
-    if ([p.load, p.loco_weight, p.gradient, p.curvature, p.speed].some((v) => Number.isNaN(v))) {
+  // Deep-link from History's "open in tool" action: ?load=<history id>.
+  useEffect(() => {
+    if (!isAuthorized) return
+    const loadId = searchParams.get('load')
+    if (!loadId) return
+    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+      const i = detail.inputs as Record<string, any>
+      if (i.mode != null) setMode(i.mode)
+      if (i.load != null) setLoad(String(i.load))
+      if (i.loco_weight != null) setLocoWeight(String(i.loco_weight))
+      if (i.speed != null) setSpeed(String(i.speed))
+      if (i.gradient != null) setGradient(String(i.gradient))
+      if (i.grad_type != null) setGradType(i.grad_type)
+      if (i.curvature != null) setCurvature(String(i.curvature))
+      if (i.curvature_unit != null) setCurvatureUnit(i.curvature_unit)
+      calculate({
+        load: Number(i.load), loco_weight: Number(i.loco_weight), gradient: Number(i.gradient), curvature: Number(i.curvature),
+        speed: Number(i.speed), mode: i.mode ?? mode, grad_type: i.grad_type ?? gradType, curvature_unit: i.curvature_unit ?? curvatureUnit,
+      })
+    }).catch(() => setError('Could not load the saved calculation.'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthorized])
+
+  if (isLoading || !isAuthorized) return null
+
+  const calculate = async (overridePayload?: ReturnType<typeof payload>) => {
+    const isFromHistory = !!overridePayload
+    const p = overridePayload || payload()
+    if (!isFromHistory && [p.load, p.loco_weight, p.gradient, p.curvature, p.speed].some((v) => Number.isNaN(v))) {
       setError('Please fill all input fields.')
       return
     }
@@ -53,7 +79,9 @@ export default function TractiveEffortPage() {
     try {
       const data = await rndApi.calculateTractiveEffort(p)
       setResult(data)
-      rndApi.saveHistory({ tool_name: 'tractive_effort', inputs: p, results: data.results, calculation_name: `TE Load=${p.load}t V=${p.speed}km/h` }).catch(() => {})
+      if (!isFromHistory) {
+        rndApi.saveHistory({ tool_name: 'tractive_effort', inputs: p, results: data.results, calculation_name: `TE Load=${p.load}t V=${p.speed}km/h` }).catch(() => {})
+      }
     } catch {
       setError('Calculation failed. Check your inputs.')
     } finally {
@@ -182,7 +210,7 @@ export default function TractiveEffortPage() {
           </div>
 
           {error && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{error}</p>}
-          <button onClick={calculate} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : '» Calculate TE'}</button>
+          <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : '» Calculate TE'}</button>
         </div>
 
         {/* Center: results summary + terminal */}

@@ -4,8 +4,8 @@ import { useState } from 'react'
 
 /** Drop-in replacement for a plain <input> that shows a red border + error
  * message once the value is invalid per `validator` — errors only appear
- * after the field has been touched (blurred) or already has enough content,
- * so it doesn't flash red while the user is still mid-typing. */
+ * after the field has been touched (blurred), so it doesn't flash red while
+ * the user is still mid-typing. */
 export default function ValidatedInput({
   value,
   onChange,
@@ -14,7 +14,6 @@ export default function ValidatedInput({
   style,
   type = 'text',
   placeholder,
-  minLengthBeforeCheck = 3,
 }: {
   value: string
   onChange: (v: string) => void
@@ -23,10 +22,9 @@ export default function ValidatedInput({
   style?: React.CSSProperties
   type?: string
   placeholder?: string
-  minLengthBeforeCheck?: number
 }) {
   const [touched, setTouched] = useState(false)
-  const invalid = (touched || value.length >= minLengthBeforeCheck) && value.length > 0 && !validator(value)
+  const invalid = touched && value.length > 0 && !validator(value)
 
   return (
     <div>

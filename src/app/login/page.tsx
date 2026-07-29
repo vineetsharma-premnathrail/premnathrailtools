@@ -7,9 +7,9 @@ import { authApi } from '@/lib/api'
 import { BRAND, GRADIENTS } from '@/lib/theme'
 
 const modules = [
-  { label: 'Service Module', desc: 'Vehicle & Service Management', dot: BRAND.primary },
-  { label: 'R&D Tools', desc: 'Engineering Calculation Suite', dot: BRAND.primaryHover },
-  { label: 'CRM', desc: 'Customer Relationship Management', dot: BRAND.primaryGlow },
+  { label: 'Service Module', desc: 'Vehicle & Service Management' },
+  { label: 'R&D Tools', desc: 'Engineering Calculation Suite' },
+  { label: 'CRM', desc: 'Customer Relationship Management' },
 ]
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -135,14 +135,13 @@ export default function LoginPage() {
       <div className="login-left" style={{ position: 'relative', flex: '1.1', minWidth: 0, padding: '64px 72px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <div style={{ position: 'relative', maxWidth: 520 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '6px 13px', borderRadius: 9999, background: 'rgba(255,255,255,.55)', border: '1px solid rgba(255,255,255,.8)', backdropFilter: 'blur(14px)', marginBottom: 38 }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: BRAND.primaryActive, boxShadow: `0 0 10px ${BRAND.primary}` }} />
             <span style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8a4a20', fontWeight: 600 }}>All systems nominal</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 30 }}>
-            <div style={{ width: 56, height: 56, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', border: '1px solid rgba(255,255,255,.5)', boxShadow: '0 10px 26px rgba(224,98,31,.35)', overflow: 'hidden' }}>
+            <div style={{ width: 220, height: 48, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', border: '1px solid rgba(255,255,255,.5)', boxShadow: '0 10px 26px rgba(224,98,31,.35)', overflow: 'hidden' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/premnath-rail-logo.jpg" alt="Premnathrail" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6 }} />
+              <img src="/logo.png" alt="Premnathrail" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 4 }} />
             </div>
             <div style={{ fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: '#a8663a' }}>Unified Command</div>
           </div>
@@ -154,7 +153,6 @@ export default function LoginPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 460 }}>
             {modules.map((m) => (
               <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: 15, padding: '16px 18px', borderRadius: 16, background: 'rgba(255,255,255,.5)', border: '1px solid rgba(255,255,255,.7)', backdropFilter: 'blur(18px)', boxShadow: '0 8px 24px rgba(180,90,40,.1)' }}>
-                <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.dot, boxShadow: `0 0 12px ${m.dot}`, flex: 'none' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#2e1c10' }}>{m.label}</div>
                   <div style={{ fontSize: 12, color: '#8a6547', marginTop: 1 }}>{m.desc}</div>
@@ -170,9 +168,9 @@ export default function LoginPage() {
         <div style={{ position: 'relative', width: '100%', maxWidth: 400, padding: 40, borderRadius: 26, background: 'rgba(255,255,255,.6)', backdropFilter: 'blur(26px) saturate(1.4)', border: '1px solid rgba(255,255,255,.85)', boxShadow: '0 24px 60px rgba(160,80,30,.25), inset 0 1px 0 rgba(255,255,255,.7)' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,rgba(255,255,255,.9),transparent)' }} />
 
-          <div style={{ width: 46, height: 46, borderRadius: 14, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, boxShadow: '0 6px 18px rgba(224,98,31,.3)', overflow: 'hidden' }}>
+          <div style={{ width: 184, height: 40, borderRadius: 10, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, boxShadow: '0 6px 18px rgba(224,98,31,.3)', overflow: 'hidden' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/premnath-rail-logo.jpg" alt="Premnathrail" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 5 }} />
+            <img src="/logo.png" alt="Premnathrail" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 3 }} />
           </div>
 
           <div style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: BRAND.primaryActive, marginBottom: 11, fontWeight: 600 }}>Premnathrail Portal</div>

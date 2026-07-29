@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
@@ -38,6 +39,7 @@ function seriesFromPoints(points: GraphPoint[]) {
 
 export default function VehiclePerformancePage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const searchParams = useSearchParams()
 
   const [docNo, setDocNo] = useState('PEW-VP-001')
   const [docDate] = useState(new Date().toISOString().split('T')[0])
@@ -66,8 +68,6 @@ export default function VehiclePerformancePage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (isLoading || !isAuthorized) return null
-
   const torqueCurve = (): Record<number, number> => {
     const curve: Record<number, number> = {}
     torqueRows.forEach((row) => {
@@ -78,7 +78,7 @@ export default function VehiclePerformancePage() {
   }
 
   const payload = () => ({
-    doc_no: docNo,
+    doc_no: docNo, made_by: madeBy, checked_by: checkedBy, approved_by: approvedBy,
     loco_gvw: Number(locoGvw), max_speed: Number(maxSpeed), max_curve: Number(maxCurve), max_slope: Number(maxSlope),
     num_axles: Number(numAxles), rear_axle_ratio: Number(rearAxleRatio),
     gear_ratios: gearRatios.split(',').map((s) => Number(s.trim())).filter((n) => !Number.isNaN(n)),
@@ -87,17 +87,59 @@ export default function VehiclePerformancePage() {
     torque_curve: torqueCurve(), curve_unit: curveUnit, slope_unit: slopeUnit,
   })
 
-  const calculate = async () => {
+  // Deep-link from History's "open in tool" action: ?load=<history id>.
+  useEffect(() => {
+    if (!isAuthorized) return
+    const loadId = searchParams.get('load')
+    if (!loadId) return
+    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+      const i = detail.inputs as Record<string, any>
+      if (i.doc_no != null) setDocNo(String(i.doc_no))
+      if (i.made_by != null) setMadeBy(String(i.made_by))
+      if (i.checked_by != null) setCheckedBy(String(i.checked_by))
+      if (i.approved_by != null) setApprovedBy(String(i.approved_by))
+      if (i.loco_gvw != null) setLocoGvw(String(i.loco_gvw))
+      if (i.max_speed != null) setMaxSpeed(String(i.max_speed))
+      if (i.max_curve != null) setMaxCurve(String(i.max_curve))
+      if (i.max_slope != null) setMaxSlope(String(i.max_slope))
+      if (i.num_axles != null) setNumAxles(String(i.num_axles))
+      if (i.rear_axle_ratio != null) setRearAxleRatio(String(i.rear_axle_ratio))
+      if (Array.isArray(i.gear_ratios)) setGearRatios(i.gear_ratios.join(','))
+      if (i.shunting_load != null) setShuntingLoad(String(i.shunting_load))
+      if (i.peak_power != null) setPeakPower(String(i.peak_power))
+      if (i.friction_mu != null) setFrictionMu(String(i.friction_mu))
+      if (i.wheel_dia != null) setWheelDia(String(i.wheel_dia))
+      if (i.min_rpm != null) setMinRpm(String(i.min_rpm))
+      if (i.max_rpm != null) setMaxRpm(String(i.max_rpm))
+      if (i.curve_unit != null) setCurveUnit(i.curve_unit)
+      if (i.slope_unit != null) setSlopeUnit(i.slope_unit)
+      let loadedTorqueRows = torqueRows
+      if (i.torque_curve && typeof i.torque_curve === 'object') {
+        loadedTorqueRows = Object.entries(i.torque_curve).map(([rpm, torque]) => ({ rpm, torque: String(torque) }))
+        setTorqueRows(loadedTorqueRows)
+      }
+      calculate({ ...i, torque_curve: i.torque_curve } as ReturnType<typeof payload>)
+    }).catch(() => setError('Could not load the saved calculation.'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthorized])
+
+  if (isLoading || !isAuthorized) return null
+
+  const calculate = async (overridePayload?: ReturnType<typeof payload>) => {
+    const isFromHistory = !!overridePayload
     setBusy(true)
     setError('')
     try {
-      const data = await rndApi.calculateVehiclePerformance(payload())
+      const usedPayload = overridePayload || payload()
+      const data = await rndApi.calculateVehiclePerformance(usedPayload)
       setResult(data)
-      rndApi.saveHistory({
-        tool_name: 'vehicle_performance', inputs: payload(),
-        results: { traction_snapshot: data.traction_snapshot, speed_vs_slope_table: data.speed_vs_slope_table },
-        calculation_name: `Vehicle Perf. GVW=${locoGvw}kg`,
-      }).catch(() => {})
+      if (!isFromHistory) {
+        rndApi.saveHistory({
+          tool_name: 'vehicle_performance', inputs: usedPayload,
+          results: { traction_snapshot: data.traction_snapshot, speed_vs_slope_table: data.speed_vs_slope_table },
+          calculation_name: `Vehicle Perf. GVW=${locoGvw}kg`,
+        }).catch(() => {})
+      }
     } catch {
       setError('Calculation failed. Check your inputs (especially the torque curve).')
     } finally {
@@ -229,7 +271,7 @@ export default function VehiclePerformancePage() {
           </div>
 
           {error && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{error}</p>}
-          <button onClick={calculate} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : '› Calculate Performance'}</button>
+          <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : '› Calculate Performance'}</button>
         </div>
 
         {/* Right column: torque curve, tables, charts, terminal */}
