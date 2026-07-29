@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 // This page only ever runs inside the isolated Teams auth popup opened by
@@ -10,6 +10,14 @@ import { useSearchParams } from 'next/navigation'
 // parent window via notifySuccess(); the parent exchanges it for real
 // session cookies (see authApi.teamsExchange in the login page).
 export default function TeamsAuthSuccessPage() {
+  return (
+    <Suspense fallback={null}>
+      <TeamsAuthSuccessInner />
+    </Suspense>
+  )
+}
+
+function TeamsAuthSuccessInner() {
   const searchParams = useSearchParams()
   const [status, setStatus] = useState('Signing in…')
 

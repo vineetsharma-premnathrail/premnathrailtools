@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
@@ -38,6 +38,14 @@ function seriesFromPoints(points: GraphPoint[]) {
 }
 
 export default function VehiclePerformancePage() {
+  return (
+    <Suspense fallback={null}>
+      <VehiclePerformancePageInner />
+    </Suspense>
+  )
+}
+
+function VehiclePerformancePageInner() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const searchParams = useSearchParams()
 

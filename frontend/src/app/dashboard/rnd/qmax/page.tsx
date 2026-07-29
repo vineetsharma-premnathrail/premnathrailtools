@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
@@ -26,6 +26,14 @@ const MATERIALS = [
 ] as const
 
 export default function QmaxPage() {
+  return (
+    <Suspense fallback={null}>
+      <QmaxPageInner />
+    </Suspense>
+  )
+}
+
+function QmaxPageInner() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const searchParams = useSearchParams()
 

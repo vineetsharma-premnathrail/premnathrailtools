@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
@@ -21,6 +21,14 @@ const RESISTANCE_LABELS: [key: 'T1' | 'T2' | 'T3' | 'T4', label: string, color: 
 ]
 
 export default function TractiveEffortPage() {
+  return (
+    <Suspense fallback={null}>
+      <TractiveEffortPageInner />
+    </Suspense>
+  )
+}
+
+function TractiveEffortPageInner() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const searchParams = useSearchParams()
 

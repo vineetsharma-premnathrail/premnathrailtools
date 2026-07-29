@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
@@ -32,6 +32,14 @@ const CONFIGS = [
 ] as const
 
 export default function LoadDistributionPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoadDistributionPageInner />
+    </Suspense>
+  )
+}
+
+function LoadDistributionPageInner() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const searchParams = useSearchParams()
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -22,6 +22,14 @@ const VERDICT_STYLE: Record<string, { bg: string; text: string }> = {
 }
 
 export default function SplinePage() {
+  return (
+    <Suspense fallback={null}>
+      <SplinePageInner />
+    </Suspense>
+  )
+}
+
+function SplinePageInner() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const searchParams = useSearchParams()
 
