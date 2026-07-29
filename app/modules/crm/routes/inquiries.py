@@ -1,0 +1,272 @@
+from datetime import datetime, timezone, date
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.core.permissions import require_app_access
+from app.modules.main.models.user import User
+from app.modules.main.models.audit_log import AuditLog
+from app.modules.crm.models.inquiry import Inquiry
+from app.modules.crm.models.activity import Activity
+from app.modules.crm.models.note import Note
+from app.modules.crm.models.stage_log import CrmStageLog
+from app.modules.crm.schemas.inquiry import InquiryCreate, InquiryUpdate, InquiryResponse, StageLogEntry
+from app.modules.crm.schemas.workflow import StageLogResponse
+from app.utils.notifications import broadcast_notification, notify_user
+
+router = APIRouter(prefix="/crm/inquiries", tags=["CRM - Inquiries"])
+
+INQ_STAGES = [
+    "Customer Requirement", "Design", "R&D", "Costing", "Management Approval",
+    "Quotation Submission", "Purchase Order", "Project", "Manufacturing",
+    "Inspection", "Dispatch", "Installation", "Commissioning", "Warranty", "Service",
+]
+
+
+def _write_audit(db: Session, inquiry_id: int, action: str, user: User, summary: str | None = None):
+    db.add(AuditLog(entity_type="inquiry", entity_id=inquiry_id, action=action, performed_by_id=user.id, summary=summary))
+
+
+def _can_modify(record, user: User) -> bool:
+    return user.role in ("admin", "super_admin") or record.created_by_id == user.id
+
+
+def _generate_universal_id(db: Session) -> str:
+    today = date.today().strftime("%Y%m%d")
+    seq = db.query(func.count(Inquiry.id)).scalar() + 1
+    return f"INQ-{today}-{seq:04d}"
+
+
+def _log_stage(db: Session, inquiry_id: int, universal_id: str, stage: str, user: User, notes: str | None = None):
+    db.add(CrmStageLog(
+        related_module="inquiry", related_id=inquiry_id, universal_id=universal_id, stage=stage,
+        entered_by_id=user.id, entered_by_name=user.name or user.email,
+        notes=notes, created_at=datetime.now(timezone.utc),
+    ))
+
+
+@router.get("", response_model=list[InquiryResponse])
+async def list_inquiries(
+    search: str | None = None,
+    status: str | None = None,
+    org_id: int | None = None,
+    skip: int = 0,
+    limit: int = 200,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    query = db.query(Inquiry).filter(Inquiry.is_deleted == False)  # noqa: E712
+    if status:
+        query = query.filter(Inquiry.status == status)
+    if org_id:
+        query = query.filter(Inquiry.org_id == org_id)
+    if search:
+        like = f"%{search}%"
+        query = query.filter(
+            (Inquiry.universal_id.ilike(like)) | (Inquiry.product.ilike(like)) | (Inquiry.bd_owner.ilike(like))
+        )
+    return query.order_by(Inquiry.id.desc()).offset(skip).limit(limit).all()
+
+
+@router.post("", response_model=InquiryResponse, status_code=201)
+async def create_inquiry(
+    payload: InquiryCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    universal_id = _generate_universal_id(db)
+    inquiry = Inquiry(**payload.model_dump(), universal_id=universal_id, created_by_id=user.id)
+    db.add(inquiry)
+    db.flush()
+
+    _log_stage(db, inquiry.id, universal_id, "Inquiry created", user)
+    if inquiry.next_followup_date:
+        db.add(Activity(
+            activity_type="Follow-up", org_id=inquiry.org_id, related_module="inquiry", related_id=inquiry.id,
+            universal_id=universal_id, next_followup=inquiry.next_followup_date,
+            assigned_to=inquiry.followup_assigned_to, created_by_id=user.id,
+        ))
+    if inquiry.followup_remarks:
+        db.add(Note(
+            org_id=inquiry.org_id, related_module="inquiry", related_id=inquiry.id, universal_id=universal_id,
+            note=inquiry.followup_remarks, created_by_name=user.name or user.email, created_by_id=user.id,
+        ))
+
+    _write_audit(db, inquiry.id, "created", user, summary=f"Inquiry {universal_id} created by {user.name or user.email}.")
+    broadcast_notification(
+        db, title="New Inquiry Raised", message=f"Inquiry '{universal_id}' was created by {user.name or user.email}.",
+        notification_type="inquiry_created", entity_type="inquiry", entity_id=inquiry.id, exclude_user_id=user.id,
+    )
+    notify_user(
+        db, user_id=user.id, title="Inquiry Created", message=f"You created inquiry '{universal_id}'.",
+        notification_type="inquiry_created", entity_type="inquiry", entity_id=inquiry.id,
+    )
+    db.commit()
+    db.refresh(inquiry)
+    return inquiry
+
+
+@router.get("/{inquiry_id}", response_model=InquiryResponse)
+async def get_inquiry(
+    inquiry_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    return inquiry
+
+
+@router.patch("/{inquiry_id}", response_model=InquiryResponse)
+async def update_inquiry(
+    inquiry_id: int,
+    payload: InquiryUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    if not _can_modify(inquiry, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this inquiry.")
+
+    updates = payload.model_dump(exclude_unset=True)
+    stage_changed = "current_stage" in updates and updates["current_stage"] != inquiry.current_stage
+    changed = [f for f, v in updates.items() if str(getattr(inquiry, f, None)) != str(v)]
+    for field, value in updates.items():
+        setattr(inquiry, field, value)
+
+    if changed:
+        _write_audit(db, inquiry.id, "updated", user, summary=f"{user.name or user.email} updated: {', '.join(changed[:5])}.")
+    if stage_changed:
+        _log_stage(db, inquiry.id, inquiry.universal_id, "Stage updated", user, notes=f"Moved to {inquiry.current_stage}")
+        broadcast_notification(
+            db, title="Inquiry Stage Updated",
+            message=f"Inquiry '{inquiry.universal_id}' moved to '{inquiry.current_stage}' by {user.name or user.email}.",
+            notification_type="inquiry_stage_updated", entity_type="inquiry", entity_id=inquiry.id,
+            exclude_user_id=user.id,
+        )
+        notify_user(
+            db, user_id=user.id, title="Inquiry Stage Updated",
+            message=f"You moved inquiry '{inquiry.universal_id}' to '{inquiry.current_stage}'.",
+            notification_type="inquiry_stage_updated", entity_type="inquiry", entity_id=inquiry.id,
+        )
+
+    db.commit()
+    db.refresh(inquiry)
+    return inquiry
+
+
+@router.delete("/{inquiry_id}", status_code=204)
+async def delete_inquiry(
+    inquiry_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    if not _can_modify(inquiry, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this inquiry.")
+
+    inquiry.is_deleted = True
+    inquiry.deleted_at = datetime.now(timezone.utc)
+    _write_audit(db, inquiry.id, "deleted", user, summary=f"Inquiry {inquiry.universal_id} moved to recycle bin by {user.name or user.email}.")
+    broadcast_notification(
+        db, title="Inquiry Deleted", message=f"Inquiry '{inquiry.universal_id}' was deleted by {user.name or user.email}.",
+        notification_type="inquiry_deleted", entity_type="inquiry", entity_id=inquiry.id, exclude_user_id=user.id,
+    )
+    notify_user(
+        db, user_id=user.id, title="Inquiry Deleted",
+        message=f"You deleted inquiry '{inquiry.universal_id}'. It can be restored from the recycle bin for 10 days.",
+        notification_type="inquiry_deleted", entity_type="inquiry", entity_id=inquiry.id,
+    )
+    db.commit()
+
+
+@router.post("/{inquiry_id}/restore", response_model=InquiryResponse)
+async def restore_inquiry(
+    inquiry_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == True).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Deleted inquiry not found")
+    inquiry.is_deleted = False
+    inquiry.deleted_at = None
+    _write_audit(db, inquiry.id, "restored", user, summary=f"Inquiry {inquiry.universal_id} restored from recycle bin.")
+    db.commit()
+    db.refresh(inquiry)
+    return inquiry
+
+
+@router.get("/recycle-bin/list")
+async def list_deleted_inquiries(
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    inquiries = db.query(Inquiry).filter(Inquiry.is_deleted == True).all()  # noqa: E712
+    return [
+        {"id": i.id, "universal_id": i.universal_id, "product": i.product, "deleted_at": i.deleted_at.isoformat() if i.deleted_at else None}
+        for i in inquiries
+    ]
+
+
+@router.get("/{inquiry_id}/audit")
+async def get_inquiry_audit(
+    inquiry_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    logs = db.query(AuditLog).filter(
+        AuditLog.entity_type == "inquiry", AuditLog.entity_id == inquiry_id
+    ).order_by(AuditLog.performed_at.asc()).all()
+    user_ids = {log.performed_by_id for log in logs if log.performed_by_id}
+    user_map: dict[int, str] = {}
+    if user_ids:
+        for u in db.query(User).filter(User.id.in_(user_ids)).all():
+            user_map[u.id] = u.name or u.email or f"User #{u.id}"
+    return [
+        {
+            "id": log.id, "action": log.action, "summary": log.summary,
+            "performed_by": user_map.get(log.performed_by_id, "System") if log.performed_by_id else "System",
+            "performed_at": log.performed_at.isoformat() if log.performed_at else None,
+        }
+        for log in logs
+    ]
+
+
+@router.get("/{inquiry_id}/stages", response_model=list[StageLogResponse])
+async def list_inquiry_stages(
+    inquiry_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    return db.query(CrmStageLog).filter(
+        CrmStageLog.related_module == "inquiry", CrmStageLog.related_id == inquiry_id
+    ).order_by(CrmStageLog.created_at.asc()).all()
+
+
+@router.post("/{inquiry_id}/stages", response_model=StageLogResponse, status_code=201)
+async def add_inquiry_stage(
+    inquiry_id: int,
+    payload: StageLogEntry,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    entry = CrmStageLog(
+        related_module="inquiry", related_id=inquiry_id, universal_id=inquiry.universal_id, stage=payload.stage,
+        entered_by_id=user.id, entered_by_name=user.name or user.email, notes=payload.notes,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(entry)
+    inquiry.current_stage = payload.stage
+    db.commit()
+    db.refresh(entry)
+    return entry
