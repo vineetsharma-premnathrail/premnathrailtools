@@ -3,8 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import settings
-from app.db.base import Base
-from app.db.session import engine
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.notification import Notification
@@ -45,8 +43,10 @@ from app.modules.rnd.routes import history as rnd_history_routes
 from app.middleware.error_handler import setup_error_handlers, LoggingMiddleware
 from app.middleware.owasp import OWASPMiddleware
 
-# Create tables on startup
-Base.metadata.create_all(bind=engine)
+# Schema is managed by Alembic now (see backend/alembic/) — run
+# `alembic upgrade head` after pulling new migrations or on first setup.
+# create_all() is no longer called here since it can't apply ALTER TABLE
+# changes to existing tables, only CREATE TABLE for brand-new ones.
 
 app = FastAPI(
     title=settings.app_name,
@@ -59,11 +59,7 @@ app = FastAPI(
 # CORS Configuration - Allow frontend to communicate
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",      # Next.js development
-        "http://localhost:5173",      # Vite alternative
-        "http://127.0.0.1:3000",      # Localhost
-    ],
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,            # Allow cookies/auth headers
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
@@ -72,7 +68,7 @@ app.add_middleware(
 # Security: Trusted hosts
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["localhost", "127.0.0.1", "testserver"],
+    allowed_hosts=settings.allowed_hosts_list,
 )
 
 # Logging middleware

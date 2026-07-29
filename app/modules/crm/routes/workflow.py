@@ -219,7 +219,7 @@ async def list_inquiry_pos(inquiry_id: int, db: Session = Depends(get_db), _user
 async def create_inquiry_po(inquiry_id: int, payload: PurchaseOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_app_access("crm"))):
     if not db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first():  # noqa: E712
         raise HTTPException(status_code=404, detail="Inquiry not found")
-    po = PurchaseOrder(**payload.model_dump(), inquiry_id=inquiry_id, created_by_id=user.id, created_at=datetime.now(timezone.utc))
+    po = PurchaseOrder(**payload.model_dump(exclude={"inquiry_id", "tender_id"}), inquiry_id=inquiry_id, created_by_id=user.id, created_at=datetime.now(timezone.utc))
     db.add(po)
     db.commit()
     db.refresh(po)
@@ -235,7 +235,7 @@ async def list_tender_pos(tender_id: int, db: Session = Depends(get_db), _user: 
 async def create_tender_po(tender_id: int, payload: PurchaseOrderCreate, db: Session = Depends(get_db), user: User = Depends(require_app_access("crm"))):
     if not db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == False).first():  # noqa: E712
         raise HTTPException(status_code=404, detail="Tender not found")
-    po = PurchaseOrder(**payload.model_dump(), tender_id=tender_id, created_by_id=user.id, created_at=datetime.now(timezone.utc))
+    po = PurchaseOrder(**payload.model_dump(exclude={"inquiry_id", "tender_id"}), tender_id=tender_id, created_by_id=user.id, created_at=datetime.now(timezone.utc))
     db.add(po)
     db.commit()
     db.refresh(po)

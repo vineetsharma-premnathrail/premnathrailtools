@@ -65,13 +65,37 @@ _MAGIC_SIGNATURES: dict[str, tuple[bytes, ...]] = {
 }
 
 
-def _verify_magic_bytes(filename: str, header: bytes) -> bool:
+# Fallback so a file with no extension at all (but a Content-Type claiming a
+# format we do have a signature for) still gets checked, instead of silently
+# skipping verification because `ext` came out empty.
+_CONTENT_TYPE_TO_EXT = {
+    "application/pdf": ".pdf",
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/gif": ".gif",
+    "image/bmp": ".bmp",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/rtf": ".rtf",
+    "application/vnd.oasis.opendocument.text": ".odt",
+}
+
+
+def _verify_magic_bytes(filename: str, content_type: str, header: bytes) -> bool:
     """True if `header` (the file's first ~16 bytes) matches the signature
     expected for `filename`'s extension. Extensions with no reliable fixed
     signature (txt/csv/video containers) are not checked here — they're still
     covered by the extension/content-type allowlist above."""
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     ext = f".{ext}" if ext else ""
+    if not ext:
+        # No extension to go on — fall back to the claimed Content-Type so an
+        # extension-less upload can't skip signature verification entirely.
+        ext = _CONTENT_TYPE_TO_EXT.get(content_type, "")
     signatures = _MAGIC_SIGNATURES.get(ext)
     if not signatures:
         return True
@@ -130,7 +154,7 @@ def _validate_uploaded_file(upload_file: UploadFile) -> int:
     except Exception:
         raise HTTPException(status_code=400, detail=f"Unable to read {filename}")
 
-    if not _verify_magic_bytes(filename, header):
+    if not _verify_magic_bytes(filename, content_type, header):
         raise HTTPException(status_code=400, detail=f"{filename} does not match its claimed file type")
 
     return size

@@ -62,9 +62,12 @@ def _resolve_user(db: Session, email: str) -> User:
     return user
 
 
-def _gen_universal_id(db: Session, model, prefix: str) -> str:
+def _next_seq(db: Session, model) -> int:
+    return db.query(func.count(model.id)).scalar() + 1
+
+
+def _format_universal_id(prefix: str, seq: int) -> str:
     today = date.today().strftime("%Y%m%d")
-    seq = db.query(func.count(model.id)).scalar() + 1
     return f"{prefix}-{today}-{seq:04d}"
 
 
@@ -139,6 +142,7 @@ async def import_inquiries(
     rows = _read_csv(await file.read())
 
     created, errors = 0, []
+    next_seq = _next_seq(db, Inquiry)
     for i, row in enumerate(rows, start=2):
         org_name = _s(row, "organization_name")
         if not org_name:
@@ -158,7 +162,10 @@ async def import_inquiries(
                 .first()
             )
 
-        universal_id = _s(row, "universal_id") or _gen_universal_id(db, Inquiry, "INQ")
+        universal_id = _s(row, "universal_id")
+        if not universal_id:
+            universal_id = _format_universal_id("INQ", next_seq)
+            next_seq += 1
         db.add(Inquiry(
             universal_id=universal_id,
             org_id=org.id,
@@ -197,6 +204,7 @@ async def import_tenders(
     rows = _read_csv(await file.read())
 
     created, errors = 0, []
+    next_seq = _next_seq(db, Tender)
     for i, row in enumerate(rows, start=2):
         org_name = _s(row, "organization_name")
         if not org_name:
@@ -216,7 +224,10 @@ async def import_tenders(
                 .first()
             )
 
-        universal_id = _s(row, "universal_id") or _gen_universal_id(db, Tender, "TND")
+        universal_id = _s(row, "universal_id")
+        if not universal_id:
+            universal_id = _format_universal_id("TND", next_seq)
+            next_seq += 1
         db.add(Tender(
             universal_id=universal_id,
             org_id=org.id,

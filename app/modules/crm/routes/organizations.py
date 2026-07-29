@@ -284,11 +284,13 @@ async def update_org_contact(
     contact_id: int,
     payload: OrgContactUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_app_access("crm")),
 ):
     contact = db.query(OrgContact).filter(OrgContact.id == contact_id, OrgContact.org_id == org_id).first()
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
+    if not _can_modify(contact, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this contact.")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(contact, field, value)
     db.commit()
@@ -301,11 +303,13 @@ async def delete_org_contact(
     org_id: int,
     contact_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_app_access("crm")),
 ):
     contact = db.query(OrgContact).filter(OrgContact.id == contact_id, OrgContact.org_id == org_id).first()
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
+    if not _can_modify(contact, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this contact.")
     db.delete(contact)
     db.commit()
     return {"message": "Contact deleted"}

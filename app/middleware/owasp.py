@@ -27,6 +27,7 @@ from urllib.parse import urlparse, unquote
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from app.core.config import settings
 from .rate_store import build_rate_store
 
 logger = logging.getLogger("owasp")
@@ -154,10 +155,15 @@ BULK_DELETE_COLLECTION_SUFFIXES = (
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    direct_ip = request.client.host if request.client else "unknown"
+    # Only honor X-Forwarded-For when the immediate TCP peer is a configured,
+    # trusted reverse proxy — otherwise any client can spoof this header to
+    # evade rate limiting / IP bans / 404-scan detection.
+    if direct_ip in settings.trusted_proxies_set:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return direct_ip
 
 
 def _rate_bucket(path: str, method: str) -> str:

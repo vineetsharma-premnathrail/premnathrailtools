@@ -14,6 +14,10 @@ from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_fol
 router = APIRouter(prefix="/crm/documents", tags=["CRM - Documents"])
 
 
+def _can_modify(record, user: User) -> bool:
+    return user.role in ("admin", "super_admin") or record.created_by_id == user.id
+
+
 @router.get("", response_model=list[CrmDocumentResponse])
 async def list_documents(
     related_module: str,
@@ -100,11 +104,13 @@ async def upload_documents(
 async def delete_document(
     document_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_app_access("crm")),
 ):
     doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    if not _can_modify(doc, user):
+        raise HTTPException(status_code=403, detail="Only the uploader or an admin can delete this document.")
 
     if settings.SHAREPOINT_SITE_ID and doc.sharepoint_path:
         try:
