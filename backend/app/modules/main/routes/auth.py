@@ -253,8 +253,8 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
         pad = 4 - len(parts[1]) % 4
         unverified = _json.loads(base64.urlsafe_b64decode(parts[1] + "=" * pad))
         actual_aud = unverified.get("aud", "")
-        token_tid = unverified.get("tid", tenant_id)
         actual_iss = unverified.get("iss", "")
+        token_tid = unverified.get("tid", "")
         token_exp = unverified.get("exp", time.time() + 3600)
         token_jti = unverified.get("jti") or hashlib.sha256(token.encode()).hexdigest()[:32]
     except Exception:
@@ -262,27 +262,46 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
 
     if not actual_aud or not actual_aud.endswith(f"/{client_id}"):
         raise HTTPException(status_code=401, detail="Token not issued for this application")
+    # Cheap early rejection of obviously-wrong issuers, before ever touching
+    # JWKS/network — this is NOT the trust boundary (that's the tenant_id
+    # equality check + the fixed `expected_issuers` passed to jose_jwt.decode
+    # below), just a fast-fail so a bogus domain never reaches real crypto.
     if not actual_iss.startswith("https://login.microsoftonline.com/") and \
        not actual_iss.startswith("https://sts.windows.net/"):
         raise HTTPException(status_code=401, detail="Token not issued by Microsoft")
+    # Enforce the token was issued by *our configured* tenant — do not trust
+    # the unverified payload's own "tid"/"iss" as the source of truth for the
+    # check we're about to perform with them, or the check is tautological.
+    if token_tid != tenant_id:
+        raise HTTPException(status_code=401, detail="Token not issued by the expected Azure AD tenant")
+    expected_issuers = (
+        f"https://login.microsoftonline.com/{tenant_id}/v2.0",
+        f"https://sts.windows.net/{tenant_id}/",
+    )
 
     if _check_replay(token_jti, token_exp):
         raise HTTPException(status_code=401, detail="Token already used")
 
-    jwks = _get_cached_jwks(token_tid)
+    jwks = _get_cached_jwks(tenant_id)
     if jwks is None:
-        jwks_url = f"https://login.microsoftonline.com/{token_tid}/discovery/v2.0/keys"
+        jwks_url = f"https://login.microsoftonline.com/{tenant_id}/discovery/v2.0/keys"
         async with httpx.AsyncClient() as hc:
             jwks_resp = await hc.get(jwks_url, timeout=10)
             jwks = jwks_resp.json()
-        _set_cached_jwks(token_tid, jwks)
+        _set_cached_jwks(tenant_id, jwks)
 
-    try:
-        payload = jose_jwt.decode(
-            token, jwks, algorithms=["RS256"], audience=actual_aud, issuer=actual_iss,
-        )
-    except JWTError as exc:
-        raise HTTPException(status_code=401, detail=f"Invalid Teams token: {exc}")
+    last_error: JWTError | None = None
+    payload = None
+    for expected_iss in expected_issuers:
+        try:
+            payload = jose_jwt.decode(
+                token, jwks, algorithms=["RS256"], audience=actual_aud, issuer=expected_iss,
+            )
+            break
+        except JWTError as exc:
+            last_error = exc
+    if payload is None:
+        raise HTTPException(status_code=401, detail=f"Invalid Teams token: {last_error}")
 
     email = payload.get("preferred_username") or payload.get("upn") or ""
     name = payload.get("name", email.split("@")[0] if email else "User")

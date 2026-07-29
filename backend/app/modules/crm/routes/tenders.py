@@ -1,6 +1,7 @@
 from datetime import datetime, timezone, date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -10,6 +11,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.models.stage_log import CrmStageLog
+from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.schemas.tender import TenderCreate, TenderUpdate, TenderResponse
 from app.modules.crm.schemas.inquiry import StageLogEntry
 from app.modules.crm.schemas.workflow import StageLogResponse
@@ -75,6 +77,14 @@ async def create_tender(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("crm")),
 ):
+    org = db.query(Organization).filter(Organization.id == payload.org_id, Organization.is_deleted == False).first()  # noqa: E712
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if payload.org_contact_id is not None:
+        contact = db.query(OrgContact).filter(OrgContact.id == payload.org_contact_id, OrgContact.org_id == payload.org_id).first()
+        if not contact:
+            raise HTTPException(status_code=422, detail="org_contact_id does not belong to the specified organization")
+
     if payload.tender_number:
         clash = db.query(Tender).filter(
             Tender.is_deleted == False,  # noqa: E712
@@ -85,10 +95,18 @@ async def create_tender(
         if clash:
             raise HTTPException(status_code=409, detail="A tender with this number already exists for this zone/division")
 
-    universal_id = _generate_universal_id(db)
-    tender = Tender(**payload.model_dump(), universal_id=universal_id, created_by_id=user.id)
-    db.add(tender)
-    db.flush()
+    tender = None
+    for attempt in range(5):
+        try:
+            universal_id = _generate_universal_id(db)
+            tender = Tender(**payload.model_dump(), universal_id=universal_id, created_by_id=user.id)
+            db.add(tender)
+            db.flush()
+            break
+        except IntegrityError:
+            db.rollback()
+            if attempt == 4:
+                raise HTTPException(status_code=500, detail="Could not allocate a tender ID, please retry")
 
     _log_stage(db, tender.id, universal_id, "Tender created", user)
     if tender.submission_date:
@@ -264,6 +282,10 @@ async def add_tender_stage(
     tender = db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == False).first()  # noqa: E712
     if not tender:
         raise HTTPException(status_code=404, detail="Tender not found")
+    if not _can_modify(tender, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can change this tender's stage.")
+    if payload.stage not in TND_STAGES:
+        raise HTTPException(status_code=422, detail=f"Invalid stage. Must be one of: {', '.join(TND_STAGES)}")
     entry = CrmStageLog(
         related_module="tender", related_id=tender_id, universal_id=tender.universal_id, stage=payload.stage,
         entered_by_id=user.id, entered_by_name=user.name or user.email, notes=payload.notes,

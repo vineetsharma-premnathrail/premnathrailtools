@@ -1,6 +1,7 @@
 from datetime import datetime, timezone, date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -11,6 +12,7 @@ from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.models.note import Note
 from app.modules.crm.models.stage_log import CrmStageLog
+from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.schemas.inquiry import InquiryCreate, InquiryUpdate, InquiryResponse, StageLogEntry
 from app.modules.crm.schemas.workflow import StageLogResponse
 from app.utils.notifications import broadcast_notification, notify_user
@@ -75,10 +77,26 @@ async def create_inquiry(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("crm")),
 ):
-    universal_id = _generate_universal_id(db)
-    inquiry = Inquiry(**payload.model_dump(), universal_id=universal_id, created_by_id=user.id)
-    db.add(inquiry)
-    db.flush()
+    org = db.query(Organization).filter(Organization.id == payload.org_id, Organization.is_deleted == False).first()  # noqa: E712
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if payload.org_contact_id is not None:
+        contact = db.query(OrgContact).filter(OrgContact.id == payload.org_contact_id, OrgContact.org_id == payload.org_id).first()
+        if not contact:
+            raise HTTPException(status_code=422, detail="org_contact_id does not belong to the specified organization")
+
+    inquiry = None
+    for attempt in range(5):
+        try:
+            universal_id = _generate_universal_id(db)
+            inquiry = Inquiry(**payload.model_dump(), universal_id=universal_id, created_by_id=user.id)
+            db.add(inquiry)
+            db.flush()
+            break
+        except IntegrityError:
+            db.rollback()
+            if attempt == 4:
+                raise HTTPException(status_code=500, detail="Could not allocate an inquiry ID, please retry")
 
     _log_stage(db, inquiry.id, universal_id, "Inquiry created", user)
     if inquiry.next_followup_date:
@@ -260,6 +278,10 @@ async def add_inquiry_stage(
     inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
+    if not _can_modify(inquiry, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can change this inquiry's stage.")
+    if payload.stage not in INQ_STAGES:
+        raise HTTPException(status_code=422, detail=f"Invalid stage. Must be one of: {', '.join(INQ_STAGES)}")
     entry = CrmStageLog(
         related_module="inquiry", related_id=inquiry_id, universal_id=inquiry.universal_id, stage=payload.stage,
         entered_by_id=user.id, entered_by_name=user.name or user.email, notes=payload.notes,
