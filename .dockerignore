@@ -1,0 +1,14 @@
+**/node_modules/
+**/.next/
+**/venv/
+**/__pycache__/
+**/*.pyc
+**/.env
+**/.env.*
+**/*.log
+**/.pytest_cache/
+.git/
+backend/scripts/
+backend/migrations/
+backend/organizations_converted.csv
+frontend/tsconfig.tsbuildinfo
