@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+body {
+  background: linear-gradient(160deg, #eef2ff 0%, #fff7f2 55%, #f8fafc 100%);
+  color: #111827;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+/* Safety net: tables and other wide, non-shrinking content are the #1 cause
+   of page-wide horizontal scrollbars. Any <table> not explicitly wrapped in
+   a .table-scroll container gets this behavior anyway. */
+table { max-width: 100%; }
+
+/* Hide number input spinner arrows everywhere */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #94a3b8 0%, #64748b 100%);
+}
+
+/* Prevent any single element (image, table, wide inline-style block) from
+   forcing horizontal page scroll on small screens. */
+img, svg { max-width: 100%; height: auto; }
+
+/* ===================== Responsive app shell ===================== */
+
+.app-shell { position: relative; }
+
+.app-sidebar {
+  transition: transform 0.25s ease;
+}
+
+.sidebar-backdrop { display: none; }
+
+.mobile-topbar { display: none; }
+
+@media (max-width: 900px) {
+  .app-shell {
+    padding: 0 !important;
+    gap: 0 !important;
+    flex-direction: column;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .mobile-topbar {
+    display: flex;
+  }
+
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 60;
+    border-radius: 0 !important;
+    transform: translateX(-100%);
+  }
+
+  .app-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop.is-open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 15, 15, 0.45);
+    z-index: 55;
+  }
+
+  .dashboard-main {
+    padding: 5px !important;
+  }
+}
+
+/* ===================== Generic responsive grid helpers =====================
+   Use these className hooks (alongside/instead of an inline style object) on
+   any multi-column layout so it collapses gracefully on small screens. */
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+@media (max-width: 1024px) {
+  .grid-3 { grid-template-columns: 1fr 1fr; }
+  .grid-4 { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 640px) {
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+}
+
+/* Horizontally-scrollable wrapper for wide data tables instead of letting
+   them blow out the page width on mobile. */
+.table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* iOS Safari zooms the page on focusing an <input> with font-size < 16px. */
+@media (max-width: 640px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Braking page: results table + EN standard reference side panel. */
+@media (max-width: 900px) {
+  .braking-results-grid { grid-template-columns: 1fr !important; }
+}
+
+/* Hydraulic page: form + sticky terminal log panel. */
+@media (max-width: 1024px) {
+  .hydraulic-main-grid { grid-template-columns: 1fr !important; }
+}
+
+/* Shared by qmax / load-distribution / tractive-effort / vehicle-performance /
+   spline: a fixed-px 2 or 3 column top-level layout (inputs | terminal | side
+   panel) that never collapsed on mobile — this was the actual cause of the
+   page-wide horizontal scrollbar on those pages. */
+.rnd-main-grid {
+  min-width: 0;
+}
+.rnd-main-grid > * {
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .rnd-main-grid { grid-template-columns: 1fr !important; }
+}
