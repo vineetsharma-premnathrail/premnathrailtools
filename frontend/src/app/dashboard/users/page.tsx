@@ -19,6 +19,7 @@ export default function UsersRolesPage() {
 
   const [search, setSearch] = useState('')
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [syncing, setSyncing] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -64,6 +65,19 @@ export default function UsersRolesPage() {
     setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)))
   }
 
+  const handleSyncAzure = async () => {
+    setSyncing(true)
+    setError('')
+    try {
+      const data = await usersApi.syncAzure()
+      setUsers(data)
+    } catch {
+      setError('Azure sync failed. Check that the app has directory-read permission in Azure AD.')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   if (isLoading || !isAuthorized) return null
 
   return (
@@ -103,6 +117,23 @@ export default function UsersRolesPage() {
             outline: 'none',
           }}
         />
+        <button
+          onClick={handleSyncAzure}
+          disabled={syncing}
+          style={{
+            padding: '10px 18px',
+            borderRadius: 10,
+            border: 'none',
+            background: syncing ? '#fca87a' : '#fa9b9b',
+            color: '#fff',
+            fontSize: 13.5,
+            fontWeight: 700,
+            cursor: syncing ? 'default' : 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {syncing ? 'Syncing…' : 'Sync from Azure AD'}
+        </button>
       </div>
 
       {/* Table */}
