@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -94,6 +94,14 @@ const cardBodyStyle: React.CSSProperties = { padding: 16, display: 'grid', gap: 
 const radioLabelStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#475569', cursor: 'pointer' }
 
 export default function BrakingCalculatorPage() {
+  return (
+    <Suspense fallback={null}>
+      <BrakingCalculatorPageInner />
+    </Suspense>
+  )
+}
+
+function BrakingCalculatorPageInner() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const searchParams = useSearchParams()
 

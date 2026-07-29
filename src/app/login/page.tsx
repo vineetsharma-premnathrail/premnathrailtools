@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { authApi } from '@/lib/api'
@@ -18,6 +18,14 @@ const ERROR_MESSAGES: Record<string, string> = {
 }
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
+  )
+}
+
+function LoginPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, hasChecked, isLoading, fetchUser, setToken } = useAuthStore()

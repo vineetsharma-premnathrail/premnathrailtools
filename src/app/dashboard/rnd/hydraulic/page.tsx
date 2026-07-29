@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -39,6 +39,14 @@ const DEFAULTS: Record<string, string> = {
 }
 
 export default function HydraulicPage() {
+  return (
+    <Suspense fallback={null}>
+      <HydraulicPageInner />
+    </Suspense>
+  )
+}
+
+function HydraulicPageInner() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const searchParams = useSearchParams()
   const [mode, setMode] = useState<CalcMode>('calc_cc')
