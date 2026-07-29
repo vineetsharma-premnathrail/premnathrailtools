@@ -14,6 +14,19 @@ const FRAME_ANCESTORS = [
 ].join(" ");
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+  reactStrictMode: true,
+  devIndicators: false,
+  images: {
+    unoptimized: true,
+  },
+  experimental: {
+    optimizePackageImports: ["@/"],
+  },
+  onDemandEntries: {
+    maxInactiveAge: 25 * 1000,
+    pagesBufferLength: 5,
+  },
   async headers() {
     return [
       {
