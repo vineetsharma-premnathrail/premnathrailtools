@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
@@ -39,35 +40,57 @@ const DEFAULTS: Record<string, string> = {
 
 export default function HydraulicPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const searchParams = useSearchParams()
   const [mode, setMode] = useState<CalcMode>('calc_cc')
   const [form, setForm] = useState<Record<string, string>>(DEFAULTS)
   const [result, setResult] = useState<HydraulicResult | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (isLoading || !isAuthorized) return null
-
   const set = (key: string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [key]: e.target.value }))
 
-  const payload = () => ({
-    calc_mode: mode,
-    weight: form.weight, axles: form.axles, drive_axles: form.drive_axles || String(form.axles),
-    wheel_diameter: form.wheel_diameter, speed: form.speed, max_vehicle_rpm: form.max_vehicle_rpm,
-    pto_gear_ratio: form.pto_gear_ratio, engine_gear_ratio: form.engine_gear_ratio, axle_gear_box_ratio: form.axle_gear_box_ratio,
-    slope_percent: form.slope_percent, curve_degree: form.curve_degree, slope_unit: 'percent', curve_unit: 'degree',
-    num_motors: form.num_motors, per_axle_motor: form.per_axle_motor, pressure: form.pressure, pressure_unit: 'bar',
-    mech_eff_motor: form.mech_eff_motor, vol_eff_motor: form.vol_eff_motor, motor_disp_in: form.motor_disp_in,
-    max_motor_rpm: form.max_motor_rpm, vol_eff_pump: form.vol_eff_pump, mech_eff_pump: form.mech_eff_pump,
-    pump_disp_in: form.pump_disp_in, num_pumps: form.num_pumps,
+  const buildPayload = (m: CalcMode, f: Record<string, string>) => ({
+    calc_mode: m,
+    weight: f.weight, axles: f.axles, drive_axles: f.drive_axles || String(f.axles),
+    wheel_diameter: f.wheel_diameter, speed: f.speed, max_vehicle_rpm: f.max_vehicle_rpm,
+    pto_gear_ratio: f.pto_gear_ratio, engine_gear_ratio: f.engine_gear_ratio, axle_gear_box_ratio: f.axle_gear_box_ratio,
+    slope_percent: f.slope_percent, curve_degree: f.curve_degree, slope_unit: 'percent', curve_unit: 'degree',
+    num_motors: f.num_motors, per_axle_motor: f.per_axle_motor, pressure: f.pressure, pressure_unit: 'bar',
+    mech_eff_motor: f.mech_eff_motor, vol_eff_motor: f.vol_eff_motor, motor_disp_in: f.motor_disp_in,
+    max_motor_rpm: f.max_motor_rpm, vol_eff_pump: f.vol_eff_pump, mech_eff_pump: f.mech_eff_pump,
+    pump_disp_in: f.pump_disp_in, num_pumps: f.num_pumps,
   })
+  const payload = () => buildPayload(mode, form)
 
-  const calculate = async () => {
+  // Deep-link from History's "open in tool" action: ?load=<history id>.
+  useEffect(() => {
+    if (!isAuthorized) return
+    const loadId = searchParams.get('load')
+    if (!loadId) return
+    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+      const i = detail.inputs as Record<string, any>
+      const loadedMode = (i.calc_mode as CalcMode) || mode
+      const loadedForm: Record<string, string> = { ...DEFAULTS }
+      Object.keys(DEFAULTS).forEach((k) => { if (i[k] != null) loadedForm[k] = String(i[k]) })
+      setMode(loadedMode)
+      setForm(loadedForm)
+      calculate(buildPayload(loadedMode, loadedForm), `Hydraulic — ${loadedMode}`)
+    }).catch(() => setError('Could not load the saved calculation.'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthorized])
+
+  if (isLoading || !isAuthorized) return null
+
+  const calculate = async (overridePayload?: ReturnType<typeof buildPayload>, overrideName?: string) => {
+    const isFromHistory = !!overridePayload
     setBusy(true)
     setError('')
     try {
-      const data = await rndApi.calculateHydraulic(payload())
+      const data = await rndApi.calculateHydraulic(overridePayload || payload())
       setResult(data)
-      rndApi.saveHistory({ tool_name: 'hydraulic', inputs: payload(), results: data.results, calculation_name: `Hydraulic — ${mode}` }).catch(() => {})
+      if (!isFromHistory) {
+        rndApi.saveHistory({ tool_name: 'hydraulic', inputs: payload(), results: data.results, calculation_name: overrideName || `Hydraulic — ${mode}` }).catch(() => {})
+      }
     } catch {
       setError('Calculation failed. Check your inputs.')
     } finally {
@@ -249,7 +272,7 @@ export default function HydraulicPage() {
           </div>
 
           {error && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{error}</p>}
-          <button onClick={calculate} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Execute Calculation'}</button>
+          <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Execute Calculation'}</button>
         </div>
 
         <div style={{ position: 'sticky', top: 16, height: 'fit-content' }}>

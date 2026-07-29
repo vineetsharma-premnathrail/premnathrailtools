@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
+
 function isFinancialYearValid(v: string): boolean {
   if (!v) return true
   const m = v.match(/^(\d{4})-(\d{2})$/)
@@ -21,16 +23,38 @@ export default function YearField({
   style?: React.CSSProperties
 }) {
   const showError = value.length >= 5 && !isFinancialYearValid(value)
+  const inputRef = useRef<HTMLInputElement>(null)
+  // Digit-count (not char-index) the caret should sit after, so it can be
+  // re-located correctly once the dash shifts position after reformatting.
+  const pendingCaretDigits = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (pendingCaretDigits.current === null || !inputRef.current) return
+    const digitsBefore = pendingCaretDigits.current
+    pendingCaretDigits.current = null
+    let seen = 0
+    let pos = value.length
+    for (let i = 0; i < value.length; i++) {
+      if (/\d/.test(value[i])) seen++
+      if (seen === digitsBefore) { pos = i + 1; break }
+    }
+    if (digitsBefore === 0) pos = 0
+    inputRef.current.setSelectionRange(pos, pos)
+  }, [value])
 
   return (
     <div>
       <input
+        ref={inputRef}
         value={value}
         maxLength={7}
         onChange={(e) => {
           // Auto-format as the user types: digits only, dash auto-inserted
           // after the 4th digit (YYYY-YY) — no need to type the dash or blur.
-          const digits = e.target.value.replace(/\D/g, '').slice(0, 6)
+          const raw = e.target.value
+          const caret = e.target.selectionStart ?? raw.length
+          pendingCaretDigits.current = raw.slice(0, caret).replace(/\D/g, '').length
+          const digits = raw.replace(/\D/g, '').slice(0, 6)
           const formatted = digits.length > 4 ? `${digits.slice(0, 4)}-${digits.slice(4)}` : digits
           onChange(formatted)
         }}

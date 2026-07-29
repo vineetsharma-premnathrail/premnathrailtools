@@ -1,7 +1,8 @@
 'use client'
 
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
@@ -94,6 +95,7 @@ const radioLabelStyle: React.CSSProperties = { display: 'flex', alignItems: 'cen
 
 export default function BrakingCalculatorPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const searchParams = useSearchParams()
 
   // Document details
   const [docNo, setDocNo] = useState('BRK-001')
@@ -144,6 +146,39 @@ export default function BrakingCalculatorPage() {
   const [busy, setBusy] = useState(false)
   const [saveStatus, setSaveStatus] = useState('')
 
+  // Deep-link from History's "open in tool" action: ?load=<history id> —
+  // fetch the saved inputs, populate every field, and recalculate. Must run
+  // unconditionally (before the isAuthorized early return) per Rules of Hooks;
+  // `calculate`/`payload` are declared further down but are only invoked once
+  // this effect actually fires (after the component has fully rendered), by
+  // which point they're already initialized.
+  useEffect(() => {
+    if (!isAuthorized) return
+    const loadId = searchParams.get('load')
+    if (!loadId) return
+    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+      const i = detail.inputs as Record<string, any>
+      if (i.doc_no != null) setDocNo(String(i.doc_no))
+      if (i.made_by != null) setMadeBy(String(i.made_by))
+      if (i.checked_by != null) setCheckedBy(String(i.checked_by))
+      if (i.approved_by != null) setApprovedBy(String(i.approved_by))
+      if (i.mass_kg != null) setMassKg(String(i.mass_kg))
+      if (i.reaction_time != null) setReactionTime(String(i.reaction_time))
+      if (i.num_wheels != null) setDrivingWheels(String(i.num_wheels))
+      if (i.wheel_dia != null) setWheelDia(String(i.wheel_dia))
+      if (i.calc_mode != null) setRoadModeEnabled(i.calc_mode === 'Rail+Road')
+      if (i.rail_speed_input != null) setMaxSpeed(String(i.rail_speed_input))
+      if (i.rail_gradient_input != null) setMaxGradient(String(i.rail_gradient_input))
+      if (i.rail_gradient_type != null) setGradientType(i.rail_gradient_type)
+      if (i.road_speed_input != null) setRoadSpeedList(String(i.road_speed_input))
+      if (i.road_gradient_input != null) setRoadGradient(String(i.road_gradient_input))
+      if (i.road_gradient_type != null) setRoadGradientType(i.road_gradient_type)
+      if (i.mu != null) setRoadFriction(String(i.mu))
+      calculate(i as ReturnType<typeof payload>)
+    }).catch(() => setError('Could not load the saved calculation.'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthorized])
+
   if (isLoading || !isAuthorized) return null
 
   const applyTrackPreset = (standard: 'CUSTOM' | 'IR' | 'HSR') => {
@@ -188,8 +223,8 @@ export default function BrakingCalculatorPage() {
     mu: parseFloat(roadFriction) || 0.7,
   })
 
-  const calculate = async () => {
-    if (!validate()) {
+  const calculate = async (fromHistory?: ReturnType<typeof payload>) => {
+    if (!fromHistory && !validate()) {
       setError('Please fix validation errors before calculating.')
       return
     }
@@ -197,15 +232,18 @@ export default function BrakingCalculatorPage() {
     setError('')
     setSaveStatus('')
     try {
-      const data = await rndApi.calculateBraking(payload())
+      const usedPayload = fromHistory || payload()
+      const data = await rndApi.calculateBraking(usedPayload)
       setResult(data)
-      // Fire-and-forget save, mirroring legacy's auto-save-to-history behavior.
-      rndApi.saveHistory({
-        tool_name: 'braking',
-        inputs: payload(),
-        results: { gbr: data.gbr, max_force: data.max_force, rows_count: (data.rows || []).length },
-        calculation_name: `Braking — ${massKg}kg @ ${maxSpeed}km/h`,
-      }).catch(() => {})
+      if (!fromHistory) {
+        // Fire-and-forget save, mirroring legacy's auto-save-to-history behavior.
+        rndApi.saveHistory({
+          tool_name: 'braking',
+          inputs: usedPayload,
+          results: { gbr: data.gbr, max_force: data.max_force, rows_count: (data.rows || []).length },
+          calculation_name: `Braking — ${massKg}kg @ ${maxSpeed}km/h`,
+        }).catch(() => {})
+      }
     } catch {
       setError('Calculation failed. Check your inputs and try again.')
     } finally {
@@ -530,7 +568,7 @@ export default function BrakingCalculatorPage() {
 
             <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <button
-                onClick={calculate}
+                onClick={() => calculate()}
                 disabled={busy}
                 style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#f97316,#ea580c)', color: '#fff', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.03em', cursor: busy ? 'default' : 'pointer', boxShadow: '0 4px 12px rgba(249,115,22,0.3)', opacity: busy ? 0.7 : 1 }}
               >

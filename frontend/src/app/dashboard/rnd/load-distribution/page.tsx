@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
@@ -32,6 +33,7 @@ const CONFIGS = [
 
 export default function LoadDistributionPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const searchParams = useSearchParams()
 
   const [configType, setConfigType] = useState<'Bogie' | 'Axle'>('Bogie')
   const [totalLoad, setTotalLoad] = useState('28.0')
@@ -43,8 +45,6 @@ export default function LoadDistributionPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (isLoading || !isAuthorized) return null
-
   const payload = () => ({
     config_type: configType,
     total_load: Number(totalLoad),
@@ -53,22 +53,52 @@ export default function LoadDistributionPage() {
     q3_percent: Number(q3Percent),
   })
 
-  const calculate = async () => {
-    const p = payload()
-    if ([p.total_load, p.front_percent, p.q1_percent, p.q3_percent].some((v) => Number.isNaN(v))) {
-      setError('Please fill all input fields.')
-      return
-    }
-    if (p.front_percent < 0 || p.front_percent > 100 || p.q1_percent < 0 || p.q1_percent > 100 || p.q3_percent < 0 || p.q3_percent > 100) {
-      setError('Percentages must be between 0 and 100.')
-      return
+  // Deep-link from History's "open in tool" action: ?load=<history id>.
+  useEffect(() => {
+    if (!isAuthorized) return
+    const loadId = searchParams.get('load')
+    if (!loadId) return
+    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+      const i = detail.inputs as Record<string, any>
+      if (i.config_type != null) setConfigType(i.config_type)
+      if (i.total_load != null) setTotalLoad(String(i.total_load))
+      if (i.front_percent != null) setFrontPercent(String(i.front_percent))
+      if (i.q1_percent != null) setQ1Percent(String(i.q1_percent))
+      if (i.q3_percent != null) setQ3Percent(String(i.q3_percent))
+      calculate({
+        config_type: i.config_type ?? configType,
+        total_load: Number(i.total_load),
+        front_percent: Number(i.front_percent),
+        q1_percent: Number(i.q1_percent),
+        q3_percent: Number(i.q3_percent),
+      })
+    }).catch(() => setError('Could not load the saved calculation.'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthorized])
+
+  if (isLoading || !isAuthorized) return null
+
+  const calculate = async (overridePayload?: ReturnType<typeof payload>) => {
+    const isFromHistory = !!overridePayload
+    const p = overridePayload || payload()
+    if (!isFromHistory) {
+      if ([p.total_load, p.front_percent, p.q1_percent, p.q3_percent].some((v) => Number.isNaN(v))) {
+        setError('Please fill all input fields.')
+        return
+      }
+      if (p.front_percent < 0 || p.front_percent > 100 || p.q1_percent < 0 || p.q1_percent > 100 || p.q3_percent < 0 || p.q3_percent > 100) {
+        setError('Percentages must be between 0 and 100.')
+        return
+      }
     }
     setBusy(true)
     setError('')
     try {
       const data = await rndApi.calculateLoadDistribution(p)
       setResult(data)
-      rndApi.saveHistory({ tool_name: 'load_distribution', inputs: p, results: data.results, calculation_name: `Load Dist. ${p.total_load}T` }).catch(() => {})
+      if (!isFromHistory) {
+        rndApi.saveHistory({ tool_name: 'load_distribution', inputs: p, results: data.results, calculation_name: `Load Dist. ${p.total_load}T` }).catch(() => {})
+      }
     } catch {
       setError('Calculation failed. Check your inputs.')
     } finally {
@@ -184,7 +214,7 @@ export default function LoadDistributionPage() {
           </div>
 
           {error && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{error}</p>}
-          <button onClick={calculate} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Calculate'}</button>
+          <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Calculate'}</button>
         </div>
 
         {/* Center: wheel load distribution + terminal */}

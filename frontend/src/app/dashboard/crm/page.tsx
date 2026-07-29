@@ -116,7 +116,7 @@ const rowSub: React.CSSProperties = { fontSize: 11.5, color: '#78716c', margin: 
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div style={{ padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)' }}>
+    <div style={{ padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
       <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 6px' }}>{label}</p>
       <p style={{ fontSize: 24, fontWeight: 800, color, margin: 0 }}>{value}</p>
     </div>
@@ -125,7 +125,7 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 
 function RecentList<T>({ title, titleColor, viewAllHref, items, renderItem }: { title: string; titleColor?: string; viewAllHref: string; items: T[]; renderItem: (item: T) => React.ReactNode }) {
   return (
-    <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', padding: 16 }}>
+    <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ fontSize: 13.5, fontWeight: 700, color: titleColor || '#1f1108', margin: 0 }}>{title}</h2>
         <Link href={viewAllHref} style={{ fontSize: 11.5, color: '#fa9b9b', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
