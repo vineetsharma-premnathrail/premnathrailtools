@@ -1,0 +1,135 @@
+\documentclass[14pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{siunitx}
+\usepackage[table]{xcolor}
+\usepackage{amsmath}
+\usepackage{geometry}
+\geometry{a4paper,
+ total={170mm,257mm},
+ left=30mm,
+ right=30mm,
+ bottom=40mm,
+ top=44mm}
+
+\sisetup{
+    group-separator={,},
+    group-minimum-digits=3,
+    round-mode=places,
+    round-precision=2,
+    table-format=3.2
+}
+
+\title{\textbf{Motor Pressure Calculation Report}}
+
+\author{\textbf{Doc-No.: {{ doc_no | default('—') }}}\\
+Made By: {{ made_by | default('—') }}\\
+Checked By: {{ checked_by | default('—') }}\\
+Approved By: {{ approved_by | default('—') }}}
+\date{{ doc_date | default("\\today") }}
+
+% Background logos (added with safety guard)
+\usepackage{eso-pic}
+\IfFileExists{logo.JPG}{
+  \AddToShipoutPictureBG{
+    \AtPageUpperLeft{\raisebox{-\height}{\includegraphics[width=\paperwidth]{logo.JPG}}}
+    \IfFileExists{logo-1.JPG}{\AtPageLowerLeft{\makebox[\paperwidth]{\includegraphics[height=2.3cm]{logo-1.JPG}}}}{}
+  }
+}{}
+
+\begin{document}
+\maketitle
+
+\section*{Introduction}
+This report computes the required hydraulic pressure for a given motor displacement and operating condition. It shows step-by-step traction, torque and pressure calculations.
+
+\section{Theory and Formulas}
+\begin{itemize}
+  \item Torque requirement: $T = F \times r$
+  \item Convert torque to motor shaft (gearbox input) if required: $T_{motor} = T_{axle} / gearbox\_ratio$
+  \item Torque (kg·cm): $T_{kg\cdot cm} = T_{Nm} \times 10.1972$
+  \item Pressure from motor displacement: $P = \dfrac{T_{kg\cdot cm} \times 2\pi}{D_{motor} \times \eta_m}$
+\end{itemize}
+
+\section{Inputs}
+\begin{itemize}
+  \item Vehicle Weight = {{ weight | default('N/A') }} t
+  \item Drive Axles = {{ drive_axles | default(axles) }}
+  \item Target Speed = {{ speed | default('N/A') }} km/h
+  \item Wheel Diameter = {{ wheel_diameter | default('N/A') }} mm
+  \item Motor Displacement (input) = {{ motor_disp_in | default('N/A') }} cc/rev
+  \item Motor Mechanical Efficiency = {{ mech_eff_motor | default('N/A') }} \%
+  \item Motor Volumetric Efficiency = {{ vol_eff_motor | default('N/A') }} \%
+\end{itemize}
+
+\section{Step-by-step Calculation}
+\subsection*{Step 1: Speed and Wheel RPM}
+\[ V = {{ speed | default(0) }} \times \frac{1000}{3600} = {{ speed_mps | default(0) | round(2) }} \, m/s \]
+\[ C = \frac{ {{ wheel_diameter | default(0) }} \times \pi }{1000} = {{ wheel_circumference | default(0) | round(3) }} \, m \]
+\[ RPM = \frac{ {{ speed_mps | default(0) | round(2) }} }{ {{ wheel_circumference | default(0) | round(3) }} } \times 60 = {{ wheel_rpm | default(0) | round(2) }} \, RPM \]
+
+\subsection*{Step 2: Resistance Forces}
+Rolling resistance:
+\[ = {{ rolling_resistance | default(0) | round(2) }} \, kN \]
+Gradient resistance:
+\[ = {{ gradient_resistance | default(0) | round(2) }} \, kN \]
+Curve resistance:
+\[ = {{ curvature_resistance | default(0) | round(2) }} \, kN \]
+Starting resistance:
+\[ = {{ starting_resistance | default(0) | round(2) }} \, kN \]
+\[ F_{total} = {{ total_resistance | default(0) | round(2) }} \, kN \]
+
+\subsection*{Resistance & Torque}
+\[ F_{total} = {{ total_resistance | default(0) | round(2) }} \, kN \]
+\[ r = \frac{ {{ wheel_diameter | default(0) }} }{2000} = {{ wheel_radius | default(0) | round(3) }} \; m \]
+\[ T_{total} = F_{total} \times r = {{ required_total_torque | default(0) | round(2) }} \; Nm \]
+\[ T_{per\_axle} = {{ per_axle_torque | default(0) | round(2) }} \; Nm \]
+\[ T_{per\_motor} = {{ per_motor_torque | default(0) | round(2) }} \; Nm \]
+\[ T_{motor\_shaft} (gearbox input) = {{ per_gearbox_input_torque | default(0) | round(2) }} \; Nm \]
+
+\subsection*{Pressure from Motor Displacement}
+Convert torque to kg·cm:
+\[ T_{kg\,cm} = {{ per_gearbox_input_torque_kg_cm | default(0) | round(2) }} \; kg\cdot cm \]
+Using \( P = \frac{T_{kg\,cm} \times 2\pi}{D \times \eta_m} \):
+\[ Required\ Pressure = \frac{ {{ per_gearbox_input_torque_kg_cm | default(0) | round(2) }} \times 2\pi }{ {{ motor_displacement_cc | default(0) | round(2) }} \times {{ (mech_eff_motor | default(100) / 100) | round(4) }} } = {{ required_pressure_bar | default(0) | round(2) }} \; bar \]
+\[ = {{ pressure_kg_cm2 | default(0) | round(2) }} \; \text{kg/cm}^2 \]
+\subsection*{Detailed worked calculation (formula → substitution → numeric result)}
+\begin{itemize}
+  \item Torque (per motor, gearbox input): $T = {{ per_gearbox_input_torque | default(0) | round(2) }}$ Nm = ${{ per_gearbox_input_torque_kg_cm | default(0) | round(2) }}$ kg·cm.
+  \item Motor displacement used: $D = {{ motor_displacement_cc | round(2) }}$ cc/rev.
+  \item Mechanical efficiency used: $\eta_m = {{ mech_eff_motor | default(0) }}\%$.
+  \item Substitution into pressure formula gives: $P = {{ required_pressure_bar | round(2) }}$ bar ({{ pressure_kg_cm2 | round(2) }} kg/cm$^2$).
+\end{itemize}
+
+\subsection*{Units & assumptions}
+\begin{itemize}
+  \item Pressure unit conversion: 1 bar = 1.01972 kg/cm$^2$.
+  \item Torque conversion: 1 Nm = 10.1972 kg·cm.
+  \item Assumptions: motor displacement is exact input; mechanical efficiencies represent shaft losses only.
+\end{itemize}
+
+\subsection*{Appendix: calculation trace}
+\begin{itemize}
+  \item Per-gearbox input torque = {{ per_gearbox_input_torque | default(0) | round(2) }} Nm
+  \item Torque (kg·cm) = {{ per_gearbox_input_torque_kg_cm | default(0) | round(2) }} kg·cm
+  \item Motor displacement = {{ motor_displacement_cc | round(2) }} cc/rev
+  \item Required pressure = {{ required_pressure_bar | round(2) }} bar
+\end{itemize}
+{% if warnings %}
+\section*{Warnings}
+\begin{itemize}
+{% for w in warnings %}
+  \item {{ w }}
+{% endfor %}
+\end{itemize}
+{% endif %}
+
+\section*{Summary}
+\begin{itemize}
+  \item Required pressure: \textbf{ {{ required_pressure_bar | default(0) | round(2) }} bar }
+  \item Motor shaft torque (gearbox input): \textbf{ {{ per_gearbox_input_torque | default(0) | round(2) }} Nm }
+  \item Motor displacement (input): \textbf{ {{ motor_displacement_cc | default(0) | round(2) }} cc/rev }
+  \item Suggested standard motor displacement (next higher): \textbf{ {{ suggested_motor_cc | default('N/A') }} } cc/rev
+\end{itemize}
+
+\end{document}

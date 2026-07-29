@@ -1,0 +1,44 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "da0e9c5c-b2d8-4a1f-a92a-7de40bba7eb3",
+  "developer": {
+    "name": "Premnathrail",
+    "websiteUrl": "https://erp.premnathrailtools.cloud",
+    "privacyUrl": "https://erp.premnathrailtools.cloud/privacy",
+    "termsOfUseUrl": "https://erp.premnathrailtools.cloud/terms"
+  },
+  "name": {
+    "short": "Premnathrail Portal",
+    "full": "Premnathrail Portal"
+  },
+  "description": {
+    "short": "Premnathrail internal portal",
+    "full": "Premnathrail internal portal for ERP, CRM and R&D modules"
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#000000",
+  "staticTabs": [
+    {
+      "entityId": "home",
+      "name": "Home",
+      "contentUrl": "https://erp.premnathrailtools.cloud/dashboard",
+      "websiteUrl": "https://erp.premnathrailtools.cloud/dashboard",
+      "scopes": ["personal"]
+    }
+  ],
+  "permissions": [
+    "identity"
+  ],
+  "validDomains": [
+    "erp.premnathrailtools.cloud"
+  ],
+  "webApplicationInfo": {
+    "id": "8e1e753c-6c52-4e32-99fc-e70e1f02323e",
+    "resource": "api://erp.premnathrailtools.cloud/8e1e753c-6c52-4e32-99fc-e70e1f02323e"
+  }
+}

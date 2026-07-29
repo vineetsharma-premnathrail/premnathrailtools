@@ -1,0 +1,16 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.12.5
+pydantic-settings==2.7.1
+sqlalchemy==2.0.41
+psycopg[binary]>=3.2.10
+python-jose[cryptography]==3.4.0
+msal==1.28.1
+httpx==0.28.1
+python-multipart==0.0.20
+
+# R&D calculation tools (backend/app/modules/rnd)
+jinja2==3.1.6
+reportlab==4.4.7
+python-docx==1.1.2
+numpy>=2.2.6  # 2.2.6 has no prebuilt wheel for Python 3.14 (no C compiler on this machine to build from source)
