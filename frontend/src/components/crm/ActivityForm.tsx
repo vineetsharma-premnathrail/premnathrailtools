@@ -5,15 +5,11 @@ import { crmApi } from '@/lib/api'
 import { CrmActivity, Organization, OrgContact } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { ACTIVITY_TYPES } from './constants'
+import PhoneField from '@/components/erp/PhoneField'
+import ValidatedInput from '@/components/ValidatedInput'
+import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
+import { ACTIVITY_TYPES, RELATED_MODULES } from './constants'
 import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle } from './ui'
-
-const RELATED_MODULES = [
-  { value: '', label: '— None —' },
-  { value: 'inquiry', label: 'Inquiry' },
-  { value: 'tender', label: 'Tender' },
-  { value: 'organization', label: 'Organization' },
-]
 
 type FormState = {
   org_id: string
@@ -55,6 +51,7 @@ export default function ActivityForm({
   const [form, setForm] = useState<FormState>(() => toFormState(initial))
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [contacts, setContacts] = useState<OrgContact[]>([])
+  const [newContact, setNewContact] = useState({ name: '', designation: '', department: '', mobile: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -75,13 +72,39 @@ export default function ActivityForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (form.org_contact_id === '__new__' && !form.org_id) {
+      setError('Please select an organization before adding a new contact.')
+      return
+    }
+    if (form.org_contact_id === '__new__' && !newContact.name.trim()) {
+      setError('Please enter a name for the new contact, or select an existing one.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
+      let orgContactId: number | undefined = form.org_contact_id && form.org_contact_id !== '__new__' ? Number(form.org_contact_id) : undefined
+      if (form.org_contact_id === '__new__') {
+        const nameLower = newContact.name.trim().toLowerCase()
+        const existing = contacts.find((c) => c.name.trim().toLowerCase() === nameLower)
+        if (existing) {
+          orgContactId = existing.id
+        } else {
+          const created = await crmApi.createOrgContact(Number(form.org_id), {
+            name: newContact.name,
+            designation: newContact.designation || undefined,
+            department: newContact.department || undefined,
+            mobile: newContact.mobile || undefined,
+            email: newContact.email || undefined,
+          })
+          orgContactId = created.id
+        }
+      }
+
       const payload: Record<string, unknown> = {
         ...form,
         org_id: form.org_id ? Number(form.org_id) : undefined,
-        org_contact_id: form.org_contact_id ? Number(form.org_contact_id) : undefined,
+        org_contact_id: orgContactId,
       }
       Object.keys(payload).forEach((k) => {
         if (payload[k] === '' || payload[k] === undefined) delete payload[k]
@@ -116,6 +139,7 @@ export default function ActivityForm({
             <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} style={inputStyle}>
               <option value="">Select contact</option>
               {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="__new__">+ Add New Contact</option>
             </select>
           </Field>
           <Field label="Related Module">
@@ -124,6 +148,21 @@ export default function ActivityForm({
             </select>
           </Field>
         </Row>
+
+        {form.org_contact_id === '__new__' && (
+          <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Row>
+              <Field label="Name *"><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Contact name" style={inputStyle} /></Field>
+              <Field label="Designation"><input value={newContact.designation} onChange={(e) => setNewContact((c) => ({ ...c, designation: e.target.value }))} placeholder="e.g. DEN" style={inputStyle} /></Field>
+            </Row>
+            <Row>
+              <Field label="Department"><input value={newContact.department} onChange={(e) => setNewContact((c) => ({ ...c, department: e.target.value }))} placeholder="Dept." style={inputStyle} /></Field>
+              <Field label="Mobile"><PhoneField value={newContact.mobile} onChange={(v) => setNewContact((c) => ({ ...c, mobile: v }))} style={inputStyle} /></Field>
+            </Row>
+            <Field label="Email"><ValidatedInput type="email" value={newContact.email} onChange={(v) => setNewContact((c) => ({ ...c, email: v }))} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="email" style={inputStyle} /></Field>
+          </div>
+        )}
+
         <Row>
           <Field label="Universal ID"><input value={form.universal_id} onChange={(e) => set('universal_id', e.target.value)} placeholder="e.g. INQ-2024-001" style={inputStyle} /></Field>
           <Field label="Activity Type">

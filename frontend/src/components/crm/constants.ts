@@ -16,6 +16,13 @@ export const DOC_CATEGORIES = [
 
 export const ACTIVITY_TYPES = ['Introduction', 'Call', 'Email', 'Meeting', 'Site Visit', 'Demo', 'Follow-up', 'Submission', 'Technical Review', 'Other']
 
+export const RELATED_MODULES = [
+  { value: '', label: '— None —' },
+  { value: 'inquiry', label: 'Inquiry' },
+  { value: 'tender', label: 'Tender' },
+  { value: 'organization', label: 'Organization' },
+]
+
 export const ORG_TYPES = ['PSU', 'Govt Department', 'Railway', 'Private', 'Joint Venture', 'Other']
 
 export const COUNTRIES = ['India', 'USA', 'UK', 'UAE', 'Other']
