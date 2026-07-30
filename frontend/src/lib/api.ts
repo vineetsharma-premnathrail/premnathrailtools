@@ -484,6 +484,17 @@ export const erpApi = {
     return data
   },
 
+  receiveMaterial: async (srId: number, matId: number, receivedQuantity: number) => {
+    const { data } = await apiClient.post(`/erp/service-requests/${srId}/materials/${matId}/receive`, { received_quantity: receivedQuantity })
+    return data
+  },
+
+  // Purchase Requisitions (raised from this SR's materials)
+  raisePurchaseRequisition: async (srId: number) => {
+    const { data } = await apiClient.post(`/erp/service-requests/${srId}/raise-pr`)
+    return data
+  },
+
   // Attachments
   uploadAttachments: async (srId: number, files: File[]) => {
     const formData = new FormData()
@@ -499,14 +510,46 @@ export const erpApi = {
     return data
   },
 
-  // Purchase department email
-  getPurchaseUsers: async (srId: number) => {
-    const { data } = await apiClient.get(`/erp/service-requests/${srId}/purchase-users`)
+}
+
+export const purchaseApi = {
+  list: async (params: { status?: string; project_id?: number; service_request_id?: number; search?: string; limit?: number } = {}) => {
+    const { data } = await apiClient.get('/purchase/requisitions', { params })
     return data
   },
 
-  sendPurchaseEmail: async (srId: number, recipientEmails: string[]) => {
-    const { data } = await apiClient.post(`/erp/service-requests/${srId}/send-purchase-email`, { recipient_emails: recipientEmails })
+  get: async (id: number) => {
+    const { data } = await apiClient.get(`/purchase/requisitions/${id}`)
+    return data
+  },
+
+  update: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/purchase/requisitions/${id}`, payload)
+    return data
+  },
+
+  approve: async (id: number) => {
+    const { data } = await apiClient.post(`/purchase/requisitions/${id}/approve`)
+    return data
+  },
+
+  reject: async (id: number, reason?: string) => {
+    const { data } = await apiClient.post(`/purchase/requisitions/${id}/reject`, { reason })
+    return data
+  },
+
+  cancel: async (id: number, reason?: string) => {
+    const { data } = await apiClient.post(`/purchase/requisitions/${id}/cancel`, { reason })
+    return data
+  },
+
+  close: async (id: number) => {
+    const { data } = await apiClient.post(`/purchase/requisitions/${id}/close`)
+    return data
+  },
+
+  getAuditTrail: async (id: number) => {
+    const { data } = await apiClient.get(`/purchase/requisitions/${id}/audit`)
     return data
   },
 }

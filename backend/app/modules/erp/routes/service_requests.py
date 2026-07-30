@@ -3,7 +3,6 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
-from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.permissions import require_app_access, has_erp_permission
@@ -22,9 +21,13 @@ from app.modules.erp.schemas.service_request import (
     ServiceMaterialCreate,
     ServiceMaterialUpdate,
     ServiceMaterialResponse,
+    MaterialReceivePayload,
 )
+from app.modules.purchase.models.purchase_requisition import PurchaseRequisition
+from app.modules.purchase.schemas.purchase_requisition import PurchaseRequisitionResponse
+from app.modules.purchase.service import raise_requisition, mark_material_received
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint
-from app.utils.email import send_client_sr_email, send_team_sr_notification
+from app.utils.email import send_client_sr_email, send_team_sr_notification, send_purchase_requisition_email
 from app.utils.notifications import broadcast_notification, notify_user
 from app.auth.microsoft import get_app_graph_token
 
@@ -113,6 +116,31 @@ async def _run_sr_emails_background(sr_id: int, event_type: str, actor_id: int, 
         project = db.query(Project).filter(Project.id == sr.project_id).first()
         await send_client_sr_email(db, sr, project, actor_id, actor_name, event_type)
         await send_team_sr_notification(db, sr, project, actor_id, actor_name, event_type)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _send_purchase_requisition_email_background(pr_id: int, sr_id: int):
+    """Best-effort email to the Purchase department mailbox (settings.PURCHASE_EMAIL),
+    run after the PR has already been committed — mirrors `_run_sr_emails_background`'s
+    pattern of opening its own DB session since the request-scoped one is
+    closed by the time a BackgroundTask runs."""
+    db = SessionLocal()
+    try:
+        if not settings.PURCHASE_EMAIL:
+            return
+        pr = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == pr_id).first()
+        sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id).first()
+        if not pr or not sr:
+            return
+        project = db.query(Project).filter(Project.id == sr.project_id).first()
+        materials = db.query(ServiceMaterial).filter(
+            ServiceMaterial.pr_id == pr.id, ServiceMaterial.is_deleted == False  # noqa: E712
+        ).all()
+        await send_purchase_requisition_email(db, pr, sr, project, materials, [settings.PURCHASE_EMAIL])
         db.commit()
     except Exception:
         db.rollback()
@@ -563,8 +591,6 @@ async def add_material(
         part_number=payload.part_number,
         quantity=payload.quantity,
         unit=payload.unit,
-        unit_price=payload.unit_price,
-        total_price=round(payload.quantity * payload.unit_price, 2),
         supplier=payload.supplier,
         status=payload.status or "pending",
         availability=payload.availability or "in_stock",
@@ -593,7 +619,6 @@ async def update_material(
 
     for field, val in payload.model_dump(exclude_unset=True).items():
         setattr(mat, field, val)
-    mat.total_price = round(mat.quantity * mat.unit_price, 2)
     _write_audit(db, sr_id, "material_updated", user, summary=f"Material updated: {mat.material_name}.")
     db.commit()
     db.refresh(mat)
@@ -621,37 +646,110 @@ async def delete_material(
     return {"message": "Material deleted"}
 
 
-# ── Email utilities ──────────────────────────────────────────────────────────
-
-@router.get("/{sr_id}/purchase-users")
-async def get_purchase_dept_users(
+@router.post("/{sr_id}/raise-pr", response_model=PurchaseRequisitionResponse, status_code=201)
+async def raise_purchase_requisition(
     sr_id: int,
-    _user: User = Depends(require_app_access("erp")),
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("erp")),
 ):
-    """Azure AD users in the Purchase department, for the purchase-email recipient picker."""
-    import httpx
-    try:
-        token = await get_app_graph_token()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Azure token error: {e}")
+    """Raise a Purchase Requisition from this SR's materials that aren't
+    already linked to one, notifying the Purchase department (in-app +
+    email) that a PR is waiting on them for this project/SR."""
+    sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id, ServiceRequest.is_deleted == False).first()  # noqa: E712
+    if not sr:
+        raise HTTPException(status_code=404, detail="Service request not found")
+    if not _can_edit(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can raise a purchase requisition for this service request.")
 
-    params = {
-        "$select": "id,displayName,mail,userPrincipalName,jobTitle,department",
-        "$filter": "department eq 'Purchase' and accountEnabled eq true",
-        "$top": 100,
-    }
-    async with httpx.AsyncClient() as client:
-        resp = await client.get("https://graph.microsoft.com/v1.0/users", headers={"Authorization": f"Bearer {token}"}, params=params)
-    if resp.status_code != 200:
-        err = resp.json().get("error", {})
-        raise HTTPException(status_code=resp.status_code, detail=err.get("message", "Graph API error"))
+    materials = db.query(ServiceMaterial).filter(
+        ServiceMaterial.service_request_id == sr_id,
+        ServiceMaterial.is_deleted == False,  # noqa: E712
+        ServiceMaterial.pr_id.is_(None),
+    ).all()
+    if not materials:
+        raise HTTPException(
+            status_code=400,
+            detail="No materials available to raise a purchase requisition — add materials first, or every existing material already belongs to a PR.",
+        )
 
-    return [
-        {"id": u.get("id"), "name": u.get("displayName", ""), "email": u.get("mail") or u.get("userPrincipalName", ""), "job_title": u.get("jobTitle", "")}
-        for u in resp.json().get("value", [])
-        if (u.get("mail") or u.get("userPrincipalName"))
-    ]
+    project = db.query(Project).filter(Project.id == sr.project_id).first()
+    pr = raise_requisition(db, project_id=sr.project_id, service_request_id=sr.id, materials=materials, raised_by_id=user.id)
+    _write_audit(
+        db, sr.id, "pr_raised", user,
+        summary=f"{user.name or user.email} raised purchase requisition {pr.pr_number} with {len(materials)} material(s).",
+    )
 
+    proj_name = f"{project.serial_number} — {project.model_name}" if project and project.model_name else (project.serial_number if project else f"Project #{sr.project_id}")
+    broadcast_notification(
+        db,
+        title="New Purchase Requisition",
+        message=f"PR '{pr.pr_number}' raised for SR '{sr.request_number}' ({proj_name}).",
+        notification_type="pr_raised",
+        entity_type="purchase_requisition",
+        entity_id=pr.id,
+        app_name="purchase",
+    )
+
+    db.commit()
+    db.refresh(pr)
+    background_tasks.add_task(_send_purchase_requisition_email_background, pr.id, sr.id)
+
+    resp = PurchaseRequisitionResponse.model_validate(pr)
+    resp.project_label = proj_name
+    if project:
+        resp.client_company = project.client_company
+        resp.site_name = project.site_name
+    resp.sr_request_number = sr.request_number
+    return resp
+
+
+@router.post("/{sr_id}/materials/{mat_id}/receive", response_model=ServiceMaterialResponse)
+async def receive_material(
+    sr_id: int,
+    mat_id: int,
+    payload: MaterialReceivePayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("erp")),
+):
+    """Mark a (possibly partial) physical receipt of a material at the service
+    site. If the material is linked to a PR, this also syncs the PR item's
+    received quantity and — once every item on the PR is fully received —
+    advances the PR to "received" so Purchase knows it's ready to close."""
+    mat = db.query(ServiceMaterial).filter(
+        ServiceMaterial.id == mat_id, ServiceMaterial.service_request_id == sr_id, ServiceMaterial.is_deleted == False  # noqa: E712
+    ).first()
+    if not mat:
+        raise HTTPException(status_code=404, detail="Material not found")
+    sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id).first()
+    if sr and not _can_edit(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can mark materials received on this service request.")
+    if payload.received_quantity < 0:
+        raise HTTPException(status_code=400, detail="received_quantity cannot be negative")
+
+    pr = mark_material_received(db, mat, payload.received_quantity)
+    _write_audit(
+        db, sr_id, "material_received", user,
+        summary=f"{user.name or user.email} marked {mat.received_quantity}/{mat.quantity} {mat.unit} of '{mat.material_name}' as received.",
+    )
+
+    if pr and pr.status == "received" and sr:
+        broadcast_notification(
+            db,
+            title="Purchase Requisition Fully Received",
+            message=f"All items for PR '{pr.pr_number}' (SR '{sr.request_number}') have been received and it's ready to close.",
+            notification_type="pr_received",
+            entity_type="purchase_requisition",
+            entity_id=pr.id,
+            app_name="purchase",
+        )
+
+    db.commit()
+    db.refresh(mat)
+    return mat
+
+
+# ── Email utilities ──────────────────────────────────────────────────────────
 
 @router.post("/{sr_id}/resend-client-email")
 async def resend_client_email(
@@ -672,98 +770,6 @@ async def resend_client_email(
     if not success:
         raise HTTPException(status_code=502, detail="Email could not be sent. Check the audit trail for the error detail.")
     return {"message": f"Email ({event_type}) resent to {sr.reported_by_email}."}
-
-
-class PurchaseEmailPayload(BaseModel):
-    recipient_emails: list[str]
-
-
-@router.post("/{sr_id}/send-purchase-email")
-async def send_purchase_email(
-    sr_id: int,
-    payload: PurchaseEmailPayload,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("erp")),
-):
-    """Send a formatted purchase-requisition email listing the SR's materials."""
-    import httpx
-
-    if not payload.recipient_emails:
-        raise HTTPException(status_code=400, detail="No recipients specified.")
-
-    sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id, ServiceRequest.is_deleted == False).first()  # noqa: E712
-    if not sr:
-        raise HTTPException(status_code=404, detail="Service request not found")
-
-    project = db.query(Project).filter(Project.id == sr.project_id).first()
-    mats = db.query(ServiceMaterial).filter(ServiceMaterial.service_request_id == sr_id, ServiceMaterial.is_deleted == False).all()  # noqa: E712
-
-    proj_name = f"{project.serial_number} — {project.model_name}" if project else f"Project #{sr.project_id}"
-    client_name = project.client_company if project else "—"
-    site_name = project.site_name if project else "—"
-
-    parts_rows = "".join(
-        f"<tr style='border-bottom:1px solid #e2e8f0'>"
-        f"<td style='padding:8px 12px;font-weight:600'>{m.material_name}</td>"
-        f"<td style='padding:8px 12px;text-align:center'>{m.quantity}</td>"
-        f"<td style='padding:8px 12px;text-align:right'>&#8377; {m.total_price:,.2f}</td>"
-        f"</tr>"
-        for m in mats
-    ) if mats else "<tr><td colspan='3' style='padding:16px;text-align:center;color:#94a3b8'>No parts listed.</td></tr>"
-    total_cost = sum(m.total_price for m in mats)
-
-    body_html = f"""
-<div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;color:#1e293b">
-  <div style="background:#f97316;padding:20px 28px;border-radius:12px 12px 0 0">
-    <h2 style="color:#fff;margin:0;font-size:18px">Purchase Requisition — {sr.request_number}</h2>
-  </div>
-  <div style="background:#fff;border:1px solid #e2e8f0;padding:24px 28px">
-    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px">
-      <tr><td style="padding:5px 0;color:#64748b;width:160px">Machine / Asset</td><td style="font-weight:600">{proj_name}</td></tr>
-      <tr><td style="padding:5px 0;color:#64748b">Client</td><td>{client_name}</td></tr>
-      <tr><td style="padding:5px 0;color:#64748b">Site</td><td>{site_name}</td></tr>
-    </table>
-    <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
-      <thead><tr style="background:#f8fafc">
-        <th style="padding:8px 12px;text-align:left;font-size:11px;color:#64748b">Part</th>
-        <th style="padding:8px 12px;text-align:center;font-size:11px;color:#64748b">Qty</th>
-        <th style="padding:8px 12px;text-align:right;font-size:11px;color:#64748b">Cost Est.</th>
-      </tr></thead>
-      <tbody>{parts_rows}</tbody>
-      <tfoot><tr style="background:#f8fafc;border-top:2px solid #e2e8f0">
-        <td colspan="2" style="padding:8px 12px;font-weight:700">Total Estimated Cost</td>
-        <td style="padding:8px 12px;text-align:right;font-weight:700">&#8377; {total_cost:,.2f}</td>
-      </tr></tfoot>
-    </table>
-  </div>
-</div>"""
-
-    sender_email = settings.SENDER_EMAIL or user.email
-    if not sender_email:
-        raise HTTPException(status_code=400, detail="No sender email configured (set SENDER_EMAIL in .env).")
-
-    try:
-        token = await get_app_graph_token()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Azure token error: {e}")
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"https://graph.microsoft.com/v1.0/users/{sender_email}/sendMail",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json={
-                "message": {
-                    "subject": f"Purchase Requisition: {sr.request_number}",
-                    "body": {"contentType": "HTML", "content": body_html},
-                    "toRecipients": [{"emailAddress": {"address": e}} for e in payload.recipient_emails],
-                },
-                "saveToSentItems": True,
-            },
-        )
-    if resp.status_code not in (200, 202):
-        raise HTTPException(status_code=502, detail=f"Graph sendMail failed: {resp.text[:300]}")
-
-    return {"message": f"Email sent to {len(payload.recipient_emails)} recipient(s)."}
 
 
 @router.post("/test-email")

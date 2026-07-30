@@ -362,18 +362,26 @@ const MATERIAL_STATUS_BADGE: Record<string, { bg: string; fg: string; label: str
   pending: { bg: '#fb923c', fg: '#fff', label: 'Pending' },
 }
 
-const MATERIAL_AVAILABILITY_BADGE: Record<string, { fg: string; label: string }> = {
-  in_stock: { fg: '#16a34a', label: 'In Stock' },
-  reserved: { fg: '#f97316', label: 'Reserved' },
-  ordered: { fg: '#3b82f6', label: 'Ordered' },
-  out_of_stock: { fg: '#ef4444', label: 'Out of Stock' },
+const PR_STATUS_BADGE: Record<string, { bg: string; fg: string; label: string }> = {
+  submitted: { bg: '#3b82f61a', fg: '#3b82f6', label: 'Submitted' },
+  approved: { bg: '#8b5cf61a', fg: '#8b5cf6', label: 'Approved' },
+  po_raised: { bg: '#f59e0b1a', fg: '#f59e0b', label: 'PO Raised' },
+  partially_received: { bg: '#f973161a', fg: '#f97316', label: 'Partially Received' },
+  received: { bg: '#0ea5e91a', fg: '#0ea5e9', label: 'Received' },
+  closed: { bg: '#22c55e1a', fg: '#22c55e', label: 'Closed' },
+  rejected: { bg: '#dc26261a', fg: '#dc2626', label: 'Rejected' },
+  cancelled: { bg: '#94a3b81a', fg: '#94a3b8', label: 'Cancelled' },
 }
 
 function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean }) {
   const [materials, setMaterials] = useState<ServiceRequest['materials']>([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ material_name: '', part_number: '', quantity: '1', unit_price: '0' })
-  const [purchaseModalOpen, setPurchaseModalOpen] = useState(false)
+  const [form, setForm] = useState({ material_name: '', part_number: '', quantity: '1' })
+  const [raisingPR, setRaisingPR] = useState(false)
+  const [prMessage, setPrMessage] = useState('')
+  const [prError, setPrError] = useState('')
+  const [receiveInputs, setReceiveInputs] = useState<Record<number, string>>({})
+  const [savingReceive, setSavingReceive] = useState<number | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -393,9 +401,8 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
       material_name: form.material_name,
       part_number: form.part_number || undefined,
       quantity: Number(form.quantity) || 1,
-      unit_price: Number(form.unit_price) || 0,
     })
-    setForm({ material_name: '', part_number: '', quantity: '1', unit_price: '0' })
+    setForm({ material_name: '', part_number: '', quantity: '1' })
     load()
   }
 
@@ -404,13 +411,51 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
     load()
   }
 
-  const total = materials.reduce((sum, m) => sum + m.total_price, 0)
+  const raisePR = async () => {
+    setRaisingPR(true)
+    setPrError('')
+    setPrMessage('')
+    try {
+      const pr = await erpApi.raisePurchaseRequisition(srId)
+      setPrMessage(`Purchase requisition ${pr.pr_number} raised — the Purchase department has been notified.`)
+      load()
+    } catch (err: any) {
+      setPrError(err?.response?.data?.detail || 'Failed to raise purchase requisition.')
+    } finally {
+      setRaisingPR(false)
+    }
+  }
+
+  const saveReceive = async (matId: number, maxQty: number) => {
+    const raw = receiveInputs[matId]
+    const qty = Math.max(0, Math.min(Number(raw), maxQty))
+    if (Number.isNaN(qty)) return
+    setSavingReceive(matId)
+    try {
+      await erpApi.receiveMaterial(srId, matId, qty)
+      setReceiveInputs((prev) => { const next = { ...prev }; delete next[matId]; return next })
+      load()
+    } finally {
+      setSavingReceive(null)
+    }
+  }
+
+  const hasUnlinkedMaterials = materials.some((m) => !m.pr_id)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {canModify && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button onClick={() => setPurchaseModalOpen(true)} style={secondaryBtnStyle}>Send to Purchase Dept.</button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {prMessage && <span style={{ fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{prMessage}</span>}
+          {prError && <span style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{prError}</span>}
+          <button
+            onClick={raisePR}
+            disabled={raisingPR || !hasUnlinkedMaterials}
+            style={{ ...primaryBtnStyle, opacity: raisingPR || !hasUnlinkedMaterials ? 0.55 : 1, cursor: raisingPR || !hasUnlinkedMaterials ? 'not-allowed' : 'pointer' }}
+            title={!hasUnlinkedMaterials ? 'Every material already belongs to a purchase requisition' : ''}
+          >
+            {raisingPR ? 'Raising…' : 'Raise Purchase Requisition'}
+          </button>
         </div>
       )}
 
@@ -419,7 +464,6 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
           <input placeholder="Material name" value={form.material_name} onChange={(e) => setForm((f) => ({ ...f, material_name: e.target.value }))} style={{ ...inputStyle, flex: '1 1 180px' }} />
           <input placeholder="Part number" value={form.part_number} onChange={(e) => setForm((f) => ({ ...f, part_number: e.target.value }))} style={{ ...inputStyle, flex: '1 1 120px' }} />
           <input type="number" min="0" step="0.01" placeholder="Qty" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} style={{ ...inputStyle, width: 90 }} />
-          <input type="number" min="0" step="0.01" placeholder="Unit price" value={form.unit_price} onChange={(e) => setForm((f) => ({ ...f, unit_price: e.target.value }))} style={{ ...inputStyle, width: 120 }} />
           <button type="submit" style={primaryBtnStyle}>Add</button>
         </form>
       )}
@@ -428,17 +472,18 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['Material', 'Part No.', 'Qty', 'Status', 'Availability', 'Unit Price', 'Total', ''].map((h) => (
+              {['Material', 'Part No.', 'Qty', 'Status', 'PR', 'Received', ''].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && materials.length === 0 && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No materials added.</td></tr>}
+            {loading && <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && materials.length === 0 && <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No materials added.</td></tr>}
             {materials.map((m) => {
               const statusBadge = MATERIAL_STATUS_BADGE[m.status || 'pending'] || MATERIAL_STATUS_BADGE.pending
-              const availBadge = MATERIAL_AVAILABILITY_BADGE[m.availability || 'in_stock'] || MATERIAL_AVAILABILITY_BADGE.in_stock
+              const prBadge = m.pr_status ? (PR_STATUS_BADGE[m.pr_status] || PR_STATUS_BADGE.submitted) : null
+              const canReceive = canModify && !!m.pr_id && m.receiving_status !== 'received'
               return (
               <tr key={m.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                 <td style={{ padding: '10px 14px', fontSize: 13 }}>{m.material_name}</td>
@@ -449,9 +494,44 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
                     {statusBadge.label}
                   </span>
                 </td>
-                <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: availBadge.fg }}>{availBadge.label}</td>
-                <td style={{ padding: '10px 14px', fontSize: 13 }}>₹{m.unit_price.toFixed(2)}</td>
-                <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700 }}>₹{m.total_price.toFixed(2)}</td>
+                <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                  {prBadge ? (
+                    <Link href={`/dashboard/purchase`} style={{ textDecoration: 'none' }}>
+                      <span title={m.pr_number} style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: prBadge.bg, color: prBadge.fg }}>
+                        {m.pr_number} · {prBadge.label}
+                      </span>
+                    </Link>
+                  ) : (
+                    <span style={{ fontSize: 12, color: '#a8a29e' }}>—</span>
+                  )}
+                </td>
+                <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+                  {canReceive ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input
+                        type="number"
+                        min={0}
+                        max={m.quantity}
+                        step="0.01"
+                        placeholder={`${m.received_quantity}/${m.quantity}`}
+                        value={receiveInputs[m.id] ?? ''}
+                        onChange={(e) => setReceiveInputs((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                        style={{ ...inputStyle, width: 70, padding: '5px 8px' }}
+                      />
+                      <button
+                        onClick={() => saveReceive(m.id, m.quantity)}
+                        disabled={savingReceive === m.id || receiveInputs[m.id] === undefined || receiveInputs[m.id] === ''}
+                        style={{ ...primaryBtnStyle, padding: '5px 10px', fontSize: 11.5, opacity: savingReceive === m.id ? 0.6 : 1 }}
+                      >
+                        {savingReceive === m.id ? '…' : 'Mark'}
+                      </button>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 12, fontWeight: 600, color: m.receiving_status === 'received' ? '#16a34a' : '#78716c' }}>
+                      {m.received_quantity}/{m.quantity}{m.receiving_status === 'received' ? ' ✓' : ''}
+                    </span>
+                  )}
+                </td>
                 <td style={{ padding: '10px 14px' }}>
                   {canModify && (
                     <button onClick={() => removeMaterial(m.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Remove</button>
@@ -461,88 +541,7 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
               )
             })}
           </tbody>
-          {materials.length > 0 && (
-            <tfoot>
-              <tr style={{ borderTop: '2px solid rgba(0,0,0,0.08)' }}>
-                <td colSpan={6} style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700 }}>Total</td>
-                <td colSpan={2} style={{ padding: '10px 14px', fontSize: 13, fontWeight: 800 }}>₹{total.toFixed(2)}</td>
-              </tr>
-            </tfoot>
-          )}
         </table>
-      </div>
-
-      {purchaseModalOpen && (
-        <SendPurchaseEmailModal srId={srId} onClose={() => setPurchaseModalOpen(false)} />
-      )}
-    </div>
-  )
-}
-
-function SendPurchaseEmailModal({ srId, onClose }: { srId: number; onClose: () => void }) {
-  const [users, setUsers] = useState<{ id: string; name: string; email: string; job_title: string }[]>([])
-  const [selected, setSelected] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
-  const [sending, setSending] = useState(false)
-  const [error, setError] = useState('')
-  const [sent, setSent] = useState(false)
-
-  useEffect(() => {
-    erpApi.getPurchaseUsers(srId)
-      .then(setUsers)
-      .catch((err) => setError(err?.response?.data?.detail || 'Failed to load Purchase department users.'))
-      .finally(() => setLoading(false))
-  }, [srId])
-
-  const toggle = (email: string) => setSelected((prev) => (prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]))
-
-  const send = async () => {
-    if (selected.length === 0) return
-    setSending(true)
-    setError('')
-    try {
-      await erpApi.sendPurchaseEmail(srId, selected)
-      setSent(true)
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to send email.')
-    } finally {
-      setSending(false)
-    }
-  }
-
-  return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: '#fff', borderRadius: 16, padding: 24 }}>
-        <h3 style={{ fontSize: 16, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>Send to Purchase Dept.</h3>
-        <p style={{ fontSize: 12.5, color: '#78716c', margin: '0 0 16px' }}>Select recipients from the Purchase department</p>
-
-        {error && <p style={{ fontSize: 12.5, color: '#b91c1c', marginBottom: 12 }}>{error}</p>}
-
-        {sent ? (
-          <p style={{ fontSize: 13, color: '#047857', fontWeight: 600 }}>Email sent to {selected.length} recipient(s).</p>
-        ) : loading ? (
-          <p style={{ fontSize: 13, color: '#a8a29e' }}>Loading…</p>
-        ) : users.length === 0 ? (
-          <p style={{ fontSize: 13, color: '#a8a29e' }}>No Purchase department users found in Azure AD.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto', marginBottom: 16 }}>
-            {users.map((u) => (
-              <label key={u.email} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                <input type="checkbox" checked={selected.includes(u.email)} onChange={() => toggle(u.email)} />
-                <span>{u.name} <span style={{ color: '#a8a29e' }}>({u.email})</span></span>
-              </label>
-            ))}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={secondaryBtnStyle}>{sent ? 'Close' : 'Cancel'}</button>
-          {!sent && (
-            <button onClick={send} disabled={sending || selected.length === 0} style={{ ...primaryBtnStyle, opacity: sending || selected.length === 0 ? 0.6 : 1 }}>
-              {sending ? 'Sending…' : 'Send Email'}
-            </button>
-          )}
-        </div>
       </div>
     </div>
   )

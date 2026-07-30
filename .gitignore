@@ -40,3 +40,4 @@ Thumbs.db
 # --- Local data / uploads ---
 *.sqlite3
 *.db
+backend/db_backups/

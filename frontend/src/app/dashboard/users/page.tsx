@@ -9,6 +9,7 @@ const APPS: { id: AppModule; label: string }[] = [
   { id: 'erp', label: 'Service Module' },
   { id: 'rnd', label: 'R&D Tools' },
   { id: 'crm', label: 'CRM' },
+  { id: 'purchase', label: 'Purchase' },
 ]
 
 export default function UsersRolesPage() {

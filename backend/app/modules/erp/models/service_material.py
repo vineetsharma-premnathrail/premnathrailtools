@@ -21,12 +21,25 @@ class ServiceMaterial(Base, TimestampMixin, SoftDeleteMixin):
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     quantity: Mapped[float] = mapped_column(Float, default=1)
     unit: Mapped[str] = mapped_column(String(20), default="pcs")
-    unit_price: Mapped[float] = mapped_column(Float, default=0)
-    total_price: Mapped[float] = mapped_column(Float, default=0)
     supplier: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_warranty_covered: Mapped[bool] = mapped_column(Boolean, default=False)
     phase: Mapped[str] = mapped_column(String(20), default="expected")
     status: Mapped[str | None] = mapped_column(String(50), default="pending", nullable=True)
     availability: Mapped[str | None] = mapped_column(String(50), default="in_stock", nullable=True)
+
+    # Purchase Requisition linkage. `pr_id` is the only hard foreign key into
+    # the `purchase` module; `pr_number`/`pr_status` are a denormalized mirror
+    # of the PurchaseRequisition so this row can display PR state without a
+    # cross-module join. Written by app/modules/purchase/routes/purchase_requisitions.py
+    # whenever the PR's status changes — this is the exact seam that would
+    # become a webhook call if Purchase were ever split into its own service.
+    pr_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("purchase_requisitions.id"), nullable=True)
+    pr_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    pr_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+    # Physical receipt at the service site, marked by the service user (not
+    # Purchase) since they're the ones who can see the goods arrive.
+    received_quantity: Mapped[float] = mapped_column(Float, default=0)
+    receiving_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | partial | received
 
     service_request: Mapped["ServiceRequest"] = relationship("ServiceRequest", back_populates="materials")

@@ -202,7 +202,7 @@ def test_delete_sr_requires_sr_delete_permission(client, db):
     assert response.status_code == 403
 
 
-def test_materials_crud_and_total_price_computation(client, db):
+def test_materials_crud(client, db):
     user = make_user(db, "erp8@premnathrail.com", erp_permissions=["sr_create", "sr_edit", "sr_delete"])
     project = make_project(db, "SN-SR-007")
     sr = client.post(
@@ -213,12 +213,12 @@ def test_materials_crud_and_total_price_computation(client, db):
 
     response = client.post(
         f"/api/v1/erp/service-requests/{sr['id']}/materials",
-        json={"material_name": "Bearing", "quantity": 3, "unit_price": 150},
+        json={"material_name": "Bearing", "quantity": 3},
         headers=auth_header(user),
     )
     assert response.status_code == 201
     mat = response.json()
-    assert mat["total_price"] == 450
+    assert mat["quantity"] == 3
 
     response = client.patch(
         f"/api/v1/erp/service-requests/{sr['id']}/materials/{mat['id']}",
@@ -226,7 +226,7 @@ def test_materials_crud_and_total_price_computation(client, db):
         headers=auth_header(user),
     )
     assert response.status_code == 200
-    assert response.json()["total_price"] == 750
+    assert response.json()["quantity"] == 5
 
     response = client.delete(f"/api/v1/erp/service-requests/{sr['id']}/materials/{mat['id']}", headers=auth_header(user))
     assert response.status_code == 200
@@ -247,7 +247,7 @@ def test_materials_require_creator_or_admin(client, db):
 
     response = client.post(
         f"/api/v1/erp/service-requests/{sr['id']}/materials",
-        json={"material_name": "Valve", "quantity": 1, "unit_price": 500},
+        json={"material_name": "Valve", "quantity": 1},
         headers=auth_header(other),
     )
     assert response.status_code == 403
@@ -264,7 +264,7 @@ def test_add_material_requires_sr_edit_permission(client, db):
 
     response = client.post(
         f"/api/v1/erp/service-requests/{sr['id']}/materials",
-        json={"material_name": "Valve", "quantity": 1, "unit_price": 500},
+        json={"material_name": "Valve", "quantity": 1},
         headers=auth_header(creator),
     )
     assert response.status_code == 403

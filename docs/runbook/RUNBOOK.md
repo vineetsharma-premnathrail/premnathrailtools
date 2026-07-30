@@ -7,6 +7,7 @@
 cd backend
 python -m venv venv && venv\Scripts\activate  # One time
 pip install -r requirements.txt               # One time
+alembic upgrade head                          # Applies any pending schema migrations
 uvicorn app.main:app --reload
 
 # Terminal 2: Run tests
@@ -265,17 +266,23 @@ Postgres database — this asymmetry is the tell.
 **Fix — pick one:**
 1. **Local/dev, data is disposable:** drop and recreate (see *Reset Database*
    above) — simplest, but destroys all rows.
-2. **Anywhere with data worth keeping:** hand-write the migration —
-   `ALTER TABLE <table> ADD COLUMN <col> <type>` (match nullability/defaults to
-   what the model declares), applied directly against the running database
-   before/alongside deploying the code change. This project doesn't have
-   Alembic wired up yet, so there's no `alembic upgrade head` step — schema
-   changes are manual `ALTER TABLE` + the model/Pydantic-schema edit, done in
-   the same change.
-3. **Whenever you do #2, also grep for every place that reads/writes the
-   column** (route, Pydantic schema, any raw SQL) — a manual `ALTER TABLE`
-   fixes the database but nothing keeps the ORM model and Pydantic schema in
-   sync with it for you.
+2. **Anywhere with data worth keeping:** this project *is* on Alembic now
+   (`backend/alembic/`) — write a real migration instead of hand-editing the
+   database. From `backend/`:
+   ```bash
+   alembic revision -m "describe the change"   # or --autogenerate, then review the diff
+   alembic upgrade head                        # applies it to whatever DATABASE_URL points at
+   ```
+   New tables can usually just call `Base.metadata.create_all(bind=op.get_bind())` (it's
+   idempotent/checkfirst — see `ea1db0867f03_baseline.py` and
+   `96f882353283_add_purchase_requisitions.py`), but **new columns on an existing table
+   need an explicit `op.add_column(...)`** — `create_all()` only creates brand-new tables,
+   it never `ALTER`s one that's already there. Guard each with an `inspector.get_columns()`
+   check (see `6f8a8c6a60c7_extend_user_model...py`) so the migration stays a no-op on a
+   database that was provisioned straight from the current models.
+3. **Whenever you add a migration, also grep for every place that reads/writes the
+   column** (route, Pydantic schema, any raw SQL) — the migration fixes the database but
+   nothing keeps the ORM model and Pydantic schema in sync with it for you.
 
 ### **Problem: A normally-fine request gets 400 "Bad request." with no other detail**
 

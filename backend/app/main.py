@@ -1,6 +1,8 @@
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -15,6 +17,8 @@ from app.modules.erp.models.project_attachment import ProjectAttachment
 from app.modules.erp.models.service_request import ServiceRequest
 from app.modules.erp.models.service_material import ServiceMaterial
 from app.modules.erp.models.service_request_attachment import ServiceRequestAttachment
+from app.modules.purchase.models.purchase_requisition import PurchaseRequisition
+from app.modules.purchase.models.purchase_requisition_item import PurchaseRequisitionItem
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation,
     Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity, Note,
@@ -32,6 +36,7 @@ from app.modules.main.routes import api_keys as api_keys_routes
 from app.modules.main.routes import presence as presence_routes
 from app.modules.erp.routes import projects as erp_projects_routes
 from app.modules.erp.routes import service_requests as erp_sr_routes
+from app.modules.purchase.routes import purchase_requisitions as purchase_requisitions_routes
 from app.modules.crm.routes import organizations as crm_organizations_routes
 from app.modules.crm.routes import inquiries as crm_inquiries_routes
 from app.modules.crm.routes import tenders as crm_tenders_routes
@@ -84,6 +89,11 @@ app.add_middleware(OWASPMiddleware)
 # Error handlers
 setup_error_handlers(app)
 
+# Static assets (e.g. the logo embedded in outgoing emails — see
+# app/utils/email.py). Public by design: OWASPMiddleware's PUBLIC_PREFIXES
+# already exempts "/static/" from the auth pre-check.
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
+
 # ============ ROUTES ============
 
 # API v1 routes
@@ -91,6 +101,7 @@ app.include_router(auth_routes.router, prefix="/api/v1")
 app.include_router(users_routes.router, prefix="/api/v1")
 app.include_router(erp_projects_routes.router, prefix="/api/v1")
 app.include_router(erp_sr_routes.router, prefix="/api/v1")
+app.include_router(purchase_requisitions_routes.router, prefix="/api/v1")
 app.include_router(crm_organizations_routes.router, prefix="/api/v1")
 app.include_router(crm_inquiries_routes.router, prefix="/api/v1")
 app.include_router(crm_tenders_routes.router, prefix="/api/v1")

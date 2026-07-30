@@ -561,9 +561,17 @@ GET    /api/v1/erp/service-requests/{id}/materials
 POST   /api/v1/erp/service-requests/{id}/materials     Requires sr_edit + creator (or admin)
 PATCH  /api/v1/erp/service-requests/{id}/materials/{mat_id}  Requires sr_edit + creator (or admin)
 DELETE /api/v1/erp/service-requests/{id}/materials/{mat_id}  Requires sr_delete + creator (or admin)
-GET    /api/v1/erp/service-requests/{id}/purchase-users
 POST   /api/v1/erp/service-requests/{id}/resend-client-email
-POST   /api/v1/erp/service-requests/{id}/send-purchase-email
+POST   /api/v1/erp/service-requests/{id}/raise-pr                     Raises a Purchase Requisition from every
+                                                                        material not already linked to one —
+                                                                        requires sr_edit + creator (or admin).
+                                                                        400 if there are no unlinked materials.
+                                                                        Notifies PURCHASE_EMAIL (see .env) by
+                                                                        email, plus every Purchase-module user
+                                                                        in-app.
+POST   /api/v1/erp/service-requests/{id}/materials/{mat_id}/receive   Marks a (possibly partial) physical receipt
+                                                                        of a material — requires sr_edit + creator
+                                                                        (or admin). Body: { received_quantity }
 ```
 
 #### Presence ("who's viewing this")
@@ -575,6 +583,36 @@ In-memory, polling-based (no websocket) — see [ARCHITECTURE.md](../architectur
 POST   /api/v1/presence/heartbeat                     Body: { resource_type: "sr"|"project", resource_id }
                                                         Call every 30s while the detail page is open
 GET    /api/v1/presence/{resource_type}/{resource_id}  Returns other users currently viewing (self excluded)
+```
+
+### Purchase Endpoints
+
+Requires `assigned_apps` to include `"purchase"` (admins always pass). Unlike ERP, there
+are no granular sub-permissions here — anyone with Purchase module access can act on any
+PR — mirroring how CRM/RnD module access works (see
+[Users & Roles](#users--roles-endpoints-admin-only)).
+
+A PR is always *raised* from the ERP side (`POST /erp/service-requests/{id}/raise-pr`,
+above) — the Purchase module only lists/processes PRs that already exist. See
+[ARCHITECTURE.md](../architecture/ARCHITECTURE.md#purchase-module) for the full lifecycle
+and the loose-coupling design between `erp` and `purchase`.
+
+```
+GET    /api/v1/purchase/requisitions                  List (filters: status, project_id,
+                                                        service_request_id, search on pr_number)
+GET    /api/v1/purchase/requisitions/{id}
+GET    /api/v1/purchase/requisitions/{id}/audit
+PATCH  /api/v1/purchase/requisitions/{id}             Update vendor/po_number/po_date/
+                                                        expected_delivery_date/notes.
+                                                        409 if the PR is closed/rejected/cancelled.
+POST   /api/v1/purchase/requisitions/{id}/approve     submitted -> approved. 409 otherwise.
+POST   /api/v1/purchase/requisitions/{id}/reject      submitted|approved -> rejected, and
+                                                        unlinks its materials so they can be
+                                                        raised into a fresh PR. Body: { reason? }
+POST   /api/v1/purchase/requisitions/{id}/cancel      Any non-terminal status -> cancelled,
+                                                        same unlink behavior. Body: { reason? }
+POST   /api/v1/purchase/requisitions/{id}/close       received -> closed only; 409 otherwise.
+                                                        Notifies the SR's ERP users + creator.
 ```
 
 ### RnD Endpoints

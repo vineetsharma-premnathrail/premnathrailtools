@@ -15,11 +15,12 @@ def broadcast_notification(
     entity_type: str | None = None,
     entity_id: int | None = None,
     exclude_user_id: int | None = None,
+    app_name: str = "erp",
 ) -> None:
-    """Notify every user with ERP access (except the actor)."""
+    """Notify every user with access to `app_name` (except the actor)."""
     try:
         for u in db.query(User).filter(User.is_active == True).all():  # noqa: E712
-            if "erp" not in u.get_apps():
+            if app_name not in u.get_apps():
                 continue
             if exclude_user_id and u.id == exclude_user_id:
                 continue

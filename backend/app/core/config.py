@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # ERP notification email (app-only Graph sendMail)
     SENDER_EMAIL: str = ""
     TEAM_EMAIL: str = ""
+    PURCHASE_EMAIL: str = ""
     APP_BASE_URL: str = "http://localhost:8000"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

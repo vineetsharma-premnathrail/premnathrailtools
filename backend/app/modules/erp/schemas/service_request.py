@@ -8,7 +8,6 @@ class ServiceMaterialCreate(BaseModel):
     part_number: str | None = None
     quantity: float = 1
     unit: str = "pcs"
-    unit_price: float = 0
     supplier: str | None = None
     status: str | None = "pending"
     availability: str | None = "in_stock"
@@ -19,7 +18,6 @@ class ServiceMaterialUpdate(BaseModel):
     part_number: str | None = None
     quantity: float | None = None
     unit: str | None = None
-    unit_price: float | None = None
     supplier: str | None = None
     status: str | None = None
     availability: str | None = None
@@ -34,12 +32,20 @@ class ServiceMaterialResponse(BaseModel):
     part_number: str | None = None
     quantity: float
     unit: str
-    unit_price: float
-    total_price: float
     supplier: str | None = None
     status: str | None = None
     availability: str | None = None
     created_at: datetime | None = None
+
+    pr_id: int | None = None
+    pr_number: str | None = None
+    pr_status: str | None = None
+    received_quantity: float = 0
+    receiving_status: str = "pending"
+
+
+class MaterialReceivePayload(BaseModel):
+    received_quantity: float
 
 
 class ServiceRequestAttachmentResponse(BaseModel):

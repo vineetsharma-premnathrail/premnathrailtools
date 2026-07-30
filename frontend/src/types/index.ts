@@ -1,4 +1,4 @@
-export type AppModule = 'erp' | 'rnd' | 'crm'
+export type AppModule = 'erp' | 'rnd' | 'crm' | 'purchase'
 
 export interface User {
   id: number
@@ -108,12 +108,15 @@ export interface ServiceMaterial {
   part_number?: string
   quantity: number
   unit: string
-  unit_price: number
-  total_price: number
   supplier?: string
   status?: string
   availability?: string
   created_at?: string
+  pr_id?: number
+  pr_number?: string
+  pr_status?: string
+  received_quantity: number
+  receiving_status: 'pending' | 'partial' | 'received'
 }
 
 export interface ServiceRequestAttachment {
@@ -205,6 +208,54 @@ export interface Notification {
   entity_id?: number
   is_read: boolean
   created_at?: string
+}
+
+// ── Purchase ─────────────────────────────────────────────────────────────
+
+export type PRStatus =
+  | 'submitted'
+  | 'approved'
+  | 'po_raised'
+  | 'partially_received'
+  | 'received'
+  | 'closed'
+  | 'rejected'
+  | 'cancelled'
+
+export interface PurchaseRequisitionLineItem {
+  id: number
+  service_material_id: number
+  material_name: string
+  part_number?: string
+  unit: string
+  quantity_requested: number
+  quantity_received: number
+  item_status: 'pending' | 'partial' | 'received'
+}
+
+export interface PurchaseRequisition {
+  id: number
+  pr_number: string
+  project_id: number
+  service_request_id: number
+  status: PRStatus
+  raised_by_id?: number
+  vendor?: string
+  po_number?: string
+  po_date?: string
+  expected_delivery_date?: string
+  notes?: string
+  approved_by_id?: number
+  approved_at?: string
+  closed_by_id?: number
+  closed_at?: string
+  created_at?: string
+  updated_at?: string
+  items: PurchaseRequisitionLineItem[]
+  project_label?: string
+  client_company?: string
+  site_name?: string
+  sr_request_number?: string
 }
 
 // ── CRM ──────────────────────────────────────────────────────────────────

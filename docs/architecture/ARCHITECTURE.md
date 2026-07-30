@@ -204,6 +204,51 @@ backend/app/modules/crm/
 `app/tests/test_crm.py` and `app/tests/test_crm_documents.py` cover this module; see
 [TESTING.md](../testing/TESTING.md) for how to run them.
 
+## Purchase Module
+
+Raised from a Service Request's Materials tab, a Purchase Requisition (PR) tracks a set
+of materials through the Purchase department's workflow (approve → PO → receive → close)
+independently of the SR's own status. It lives at `backend/app/modules/purchase/` and
+follows the same models/schemas/routes layout as CRM/ERP above, plus a `service.py` for
+the status-transition logic shared between its own routes and the ERP routes that raise
+a PR / mark a material received.
+
+**Lifecycle:**
+```
+submitted → approved → po_raised → partially_received → received → closed
+        \→ rejected                                  \→ cancelled
+```
+`partially_received`/`received` are computed automatically — see below — every other
+transition is an explicit Purchase-side action (`POST .../approve|reject|cancel|close`).
+
+**Why a module, not a separate app (yet):** the request explicitly asked for Purchase to
+eventually be its own deployable application, so this module is deliberately built with a
+clean seam rather than reaching into ERP internals:
+- It never imports ERP *route* code, only two ERP *models* (`Project`, `ServiceRequest`),
+  purely to read display fields (client, site, SR number) — no writes.
+- The only write it makes back into ERP is a small denormalized mirror
+  (`ServiceMaterial.pr_id` / `pr_number` / `pr_status`), kept in sync by
+  `purchase/service.py::sync_material_pr_fields()` whenever a PR's status changes. That
+  function is the exact seam that would become an outbound webhook call if Purchase were
+  ever extracted into its own service — the rest of the module (models, routes, status
+  logic) would move unchanged.
+- ERP's side of the integration is symmetric: `service_requests.py`'s `raise-pr` and
+  `.../materials/{id}/receive` routes call into `purchase/service.py`'s plain functions
+  rather than duplicating PR logic — that's the inbound half of the same seam.
+
+**Who marks what:** Purchase raises/approves/sets PO details/closes. The **service
+user** (SR creator, or admin) marks physical receipt on the SR's own Materials tab
+(`POST /erp/service-requests/{id}/materials/{mat_id}/receive`) — they're the ones who can
+actually see the goods arrive at site. Receiving is additive/partial: each call sets an
+absolute `received_quantity` (clamped to the material's ordered quantity), and the parent
+PR's status is recomputed after every call — `partially_received` while any item is short,
+`received` once every item matches its requested quantity. A PR can only be `closed` once
+it reaches `received`.
+
+`app/tests/test_purchase_requisitions.py` covers this module end-to-end (raising a PR,
+approve/reject/cancel, partial/full receiving, closing) — see
+[TESTING.md](../testing/TESTING.md).
+
 ## Authentication & Authorization
 
 ### Flow:
@@ -245,6 +290,14 @@ backend/app/modules/crm/
 ### ERP Tables
 - `erp_projects`, `erp_project_attachments`
 - `erp_service_requests`, `erp_service_materials`, `erp_service_request_attachments`
+  - `erp_service_materials` additionally carries the Purchase Requisition mirror:
+    `pr_id`, `pr_number`, `pr_status`, `received_quantity`, `receiving_status`
+
+### Purchase Tables
+- `purchase_requisitions` — one row per PR (`pr_number`, `status`, `project_id` /
+  `service_request_id` links, vendor/PO/delivery fields)
+- `purchase_requisition_items` — line items, snapshotted from `erp_service_materials`
+  at the moment the PR is raised, tracking `quantity_requested` vs `quantity_received`
 
 ### RnD Tables (not yet created — module not ported)
 `app/modules/rnd` is currently empty scaffolding; these tables exist in legacy

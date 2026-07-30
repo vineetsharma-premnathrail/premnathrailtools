@@ -23,6 +23,13 @@ const UsersIcon = (
     <path d="M16 3.13a4 4 0 010 7.75" />
   </svg>
 )
+const CartIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="9" cy="21" r="1" />
+    <circle cx="20" cy="21" r="1" />
+    <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6" />
+  </svg>
+)
 
 const modules = [
   {
@@ -63,6 +70,19 @@ const modules = [
     iconColor: '#059669',
     tagBg: 'rgba(16,185,129,0.12)',
     tagColor: '#047857',
+  },
+  {
+    title: 'Purchase',
+    app: 'purchase' as const,
+    description: 'Purchase requisitions raised from service materials — approvals, PO tracking, and receiving.',
+    icon: CartIcon,
+    href: '/dashboard/purchase',
+    features: ['Requisitions', 'Approvals', 'PO Tracking'],
+    barColor: 'linear-gradient(90deg,#a855f7,#c084fc)',
+    iconBg: 'rgba(168,85,247,0.12)',
+    iconColor: '#7e22ce',
+    tagBg: 'rgba(168,85,247,0.12)',
+    tagColor: '#6b21a8',
   },
 ]
 
