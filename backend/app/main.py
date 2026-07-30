@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 from app.core.config import settings
+from app.tasks.followup_reminders import send_activity_followup_reminders
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.notification import Notification
@@ -128,14 +131,26 @@ def root():
 
 # ============ STARTUP/SHUTDOWN EVENTS ============
 
+scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+
+
 @app.on_event("startup")
 async def startup():
     """Run on application startup."""
     print(f"[OK] {settings.app_name} started")
     print(f"[DOCS] API Docs: http://localhost:8000/docs")
 
+    scheduler.add_job(
+        send_activity_followup_reminders,
+        CronTrigger(hour=8, minute=0),
+        id="activity_followup_reminders",
+        replace_existing=True,
+    )
+    scheduler.start()
+
 
 @app.on_event("shutdown")
 async def shutdown():
     """Run on application shutdown."""
+    scheduler.shutdown(wait=False)
     print(f"[STOP] {settings.app_name} stopped")
