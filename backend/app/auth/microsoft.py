@@ -21,6 +21,7 @@ def get_auth_url(state: str, redirect_uri: str) -> str:
         scopes=scopes,
         state=state,
         redirect_uri=redirect_uri,
+        prompt="select_account",  # always show Microsoft's account picker instead of silently SSO-ing into the last account
     )
 
 
