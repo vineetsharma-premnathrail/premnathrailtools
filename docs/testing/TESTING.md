@@ -32,9 +32,11 @@ backend/app/tests/
 ├── test_erp_service_requests.py
 ├── test_crm.py                    # Organizations/Inquiries/Tenders CRUD, stage logging,
 │                                     duplicate-prevention, cascade delete/restore, permissions
-└── test_crm_documents.py          # SharePoint-backed document upload/list/delete —
-                                      mocks upload_file_to_sharepoint/delete_file_from_sharepoint
-                                      via monkeypatch rather than hitting Microsoft Graph
+├── test_crm_documents.py          # SharePoint-backed document upload/list/delete —
+│                                     mocks upload_file_to_sharepoint/delete_file_from_sharepoint
+│                                     via monkeypatch rather than hitting Microsoft Graph
+└── test_followup_reminders.py     # app/tasks/followup_reminders.py — see the dedicated
+                                      section below, it isn't a route/`client` test
 ```
 
 Every test module follows the same two helpers (copy this pattern for new test files):
@@ -376,6 +378,32 @@ offset worth remembering if you add similar tests: the request that pushes the
 violation count over `BAN_THRESHOLD` is itself still answered with the error
 that *caused* the violation (e.g. `400`) — the ban only takes effect starting
 with the *next* request after that.
+
+---
+
+## Activity Follow-up Reminder Testing
+
+`test_followup_reminders.py` covers `app/tasks/followup_reminders.py` — a
+scheduled job (see [ARCHITECTURE.md](../architecture/ARCHITECTURE.md#background-jobs--scheduled-tasks)),
+not a route, so it doesn't use the `client` fixture at all.
+
+**Why it doesn't just call `send_activity_followup_reminders()` directly:**
+that's the scheduler entry point, and it opens its own session via the real
+`SessionLocal()` — the same one `app/db/session.py` binds to the production
+`DATABASE_URL`. Calling it in a test would silently read/write your actual
+Postgres database instead of the isolated in-memory one (see the warning
+at the top of `test_microsoft_oauth.py` about exactly this mistake). Instead,
+tests call `_send_activity_followup_reminders(db)` — the `_`-prefixed
+pure-logic function that takes the test's own `db` fixture session directly,
+no monkeypatching needed. Apply the same entry-point/`_`-logic split to any
+new scheduled job so it stays testable this way.
+
+Covers: due-today vs. due-tomorrow notification wording/type, resolving
+`assigned_to` (free text) to a real user by case-insensitive name match,
+falling back to the activity's creator when there's no match (or the field
+is blank), skipping non-`"Open"` activities and activities not yet due, the
+organization name appearing in the message body, and no duplicate
+notification if the job is invoked twice on the same day.
 
 ---
 

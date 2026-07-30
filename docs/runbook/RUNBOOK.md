@@ -194,18 +194,59 @@ CRM/R&D are whole-module toggles via `assigned_apps` only. Valid ids:
 GET /api/v1/users   # (as an admin) — check erp_permissions on the target user
 ```
 
-**Check 2: is only `DELETE /erp/projects/{id}` actually enforced server-side?**
-Yes — as of this writing, `project_delete` is the only ERP sub-permission
-checked on its corresponding endpoint. The others (`project_create`, `sr_edit`,
-etc.) are read by the frontend to show/hide nav items and buttons, but their
-routes don't yet re-check them server-side. Don't assume granting/removing one
-of those ids changes what a Bearer-token/API call can actually do — only
-`project_delete` currently gates anything at the API layer.
+**Check 2: are all 8 sub-permissions actually enforced server-side?**
+Yes. Every id is checked on its corresponding endpoint via
+`has_erp_permission()` (`app/core/permissions.py`) — this isn't just a
+frontend show/hide, it also gates the API call itself:
+- `project_create` / `project_edit` / `project_delete` — gate
+  `POST`/`PATCH`/`DELETE /erp/projects/{id}` respectively. `project_edit`
+  also gates uploading a project attachment; `project_delete` also gates
+  deleting one.
+- `sr_create` gates `POST /erp/service-requests`.
+- `sr_edit` / `sr_delete` gate `PATCH`/`DELETE /erp/service-requests/{id}`
+  respectively, **and require the caller to be the SR's creator** (or an
+  admin) — holding the permission alone isn't enough if you didn't create
+  the SR. The same edit/delete split applies to that SR's attachments and
+  materials (add/update need `sr_edit`, delete needs `sr_delete`).
+
+Granting/removing any of these ids does change what a Bearer-token/API call
+can actually do, not just what the UI renders.
 
 **Check 3: is the caller hitting an admin route without an admin role?**
 `admin`/`super_admin` bypass `erp_permissions` entirely — a `403` for an admin
 account usually means the JWT's `role` claim is stale (re-login) rather than a
 real permissions gap.
+
+### **Problem: CRM Activity follow-up reminder notification never arrived**
+
+The reminder is a daily batch job (`app/tasks/followup_reminders.py`), not
+instant — see [ARCHITECTURE.md](../architecture/ARCHITECTURE.md#background-jobs--scheduled-tasks).
+It only runs once a day, at 8:00 AM IST.
+
+**Check 1: is the activity actually due, and still Open?**
+Only activities with `status: "Open"` and `next_followup` equal to today or
+tomorrow are considered. A `Done`/`Cancelled` activity, or one due further
+out, is silently skipped — that's by design, not a bug.
+
+**Check 2: does `assigned_to` actually match a real user's name?**
+`assigned_to` is free text (no FK to `users`), matched case-insensitively
+against `User.name`. A typo, a nickname, or a name that doesn't match any
+account falls back to notifying the activity's **creator** instead — check
+`GET /api/v1/notifications` for the creator's account before assuming nothing
+was sent at all.
+
+**Check 3: did the server restart mid-day and skip the 8 AM run?**
+`BackgroundScheduler` only fires on its cron schedule while the process is
+running — if the container restarted after 8 AM, that day's run doesn't
+happen retroactively. It'll fire normally the next day. To confirm the job is
+even registered, check the startup log for no scheduler errors, or call
+`send_activity_followup_reminders()` manually from a Python shell against the
+real DB to force a run.
+
+**Check 4: was it already sent once today?**
+The job dedupes per user/activity/notification-type/day — if you already got
+"due tomorrow" today and are wondering why you didn't get a second one, that's
+intentional; you'll get "due today" tomorrow (a different `notification_type`).
 
 ### **Problem: SQLAlchemy model has a column that doesn't error on import, but every query fails / a field is silently None**
 

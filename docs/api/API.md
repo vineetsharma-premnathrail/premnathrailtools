@@ -199,10 +199,17 @@ Body (all fields optional): `{ "name": "...", "role": "user|admin|super_admin", 
   whole-module toggle. Valid ids: `project_view`, `project_create`, `project_edit`,
   `project_delete`, `sr_view`, `sr_create`, `sr_edit`, `sr_delete`. Rejects unknown ids
   with `400`. Admins/super_admins bypass this entirely (see enforcement below).
-- Currently enforced server-side only on `DELETE /api/v1/erp/projects/{id}`, which
-  requires `project_delete` (or admin role) and returns `403` otherwise. The other ids
-  are read by the ERP frontend to show/hide nav items and buttons, but aren't yet
-  checked on their corresponding endpoints.
+- Enforced server-side on every corresponding endpoint (not just read by the frontend
+  to show/hide nav items and buttons):
+  - `project_create` → `POST /erp/projects`; `project_edit` → `PATCH /erp/projects/{id}`
+    and `POST /erp/projects/{id}/attachments`; `project_delete` →
+    `DELETE /erp/projects/{id}` and `DELETE /erp/projects/{id}/attachments/{id}`.
+  - `sr_create` → `POST /erp/service-requests`. `sr_edit` → `PATCH /erp/service-requests/{id}`,
+    uploading an attachment, and adding/updating a material. `sr_delete` →
+    `DELETE /erp/service-requests/{id}` and deleting an attachment/material.
+    Both `sr_edit` and `sr_delete` additionally require the caller to be the SR's
+    creator (or an admin) — see [service-requests.md](#service-requests) below.
+  - All return `403` when missing, except admins/super_admins, who bypass every check.
 
 ### Deactivate / Activate a User
 
@@ -419,6 +426,16 @@ PATCH  /api/v1/crm/notes/{id}
 DELETE /api/v1/crm/notes/{id}
 ```
 
+**Follow-up reminders:** an Activity with `next_followup` set and `status: "Open"`
+automatically gets an in-app notification sent one day before that date and again
+on the day itself — see `app/tasks/followup_reminders.py`, scheduled daily at
+8:00 AM IST (`app/main.py`). The target user is resolved by matching `assigned_to`
+(free text) against a real user's name (case-insensitive); if there's no match —
+or `assigned_to` is blank — it falls back to the activity's creator. Notification
+types: `activity_followup_due_today`, `activity_followup_due_tomorrow`. This is a
+batch job, not instant — saving an activity due today won't trigger a notification
+until the next scheduled run.
+
 ### Documents (SharePoint-backed)
 
 Reuses the same SharePoint integration as the ERP module's project/service-request
@@ -499,8 +516,9 @@ plus `recent_organizations`/`recent_inquiries`/`recent_tenders` (last 5 each).
 
 All routes below require `Authorization: Bearer <token>` (or the `session_token` cookie)
 for a user whose `assigned_apps` includes `"erp"` (admins/super_admins always pass).
-`DELETE /projects/{id}` additionally requires the `project_delete` `erp_permissions` entry
-(or admin role) — see [Users & Roles](#users--roles-endpoints-admin-only) above.
+Beyond that module-level gate, every create/edit/delete route also requires the matching
+`erp_permissions` entry — see [Users & Roles](#users--roles-endpoints-admin-only) above
+for the full enforcement breakdown, and the per-route notes below.
 
 #### Projects
 
@@ -508,35 +526,41 @@ for a user whose `assigned_apps` includes `"erp"` (admins/super_admins always pa
 GET    /api/v1/erp/projects                          List (filters: search, status,
                                                        application_type, client_company, skip/limit)
 GET    /api/v1/erp/projects/filter-options            Distinct values for the filter dropdowns
-POST   /api/v1/erp/projects                           Create
+POST   /api/v1/erp/projects                           Create — requires project_create/admin
 GET    /api/v1/erp/projects/{id}
-PATCH  /api/v1/erp/projects/{id}
+PATCH  /api/v1/erp/projects/{id}                      Requires project_edit/admin
 DELETE /api/v1/erp/projects/{id}                      Soft delete — requires project_delete/admin
 POST   /api/v1/erp/projects/{id}/restore
 GET    /api/v1/erp/projects/recycle-bin/list
 GET    /api/v1/erp/projects/{id}/audit
 GET    /api/v1/erp/projects/{id}/attachments
-POST   /api/v1/erp/projects/{id}/attachments          multipart/form-data — SharePoint-backed
-DELETE /api/v1/erp/projects/{id}/attachments/{attachment_id}
+POST   /api/v1/erp/projects/{id}/attachments          multipart/form-data — SharePoint-backed;
+                                                       requires project_edit/admin
+DELETE /api/v1/erp/projects/{id}/attachments/{attachment_id}  Requires project_delete/admin
 ```
 
 #### Service Requests
 
+Unlike Projects, `sr_edit`/`sr_delete` alone aren't enough — the caller must also be the
+SR's creator (admins bypass this too). `sr_create`/`sr_edit`/`sr_delete` have no ownership
+requirement for creation itself, obviously, but do for editing/deleting an existing one.
+
 ```
 GET    /api/v1/erp/service-requests                   List
-POST   /api/v1/erp/service-requests                   Create
+POST   /api/v1/erp/service-requests                   Create — requires sr_create/admin
 GET    /api/v1/erp/service-requests/recycle-bin
 GET    /api/v1/erp/service-requests/{id}
-PATCH  /api/v1/erp/service-requests/{id}
-DELETE /api/v1/erp/service-requests/{id}
+PATCH  /api/v1/erp/service-requests/{id}               Requires sr_edit + creator (or admin)
+DELETE /api/v1/erp/service-requests/{id}               Requires sr_delete + creator (or admin)
 POST   /api/v1/erp/service-requests/{id}/restore
 GET    /api/v1/erp/service-requests/{id}/audit
-POST   /api/v1/erp/service-requests/{id}/attachments   multipart/form-data — SharePoint-backed
-DELETE /api/v1/erp/service-requests/{id}/attachments/{attachment_id}
+POST   /api/v1/erp/service-requests/{id}/attachments   multipart/form-data — SharePoint-backed;
+                                                        requires sr_edit + creator (or admin)
+DELETE /api/v1/erp/service-requests/{id}/attachments/{attachment_id}  Requires sr_delete + creator (or admin)
 GET    /api/v1/erp/service-requests/{id}/materials
-POST   /api/v1/erp/service-requests/{id}/materials
-PATCH  /api/v1/erp/service-requests/{id}/materials/{mat_id}
-DELETE /api/v1/erp/service-requests/{id}/materials/{mat_id}
+POST   /api/v1/erp/service-requests/{id}/materials     Requires sr_edit + creator (or admin)
+PATCH  /api/v1/erp/service-requests/{id}/materials/{mat_id}  Requires sr_edit + creator (or admin)
+DELETE /api/v1/erp/service-requests/{id}/materials/{mat_id}  Requires sr_delete + creator (or admin)
 GET    /api/v1/erp/service-requests/{id}/purchase-users
 POST   /api/v1/erp/service-requests/{id}/resend-client-email
 POST   /api/v1/erp/service-requests/{id}/send-purchase-email

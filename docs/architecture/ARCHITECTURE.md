@@ -257,6 +257,36 @@ and will be created here once the calculation tools are ported (see
 - `calculation_history` — cross-tool save/rename/list/delete log, one row per
   named save regardless of which tool produced it
 
+## Background Jobs / Scheduled Tasks
+
+`app/tasks/` holds functions that run outside any HTTP request context, on a
+schedule rather than in response to a client call. There's a single job as of
+this writing:
+
+- **`app/tasks/followup_reminders.py` — `send_activity_followup_reminders()`.**
+  Notifies whoever a CRM Activity is assigned to (or its creator, if
+  `assigned_to`'s free-text name doesn't match a real user) one day before and
+  on the day of its `next_followup` date. Only `status: "Open"` activities are
+  considered.
+
+Wired up in `app/main.py`'s `startup` event via APScheduler's
+`BackgroundScheduler`, on a daily `CronTrigger(hour=8, minute=0)` pinned to
+`Asia/Kolkata` (so it fires at 8 AM IST regardless of the container's system
+timezone). Shut down cleanly on the `shutdown` event.
+
+Each job function is split into two: a scheduler entry point that opens its
+own `SessionLocal()` (since there's no request to inject a `db` session from),
+and a `_`-prefixed pure-logic function that takes an already-open `Session` —
+the latter is what tests call directly, so they never touch the entry point's
+production-bound `SessionLocal` (see the note in
+[TESTING.md](../testing/TESTING.md#activity-follow-up-reminder-testing)).
+Follow this split for any new scheduled job.
+
+APScheduler runs in-process — this only works because the app runs as a single
+instance (see Scaling Strategy below). Moving to multiple instances/workers
+would need the job moved to a proper scheduler (or guarded so only one
+instance runs it) to avoid duplicate sends.
+
 ## Deployment Architecture
 
 ```
@@ -264,7 +294,10 @@ and will be created here once the calculation tools are ported (see
 │   Docker Container                   │
 │  ┌────────────────────────────────┐ │
 │  │ FastAPI App (Uvicorn)          │ │
-│  │ - 4 workers                    │ │
+│  │ - 1 worker (see docker-        │ │
+│  │   entrypoint.sh — matters for  │ │
+│  │   the in-process scheduler,    │ │
+│  │   above)                       │ │
 │  │ - Port 8000 (internal)         │ │
 │  └────────────────────────────────┘ │
 └──────────────┬──────────────────────┘
