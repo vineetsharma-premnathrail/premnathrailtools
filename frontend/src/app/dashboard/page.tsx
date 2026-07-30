@@ -27,6 +27,7 @@ const UsersIcon = (
 const modules = [
   {
     title: 'Service Module',
+    app: 'erp' as const,
     description: 'Project management, service requests, warranty tracking, and operational reports.',
     icon: ShieldIcon,
     href: '/dashboard/erp',
@@ -39,6 +40,7 @@ const modules = [
   },
   {
     title: 'R&D Tools',
+    app: 'rnd' as const,
     description: 'Railway engineering calculators — braking, hydraulic, load distribution, and more.',
     icon: ClockIcon,
     href: '/dashboard/rnd',
@@ -51,6 +53,7 @@ const modules = [
   },
   {
     title: 'CRM',
+    app: 'crm' as const,
     description: 'Customer relationship management, leads, contacts, deals, and organizations.',
     icon: UsersIcon,
     href: '/dashboard/crm',
@@ -74,6 +77,8 @@ export default function DashboardPage() {
     day: 'numeric',
   })
 
+  const visibleModules = modules.filter((module) => user?.apps?.includes(module.app))
+
   return (
     <div>
       <h1 style={{ fontSize: 30, fontWeight: 800, color: TEXT.heading, margin: '0 0 6px' }}>
@@ -86,7 +91,7 @@ export default function DashboardPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 20 }}>
-        {modules.map((module) => (
+        {visibleModules.map((module) => (
           <ModuleCard key={module.title} {...module} />
         ))}
       </div>

@@ -2,17 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useRequireErpPermission } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { Project } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ProjectForm from '@/components/erp/ProjectForm'
 
 export default function EditProjectPage() {
-  const { isAuthorized, isLoading } = useRequireApp('erp')
   const params = useParams()
   const router = useRouter()
   const projectId = Number(params.id)
+  const { isAuthorized, isLoading } = useRequireErpPermission('project_edit', `/dashboard/erp/projects/${projectId}`)
 
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)

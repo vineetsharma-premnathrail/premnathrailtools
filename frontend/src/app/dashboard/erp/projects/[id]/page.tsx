@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { AuditEntry, Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
@@ -13,7 +13,10 @@ import FileUploadPreview from '@/components/FileUploadPreview'
 const TABS = ['Overview', 'Technical Specs', 'Maintenance History', 'Documents', 'Audit Trail'] as const
 
 export default function ProjectDetailPage() {
-  const { isAuthorized, isLoading } = useRequireApp('erp')
+  const { user, isAuthorized, isLoading } = useRequireApp('erp')
+  const canCreateSr = hasErpPermission(user, 'sr_create')
+  const canEdit = hasErpPermission(user, 'project_edit')
+  const canDelete = hasErpPermission(user, 'project_delete')
   const params = useParams()
   const router = useRouter()
   const projectId = Number(params.id)
@@ -83,19 +86,25 @@ export default function ProjectDetailPage() {
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{project.model_name || '—'} {project.client_company ? `· ${project.client_company}` : ''}</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <Link
-            href={{ pathname: '/dashboard/erp/service-requests/new' }}
-            style={{ fontSize: 13, fontWeight: 700, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap' }}
-          >
-            + New Service Request
-          </Link>
-          <Link
-            href={`/dashboard/erp/projects/${project.id}/edit`}
-            style={{ fontSize: 13, fontWeight: 700, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', textDecoration: 'none', whiteSpace: 'nowrap' }}
-          >
-            Edit Project
-          </Link>
-          <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>
+          {canCreateSr && (
+            <Link
+              href={{ pathname: '/dashboard/erp/service-requests/new' }}
+              style={{ fontSize: 13, fontWeight: 700, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap' }}
+            >
+              + New Service Request
+            </Link>
+          )}
+          {canEdit && (
+            <Link
+              href={`/dashboard/erp/projects/${project.id}/edit`}
+              style={{ fontSize: 13, fontWeight: 700, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', textDecoration: 'none', whiteSpace: 'nowrap' }}
+            >
+              Edit Project
+            </Link>
+          )}
+          {canDelete && (
+            <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>
+          )}
         </div>
       </div>
 

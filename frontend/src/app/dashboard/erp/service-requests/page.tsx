@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest, SRStatus } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
@@ -62,7 +62,8 @@ function warrantyLabel(project?: Project) {
 }
 
 export default function ServiceRequestsPage() {
-  const { isAuthorized, isLoading } = useRequireApp('erp')
+  const { user, isAuthorized, isLoading } = useRequireApp('erp')
+  const canCreate = hasErpPermission(user, 'sr_create')
   const router = useRouter()
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -144,21 +145,23 @@ export default function ServiceRequestsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>Service Request Registry</h1>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{srs.length} Service Requests Found</p>
         </div>
-        <Link
-          href="/dashboard/erp/service-requests/new"
-          style={{
-            fontSize: 13.5,
-            fontWeight: 700,
-            padding: '10px 20px',
-            borderRadius: 10,
-            background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
-            color: '#fff',
-            textDecoration: 'none',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          + New Service Request
-        </Link>
+        {canCreate && (
+          <Link
+            href="/dashboard/erp/service-requests/new"
+            style={{
+              fontSize: 13.5,
+              fontWeight: 700,
+              padding: '10px 20px',
+              borderRadius: 10,
+              background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
+              color: '#fff',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            + New Service Request
+          </Link>
+        )}
       </div>
 
       {error && (

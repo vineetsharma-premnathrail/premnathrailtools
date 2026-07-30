@@ -1,13 +1,13 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useRequireErpPermission } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import ErpNav from '@/components/erp/ErpNav'
 import ServiceRequestForm from '@/components/erp/ServiceRequestForm'
 
 export default function NewServiceRequestPage() {
-  const { isAuthorized, isLoading } = useRequireApp('erp')
+  const { isAuthorized, isLoading } = useRequireErpPermission('sr_create', '/dashboard/erp/service-requests')
   const router = useRouter()
 
   if (isLoading || !isAuthorized) return null

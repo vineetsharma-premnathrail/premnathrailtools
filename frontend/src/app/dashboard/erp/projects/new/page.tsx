@@ -1,13 +1,13 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useRequireErpPermission } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import ErpNav from '@/components/erp/ErpNav'
 import ProjectForm from '@/components/erp/ProjectForm'
 
 export default function NewProjectPage() {
-  const { isAuthorized, isLoading } = useRequireApp('erp')
+  const { isAuthorized, isLoading } = useRequireErpPermission('project_create', '/dashboard/erp/projects')
   const router = useRouter()
 
   if (isLoading || !isAuthorized) return null

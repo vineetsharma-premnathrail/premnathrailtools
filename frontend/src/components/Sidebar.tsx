@@ -52,13 +52,15 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     router.push('/login')
   }
 
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+
   const links = [
-    { href: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
-    { href: '/dashboard/erp', label: 'Service Module', icon: 'erp' },
-    { href: '/dashboard/rnd', label: 'R&D Tools', icon: 'rnd' },
-    { href: '/dashboard/crm', label: 'CRM Module', icon: 'crm' },
-    { href: '/dashboard/users', label: 'Users & Roles', icon: 'users' },
-  ]
+    { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', visible: true },
+    { href: '/dashboard/erp', label: 'Service Module', icon: 'erp', visible: !!user?.apps?.includes('erp') },
+    { href: '/dashboard/rnd', label: 'R&D Tools', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
+    { href: '/dashboard/crm', label: 'CRM Module', icon: 'crm', visible: !!user?.apps?.includes('crm') },
+    { href: '/dashboard/users', label: 'Users & Roles', icon: 'users', visible: isAdmin },
+  ].filter((link) => link.visible)
 
   return (
     <aside

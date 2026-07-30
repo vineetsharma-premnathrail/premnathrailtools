@@ -3,6 +3,16 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
+import { User } from '@/types'
+
+/** Granular ERP sub-permission check (project_create, sr_edit, etc.) — admins/
+ * super_admins implicitly hold every permission. Mirrors the server's own
+ * `role in (admin, super_admin) or perm in erp_permissions` check. */
+export function hasErpPermission(user: User | null | undefined, permission: string): boolean {
+  if (!user) return false
+  if (user.role === 'admin' || user.role === 'super_admin') return true
+  return !!user.erp_permissions?.includes(permission)
+}
 
 export function useAuth() {
   const router = useRouter()
@@ -65,4 +75,23 @@ export function useRequireApp(appName: 'erp' | 'rnd' | 'crm') {
   }, [isLoading, user, hasAccess, router])
 
   return { user, isLoading, isAuthorized: hasAccess }
+}
+
+/** Guards a page to users who both have `erp` access and hold the given
+ * granular sub-permission (e.g. "project_create"). Redirects everyone else
+ * back to `fallback`. Use on create/edit routes whose entry points (buttons)
+ * are already hidden by the same permission — this is the direct-URL backstop. */
+export function useRequireErpPermission(permission: string, fallback = '/dashboard/erp') {
+  const router = useRouter()
+  const { user, isLoading } = useAuth()
+  const hasErpApp = !!user?.apps?.includes('erp')
+  const isAuthorized = hasErpApp && hasErpPermission(user, permission)
+
+  useEffect(() => {
+    if (!isLoading && user && !isAuthorized) {
+      router.push(fallback)
+    }
+  }, [isLoading, user, isAuthorized, router, fallback])
+
+  return { user, isLoading, isAuthorized }
 }
