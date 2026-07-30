@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.core.permissions import require_app_access
+from app.core.permissions import require_app_access, has_erp_permission
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.erp.models.project import Project
@@ -76,6 +76,8 @@ async def create_project(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("erp")),
 ):
+    if not has_erp_permission(user, "project_create"):
+        raise HTTPException(status_code=403, detail="You do not have permission to create projects.")
     existing = db.query(Project).filter(Project.serial_number == payload.serial_number).first()
     if existing:
         raise HTTPException(status_code=409, detail="A machine with this serial number already exists")
@@ -117,6 +119,8 @@ async def update_project(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("erp")),
 ):
+    if not has_erp_permission(user, "project_edit"):
+        raise HTTPException(status_code=403, detail="You do not have permission to edit projects.")
     project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()  # noqa: E712
     if not project:
         raise HTTPException(status_code=404, detail="Machine not found")
@@ -148,8 +152,7 @@ async def delete_project(
     """Soft delete a machine, and cascade the soft-delete to all of its Service Requests
     (setting `is_deleted` doesn't trigger the ORM's `delete-orphan` cascade — that only
     fires on real deletes — so the SRs have to be soft-deleted explicitly here)."""
-    is_admin = user.role in ("admin", "super_admin")
-    if not is_admin and "project_delete" not in (user.erp_permissions or []):
+    if not has_erp_permission(user, "project_delete"):
         raise HTTPException(status_code=403, detail="You do not have permission to delete projects.")
     project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == False).first()  # noqa: E712
     if not project:
@@ -266,6 +269,8 @@ async def upload_project_attachments(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("erp")),
 ):
+    if not has_erp_permission(user, "project_edit"):
+        raise HTTPException(status_code=403, detail="You do not have permission to edit projects.")
     project = db.query(Project).options(selectinload(Project.attachments)).filter(
         Project.id == project_id, Project.is_deleted == False  # noqa: E712
     ).first()
@@ -308,8 +313,10 @@ async def delete_project_attachment(
     project_id: int,
     attachment_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_app_access("erp")),
 ):
+    if not has_erp_permission(user, "project_delete"):
+        raise HTTPException(status_code=403, detail="You do not have permission to delete project attachments.")
     attachment = db.query(ProjectAttachment).filter(
         ProjectAttachment.id == attachment_id, ProjectAttachment.project_id == project_id
     ).first()

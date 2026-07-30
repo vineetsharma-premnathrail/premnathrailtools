@@ -14,3 +14,12 @@ def require_app_access(app_name: str):
         return user
 
     return _dependency
+
+
+def has_erp_permission(user: User, permission: str) -> bool:
+    """True if `user` is admin/super_admin (implicit access to every ERP action)
+    or holds the given granular ERP sub-permission (e.g. "project_edit",
+    "sr_delete") in their `erp_permissions` list."""
+    if user.role in ("admin", "super_admin"):
+        return True
+    return permission in (user.erp_permissions or [])

@@ -19,7 +19,7 @@ def auth_header(user):
 
 
 def test_sr_creation_notifies_other_erp_users_and_the_actor(client, db):
-    creator = make_user(db, "notif1@premnathrail.com")
+    creator = make_user(db, "notif1@premnathrail.com", erp_permissions=("project_create", "sr_create"))
     other = make_user(db, "notif2@premnathrail.com")
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-N1"}, headers=auth_header(creator)).json()
 
@@ -38,7 +38,7 @@ def test_sr_creation_notifies_other_erp_users_and_the_actor(client, db):
 
 
 def test_sr_update_notifies_creator_when_someone_else_changes_it(client, db):
-    creator = make_user(db, "notif3@premnathrail.com")
+    creator = make_user(db, "notif3@premnathrail.com", erp_permissions=("project_create", "sr_create"))
     admin = make_user(db, "notif4@premnathrail.com", role="admin")
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-N2"}, headers=auth_header(creator)).json()
     sr = client.post(
@@ -54,7 +54,7 @@ def test_sr_update_notifies_creator_when_someone_else_changes_it(client, db):
 
 
 def test_unread_count_and_mark_all_read(client, db):
-    creator = make_user(db, "notif5@premnathrail.com")
+    creator = make_user(db, "notif5@premnathrail.com", erp_permissions=("project_create", "sr_create"))
     other = make_user(db, "notif6@premnathrail.com")
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-N3"}, headers=auth_header(creator)).json()
     client.post(
@@ -73,7 +73,7 @@ def test_unread_count_and_mark_all_read(client, db):
 
 
 def test_project_creation_and_deletion_notify_other_erp_users(client, db):
-    creator = make_user(db, "notif7@premnathrail.com", erp_permissions=("project_delete",))
+    creator = make_user(db, "notif7@premnathrail.com", erp_permissions=("project_create", "project_delete"))
     other = make_user(db, "notif8@premnathrail.com")
 
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-N4"}, headers=auth_header(creator)).json()

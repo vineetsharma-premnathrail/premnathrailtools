@@ -5,8 +5,11 @@ from app.middleware.api_key import generate_api_key
 from app.middleware.owasp import get_rate_store
 
 
-def make_user(db, email, role="user"):
-    user = User(email=email, name=email.split("@")[0], role=role, is_active=True, assigned_apps=["erp"])
+def make_user(db, email, role="user", erp_permissions=None):
+    user = User(
+        email=email, name=email.split("@")[0], role=role, is_active=True,
+        assigned_apps=["erp"], erp_permissions=erp_permissions or [],
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -62,7 +65,7 @@ def test_sqli_in_json_body_is_blocked(client, db):
 
 
 def test_ordinary_request_is_not_blocked_by_injection_scan(client, db):
-    user = make_user(db, "sec5@premnathrail.com")
+    user = make_user(db, "sec5@premnathrail.com", erp_permissions=["project_create"])
     response = client.post(
         "/api/v1/erp/projects",
         json={"serial_number": "SN-SEC-1", "model_name": "Model Select 9000"},

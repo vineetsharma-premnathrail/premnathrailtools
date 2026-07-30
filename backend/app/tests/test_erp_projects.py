@@ -30,8 +30,28 @@ def test_admin_bypasses_app_assignment(client, db):
     assert response.status_code == 200
 
 
+def test_create_project_requires_project_create_permission(client, db):
+    user = make_user(db, "erpuser_nocreate@premnathrail.com", assigned_apps=["erp"])
+    response = client.post(
+        "/api/v1/erp/projects",
+        json={"serial_number": "SN-000"},
+        headers=auth_header(user),
+    )
+    assert response.status_code == 403
+
+
+def test_admin_can_create_project_without_explicit_permission(client, db):
+    admin = make_user(db, "erpadmin_create@premnathrail.com", role="admin")
+    response = client.post(
+        "/api/v1/erp/projects",
+        json={"serial_number": "SN-000-ADMIN"},
+        headers=auth_header(admin),
+    )
+    assert response.status_code == 201
+
+
 def test_create_and_get_project(client, db):
-    user = make_user(db, "erpuser@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create"])
     response = client.post(
         "/api/v1/erp/projects",
         json={"serial_number": "SN-001", "model_name": "Model X", "client_company": "Acme"},
@@ -46,14 +66,27 @@ def test_create_and_get_project(client, db):
 
 
 def test_create_project_rejects_duplicate_serial_number(client, db):
-    user = make_user(db, "erpuser2@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser2@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create"])
     client.post("/api/v1/erp/projects", json={"serial_number": "SN-DUP"}, headers=auth_header(user))
     response = client.post("/api/v1/erp/projects", json={"serial_number": "SN-DUP"}, headers=auth_header(user))
     assert response.status_code == 409
 
 
+def test_update_project_requires_project_edit_permission(client, db):
+    creator = make_user(db, "erpuser3_creator@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create"])
+    other = make_user(db, "erpuser3_noedit@premnathrail.com", assigned_apps=["erp"])
+    created = client.post("/api/v1/erp/projects", json={"serial_number": "SN-002B"}, headers=auth_header(creator)).json()
+
+    response = client.patch(
+        f"/api/v1/erp/projects/{created['id']}",
+        json={"status": "inactive"},
+        headers=auth_header(other),
+    )
+    assert response.status_code == 403
+
+
 def test_update_project(client, db):
-    user = make_user(db, "erpuser3@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser3@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create", "project_edit"])
     created = client.post("/api/v1/erp/projects", json={"serial_number": "SN-002"}, headers=auth_header(user)).json()
 
     response = client.patch(
@@ -67,7 +100,7 @@ def test_update_project(client, db):
 
 
 def test_delete_project_requires_project_delete_permission(client, db):
-    user = make_user(db, "erpuser_noperm@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser_noperm@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create"])
     created = client.post("/api/v1/erp/projects", json={"serial_number": "SN-004"}, headers=auth_header(user)).json()
 
     response = client.delete(f"/api/v1/erp/projects/{created['id']}", headers=auth_header(user))
@@ -87,7 +120,7 @@ def test_admin_can_delete_project_without_explicit_permission(client, db):
 
 
 def test_soft_delete_project_hides_it_from_list_and_get(client, db):
-    user = make_user(db, "erpuser4@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_delete"])
+    user = make_user(db, "erpuser4@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create", "project_delete"])
     created = client.post("/api/v1/erp/projects", json={"serial_number": "SN-003"}, headers=auth_header(user)).json()
 
     response = client.delete(f"/api/v1/erp/projects/{created['id']}", headers=auth_header(user))
@@ -101,7 +134,7 @@ def test_soft_delete_project_hides_it_from_list_and_get(client, db):
 
 
 def test_search_filters_projects(client, db):
-    user = make_user(db, "erpuser5@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser5@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create"])
     client.post("/api/v1/erp/projects", json={"serial_number": "SN-100", "client_company": "Zenith Corp"}, headers=auth_header(user))
     client.post("/api/v1/erp/projects", json={"serial_number": "SN-101", "client_company": "Other Co"}, headers=auth_header(user))
 
@@ -113,7 +146,7 @@ def test_search_filters_projects(client, db):
 
 
 def test_status_and_application_type_filters(client, db):
-    user = make_user(db, "erpuser6@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser6@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create"])
     client.post("/api/v1/erp/projects", json={"serial_number": "SN-200", "status": "active", "application_type": "OHE"}, headers=auth_header(user))
     client.post("/api/v1/erp/projects", json={"serial_number": "SN-201", "status": "inactive", "application_type": "FBW"}, headers=auth_header(user))
 
@@ -129,7 +162,7 @@ def test_status_and_application_type_filters(client, db):
 
 
 def test_filter_options_returns_distinct_values(client, db):
-    user = make_user(db, "erpuser7@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser7@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create"])
     client.post("/api/v1/erp/projects", json={"serial_number": "SN-300", "status": "active", "application_type": "OHE", "client_company": "Acme"}, headers=auth_header(user))
     client.post("/api/v1/erp/projects", json={"serial_number": "SN-301", "status": "active", "application_type": "OHE", "client_company": "Acme"}, headers=auth_header(user))
 
@@ -142,7 +175,7 @@ def test_filter_options_returns_distinct_values(client, db):
 
 
 def test_project_audit_trail_records_lifecycle(client, db):
-    user = make_user(db, "erpuser8@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser8@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create", "project_edit"])
     created = client.post("/api/v1/erp/projects", json={"serial_number": "SN-400"}, headers=auth_header(user)).json()
 
     client.patch(f"/api/v1/erp/projects/{created['id']}", json={"status": "inactive"}, headers=auth_header(user))
@@ -154,7 +187,7 @@ def test_project_audit_trail_records_lifecycle(client, db):
 
 
 def test_project_soft_delete_restore_and_recycle_bin(client, db):
-    user = make_user(db, "erpuser9@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_delete"])
+    user = make_user(db, "erpuser9@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create", "project_delete"])
     created = client.post("/api/v1/erp/projects", json={"serial_number": "SN-500"}, headers=auth_header(user)).json()
 
     response = client.delete(f"/api/v1/erp/projects/{created['id']}", headers=auth_header(user))
@@ -174,7 +207,10 @@ def test_project_soft_delete_restore_and_recycle_bin(client, db):
 
 
 def test_project_delete_cascades_to_its_service_requests(client, db):
-    user = make_user(db, "erpuser10@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_delete"])
+    user = make_user(
+        db, "erpuser10@premnathrail.com", assigned_apps=["erp"],
+        erp_permissions=["project_create", "project_delete", "sr_create"],
+    )
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-600"}, headers=auth_header(user)).json()
     sr = client.post(
         "/api/v1/erp/service-requests",
@@ -204,7 +240,7 @@ def test_project_attachments_require_sharepoint_config(client, db, monkeypatch):
     from app.core.config import settings
     monkeypatch.setattr(settings, "SHAREPOINT_SITE_ID", "")
 
-    user = make_user(db, "erpuser11@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser11@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create", "project_edit"])
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-700"}, headers=auth_header(user)).json()
 
     response = client.post(
@@ -215,8 +251,20 @@ def test_project_attachments_require_sharepoint_config(client, db, monkeypatch):
     assert response.status_code == 503
 
 
+def test_upload_project_attachment_requires_project_edit_permission(client, db):
+    user = make_user(db, "erpuser11b@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create"])
+    project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-700B"}, headers=auth_header(user)).json()
+
+    response = client.post(
+        f"/api/v1/erp/projects/{project['id']}/attachments",
+        files={"files": ("test.pdf", b"%PDF-1.4 fake content", "application/pdf")},
+        headers=auth_header(user),
+    )
+    assert response.status_code == 403
+
+
 def test_list_project_attachments_empty(client, db):
-    user = make_user(db, "erpuser12@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser12@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create"])
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-701"}, headers=auth_header(user)).json()
 
     response = client.get(f"/api/v1/erp/projects/{project['id']}/attachments", headers=auth_header(user))
@@ -225,8 +273,16 @@ def test_list_project_attachments_empty(client, db):
 
 
 def test_delete_nonexistent_project_attachment_returns_404(client, db):
-    user = make_user(db, "erpuser13@premnathrail.com", assigned_apps=["erp"])
+    user = make_user(db, "erpuser13@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create", "project_delete"])
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-702"}, headers=auth_header(user)).json()
 
     response = client.delete(f"/api/v1/erp/projects/{project['id']}/attachments/9999", headers=auth_header(user))
     assert response.status_code == 404
+
+
+def test_delete_project_attachment_requires_project_delete_permission(client, db):
+    user = make_user(db, "erpuser13b@premnathrail.com", assigned_apps=["erp"], erp_permissions=["project_create"])
+    project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-702B"}, headers=auth_header(user)).json()
+
+    response = client.delete(f"/api/v1/erp/projects/{project['id']}/attachments/9999", headers=auth_header(user))
+    assert response.status_code == 403

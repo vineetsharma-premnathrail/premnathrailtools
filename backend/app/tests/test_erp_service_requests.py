@@ -3,8 +3,11 @@ from app.modules.main.models.user import User
 from app.modules.erp.models.project import Project
 
 
-def make_user(db, email, role="user", assigned_apps=("erp",)):
-    user = User(email=email, name=email.split("@")[0], role=role, is_active=True, assigned_apps=list(assigned_apps))
+def make_user(db, email, role="user", assigned_apps=("erp",), erp_permissions=None):
+    user = User(
+        email=email, name=email.split("@")[0], role=role, is_active=True,
+        assigned_apps=list(assigned_apps), erp_permissions=erp_permissions or [],
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -35,8 +38,30 @@ def test_create_sr_requires_erp_access(client, db):
     assert response.status_code == 403
 
 
+def test_create_sr_requires_sr_create_permission(client, db):
+    user = make_user(db, "noperm@premnathrail.com")
+    project = make_project(db, "SN-SR-NOPERM")
+    response = client.post(
+        "/api/v1/erp/service-requests",
+        json={"project_id": project.id, "issue_title": "Engine noise"},
+        headers=auth_header(user),
+    )
+    assert response.status_code == 403
+
+
+def test_admin_can_create_sr_without_explicit_permission(client, db):
+    admin = make_user(db, "sradmin_create@premnathrail.com", role="admin")
+    project = make_project(db, "SN-SR-ADMIN")
+    response = client.post(
+        "/api/v1/erp/service-requests",
+        json={"project_id": project.id, "issue_title": "Engine noise"},
+        headers=auth_header(admin),
+    )
+    assert response.status_code == 201
+
+
 def test_create_sr_generates_request_number(client, db):
-    user = make_user(db, "erp1@premnathrail.com")
+    user = make_user(db, "erp1@premnathrail.com", erp_permissions=["sr_create"])
     project = make_project(db, "SN-SR-002")
     response = client.post(
         "/api/v1/erp/service-requests",
@@ -52,7 +77,7 @@ def test_create_sr_generates_request_number(client, db):
 
 
 def test_create_sr_rejects_missing_project(client, db):
-    user = make_user(db, "erp2@premnathrail.com")
+    user = make_user(db, "erp2@premnathrail.com", erp_permissions=["sr_create"])
     response = client.post(
         "/api/v1/erp/service-requests",
         json={"project_id": 9999, "issue_title": "Test"},
@@ -62,7 +87,7 @@ def test_create_sr_rejects_missing_project(client, db):
 
 
 def test_list_and_get_sr(client, db):
-    user = make_user(db, "erp3@premnathrail.com")
+    user = make_user(db, "erp3@premnathrail.com", erp_permissions=["sr_create"])
     project = make_project(db, "SN-SR-003")
     created = client.post(
         "/api/v1/erp/service-requests",
@@ -80,8 +105,8 @@ def test_list_and_get_sr(client, db):
 
 
 def test_non_creator_cannot_update_sr(client, db):
-    creator = make_user(db, "erp4@premnathrail.com")
-    other = make_user(db, "erp5@premnathrail.com")
+    creator = make_user(db, "erp4@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    other = make_user(db, "erp5@premnathrail.com", erp_permissions=["sr_edit"])
     project = make_project(db, "SN-SR-004")
     created = client.post(
         "/api/v1/erp/service-requests",
@@ -97,8 +122,25 @@ def test_non_creator_cannot_update_sr(client, db):
     assert response.status_code == 403
 
 
+def test_creator_without_sr_edit_permission_cannot_update_own_sr(client, db):
+    creator = make_user(db, "erp4b@premnathrail.com", erp_permissions=["sr_create"])
+    project = make_project(db, "SN-SR-004B")
+    created = client.post(
+        "/api/v1/erp/service-requests",
+        json={"project_id": project.id, "issue_title": "Overheating"},
+        headers=auth_header(creator),
+    ).json()
+
+    response = client.patch(
+        f"/api/v1/erp/service-requests/{created['id']}",
+        json={"status": "acknowledged"},
+        headers=auth_header(creator),
+    )
+    assert response.status_code == 403
+
+
 def test_admin_can_update_others_sr_and_close_writes_audit(client, db):
-    creator = make_user(db, "erp6@premnathrail.com")
+    creator = make_user(db, "erp6@premnathrail.com", erp_permissions=["sr_create"])
     admin = make_user(db, "erpadmin@premnathrail.com", role="admin")
     project = make_project(db, "SN-SR-005")
     created = client.post(
@@ -123,7 +165,7 @@ def test_admin_can_update_others_sr_and_close_writes_audit(client, db):
 
 
 def test_soft_delete_and_restore_sr(client, db):
-    user = make_user(db, "erp7@premnathrail.com")
+    user = make_user(db, "erp7@premnathrail.com", erp_permissions=["sr_create", "sr_delete"])
     project = make_project(db, "SN-SR-006")
     created = client.post(
         "/api/v1/erp/service-requests",
@@ -147,8 +189,21 @@ def test_soft_delete_and_restore_sr(client, db):
     assert response.status_code == 200
 
 
+def test_delete_sr_requires_sr_delete_permission(client, db):
+    user = make_user(db, "erp7b@premnathrail.com", erp_permissions=["sr_create"])
+    project = make_project(db, "SN-SR-006B")
+    created = client.post(
+        "/api/v1/erp/service-requests",
+        json={"project_id": project.id, "issue_title": "Sensor fault"},
+        headers=auth_header(user),
+    ).json()
+
+    response = client.delete(f"/api/v1/erp/service-requests/{created['id']}", headers=auth_header(user))
+    assert response.status_code == 403
+
+
 def test_materials_crud_and_total_price_computation(client, db):
-    user = make_user(db, "erp8@premnathrail.com")
+    user = make_user(db, "erp8@premnathrail.com", erp_permissions=["sr_create", "sr_edit", "sr_delete"])
     project = make_project(db, "SN-SR-007")
     sr = client.post(
         "/api/v1/erp/service-requests",
@@ -181,8 +236,8 @@ def test_materials_crud_and_total_price_computation(client, db):
 
 
 def test_materials_require_creator_or_admin(client, db):
-    creator = make_user(db, "erp9@premnathrail.com")
-    other = make_user(db, "erp10@premnathrail.com")
+    creator = make_user(db, "erp9@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    other = make_user(db, "erp10@premnathrail.com", erp_permissions=["sr_edit"])
     project = make_project(db, "SN-SR-008")
     sr = client.post(
         "/api/v1/erp/service-requests",
@@ -198,8 +253,25 @@ def test_materials_require_creator_or_admin(client, db):
     assert response.status_code == 403
 
 
+def test_add_material_requires_sr_edit_permission(client, db):
+    creator = make_user(db, "erp9b@premnathrail.com", erp_permissions=["sr_create"])
+    project = make_project(db, "SN-SR-008B")
+    sr = client.post(
+        "/api/v1/erp/service-requests",
+        json={"project_id": project.id, "issue_title": "Valve replacement"},
+        headers=auth_header(creator),
+    ).json()
+
+    response = client.post(
+        f"/api/v1/erp/service-requests/{sr['id']}/materials",
+        json={"material_name": "Valve", "quantity": 1, "unit_price": 500},
+        headers=auth_header(creator),
+    )
+    assert response.status_code == 403
+
+
 def test_search_and_status_filter(client, db):
-    user = make_user(db, "erp11@premnathrail.com")
+    user = make_user(db, "erp11@premnathrail.com", erp_permissions=["sr_create"])
     project = make_project(db, "SN-SR-009")
     client.post(
         "/api/v1/erp/service-requests",
@@ -227,7 +299,7 @@ def test_attachments_require_sharepoint_config(client, db, monkeypatch):
     from app.core.config import settings
     monkeypatch.setattr(settings, "SHAREPOINT_SITE_ID", "")
 
-    user = make_user(db, "erp12@premnathrail.com")
+    user = make_user(db, "erp12@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     project = make_project(db, "SN-SR-010")
     sr = client.post(
         "/api/v1/erp/service-requests",
@@ -241,3 +313,20 @@ def test_attachments_require_sharepoint_config(client, db, monkeypatch):
         headers=auth_header(user),
     )
     assert response.status_code == 503
+
+
+def test_upload_attachment_requires_sr_edit_permission(client, db):
+    user = make_user(db, "erp12b@premnathrail.com", erp_permissions=["sr_create"])
+    project = make_project(db, "SN-SR-010B")
+    sr = client.post(
+        "/api/v1/erp/service-requests",
+        json={"project_id": project.id, "issue_title": "Attachment test"},
+        headers=auth_header(user),
+    ).json()
+
+    response = client.post(
+        f"/api/v1/erp/service-requests/{sr['id']}/attachments",
+        files={"files": ("test.pdf", b"%PDF-1.4 fake content", "application/pdf")},
+        headers=auth_header(user),
+    )
+    assert response.status_code == 403

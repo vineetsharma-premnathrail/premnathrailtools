@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.core.permissions import require_app_access
+from app.core.permissions import require_app_access, has_erp_permission
 from app.db.session import SessionLocal, get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
@@ -120,8 +120,20 @@ async def _run_sr_emails_background(sr_id: int, event_type: str, actor_id: int, 
         db.close()
 
 
-def _can_modify(sr: ServiceRequest, user: User) -> bool:
-    return user.role in ("admin", "super_admin") or sr.created_by_id == user.id
+def _can_edit(sr: ServiceRequest, user: User) -> bool:
+    """Admins always pass. Everyone else must both own the SR (be its creator)
+    and hold the granular "sr_edit" permission — mirrors the Edit checkbox in
+    the Users & Roles module-access editor."""
+    if user.role in ("admin", "super_admin"):
+        return True
+    return sr.created_by_id == user.id and has_erp_permission(user, "sr_edit")
+
+
+def _can_delete(sr: ServiceRequest, user: User) -> bool:
+    """Same as `_can_edit` but gated on "sr_delete" instead."""
+    if user.role in ("admin", "super_admin"):
+        return True
+    return sr.created_by_id == user.id and has_erp_permission(user, "sr_delete")
 
 
 @router.get("", response_model=list[ServiceRequestResponse])
@@ -165,6 +177,8 @@ async def create_service_request(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("erp")),
 ):
+    if not has_erp_permission(user, "sr_create"):
+        raise HTTPException(status_code=403, detail="You do not have permission to create service requests.")
     project = db.query(Project).filter(Project.id == data.project_id, Project.is_deleted == False).first()  # noqa: E712
     if not project:
         raise HTTPException(status_code=404, detail="Machine/Project not found")
@@ -266,8 +280,8 @@ async def update_service_request(
     sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id, ServiceRequest.is_deleted == False).first()  # noqa: E712
     if not sr:
         raise HTTPException(status_code=404, detail="Service request not found")
-    if not _can_modify(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator can edit this service request.")
+    if not _can_edit(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) can edit this service request.")
     if sr.is_locked:
         raise HTTPException(status_code=423, detail="Service request is locked")
 
@@ -355,8 +369,8 @@ async def delete_service_request(
     sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id).first()
     if not sr:
         raise HTTPException(status_code=404, detail="Service request not found")
-    if not _can_modify(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator can delete this service request.")
+    if not _can_delete(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with delete permission) can delete this service request.")
 
     sr.is_deleted = True
     sr.deleted_at = datetime.now(timezone.utc)
@@ -445,8 +459,8 @@ async def upload_service_request_attachments(
     ).first()
     if not sr:
         raise HTTPException(status_code=404, detail="Service request not found")
-    if not _can_modify(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator can add attachments to this service request.")
+    if not _can_edit(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) can add attachments to this service request.")
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 
@@ -503,8 +517,8 @@ async def delete_service_request_attachment(
         raise HTTPException(status_code=404, detail="Attachment not found")
 
     sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id).first()
-    if sr and not _can_modify(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator can delete attachments from this service request.")
+    if sr and not _can_delete(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with delete permission) can delete attachments from this service request.")
 
     if settings.SHAREPOINT_SITE_ID and attachment.sharepoint_path:
         try:
@@ -540,8 +554,8 @@ async def add_material(
     sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id).first()
     if not sr:
         raise HTTPException(status_code=404, detail="Service request not found")
-    if not _can_modify(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can add materials to this service request.")
+    if not _can_edit(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can add materials to this service request.")
 
     mat = ServiceMaterial(
         service_request_id=sr_id,
@@ -574,8 +588,8 @@ async def update_material(
     if not mat:
         raise HTTPException(status_code=404, detail="Material not found")
     sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id).first()
-    if sr and not _can_modify(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can update materials on this service request.")
+    if sr and not _can_edit(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can update materials on this service request.")
 
     for field, val in payload.model_dump(exclude_unset=True).items():
         setattr(mat, field, val)
@@ -597,8 +611,8 @@ async def delete_material(
     if not mat:
         raise HTTPException(status_code=404, detail="Material not found")
     sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id).first()
-    if sr and not _can_modify(sr, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete materials from this service request.")
+    if sr and not _can_delete(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with delete permission) or an admin can delete materials from this service request.")
 
     mat_name = mat.material_name
     mat.is_deleted = True
