@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react'
+import axios from 'axios'
 import { COLORS, RADII, BORDERS, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 
 export const inputStyle: CSSProperties = {
@@ -51,4 +52,24 @@ export function downloadBlob(blob: Blob, filename: string) {
   a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+// Backend errors on responseType:'blob' requests arrive as a Blob (not JSON),
+// so axios can't auto-parse them. This reads the blob body to surface the real
+// FastAPI `detail` message instead of a generic fallback string.
+export async function getErrorMessage(err: unknown, fallback: string): Promise<string> {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data
+    if (data instanceof Blob) {
+      try {
+        const parsed = JSON.parse(await data.text())
+        if (parsed?.detail) return String(parsed.detail)
+      } catch {
+        // response body wasn't JSON — fall through to fallback
+      }
+    } else if (data && typeof data === 'object' && 'detail' in data) {
+      return String((data as { detail: unknown }).detail)
+    }
+  }
+  return fallback
 }

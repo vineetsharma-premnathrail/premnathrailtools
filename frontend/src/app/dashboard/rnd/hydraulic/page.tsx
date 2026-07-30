@@ -7,7 +7,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
-import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, radioLabelStyle, smBtnStyle, calcButtonStyle, downloadBlob } from '@/components/rnd/toolStyles'
+import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, radioLabelStyle, smBtnStyle, calcButtonStyle, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
 
 type CalcMode = 'calc_cc' | 'calc_speed' | 'calc_motor_pressure' | 'calc_gear'
 
@@ -99,8 +99,8 @@ function HydraulicPageInner() {
       if (!isFromHistory) {
         rndApi.saveHistory({ tool_name: 'hydraulic', inputs: payload(), results: data.results, calculation_name: overrideName || `Hydraulic — ${mode}` }).catch(() => {})
       }
-    } catch {
-      setError('Calculation failed. Check your inputs.')
+    } catch (err) {
+      setError(await getErrorMessage(err, 'Calculation failed. Check your inputs.'))
     } finally {
       setBusy(false)
     }
@@ -109,13 +109,13 @@ function HydraulicPageInner() {
   const downloadDocx = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadHydraulicReport(payload()), 'Hydraulic_Report.docx') }
-    catch { setError('Report generation failed.') } finally { setBusy(false) }
+    catch (err) { setError(await getErrorMessage(err, 'Report generation failed.')) } finally { setBusy(false) }
   }
 
   const downloadPdf = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadHydraulicPdf(payload()), 'Hydraulic_Report.pdf') }
-    catch { setError('PDF generation failed.') } finally { setBusy(false) }
+    catch (err) { setError(await getErrorMessage(err, 'PDF generation failed.')) } finally { setBusy(false) }
   }
 
   const visibleFields = MODE_FIELDS[mode]
