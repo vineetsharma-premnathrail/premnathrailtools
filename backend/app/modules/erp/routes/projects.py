@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session, selectinload
@@ -15,6 +16,15 @@ from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_fol
 from app.utils.notifications import broadcast_notification, notify_user
 
 router = APIRouter(prefix="/erp/projects", tags=["ERP - Projects"])
+
+_NATURAL_SORT_SPLIT = re.compile(r"(\d+)")
+
+
+def _natural_sort_key(value: str | None) -> list:
+    """Split a serial number like 'PEW-53-A-9' into ['pew-', 9, '-a-', ''] so that
+    digit groups sort numerically (9 before 10) instead of lexicographically."""
+    parts = _NATURAL_SORT_SPLIT.split(value or "")
+    return [int(part) if part.isdigit() else part.lower() for part in parts]
 
 
 def _write_audit(db: Session, project_id: int, action: str, user: User, summary: str | None = None):
@@ -48,8 +58,9 @@ async def list_projects(
             | (Project.model_name.ilike(like))
             | (Project.client_company.ilike(like))
         )
-    projects = query.order_by(Project.id.desc()).offset(skip).limit(limit).all()
-    return projects
+    projects = query.all()
+    projects.sort(key=lambda p: _natural_sort_key(p.serial_number))
+    return projects[skip:skip + limit]
 
 
 @router.get("/filter-options")

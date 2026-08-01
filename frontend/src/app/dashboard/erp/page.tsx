@@ -97,7 +97,10 @@ export default function ErpDashboardPage() {
     () => [...srs].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).slice(0, 8),
     [srs]
   )
-  const recentProjects = useMemo(() => [...projects].sort((a, b) => b.id - a.id).slice(0, 8), [projects])
+  const recentProjects = useMemo(
+    () => [...projects].sort((a, b) => (a.serial_number || '').localeCompare(b.serial_number || '', undefined, { numeric: true, sensitivity: 'base' })).slice(0, 8),
+    [projects]
+  )
 
   if (isLoading || !isAuthorized) return null
 
