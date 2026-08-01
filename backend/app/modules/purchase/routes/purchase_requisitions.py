@@ -8,7 +8,7 @@ from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.service_request import ServiceRequest
-from app.modules.purchase.models.purchase_requisition import PurchaseRequisition
+from app.modules.purchase.models.purchase_requisition import PurchaseRequisition, PR_STATUSES
 from app.modules.purchase.schemas.purchase_requisition import (
     PurchaseRequisitionResponse,
     PurchaseRequisitionUpdate,
@@ -109,21 +109,45 @@ async def update_requisition(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
-    """Update vendor/PO/delivery-date details. Does not change status."""
+    """Update vendor/PO/delivery-date details, and/or manually override the status.
+
+    A manual `status` override is allowed from and to any status (including
+    reopening a closed/rejected/cancelled PR) — it's an explicit admin action,
+    distinct from the guided approve/reject/cancel/close workflow below."""
     pr = db.query(PurchaseRequisition).options(selectinload(PurchaseRequisition.items)).filter(PurchaseRequisition.id == pr_id).first()
     if not pr:
         raise HTTPException(status_code=404, detail="Purchase requisition not found")
-    if pr.status in ("closed", "rejected", "cancelled"):
+
+    updates = payload.model_dump(exclude_unset=True)
+    new_status = updates.pop("status", None)
+
+    if updates and pr.status in ("closed", "rejected", "cancelled") and new_status is None:
         raise HTTPException(status_code=409, detail=f"Cannot edit a {pr.status} purchase requisition")
 
-    for field, val in payload.model_dump(exclude_unset=True).items():
+    for field, val in updates.items():
         setattr(pr, field, val)
 
-    if payload.po_number and pr.status == "approved":
+    if updates.get("po_number") and pr.status == "approved":
         pr.status = "po_raised"
         sync_material_pr_fields(db, pr)
 
-    _write_audit(db, pr.id, "updated", user, summary=f"{user.name or user.email} updated purchase requisition {pr.pr_number}.")
+    if new_status and new_status != pr.status:
+        if new_status not in PR_STATUSES:
+            raise HTTPException(status_code=400, detail=f"Invalid status '{new_status}'")
+        old_status = pr.status
+        pr.status = new_status
+        if new_status == "approved" and not pr.approved_by_id:
+            pr.approved_by_id = user.id
+            pr.approved_at = datetime.now(timezone.utc)
+        if new_status == "closed" and not pr.closed_by_id:
+            pr.closed_by_id = user.id
+            pr.closed_at = datetime.now(timezone.utc)
+        sync_material_pr_fields(db, pr)
+        _write_audit(db, pr.id, "status_changed", user, summary=f"{user.name or user.email} manually changed status of {pr.pr_number} from '{old_status}' to '{new_status}'.")
+
+    if updates:
+        _write_audit(db, pr.id, "updated", user, summary=f"{user.name or user.email} updated purchase requisition {pr.pr_number}.")
+
     db.commit()
     db.refresh(pr)
     return _to_response(db, pr)

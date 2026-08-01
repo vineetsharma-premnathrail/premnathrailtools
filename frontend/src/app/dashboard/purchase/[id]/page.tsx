@@ -111,6 +111,12 @@ export default function PurchaseRequisitionDetailPage() {
     runAction(() => purchaseApi.cancel(prId, reason))
   }
 
+  const changeStatus = (newStatus: string) => {
+    if (!pr || newStatus === pr.status) return
+    if (!window.confirm(`Manually change status from "${STATUS_LABELS[pr.status] || pr.status}" to "${STATUS_LABELS[newStatus] || newStatus}"? This bypasses the normal approve/receive workflow.`)) return
+    runAction(() => purchaseApi.update(prId, { status: newStatus }))
+  }
+
   if (isLoading || !isAuthorized) return null
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
   if (error || !pr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error || 'Not found.'}</p>
@@ -139,7 +145,18 @@ export default function PurchaseRequisitionDetailPage() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <select
+            disabled={busy}
+            value={pr.status}
+            onChange={(e) => changeStatus(e.target.value)}
+            title="Manually override status"
+            style={{ ...secondaryBtnStyle, cursor: busy ? 'not-allowed' : 'pointer', paddingRight: 8 }}
+          >
+            {Object.entries(STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
           {pr.status === 'submitted' && (
             <button disabled={busy} onClick={() => runAction(() => purchaseApi.approve(prId))} style={primaryBtnStyle}>Approve</button>
           )}

@@ -21,6 +21,7 @@ class PurchaseRequisitionUpdate(BaseModel):
     po_date: date | None = None
     expected_delivery_date: date | None = None
     notes: str | None = None
+    status: str | None = None
 
 
 class PurchaseRequisitionActionPayload(BaseModel):

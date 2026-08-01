@@ -121,6 +121,9 @@ def mark_material_received(db: Session, material: ServiceMaterial, received_quan
         material.receiving_status = "partial"
     else:
         material.receiving_status = "received"
+        # Fully received means the part is now physically at the service site and
+        # available for use, so the issue-status badge shouldn't stay "pending".
+        material.status = "issued"
 
     if not material.pr_id:
         return None
