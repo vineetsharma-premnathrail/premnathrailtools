@@ -1,13 +1,15 @@
 """Service Request email notifications, sent via Microsoft Graph `sendMail`
 using the app-only token (no per-user delegated token involved).
 
-The logo is served from this backend's own `/static/logo.png` (mounted in
-app/main.py) and referenced by absolute URL (settings.APP_BASE_URL) rather
-than embedded as a data URI or file attachment — a plain <img src> is what
-renders most reliably across email clients, including Outlook desktop.
+The logo is sent as a CID inline attachment (not a remote <img src> URL) so it
+renders regardless of the recipient's "block external images" setting — the
+previous absolute-URL approach also depended on APP_BASE_URL being publicly
+reachable, which it isn't in local dev (it's localhost).
 """
+import base64
 import logging
 import datetime as _dt
+from pathlib import Path
 import httpx
 from sqlalchemy.orm import Session
 
@@ -17,9 +19,24 @@ from app.modules.main.models.audit_log import AuditLog
 
 logger = logging.getLogger(__name__)
 
+_LOGO_CONTENT_ID = "premnathrail-logo"
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "static" / "logo.png"
+_logo_b64_cache: str | None = None
+
+
+def _logo_base64() -> str | None:
+    global _logo_b64_cache
+    if _logo_b64_cache is None:
+        try:
+            _logo_b64_cache = base64.b64encode(_LOGO_PATH.read_bytes()).decode("ascii")
+        except OSError:
+            logger.warning("Could not read logo file at %s; emails will send without it.", _LOGO_PATH)
+            _logo_b64_cache = ""
+    return _logo_b64_cache or None
+
 
 def _logo_header() -> str:
-    return f'<img src="{settings.APP_BASE_URL}/static/logo.png" alt="Premnathrail Rail" height="32" style="display:block;height:32px;width:auto">'
+    return f'<img src="cid:{_LOGO_CONTENT_ID}" alt="Premnathrail Rail" height="32" style="display:block;height:32px;width:auto">'
 
 
 def _write_audit(db: Session, entity_id: int, action: str, performed_by_id: int | None, summary: str | None = None):
@@ -32,15 +49,23 @@ async def _send_graph_mail(sender_email: str, subject: str, html_body: str, to_e
     except Exception as exc:
         return False, f"Graph token error: {exc}"
 
-    payload = {
-        "message": {
-            "subject": subject,
-            "from": {"emailAddress": {"name": "Premnathrail Service Team", "address": sender_email}},
-            "body": {"contentType": "HTML", "content": html_body},
-            "toRecipients": [{"emailAddress": {"name": to_name, "address": to_email}}],
-        },
-        "saveToSentItems": True,
+    message: dict[str, object] = {
+        "subject": subject,
+        "from": {"emailAddress": {"name": "Premnathrail Service Team", "address": sender_email}},
+        "body": {"contentType": "HTML", "content": html_body},
+        "toRecipients": [{"emailAddress": {"name": to_name, "address": to_email}}],
     }
+    logo_b64 = _logo_base64()
+    if logo_b64:
+        message["attachments"] = [{
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": "logo.png",
+            "contentType": "image/png",
+            "contentBytes": logo_b64,
+            "isInline": True,
+            "contentId": _LOGO_CONTENT_ID,
+        }]
+    payload = {"message": message, "saveToSentItems": True}
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(
