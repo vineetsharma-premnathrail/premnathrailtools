@@ -12,17 +12,19 @@ import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle } f
 
 export default function NoteForm({
   initial,
+  defaultOrgId,
   submitLabel,
   onCancel,
   onSubmit,
 }: {
   initial?: CrmNote
+  defaultOrgId?: number
   submitLabel: string
   onCancel: () => void
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
 }) {
   const editing = !!initial
-  const [orgId, setOrgId] = useState(initial?.org_id ? String(initial.org_id) : '')
+  const [orgId, setOrgId] = useState(initial?.org_id ? String(initial.org_id) : defaultOrgId ? String(defaultOrgId) : '')
   const [orgContactId, setOrgContactId] = useState(initial?.org_contact_id ? String(initial.org_contact_id) : '')
   const [relatedModule, setRelatedModule] = useState(initial?.related_module || '')
   const [relatedId, setRelatedId] = useState(initial?.related_id ? String(initial.related_id) : '')

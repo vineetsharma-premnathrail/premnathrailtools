@@ -13,6 +13,7 @@ class ActivityCreate(BaseModel):
     assigned_to: str | None = None
     status: str = "Open"
     remarks: str | None = None
+    action_plan: str | None = None
 
 
 class ActivityUpdate(BaseModel):
@@ -21,6 +22,7 @@ class ActivityUpdate(BaseModel):
     assigned_to: str | None = None
     status: str | None = None
     remarks: str | None = None
+    action_plan: str | None = None
 
 
 class ActivityResponse(BaseModel):
@@ -37,5 +39,14 @@ class ActivityResponse(BaseModel):
     assigned_to: str | None = None
     status: str
     remarks: str | None = None
+    action_plan: str | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
+
+
+class MomExportRequest(BaseModel):
+    subject: str
+    meeting_date: date
+    pew_member_ids: list[int] = []
+    client_contact_ids: list[int] = []
+    activity_ids: list[int] = []

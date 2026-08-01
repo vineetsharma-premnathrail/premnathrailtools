@@ -46,9 +46,9 @@ type FormState = {
   loss_reason: string
 }
 
-function toFormState(initial?: Tender): FormState {
+function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
   return {
-    org_id: initial?.org_id ? String(initial.org_id) : '',
+    org_id: initial?.org_id ? String(initial.org_id) : defaultOrgId ? String(defaultOrgId) : '',
     org_contact_id: initial?.org_contact_id ? String(initial.org_contact_id) : '',
     tender_number: initial?.tender_number || '',
     tender_name: initial?.tender_name || '',
@@ -83,17 +83,19 @@ function toFormState(initial?: Tender): FormState {
 
 export default function TenderForm({
   initial,
+  defaultOrgId,
   submitLabel,
   onCancel,
   onSubmit,
 }: {
   initial?: Tender
+  defaultOrgId?: number
   submitLabel: string
   onCancel: () => void
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
 }) {
   const [tab, setTab] = useState<typeof TABS[number]>('Tender Information')
-  const [form, setForm] = useState<FormState>(() => toFormState(initial))
+  const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
   const [railwayZoneCustom, setRailwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )

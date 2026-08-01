@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
-import { CrmActivity, Organization } from '@/types'
+import { CrmActivity, Organization, OrgContact } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { InfoRow, primaryBtnStyle, secondaryBtnStyle, inputStyle } from '@/components/crm/ui'
@@ -42,6 +42,7 @@ export default function ActivitiesPage() {
   }, [search]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const orgById = new Map(organizations.map((o) => [o.id, o]))
+  const contactById = new Map<number, OrgContact>(organizations.flatMap((o) => (o.contacts || []).map((c) => [c.id, c] as const)))
 
   const remove = async (id: number) => {
     await crmApi.deleteActivity(id)
@@ -101,7 +102,7 @@ export default function ActivitiesPage() {
             <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#fffaf5' }}>
-                  {['Type', 'Universal ID', 'Module', 'Next Follow-up', 'Assigned To', 'Status', 'Actions'].map((h) => (
+                  {['Type', 'Organization', 'Contact Person', 'Universal ID', 'Module', 'Next Follow-up', 'Assigned To', 'Status', 'Actions'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -112,6 +113,8 @@ export default function ActivitiesPage() {
                     <td style={{ padding: '10px 16px' }}>
                       <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 8, background: 'rgba(0,0,0,0.05)', color: '#57534e' }}>{a.activity_type || '—'}</span>
                     </td>
+                    <td style={{ padding: '10px 16px', color: '#1f1108', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.org_id ? orgById.get(a.org_id)?.name || '—' : '—'}</td>
+                    <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{a.org_contact_id ? contactById.get(a.org_contact_id)?.name || '—' : '—'}</td>
                     <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: 12, color: '#fa9b9b' }}>{a.universal_id || '—'}</td>
                     <td style={{ padding: '10px 16px', color: '#57534e', textTransform: 'capitalize' }}>{a.related_module || '—'}</td>
                     <td style={{ padding: '10px 16px', color: '#57534e' }}>{a.next_followup || '—'}</td>
@@ -139,6 +142,7 @@ export default function ActivitiesPage() {
           <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 420, background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 14, maxHeight: '80vh', overflowY: 'auto' }}>
             <p style={{ fontSize: 16, fontWeight: 800, color: '#1f1108', margin: 0 }}>{viewing.activity_type || 'Activity'}</p>
             <InfoRow label="Organization" value={viewing.org_id ? orgById.get(viewing.org_id)?.name || '—' : '—'} />
+            <InfoRow label="Contact Person" value={viewing.org_contact_id ? contactById.get(viewing.org_contact_id)?.name || '—' : '—'} />
             <InfoRow label="Related To" value={viewing.related_module && viewing.universal_id ? `${viewing.related_module} · ${viewing.universal_id}` : '—'} />
             <InfoRow label="Status" value={viewing.status} />
             <InfoRow label="Next Follow-up" value={viewing.next_followup || '—'} />

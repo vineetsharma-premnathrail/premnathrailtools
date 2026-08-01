@@ -292,6 +292,7 @@ export interface Organization {
   created_at?: string
   updated_at?: string
   is_deleted: boolean
+  contacts?: OrgContact[]
 }
 
 export interface OrganizationDetail extends Organization {
@@ -390,8 +391,15 @@ export interface CrmActivity {
   assigned_to?: string
   status: string
   remarks?: string
+  action_plan?: string
   created_by_id?: number
   created_at?: string
+}
+
+export interface CrmTeamMember {
+  id: number
+  name: string
+  designation?: string
 }
 
 export interface CrmNote {

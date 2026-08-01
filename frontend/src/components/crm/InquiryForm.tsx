@@ -38,9 +38,9 @@ type FormState = {
   followup_remarks: string
 }
 
-function toFormState(initial?: Inquiry): FormState {
+function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
   return {
-    org_id: initial?.org_id ? String(initial.org_id) : '',
+    org_id: initial?.org_id ? String(initial.org_id) : defaultOrgId ? String(defaultOrgId) : '',
     org_contact_id: initial?.org_contact_id ? String(initial.org_contact_id) : '',
     railway_zone: initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? 'Other' : initial?.railway_zone || '',
     division: initial?.division || '',
@@ -68,11 +68,13 @@ function toFormState(initial?: Inquiry): FormState {
 
 export default function InquiryForm({
   initial,
+  defaultOrgId,
   submitLabel,
   onCancel,
   onSubmit,
 }: {
   initial?: Inquiry
+  defaultOrgId?: number
   submitLabel: string
   onCancel: () => void
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
@@ -80,7 +82,7 @@ export default function InquiryForm({
   const { user } = useAuth()
   const bdOwnerName = initial?.bd_owner || user?.name || ''
   const followupAssignedToName = initial?.followup_assigned_to || user?.name || ''
-  const [form, setForm] = useState<FormState>(() => toFormState(initial))
+  const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
   const [railwayZoneCustom, setRailwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )

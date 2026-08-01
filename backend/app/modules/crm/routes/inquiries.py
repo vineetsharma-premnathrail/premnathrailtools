@@ -15,7 +15,10 @@ from app.modules.crm.models.stage_log import CrmStageLog
 from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.schemas.inquiry import InquiryCreate, InquiryUpdate, InquiryResponse, StageLogEntry
 from app.modules.crm.schemas.workflow import StageLogResponse
+from app.modules.crm.schemas.activity import MomExportRequest
+from app.modules.crm.reports.mom_docx import build_mom_docx
 from app.utils.notifications import broadcast_notification, notify_user
+from fastapi.responses import Response
 
 router = APIRouter(prefix="/crm/inquiries", tags=["CRM - Inquiries"])
 
@@ -292,3 +295,62 @@ async def add_inquiry_stage(
     db.commit()
     db.refresh(entry)
     return entry
+
+
+@router.post("/{inquiry_id}/mom-docx")
+async def export_inquiry_mom(
+    inquiry_id: int,
+    payload: MomExportRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """Export this inquiry's logged activities as a Minutes-of-Meeting .docx.
+    Client name/contacts and organization are pulled from the already-linked
+    records rather than re-entered — only the meeting-specific fields
+    (subject, date, who was present, which activities to include) are asked
+    for at export time."""
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+
+    org = db.query(Organization).filter(Organization.id == inquiry.org_id).first()
+
+    activities_query = db.query(Activity).filter(
+        Activity.related_module == "inquiry", Activity.related_id == inquiry_id, Activity.is_deleted == False,  # noqa: E712
+    )
+    if payload.activity_ids:
+        activities_query = activities_query.filter(Activity.id.in_(payload.activity_ids))
+    activities = activities_query.order_by(Activity.id.asc()).all()
+
+    pew_members = (
+        db.query(User).filter(User.id.in_(payload.pew_member_ids)).all() if payload.pew_member_ids else []
+    )
+    client_contacts = (
+        db.query(OrgContact).filter(OrgContact.id.in_(payload.client_contact_ids)).all()
+        if payload.client_contact_ids else []
+    )
+
+    buf = build_mom_docx({
+        "org_name": org.name if org else None,
+        "subject": payload.subject,
+        "meeting_date": payload.meeting_date.strftime("%d.%m.%Y"),
+        "pew_members": [{"name": u.name, "designation": u.designation} for u in pew_members],
+        "client_members": [{"name": c.name, "designation": c.designation} for c in client_contacts],
+        "activities": [
+            {
+                "observation": a.remarks,
+                "action_plan": a.action_plan,
+                "responsibility": a.assigned_to,
+                "target": a.next_followup.strftime("%d.%m.%Y") if a.next_followup else None,
+            }
+            for a in activities
+        ],
+    })
+
+    org_slug = (org.name if org else "Inquiry").replace(" ", "_").replace("/", "-")
+    filename = f"MOM_{org_slug}_{payload.meeting_date.strftime('%Y%m%d')}.docx"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

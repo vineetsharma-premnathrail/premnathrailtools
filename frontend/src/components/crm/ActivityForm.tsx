@@ -21,11 +21,12 @@ type FormState = {
   next_followup: string
   assigned_to: string
   remarks: string
+  action_plan: string
 }
 
-function toFormState(initial?: CrmActivity): FormState {
+function toFormState(initial?: CrmActivity, defaultOrgId?: number): FormState {
   return {
-    org_id: initial?.org_id ? String(initial.org_id) : '',
+    org_id: initial?.org_id ? String(initial.org_id) : defaultOrgId ? String(defaultOrgId) : '',
     org_contact_id: initial?.org_contact_id ? String(initial.org_contact_id) : '',
     related_module: initial?.related_module || '',
     universal_id: initial?.universal_id || '',
@@ -34,21 +35,24 @@ function toFormState(initial?: CrmActivity): FormState {
     next_followup: initial?.next_followup || '',
     assigned_to: initial?.assigned_to || '',
     remarks: initial?.remarks || '',
+    action_plan: initial?.action_plan || '',
   }
 }
 
 export default function ActivityForm({
   initial,
+  defaultOrgId,
   submitLabel,
   onCancel,
   onSubmit,
 }: {
   initial?: CrmActivity
+  defaultOrgId?: number
   submitLabel: string
   onCancel: () => void
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
 }) {
-  const [form, setForm] = useState<FormState>(() => toFormState(initial))
+  const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [contacts, setContacts] = useState<OrgContact[]>([])
   const [newContact, setNewContact] = useState({ name: '', designation: '', department: '', mobile: '', email: '' })
@@ -182,7 +186,8 @@ export default function ActivityForm({
           <Field label="Next Follow-up Date"><DateField value={form.next_followup} onChange={(v) => set('next_followup', v)} /></Field>
         </Row>
         <Field label="Assigned To"><input value={form.assigned_to} onChange={(e) => set('assigned_to', e.target.value)} placeholder="Assignee name" style={inputStyle} /></Field>
-        <Field label="Remarks"><textarea value={form.remarks} onChange={(e) => set('remarks', e.target.value)} rows={3} placeholder="Describe the activity outcome or notes" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        <Field label="Observation / Remarks"><textarea value={form.remarks} onChange={(e) => set('remarks', e.target.value)} rows={3} placeholder="What was discussed or observed" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        <Field label="Action Plan"><textarea value={form.action_plan} onChange={(e) => set('action_plan', e.target.value)} rows={3} placeholder="What needs to be done next" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
       </Section>
 
       <div style={{ display: 'flex', gap: 10 }}>

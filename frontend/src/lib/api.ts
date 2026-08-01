@@ -218,6 +218,10 @@ export const crmApi = {
     const { data } = await apiClient.post(`/crm/inquiries/${id}/stages`, payload)
     return data
   },
+  exportInquiryMom: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/crm/inquiries/${id}/mom-docx`, payload, { responseType: 'blob' })
+    return data as Blob
+  },
 
   // Tenders
   listTenders: async (params: { search?: string; status?: string; org_id?: number } = {}) => {
@@ -263,6 +267,10 @@ export const crmApi = {
   // Activities
   listActivities: async (params: { search?: string; status?: string; org_id?: number; related_module?: string; related_id?: number } = {}) => {
     const { data } = await apiClient.get('/crm/activities', { params })
+    return data
+  },
+  listTeamMembers: async () => {
+    const { data } = await apiClient.get('/crm/activities/team-members')
     return data
   },
   createActivity: async (payload: Record<string, unknown>) => {

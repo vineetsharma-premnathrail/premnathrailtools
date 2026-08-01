@@ -20,4 +20,5 @@ class Activity(Base, TimestampMixin, SoftDeleteMixin):
     assigned_to: Mapped[str | None] = mapped_column(String(150), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="Open", nullable=False)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    action_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)

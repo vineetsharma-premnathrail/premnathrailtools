@@ -15,6 +15,18 @@ def _can_modify(record, user: User) -> bool:
     return user.role in ("admin", "super_admin") or record.created_by_id == user.id
 
 
+@router.get("/team-members")
+async def list_team_members(
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """Lightweight internal-user lookup (name + designation) for the MOM
+    export's "PEW Member Present" picker — avoids re-typing attendee names
+    that already live on the user's profile."""
+    users = db.query(User).filter(User.is_active == True).order_by(User.name).all()  # noqa: E712
+    return [{"id": u.id, "name": u.name, "designation": u.designation} for u in users]
+
+
 @router.get("", response_model=list[ActivityResponse])
 async def list_activities(
     search: str | None = None,
