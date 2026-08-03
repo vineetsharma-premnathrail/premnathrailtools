@@ -6,6 +6,7 @@ import { ReactNode, useState } from 'react'
 import { User } from '@/types'
 import { useAuthStore } from '@/store/authStore'
 import { BRAND, TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
+import UpdatesButton from '@/components/UpdatesButton'
 
 const icons: Record<string, ReactNode> = {
   dashboard: (
@@ -133,6 +134,8 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
           )
         })}
       </nav>
+
+      <UpdatesButton variant="row" />
 
       {user && (
         <div style={{ position: 'relative' }}>

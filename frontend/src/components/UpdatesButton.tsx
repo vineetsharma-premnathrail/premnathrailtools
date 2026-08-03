@@ -5,7 +5,7 @@ import { CHANGELOG } from '@/lib/changelog'
 
 const SEEN_KEY = 'premnathrail_updates_last_seen'
 
-export default function UpdatesButton() {
+export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' | 'row' }) {
   const [open, setOpen] = useState(false)
   const [hasUnseen, setHasUnseen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -35,54 +35,90 @@ export default function UpdatesButton() {
     }
   }
 
+  const icon = (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="16" x2="12" y2="11" />
+      <line x1="12" y1="8" x2="12.01" y2="8" />
+    </svg>
+  )
+
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        onClick={toggleOpen}
-        style={{
-          position: 'relative',
-          width: 36,
-          height: 36,
-          borderRadius: '50%',
-          border: '1px solid rgba(0,0,0,0.1)',
-          background: '#fff',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-        aria-label="What's new"
-        title="What's new"
-      >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#57534e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="16" x2="12" y2="11" />
-          <line x1="12" y1="8" x2="12.01" y2="8" />
-        </svg>
-        {hasUnseen && (
-          <span
-            style={{
-              position: 'absolute',
-              top: -2,
-              right: -2,
-              width: 10,
-              height: 10,
-              borderRadius: '50%',
-              background: '#dc2626',
-              border: '2px solid #fff',
-            }}
-          />
-        )}
-      </button>
+      {variant === 'row' ? (
+        <button
+          onClick={toggleOpen}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 11,
+            padding: '10px 14px',
+            marginBottom: 6,
+            borderRadius: 12,
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            fontSize: 14,
+            fontWeight: 500,
+            color: '#57534e',
+            fontFamily: 'inherit',
+          }}
+        >
+          {icon}
+          What&apos;s New
+          {hasUnseen && (
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#dc2626', marginLeft: 'auto' }} />
+          )}
+        </button>
+      ) : (
+        <button
+          onClick={toggleOpen}
+          style={{
+            position: 'relative',
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            border: '1px solid rgba(0,0,0,0.1)',
+            background: '#fff',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#57534e',
+          }}
+          aria-label="What's new"
+          title="What's new"
+        >
+          {icon}
+          {hasUnseen && (
+            <span
+              style={{
+                position: 'absolute',
+                top: -2,
+                right: -2,
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: '#dc2626',
+                border: '2px solid #fff',
+              }}
+            />
+          )}
+        </button>
+      )}
 
       {open && (
         <div
           style={{
             position: 'absolute',
-            right: 0,
-            top: 44,
-            width: 360,
-            maxHeight: 460,
+            left: variant === 'row' ? 0 : undefined,
+            right: variant === 'row' ? undefined : 0,
+            bottom: variant === 'row' ? '100%' : undefined,
+            top: variant === 'row' ? undefined : 44,
+            marginBottom: variant === 'row' ? 8 : 0,
+            width: 340,
+            maxHeight: 420,
             display: 'flex',
             flexDirection: 'column',
             background: '#fff',
