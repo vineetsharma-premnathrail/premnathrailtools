@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
-import { OrganizationDetail, Inquiry, Tender, CrmActivity, CrmNote } from '@/types'
+import { OrganizationDetail, Inquiry, Tender, CrmActivity, CrmNote, OrgContact } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import InquiryForm from '@/components/crm/InquiryForm'
@@ -389,11 +389,14 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
 
 function ActivitiesTab({ orgId }: { orgId: number }) {
   const [activities, setActivities] = useState<CrmActivity[]>([])
+  const [contacts, setContacts] = useState<OrgContact[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<CrmActivity | null>(null)
   const load = () => crmApi.listActivities({ org_id: orgId }).then(setActivities).finally(() => setLoading(false))
   useEffect(() => { load() }, [orgId])
+  useEffect(() => { crmApi.listOrgContacts(orgId).then(setContacts) }, [orgId])
+  const contactById = new Map(contacts.map((c) => [c.id, c]))
 
   const cancelForm = () => {
     setEditing(null)
@@ -429,10 +432,17 @@ function ActivitiesTab({ orgId }: { orgId: number }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {activities.map((a) => (
-            <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-              <div>
+            <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
+              <div style={{ minWidth: 0 }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: '#1f1108', margin: '0 0 2px' }}>{a.activity_type || 'Activity'} <span style={{ fontWeight: 500, color: '#78716c' }}>· {a.status}</span></p>
-                <p style={{ fontSize: 12.5, color: '#57534e', margin: 0 }}>{a.remarks || '—'} {a.next_followup && `· Follow-up: ${a.next_followup}`}</p>
+                <p style={{ fontSize: 12.5, color: '#57534e', margin: '0 0 4px' }}>{a.remarks || '—'}</p>
+                {a.action_plan && <p style={{ fontSize: 12, color: '#78716c', margin: '0 0 4px' }}>Action Plan: {a.action_plan}</p>}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: '#a8a29e' }}>
+                  {a.org_contact_id && contactById.get(a.org_contact_id) && <span>Contact: {contactById.get(a.org_contact_id)!.name}</span>}
+                  {a.related_module && a.universal_id && <span>{a.related_module}: {a.universal_id}</span>}
+                  {a.assigned_to && <span>Assigned To: {a.assigned_to}</span>}
+                  {a.next_followup && <span>Follow-up: {a.next_followup}</span>}
+                </div>
               </div>
               <button onClick={() => { setEditing(a); setShowForm(true) }} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>Edit</button>
             </div>
