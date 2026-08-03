@@ -40,7 +40,7 @@ export default function RndHistoryPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
   const { user } = useAuth()
   const router = useRouter()
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+  const isAdmin = user?.role === 'admin'
 
   const [adminMode, setAdminMode] = useState(false)
   const [adminUsers, setAdminUsers] = useState<HistoryUser[]>([])

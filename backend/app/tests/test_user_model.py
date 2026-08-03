@@ -10,11 +10,6 @@ def test_get_apps_admin_gets_everything_regardless_of_assignment():
     assert user.get_apps() == sorted(AVAILABLE_APPS)
 
 
-def test_get_apps_super_admin_gets_everything():
-    user = User(email="a@x.com", name="A", role="super_admin", assigned_apps=[])
-    assert user.get_apps() == sorted(AVAILABLE_APPS)
-
-
 def test_get_apps_regular_user_gets_only_assigned():
     user = User(email="a@x.com", name="A", role="user", assigned_apps=["crm", "rnd"])
     assert user.get_apps() == ["crm", "rnd"]

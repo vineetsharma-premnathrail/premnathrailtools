@@ -42,7 +42,7 @@ class RenameHistoryRequest(BaseModel):
 
 
 def _is_admin(user: User) -> bool:
-    return user.role in ("admin", "super_admin")
+    return user.role == "admin"
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:

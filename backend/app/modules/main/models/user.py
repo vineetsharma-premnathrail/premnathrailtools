@@ -3,8 +3,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
-# Modules a user's `assigned_apps` list may contain. Admin/super_admin
-# roles bypass this entirely and get access to every module regardless
+# Modules a user's `assigned_apps` list may contain. The admin role
+# bypasses this entirely and gets access to every module regardless
 # of what's in the list (see get_user_apps() usage in routes).
 AVAILABLE_APPS = {"erp", "rnd", "crm", "purchase"}
 
@@ -55,6 +55,6 @@ class User(Base, TimestampMixin):
     def get_apps(self) -> list[str]:
         """Modules this user can see: admins get all of them, everyone else
         gets whatever was explicitly assigned to them."""
-        if self.role in ("admin", "super_admin"):
+        if self.role == "admin":
             return sorted(AVAILABLE_APPS)
         return self.assigned_apps or []

@@ -74,7 +74,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     router.push('/login')
   }
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+  const isAdmin = user?.role === 'admin'
 
   const links = [
     { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', visible: true },

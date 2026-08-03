@@ -87,7 +87,7 @@ export interface User {
   id: number
   email: string
   name: string
-  role: 'user' | 'admin' | 'super_admin'
+  role: 'user' | 'admin'
   is_active: boolean
   azure_id?: string
   designation?: string

@@ -184,7 +184,7 @@ echo $AZURE_CLIENT_SECRET  # Should not be blank
 
 ### **Problem: ERP requests return 403 with "erp_permissions" mentioned**
 
-The caller's `role` isn't `admin`/`super_admin`, and their `erp_permissions`
+The caller's `role` isn't `admin`, and their `erp_permissions`
 list is missing the specific action's id. Sub-permissions only apply to ERP —
 CRM/R&D are whole-module toggles via `assigned_apps` only. Valid ids:
 `project_view`, `project_create`, `project_edit`, `project_delete`, `sr_view`,
@@ -214,7 +214,7 @@ Granting/removing any of these ids does change what a Bearer-token/API call
 can actually do, not just what the UI renders.
 
 **Check 3: is the caller hitting an admin route without an admin role?**
-`admin`/`super_admin` bypass `erp_permissions` entirely — a `403` for an admin
+`admin` bypasses `erp_permissions` entirely — a `403` for an admin
 account usually means the JWT's `role` claim is stale (re-login) rather than a
 real permissions gap.
 

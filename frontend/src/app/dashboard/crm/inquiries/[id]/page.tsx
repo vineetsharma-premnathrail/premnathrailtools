@@ -57,7 +57,7 @@ export default function InquiryDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, inquiryId])
 
-  const canModify = !!inquiry && !!user && (user.role === 'admin' || user.role === 'super_admin' || inquiry.created_by_id === user.id)
+  const canModify = !!inquiry && !!user && (user.role === 'admin' || inquiry.created_by_id === user.id)
 
   const patch = async (payload: Record<string, unknown>) => {
     if (!inquiry) return

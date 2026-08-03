@@ -9,7 +9,7 @@ from app.auth.microsoft import list_azure_org_users, get_azure_admin_ids
 
 router = APIRouter(prefix="/users", tags=["Users & Roles"])
 
-VALID_ROLES = {"user", "admin", "super_admin"}
+VALID_ROLES = {"user", "admin"}
 
 # Granular ERP permission ids the "ERP Permissions" section of the Module
 # Access modal can grant. R&D Tools and CRM don't have a sub-permission
@@ -21,8 +21,8 @@ VALID_ERP_PERMISSIONS = {
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
-    """Dependency: only allow admin or super_admin roles through."""
-    if user.role not in ("admin", "super_admin"):
+    """Dependency: only allow admin roles through."""
+    if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
     return user
 
@@ -60,8 +60,8 @@ async def update_user(
     if payload.role is not None:
         if payload.role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail="Invalid role")
-        if target.id == admin.id and payload.role != "super_admin" and admin.role == "super_admin":
-            raise HTTPException(status_code=400, detail="Cannot change your own super_admin role")
+        if target.id == admin.id and payload.role != "admin":
+            raise HTTPException(status_code=400, detail="Cannot change your own admin role")
         target.role = payload.role
 
     if payload.assigned_apps is not None:

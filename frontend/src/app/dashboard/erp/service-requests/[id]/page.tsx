@@ -53,7 +53,7 @@ export default function ServiceRequestDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, srId])
 
-  const canModify = !!sr && !!user && (user.role === 'admin' || user.role === 'super_admin' || sr.created_by_id === user.id)
+  const canModify = !!sr && !!user && (user.role === 'admin' || sr.created_by_id === user.id)
 
   const patch = async (payload: Record<string, unknown>) => {
     if (!sr) return

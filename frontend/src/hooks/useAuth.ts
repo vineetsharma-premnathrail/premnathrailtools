@@ -5,12 +5,12 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { User } from '@/types'
 
-/** Granular ERP sub-permission check (project_create, sr_edit, etc.) — admins/
- * super_admins implicitly hold every permission. Mirrors the server's own
- * `role in (admin, super_admin) or perm in erp_permissions` check. */
+/** Granular ERP sub-permission check (project_create, sr_edit, etc.) — admins
+ * implicitly hold every permission. Mirrors the server's own
+ * `role == admin or perm in erp_permissions` check. */
 export function hasErpPermission(user: User | null | undefined, permission: string): boolean {
   if (!user) return false
-  if (user.role === 'admin' || user.role === 'super_admin') return true
+  if (user.role === 'admin') return true
   return !!user.erp_permissions?.includes(permission)
 }
 
@@ -46,11 +46,11 @@ export function useProtectedPage() {
   return { isAuthorized: !!user, isLoading: false, user }
 }
 
-/** Guards a page to admin/super_admin roles only. Redirects non-admins to /dashboard. */
+/** Guards a page to admin roles only. Redirects non-admins to /dashboard. */
 export function useRequireAdmin() {
   const router = useRouter()
   const { user, isLoading } = useAuth()
-  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin'
+  const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
     if (!isLoading && user && !isAdmin) {

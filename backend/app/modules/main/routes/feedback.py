@@ -8,6 +8,7 @@ from app.modules.main.models.feedback import Feedback
 from app.modules.main.routes.auth import get_current_user
 from app.modules.main.routes.users import require_admin
 from app.modules.main.schemas.feedback import FeedbackCreate, FeedbackResponse
+from app.utils.notifications import notify_user
 
 router = APIRouter(prefix="/feedback", tags=["Feedback"])
 
@@ -34,6 +35,19 @@ async def submit_feedback(
     db.add(feedback)
     db.commit()
     db.refresh(feedback)
+
+    admins = db.query(User).filter(User.role == "admin").all()
+    for admin in admins:
+        notify_user(
+            db, admin.id,
+            title="New feedback received",
+            message=f"{user.name}: {payload.message[:150]}",
+            notification_type="feedback",
+            entity_type="feedback",
+            entity_id=feedback.id,
+        )
+    db.commit()
+
     return _to_response(feedback, user)
 
 

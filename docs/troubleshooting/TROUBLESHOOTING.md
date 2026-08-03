@@ -303,11 +303,11 @@ route instead of mocking `httpx` at a lower level.
 
 **Cause:** This is intentional — every CRM mutation route (including the nested workflow
 sub-entities under `/inquiries/{id}/...` and `/tenders/{id}/...`) checks
-`user.role in ("admin", "super_admin") or record.created_by_id == user.id`. Only the
+`user.role == "admin" or record.created_by_id == user.id`. Only the
 record's own creator or an admin can update/delete it. A user with plain `"crm"` app
 access can still `GET`/list and create new sub-records, just not modify someone else's.
 
-**Fix:** Log in as the record's creator, or use an admin/super_admin account. Do not
+**Fix:** Log in as the record's creator, or use an admin account. Do not
 "fix" this by weakening the check — it was deliberately added everywhere (the legacy app
 this was rebuilt from left permission checks off these specific sub-routes, which was a
 real gap, not a feature to replicate).

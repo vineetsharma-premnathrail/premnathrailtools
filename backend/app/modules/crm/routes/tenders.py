@@ -31,7 +31,7 @@ def _write_audit(db: Session, tender_id: int, action: str, user: User, summary: 
 
 
 def _can_modify(record, user: User) -> bool:
-    return user.role in ("admin", "super_admin") or record.created_by_id == user.id
+    return user.role == "admin" or record.created_by_id == user.id
 
 
 def _generate_universal_id(db: Session) -> str:

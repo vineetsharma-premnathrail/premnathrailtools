@@ -151,7 +151,7 @@ Authorization: Bearer <token>
 ## Users & Roles Endpoints (admin only)
 
 All endpoints below require the caller's JWT to belong to a user with `role` of
-`admin` or `super_admin` (enforced by the `require_admin` dependency). A non-admin
+`admin` (enforced by the `require_admin` dependency). A non-admin
 caller gets `403 Forbidden`.
 
 ### List Users
@@ -161,7 +161,7 @@ GET /api/v1/users
 ```
 
 Returns every user in the local database, ordered by name. Each user includes
-a computed `apps` field: admins/super_admins always get `["crm","erp","rnd"]`
+a computed `apps` field: admins always get `["crm","erp","rnd"]`
 regardless of `assigned_apps`; everyone else gets exactly `assigned_apps`.
 
 **Response (200):**
@@ -190,15 +190,15 @@ regardless of `assigned_apps`; everyone else gets exactly `assigned_apps`.
 PATCH /api/v1/users/{user_id}
 ```
 
-Body (all fields optional): `{ "name": "...", "role": "user|admin|super_admin", "assigned_apps": ["erp","rnd","crm"], "erp_permissions": ["project_view", "project_delete"] }`
+Body (all fields optional): `{ "name": "...", "role": "user|admin", "assigned_apps": ["erp","rnd","crm"], "erp_permissions": ["project_view", "project_delete"] }`
 
 - Rejects unknown role values or unknown app names with `400`.
-- A `super_admin` cannot demote their own account via this endpoint (`400`).
+- An `admin` cannot demote their own account via this endpoint (`400`).
 - `erp_permissions` is a granular sub-permission list that only applies when `"erp"` is in
   `assigned_apps` — R&D Tools and CRM don't have a sub-permission breakdown, just the
   whole-module toggle. Valid ids: `project_view`, `project_create`, `project_edit`,
   `project_delete`, `sr_view`, `sr_create`, `sr_edit`, `sr_delete`. Rejects unknown ids
-  with `400`. Admins/super_admins bypass this entirely (see enforcement below).
+  with `400`. Admins bypass this entirely (see enforcement below).
 - Enforced server-side on every corresponding endpoint (not just read by the frontend
   to show/hide nav items and buttons):
   - `project_create` → `POST /erp/projects`; `project_edit` → `PATCH /erp/projects/{id}`
@@ -209,7 +209,7 @@ Body (all fields optional): `{ "name": "...", "role": "user|admin|super_admin", 
     `DELETE /erp/service-requests/{id}` and deleting an attachment/material.
     Both `sr_edit` and `sr_delete` additionally require the caller to be the SR's
     creator (or an admin) — see [service-requests.md](#service-requests) below.
-  - All return `403` when missing, except admins/super_admins, who bypass every check.
+  - All return `403` when missing, except admins, who bypass every check.
 
 ### Deactivate / Activate a User
 
@@ -351,8 +351,8 @@ GET /api/v1/crm/notes?skip=0&limit=10
 ## CRM Module Endpoints
 
 All routes below require `Authorization: Bearer <token>` for a user whose `assigned_apps`
-includes `"crm"` (admins/super_admins always pass). Mutating routes (`PATCH`/`DELETE`) also
-require the caller to be the record's creator or an admin/super_admin — otherwise `403`.
+includes `"crm"` (admins always pass). Mutating routes (`PATCH`/`DELETE`) also
+require the caller to be the record's creator or an admin — otherwise `403`.
 
 ### Organizations
 
@@ -515,7 +515,7 @@ plus `recent_organizations`/`recent_inquiries`/`recent_tenders` (last 5 each).
 ### ERP Endpoints
 
 All routes below require `Authorization: Bearer <token>` (or the `session_token` cookie)
-for a user whose `assigned_apps` includes `"erp"` (admins/super_admins always pass).
+for a user whose `assigned_apps` includes `"erp"` (admins always pass).
 Beyond that module-level gate, every create/edit/delete route also requires the matching
 `erp_permissions` entry — see [Users & Roles](#users--roles-endpoints-admin-only) above
 for the full enforcement breakdown, and the per-route notes below.

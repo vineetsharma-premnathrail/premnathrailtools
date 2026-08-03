@@ -48,7 +48,7 @@ export default function TenderDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, tenderId])
 
-  const canModify = !!tender && !!user && (user.role === 'admin' || user.role === 'super_admin' || tender.created_by_id === user.id)
+  const canModify = !!tender && !!user && (user.role === 'admin' || tender.created_by_id === user.id)
 
   const patch = async (payload: Record<string, unknown>) => {
     if (!tender) return

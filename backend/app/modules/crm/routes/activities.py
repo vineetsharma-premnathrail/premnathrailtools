@@ -12,7 +12,7 @@ router = APIRouter(prefix="/crm/activities", tags=["CRM - Activities"])
 
 
 def _can_modify(record, user: User) -> bool:
-    return user.role in ("admin", "super_admin") or record.created_by_id == user.id
+    return user.role == "admin" or record.created_by_id == user.id
 
 
 @router.get("/team-members")

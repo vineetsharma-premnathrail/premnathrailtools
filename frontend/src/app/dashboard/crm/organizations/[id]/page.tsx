@@ -44,7 +44,7 @@ export default function OrganizationDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, orgId])
 
-  const canModify = !!org && !!user && (user.role === 'admin' || user.role === 'super_admin' || org.created_by_id === user.id)
+  const canModify = !!org && !!user && (user.role === 'admin' || org.created_by_id === user.id)
 
   const handleDelete = async () => {
     await crmApi.deleteOrganization(orgId)

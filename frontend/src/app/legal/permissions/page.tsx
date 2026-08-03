@@ -20,7 +20,7 @@ export default function PermissionsPage() {
       <p>Once signed in, what you can see and do is controlled by your assigned role and modules:</p>
       <ul style={listStyle}>
         <li><strong>User</strong> — access to the specific modules (ERP, CRM, R&amp;D, Purchase) an admin has assigned to you.</li>
-        <li><strong>Admin / Super Admin</strong> — access to all modules, plus Users &amp; Roles to manage other accounts.</li>
+        <li><strong>Admin</strong> — access to all modules, plus Users &amp; Roles to manage other accounts.</li>
         <li>Within ERP specifically, admins can grant finer-grained permissions (e.g. project view/create/edit/delete).</li>
       </ul>
 

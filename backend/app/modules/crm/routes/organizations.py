@@ -23,7 +23,7 @@ def _write_audit(db: Session, org_id: int, action: str, user: User, summary: str
 
 
 def _can_modify(record, user: User) -> bool:
-    return user.role in ("admin", "super_admin") or record.created_by_id == user.id
+    return user.role == "admin" or record.created_by_id == user.id
 
 
 @router.get("", response_model=list[OrganizationResponse])

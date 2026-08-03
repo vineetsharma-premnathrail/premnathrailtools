@@ -27,7 +27,7 @@ export default function EditServiceRequestPage() {
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
   if (error || !sr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error || 'Service request not found.'}</p>
 
-  const canModify = !!user && (user.role === 'admin' || user.role === 'super_admin' || sr.created_by_id === user.id)
+  const canModify = !!user && (user.role === 'admin' || sr.created_by_id === user.id)
   if (!canModify) {
     router.push(`/dashboard/erp/service-requests/${srId}`)
     return null

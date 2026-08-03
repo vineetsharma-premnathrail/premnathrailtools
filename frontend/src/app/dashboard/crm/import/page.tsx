@@ -41,7 +41,7 @@ export default function CrmImportPage() {
   }, [])
 
   if (!user) return null
-  if (user.role !== 'admin' && user.role !== 'super_admin') {
+  if (user.role !== 'admin') {
     return (
       <div>
         <CrmNav />

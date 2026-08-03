@@ -152,14 +152,14 @@ def _can_edit(sr: ServiceRequest, user: User) -> bool:
     """Admins always pass. Everyone else must both own the SR (be its creator)
     and hold the granular "sr_edit" permission — mirrors the Edit checkbox in
     the Users & Roles module-access editor."""
-    if user.role in ("admin", "super_admin"):
+    if user.role == "admin":
         return True
     return sr.created_by_id == user.id and has_erp_permission(user, "sr_edit")
 
 
 def _can_delete(sr: ServiceRequest, user: User) -> bool:
     """Same as `_can_edit` but gated on "sr_delete" instead."""
-    if user.role in ("admin", "super_admin"):
+    if user.role == "admin":
         return True
     return sr.created_by_id == user.id and has_erp_permission(user, "sr_delete")
 

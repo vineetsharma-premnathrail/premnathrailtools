@@ -45,7 +45,7 @@ export default function UsersRolesPage() {
       total: users.length,
       active: users.filter((u) => u.is_active).length,
       inactive: users.filter((u) => !u.is_active).length,
-      admins: users.filter((u) => u.role === 'admin' || u.role === 'super_admin').length,
+      admins: users.filter((u) => u.role === 'admin').length,
     }),
     [users]
   )
@@ -188,7 +188,7 @@ export default function UsersRolesPage() {
             )}
             {filtered.map((u) => {
               const isSelf = u.id === currentUser?.id
-              const isAdminRole = u.role === 'admin' || u.role === 'super_admin'
+              const isAdminRole = u.role === 'admin'
               return (
                 <tr key={u.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                   <td style={{ padding: '12px 16px' }}>
@@ -359,7 +359,7 @@ function EditUserModal({
   onSave: (id: number, apps: AppModule[], erpPermissions: string[]) => Promise<void>
   onToggleActive: (u: User) => Promise<void>
 }) {
-  const isAdminRole = user.role === 'admin' || user.role === 'super_admin'
+  const isAdminRole = user.role === 'admin'
   const [selected, setSelected] = useState<AppModule[]>(user.assigned_apps || [])
   const [erpPerms, setErpPerms] = useState<string[]>(user.erp_permissions || [])
   const [saving, setSaving] = useState(false)
