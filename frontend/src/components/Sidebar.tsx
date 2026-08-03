@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { ReactNode, useState } from 'react'
+import { ReactNode, useRef, useState } from 'react'
 import { User } from '@/types'
 import { useAuthStore } from '@/store/authStore'
 import { BRAND, TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
@@ -55,6 +55,19 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
   const router = useRouter()
   const logout = useAuthStore((state) => state.logout)
   const [menuOpen, setMenuOpen] = useState(false)
+  const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const cancelMenuClose = () => {
+    if (menuCloseTimer.current) {
+      clearTimeout(menuCloseTimer.current)
+      menuCloseTimer.current = null
+    }
+  }
+
+  const scheduleMenuClose = () => {
+    cancelMenuClose()
+    menuCloseTimer.current = setTimeout(() => setMenuOpen(false), 150)
+  }
 
   const handleLogout = async () => {
     await logout()
@@ -140,7 +153,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
       <UpdatesButton variant="row" />
 
       {user && (
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} onMouseEnter={cancelMenuClose} onMouseLeave={scheduleMenuClose}>
           {menuOpen && (
             <div
               style={{
@@ -149,9 +162,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                 left: 0,
                 right: 0,
                 marginBottom: 8,
-                background: GLASS.strong,
-                backdropFilter: GLASS.blurStrong,
-                WebkitBackdropFilter: GLASS.blurStrong,
+                background: '#fff',
                 borderRadius: 20,
                 border: `1px solid ${GLASS.border}`,
                 boxShadow: SHADOWS.glass(),
