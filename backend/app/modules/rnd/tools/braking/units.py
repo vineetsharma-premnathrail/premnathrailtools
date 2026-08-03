@@ -1,8 +1,9 @@
 # Braking Tool Helper Functions
 
 import math
-import re
 from typing import List
+
+from ..latex_utils import escape_latex  # re-exported: `from .units import escape_latex` still works
 
 def parse_list(input_str: str) -> List[float]:
     """Parse comma-separated string into list of floats"""
@@ -44,12 +45,3 @@ def get_compliance(speed: float, total_dist: float) -> str:
         return "✓ Standard Followed"
     else:
         return "✗ Standard Exceeded"
-
-def escape_latex(s: str) -> str:
-    """Escape special LaTeX characters"""
-    mapping = {
-        '&': r'\&', '%': r'\%', '$': r'\$', '#': r'\#', '_': r'\_',
-        '{': r'\{', '}': r'\}', '~': r'\textasciitilde{}',
-        '^': r'\textasciicircum{}', '\\': r'\textbackslash{}', ';': r'\;', ':': r'\:',
-    }
-    return re.sub(r'[&%$#_{}~^;:\\]', lambda m: mapping.get(m.group(0), ""), s)

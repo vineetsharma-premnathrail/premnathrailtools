@@ -1,5 +1,6 @@
 import io
 import math
+import os
 import subprocess
 import tempfile
 from datetime import datetime
@@ -36,12 +37,16 @@ def generate_braking_pdf_report(context: Dict[str, Any]) -> io.BytesIO:
 
             pdf_path = temp_path / 'report.pdf'
             last_res = None
+            # openin_any=p restricts \input/\include file resolution to the
+            # temp working directory — defense in depth alongside escaping
+            # user-supplied fields before they reach the template.
+            tex_env = {**os.environ, "openin_any": "p"}
 
             for compiler in ['pdflatex', 'xelatex', 'lualatex']:
                 try:
                     last_res = subprocess.run(
-                        [compiler, '-interaction=nonstopmode', 'report.tex'],
-                        cwd=temp_dir, capture_output=True, text=True, timeout=30,
+                        [compiler, '-interaction=nonstopmode', '-no-shell-escape', 'report.tex'],
+                        cwd=temp_dir, capture_output=True, text=True, timeout=30, env=tex_env,
                     )
                 except FileNotFoundError:
                     last_res = None

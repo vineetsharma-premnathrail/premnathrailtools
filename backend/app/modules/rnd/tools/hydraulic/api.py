@@ -9,6 +9,7 @@ from .schemas import HydraulicInput
 from .validation import validate_hydraulic_inputs
 from .service import perform_hydraulic_calculation
 from .reports.pdf_builder import create_hydraulic_docx_report, generate_hydraulic_pdf_report
+from ..latex_utils import escape_latex
 
 logger = logging.getLogger("engineering_tools")
 router = APIRouter()
@@ -119,10 +120,14 @@ async def download_hydraulic_pdf(raw: Mapping[str, Any]):
         for k, v in (inputs_raw or {}).items():
             if k not in context:
                 context[k] = v
-        # include optional metadata from the incoming payload (if provided)
+        # include optional metadata from the incoming payload (if provided).
+        # These are free-text and go straight into a .tex template that gets
+        # compiled by a real LaTeX engine below — escape them so a value like
+        # `\input{/app/.env}` renders as literal text instead of being
+        # interpreted as a file-inclusion directive by the compiler.
         for meta in ('doc_no', 'made_by', 'checked_by', 'approved_by', 'doc_date'):
             if raw.get(meta):
-                context[meta] = raw.get(meta)
+                context[meta] = escape_latex(str(raw.get(meta)))
 
         pdf_stream = generate_hydraulic_pdf_report(context)
         fname = str(context.get('doc_no') or 'Hydraulic_Report').replace(' ', '_').replace('/', '_') + '.pdf'

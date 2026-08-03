@@ -766,8 +766,18 @@ def generate_hydraulic_pdf_report(context: Mapping[str, Any]) -> io.BytesIO:
                 if src.exists():
                     shutil.copy(src, tmp / img)
 
+            # openin_any=p ("paranoid") restricts kpathsea's \input/\include
+            # file resolution to the current directory and its subdirs — set
+            # as an env var since kpathsea reads it there in preference to
+            # texmf.cnf. Without this, a value like `\input{/app/.env}` in an
+            # escaped-but-still-backslash-containing string wouldn't execute
+            # (escape_latex neutralizes the backslash), but this is defense
+            # in depth against any future field that reaches the template
+            # unescaped.
+            _tex_env = {**os.environ, "openin_any": "p"}
+
             def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-                return subprocess.run(cmd, cwd=td, capture_output=True, text=True, timeout=60)
+                return subprocess.run(cmd, cwd=td, capture_output=True, text=True, timeout=60, env=_tex_env)
 
             # Resolve full paths for engines — checks PATH first, then common Windows install locations
             _win_miktex_dirs = [
@@ -794,7 +804,7 @@ def generate_hydraulic_pdf_report(context: Mapping[str, Any]) -> io.BytesIO:
 
             for engine in engines:
                 try:
-                    last_res = _run([engine, '-interaction=nonstopmode', 'report.tex'])
+                    last_res = _run([engine, '-interaction=nonstopmode', '-no-shell-escape', 'report.tex'])
                     engines_tried.append(engine)
                 except FileNotFoundError:
                     engines_missing.append(engine)

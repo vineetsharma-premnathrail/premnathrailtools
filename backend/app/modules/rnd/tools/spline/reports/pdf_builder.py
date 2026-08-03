@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import shutil
 import subprocess
 import tempfile
@@ -10,8 +11,14 @@ from typing import Any, Mapping
 
 from docx.shared import RGBColor
 
+from ...latex_utils import escape_latex
+
 # Shared templates folder: backend/app/utils/templates/
 _TEMPLATES_DIR = Path(__file__).resolve().parents[5] / "utils" / "templates"
+
+# Free-text fields the .tex template interpolates directly — must be escaped
+# before reaching the LaTeX compiler (see latex_utils.escape_latex).
+_LATEX_TEXT_FIELDS = ("doc_no", "made_by", "checked_by", "approved_by", "doc_date", "material_type")
 
 
 # ── DOCX ──────────────────────────────────────────────────────────────────────
@@ -191,7 +198,11 @@ def generate_spline_pdf(data: Mapping[str, Any], result: Mapping[str, Any]) -> i
 
     env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)))
     template = env.get_template(template_name)
-    context = {"data": dict(data), "result": dict(result)}
+    safe_data = dict(data)
+    for field in _LATEX_TEXT_FIELDS:
+        if safe_data.get(field):
+            safe_data[field] = escape_latex(str(safe_data[field]))
+    context = {"data": safe_data, "result": dict(result)}
     latex_content = template.render(**context)
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -206,11 +217,15 @@ def generate_spline_pdf(data: Mapping[str, Any], result: Mapping[str, Any]) -> i
 
         pdf_path = tmp_path / "spline_report.pdf"
         last_res = None
+        # openin_any=p restricts \input/\include file resolution to the temp
+        # working directory — defense in depth alongside escaping
+        # user-supplied fields before they reach the template.
+        tex_env = {**os.environ, "openin_any": "p"}
         for compiler in ["pdflatex", "xelatex", "lualatex"]:
             try:
                 last_res = subprocess.run(
-                    [compiler, "-interaction=nonstopmode", "spline_report.tex"],
-                    cwd=tmp, capture_output=True, text=True, timeout=30,
+                    [compiler, "-interaction=nonstopmode", "-no-shell-escape", "spline_report.tex"],
+                    cwd=tmp, capture_output=True, text=True, timeout=30, env=tex_env,
                 )
             except FileNotFoundError:
                 last_res = None
