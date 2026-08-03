@@ -81,8 +81,10 @@ export default function InquiryForm({
 }) {
   const { user } = useAuth()
   const bdOwnerName = initial?.bd_owner || user?.name || ''
-  const followupAssignedToName = initial?.followup_assigned_to || user?.name || ''
-  const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
+  const [form, setForm] = useState<FormState>(() => ({
+    ...toFormState(initial, defaultOrgId),
+    followup_assigned_to: initial?.followup_assigned_to || user?.name || '',
+  }))
   const [railwayZoneCustom, setRailwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )
@@ -194,7 +196,6 @@ export default function InquiryForm({
         org_contact_id: orgContactId,
         railway_zone: form.railway_zone === 'Other' ? railwayZoneCustom : form.railway_zone,
         bd_owner: bdOwnerName,
-        followup_assigned_to: followupAssignedToName,
         quantity: form.quantity ? Number(form.quantity) : undefined,
       }
       Object.keys(payload).forEach((k) => {
@@ -380,7 +381,7 @@ export default function InquiryForm({
             </select>
           </Field>
           <Field label="Assigned To">
-            <input value={followupAssignedToName} disabled style={{ ...inputStyle, background: '#f5f5f4', color: '#78716c' }} />
+            <input value={form.followup_assigned_to} onChange={(e) => set('followup_assigned_to', e.target.value)} placeholder="Person name" style={inputStyle} />
           </Field>
         </Row3>
         <Field label="Follow-up Remarks"><textarea value={form.followup_remarks} onChange={(e) => set('followup_remarks', e.target.value)} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
