@@ -142,18 +142,6 @@ function LoginPageInner() {
       {/* LEFT / BRAND */}
       <div className="login-left" style={{ position: 'relative', flex: '1.1', minWidth: 0, padding: '64px 72px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         <div style={{ position: 'relative', maxWidth: 520 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 9, padding: '6px 13px', borderRadius: 9999, background: 'rgba(255,255,255,.55)', border: '1px solid rgba(255,255,255,.8)', backdropFilter: 'blur(14px)', marginBottom: 38 }}>
-            <span style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#8a4a20', fontWeight: 600 }}>All systems nominal</span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 30 }}>
-            <div style={{ width: 220, height: 48, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', border: '1px solid rgba(255,255,255,.5)', boxShadow: '0 10px 26px rgba(224,98,31,.35)', overflow: 'hidden' }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/logo.png" alt="Premnathrail" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 4 }} />
-            </div>
-            <div style={{ fontSize: 11, letterSpacing: '.2em', textTransform: 'uppercase', color: '#a8663a' }}>Unified Command</div>
-          </div>
-
           <p style={{ maxWidth: 420, fontSize: 17, lineHeight: 1.6, color: '#6e4a2e', margin: '0 0 44px' }}>
             One workspace for Engineering, Service Management, and Business Operations — everything your team runs, in a single place.
           </p>

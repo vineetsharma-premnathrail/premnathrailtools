@@ -17,6 +17,7 @@ from app.modules.crm.schemas.inquiry import InquiryCreate, InquiryUpdate, Inquir
 from app.modules.crm.schemas.workflow import StageLogResponse
 from app.modules.crm.schemas.activity import MomExportRequest
 from app.modules.crm.reports.mom_docx import build_mom_docx
+from app.modules.crm.reports.mom_pdf import build_mom_pdf
 from app.utils.notifications import broadcast_notification, notify_user
 from fastapi.responses import Response
 
@@ -297,18 +298,7 @@ async def add_inquiry_stage(
     return entry
 
 
-@router.post("/{inquiry_id}/mom-docx")
-async def export_inquiry_mom(
-    inquiry_id: int,
-    payload: MomExportRequest,
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
-):
-    """Export this inquiry's logged activities as a Minutes-of-Meeting .docx.
-    Client name/contacts and organization are pulled from the already-linked
-    records rather than re-entered — only the meeting-specific fields
-    (subject, date, who was present, which activities to include) are asked
-    for at export time."""
+def _build_mom_ctx(inquiry_id: int, payload: MomExportRequest, db: Session) -> tuple[dict, "Organization | None"]:
     inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
@@ -330,7 +320,10 @@ async def export_inquiry_mom(
         if payload.client_contact_ids else []
     )
 
-    buf = build_mom_docx({
+    # Responsibility on the MOM is always the inquiry's BD Owner (PEW side) —
+    # never a client contact's name, even if an activity's free-text
+    # "assigned_to" happens to have been filled with one.
+    ctx = {
         "org_name": org.name if org else None,
         "subject": payload.subject,
         "meeting_date": payload.meeting_date.strftime("%d.%m.%Y"),
@@ -340,17 +333,55 @@ async def export_inquiry_mom(
             {
                 "observation": a.remarks,
                 "action_plan": a.action_plan,
-                "responsibility": a.assigned_to,
+                "responsibility": inquiry.bd_owner,
                 "target": a.next_followup.strftime("%d.%m.%Y") if a.next_followup else None,
             }
             for a in activities
         ],
-    })
+    }
+    return ctx, org
+
+
+@router.post("/{inquiry_id}/mom-docx")
+async def export_inquiry_mom(
+    inquiry_id: int,
+    payload: MomExportRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """Export this inquiry's logged activities as a Minutes-of-Meeting .docx.
+    Client name/contacts and organization are pulled from the already-linked
+    records rather than re-entered — only the meeting-specific fields
+    (subject, date, who was present, which activities to include) are asked
+    for at export time."""
+    ctx, org = _build_mom_ctx(inquiry_id, payload, db)
+    buf = build_mom_docx(ctx)
 
     org_slug = (org.name if org else "Inquiry").replace(" ", "_").replace("/", "-")
     filename = f"MOM_{org_slug}_{payload.meeting_date.strftime('%Y%m%d')}.docx"
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/{inquiry_id}/mom-pdf")
+async def export_inquiry_mom_pdf(
+    inquiry_id: int,
+    payload: MomExportRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """Export this inquiry's logged activities as a Minutes-of-Meeting .pdf,
+    built directly with reportlab (no DOCX-to-PDF conversion step)."""
+    ctx, org = _build_mom_ctx(inquiry_id, payload, db)
+    buf = build_mom_pdf(ctx)
+
+    org_slug = (org.name if org else "Inquiry").replace(" ", "_").replace("/", "-")
+    filename = f"MOM_{org_slug}_{payload.meeting_date.strftime('%Y%m%d')}.pdf"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

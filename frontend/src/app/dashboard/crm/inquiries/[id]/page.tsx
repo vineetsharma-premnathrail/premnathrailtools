@@ -688,7 +688,7 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Log Activity'}</button>
         {activities.length > 0 && (
-          <button onClick={() => setShowMomModal(true)} style={secondaryBtnStyle}>Export MOM (Word)</button>
+          <button onClick={() => setShowMomModal(true)} style={secondaryBtnStyle}>Export MOM</button>
         )}
       </div>
       {showForm && (
@@ -776,7 +776,7 @@ function MomExportModal({ inquiry, org, activities, onClose }: {
     setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
   }
 
-  const submit = async () => {
+  const submit = async (format: 'docx' | 'pdf') => {
     if (!subject.trim()) {
       setError('Please enter a subject for the meeting.')
       return
@@ -784,14 +784,17 @@ function MomExportModal({ inquiry, org, activities, onClose }: {
     setBusy(true)
     setError('')
     try {
-      const blob = await crmApi.exportInquiryMom(inquiry.id, {
+      const payload = {
         subject,
         meeting_date: meetingDate,
         pew_member_ids: pewIds,
         client_contact_ids: contactIds,
         activity_ids: activityIds,
-      })
-      downloadBlob(blob, `MOM_${(org?.name || 'Inquiry').replace(/\s+/g, '_')}_${meetingDate}.docx`)
+      }
+      const blob = format === 'pdf'
+        ? await crmApi.exportInquiryMomPdf(inquiry.id, payload)
+        : await crmApi.exportInquiryMom(inquiry.id, payload)
+      downloadBlob(blob, `MOM_${(org?.name || 'Inquiry').replace(/\s+/g, '_')}_${meetingDate}.${format}`)
       onClose()
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Failed to generate MOM document.')
@@ -855,7 +858,8 @@ function MomExportModal({ inquiry, org, activities, onClose }: {
 
         <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
           <button onClick={onClose} style={{ ...secondaryBtnStyle, flex: 1 }}>Cancel</button>
-          <button onClick={submit} disabled={busy} style={{ ...primaryBtnStyle, flex: 1, opacity: busy ? 0.7 : 1 }}>{busy ? 'Generating…' : 'Download .docx'}</button>
+          <button onClick={() => submit('docx')} disabled={busy} style={{ ...secondaryBtnStyle, flex: 1, opacity: busy ? 0.7 : 1 }}>{busy ? 'Generating…' : 'Download .docx'}</button>
+          <button onClick={() => submit('pdf')} disabled={busy} style={{ ...primaryBtnStyle, flex: 1, opacity: busy ? 0.7 : 1 }}>{busy ? 'Generating…' : 'Download .pdf'}</button>
         </div>
       </div>
     </div>

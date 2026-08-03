@@ -3,6 +3,7 @@
 import { User } from '@/types'
 import { useAuthStore } from '@/store/authStore'
 import { useRouter } from 'next/navigation'
+import UpdatesButton from '@/components/UpdatesButton'
 
 export default function Navbar({ user }: { user: User | null }) {
   const router = useRouter()
@@ -32,6 +33,8 @@ export default function Navbar({ user }: { user: User | null }) {
 
       {user && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <UpdatesButton />
+
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 14, cursor: 'pointer' }}>
             <div
               style={{
