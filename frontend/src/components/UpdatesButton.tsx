@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { CHANGELOG } from '@/lib/changelog'
 
 const SEEN_KEY = 'premnathrail_updates_last_seen'
@@ -8,7 +9,9 @@ const SEEN_KEY = 'premnathrail_updates_last_seen'
 export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' | 'row' }) {
   const [open, setOpen] = useState(false)
   const [hasUnseen, setHasUnseen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState({ top: 0, left: 0 })
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const latestDate = CHANGELOG[0]?.date
 
@@ -20,7 +23,9 @@ export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' |
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (btnRef.current?.contains(target)) return
+      if (panelRef.current && !panelRef.current.contains(target)) setOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -28,6 +33,15 @@ export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' |
 
   const toggleOpen = () => {
     const next = !open
+    if (next && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      const panelWidth = 340
+      if (variant === 'row') {
+        setCoords({ top: rect.top - 8, left: Math.min(rect.left, window.innerWidth - panelWidth - 12) })
+      } else {
+        setCoords({ top: rect.bottom + 8, left: Math.min(rect.right - panelWidth, window.innerWidth - panelWidth - 12) })
+      }
+    }
     setOpen(next)
     if (next && latestDate) {
       localStorage.setItem(SEEN_KEY, latestDate)
@@ -44,9 +58,10 @@ export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' |
   )
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <>
       {variant === 'row' ? (
         <button
+          ref={btnRef}
           onClick={toggleOpen}
           style={{
             width: '100%',
@@ -73,6 +88,7 @@ export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' |
         </button>
       ) : (
         <button
+          ref={btnRef}
           onClick={toggleOpen}
           style={{
             position: 'relative',
@@ -108,15 +124,14 @@ export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' |
         </button>
       )}
 
-      {open && (
+      {open && typeof document !== 'undefined' && createPortal(
         <div
+          ref={panelRef}
           style={{
-            position: 'absolute',
-            left: variant === 'row' ? 0 : undefined,
-            right: variant === 'row' ? undefined : 0,
-            bottom: variant === 'row' ? '100%' : undefined,
-            top: variant === 'row' ? undefined : 44,
-            marginBottom: variant === 'row' ? 8 : 0,
+            position: 'fixed',
+            top: variant === 'row' ? undefined : coords.top,
+            bottom: variant === 'row' ? window.innerHeight - coords.top : undefined,
+            left: coords.left,
             width: 340,
             maxHeight: 420,
             display: 'flex',
@@ -125,7 +140,7 @@ export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' |
             borderRadius: 14,
             border: '1px solid rgba(0,0,0,0.08)',
             boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
-            zIndex: 60,
+            zIndex: 1000,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
@@ -173,8 +188,9 @@ export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' |
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   )
 }
