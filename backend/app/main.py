@@ -32,6 +32,7 @@ from app.modules.rnd.models.tool_calculations import (
 from app.modules.main.routes import auth as auth_routes
 from app.modules.main.routes import users as users_routes
 from app.modules.main.routes import notifications as notifications_routes
+from app.modules.main.routes import feedback as feedback_routes
 from app.modules.main.routes import api_keys as api_keys_routes
 from app.modules.main.routes import presence as presence_routes
 from app.modules.erp.routes import projects as erp_projects_routes
@@ -112,6 +113,7 @@ app.include_router(crm_workflow_routes.router, prefix="/api/v1")
 app.include_router(crm_dashboard_routes.router, prefix="/api/v1")
 app.include_router(crm_bulk_import_routes.router, prefix="/api/v1")
 app.include_router(notifications_routes.router, prefix="/api/v1")
+app.include_router(feedback_routes.router, prefix="/api/v1")
 app.include_router(api_keys_routes.router, prefix="/api/v1")
 app.include_router(presence_routes.router, prefix="/api/v1")
 app.include_router(rnd_calculations_routes.router, prefix="/api/v1/rnd")

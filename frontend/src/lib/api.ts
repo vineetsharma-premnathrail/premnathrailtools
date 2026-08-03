@@ -703,3 +703,28 @@ export const notificationsApi = {
     return data
   },
 }
+
+export const feedbackApi = {
+  submit: async (message: string) => {
+    const { data } = await apiClient.post('/feedback', { message })
+    return data
+  },
+
+  // Admin only
+  list: async () => {
+    const { data } = await apiClient.get('/feedback')
+    return data
+  },
+
+  // Admin only
+  getUnreadCount: async () => {
+    const { data } = await apiClient.get('/feedback/unread-count')
+    return data
+  },
+
+  // Admin only
+  markAsRead: async (id: number) => {
+    const { data } = await apiClient.patch(`/feedback/${id}/read`)
+    return data
+  },
+}

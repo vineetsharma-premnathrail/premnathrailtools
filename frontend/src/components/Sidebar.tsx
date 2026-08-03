@@ -7,6 +7,7 @@ import { User } from '@/types'
 import { useAuthStore } from '@/store/authStore'
 import { BRAND, TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
 import UpdatesButton from '@/components/UpdatesButton'
+import FeedbackButton from '@/components/FeedbackButton'
 
 const icons: Record<string, ReactNode> = {
   dashboard: (
@@ -135,6 +136,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
         })}
       </nav>
 
+      <FeedbackButton variant="row" />
       <UpdatesButton variant="row" />
 
       {user && (

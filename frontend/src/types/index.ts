@@ -210,6 +210,16 @@ export interface Notification {
   created_at?: string
 }
 
+export interface Feedback {
+  id: number
+  user_id: number
+  user_name: string
+  user_email: string
+  message: string
+  is_read: boolean
+  created_at: string
+}
+
 // ── Purchase ─────────────────────────────────────────────────────────────
 
 export type PRStatus =

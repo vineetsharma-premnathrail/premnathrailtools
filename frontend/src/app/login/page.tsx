@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { authApi } from '@/lib/api'
@@ -238,7 +239,13 @@ function LoginPageInner() {
           </div>
 
           <div style={{ height: 1, background: 'rgba(180,120,80,.25)', margin: '26px 0 16px' }} />
-          <div style={{ textAlign: 'center', fontSize: 11, color: '#a8825f' }}>© 2026 Premnathrail. All rights reserved.</div>
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#a8825f', lineHeight: 1.6 }}>
+            By using Premnathrail Portal, you agree to the{' '}
+            <Link href="/legal/privacy-policy" style={{ color: '#c07038', fontWeight: 600 }}>Privacy Policy</Link>,{' '}
+            <Link href="/legal/terms-of-use" style={{ color: '#c07038', fontWeight: 600 }}>Terms of Use</Link>, and{' '}
+            <Link href="/legal/permissions" style={{ color: '#c07038', fontWeight: 600 }}>Permissions</Link>.
+          </div>
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#a8825f', marginTop: 8 }}>© 2026 Premnathrail. All rights reserved.</div>
         </div>
       </div>
 

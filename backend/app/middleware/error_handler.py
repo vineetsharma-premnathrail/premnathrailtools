@@ -4,6 +4,7 @@ Error handling middleware - catches all exceptions and logs them properly.
 
 import logging
 from fastapi import Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -47,7 +48,12 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
             "detail": "Validation error",
-            "errors": exc.errors()  # Pydantic error details
+            # jsonable_encoder is required here: Pydantic v2 puts the raw
+            # exception object in errors()[i]["ctx"]["error"] for any custom
+            # validator that raises ValueError(...), and that isn't JSON-
+            # serializable on its own — passing exc.errors() to JSONResponse
+            # directly 500s instead of returning 422.
+            "errors": jsonable_encoder(exc.errors()),
         }
     )
 

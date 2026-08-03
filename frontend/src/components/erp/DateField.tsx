@@ -53,6 +53,14 @@ export default function DateField({ value, onChange, style }: { value: string; o
     ? `${String(selected.getDate()).padStart(2, '0')}-${String(selected.getMonth() + 1).padStart(2, '0')}-${selected.getFullYear()}`
     : ''
 
+  // Typed text is kept separate from `value` (the committed ISO date) so a
+  // partial/invalid in-progress date (e.g. "06-12-2") doesn't get clobbered
+  // by the formatted-from-value re-render on every keystroke.
+  const [draft, setDraft] = useState(displayValue)
+  useEffect(() => {
+    setDraft(displayValue)
+  }, [displayValue])
+
   const openCalendar = () => {
     if (selected) {
       setViewYear(selected.getFullYear())
@@ -65,6 +73,44 @@ export default function DateField({ value, onChange, style }: { value: string; o
     const iso = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     onChange(iso)
     setOpen(false)
+  }
+
+  // Strips everything but digits and re-inserts the DD-MM-YYYY dashes as the
+  // user types, so backspace/paste/typing all "just work" without the user
+  // having to type the dashes themselves.
+  const formatDigits = (raw: string) => {
+    const digits = raw.replace(/\D/g, '').slice(0, 8)
+    let out = digits.slice(0, 2)
+    if (digits.length > 2) out += '-' + digits.slice(2, 4)
+    if (digits.length > 4) out += '-' + digits.slice(4, 8)
+    return out
+  }
+
+  // Only commits (and only calls onChange) once the text is a complete,
+  // real calendar date — "31-02-2026" is rejected rather than silently
+  // rolled over to March.
+  const commitIfValid = (text: string) => {
+    const match = text.match(/^(\d{2})-(\d{2})-(\d{4})$/)
+    if (!match) return false
+    const day = Number(match[1])
+    const month = Number(match[2])
+    const year = Number(match[3])
+    const parsed = new Date(year, month - 1, day)
+    if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return false
+    onChange(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+    setViewYear(year)
+    setViewMonth(month - 1)
+    return true
+  }
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatDigits(e.target.value)
+    setDraft(formatted)
+    commitIfValid(formatted)
+  }
+
+  const handleBlur = () => {
+    if (!commitIfValid(draft)) setDraft(displayValue)
   }
 
   const firstOfMonth = new Date(viewYear, viewMonth, 1)
@@ -93,11 +139,13 @@ export default function DateField({ value, onChange, style }: { value: string; o
   return (
     <div ref={wrapperRef} style={{ position: 'relative' }}>
       <input
-        readOnly
-        value={displayValue}
-        onClick={openCalendar}
+        value={draft}
+        onChange={handleTextChange}
+        onFocus={openCalendar}
+        onBlur={handleBlur}
         placeholder="DD-MM-YYYY"
-        style={{ ...dateInputStyle, ...style, cursor: 'pointer' }}
+        inputMode="numeric"
+        style={{ ...dateInputStyle, ...style }}
       />
       <svg
         onClick={openCalendar}

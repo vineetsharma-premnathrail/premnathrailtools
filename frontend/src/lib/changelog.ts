@@ -11,6 +11,14 @@ export type ChangelogEntry = {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-08-03',
+    title: 'Feedback',
+    items: [
+      'New "Feedback" nav item — send issues or suggestions straight to the admin team.',
+      'Admins get a feedback bell on Users & Roles showing unread feedback, with a popup to review it.',
+    ],
+  },
+  {
+    date: '2026-08-03',
     title: 'MOM PDF export & login page cleanup',
     items: [
       'CRM Inquiry "Export MOM" now offers a PDF download alongside Word (.docx).',

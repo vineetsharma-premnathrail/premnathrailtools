@@ -275,7 +275,22 @@ approve/reject/cancel, partial/full receiving, closing) — see
 ## Database Schema
 
 ### Main Tables
-- `users` — Portal users, role, Azure profile
+- `users` — Portal users, role, Azure profile. Also carries a few dormant
+  columns inherited from the legacy production schema (`hashed_password`,
+  `must_change_password`, `encrypted_graph_refresh_token`) that have no
+  reader/writer in this codebase yet — see the security note in
+  `app/modules/main/models/user.py`. Do not treat their presence as evidence
+  of a local-password auth path; see Security → Authentication below.
+- `notifications` — per-user in-app notifications generated as a side effect
+  of ERP/CRM events (see `app/modules/main/models/notification.py`).
+- `feedback` — free-text feedback/suggestions submitted by any user via the
+  "Feedback" nav item (`app/modules/main/models/feedback.py`,
+  `routes/feedback.py`). `POST /api/v1/feedback` is open to any authenticated
+  user; `GET /feedback`, `GET /feedback/unread-count`, and
+  `PATCH /feedback/{id}/read` are admin-only (`require_admin`, shared with
+  `routes/users.py`). Reviewed via the `FeedbackBell` component on the Users
+  & Roles page (`frontend/src/components/FeedbackBell.tsx`), which polls
+  `/feedback/unread-count` every 30s the same way `NotificationBell` does.
 
 ### CRM Tables
 - `crm_organizations`, `crm_org_contacts`
@@ -388,6 +403,10 @@ Module structure supports this — minimal changes needed to extract a module in
 - Microsoft SSO only (no passwords stored locally)
 - JWT tokens with 24-hour expiry
 - HttpOnly cookies (frontend integration later)
+- `users.hashed_password` / `users.must_change_password` exist in the table
+  but are inert — no route or service reads or writes them. If a local-
+  password login is ever added, hash with passlib/argon2 (add the dependency
+  first — it's not currently in requirements.txt) and never store plaintext.
 
 ### Authorization
 - Role-based access control (user, admin)

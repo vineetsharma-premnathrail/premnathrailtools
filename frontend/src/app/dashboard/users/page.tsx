@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRequireAdmin } from '@/hooks/useAuth'
 import { usersApi } from '@/lib/api'
 import { AppModule, User } from '@/types'
+import FeedbackBell from '@/components/FeedbackBell'
 
 const APPS: { id: AppModule; label: string }[] = [
   { id: 'erp', label: 'Service Module' },
@@ -83,10 +84,15 @@ export default function UsersRolesPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 26, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>Users &amp; Roles</h1>
-      <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>
-        Manage portal users, roles, and module access
-      </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>Users &amp; Roles</h1>
+          <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>
+            Manage portal users, roles, and module access
+          </p>
+        </div>
+        <FeedbackBell />
+      </div>
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
