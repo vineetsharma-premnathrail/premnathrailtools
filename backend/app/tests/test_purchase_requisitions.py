@@ -267,3 +267,144 @@ def test_close_requires_received_status(client, db):
     # A closed PR is reflected back onto the material it covers.
     materials = client.get(f"/api/v1/erp/service-requests/{sr['id']}/materials", headers=auth_header(creator)).json()
     assert materials[0]["pr_status"] == "closed"
+
+
+# ── Item remarks & photos ────────────────────────────────────────────────────
+
+def test_update_item_remarks(client, db):
+    creator = make_user(db, "raiser14@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-014")
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    item_id = pr["items"][0]["id"]
+
+    purchaser = _make_purchase_user(db, "purchase14@premnathrail.com")
+    response = client.patch(
+        f"/api/v1/purchase/requisitions/{pr['id']}/items/{item_id}",
+        json={"remarks": "Vendor quoted 2-week lead time"},
+        headers=auth_header(purchaser),
+    )
+    assert response.status_code == 200
+    updated_item = next(i for i in response.json()["items"] if i["id"] == item_id)
+    assert updated_item["remarks"] == "Vendor quoted 2-week lead time"
+
+    # Persists on a fresh GET, not just the mutating response.
+    refetched = client.get(f"/api/v1/purchase/requisitions/{pr['id']}", headers=auth_header(purchaser)).json()
+    assert next(i for i in refetched["items"] if i["id"] == item_id)["remarks"] == "Vendor quoted 2-week lead time"
+
+
+def test_update_item_remarks_unknown_item_404s(client, db):
+    creator = make_user(db, "raiser15@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-015")
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+
+    purchaser = _make_purchase_user(db, "purchase15@premnathrail.com")
+    response = client.patch(
+        f"/api/v1/purchase/requisitions/{pr['id']}/items/999999",
+        json={"remarks": "n/a"},
+        headers=auth_header(purchaser),
+    )
+    assert response.status_code == 404
+
+
+def test_item_attachments_require_sharepoint_config(client, db, monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "SHAREPOINT_SITE_ID", "")
+
+    creator = make_user(db, "raiser16@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-016")
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    item_id = pr["items"][0]["id"]
+
+    purchaser = _make_purchase_user(db, "purchase16@premnathrail.com")
+    response = client.post(
+        f"/api/v1/purchase/requisitions/{pr['id']}/items/{item_id}/attachments",
+        files={"files": ("photo.jpg", b"fake-bytes", "image/jpeg")},
+        headers=auth_header(purchaser),
+    )
+    assert response.status_code == 503
+
+
+def test_item_attachment_rejects_non_image(client, db, monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "SHAREPOINT_SITE_ID", "fake-site-id")
+
+    creator = make_user(db, "raiser17@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-017")
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    item_id = pr["items"][0]["id"]
+
+    purchaser = _make_purchase_user(db, "purchase17@premnathrail.com")
+    response = client.post(
+        f"/api/v1/purchase/requisitions/{pr['id']}/items/{item_id}/attachments",
+        files={"files": ("doc.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        headers=auth_header(purchaser),
+    )
+    assert response.status_code == 400
+
+
+def test_upload_and_delete_item_attachment(client, db, monkeypatch):
+    import app.modules.purchase.routes.purchase_requisitions as purchase_routes
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "SHAREPOINT_SITE_ID", "fake-site-id")
+
+    async def fake_upload(site_id, folder_path, upload_file):
+        return {
+            "name": upload_file.filename,
+            "path": f"{folder_path}/{upload_file.filename}",
+            "webUrl": f"https://sharepoint.example/{upload_file.filename}",
+            "size": 123,
+        }
+
+    async def fake_delete(site_id, file_path):
+        return None
+
+    monkeypatch.setattr(purchase_routes, "upload_file_to_sharepoint", fake_upload)
+    monkeypatch.setattr(purchase_routes, "delete_file_from_sharepoint", fake_delete)
+
+    creator = make_user(db, "raiser18@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-018")
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    item_id = pr["items"][0]["id"]
+
+    purchaser = _make_purchase_user(db, "purchase18@premnathrail.com")
+    upload_response = client.post(
+        f"/api/v1/purchase/requisitions/{pr['id']}/items/{item_id}/attachments",
+        files={"files": ("photo.jpg", b"fake-bytes", "image/jpeg")},
+        headers=auth_header(purchaser),
+    )
+    assert upload_response.status_code == 200
+    item_after_upload = next(i for i in upload_response.json()["items"] if i["id"] == item_id)
+    assert len(item_after_upload["attachments"]) == 1
+    attachment = item_after_upload["attachments"][0]
+    assert attachment["filename"] == "photo.jpg"
+    assert attachment["sharepoint_url"] == "https://sharepoint.example/photo.jpg"
+
+    # The photo is also visible from the ERP side, since it's the same
+    # underlying ServiceMaterial gallery — not a separate copy.
+    materials = client.get(f"/api/v1/erp/service-requests/{sr['id']}/materials", headers=auth_header(creator)).json()
+    assert len(materials[0]["attachments"]) == 1
+
+    delete_response = client.delete(
+        f"/api/v1/purchase/requisitions/{pr['id']}/items/{item_id}/attachments/{attachment['id']}",
+        headers=auth_header(purchaser),
+    )
+    assert delete_response.status_code == 200
+    item_after_delete = next(i for i in delete_response.json()["items"] if i["id"] == item_id)
+    assert item_after_delete["attachments"] == []
+
+
+def test_delete_unknown_item_attachment_404s(client, db, monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "SHAREPOINT_SITE_ID", "fake-site-id")
+
+    creator = make_user(db, "raiser19@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-019")
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    item_id = pr["items"][0]["id"]
+
+    purchaser = _make_purchase_user(db, "purchase19@premnathrail.com")
+    response = client.delete(
+        f"/api/v1/purchase/requisitions/{pr['id']}/items/{item_id}/attachments/999999",
+        headers=auth_header(purchaser),
+    )
+    assert response.status_code == 404

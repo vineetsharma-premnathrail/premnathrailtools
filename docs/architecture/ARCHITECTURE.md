@@ -246,8 +246,17 @@ PR's status is recomputed after every call — `partially_received` while any it
 it reaches `received`.
 
 `app/tests/test_purchase_requisitions.py` covers this module end-to-end (raising a PR,
-approve/reject/cancel, partial/full receiving, closing) — see
+approve/reject/cancel, partial/full receiving, closing, item remarks/photos) — see
 [TESTING.md](../testing/TESTING.md).
+
+**Item remarks & photos:** each `PurchaseRequisitionItem` has a free-text `remarks`
+column (`PATCH .../items/{item_id}`) and a photo gallery. The gallery is **not** a
+separate table — `POST/DELETE .../items/{item_id}/attachments` read/write the same
+`ServiceMaterialAttachment` rows keyed off the item's `service_material_id`, so a photo
+added from the Purchase side shows up in the ERP Material's gallery too (and vice versa)
+with no sync step. `_to_response()` in `purchase_requisitions.py` loads each item's
+material with `selectinload(ServiceMaterial.attachments)` and maps them onto
+`PurchaseRequisitionItemResponse.attachments`.
 
 ## Authentication & Authorization
 
@@ -312,7 +321,9 @@ approve/reject/cancel, partial/full receiving, closing) — see
 - `purchase_requisitions` — one row per PR (`pr_number`, `status`, `project_id` /
   `service_request_id` links, vendor/PO/delivery fields)
 - `purchase_requisition_items` — line items, snapshotted from `erp_service_materials`
-  at the moment the PR is raised, tracking `quantity_requested` vs `quantity_received`
+  at the moment the PR is raised, tracking `quantity_requested` vs `quantity_received`,
+  plus a `remarks` text column (added in `a2d5e8f1c3b7_add_pr_item_remarks`). Photos are
+  not stored here — see "Item remarks & photos" above.
 
 ### RnD Tables (not yet created — module not ported)
 `app/modules/rnd` is currently empty scaffolding; these tables exist in legacy

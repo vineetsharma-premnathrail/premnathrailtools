@@ -31,7 +31,9 @@ backend/app/tests/
 ├── test_erp_projects.py
 ├── test_erp_service_requests.py
 ├── test_purchase_requisitions.py  # Raising a PR from SR materials, approve/reject/cancel,
-│                                     partial/full receiving, closing — see
+│                                     partial/full receiving, closing, item remarks + photo
+│                                     attachments (mocks SharePoint the same way
+│                                     test_crm_documents.py does) — see
 │                                     ARCHITECTURE.md#purchase-module for the lifecycle
 ├── test_crm.py                    # Organizations/Inquiries/Tenders CRUD, stage logging,
 │                                     duplicate-prevention, cascade delete/restore, permissions

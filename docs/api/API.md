@@ -613,7 +613,20 @@ POST   /api/v1/purchase/requisitions/{id}/cancel      Any non-terminal status ->
                                                         same unlink behavior. Body: { reason? }
 POST   /api/v1/purchase/requisitions/{id}/close       received -> closed only; 409 otherwise.
                                                         Notifies the SR's ERP users + creator.
+PATCH  /api/v1/purchase/requisitions/{id}/items/{item_id}
+                                                        Update an item's remarks. Body: { remarks? }
+POST   /api/v1/purchase/requisitions/{id}/items/{item_id}/attachments
+                                                        Upload photo(s) against the item. multipart/form-data,
+                                                        field "files" (image/* only). 503 if SharePoint isn't
+                                                        configured. Writes to the same ServiceMaterialAttachment
+                                                        gallery the ERP Material's photo tab uses — no separate
+                                                        copy, so photos added here are visible from the SR side too.
+DELETE /api/v1/purchase/requisitions/{id}/items/{item_id}/attachments/{attachment_id}
+                                                        Remove a photo (SharePoint file + DB row).
 ```
+
+All three item-level routes return the full `PurchaseRequisitionResponse` (not just the
+item), matching the other PR mutation endpoints above.
 
 ### RnD Endpoints
 

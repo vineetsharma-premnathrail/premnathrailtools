@@ -4,13 +4,13 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
-import { Inquiry, Organization, OrgContact, InquiryTask, InquiryApprovalItem, QuotationItem, PurchaseOrderItem, CrmDiscussionItem, CrmActivity, CrmNote, CrmDocument, CrmStageLogEntry, CrmTeamMember } from '@/types'
-import { downloadBlob } from '@/components/rnd/toolStyles'
+import { Inquiry, Organization, OrgContact, InquiryTask, InquiryApprovalItem, QuotationItem, PurchaseOrderItem, CrmDiscussionItem, CrmActivity, CrmNote, CrmDocument, CrmStageLogEntry } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
 import InquiryForm from '@/components/crm/InquiryForm'
-import { INQ_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES, ACTIVITY_TYPES } from '@/components/crm/constants'
+import ActivityForm from '@/components/crm/ActivityForm'
+import { INQ_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES } from '@/components/crm/constants'
 import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
 
 const TABS = ['Info', 'Department Tasks', 'Quotations', 'Sales', 'Documents', 'Discussion', 'Activities', 'Notes', 'Timeline'] as const
@@ -650,32 +650,19 @@ function DiscussionTab({ inquiryId }: { inquiryId: number }) {
 function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization | null }) {
   const [activities, setActivities] = useState<CrmActivity[]>([])
   const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [showMomModal, setShowMomModal] = useState(false)
-  const emptyForm = { activity_type: ACTIVITY_TYPES[0], assigned_to: '', next_followup: '', status: 'Open', remarks: '', action_plan: '' }
-  const [form, setForm] = useState(emptyForm)
+  const [editingActivity, setEditingActivity] = useState<CrmActivity | null>(null)
 
   const load = () => crmApi.listActivities({ related_module: 'inquiry', related_id: inquiry.id }).then(setActivities)
   useEffect(() => { load() }, [inquiry.id])
 
   const startEdit = (a: CrmActivity) => {
-    setEditingId(a.id)
-    setForm({ activity_type: a.activity_type || ACTIVITY_TYPES[0], assigned_to: a.assigned_to || '', next_followup: a.next_followup || '', status: a.status, remarks: a.remarks || '', action_plan: a.action_plan || '' })
+    setEditingActivity(a)
     setShowForm(true)
   }
 
   const cancelForm = () => {
-    setEditingId(null)
-    setForm(emptyForm)
+    setEditingActivity(null)
     setShowForm(false)
-  }
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (editingId) await crmApi.updateActivity(editingId, form)
-    else await crmApi.createActivity({ ...form, org_id: inquiry.org_id, related_module: 'inquiry', related_id: inquiry.id, universal_id: inquiry.universal_id })
-    cancelForm()
-    load()
   }
 
   const markDone = async (id: number) => {
@@ -686,37 +673,20 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Log Activity'}</button>
-        {activities.length > 0 && (
-          <button onClick={() => setShowMomModal(true)} style={secondaryBtnStyle}>Export MOM</button>
-        )}
+        <button onClick={() => { if (showForm) cancelForm(); else { setEditingActivity(null); setShowForm(true) } }} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Log Activity'}</button>
       </div>
       {showForm && (
-        <form onSubmit={save} style={{ padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Activity Type">
-            <select value={form.activity_type} onChange={(e) => setForm((f) => ({ ...f, activity_type: e.target.value }))} style={inputStyle}>
-              {ACTIVITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </Field>
-          <Field label="Assigned To (Responsibility)"><input value={form.assigned_to} onChange={(e) => setForm((f) => ({ ...f, assigned_to: e.target.value }))} placeholder="Person name" style={inputStyle} /></Field>
-          <Field label="Due Date (Target)"><DateField value={form.next_followup} onChange={(v) => setForm((f) => ({ ...f, next_followup: v }))} /></Field>
-          <Field label="Status">
-            <select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} style={inputStyle}>
-              <option value="Open">Open</option>
-              <option value="Done">Done</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
-          </Field>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <Field label="Observation"><textarea value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} rows={2} placeholder="What was discussed or observed?" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <Field label="Action Plan"><textarea value={form.action_plan} onChange={(e) => setForm((f) => ({ ...f, action_plan: e.target.value }))} rows={2} placeholder="What needs to be done next?" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <button type="submit" style={primaryBtnStyle}>{editingId ? 'Save Changes' : 'Save Activity'}</button>
-          </div>
-        </form>
+        <ActivityForm
+          initial={editingActivity || { org_id: inquiry.org_id, related_module: 'inquiry', related_id: inquiry.id, universal_id: inquiry.universal_id }}
+          submitLabel={editingActivity ? 'Save Changes' : 'Log Activity'}
+          onCancel={cancelForm}
+          onSubmit={async (payload) => {
+            if (editingActivity) await crmApi.updateActivity(editingActivity.id, payload)
+            else await crmApi.createActivity(payload)
+            cancelForm()
+            load()
+          }}
+        />
       )}
       {activities.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No activities logged.</p>
@@ -727,8 +697,23 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
               <p style={{ fontSize: 13, fontWeight: 700, color: '#1f1108', margin: '0 0 2px' }}>
                 {a.activity_type || 'Activity'} {a.assigned_to && <span style={{ fontWeight: 500, color: '#78716c' }}>· {a.assigned_to}</span>}
               </p>
-              <p style={{ fontSize: 12, color: '#57534e', margin: 0 }}>{a.remarks || '—'} {a.next_followup && `· Due: ${a.next_followup}`}</p>
-              {a.action_plan && <p style={{ fontSize: 12, color: '#78716c', margin: '2px 0 0' }}>Action Plan: {a.action_plan}</p>}
+              {a.mom_items?.length ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                  {a.mom_items.map((item, i) => (
+                    <div key={i} style={{ fontSize: 12, color: '#57534e' }}>
+                      <span style={{ fontWeight: 700, color: '#a8a29e' }}>{i + 1}.</span> {item.observation || '—'}
+                      {item.action_plan && <span> · Action Plan: {item.action_plan}</span>}
+                      <span> · Responsibility: {item.responsibility || '—'}</span>
+                      <span> · Target: {item.target_date || '—'}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <p style={{ fontSize: 12, color: '#57534e', margin: 0 }}>{a.remarks || '—'} {a.next_followup && `· Due: ${a.next_followup}`}</p>
+                  {a.action_plan && <p style={{ fontSize: 12, color: '#78716c', margin: '2px 0 0' }}>Action Plan: {a.action_plan}</p>}
+                </>
+              )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 8, background: a.status === 'Done' ? 'rgba(34,197,94,0.12)' : a.status === 'Cancelled' ? 'rgba(0,0,0,0.06)' : 'rgba(234,179,8,0.12)', color: a.status === 'Done' ? '#16a34a' : a.status === 'Cancelled' ? '#78716c' : '#a16207' }}>{a.status}</span>
@@ -738,130 +723,6 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
           </div>
         ))
       )}
-      {showMomModal && (
-        <MomExportModal
-          inquiry={inquiry}
-          org={org}
-          activities={activities}
-          onClose={() => setShowMomModal(false)}
-        />
-      )}
-    </div>
-  )
-}
-
-function MomExportModal({ inquiry, org, activities, onClose }: {
-  inquiry: Inquiry
-  org: Organization | null
-  activities: CrmActivity[]
-  onClose: () => void
-}) {
-  const [subject, setSubject] = useState('')
-  const [meetingDate, setMeetingDate] = useState(new Date().toISOString().slice(0, 10))
-  const [teamMembers, setTeamMembers] = useState<CrmTeamMember[]>([])
-  const [contacts, setContacts] = useState<OrgContact[]>([])
-  const [pewIds, setPewIds] = useState<number[]>([])
-  const [contactIds, setContactIds] = useState<number[]>(inquiry.org_contact_id ? [inquiry.org_contact_id] : [])
-  const [activityIds, setActivityIds] = useState<number[]>(activities.map((a) => a.id))
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    crmApi.listTeamMembers().then(setTeamMembers)
-    crmApi.listOrgContacts(inquiry.org_id).then(setContacts)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inquiry.org_id])
-
-  const toggle = (list: number[], setList: (v: number[]) => void, id: number) => {
-    setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
-  }
-
-  const submit = async (format: 'docx' | 'pdf') => {
-    if (!subject.trim()) {
-      setError('Please enter a subject for the meeting.')
-      return
-    }
-    setBusy(true)
-    setError('')
-    try {
-      const payload = {
-        subject,
-        meeting_date: meetingDate,
-        pew_member_ids: pewIds,
-        client_contact_ids: contactIds,
-        activity_ids: activityIds,
-      }
-      const blob = format === 'pdf'
-        ? await crmApi.exportInquiryMomPdf(inquiry.id, payload)
-        : await crmApi.exportInquiryMom(inquiry.id, payload)
-      downloadBlob(blob, `MOM_${(org?.name || 'Inquiry').replace(/\s+/g, '_')}_${meetingDate}.${format}`)
-      onClose()
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to generate MOM document.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <p style={{ fontSize: 16, fontWeight: 800, color: '#1f1108', margin: 0 }}>Export Minutes of Meeting</p>
-        <p style={{ fontSize: 12.5, color: '#78716c', margin: 0 }}>Client and contact details are pulled automatically from this inquiry — only the meeting-specific details below need to be filled in.</p>
-
-        {error && (
-          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>
-        )}
-
-        <Row>
-          <Field label="Subject *"><input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Introduction to Premnath Rail" style={inputStyle} /></Field>
-          <Field label="Meeting Date"><DateField value={meetingDate} onChange={setMeetingDate} /></Field>
-        </Row>
-
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 8px' }}>PEW Member(s) Present</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxHeight: 120, overflowY: 'auto' }}>
-            {teamMembers.length === 0 && <span style={{ fontSize: 12.5, color: '#a8a29e' }}>No internal users found.</span>}
-            {teamMembers.map((m) => (
-              <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, padding: '6px 10px', borderRadius: 8, background: pewIds.includes(m.id) ? 'rgba(244,113,59,0.1)' : '#f9fafb', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={pewIds.includes(m.id)} onChange={() => toggle(pewIds, setPewIds, m.id)} />
-                {m.name}{m.designation ? ` (${m.designation})` : ''}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 8px' }}>Client Member(s) Present</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, maxHeight: 120, overflowY: 'auto' }}>
-            {contacts.length === 0 && <span style={{ fontSize: 12.5, color: '#a8a29e' }}>No contacts found for this organization.</span>}
-            {contacts.map((c) => (
-              <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, padding: '6px 10px', borderRadius: 8, background: contactIds.includes(c.id) ? 'rgba(244,113,59,0.1)' : '#f9fafb', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={contactIds.includes(c.id)} onChange={() => toggle(contactIds, setContactIds, c.id)} />
-                {c.name}{c.designation ? ` (${c.designation})` : ''}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 8px' }}>Activities to Include as Rows</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto' }}>
-            {activities.map((a) => (
-              <label key={a.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12.5, padding: '6px 10px', borderRadius: 8, background: activityIds.includes(a.id) ? 'rgba(244,113,59,0.1)' : '#f9fafb', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={activityIds.includes(a.id)} onChange={() => toggle(activityIds, setActivityIds, a.id)} style={{ marginTop: 2 }} />
-                <span>{a.remarks || a.activity_type || `Activity #${a.id}`}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-          <button onClick={onClose} style={{ ...secondaryBtnStyle, flex: 1 }}>Cancel</button>
-          <button onClick={() => submit('docx')} disabled={busy} style={{ ...secondaryBtnStyle, flex: 1, opacity: busy ? 0.7 : 1 }}>{busy ? 'Generating…' : 'Download .docx'}</button>
-          <button onClick={() => submit('pdf')} disabled={busy} style={{ ...primaryBtnStyle, flex: 1, opacity: busy ? 0.7 : 1 }}>{busy ? 'Generating…' : 'Download .pdf'}</button>
-        </div>
-      </div>
     </div>
   )
 }

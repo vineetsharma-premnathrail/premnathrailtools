@@ -13,6 +13,7 @@ from app.modules.erp.models.project import Project
 from app.modules.erp.models.service_request import ServiceRequest
 from app.modules.erp.models.service_request_attachment import ServiceRequestAttachment
 from app.modules.erp.models.service_material import ServiceMaterial
+from app.modules.erp.models.service_material_attachment import ServiceMaterialAttachment
 from app.modules.erp.schemas.service_request import (
     ServiceRequestCreate,
     ServiceRequestUpdate,
@@ -21,6 +22,7 @@ from app.modules.erp.schemas.service_request import (
     ServiceMaterialCreate,
     ServiceMaterialUpdate,
     ServiceMaterialResponse,
+    ServiceMaterialAttachmentResponse,
     MaterialReceivePayload,
 )
 from app.modules.purchase.models.purchase_requisition import PurchaseRequisition
@@ -589,11 +591,10 @@ async def add_material(
         service_request_id=sr_id,
         material_name=payload.material_name,
         part_number=payload.part_number,
+        description=payload.description,
         quantity=payload.quantity,
         unit=payload.unit,
-        supplier=payload.supplier,
         status=payload.status or "pending",
-        availability=payload.availability or "in_stock",
     )
     db.add(mat)
     _write_audit(db, sr_id, "material_added", user, summary=f"Material added: {mat.material_name} (qty: {mat.quantity} {mat.unit}).")
@@ -644,6 +645,106 @@ async def delete_material(
     _write_audit(db, sr_id, "material_deleted", user, summary=f"Material deleted: {mat_name}.")
     db.commit()
     return {"message": "Material deleted"}
+
+
+# ── Material photos (SharePoint) ────────────────────────────────────────────
+
+@router.post("/{sr_id}/materials/{mat_id}/attachments")
+async def upload_material_attachments(
+    sr_id: int,
+    mat_id: int,
+    request: Request,
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("erp")),
+):
+    mat = db.query(ServiceMaterial).filter(
+        ServiceMaterial.id == mat_id, ServiceMaterial.service_request_id == sr_id, ServiceMaterial.is_deleted == False  # noqa: E712
+    ).first()
+    if not mat:
+        raise HTTPException(status_code=404, detail="Material not found")
+    sr = db.query(ServiceRequest).options(selectinload(ServiceRequest.project)).filter(
+        ServiceRequest.id == sr_id
+    ).first()
+    if not sr:
+        raise HTTPException(status_code=404, detail="Service request not found")
+    if not _can_edit(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can add photos to this material.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    for f in files:
+        if not f.content_type or not f.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail=f"'{f.filename}' is not an image — only photos can be attached to a material.")
+
+    project = sr.project
+    project_name = (project.serial_number or project.model_name or str(sr.project_id)) if project else str(sr.project_id)
+    folder_path = build_sharepoint_folder_path(user.name or user.email or "", project_name, sr.request_number) + "/materials"
+
+    uploaded, failed = [], []
+    for f in files:
+        try:
+            result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, f)
+            attachment = ServiceMaterialAttachment(
+                service_material_id=mat.id,
+                filename=result["name"],
+                content_type=f.content_type,
+                size=result["size"],
+                sharepoint_path=result["path"],
+                sharepoint_url=result.get("webUrl"),
+                created_by_id=user.id,
+            )
+            db.add(attachment)
+            uploaded.append(attachment)
+        except HTTPException as exc:
+            failed.append({"filename": f.filename or "photo", "error": exc.detail})
+
+    if not uploaded and failed:
+        raise HTTPException(status_code=502, detail=failed[0]["error"])
+
+    if uploaded:
+        db.flush()
+        for a in uploaded:
+            db.refresh(a)
+        _write_audit(
+            db, sr_id, "material_photo_uploaded", user, request,
+            summary=f"{user.name or user.email} added {len(uploaded)} photo(s) to material '{mat.material_name}'.",
+        )
+
+    db.commit()
+    return {
+        "uploaded": [ServiceMaterialAttachmentResponse.model_validate(a).model_dump() for a in uploaded],
+        "failed": failed,
+    }
+
+
+@router.delete("/{sr_id}/materials/{mat_id}/attachments/{attachment_id}")
+async def delete_material_attachment(
+    sr_id: int,
+    mat_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("erp")),
+):
+    attachment = db.query(ServiceMaterialAttachment).filter(
+        ServiceMaterialAttachment.id == attachment_id, ServiceMaterialAttachment.service_material_id == mat_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id).first()
+    if sr and not _can_delete(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with delete permission) or an admin can delete photos from this material.")
+
+    if settings.SHAREPOINT_SITE_ID and attachment.sharepoint_path:
+        try:
+            await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path)
+        except Exception:
+            pass  # DB removal proceeds even if SharePoint delete fails
+
+    db.delete(attachment)
+    db.commit()
+    return {"message": "Photo deleted"}
 
 
 @router.post("/{sr_id}/raise-pr", response_model=PurchaseRequisitionResponse, status_code=201)

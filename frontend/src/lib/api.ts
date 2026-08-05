@@ -166,6 +166,10 @@ export const crmApi = {
     const { data } = await apiClient.get(`/crm/organizations/${orgId}/contacts`)
     return data
   },
+  listAllOrgContacts: async () => {
+    const { data } = await apiClient.get('/crm/organizations/contacts/all')
+    return data
+  },
   createOrgContact: async (orgId: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.post(`/crm/organizations/${orgId}/contacts`, payload)
     return data
@@ -501,6 +505,20 @@ export const erpApi = {
     return data
   },
 
+  uploadMaterialAttachments: async (srId: number, matId: number, files: File[]) => {
+    const formData = new FormData()
+    files.forEach((f) => formData.append('files', f))
+    const { data } = await apiClient.post(`/erp/service-requests/${srId}/materials/${matId}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
+  deleteMaterialAttachment: async (srId: number, matId: number, attachmentId: number) => {
+    const { data } = await apiClient.delete(`/erp/service-requests/${srId}/materials/${matId}/attachments/${attachmentId}`)
+    return data
+  },
+
   // Purchase Requisitions (raised from this SR's materials)
   raisePurchaseRequisition: async (srId: number) => {
     const { data } = await apiClient.post(`/erp/service-requests/${srId}/raise-pr`)
@@ -562,6 +580,25 @@ export const purchaseApi = {
 
   getAuditTrail: async (id: number) => {
     const { data } = await apiClient.get(`/purchase/requisitions/${id}/audit`)
+    return data
+  },
+
+  updateItem: async (prId: number, itemId: number, payload: { remarks?: string }) => {
+    const { data } = await apiClient.patch(`/purchase/requisitions/${prId}/items/${itemId}`, payload)
+    return data
+  },
+
+  uploadItemAttachments: async (prId: number, itemId: number, files: File[]) => {
+    const formData = new FormData()
+    files.forEach((f) => formData.append('files', f))
+    const { data } = await apiClient.post(`/purchase/requisitions/${prId}/items/${itemId}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
+  deleteItemAttachment: async (prId: number, itemId: number, attachmentId: number) => {
+    const { data } = await apiClient.delete(`/purchase/requisitions/${prId}/items/${itemId}/attachments/${attachmentId}`)
     return data
   },
 }

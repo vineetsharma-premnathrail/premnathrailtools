@@ -17,6 +17,7 @@ from app.modules.erp.models.project_attachment import ProjectAttachment
 from app.modules.erp.models.service_request import ServiceRequest
 from app.modules.erp.models.service_material import ServiceMaterial
 from app.modules.erp.models.service_request_attachment import ServiceRequestAttachment
+from app.modules.erp.models.service_material_attachment import ServiceMaterialAttachment
 from app.modules.purchase.models.purchase_requisition import PurchaseRequisition
 from app.modules.purchase.models.purchase_requisition_item import PurchaseRequisitionItem
 from app.modules.crm.models import (

@@ -1,5 +1,6 @@
 """In-app notification side effects for ERP events (sync SQLAlchemy Session)."""
 import logging
+from urllib.parse import quote
 import httpx
 from sqlalchemy.orm import Session
 from app.modules.main.models.user import User
@@ -8,6 +9,14 @@ from app.auth.microsoft import get_msal_app
 
 logger = logging.getLogger(__name__)
 
+# Must match teams-app/manifest.json webApplicationInfo.id and the "home"
+# staticTabs entityId — Graph validates the activityType against whatever
+# manifest is currently published to Teams, and the webUrl must be a Teams
+# deep link (plain https:// URLs are rejected with a 400).
+TEAMS_APP_ID = "8e1e753c-6c52-4e32-99fc-e70e1f02323e"
+TEAMS_ENTITY_ID = "home"
+PORTAL_URL = "https://erp.premnathrailtools.cloud/dashboard"
+
 
 def _send_teams_activity_notification(azure_user_id: str, title: str, message: str) -> None:
     """Push a real Teams activity-feed notification (bell + toast + mobile push) to a user."""
@@ -15,14 +24,16 @@ def _send_teams_activity_notification(azure_user_id: str, title: str, message: s
     token = result.get("access_token")
     if not token:
         raise ValueError(f"Unable to acquire Graph token: {result.get('error_description', result.get('error'))}")
+    web_url = f"https://teams.microsoft.com/l/entity/{TEAMS_APP_ID}/{TEAMS_ENTITY_ID}?webUrl={quote(PORTAL_URL, safe='')}"
     payload = {
         "topic": {
             "source": "text",
             "value": title,
-            "webUrl": "https://erp.premnathrailtools.cloud/dashboard",
+            "webUrl": web_url,
         },
         "activityType": "notificationAlert",
         "previewText": {"content": message[:150]},
+        "templateParameters": [{"name": "message", "value": message[:150]}],
         "recipient": {
             "@odata.type": "microsoft.graph.aadUserNotificationRecipient",
             "userId": azure_user_id,

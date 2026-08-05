@@ -50,6 +50,9 @@ export default function PurchaseRequisitionDetailPage() {
   const [actionError, setActionError] = useState('')
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState({ vendor: '', po_number: '', po_date: '', expected_delivery_date: '', notes: '' })
+  const [remarksDraft, setRemarksDraft] = useState<Record<number, string>>({})
+  const [uploadingItemId, setUploadingItemId] = useState<number | null>(null)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -64,6 +67,7 @@ export default function PurchaseRequisitionDetailPage() {
         expected_delivery_date: data.expected_delivery_date || '',
         notes: data.notes || '',
       })
+      setRemarksDraft(Object.fromEntries((data.items || []).map((it: any) => [it.id, it.remarks || ''])))
       purchaseApi.getAuditTrail(prId).then(setAudit).catch(() => {})
     } catch {
       setError('Purchase requisition not found.')
@@ -109,6 +113,28 @@ export default function PurchaseRequisitionDetailPage() {
   const cancel = () => {
     const reason = window.prompt('Reason for cancelling this PR (optional):') || undefined
     runAction(() => purchaseApi.cancel(prId, reason))
+  }
+
+  const saveRemarks = (itemId: number) =>
+    runAction(() => purchaseApi.updateItem(prId, itemId, { remarks: remarksDraft[itemId] || '' }))
+
+  const uploadPhotos = async (itemId: number, files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setUploadingItemId(itemId)
+    setActionError('')
+    try {
+      await purchaseApi.uploadItemAttachments(prId, itemId, Array.from(files))
+      await load()
+    } catch (err: any) {
+      setActionError(err?.response?.data?.detail || 'Photo upload failed.')
+    } finally {
+      setUploadingItemId(null)
+    }
+  }
+
+  const deletePhoto = (itemId: number, attachmentId: number) => {
+    if (!window.confirm('Delete this photo?')) return
+    runAction(() => purchaseApi.deleteItemAttachment(prId, itemId, attachmentId))
   }
 
   const changeStatus = (newStatus: string) => {
@@ -216,7 +242,7 @@ export default function PurchaseRequisitionDetailPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['Material', 'Part No.', 'Qty Requested', 'Qty Received', 'Status'].map((h) => (
+              {['Material', 'Part No.', 'Qty Requested', 'Qty Received', 'Status', 'Photos', 'Remarks'].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#a8a29e' }}>{h}</th>
               ))}
             </tr>
@@ -233,11 +259,63 @@ export default function PurchaseRequisitionDetailPage() {
                     {item.item_status}
                   </span>
                 </td>
+                <td style={{ padding: '10px 14px', minWidth: 160 }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {(item.attachments || []).map((att) => (
+                      <div key={att.id} style={{ position: 'relative' }}>
+                        <img
+                          src={att.sharepoint_url}
+                          alt={att.filename}
+                          onClick={() => setLightboxUrl(att.sharepoint_url || null)}
+                          style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', cursor: 'pointer', border: '1px solid rgba(0,0,0,0.08)' }}
+                        />
+                        <button
+                          onClick={() => deletePhoto(item.id, att.id)}
+                          title="Delete photo"
+                          style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', border: 'none', background: '#dc2626', color: '#fff', fontSize: 10, lineHeight: '16px', cursor: 'pointer', padding: 0 }}
+                        >×</button>
+                      </div>
+                    ))}
+                    <label style={{ ...secondaryBtnStyle, padding: '4px 8px', fontSize: 11, fontWeight: 600, opacity: uploadingItemId === item.id ? 0.6 : 1 }}>
+                      {uploadingItemId === item.id ? 'Uploading…' : '+ Add'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        disabled={uploadingItemId === item.id}
+                        onChange={(e) => { uploadPhotos(item.id, e.target.files); e.target.value = '' }}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                  </div>
+                </td>
+                <td style={{ padding: '10px 14px', minWidth: 200 }}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      value={remarksDraft[item.id] ?? ''}
+                      onChange={(e) => setRemarksDraft((d) => ({ ...d, [item.id]: e.target.value }))}
+                      placeholder="Add remarks…"
+                      style={{ ...inputStyle, padding: '6px 10px', fontSize: 12.5 }}
+                    />
+                    {(remarksDraft[item.id] ?? '') !== (item.remarks || '') && (
+                      <button disabled={busy} onClick={() => saveRemarks(item.id)} style={{ ...primaryBtnStyle, padding: '6px 10px', fontSize: 11 }}>Save</button>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {lightboxUrl && (
+        <div
+          onClick={() => setLightboxUrl(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'zoom-out' }}
+        >
+          <img src={lightboxUrl} alt="Material photo" style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 12, boxShadow: '0 20px 60px rgba(0,0,0,0.4)' }} />
+        </div>
+      )}
 
       <p style={{ fontSize: 12.5, color: '#a8a29e', margin: '0 0 8px' }}>
         Materials are marked received on the Service Request&apos;s Materials tab by the service team — this PR advances to &quot;Received&quot; automatically once every item is fully received, and can then be closed here.

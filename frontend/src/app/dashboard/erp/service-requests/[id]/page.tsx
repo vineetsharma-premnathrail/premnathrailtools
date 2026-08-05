@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
-import { AuditEntry, Project, ServiceRequest } from '@/types'
+import { AuditEntry, Project, ServiceRequest, ServiceMaterial } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadPreview from '@/components/FileUploadPreview'
@@ -376,12 +376,13 @@ const PR_STATUS_BADGE: Record<string, { bg: string; fg: string; label: string }>
 function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean }) {
   const [materials, setMaterials] = useState<ServiceRequest['materials']>([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ material_name: '', part_number: '', quantity: '1' })
+  const [form, setForm] = useState({ material_name: '', part_number: '', quantity: '1', remarks: '' })
   const [raisingPR, setRaisingPR] = useState(false)
   const [prMessage, setPrMessage] = useState('')
   const [prError, setPrError] = useState('')
   const [receiveInputs, setReceiveInputs] = useState<Record<number, string>>({})
   const [savingReceive, setSavingReceive] = useState<number | null>(null)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -400,9 +401,10 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
     await erpApi.addMaterial(srId, {
       material_name: form.material_name,
       part_number: form.part_number || undefined,
+      description: form.remarks || undefined,
       quantity: Number(form.quantity) || 1,
     })
-    setForm({ material_name: '', part_number: '', quantity: '1' })
+    setForm({ material_name: '', part_number: '', quantity: '1', remarks: '' })
     load()
   }
 
@@ -464,6 +466,7 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
           <input placeholder="Material name" value={form.material_name} onChange={(e) => setForm((f) => ({ ...f, material_name: e.target.value }))} style={{ ...inputStyle, flex: '1 1 180px' }} />
           <input placeholder="Part number" value={form.part_number} onChange={(e) => setForm((f) => ({ ...f, part_number: e.target.value }))} style={{ ...inputStyle, flex: '1 1 120px' }} />
           <input type="number" min="0" step="0.01" placeholder="Qty" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} style={{ ...inputStyle, width: 90 }} />
+          <input placeholder="Remarks" value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} style={{ ...inputStyle, flex: '1 1 160px' }} />
           <button type="submit" style={primaryBtnStyle}>Add</button>
         </form>
       )}
@@ -472,23 +475,38 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['Material', 'Part No.', 'Qty', 'Status', 'PR', 'Received', ''].map((h) => (
+              {['Material', 'Photos', 'Part No.', 'Qty', 'Status', 'PR', 'Received', ''].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && materials.length === 0 && <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No materials added.</td></tr>}
+            {loading && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && materials.length === 0 && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No materials added.</td></tr>}
             {materials.map((m) => {
               const statusBadge = MATERIAL_STATUS_BADGE[m.status || 'pending'] || MATERIAL_STATUS_BADGE.pending
               const prBadge = m.pr_status ? (PR_STATUS_BADGE[m.pr_status] || PR_STATUS_BADGE.submitted) : null
               const canReceive = canModify && !!m.pr_id && m.receiving_status !== 'received'
+              const isExpanded = expandedId === m.id
               return (
-              <tr key={m.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                <td style={{ padding: '10px 14px', fontSize: 13 }}>{m.material_name}</td>
+              <Fragment key={m.id}>
+              <tr style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                <td style={{ padding: '10px 14px', fontSize: 13 }}>
+                  {m.material_name}
+                  {m.description && (
+                    <div style={{ fontSize: 11, color: '#a8a29e', marginTop: 2 }}>{m.description}</div>
+                  )}
+                </td>
+                <td style={{ padding: '10px 14px' }}>
+                  <button
+                    onClick={() => setExpandedId(isExpanded ? null : m.id)}
+                    style={{ border: 'none', background: 'rgba(0,0,0,0.04)', borderRadius: 6, padding: '4px 9px', fontSize: 11.5, fontWeight: 700, color: '#78716c', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
+                  >
+                    Photos ({m.attachments?.length || 0}) {isExpanded ? '▴' : '▾'}
+                  </button>
+                </td>
                 <td style={{ padding: '10px 14px', fontSize: 13, color: '#78716c' }}>{m.part_number || '—'}</td>
-                <td style={{ padding: '10px 14px', fontSize: 13 }}>{m.quantity} {m.unit}</td>
+                <td style={{ padding: '10px 14px', fontSize: 13 }}>{m.quantity}</td>
                 <td style={{ padding: '10px 14px' }}>
                   <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: statusBadge.bg, color: statusBadge.fg }}>
                     {statusBadge.label}
@@ -538,11 +556,139 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
                   )}
                 </td>
               </tr>
+              {isExpanded && (
+                <tr>
+                  <td colSpan={8} style={{ padding: '0 14px 14px' }}>
+                    <MaterialPhotoGallery srId={srId} material={m} canModify={canModify} onChanged={load} />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
               )
             })}
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: number; material: ServiceMaterial; canModify: boolean; onChanged: () => void }) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const [error, setError] = useState('')
+  const [staged, setStaged] = useState<File[]>([])
+
+  const stageFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setStaged((prev) => [...prev, ...Array.from(files)])
+  }
+
+  const confirmUpload = async () => {
+    if (staged.length === 0) return
+    setUploading(true)
+    setError('')
+    try {
+      await erpApi.uploadMaterialAttachments(srId, material.id, staged)
+      setStaged([])
+      onChanged()
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Upload failed.')
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+      if (cameraRef.current) cameraRef.current.value = ''
+    }
+  }
+
+  const handleDelete = async (attachmentId: number) => {
+    await erpApi.deleteMaterialAttachment(srId, material.id, attachmentId)
+    onChanged()
+  }
+
+  return (
+    <div style={{ borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.08)', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {canModify && (
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div
+            onClick={() => !uploading && cameraRef.current?.click()}
+            style={{
+              flex: '1 1 160px',
+              padding: '14px 12px',
+              borderRadius: 10,
+              border: '2px dashed rgba(0,0,0,0.15)',
+              background: '#faf9f7',
+              textAlign: 'center',
+              cursor: uploading ? 'wait' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+            }}
+          >
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => stageFiles(e.target.files)} disabled={uploading} />
+            <span style={{ fontSize: 16 }}>📷</span>
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: 0 }}>Take photo</p>
+          </div>
+
+          <div
+            onClick={() => !uploading && fileRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); stageFiles(e.dataTransfer.files) }}
+            style={{
+              flex: '2 1 220px',
+              padding: '14px 12px',
+              borderRadius: 10,
+              border: `2px dashed ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.15)'}`,
+              background: dragOver ? 'rgba(244,113,59,0.05)' : '#faf9f7',
+              textAlign: 'center',
+              cursor: uploading ? 'wait' : 'pointer',
+            }}
+          >
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => stageFiles(e.target.files)} disabled={uploading} />
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: 0 }}>
+              {uploading ? 'Uploading…' : 'Drag & drop photos, or click to browse (JPG/PNG)'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <FileUploadPreview
+        files={staged}
+        uploading={uploading}
+        onRemove={(i) => setStaged((prev) => prev.filter((_, idx) => idx !== i))}
+        onConfirm={confirmUpload}
+        onCancel={() => { setStaged([]); if (fileRef.current) fileRef.current.value = '' }}
+      />
+
+      {error && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: 0 }}>{error}</p>}
+
+      {(!material.attachments || material.attachments.length === 0) ? (
+        <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>No photos added yet.</p>
+      ) : (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          {material.attachments.map((a) => (
+            <div key={a.id} style={{ position: 'relative', width: 64, height: 64, flex: 'none' }}>
+              <a href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={a.sharepoint_url} alt={a.filename} style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />
+              </a>
+              {canModify && (
+                <button
+                  onClick={() => handleDelete(a.id)}
+                  aria-label={`Delete ${a.filename}`}
+                  style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', border: 'none', background: '#dc2626', color: '#fff', fontSize: 12, lineHeight: '20px', cursor: 'pointer', padding: 0 }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

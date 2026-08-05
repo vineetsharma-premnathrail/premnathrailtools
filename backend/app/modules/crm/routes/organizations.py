@@ -252,6 +252,16 @@ async def get_organization_audit(
 
 # ── Contacts ─────────────────────────────────────────────────────────────
 
+@router.get("/contacts/all", response_model=list[OrgContactResponse])
+async def list_all_org_contacts(
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """Bulk fetch for list views (e.g. Activities) that need to resolve many
+    org_contact_id references at once without firing one request per org."""
+    return db.query(OrgContact).order_by(OrgContact.id.desc()).all()
+
+
 @router.get("/{org_id}/contacts", response_model=list[OrgContactResponse])
 async def list_org_contacts(
     org_id: int,

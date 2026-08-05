@@ -3,24 +3,36 @@ from pydantic import BaseModel, Field, field_validator
 from app.core.validators import validate_email_format
 
 
+class ServiceMaterialAttachmentResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    service_material_id: int
+    filename: str
+    content_type: str | None = None
+    size: int | None = None
+    sharepoint_path: str | None = None
+    sharepoint_url: str | None = None
+    created_by_id: int | None = None
+    created_at: datetime | None = None
+
+
 class ServiceMaterialCreate(BaseModel):
     material_name: str
     part_number: str | None = None
+    description: str | None = None
     quantity: float = 1
     unit: str = "pcs"
-    supplier: str | None = None
     status: str | None = "pending"
-    availability: str | None = "in_stock"
 
 
 class ServiceMaterialUpdate(BaseModel):
     material_name: str | None = None
     part_number: str | None = None
+    description: str | None = None
     quantity: float | None = None
     unit: str | None = None
-    supplier: str | None = None
     status: str | None = None
-    availability: str | None = None
 
 
 class ServiceMaterialResponse(BaseModel):
@@ -30,11 +42,10 @@ class ServiceMaterialResponse(BaseModel):
     service_request_id: int
     material_name: str
     part_number: str | None = None
+    description: str | None = None
     quantity: float
     unit: str
-    supplier: str | None = None
     status: str | None = None
-    availability: str | None = None
     created_at: datetime | None = None
 
     pr_id: int | None = None
@@ -42,6 +53,7 @@ class ServiceMaterialResponse(BaseModel):
     pr_status: str | None = None
     received_quantity: float = 0
     receiving_status: str = "pending"
+    attachments: list[ServiceMaterialAttachmentResponse] = Field(default_factory=list)
 
 
 class MaterialReceivePayload(BaseModel):

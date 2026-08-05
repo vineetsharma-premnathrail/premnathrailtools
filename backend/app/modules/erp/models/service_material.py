@@ -7,6 +7,7 @@ from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 if TYPE_CHECKING:
     from app.modules.erp.models.service_request import ServiceRequest
+    from app.modules.erp.models.service_material_attachment import ServiceMaterialAttachment
 
 
 class ServiceMaterial(Base, TimestampMixin, SoftDeleteMixin):
@@ -21,11 +22,9 @@ class ServiceMaterial(Base, TimestampMixin, SoftDeleteMixin):
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     quantity: Mapped[float] = mapped_column(Float, default=1)
     unit: Mapped[str] = mapped_column(String(20), default="pcs")
-    supplier: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_warranty_covered: Mapped[bool] = mapped_column(Boolean, default=False)
     phase: Mapped[str] = mapped_column(String(20), default="expected")
     status: Mapped[str | None] = mapped_column(String(50), default="pending", nullable=True)
-    availability: Mapped[str | None] = mapped_column(String(50), default="in_stock", nullable=True)
 
     # Purchase Requisition linkage. `pr_id` is the only hard foreign key into
     # the `purchase` module; `pr_number`/`pr_status` are a denormalized mirror
@@ -43,3 +42,6 @@ class ServiceMaterial(Base, TimestampMixin, SoftDeleteMixin):
     receiving_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | partial | received
 
     service_request: Mapped["ServiceRequest"] = relationship("ServiceRequest", back_populates="materials")
+    attachments: Mapped[list["ServiceMaterialAttachment"]] = relationship(
+        "ServiceMaterialAttachment", back_populates="material", cascade="all, delete-orphan"
+    )

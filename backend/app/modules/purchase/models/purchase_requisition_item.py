@@ -28,5 +28,6 @@ class PurchaseRequisitionItem(Base, TimestampMixin):
     quantity_requested: Mapped[float] = mapped_column(Float, default=1)
     quantity_received: Mapped[float] = mapped_column(Float, default=0)
     item_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | partial | received
+    remarks: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     purchase_requisition: Mapped["PurchaseRequisition"] = relationship("PurchaseRequisition", back_populates="items")

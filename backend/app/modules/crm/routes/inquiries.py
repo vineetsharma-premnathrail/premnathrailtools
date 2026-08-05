@@ -320,24 +320,36 @@ def _build_mom_ctx(inquiry_id: int, payload: MomExportRequest, db: Session) -> t
         if payload.client_contact_ids else []
     )
 
-    # Responsibility on the MOM is always the inquiry's BD Owner (PEW side) —
-    # never a client contact's name, even if an activity's free-text
-    # "assigned_to" happens to have been filled with one.
+    # Responsibility on the MOM defaults to the inquiry's BD Owner (PEW side)
+    # when an activity has no explicit per-row responsibility set. An activity
+    # with `mom_items` expands into one MOM row per item (letting a single
+    # activity carry a whole multi-row MOM on its own); activities without
+    # mom_items fall back to the legacy single-row behavior.
+    rows = []
+    for a in activities:
+        if a.mom_items:
+            for item in a.mom_items:
+                rows.append({
+                    "observation": item.get("observation"),
+                    "action_plan": item.get("action_plan"),
+                    "responsibility": item.get("responsibility") or inquiry.bd_owner,
+                    "target": item.get("target_date"),
+                })
+        else:
+            rows.append({
+                "observation": a.remarks,
+                "action_plan": a.action_plan,
+                "responsibility": inquiry.bd_owner,
+                "target": a.next_followup.strftime("%d.%m.%Y") if a.next_followup else None,
+            })
+
     ctx = {
         "org_name": org.name if org else None,
         "subject": payload.subject,
         "meeting_date": payload.meeting_date.strftime("%d.%m.%Y"),
         "pew_members": [{"name": u.name, "designation": u.designation} for u in pew_members],
         "client_members": [{"name": c.name, "designation": c.designation} for c in client_contacts],
-        "activities": [
-            {
-                "observation": a.remarks,
-                "action_plan": a.action_plan,
-                "responsibility": inquiry.bd_owner,
-                "target": a.next_followup.strftime("%d.%m.%Y") if a.next_followup else None,
-            }
-            for a in activities
-        ],
+        "activities": rows,
     }
     return ctx, org
 

@@ -10,6 +10,7 @@ Requisitions (PR)**, raised from a Service Request's Materials tab:
 
 What exists:
 - `PurchaseRequisition` + `PurchaseRequisitionItem` — snapshot of requested materials, qty only, no cost.
+- Each item now carries a `remarks` text field and a photo gallery (shared with the underlying `ServiceMaterial`'s attachments — see [ARCHITECTURE.md](../architecture/ARCHITECTURE.md#purchase-module)), editable from the PR detail page.
 - `vendor` and `po_number`/`po_date` are free-text fields typed in after the fact — no vendor master, no generated PO document.
 - Receiving is recorded on the ERP side (`ServiceMaterial.receiving_status`) and mirrored back onto the PR — no formal Goods Receipt Note.
 - No costing, no budget tracking, no invoice/payment tracking, no reporting dashboard.

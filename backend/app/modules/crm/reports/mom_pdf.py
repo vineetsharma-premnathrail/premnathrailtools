@@ -78,26 +78,39 @@ def build_mom_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     story: list[Any] = []
 
     # Letterhead: logo + company name, format-no block.
+    # Logo + name are built as one nested (borderless) table so the wide logo
+    # image can never overlap/cross the outer grid's column line — the outer
+    # table only ever sees a single merged cell here, not a logo/text split.
+    brand_col_width = (COL_WIDTHS_IN[0] + COL_WIDTHS_IN[1] + COL_WIDTHS_IN[2]) * inch
     if os.path.exists(LOGO_PATH):
         try:
-            logo_cell = Image(LOGO_PATH, width=1.1 * inch, height=0.42 * inch)
+            logo_img = Image(LOGO_PATH, width=0.9 * inch, height=0.34 * inch)
         except Exception:
-            logo_cell = ""
+            logo_img = ""
     else:
-        logo_cell = ""
+        logo_img = ""
+
+    brand_cell = Table(
+        [[logo_img, center("Premnath Engineering Works", size=14, b=True)]],
+        colWidths=[1.0 * inch, brand_col_width - 1.0 * inch],
+    )
+    brand_cell.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (0, 0), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
 
     letterhead_data = [
-        [logo_cell, center("Premnath Engineering Works", size=14, b=True), "", bold("Format No :"), bold("F/HRD/4")],
+        [brand_cell, "", "", bold("Format No :"), bold("F/HRD/4")],
         ["", "", "", bold("Effective Date :"), bold("01.02.2025")],
         ["", "", "", bold("Rev. No :"), bold("00")],
         ["", "", "", bold("Rev Date :"), bold("00")],
     ]
     letterhead = Table(letterhead_data, colWidths=[w * inch for w in COL_WIDTHS_IN], rowHeights=0.3 * inch)
     letterhead.setStyle(TableStyle([
-        ("SPAN", (0, 0), (0, 3)),
-        ("SPAN", (1, 0), (2, 3)),
+        ("SPAN", (0, 0), (2, 3)),
         ("VALIGN", (0, 0), (2, 3), "MIDDLE"),
-        ("ALIGN", (0, 0), (0, 3), "CENTER"),
+        ("ALIGN", (0, 0), (2, 3), "CENTER"),
         ("GRID", (0, 0), (-1, -1), 1, black),
         ("LEFTPADDING", (0, 0), (-1, -1), 4),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),

@@ -1,5 +1,16 @@
 from datetime import date, datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class PurchaseRequisitionItemAttachmentResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    filename: str
+    content_type: str | None = None
+    size: int | None = None
+    sharepoint_url: str | None = None
+    created_at: datetime | None = None
 
 
 class PurchaseRequisitionItemResponse(BaseModel):
@@ -13,6 +24,12 @@ class PurchaseRequisitionItemResponse(BaseModel):
     quantity_requested: float
     quantity_received: float
     item_status: str
+    remarks: str | None = None
+    attachments: list[PurchaseRequisitionItemAttachmentResponse] = Field(default_factory=list)
+
+
+class PurchaseRequisitionItemUpdate(BaseModel):
+    remarks: str | None = None
 
 
 class PurchaseRequisitionUpdate(BaseModel):

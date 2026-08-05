@@ -60,7 +60,9 @@ async def create_activity(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("crm")),
 ):
-    activity = Activity(**payload.model_dump(), created_by_id=user.id)
+    data = payload.model_dump()
+    data["mom_items"] = payload.model_dump(mode="json").get("mom_items")
+    activity = Activity(**data, created_by_id=user.id)
     db.add(activity)
     db.commit()
     db.refresh(activity)
@@ -79,8 +81,9 @@ async def update_activity(
         raise HTTPException(status_code=404, detail="Activity not found")
     if not _can_modify(activity, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this activity.")
+    json_data = payload.model_dump(exclude_unset=True, mode="json")
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(activity, field, value)
+        setattr(activity, field, json_data[field] if field == "mom_items" else value)
     db.commit()
     db.refresh(activity)
     return activity

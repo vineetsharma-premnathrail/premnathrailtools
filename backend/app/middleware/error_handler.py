@@ -44,6 +44,7 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 
     Returns detailed error info (safe - validation is client fault, not security issue).
     """
+    logger.warning(f"Validation error on {request.method} {request.url.path}: {exc.errors()}")
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={

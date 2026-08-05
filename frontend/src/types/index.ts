@@ -106,17 +106,29 @@ export interface ServiceMaterial {
   service_request_id: number
   material_name: string
   part_number?: string
+  description?: string
   quantity: number
   unit: string
-  supplier?: string
   status?: string
-  availability?: string
   created_at?: string
   pr_id?: number
   pr_number?: string
   pr_status?: string
   received_quantity: number
   receiving_status: 'pending' | 'partial' | 'received'
+  attachments: ServiceMaterialAttachment[]
+}
+
+export interface ServiceMaterialAttachment {
+  id: number
+  service_material_id: number
+  filename: string
+  content_type?: string
+  size?: number
+  sharepoint_path?: string
+  sharepoint_url?: string
+  created_by_id?: number
+  created_at?: string
 }
 
 export interface ServiceRequestAttachment {
@@ -232,6 +244,15 @@ export type PRStatus =
   | 'rejected'
   | 'cancelled'
 
+export interface PurchaseRequisitionItemAttachment {
+  id: number
+  filename: string
+  content_type?: string
+  size?: number
+  sharepoint_url?: string
+  created_at?: string
+}
+
 export interface PurchaseRequisitionLineItem {
   id: number
   service_material_id: number
@@ -241,6 +262,8 @@ export interface PurchaseRequisitionLineItem {
   quantity_requested: number
   quantity_received: number
   item_status: 'pending' | 'partial' | 'received'
+  remarks?: string
+  attachments: PurchaseRequisitionItemAttachment[]
 }
 
 export interface PurchaseRequisition {
@@ -389,6 +412,13 @@ export interface Tender {
   is_deleted: boolean
 }
 
+export interface MomItem {
+  observation?: string
+  action_plan?: string
+  responsibility?: string
+  target_date?: string
+}
+
 export interface CrmActivity {
   id: number
   activity_type?: string
@@ -397,11 +427,14 @@ export interface CrmActivity {
   related_module?: string
   related_id?: number
   universal_id?: string
+  activity_date?: string
   next_followup?: string
   assigned_to?: string
   status: string
   remarks?: string
   action_plan?: string
+  mom_items?: MomItem[]
+  contact_ids?: number[]
   created_by_id?: number
   created_at?: string
 }
