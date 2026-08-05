@@ -10,6 +10,15 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    date: '2026-08-05',
+    title: 'Purchase: material remarks & photos',
+    items: [
+      'Purchase Requisition materials now have a remarks field for notes like vendor lead times.',
+      'Add, view, and delete material photos directly from the Purchase Requisition page — shared with the same gallery on the Service Request\'s Materials tab.',
+      'CRM Activities: added a date field, structured Minutes of Meeting items, and contact linking.',
+    ],
+  },
+  {
     date: '2026-08-03',
     title: 'Feedback',
     items: [
