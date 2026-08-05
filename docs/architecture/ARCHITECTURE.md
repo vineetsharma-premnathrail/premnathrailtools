@@ -250,13 +250,16 @@ approve/reject/cancel, partial/full receiving, closing, item remarks/photos) —
 [TESTING.md](../testing/TESTING.md).
 
 **Item remarks & photos:** each `PurchaseRequisitionItem` has a free-text `remarks`
-column (`PATCH .../items/{item_id}`) and a photo gallery. The gallery is **not** a
-separate table — `POST/DELETE .../items/{item_id}/attachments` read/write the same
-`ServiceMaterialAttachment` rows keyed off the item's `service_material_id`, so a photo
-added from the Purchase side shows up in the ERP Material's gallery too (and vice versa)
-with no sync step. `_to_response()` in `purchase_requisitions.py` loads each item's
-material with `selectinload(ServiceMaterial.attachments)` and maps them onto
-`PurchaseRequisitionItemResponse.attachments`.
+column (`PATCH .../items/{item_id}`) and a **read-only** photo gallery — Purchase can
+view a material's photos but cannot add or delete them; that's deliberately kept as an
+ERP-side-only action on the Service Request's Materials tab
+(`POST/DELETE /erp/service-requests/{sr_id}/materials/{mat_id}/attachments`), since the
+service team is the one physically handling the part. The gallery isn't a separate
+table — `_to_response()` in `purchase_requisitions.py` loads each item's linked
+`ServiceMaterial` with `selectinload(ServiceMaterial.attachments)` and maps the existing
+`ServiceMaterialAttachment` rows onto `PurchaseRequisitionItemResponse.attachments`, so a
+photo uploaded from the SR side shows up on the PR item automatically with no sync step
+and no purchase-side upload/delete route.
 
 ## Authentication & Authorization
 

@@ -615,18 +615,13 @@ POST   /api/v1/purchase/requisitions/{id}/close       received -> closed only; 4
                                                         Notifies the SR's ERP users + creator.
 PATCH  /api/v1/purchase/requisitions/{id}/items/{item_id}
                                                         Update an item's remarks. Body: { remarks? }
-POST   /api/v1/purchase/requisitions/{id}/items/{item_id}/attachments
-                                                        Upload photo(s) against the item. multipart/form-data,
-                                                        field "files" (image/* only). 503 if SharePoint isn't
-                                                        configured. Writes to the same ServiceMaterialAttachment
-                                                        gallery the ERP Material's photo tab uses — no separate
-                                                        copy, so photos added here are visible from the SR side too.
-DELETE /api/v1/purchase/requisitions/{id}/items/{item_id}/attachments/{attachment_id}
-                                                        Remove a photo (SharePoint file + DB row).
 ```
 
-All three item-level routes return the full `PurchaseRequisitionResponse` (not just the
-item), matching the other PR mutation endpoints above.
+This route returns the full `PurchaseRequisitionResponse` (not just the item), matching
+the other PR mutation endpoints above. Each item's `attachments` (read-only) ride along
+on every PR response too — see "Item remarks & photos" in
+[ARCHITECTURE.md](../architecture/ARCHITECTURE.md#purchase-module) for why there's no
+upload/delete route here.
 
 ### RnD Endpoints
 

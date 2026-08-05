@@ -587,20 +587,6 @@ export const purchaseApi = {
     const { data } = await apiClient.patch(`/purchase/requisitions/${prId}/items/${itemId}`, payload)
     return data
   },
-
-  uploadItemAttachments: async (prId: number, itemId: number, files: File[]) => {
-    const formData = new FormData()
-    files.forEach((f) => formData.append('files', f))
-    const { data } = await apiClient.post(`/purchase/requisitions/${prId}/items/${itemId}/attachments`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return data
-  },
-
-  deleteItemAttachment: async (prId: number, itemId: number, attachmentId: number) => {
-    const { data } = await apiClient.delete(`/purchase/requisitions/${prId}/items/${itemId}/attachments/${attachmentId}`)
-    return data
-  },
 }
 
 const RND_TOOL_PATHS: Record<string, string> = {

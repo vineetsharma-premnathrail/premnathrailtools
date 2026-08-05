@@ -14,7 +14,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     title: 'Purchase: material remarks & photos',
     items: [
       'Purchase Requisition materials now have a remarks field for notes like vendor lead times.',
-      'Add, view, and delete material photos directly from the Purchase Requisition page — shared with the same gallery on the Service Request\'s Materials tab.',
+      'View material photos directly from the Purchase Requisition page — the same gallery uploaded from the Service Request\'s Materials tab.',
       'CRM Activities: added a date field, structured Minutes of Meeting items, and contact linking.',
     ],
   },

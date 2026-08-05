@@ -420,11 +420,15 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
     try {
       const pr = await erpApi.raisePurchaseRequisition(srId)
       setPrMessage(`Purchase requisition ${pr.pr_number} raised — the Purchase department has been notified.`)
-      load()
     } catch (err: any) {
-      setPrError(err?.response?.data?.detail || 'Failed to raise purchase requisition.')
+      // The request can fail on the client (network drop, dev-server reload,
+      // timeout) even after the server already committed the PR — re-fetch
+      // regardless of outcome so the page never shows a stale "still
+      // unlinked" materials list when the PR was actually raised.
+      setPrError(err?.response?.data?.detail || 'Failed to raise purchase requisition — refreshing to confirm current status…')
     } finally {
       setRaisingPR(false)
+      load()
     }
   }
 

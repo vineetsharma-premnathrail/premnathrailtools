@@ -51,7 +51,6 @@ export default function PurchaseRequisitionDetailPage() {
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState({ vendor: '', po_number: '', po_date: '', expected_delivery_date: '', notes: '' })
   const [remarksDraft, setRemarksDraft] = useState<Record<number, string>>({})
-  const [uploadingItemId, setUploadingItemId] = useState<number | null>(null)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   const load = async () => {
@@ -117,25 +116,6 @@ export default function PurchaseRequisitionDetailPage() {
 
   const saveRemarks = (itemId: number) =>
     runAction(() => purchaseApi.updateItem(prId, itemId, { remarks: remarksDraft[itemId] || '' }))
-
-  const uploadPhotos = async (itemId: number, files: FileList | null) => {
-    if (!files || files.length === 0) return
-    setUploadingItemId(itemId)
-    setActionError('')
-    try {
-      await purchaseApi.uploadItemAttachments(prId, itemId, Array.from(files))
-      await load()
-    } catch (err: any) {
-      setActionError(err?.response?.data?.detail || 'Photo upload failed.')
-    } finally {
-      setUploadingItemId(null)
-    }
-  }
-
-  const deletePhoto = (itemId: number, attachmentId: number) => {
-    if (!window.confirm('Delete this photo?')) return
-    runAction(() => purchaseApi.deleteItemAttachment(prId, itemId, attachmentId))
-  }
 
   const changeStatus = (newStatus: string) => {
     if (!pr || newStatus === pr.status) return
@@ -259,34 +239,19 @@ export default function PurchaseRequisitionDetailPage() {
                     {item.item_status}
                   </span>
                 </td>
-                <td style={{ padding: '10px 14px', minWidth: 160 }}>
+                <td style={{ padding: '10px 14px', minWidth: 120 }}>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {(item.attachments || []).length === 0 && <span style={{ fontSize: 12, color: '#a8a29e' }}>—</span>}
                     {(item.attachments || []).map((att) => (
-                      <div key={att.id} style={{ position: 'relative' }}>
-                        <img
-                          src={att.sharepoint_url}
-                          alt={att.filename}
-                          onClick={() => setLightboxUrl(att.sharepoint_url || null)}
-                          style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', cursor: 'pointer', border: '1px solid rgba(0,0,0,0.08)' }}
-                        />
-                        <button
-                          onClick={() => deletePhoto(item.id, att.id)}
-                          title="Delete photo"
-                          style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', border: 'none', background: '#dc2626', color: '#fff', fontSize: 10, lineHeight: '16px', cursor: 'pointer', padding: 0 }}
-                        >×</button>
-                      </div>
-                    ))}
-                    <label style={{ ...secondaryBtnStyle, padding: '4px 8px', fontSize: 11, fontWeight: 600, opacity: uploadingItemId === item.id ? 0.6 : 1 }}>
-                      {uploadingItemId === item.id ? 'Uploading…' : '+ Add'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        disabled={uploadingItemId === item.id}
-                        onChange={(e) => { uploadPhotos(item.id, e.target.files); e.target.value = '' }}
-                        style={{ display: 'none' }}
+                      <img
+                        key={att.id}
+                        src={att.sharepoint_url}
+                        alt={att.filename}
+                        onClick={() => setLightboxUrl(att.sharepoint_url || null)}
+                        title="View photo"
+                        style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', cursor: 'pointer', border: '1px solid rgba(0,0,0,0.08)' }}
                       />
-                    </label>
+                    ))}
                   </div>
                 </td>
                 <td style={{ padding: '10px 14px', minWidth: 200 }}>
