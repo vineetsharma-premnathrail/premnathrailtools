@@ -90,6 +90,7 @@ export default function ActivityForm({
   const [targetDateText, setTargetDateText] = useState(() => momItemsToNumberedText(initial?.mom_items, 'target_date'))
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [contacts, setContacts] = useState<OrgContact[]>([])
+  const [relatedOptions, setRelatedOptions] = useState<{ value: string; label: string }[]>([])
   const [newContact, setNewContact] = useState({ name: '', designation: '', department: '', mobile: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -106,6 +107,30 @@ export default function ActivityForm({
     crmApi.listOrgContacts(Number(form.org_id)).then(setContacts)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.org_id])
+
+  // Once an org + a linkable related module (Inquiry/Tender) is picked, offer
+  // that org's records so Universal ID is chosen from a list instead of typed
+  // by hand — free typing was error-prone since it has to exactly match the
+  // record's universal_id to actually link.
+  useEffect(() => {
+    if (!form.org_id || (form.related_module !== 'inquiry' && form.related_module !== 'tender')) {
+      setRelatedOptions([])
+      return
+    }
+    const orgId = Number(form.org_id)
+    const load = form.related_module === 'inquiry'
+      ? crmApi.listInquiries({ org_id: orgId })
+      : crmApi.listTenders({ org_id: orgId })
+    load.then((records: any[]) => {
+      setRelatedOptions(
+        records.map((r) => ({
+          value: r.universal_id,
+          label: `${r.universal_id} — ${form.related_module === 'inquiry' ? (r.product || r.requirement_desc || 'Untitled') : (r.tender_name || r.tender_number || 'Untitled')}`,
+        }))
+      )
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.org_id, form.related_module])
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
 
@@ -235,7 +260,11 @@ export default function ActivityForm({
         </Field>
         <Row>
           <Field label="Related Module">
-            <select value={form.related_module} onChange={(e) => set('related_module', e.target.value)} style={inputStyle}>
+            <select
+              value={form.related_module}
+              onChange={(e) => setForm((f) => ({ ...f, related_module: e.target.value, universal_id: '' }))}
+              style={inputStyle}
+            >
               {RELATED_MODULES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </Field>
@@ -256,7 +285,18 @@ export default function ActivityForm({
         )}
 
         <Row>
-          <Field label="Universal ID"><input value={form.universal_id} onChange={(e) => set('universal_id', e.target.value)} placeholder="e.g. INQ-2024-001" style={inputStyle} /></Field>
+          <Field label={form.related_module === 'inquiry' ? 'Inquiry' : form.related_module === 'tender' ? 'Tender' : 'Universal ID'}>
+            {form.related_module === 'inquiry' || form.related_module === 'tender' ? (
+              <SearchableSelect
+                value={form.universal_id}
+                onChange={(v) => set('universal_id', v)}
+                options={relatedOptions}
+                placeholder={form.org_id ? `Select ${form.related_module}…` : 'Select an organization first…'}
+              />
+            ) : (
+              <input value={form.universal_id} onChange={(e) => set('universal_id', e.target.value)} placeholder="e.g. INQ-2024-001" style={inputStyle} />
+            )}
+          </Field>
           <Field label="Activity Type">
             {addingActivityType ? (
               <input
