@@ -66,6 +66,27 @@ def _next_seq(db: Session, model) -> int:
     return db.query(func.count(model.id)).scalar() + 1
 
 
+def _find_or_create_contact(db: Session, org: Organization, contact_name: str | None, owner: User) -> OrgContact | None:
+    """Resolve a CSV `contact_name` to an OrgContact, creating one if no
+    existing contact of that name is on file for the org — otherwise a
+    contact_name with no prior match would silently import with no contact
+    linked at all (org_contact_id stays null, and the Contacts tab shows 0
+    despite the imported row visibly naming a contact)."""
+    if not contact_name:
+        return None
+    contact = (
+        db.query(OrgContact)
+        .filter(OrgContact.org_id == org.id, func.lower(OrgContact.name) == contact_name.lower())
+        .first()
+    )
+    if contact:
+        return contact
+    contact = OrgContact(org_id=org.id, name=contact_name, created_by_id=owner.id, created_at=datetime.now(timezone.utc))
+    db.add(contact)
+    db.flush()
+    return contact
+
+
 def _format_universal_id(prefix: str, seq: int) -> str:
     today = date.today().strftime("%Y%m%d")
     return f"{prefix}-{today}-{seq:04d}"

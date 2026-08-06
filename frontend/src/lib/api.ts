@@ -293,6 +293,18 @@ export const crmApi = {
     const { data } = await apiClient.delete(`/crm/activities/${id}`)
     return data
   },
+  uploadActivityAttachments: async (activityId: number, files: File[]) => {
+    const formData = new FormData()
+    files.forEach((f) => formData.append('files', f))
+    const { data } = await apiClient.post(`/crm/activities/${activityId}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  deleteActivityAttachment: async (activityId: number, attachmentId: number) => {
+    const { data } = await apiClient.delete(`/crm/activities/${activityId}/attachments/${attachmentId}`)
+    return data
+  },
 
   // Notes
   listNotes: async (params: { search?: string; org_id?: number; related_module?: string; related_id?: number } = {}) => {

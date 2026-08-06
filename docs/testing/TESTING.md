@@ -40,6 +40,13 @@ backend/app/tests/
 ├── test_crm_documents.py          # SharePoint-backed document upload/list/delete —
 │                                     mocks upload_file_to_sharepoint/delete_file_from_sharepoint
 │                                     via monkeypatch rather than hitting Microsoft Graph
+├── test_crm_activities.py         # Activity list/create response enrichment (contact_names,
+│                                     related_label) and the Organization Activities tab's
+│                                     org_id-vs-stale-snapshot regression — see
+│                                     ARCHITECTURE.md's "Why the Organization's Activities tab
+│                                     joins through Inquiry/Tender"
+├── test_crm_activity_attachments.py  # Activity photo gallery upload/list/delete — same
+│                                        SharePoint-mocking pattern as test_crm_documents.py
 └── test_followup_reminders.py     # app/tasks/followup_reminders.py — see the dedicated
                                       section below, it isn't a route/`client` test
 ```

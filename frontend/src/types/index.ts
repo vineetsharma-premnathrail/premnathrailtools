@@ -437,6 +437,20 @@ export interface CrmActivity {
   contact_ids?: number[]
   created_by_id?: number
   created_at?: string
+  // Display-only, filled in by the backend route — see _enrich() in
+  // backend/app/modules/crm/routes/activities.py.
+  contact_names?: string[]
+  related_label?: string
+  attachments?: CrmActivityAttachment[]
+}
+
+export interface CrmActivityAttachment {
+  id: number
+  filename: string
+  content_type?: string
+  size?: number
+  sharepoint_url?: string
+  created_at?: string
 }
 
 export interface CrmTeamMember {

@@ -9,7 +9,7 @@ import CrmNav from '@/components/crm/CrmNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
 import { downloadBlob } from '@/components/rnd/toolStyles'
-import { InfoRow, Field, Row, primaryBtnStyle, secondaryBtnStyle, inputStyle } from '@/components/crm/ui'
+import { InfoRow, Field, Row, primaryBtnStyle, secondaryBtnStyle, inputStyle, ActivityPhotos } from '@/components/crm/ui'
 
 const QUICK_FILTERS = ['all', 'open', 'done', 'today', 'overdue'] as const
 
@@ -162,6 +162,12 @@ export default function ActivitiesPage() {
             <InfoRow label="Observation / Remarks" value={viewing.remarks || '—'} />
             <InfoRow label="Action Plan" value={viewing.action_plan || '—'} />
             <InfoRow label="Created At" value={viewing.created_at ? new Date(viewing.created_at).toLocaleString() : '—'} />
+            {!!viewing.attachments?.length && (
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 6px' }}>Photos</p>
+                <ActivityPhotos attachments={viewing.attachments} />
+              </div>
+            )}
             {viewing.mom_items && viewing.mom_items.length > 0 && (
               <div>
                 <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 8px' }}>MOM Line Items</p>

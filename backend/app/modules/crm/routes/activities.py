@@ -1,12 +1,19 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.core.permissions import require_app_access
 from app.modules.main.models.user import User
 from app.modules.crm.models.activity import Activity
-from app.modules.crm.schemas.activity import ActivityCreate, ActivityUpdate, ActivityResponse
+from app.modules.crm.models.activity_attachment import ActivityAttachment
+from app.modules.crm.models.inquiry import Inquiry
+from app.modules.crm.models.tender import Tender
+from app.modules.crm.models.organization import Organization, OrgContact
+from app.modules.crm.schemas.activity import ActivityCreate, ActivityUpdate, ActivityResponse, ActivityAttachmentResponse
+from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint
 
 router = APIRouter(prefix="/crm/activities", tags=["CRM - Activities"])
 
@@ -27,6 +34,49 @@ async def list_team_members(
     return [{"id": u.id, "name": u.name, "designation": u.designation} for u in users]
 
 
+def _enrich(db: Session, activities: list[Activity]) -> list[ActivityResponse]:
+    """Attach display-only fields the org/inquiry Activities tabs need to show
+    "who" and "which record" without a client-side round trip per activity:
+    contact name(s) and a human label for the linked Inquiry/Tender. Activity
+    only stores raw ids (org_contact_id/contact_ids/related_id) — the
+    frontend used to resolve org_contact_id itself, but that breaks for
+    activities whose org_id is a stale snapshot (see below), since it fetches
+    contacts scoped to the *current* org_id, not necessarily the one the
+    activity's contact actually belongs to."""
+    contact_ids = {a.org_contact_id for a in activities if a.org_contact_id}
+    for a in activities:
+        contact_ids.update(a.contact_ids or [])
+    contacts_by_id = {}
+    if contact_ids:
+        contacts_by_id = {c.id: c.name for c in db.query(OrgContact).filter(OrgContact.id.in_(contact_ids)).all()}
+
+    inquiry_ids = {a.related_id for a in activities if a.related_module == "inquiry" and a.related_id}
+    tender_ids = {a.related_id for a in activities if a.related_module == "tender" and a.related_id}
+    inquiry_labels = {i.id: i.universal_id for i in db.query(Inquiry).filter(Inquiry.id.in_(inquiry_ids)).all()} if inquiry_ids else {}
+    tender_labels = {t.id: t.universal_id for t in db.query(Tender).filter(Tender.id.in_(tender_ids)).all()} if tender_ids else {}
+
+    activity_ids = [a.id for a in activities]
+    attachments_by_activity: dict[int, list[ActivityAttachment]] = {aid: [] for aid in activity_ids}
+    if activity_ids:
+        for att in db.query(ActivityAttachment).filter(ActivityAttachment.activity_id.in_(activity_ids)).order_by(ActivityAttachment.id.asc()).all():
+            attachments_by_activity[att.activity_id].append(att)
+
+    results = []
+    for a in activities:
+        resp = ActivityResponse.model_validate(a)
+        names = [contacts_by_id[cid] for cid in (a.contact_ids or []) if cid in contacts_by_id]
+        if a.org_contact_id and a.org_contact_id in contacts_by_id and contacts_by_id[a.org_contact_id] not in names:
+            names.insert(0, contacts_by_id[a.org_contact_id])
+        resp.contact_names = names
+        if a.related_module == "inquiry":
+            resp.related_label = inquiry_labels.get(a.related_id)
+        elif a.related_module == "tender":
+            resp.related_label = tender_labels.get(a.related_id)
+        resp.attachments = [ActivityAttachmentResponse.model_validate(att) for att in attachments_by_activity.get(a.id, [])]
+        results.append(resp)
+    return results
+
+
 @router.get("", response_model=list[ActivityResponse])
 async def list_activities(
     search: str | None = None,
@@ -43,7 +93,20 @@ async def list_activities(
     if status:
         query = query.filter(Activity.status == status)
     if org_id:
-        query = query.filter(Activity.org_id == org_id)
+        # Activity.org_id is stamped at creation time and can drift from the
+        # truth if the parent Inquiry/Tender's org is edited afterwards — so
+        # don't trust it alone. Also match any activity logged against an
+        # Inquiry/Tender that *currently* belongs to this org, so the
+        # Organization's Activities tab shows everything logged under its
+        # Inquiries/Tenders even if the Activity row's own org_id is stale.
+        org_inquiry_ids = [i for (i,) in db.query(Inquiry.id).filter(Inquiry.org_id == org_id).all()]
+        org_tender_ids = [t for (t,) in db.query(Tender.id).filter(Tender.org_id == org_id).all()]
+        conditions = [Activity.org_id == org_id]
+        if org_inquiry_ids:
+            conditions.append(and_(Activity.related_module == "inquiry", Activity.related_id.in_(org_inquiry_ids)))
+        if org_tender_ids:
+            conditions.append(and_(Activity.related_module == "tender", Activity.related_id.in_(org_tender_ids)))
+        query = query.filter(or_(*conditions))
     if related_module:
         query = query.filter(Activity.related_module == related_module)
     if related_id:
@@ -51,7 +114,8 @@ async def list_activities(
     if search:
         like = f"%{search}%"
         query = query.filter((Activity.universal_id.ilike(like)) | (Activity.remarks.ilike(like)))
-    return query.order_by(Activity.id.desc()).offset(skip).limit(limit).all()
+    activities = query.order_by(Activity.id.desc()).offset(skip).limit(limit).all()
+    return _enrich(db, activities)
 
 
 @router.post("", response_model=ActivityResponse, status_code=201)
@@ -66,7 +130,7 @@ async def create_activity(
     db.add(activity)
     db.commit()
     db.refresh(activity)
-    return activity
+    return _enrich(db, [activity])[0]
 
 
 @router.patch("/{activity_id}", response_model=ActivityResponse)
@@ -86,7 +150,90 @@ async def update_activity(
         setattr(activity, field, json_data[field] if field == "mom_items" else value)
     db.commit()
     db.refresh(activity)
-    return activity
+    return _enrich(db, [activity])[0]
+
+
+@router.post("/{activity_id}/attachments", response_model=ActivityResponse)
+async def upload_activity_attachments(
+    activity_id: int,
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    if not _can_modify(activity, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can add photos to this activity.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    for f in files:
+        if not f.content_type or not f.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail=f"'{f.filename}' is not an image — only photos can be attached to an activity.")
+
+    org_name = "General"
+    if activity.org_id:
+        org = db.query(Organization).filter(Organization.id == activity.org_id).first()
+        if org:
+            org_name = org.name
+    folder_path = build_sharepoint_folder_path(user.name or user.email or "", org_name, f"crm/activity/{activity.id}")
+
+    uploaded, failed = [], []
+    for f in files:
+        try:
+            result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, f)
+            attachment = ActivityAttachment(
+                activity_id=activity.id,
+                filename=result["name"],
+                content_type=f.content_type,
+                size=result["size"],
+                sharepoint_path=result["path"],
+                sharepoint_url=result.get("webUrl"),
+                created_by_id=user.id,
+            )
+            db.add(attachment)
+            uploaded.append(attachment)
+        except HTTPException as exc:
+            failed.append({"filename": f.filename or "photo", "error": exc.detail})
+
+    if not uploaded and failed:
+        raise HTTPException(status_code=502, detail=failed[0]["error"])
+
+    db.commit()
+    db.refresh(activity)
+    return _enrich(db, [activity])[0]
+
+
+@router.delete("/{activity_id}/attachments/{attachment_id}", response_model=ActivityResponse)
+async def delete_activity_attachment(
+    activity_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    if not _can_modify(activity, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete photos from this activity.")
+
+    attachment = db.query(ActivityAttachment).filter(
+        ActivityAttachment.id == attachment_id, ActivityAttachment.activity_id == activity_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    if settings.SHAREPOINT_SITE_ID and attachment.sharepoint_path:
+        try:
+            await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path)
+        except Exception:
+            pass  # DB removal proceeds even if SharePoint delete fails
+
+    db.delete(attachment)
+    db.commit()
+    db.refresh(activity)
+    return _enrich(db, [activity])[0]
 
 
 @router.delete("/{activity_id}")

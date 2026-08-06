@@ -11,7 +11,7 @@ import DateField from '@/components/erp/DateField'
 import InquiryForm from '@/components/crm/InquiryForm'
 import ActivityForm from '@/components/crm/ActivityForm'
 import { INQ_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES } from '@/components/crm/constants'
-import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
+import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos } from '@/components/crm/ui'
 
 const TABS = ['Info', 'Department Tasks', 'Quotations', 'Sales', 'Documents', 'Discussion', 'Activities', 'Notes', 'Timeline'] as const
 
@@ -680,9 +680,11 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
           initial={editingActivity || { org_id: inquiry.org_id, related_module: 'inquiry', related_id: inquiry.id, universal_id: inquiry.universal_id }}
           submitLabel={editingActivity ? 'Save Changes' : 'Log Activity'}
           onCancel={cancelForm}
-          onSubmit={async (payload) => {
-            if (editingActivity) await crmApi.updateActivity(editingActivity.id, payload)
-            else await crmApi.createActivity(payload)
+          onSubmit={async (payload, photos) => {
+            const saved = editingActivity
+              ? await crmApi.updateActivity(editingActivity.id, payload)
+              : await crmApi.createActivity(payload)
+            if (photos.length) await crmApi.uploadActivityAttachments(saved.id, photos)
             cancelForm()
             load()
           }}
@@ -714,6 +716,7 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
                   {a.action_plan && <p style={{ fontSize: 12, color: '#78716c', margin: '2px 0 0' }}>Action Plan: {a.action_plan}</p>}
                 </>
               )}
+              <ActivityPhotos attachments={a.attachments} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 8, background: a.status === 'Done' ? 'rgba(34,197,94,0.12)' : a.status === 'Cancelled' ? 'rgba(0,0,0,0.06)' : 'rgba(234,179,8,0.12)', color: a.status === 'Done' ? '#16a34a' : a.status === 'Cancelled' ? '#78716c' : '#a16207' }}>{a.status}</span>

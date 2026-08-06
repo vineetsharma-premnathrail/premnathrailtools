@@ -3,6 +3,7 @@ from app.modules.crm.models.inquiry import Inquiry, InquiryTask, InquiryApproval
 from app.modules.crm.models.tender import Tender, TenderTask, TenderCompetitor
 from app.modules.crm.models.purchase_order import PurchaseOrder
 from app.modules.crm.models.activity import Activity
+from app.modules.crm.models.activity_attachment import ActivityAttachment
 from app.modules.crm.models.note import Note
 from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.models.discussion import CrmDiscussion
@@ -20,6 +21,7 @@ __all__ = [
     "TenderCompetitor",
     "PurchaseOrder",
     "Activity",
+    "ActivityAttachment",
     "Note",
     "CrmDocument",
     "CrmDiscussion",

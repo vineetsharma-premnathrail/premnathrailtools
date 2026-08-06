@@ -11,7 +11,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import InquiryForm from '@/components/crm/InquiryForm'
 import TenderForm from '@/components/crm/TenderForm'
 import ActivityForm from '@/components/crm/ActivityForm'
-import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
+import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos } from '@/components/crm/ui'
 
 const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Activities', 'Notes', 'Audit Trail'] as const
 
@@ -389,14 +389,11 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
 
 function ActivitiesTab({ orgId }: { orgId: number }) {
   const [activities, setActivities] = useState<CrmActivity[]>([])
-  const [contacts, setContacts] = useState<OrgContact[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<CrmActivity | null>(null)
   const load = () => crmApi.listActivities({ org_id: orgId }).then(setActivities).finally(() => setLoading(false))
   useEffect(() => { load() }, [orgId])
-  useEffect(() => { crmApi.listOrgContacts(orgId).then(setContacts) }, [orgId])
-  const contactById = new Map(contacts.map((c) => [c.id, c]))
 
   const cancelForm = () => {
     setEditing(null)
@@ -416,9 +413,11 @@ function ActivitiesTab({ orgId }: { orgId: number }) {
               defaultOrgId={orgId}
               submitLabel={editing ? 'Save Changes' : 'Save Activity'}
               onCancel={cancelForm}
-              onSubmit={async (payload) => {
-                if (editing) await crmApi.updateActivity(editing.id, payload)
-                else await crmApi.createActivity(payload)
+              onSubmit={async (payload, photos) => {
+                const saved = editing
+                  ? await crmApi.updateActivity(editing.id, payload)
+                  : await crmApi.createActivity(payload)
+                if (photos.length) await crmApi.uploadActivityAttachments(saved.id, photos)
                 cancelForm()
                 load()
               }}
@@ -438,11 +437,14 @@ function ActivitiesTab({ orgId }: { orgId: number }) {
                 <p style={{ fontSize: 12.5, color: '#57534e', margin: '0 0 4px' }}>{a.remarks || '—'}</p>
                 {a.action_plan && <p style={{ fontSize: 12, color: '#78716c', margin: '0 0 4px' }}>Action Plan: {a.action_plan}</p>}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: '#a8a29e' }}>
-                  {a.org_contact_id && contactById.get(a.org_contact_id) && <span>Contact: {contactById.get(a.org_contact_id)!.name}</span>}
-                  {a.related_module && a.universal_id && <span>{a.related_module}: {a.universal_id}</span>}
+                  {!!a.contact_names?.length && <span>Contact: {a.contact_names.join(', ')}</span>}
+                  {a.related_module && (a.related_label || a.universal_id) && (
+                    <span style={{ textTransform: 'capitalize' }}>{a.related_module}: {a.related_label || a.universal_id}</span>
+                  )}
                   {a.assigned_to && <span>Assigned To: {a.assigned_to}</span>}
                   {a.next_followup && <span>Follow-up: {a.next_followup}</span>}
                 </div>
+                <ActivityPhotos attachments={a.attachments} />
               </div>
               <button onClick={() => { setEditing(a); setShowForm(true) }} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>Edit</button>
             </div>

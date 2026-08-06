@@ -11,6 +11,16 @@ export type ChangelogEntry = {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     date: '2026-08-05',
+    title: 'CRM Activities: photos & fixes',
+    items: [
+      'Add photos to an Activity (camera or drag & drop) — visible from the Organization\'s Activities tab, the Inquiry\'s Activities tab, and the Activities list view.',
+      'Fixed: an Organization\'s Activities tab now shows activities logged against its Inquiries/Tenders even if the activity was logged before the Inquiry was reassigned to this Organization.',
+      'Fixed: logging an Activity against an Inquiry or Tender now offers a searchable dropdown of that organization\'s records instead of typing the ID by hand.',
+      'Teams app: added camera/media permission so "Take photo" works inside Teams on mobile and desktop (requires reinstalling the updated Teams app package).',
+    ],
+  },
+  {
+    date: '2026-08-05',
     title: 'Purchase: material remarks & photos',
     items: [
       'Purchase Requisition materials now have a remarks field for notes like vendor lead times.',

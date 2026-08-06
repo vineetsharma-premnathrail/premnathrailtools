@@ -46,8 +46,9 @@ export default function EditActivityPage() {
         initial={activity}
         submitLabel="Save Changes"
         onCancel={() => router.push('/dashboard/crm/activities')}
-        onSubmit={async (payload) => {
+        onSubmit={async (payload, photos) => {
           await crmApi.updateActivity(activity.id, payload)
+          if (photos.length) await crmApi.uploadActivityAttachments(activity.id, photos)
           router.push('/dashboard/crm/activities')
         }}
       />

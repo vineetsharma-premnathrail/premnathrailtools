@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { crmApi } from '@/lib/api'
 import { CrmActivity, MomItem, Organization, OrgContact } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
@@ -72,9 +72,12 @@ export default function ActivityForm({
   defaultOrgId?: number
   submitLabel: string
   onCancel: () => void
-  onSubmit: (payload: Record<string, unknown>) => Promise<void>
+  onSubmit: (payload: Record<string, unknown>, photos: File[]) => Promise<void>
 }) {
   const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
+  const [stagedPhotos, setStagedPhotos] = useState<File[]>([])
+  const [existingAttachments, setExistingAttachments] = useState<CrmActivity['attachments']>(initial?.attachments || [])
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState<number | null>(null)
   const [selectedContactIds, setSelectedContactIds] = useState<number[]>(() => {
     if (initial?.contact_ids?.length) return initial.contact_ids
     return initial?.org_contact_id ? [initial.org_contact_id] : []
@@ -219,11 +222,29 @@ export default function ActivityForm({
       Object.keys(payload).forEach((k) => {
         if (payload[k] === '' || payload[k] === undefined) delete payload[k]
       })
-      await onSubmit(payload)
+      await onSubmit(payload, stagedPhotos)
+      setStagedPhotos([])
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Failed to save activity.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const stagePhotos = (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setStagedPhotos((prev) => [...prev, ...Array.from(files)])
+  }
+
+  const deleteExistingPhoto = async (attachmentId: number) => {
+    if (!initial?.id) return
+    if (!window.confirm('Delete this photo?')) return
+    setDeletingAttachmentId(attachmentId)
+    try {
+      const updated = await crmApi.deleteActivityAttachment(initial.id, attachmentId)
+      setExistingAttachments(updated.attachments || [])
+    } finally {
+      setDeletingAttachmentId(null)
     }
   }
 
@@ -346,6 +367,15 @@ export default function ActivityForm({
         </Row>
       </Section>
 
+      <PhotoSection
+        stagedPhotos={stagedPhotos}
+        onStage={stagePhotos}
+        onRemoveStaged={(i) => setStagedPhotos((prev) => prev.filter((_, idx) => idx !== i))}
+        existingAttachments={existingAttachments}
+        onDeleteExisting={deleteExistingPhoto}
+        deletingAttachmentId={deletingAttachmentId}
+      />
+
       <div style={{ display: 'flex', gap: 10 }}>
         <button type="button" onClick={onCancel} style={{ ...secondaryBtnStyle, flex: 1 }}>Cancel</button>
         <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, flex: 1, opacity: saving ? 0.7 : 1 }}>
@@ -353,5 +383,93 @@ export default function ActivityForm({
         </button>
       </div>
     </form>
+  )
+}
+
+function PhotoSection({
+  stagedPhotos,
+  onStage,
+  onRemoveStaged,
+  existingAttachments,
+  onDeleteExisting,
+  deletingAttachmentId,
+}: {
+  stagedPhotos: File[]
+  onStage: (files: FileList | null) => void
+  onRemoveStaged: (index: number) => void
+  existingAttachments: CrmActivity['attachments']
+  onDeleteExisting: (attachmentId: number) => void
+  deletingAttachmentId: number | null
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const previews = stagedPhotos.map((f) => URL.createObjectURL(f))
+  useEffect(() => () => previews.forEach((url) => URL.revokeObjectURL(url)), [previews])
+
+  return (
+    <Section title="Photos">
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div
+          onClick={() => cameraRef.current?.click()}
+          style={{ flex: '1 1 160px', padding: '14px 12px', borderRadius: 10, border: '2px dashed rgba(0,0,0,0.15)', background: '#faf9f7', textAlign: 'center', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+        >
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { onStage(e.target.files); e.target.value = '' }} />
+          <span style={{ fontSize: 16 }}>📷</span>
+          <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: 0 }}>Take photo</p>
+        </div>
+        <div
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); onStage(e.dataTransfer.files) }}
+          style={{ flex: '2 1 220px', padding: '14px 12px', borderRadius: 10, border: `2px dashed ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.15)'}`, background: dragOver ? 'rgba(244,113,59,0.05)' : '#faf9f7', textAlign: 'center', cursor: 'pointer' }}
+        >
+          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { onStage(e.target.files); e.target.value = '' }} />
+          <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: 0 }}>Drag &amp; drop photos, or click to browse (JPG/PNG)</p>
+        </div>
+      </div>
+
+      {!!existingAttachments?.length && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          {existingAttachments.map((a) => (
+            <div key={a.id} style={{ position: 'relative', width: 56, height: 56, flex: 'none' }}>
+              <a href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={a.sharepoint_url} alt={a.filename} style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />
+              </a>
+              <button
+                type="button"
+                onClick={() => onDeleteExisting(a.id)}
+                disabled={deletingAttachmentId === a.id}
+                aria-label={`Delete ${a.filename}`}
+                style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#dc2626', color: '#fff', fontSize: 11, lineHeight: '18px', cursor: 'pointer', padding: 0 }}
+              >✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {stagedPhotos.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+          {stagedPhotos.map((f, i) => (
+            <div key={i} style={{ position: 'relative', width: 56, height: 56, flex: 'none' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previews[i]} alt={f.name} style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />
+              <button
+                type="button"
+                onClick={() => onRemoveStaged(i)}
+                aria-label={`Remove ${f.name}`}
+                style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#dc2626', color: '#fff', fontSize: 11, lineHeight: '18px', cursor: 'pointer', padding: 0 }}
+              >✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!existingAttachments?.length && stagedPhotos.length === 0 && (
+        <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>No photos added yet.</p>
+      )}
+    </Section>
   )
 }

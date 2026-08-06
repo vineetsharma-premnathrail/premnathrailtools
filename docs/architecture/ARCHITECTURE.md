@@ -201,8 +201,32 @@ backend/app/modules/crm/
 │   │   documents.py, workflow.py (all nested sub-entity routes), dashboard.py
 ```
 
-`app/tests/test_crm.py` and `app/tests/test_crm_documents.py` cover this module; see
+`app/tests/test_crm.py`, `app/tests/test_crm_documents.py`, `app/tests/test_crm_activities.py`,
+and `app/tests/test_crm_activity_attachments.py` cover this module; see
 [TESTING.md](../testing/TESTING.md) for how to run them.
+
+### Activity photos
+
+Each `Activity` has a SharePoint-backed photo gallery (`crm_activity_attachments` table —
+same pointer/metadata-only pattern as `ServiceMaterialAttachment` in the Purchase/ERP
+modules). Photos can be added from the Activity form itself (create or edit) via
+`POST /crm/activities/{id}/attachments`, and are visible everywhere that activity is
+listed or viewed — the Organization's Activities tab, the Inquiry's Activities tab, and
+the Activities list page's detail view — since `_enrich()` in `routes/activities.py`
+attaches them to every `ActivityResponse`, not just the upload response.
+
+### Why the Organization's Activities tab joins through Inquiry/Tender
+
+`Activity.org_id` is stamped once, at creation time. If the Activity was logged against
+an Inquiry/Tender and that record is *later* reassigned to a different Organization
+(e.g. a data-entry correction), `Activity.org_id` doesn't follow — it silently goes
+stale, and an Organization's Activities tab that trusted it alone would miss activities
+that objectively belong to it now. `list_activities()`'s `org_id` filter therefore
+ORs the direct `Activity.org_id == org_id` match with a subquery check — does this
+activity's `related_module`/`related_id` point at an Inquiry or Tender whose *current*
+`org_id` is this org? — so the tab reflects the Inquiry/Tender's present ownership, not
+a frozen snapshot. See `test_org_activities_include_inquiry_activities_with_stale_org_id`
+in `test_crm_activities.py` for the exact scenario this guards against.
 
 ## Purchase Module
 

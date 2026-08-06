@@ -414,11 +414,28 @@ Management Approval → Bid Submitted → Technical Qualified → Financial Open
 
 ### Activities & Notes
 
+Every Activity response carries three read-only, route-computed fields not stored on the
+row itself (see `_enrich()` in `routes/activities.py`): `contact_names` (resolved from
+`org_contact_id`/`contact_ids`), `related_label` (the linked Inquiry/Tender's
+`universal_id`), and `attachments` (its photo gallery — see below).
+
+The `org_id` filter on `GET /crm/activities` also matches activities logged against any
+Inquiry/Tender that *currently* belongs to that org — not just activities whose own
+`org_id` column says so — since that column is a creation-time snapshot that goes stale
+if the parent Inquiry/Tender is later reassigned to a different Organization. See
+[ARCHITECTURE.md](../architecture/ARCHITECTURE.md#why-the-organizations-activities-tab-joins-through-inquirytender)
+for the full explanation.
+
 ```
 GET    /api/v1/crm/activities   (filters: search, status, org_id, related_module, related_id)
 POST   /api/v1/crm/activities
 PATCH  /api/v1/crm/activities/{id}
 DELETE /api/v1/crm/activities/{id}
+POST   /api/v1/crm/activities/{id}/attachments      Upload photo(s), multipart/form-data field
+                                                     "files" (image/* only). Creator or admin only.
+                                                     503 if SharePoint isn't configured.
+DELETE /api/v1/crm/activities/{id}/attachments/{attachment_id}
+                                                     Remove a photo. Creator or admin only.
 
 GET    /api/v1/crm/notes        (filters: search, org_id, related_module, related_id)
 POST   /api/v1/crm/notes

@@ -2,6 +2,17 @@ from datetime import date, datetime
 from pydantic import BaseModel
 
 
+class ActivityAttachmentResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    filename: str
+    content_type: str | None = None
+    size: int | None = None
+    sharepoint_url: str | None = None
+    created_at: datetime | None = None
+
+
 class MomItem(BaseModel):
     observation: str | None = None
     action_plan: str | None = None
@@ -61,6 +72,12 @@ class ActivityResponse(BaseModel):
     mom_items: list[MomItem] | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
+
+    # Display-only, filled in by the route (not stored on the Activity row
+    # itself) — see `_enrich()` in routes/activities.py.
+    contact_names: list[str] = []
+    related_label: str | None = None
+    attachments: list[ActivityAttachmentResponse] = []
 
 
 class MomExportRequest(BaseModel):

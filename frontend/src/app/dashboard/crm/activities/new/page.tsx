@@ -25,8 +25,9 @@ export default function NewActivityPage() {
       <ActivityForm
         submitLabel="Log Activity"
         onCancel={() => router.push('/dashboard/crm/activities')}
-        onSubmit={async (payload) => {
-          await crmApi.createActivity(payload)
+        onSubmit={async (payload, photos) => {
+          const created = await crmApi.createActivity(payload)
+          if (photos.length) await crmApi.uploadActivityAttachments(created.id, photos)
           router.push('/dashboard/crm/activities')
         }}
       />

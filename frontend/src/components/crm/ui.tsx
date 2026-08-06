@@ -1,6 +1,7 @@
 'use client'
 
 import { COLORS, RADII, BORDERS, GLASS, SHADOWS } from '@/lib/theme'
+import { CrmActivityAttachment } from '@/types'
 
 export const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -86,6 +87,23 @@ export function InfoRow({ label, value }: { label: string; value: string }) {
     <div>
       <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: COLORS.textFaint2, margin: '0 0 2px' }}>{label}</p>
       <p style={{ fontSize: 13, color: COLORS.ink, margin: 0, whiteSpace: 'pre-wrap' }}>{value}</p>
+    </div>
+  )
+}
+
+/** Read-only photo thumbnail strip for an Activity — shown wherever an
+ * Activity is listed/viewed (Org tab, Inquiry tab, Activities list). Photos
+ * themselves are only added/removed from the Activity form itself. */
+export function ActivityPhotos({ attachments }: { attachments?: CrmActivityAttachment[] }) {
+  if (!attachments?.length) return null
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+      {attachments.map((a) => (
+        <a key={a.id} href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={a.sharepoint_url} alt={a.filename} style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />
+        </a>
+      ))}
     </div>
   )
 }
