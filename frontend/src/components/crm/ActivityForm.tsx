@@ -11,6 +11,7 @@ import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
 import { ACTIVITY_TYPES, RELATED_MODULES } from './constants'
 import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle } from './ui'
 import NumberedTextarea from './NumberedTextarea'
+import CameraCapture from '@/components/CameraCapture'
 
 type FormState = {
   org_id: string
@@ -231,7 +232,7 @@ export default function ActivityForm({
     }
   }
 
-  const stagePhotos = (files: FileList | null) => {
+  const stagePhotos = (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return
     setStagedPhotos((prev) => [...prev, ...Array.from(files)])
   }
@@ -395,39 +396,47 @@ function PhotoSection({
   deletingAttachmentId,
 }: {
   stagedPhotos: File[]
-  onStage: (files: FileList | null) => void
+  onStage: (files: FileList | File[] | null) => void
   onRemoveStaged: (index: number) => void
   existingAttachments: CrmActivity['attachments']
   onDeleteExisting: (attachmentId: number) => void
   deletingAttachmentId: number | null
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const cameraRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [showCamera, setShowCamera] = useState(false)
   const previews = stagedPhotos.map((f) => URL.createObjectURL(f))
   useEffect(() => () => previews.forEach((url) => URL.revokeObjectURL(url)), [previews])
 
   return (
     <Section title="Photos">
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <div
-          onClick={() => cameraRef.current?.click()}
-          style={{ flex: '1 1 160px', padding: '14px 12px', borderRadius: 10, border: '2px dashed rgba(0,0,0,0.15)', background: '#faf9f7', textAlign: 'center', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+      {showCamera && (
+        <CameraCapture onCapture={(file) => onStage([file])} onClose={() => setShowCamera(false)} />
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={() => setShowCamera(true)}
+          aria-label="Take photo"
+          title="Take photo"
+          style={{ width: 46, height: 46, flex: 'none', borderRadius: 12, border: '1px solid rgba(0,0,0,0.1)', background: '#faf9f7', fontSize: 19, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
-          <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { onStage(e.target.files); e.target.value = '' }} />
-          <span style={{ fontSize: 16 }}>📷</span>
-          <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: 0 }}>Take photo</p>
-        </div>
-        <div
+          📷
+        </button>
+        <button
+          type="button"
           onClick={() => fileRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
           onDrop={(e) => { e.preventDefault(); setDragOver(false); onStage(e.dataTransfer.files) }}
-          style={{ flex: '2 1 220px', padding: '14px 12px', borderRadius: 10, border: `2px dashed ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.15)'}`, background: dragOver ? 'rgba(244,113,59,0.05)' : '#faf9f7', textAlign: 'center', cursor: 'pointer' }}
+          aria-label="Browse photos"
+          title="Browse photos, or drag &amp; drop here"
+          style={{ width: 46, height: 46, flex: 'none', borderRadius: 12, border: `1px solid ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.1)'}`, background: dragOver ? 'rgba(244,113,59,0.08)' : '#faf9f7', fontSize: 19, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
         >
-          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { onStage(e.target.files); e.target.value = '' }} />
-          <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: 0 }}>Drag &amp; drop photos, or click to browse (JPG/PNG)</p>
-        </div>
+          🖼️
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { onStage(e.target.files); e.target.value = '' }} />
+        <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0 }}>Take a photo, or browse / drag &amp; drop (JPG/PNG)</p>
       </div>
 
       {!!existingAttachments?.length && (

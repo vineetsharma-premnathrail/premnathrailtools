@@ -43,10 +43,21 @@ export default function DashboardLayout({
     >
       {/* Decorative color blobs — a glass panel needs something visibly
           textured behind it to blur/refract; a flat gradient alone makes
-          backdrop-filter invisible no matter how correct the CSS is. */}
-      <div style={{ position: 'absolute', top: '-10%', left: '15%', width: 460, height: 460, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,69,0.38), transparent 70%)', filter: 'blur(10px)', pointerEvents: 'none', zIndex: -1 }} />
-      <div style={{ position: 'absolute', bottom: '-15%', left: '35%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,90,31,0.26), transparent 70%)', filter: 'blur(10px)', pointerEvents: 'none', zIndex: -1 }} />
-      <div style={{ position: 'absolute', top: '20%', right: '5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.20), transparent 70%)', filter: 'blur(10px)', pointerEvents: 'none', zIndex: -1 }} />
+          backdrop-filter invisible no matter how correct the CSS is.
+          Wrapped in its own overflow:hidden, inset:0 box (rather than
+          relying on .app-shell's own overflow) because the blobs use
+          percentage top/bottom offsets (e.g. bottom:-15%) that read against
+          .app-shell's own auto height on mobile — on desktop .app-shell's
+          overflow:hidden clips the excess, but on mobile it's overflow:visible
+          (for natural single-page scroll), so the clipped-off ~15-20% of
+          each blob was instead adding ~300px of true page scrollHeight below
+          all real content. Clipping locally keeps that overflow invisible
+          regardless of the shell's own overflow setting. */}
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: -1 }}>
+        <div style={{ position: 'absolute', top: '-10%', left: '15%', width: 460, height: 460, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,69,0.38), transparent 70%)', filter: 'blur(10px)' }} />
+        <div style={{ position: 'absolute', bottom: '-15%', left: '35%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,90,31,0.26), transparent 70%)', filter: 'blur(10px)' }} />
+        <div style={{ position: 'absolute', top: '20%', right: '5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.20), transparent 70%)', filter: 'blur(10px)' }} />
+      </div>
 
       <div className="mobile-topbar" style={{ position: 'sticky', zIndex: 50, alignItems: 'center', gap: 12, padding: '12px 16px', top: 0, background: GLASS.strong, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, borderBottom: `1px solid ${GLASS.border}` }}>
         <button

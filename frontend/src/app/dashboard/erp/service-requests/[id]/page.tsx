@@ -8,6 +8,7 @@ import { AuditEntry, Project, ServiceRequest, ServiceMaterial } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadPreview from '@/components/FileUploadPreview'
+import CameraCapture from '@/components/CameraCapture'
 import Link from 'next/link'
 
 const WORKFLOW_STEPS = [
@@ -579,13 +580,13 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
 
 function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: number; material: ServiceMaterial; canModify: boolean; onChanged: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const cameraRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [showCamera, setShowCamera] = useState(false)
   const [error, setError] = useState('')
   const [staged, setStaged] = useState<File[]>([])
 
-  const stageFiles = (files: FileList | null) => {
+  const stageFiles = (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return
     setStaged((prev) => [...prev, ...Array.from(files)])
   }
@@ -603,7 +604,6 @@ function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: 
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
-      if (cameraRef.current) cameraRef.current.value = ''
     }
   }
 
@@ -614,49 +614,39 @@ function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: 
 
   return (
     <div style={{ borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.08)', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {showCamera && (
+        <CameraCapture onCapture={(file) => stageFiles([file])} onClose={() => setShowCamera(false)} />
+      )}
       {canModify && (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <div
-            onClick={() => !uploading && cameraRef.current?.click()}
-            style={{
-              flex: '1 1 160px',
-              padding: '14px 12px',
-              borderRadius: 10,
-              border: '2px dashed rgba(0,0,0,0.15)',
-              background: '#faf9f7',
-              textAlign: 'center',
-              cursor: uploading ? 'wait' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-            }}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => !uploading && setShowCamera(true)}
+            disabled={uploading}
+            aria-label="Take photo"
+            title="Take photo"
+            style={{ width: 46, height: 46, flex: 'none', borderRadius: 12, border: '1px solid rgba(0,0,0,0.1)', background: '#faf9f7', fontSize: 19, cursor: uploading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => stageFiles(e.target.files)} disabled={uploading} />
-            <span style={{ fontSize: 16 }}>📷</span>
-            <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: 0 }}>Take photo</p>
-          </div>
+            📷
+          </button>
 
-          <div
+          <button
+            type="button"
             onClick={() => !uploading && fileRef.current?.click()}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
             onDragLeave={() => setDragOver(false)}
             onDrop={(e) => { e.preventDefault(); setDragOver(false); stageFiles(e.dataTransfer.files) }}
-            style={{
-              flex: '2 1 220px',
-              padding: '14px 12px',
-              borderRadius: 10,
-              border: `2px dashed ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.15)'}`,
-              background: dragOver ? 'rgba(244,113,59,0.05)' : '#faf9f7',
-              textAlign: 'center',
-              cursor: uploading ? 'wait' : 'pointer',
-            }}
+            disabled={uploading}
+            aria-label="Browse photos"
+            title="Browse photos, or drag &amp; drop here"
+            style={{ width: 46, height: 46, flex: 'none', borderRadius: 12, border: `1px solid ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.1)'}`, background: dragOver ? 'rgba(244,113,59,0.08)' : '#faf9f7', fontSize: 19, cursor: uploading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => stageFiles(e.target.files)} disabled={uploading} />
-            <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: 0 }}>
-              {uploading ? 'Uploading…' : 'Drag & drop photos, or click to browse (JPG/PNG)'}
-            </p>
-          </div>
+            🖼️
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => stageFiles(e.target.files)} disabled={uploading} />
+          <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0 }}>
+            {uploading ? 'Uploading…' : 'Take a photo, or browse / drag & drop (JPG/PNG)'}
+          </p>
         </div>
       )}
 
