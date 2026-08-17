@@ -30,6 +30,14 @@ const CartIcon = (
     <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6" />
   </svg>
 )
+const FileTextIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+    <polyline points="14 2 14 8 20 8" />
+    <line x1="16" y1="13" x2="8" y2="13" />
+    <line x1="16" y1="17" x2="8" y2="17" />
+  </svg>
+)
 
 const modules = [
   {
@@ -83,6 +91,19 @@ const modules = [
     iconColor: '#7e22ce',
     tagBg: 'rgba(168,85,247,0.12)',
     tagColor: '#6b21a8',
+  },
+  {
+    title: 'P2P',
+    app: 'p2p' as const,
+    description: 'Standalone purchase requisitions — raise, approve, and track requests.',
+    icon: FileTextIcon,
+    href: '/dashboard/p2p',
+    features: ['Requisitions'],
+    barColor: 'linear-gradient(90deg,#0ea5e9,#38bdf8)',
+    iconBg: 'rgba(14,165,233,0.12)',
+    iconColor: '#0284c7',
+    tagBg: 'rgba(14,165,233,0.12)',
+    tagColor: '#0369a1',
   },
 ]
 

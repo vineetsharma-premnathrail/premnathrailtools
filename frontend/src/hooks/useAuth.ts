@@ -63,7 +63,7 @@ export function useRequireAdmin() {
 
 /** Guards a page to users whose `apps` list includes `appName` (admins always pass,
  * since they implicitly get every module). Redirects everyone else to /dashboard. */
-export function useRequireApp(appName: 'erp' | 'rnd' | 'crm' | 'purchase') {
+export function useRequireApp(appName: 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p') {
   const router = useRouter()
   const { user, isLoading } = useAuth()
   const hasAccess = !!user?.apps?.includes(appName)

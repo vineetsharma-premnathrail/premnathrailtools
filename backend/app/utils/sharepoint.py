@@ -260,6 +260,58 @@ async def delete_file_from_sharepoint(site_id: str, file_path: str) -> None:
         raise HTTPException(status_code=502, detail=f"SharePoint delete failed for {file_path}: {response.text}")
 
 
+async def download_file_content(site_id: str, file_path: str) -> tuple[bytes, str]:
+    """Fetch a file's raw bytes via the app-only Graph token, for rendering
+    natively in-app (img/pdf/video tags served from our own origin) instead of
+    relying on Microsoft's Office viewer page, which refuses to be framed.
+    Callers MUST run their own authorization check first — this has no
+    concept of who's asking."""
+    if not site_id:
+        raise HTTPException(status_code=503, detail="SharePoint site ID is not configured")
+    if not file_path:
+        raise HTTPException(status_code=400, detail="Attachment path is missing")
+
+    encoded_path = "/".join(_encode_path_segment(p) for p in file_path.split("/") if p)
+    content_url = f"{GRAPH_API}/sites/{site_id}/drive/root:/{encoded_path}:/content"
+    token = await get_app_graph_token()
+
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        response = await client.get(content_url, headers={"Authorization": f"Bearer {token}"})
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Unable to download {file_path}: {response.text}")
+
+    content_type = response.headers.get("content-type", "application/octet-stream")
+    return response.content, content_type
+
+
+async def get_preview_url(site_id: str, file_path: str) -> str:
+    """Mint a short-lived, embeddable Microsoft preview link for a file via the
+    app-only Graph token — the caller's own SharePoint permissions (or lack of
+    them) never come into it, since the app itself is what talks to Graph.
+    Callers MUST run their own authorization check before calling this, since
+    getting a preview link back is equivalent to granting read access."""
+    if not site_id:
+        raise HTTPException(status_code=503, detail="SharePoint site ID is not configured")
+    if not file_path:
+        raise HTTPException(status_code=400, detail="Attachment path is missing")
+
+    encoded_path = "/".join(_encode_path_segment(p) for p in file_path.split("/") if p)
+    preview_url = f"{GRAPH_API}/sites/{site_id}/drive/root:/{encoded_path}:/preview"
+    token = await get_app_graph_token()
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(preview_url, headers={"Authorization": f"Bearer {token}"}, json={})
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Unable to generate preview for {file_path}: {response.text}")
+
+    get_url = response.json().get("getUrl")
+    if not get_url:
+        raise HTTPException(status_code=502, detail=f"Preview response missing getUrl for {file_path}")
+    return get_url
+
+
 def build_sharepoint_folder_path(user_name: str, project_name: str, service_request_number: str) -> str:
     root_folder = sanitize_folder_name(settings.SHAREPOINT_FOLDER or "ERP-media")
     user_folder = sanitize_folder_name(user_name or "unknown")

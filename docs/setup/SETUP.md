@@ -93,7 +93,7 @@ DATABASE_URL=postgresql+psycopg://postgres:password@localhost:5432/premnathrail_
 AZURE_CLIENT_ID=your-client-id-from-azure
 AZURE_CLIENT_SECRET=your-client-secret-from-azure
 AZURE_TENANT_ID=your-tenant-id-from-azure
-AZURE_REDIRECT_URI=http://localhost:8000/auth/callback
+AZURE_REDIRECT_URI=http://localhost:8000/api/v1/auth/callback
 
 # Domain restriction (optional)
 DOMAIN_EMAIL=@premnathrail.com
@@ -124,7 +124,7 @@ curl http://localhost:8000/health
 
 Should return:
 ```json
-{"status": "ok", "app": "Premnathrail Portal"}
+{"status": "ok", "app": "Premnathrail Portal", "version": "1.0.0", "environment": "development"}
 ```
 
 ### Test via Swagger UI
@@ -154,76 +154,9 @@ test_health_endpoint PASSED
 
 ---
 
-## Step 6: Frontend Setup (Optional)
+## Step 6: Frontend Setup
 
-### 1. Create basic HTML test page
-
-Create `frontend/index.html`:
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Premnathrail Portal</title>
-</head>
-<body>
-  <h1>Premnathrail Portal</h1>
-  
-  <button onclick="login()">Login with Microsoft</button>
-  <div id="user-info" style="display:none;">
-    <p>Welcome, <span id="username"></span>!</p>
-    <button onclick="logout()">Logout</button>
-  </div>
-
-  <script>
-    const API_URL = 'http://localhost:8000';
-    
-    function login() {
-      window.location.href = `${API_URL}/auth/microsoft-login`;
-    }
-    
-    async function getMe() {
-      const token = localStorage.getItem('token');
-      if (!token) return null;
-      
-      const response = await fetch(`${API_URL}/auth/me`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.ok) return response.json();
-      return null;
-    }
-    
-    async function logout() {
-      localStorage.removeItem('token');
-      location.reload();
-    }
-    
-    // Check if logged in
-    (async () => {
-      const user = await getMe();
-      if (user) {
-        document.getElementById('user-info').style.display = 'block';
-        document.getElementById('username').textContent = user.name;
-      }
-    })();
-  </script>
-</body>
-</html>
-```
-
-### 2. Serve frontend
-
-```bash
-# Using Python
-python -m http.server 3000
-
-# Or use npm http-server
-npm install -g http-server
-http-server
-```
-
-Open: `http://localhost:3000/frontend/index.html`
+> **Note:** this section previously described a hand-written `frontend/index.html` test page served via `python -m http.server`. That no longer reflects reality — the frontend is now a full Next.js 16 / React 19 application under `frontend/src/`. See **[../development/DEVELOPMENT_SETUP.md](../development/DEVELOPMENT_SETUP.md)** for the current frontend setup steps (`npm install`, `npm run dev`, required `NEXT_PUBLIC_API_URL`).
 
 ---
 

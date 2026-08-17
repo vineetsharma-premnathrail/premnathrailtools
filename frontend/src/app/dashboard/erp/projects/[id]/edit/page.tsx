@@ -12,7 +12,7 @@ export default function EditProjectPage() {
   const params = useParams()
   const router = useRouter()
   const projectId = Number(params.id)
-  const { isAuthorized, isLoading } = useRequireErpPermission('project_edit', `/dashboard/erp/projects/${projectId}`)
+  const { user, isAuthorized, isLoading } = useRequireErpPermission('project_edit', `/dashboard/erp/projects/${projectId}`)
 
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
@@ -48,11 +48,12 @@ export default function EditProjectPage() {
       <ProjectForm
         initial={project}
         submitLabel="Save Changes"
+        currentUserId={user?.id}
         onCancel={() => router.push(`/dashboard/erp/projects/${projectId}`)}
-        onSubmit={async (payload, files) => {
+        onSubmit={async (payload, files, shareOptions) => {
           await erpApi.updateProject(projectId, payload)
           if (files.length > 0) {
-            await erpApi.uploadProjectAttachments(projectId, files)
+            await erpApi.uploadProjectAttachments(projectId, files, shareOptions)
           }
           router.push(`/dashboard/erp/projects/${projectId}`)
         }}

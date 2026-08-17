@@ -15,8 +15,14 @@ We need to build a complex application (CRM + ERP + RnD) that may grow into mult
 
 Adopt a **modular monolith** architecture:
 - Single FastAPI application
-- Well-defined modules (CRM, ERP, RnD, Main)
-- Each module has: models, schemas, repositories, services, routes
+- Well-defined modules — as actually built: `main` (users/auth/notifications),
+  `erp`, `crm`, `rnd`, `purchase` (PRs raised from ERP Service Requests), and
+  `p2p` (a newer, independent, any-department P2P request module — see
+  [ADR 0003](./0003-independent-p2p-module.md))
+- Each module has: models, schemas, routes (in practice, routes query the DB
+  directly — see the "Module Structure" note in
+  [ARCHITECTURE.md](../architecture/ARCHITECTURE.md) for why the originally-planned
+  separate repositories/services layers were dropped)
 - Clear layer separation: routes → services → repositories
 
 ## Rationale

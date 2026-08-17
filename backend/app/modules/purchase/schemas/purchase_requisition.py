@@ -45,6 +45,16 @@ class PurchaseRequisitionActionPayload(BaseModel):
     reason: str | None = None
 
 
+class PurchaseRequisitionRaisePayload(BaseModel):
+    priority: str = "medium"
+    required_by_date: date | None = None
+    reason: str | None = None
+    category_code: str | None = None
+    requirement_type: str | None = None
+    approver_id: int | None = None
+    approver_name: str | None = None
+
+
 class PurchaseRequisitionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -54,6 +64,14 @@ class PurchaseRequisitionResponse(BaseModel):
     service_request_id: int
     status: str
     raised_by_id: int | None = None
+    priority: str = "medium"
+    required_by_date: date | None = None
+    purchase_reason: str | None = None
+    category_code: str | None = None
+    category_label: str | None = None
+    requirement_type: str | None = None
+    approver_id: int | None = None
+    approver_name: str | None = None
     vendor: str | None = None
     po_number: str | None = None
     po_date: date | None = None
@@ -73,3 +91,5 @@ class PurchaseRequisitionResponse(BaseModel):
     client_company: str | None = None
     site_name: str | None = None
     sr_request_number: str | None = None
+    raised_by_name: str | None = None
+    department: str | None = None

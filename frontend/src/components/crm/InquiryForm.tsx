@@ -102,6 +102,9 @@ export default function InquiryForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
+  const setMirror = (field: keyof typeof orgMirror, value: string) => setOrgMirror((m) => ({ ...m, [field]: value }))
+
   useEffect(() => {
     crmApi.listOrganizations().then(setOrganizations)
   }, [])
@@ -156,9 +159,6 @@ export default function InquiryForm({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.org_id])
-
-  const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
-  const setMirror = (field: keyof typeof orgMirror, value: string) => setOrgMirror((m) => ({ ...m, [field]: value }))
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

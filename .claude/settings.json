@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./venv/Scripts/python.exe -c ' *)",
+      "Bash(node -e \"console.log\\(require\\('zustand/package.json'\\).version\\)\")",
+      "Bash(curl -s -H 'Cookie: session_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJ2aW5lZXQuc2hhcm1hQHByZW1uYXRocmFpbC5jb20iLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3ODY2MjQyMjd9.OI2WIWIUsI1T9mgmdEVCpUsVAdCqL17ddBflRpu0iqM' http://localhost:8000/api/v1/auth/me)",
+      "Bash(powershell -Command \"Get-CimInstance Win32_Process -Filter \\\\\"ProcessId=29148 or ProcessId=16880\\\\\" | Select-Object ProcessId,CommandLine\")",
+      "Bash(powershell -Command \"Get-CimInstance Win32_Process -Filter \\\\\"Name='python.exe'\\\\\" | Select-Object ProcessId,CommandLine\")"
+    ]
+  }
+}

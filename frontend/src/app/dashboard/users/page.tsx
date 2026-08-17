@@ -11,6 +11,7 @@ const APPS: { id: AppModule; label: string }[] = [
   { id: 'rnd', label: 'R&D Tools' },
   { id: 'crm', label: 'CRM' },
   { id: 'purchase', label: 'Purchase' },
+  { id: 'p2p', label: 'P2P' },
 ]
 
 export default function UsersRolesPage() {

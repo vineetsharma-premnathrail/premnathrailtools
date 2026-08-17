@@ -102,6 +102,11 @@ export const usersApi = {
     const { data } = await apiClient.post('/users/sync-azure')
     return data
   },
+
+  directory: async (): Promise<import('@/types').DirectoryUser[]> => {
+    const { data } = await apiClient.get('/users/directory')
+    return data
+  },
 }
 
 export const crmApi = {
@@ -436,9 +441,19 @@ export const erpApi = {
     return data
   },
 
-  uploadProjectAttachments: async (id: number, files: File[]) => {
+  uploadProjectAttachments: async (
+    id: number,
+    files: File[],
+    options?: { isPrivate?: boolean; sharedWithUserIds?: number[]; sharedDepartments?: string[]; sharedDesignations?: string[] }
+  ) => {
     const formData = new FormData()
     files.forEach((f) => formData.append('files', f))
+    if (options?.isPrivate) {
+      formData.append('is_private', 'true')
+      if (options.sharedWithUserIds?.length) formData.append('shared_with_user_ids', options.sharedWithUserIds.join(','))
+      if (options.sharedDepartments?.length) formData.append('shared_departments', options.sharedDepartments.join(','))
+      if (options.sharedDesignations?.length) formData.append('shared_designations', options.sharedDesignations.join(','))
+    }
     const { data } = await apiClient.post(`/erp/projects/${id}/attachments`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
@@ -447,6 +462,28 @@ export const erpApi = {
 
   deleteProjectAttachment: async (id: number, attachmentId: number) => {
     const { data } = await apiClient.delete(`/erp/projects/${id}/attachments/${attachmentId}`)
+    return data
+  },
+
+  previewProjectAttachment: async (id: number, attachmentId: number): Promise<{ getUrl: string }> => {
+    const { data } = await apiClient.get(`/erp/projects/${id}/attachments/${attachmentId}/preview`)
+    return data
+  },
+
+  updateProjectAttachmentPermissions: async (
+    id: number,
+    attachmentId: number,
+    isPrivate: boolean,
+    sharedWithUserIds: number[],
+    sharedDepartments: string[] = [],
+    sharedDesignations: string[] = []
+  ) => {
+    const { data } = await apiClient.patch(`/erp/projects/${id}/attachments/${attachmentId}/permissions`, {
+      is_private: isPrivate,
+      shared_with_user_ids: sharedWithUserIds,
+      shared_departments: sharedDepartments,
+      shared_designations: sharedDesignations,
+    })
     return data
   },
 
@@ -531,9 +568,27 @@ export const erpApi = {
     return data
   },
 
+  getMaterialAttachmentBlob: async (srId: number, matId: number, attachmentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/erp/service-requests/${srId}/materials/${matId}/attachments/${attachmentId}/content`, { responseType: 'blob' })
+    return data
+  },
+
+  previewMaterialAttachment: async (srId: number, matId: number, attachmentId: number): Promise<{ getUrl: string }> => {
+    const { data } = await apiClient.get(`/erp/service-requests/${srId}/materials/${matId}/attachments/${attachmentId}/preview`)
+    return data
+  },
+
   // Purchase Requisitions (raised from this SR's materials)
-  raisePurchaseRequisition: async (srId: number) => {
-    const { data } = await apiClient.post(`/erp/service-requests/${srId}/raise-pr`)
+  raisePurchaseRequisition: async (srId: number, payload: {
+    priority: string
+    required_by_date?: string
+    reason?: string
+    category_code?: string
+    requirement_type?: string
+    approver_id?: number
+    approver_name?: string
+  }) => {
+    const { data } = await apiClient.post(`/erp/service-requests/${srId}/raise-pr`, payload)
     return data
   },
 
@@ -549,6 +604,11 @@ export const erpApi = {
 
   deleteAttachment: async (srId: number, attachmentId: number) => {
     const { data } = await apiClient.delete(`/erp/service-requests/${srId}/attachments/${attachmentId}`)
+    return data
+  },
+
+  previewAttachment: async (srId: number, attachmentId: number): Promise<{ getUrl: string }> => {
+    const { data } = await apiClient.get(`/erp/service-requests/${srId}/attachments/${attachmentId}/preview`)
     return data
   },
 
@@ -597,6 +657,107 @@ export const purchaseApi = {
 
   updateItem: async (prId: number, itemId: number, payload: { remarks?: string }) => {
     const { data } = await apiClient.patch(`/purchase/requisitions/${prId}/items/${itemId}`, payload)
+    return data
+  },
+}
+
+// Standalone Purchase Requisition module (distinct from purchaseApi above —
+// this one is for PRs raised directly by any department, not out of a
+// Service Request's Materials tab).
+export const p2pApi = {
+  listProjects: async (search?: string) => {
+    const { data } = await apiClient.get('/p2p/requests/projects', { params: { search } })
+    return data
+  },
+
+  getMeta: async () => {
+    const { data } = await apiClient.get('/p2p/requests/meta')
+    return data
+  },
+
+  create: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/p2p/requests', payload)
+    return data
+  },
+
+  list: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/p2p/requests', { params })
+    return data
+  },
+
+  get: async (id: number) => {
+    const { data } = await apiClient.get(`/p2p/requests/${id}`)
+    return data
+  },
+
+  update: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/p2p/requests/${id}`, payload)
+    return data
+  },
+
+  getAuditTrail: async (id: number) => {
+    const { data } = await apiClient.get(`/p2p/requests/${id}/audit`)
+    return data
+  },
+
+  approve: async (id: number) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/approve`)
+    return data
+  },
+
+  reject: async (id: number, reason?: string) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/reject`, { reason })
+    return data
+  },
+
+  cancel: async (id: number, reason?: string) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/cancel`, { reason })
+    return data
+  },
+
+  assignBuyer: async (id: number, assigned_buyer_id: number, assignment_date?: string) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/assign-buyer`, { assigned_buyer_id, assignment_date })
+    return data
+  },
+
+  requestQuotations: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/request-quotations`, payload)
+    return data
+  },
+
+  selectVendor: async (id: number, selected_vendor: string) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/select-vendor`, { selected_vendor })
+    return data
+  },
+
+  createPO: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/create-po`, payload)
+    return data
+  },
+
+  updateReceipt: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/update-receipt`, payload)
+    return data
+  },
+
+  close: async (id: number) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/close`)
+    return data
+  },
+
+  uploadAttachments: async (id: number, files: File[], docType: string = 'supporting', itemId?: number) => {
+    const formData = new FormData()
+    files.forEach((f) => formData.append('files', f))
+    formData.append('doc_type', docType)
+    if (itemId) formData.append('item_id', String(itemId))
+    const { data } = await apiClient.post(`/p2p/requests/${id}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
+  deleteAttachment: async (id: number, attachmentId: number) => {
+    const { data } = await apiClient.delete(`/p2p/requests/${id}/attachments/${attachmentId}`)
     return data
   },
 }

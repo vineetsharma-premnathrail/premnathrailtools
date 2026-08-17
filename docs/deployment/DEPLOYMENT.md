@@ -1,289 +1,176 @@
 # Deployment Guide
 
-How to deploy Premnathrail Portal to production.
+How Premnathrail Portal is actually built and deployed, based on the
+repo's real `Dockerfile` and entrypoint — not a hypothetical target
+platform. There is no Kubernetes, no CDN, and no load balancer in this
+repo; if you introduce one, update this doc to match.
+
+## Architecture (as it actually exists)
+
+The whole application ships as **one Docker image** containing both the
+FastAPI backend and the built Next.js frontend. Only the frontend process
+is exposed:
+
+```
+┌───────────────────────────────────────────────┐
+│ Single container                               │
+│                                                 │
+│  Node (Next.js standalone server)  :3000  ◄──── EXPOSE 3000 (only port out)
+│         │  proxies /api/* to backend           │
+│         ▼                                      │
+│  uvicorn (FastAPI)  127.0.0.1:8000              │  ← internal only, not exposed
+│                                                 │
+└───────────────────────────────────────────────┘
+                    │
+                    ▼
+          PostgreSQL (external, via DATABASE_URL)
+```
+
+There is no docker-compose file and no separate Dockerfiles for
+frontend/backend — see [DOCKER.md](DOCKER.md) for the single root
+`Dockerfile` and `docker-entrypoint.sh` in full detail.
 
 ## Prerequisites
 
-- Docker installed
-- Kubernetes cluster (or use managed: AWS EKS, Azure AKS, GCP GKE)
-- PostgreSQL database (managed: AWS RDS, Azure Database, Google Cloud SQL)
-- Domain name with DNS configured
-- SSL certificate (use Let's Encrypt)
+- Docker (to build/run the image)
+- A reachable PostgreSQL database (any host — managed or self-run; this
+  repo does not assume RDS/Cloud SQL/etc.)
+- Values for the environment variables below (Azure AD app registration,
+  SharePoint site, etc.)
+- A reverse proxy in front of the container for TLS termination if
+  exposed to the internet (the container itself serves plain HTTP on
+  port 3000) — see [SERVER_CONFIGURATION.md](SERVER_CONFIGURATION.md)
 
-## Architecture
-
-```
-┌─────────────────────────────────────┐
-│ CDN (CloudFlare/CloudFront)        │ ← Frontend static files
-└──────────────┬──────────────────────┘
-               │
-┌──────────────▼──────────────────────┐
-│ Load Balancer (Nginx/HAProxy)      │ ← Reverse proxy, HTTPS termination
-└──────────────┬──────────────────────┘
-               │
-┌──────────────▼──────────────────────┐
-│ Kubernetes Cluster                  │
-│ ├─ FastAPI Pod (4 replicas)        │ ← Auto-scale based on CPU/memory
-│ ├─ FastAPI Pod                     │
-│ ├─ FastAPI Pod                     │
-│ └─ FastAPI Pod                     │
-└──────────────┬──────────────────────┘
-               │
-┌──────────────▼──────────────────────┐
-│ PostgreSQL Database                │ ← Multi-AZ replication
-└─────────────────────────────────────┘
-```
-
-## Step 1: Containerize Application
-
-### Dockerfile
-
-Create `Dockerfile` in project root:
-
-```dockerfile
-FROM python:3.14-slim
-
-WORKDIR /app
-
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY backend/ .
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### Build image
+## Step 1: Build the image
 
 ```bash
-docker build -t premnathrail-portal:1.0.0 .
-docker tag premnathrail-portal:1.0.0 your-registry/premnathrail-portal:1.0.0
-docker push your-registry/premnathrail-portal:1.0.0
+docker build -t premnathrail-portal:latest .
 ```
 
-## Step 2: Deploy to Kubernetes
+Build args (all optional, baked into the client bundle at build time
+since they're `NEXT_PUBLIC_*`):
 
-### Kubernetes manifests
+- `NEXT_PUBLIC_API_URL` — defaults to `/api/v1` (same-origin relative
+  path; works out of the box because the frontend proxies `/api/*` to
+  the co-located backend, so no build arg is normally needed)
 
-**deployment.yaml:**
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: premnathrail-portal
-spec:
-  replicas: 4
-  selector:
-    matchLabels:
-      app: premnathrail-portal
-  template:
-    metadata:
-      labels:
-        app: premnathrail-portal
-    spec:
-      containers:
-      - name: app
-        image: your-registry/premnathrail-portal:1.0.0
-        ports:
-        - containerPort: 8000
-        env:
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: database-url
-        - name: SECRET_KEY
-          valueFrom:
-            secretKeyRef:
-              name: app-secrets
-              key: secret-key
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-          initialDelaySeconds: 10
-          periodSeconds: 10
-```
+See [DOCKER.md](DOCKER.md) for what each build stage does and why.
 
-**service.yaml:**
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: premnathrail-portal
-spec:
-  selector:
-    app: premnathrail-portal
-  ports:
-  - protocol: TCP
-    port: 80
-    targetPort: 8000
-  type: LoadBalancer
-```
-
-### Apply manifests
+## Step 2: Run the container
 
 ```bash
-kubectl create secret generic app-secrets \
-  --from-literal=database-url="..." \
-  --from-literal=secret-key="..."
-
-kubectl apply -f deployment.yaml
-kubectl apply -f service.yaml
+docker run -d \
+  --name premnathrail-portal \
+  -p 80:3000 \
+  -e DATABASE_URL="postgresql+psycopg://user:password@db-host:5432/premnathrail" \
+  -e SECRET_KEY="<32+ char random secret>" \
+  -e ENVIRONMENT=production \
+  -e ALLOWED_ORIGINS="https://portal.premnathrail.com" \
+  -e ALLOWED_HOSTS="portal.premnathrail.com" \
+  -e TRUSTED_PROXIES="<reverse-proxy-ip>" \
+  -e AZURE_CLIENT_ID="..." \
+  -e AZURE_CLIENT_SECRET="..." \
+  -e AZURE_TENANT_ID="..." \
+  -e AZURE_REDIRECT_URI="https://portal.premnathrail.com/auth/callback" \
+  premnathrail-portal:latest
 ```
 
-## Step 3: Setup Database
+The full list of settings the app reads is in
+`backend/app/core/config.py`; see [SERVER_CONFIGURATION.md](SERVER_CONFIGURATION.md)
+for what each one means and which are security-relevant.
 
-### AWS RDS
+On startup, `docker-entrypoint.sh` automatically runs `alembic upgrade
+head` against `DATABASE_URL` **before** starting uvicorn — migrations are
+applied on every container start, not as a separate manual step. If the
+backend process dies, the entrypoint intentionally kills the whole
+container rather than leaving the frontend running with a dead API.
 
-```bash
-# Create RDS instance
-aws rds create-db-instance \
-  --db-instance-identifier premnathrail-prod \
-  --db-instance-class db.t3.micro \
-  --engine postgres \
-  --master-username postgres \
-  --master-user-password "<strong-password>"
-```
+## Step 3: Database
 
-### Apply migrations
+Point `DATABASE_URL` at a reachable Postgres instance. There is no
+database-provisioning automation in this repo — create the database and
+role yourself, then let the entrypoint's `alembic upgrade head` create
+the schema on first boot. For manual migration runs, see
+[RUNBOOK.md](../runbook/RUNBOOK.md).
 
-```bash
-alembic upgrade head
-```
+`environment=production` (via `ENVIRONMENT` env var, mapped to
+`Settings.environment`) makes the app **refuse to start** if `SECRET_KEY`
+is unset, the placeholder value, or under 32 characters — this is
+enforced in code (`Settings._reject_placeholder_secret_in_production`),
+not just documentation.
 
-## Step 4: Configure DNS & HTTPS
+## Step 4: DNS & HTTPS
 
-### Point domain to load balancer
-
-```bash
-# Get load balancer IP
-kubectl get svc premnathrail-portal
-
-# In DNS provider (Route53, Cloudflare, etc.):
-# CNAME: api.premnathrail.com → <load-balancer-ip>
-```
-
-### SSL certificate (Let's Encrypt)
-
-```bash
-# Using cert-manager in Kubernetes
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
-```
+The container serves plain HTTP on port 3000 only — TLS termination and
+DNS are entirely external to this repo. Put a reverse proxy (Nginx,
+Traefik, Coolify, etc.) in front of it; see
+[SERVER_CONFIGURATION.md](SERVER_CONFIGURATION.md) for the reverse-proxy
+headers the app expects (`TRUSTED_PROXIES`, `ALLOWED_HOSTS`) and why they
+matter for security, not just routing.
 
 ## Step 5: Monitoring & Logging
 
-### Setup logging
+There is no external log aggregation or metrics stack (no ELK, no
+Prometheus/Grafana) configured in this repo. What exists today:
 
-```bash
-# Using ELK (Elasticsearch, Logstash, Kibana) or CloudWatch
-# Configure app to send logs to central location
-```
+- Uvicorn's own access/error logs on stdout
+- `OWASPMiddleware` (`backend/app/middleware/owasp.py`) emits structured,
+  OWASP-tagged log lines (`[A01]`…`[A10]`) for security-relevant events
+  — see [RUNBOOK.md](../runbook/RUNBOOK.md#monitoring--logging) for how
+  to read them
 
-### Setup monitoring
+If you add a real log/metrics stack, point it at the container's stdout
+and update this section.
 
-```bash
-# Using Prometheus + Grafana
-# Monitor: CPU, memory, request latency, error rate
-```
+## Deployment checklist
 
-## Deployment Checklist
-
-- [ ] Docker image builds successfully
-- [ ] All tests pass (`pytest app/tests`)
-- [ ] Database migrations tested
-- [ ] Environment variables configured
-- [ ] Secrets secured (not in code)
-- [ ] Load balancer configured
-- [ ] HTTPS/SSL working
-- [ ] Database backups configured
-- [ ] Monitoring alerts setup
-- [ ] Rollback plan documented
+- [ ] `docker build` succeeds
+- [ ] Backend tests pass (`pytest app/tests`, see [RUNBOOK.md](../runbook/RUNBOOK.md))
+- [ ] Frontend builds (`npm run build`) and lints (`npm run lint`)
+- [ ] All required env vars set (see [SERVER_CONFIGURATION.md](SERVER_CONFIGURATION.md))
+- [ ] `SECRET_KEY` is a real 32+ char secret, not the `"..."` placeholder
+- [ ] `ALLOWED_ORIGINS` / `ALLOWED_HOSTS` / `TRUSTED_PROXIES` set correctly for production
+- [ ] Database reachable and migrations apply cleanly
+- [ ] Reverse proxy in front with HTTPS
+- [ ] A recent backup exists — see [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
+- [ ] Rollback plan understood (see below)
 
 ## Rollback
 
-If deployment fails:
+There is no orchestrator (no Kubernetes) doing rolling updates here.
+Rollback is manual:
 
 ```bash
-# Revert to previous image
-kubectl set image deployment/premnathrail-portal \
-  app=your-registry/premnathrail-portal:1.0.0-previous
-
-# Verify
-kubectl rollout status deployment/premnathrail-portal
+docker stop premnathrail-portal
+docker run -d --name premnathrail-portal ... premnathrail-portal:<previous-tag>
 ```
 
-## Maintenance
-
-### Backup database
-
-```bash
-# Automated backup via RDS (AWS does daily backups)
-# Manual backup:
-pg_dump -U postgres -h <db-host> premnathrail > backup.sql
-```
-
-### Update dependencies
-
-```bash
-# Only in staging first
-pip install --upgrade -r requirements.txt
-# Then rebuild Docker image and test
-```
-
-### Monitor performance
-
-- Check CPU/memory usage
-- Monitor database query times
-- Track error rates
-- Alert if metrics exceed thresholds
-
-## Security Considerations
-
-- [ ] HTTPS only (redirect HTTP → HTTPS)
-- [ ] Rate limiting enabled
-- [ ] CORS configured
-- [ ] SQL injection protection (SQLAlchemy parameterized queries)
-- [ ] Secrets not in code (use environment variables)
-- [ ] Database credentials rotated quarterly
-- [ ] Regular security patches applied
-
-## Cost Optimization
-
-- Use auto-scaling (reduce replicas during off-hours)
-- Use spot instances for non-critical services
-- Monitor and alert on unexpected costs
-- Clean up unused resources
+Because migrations run automatically on container start, rolling back the
+image does **not** roll back the database schema. If the failed
+deployment included a migration, you must decide whether to
+`alembic downgrade` or restore from backup (see
+[BACKUP_RESTORE.md](BACKUP_RESTORE.md)) — rolling back the image alone
+can leave the old code pointed at a newer schema.
 
 ## Troubleshooting
 
-### Pod crashes
+See [RUNBOOK.md](../runbook/RUNBOOK.md) for day-to-day operational
+troubleshooting (OAuth, permissions, OWASP 400/429s, etc.). Container-level
+issues:
+
 ```bash
-kubectl logs <pod-name>
-kubectl describe pod <pod-name>
+docker logs premnathrail-portal
+docker exec -it premnathrail-portal sh
 ```
 
-### Database connection errors
-```bash
-# Check security groups allow connection
-# Verify DATABASE_URL is correct
-psql -U postgres -h <db-host> -d premnathrail
-```
+Database connectivity:
 
-### High latency
 ```bash
-# Check database query performance
-# Check network latency
-# Monitor CPU/memory usage
+# from inside or near the container's network
+psql "$DATABASE_URL"
 ```
 
 ---
 
-**Next:** Read [RUNBOOK.md](../runbook/RUNBOOK.md) for operational procedures.
+**Next:** [DOCKER.md](DOCKER.md) for the image build in detail, or
+[RUNBOOK.md](../runbook/RUNBOOK.md) for operational procedures.

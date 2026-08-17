@@ -1,12 +1,14 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { Project } from '@/types'
+import { useEffect, useRef, useState } from 'react'
+import { DirectoryUser, Project } from '@/types'
 import DateField from './DateField'
 import PhoneField, { isPhoneValid } from './PhoneField'
 import YearField, { isFinancialYearValid } from './YearField'
 import ValidatedInput from '@/components/ValidatedInput'
+import SharePicker, { useShareSelection } from './SharePicker'
 import { isValidEmail, isValidGST, VALIDATION_MESSAGES } from '@/lib/validation'
+import { usersApi } from '@/lib/api'
 
 const MACHINE_TYPES = ['Road Rail', 'Rail Bound', 'Accessories', 'Other']
 const APPLICATION_TYPES = ['OHE', 'FBW', 'CMC - Shunting', 'Track Laying', 'Other']
@@ -135,11 +137,17 @@ export default function ProjectForm({
   submitLabel,
   onSubmit,
   onCancel,
+  currentUserId,
 }: {
   initial?: Partial<Project>
   submitLabel: string
-  onSubmit: (payload: Record<string, unknown>, files: File[]) => Promise<void>
+  onSubmit: (
+    payload: Record<string, unknown>,
+    files: File[],
+    shareOptions: { isPrivate: boolean; sharedWithUserIds: number[]; sharedDepartments: string[]; sharedDesignations: string[] }
+  ) => Promise<void>
   onCancel: () => void
+  currentUserId?: number
 }) {
   const [tabIndex, setTabIndex] = useState(0)
   const [form, setForm] = useState<FormState>(() => toFormState(initial))
@@ -158,6 +166,10 @@ export default function ProjectForm({
   const fileRef = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const share = useShareSelection()
+  const [directory, setDirectory] = useState<DirectoryUser[]>([])
+
+  useEffect(() => { usersApi.directory().then(setDirectory).catch(() => {}) }, [])
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
 
@@ -224,7 +236,10 @@ export default function ProjectForm({
       Object.keys(payload).forEach((k) => {
         if (payload[k] === '') delete payload[k]
       })
-      await onSubmit(payload, queuedFiles)
+      await onSubmit(payload, queuedFiles, {
+        isPrivate: share.isPrivate, sharedWithUserIds: share.userIds,
+        sharedDepartments: share.departments, sharedDesignations: share.designations,
+      })
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Failed to save project.')
     } finally {
@@ -477,6 +492,23 @@ export default function ProjectForm({
                     <button type="button" onClick={() => setQueuedFiles((prev) => prev.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: 12 }}>Remove</button>
                   </div>
                 ))}
+              </div>
+            )}
+            {queuedFiles.length > 0 && (
+              <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                <SharePicker
+                  directory={directory}
+                  currentUserId={currentUserId}
+                  isPrivate={share.isPrivate}
+                  onTogglePrivate={share.setIsPrivate}
+                  selectedUserIds={share.userIds}
+                  onToggleUser={share.toggleUser}
+                  selectedDepartments={share.departments}
+                  onToggleDepartment={share.toggleDepartment}
+                  selectedDesignations={share.designations}
+                  onToggleDesignation={share.toggleDesignation}
+                  disabled={saving}
+                />
               </div>
             )}
           </Section>

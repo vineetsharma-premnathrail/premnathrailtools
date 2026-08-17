@@ -14,7 +14,7 @@ doesn't repeat them, just places them in context:
 
 | Department | Status |
 |---|---|
-| Purchase | Built (PR lifecycle) — roadmap written |
+| Purchase | Built (PR lifecycle) — roadmap written. ✅ Note: the buyer/RFQ/vendor/PO/receipt phases planned in `PURCHASE_MODULE_PLAN.md` now exist, but in the separate standalone `p2p` module, not this one — see the note at the top of that doc. |
 | Electrical | Not built — roadmap written |
 | R&D | Built (calculation tools) — extend below |
 | Business Development | Built (CRM: inquiries/tenders/quotations) — extend below |

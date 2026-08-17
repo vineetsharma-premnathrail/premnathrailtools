@@ -27,6 +27,9 @@ from app.modules.erp.models.service_request_attachment import ServiceRequestAtta
 from app.modules.erp.models.service_material_attachment import ServiceMaterialAttachment
 from app.modules.purchase.models.purchase_requisition import PurchaseRequisition
 from app.modules.purchase.models.purchase_requisition_item import PurchaseRequisitionItem
+from app.modules.p2p.models.p2p_request import P2PRequest
+from app.modules.p2p.models.p2p_request_item import P2PRequestItem
+from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation,
     Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity, Note,

@@ -9,11 +9,12 @@ from app.auth.microsoft import get_msal_app
 
 logger = logging.getLogger(__name__)
 
-# Must match teams-app/manifest.json webApplicationInfo.id and the "home"
-# staticTabs entityId — Graph validates the activityType against whatever
-# manifest is currently published to Teams, and the webUrl must be a Teams
-# deep link (plain https:// URLs are rejected with a 400).
-TEAMS_APP_ID = "8e1e753c-6c52-4e32-99fc-e70e1f02323e"
+# Must match teams-app/manifest.json's root "id" (the Teams catalog app ID —
+# NOT webApplicationInfo.id, which is the AAD client ID used for SSO) and the
+# "home" staticTabs entityId — Graph validates the activityType against
+# whatever manifest is currently published to Teams, and the webUrl must be a
+# Teams deep link (plain https:// URLs are rejected with a 400).
+TEAMS_APP_ID = "da0e9c5c-b2d8-4a1f-a92a-7de40bba7eb3"
 TEAMS_ENTITY_ID = "home"
 PORTAL_URL = "https://erp.premnathrailtools.cloud/dashboard"
 

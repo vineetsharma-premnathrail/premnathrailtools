@@ -374,7 +374,7 @@ curl -w "\nTime: %{time_total}s\n" http://localhost:8000/health
 
 ---
 
-## Logs
+## Monitoring & Logging
 
 ### View logs
 ```bash
@@ -383,6 +383,11 @@ curl -w "\nTime: %{time_total}s\n" http://localhost:8000/health
 uvicorn app.main:app --reload --log-level=debug
 ```
 
+In the Docker deployment, both the backend and frontend processes log to
+the container's stdout/stderr (see
+[../deployment/DOCKER.md](../deployment/DOCKER.md)) — `docker logs
+<container>` is the equivalent of watching the uvicorn terminal locally.
+
 ### Log levels
 - `DEBUG` — Very detailed, noisy
 - `INFO` — General info (default)
@@ -390,19 +395,56 @@ uvicorn app.main:app --reload --log-level=debug
 - `ERROR` — Something failed
 - `CRITICAL` — System failing
 
+### Security logs (OWASP middleware)
+
+`backend/app/middleware/owasp.py` logs structured, OWASP-tagged lines
+(logger name `owasp`) for every security-relevant event it handles —
+tag prefixes `[A01]` through `[A10]` correspond directly to the OWASP
+Top 10 (2021) category named in that file's module docstring, e.g.:
+
+- `[A01]` — broken access control / path-scan detection
+- `[A03]` — injection pattern matched (SQLi/XSS/path traversal/etc.) in a
+  URL, header, or body — the log line names exactly which pattern
+  matched and where
+- `[A07]` — rate limit exceeded or an IP crossing `BAN_THRESHOLD` (10
+  violations) and getting banned for `BAN_DURATION_SECONDS` (600s)
+- `[A09]` — request-ID tracing and slow-request alerts (>`SLOW_REQUEST_MS`,
+  5000ms)
+- `[A10]` — SSRF: a private/loopback IP range blocked in a query param or
+  URL-valued header
+
+When a request unexpectedly gets a `400`/`429` with no further detail,
+grep the logs for these tags first — see the existing troubleshooting
+entries above ("A normally-fine request gets 400", "A previously-working
+IP suddenly gets 429") for the exact interpretation of each.
+
+There is no external log aggregation (no ELK/Prometheus/Grafana)
+currently wired up — logs live only in the terminal/container stdout
+today. If you add one, point it at that stream and update this section.
+
 ---
 
-## Backup & Restore
+## Disaster Recovery
 
-### Backup database
-```bash
-pg_dump -U postgres -h localhost premnathrail_ideal > backup.sql
-```
+Full backup/restore procedure (connection details, the actual dump
+naming pattern used in this repo, `pg_dump`/`pg_restore` commands, and
+what's *not* automated) lives in
+[../deployment/BACKUP_RESTORE.md](../deployment/BACKUP_RESTORE.md) —
+that is the source of truth; don't duplicate the commands here.
 
-### Restore database
-```bash
-psql -U postgres -h localhost premnathrail_ideal < backup.sql
-```
+Quick reference for an active incident:
+
+1. **Before touching anything destructive**, take a fresh dump first
+   (see BACKUP_RESTORE.md) — the existing `backend/db_backups/*.sql`
+   files show the pattern already used before risky migrations.
+2. If a bad deploy included a migration, remember the Docker entrypoint
+   runs `alembic upgrade head` automatically on every container start
+   (see [../deployment/DOCKER.md](../deployment/DOCKER.md)) — rolling
+   back the image alone does **not** roll back the schema. Decide
+   between `alembic downgrade` and a full restore from backup.
+3. There is no automated backup job today (see BACKUP_RESTORE.md) — if
+   the most recent manual dump predates the incident by a lot, that gap
+   is itself worth flagging afterward, not just working around.
 
 ---
 
@@ -447,6 +489,16 @@ Before going to production:
 - [ ] Set up CI/CD pipeline
 - [ ] Document deploy process
 - [ ] Test deploy in staging environment
+
+---
+
+## Related Deployment Docs
+
+- [../deployment/DEPLOYMENT.md](../deployment/DEPLOYMENT.md) — full deploy flow
+- [../deployment/DOCKER.md](../deployment/DOCKER.md) — image build & entrypoint details
+- [../deployment/CI_CD.md](../deployment/CI_CD.md) — current state (none) and a recommended pipeline
+- [../deployment/SERVER_CONFIGURATION.md](../deployment/SERVER_CONFIGURATION.md) — every env var and what it controls
+- [../deployment/BACKUP_RESTORE.md](../deployment/BACKUP_RESTORE.md) — backup/restore procedure
 
 ---
 

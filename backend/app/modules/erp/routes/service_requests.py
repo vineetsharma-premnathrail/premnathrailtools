@@ -25,10 +25,14 @@ from app.modules.erp.schemas.service_request import (
     ServiceMaterialAttachmentResponse,
     MaterialReceivePayload,
 )
-from app.modules.purchase.models.purchase_requisition import PurchaseRequisition
-from app.modules.purchase.schemas.purchase_requisition import PurchaseRequisitionResponse
+from app.modules.purchase.models.purchase_requisition import PurchaseRequisition, PR_PRIORITIES, PR_CATEGORIES, PR_REQUIREMENT_TYPES
+from app.modules.purchase.schemas.purchase_requisition import PurchaseRequisitionResponse, PurchaseRequisitionRaisePayload
 from app.modules.purchase.service import raise_requisition, mark_material_received
-from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint
+from fastapi.responses import Response
+from app.utils.sharepoint import (
+    upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint,
+    get_preview_url, download_file_content,
+)
 from app.utils.email import send_client_sr_email, send_team_sr_notification, send_purchase_requisition_email
 from app.utils.notifications import broadcast_notification, notify_user
 from app.auth.microsoft import get_app_graph_token
@@ -533,6 +537,52 @@ async def upload_service_request_attachments(
     }
 
 
+@router.get("/{sr_id}/attachments/{attachment_id}/content")
+async def get_service_request_attachment_content(
+    sr_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("erp")),
+):
+    """Raw bytes for in-app preview (img/pdf/video tags on our own origin),
+    fetched via the app-only Graph token — never the raw SharePoint webUrl."""
+    attachment = db.query(ServiceRequestAttachment).filter(
+        ServiceRequestAttachment.id == attachment_id, ServiceRequestAttachment.service_request_id == sr_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
+    return Response(
+        content=content,
+        media_type=attachment.content_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+    )
+
+
+@router.get("/{sr_id}/attachments/{attachment_id}/preview")
+async def preview_service_request_attachment(
+    sr_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("erp")),
+):
+    """Fallback for formats the browser can't render natively (Office docs) —
+    a short-lived Microsoft-viewer link, minted via the app-only token."""
+    attachment = db.query(ServiceRequestAttachment).filter(
+        ServiceRequestAttachment.id == attachment_id, ServiceRequestAttachment.service_request_id == sr_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    get_url = await get_preview_url(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
+    return {"getUrl": get_url}
+
+
 @router.delete("/{sr_id}/attachments/{attachment_id}")
 async def delete_service_request_attachment(
     sr_id: int,
@@ -591,7 +641,10 @@ async def add_material(
         service_request_id=sr_id,
         material_name=payload.material_name,
         part_number=payload.part_number,
+        model_number=payload.model_number,
         description=payload.description,
+        estimated_budget=payload.estimated_budget,
+        reason=payload.reason,
         quantity=payload.quantity,
         unit=payload.unit,
         status=payload.status or "pending",
@@ -718,6 +771,50 @@ async def upload_material_attachments(
     }
 
 
+@router.get("/{sr_id}/materials/{mat_id}/attachments/{attachment_id}/content")
+async def get_material_attachment_content(
+    sr_id: int,
+    mat_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("erp")),
+):
+    attachment = db.query(ServiceMaterialAttachment).filter(
+        ServiceMaterialAttachment.id == attachment_id, ServiceMaterialAttachment.service_material_id == mat_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
+    return Response(
+        content=content,
+        media_type=attachment.content_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+    )
+
+
+@router.get("/{sr_id}/materials/{mat_id}/attachments/{attachment_id}/preview")
+async def preview_material_attachment(
+    sr_id: int,
+    mat_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("erp")),
+):
+    attachment = db.query(ServiceMaterialAttachment).filter(
+        ServiceMaterialAttachment.id == attachment_id, ServiceMaterialAttachment.service_material_id == mat_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    get_url = await get_preview_url(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
+    return {"getUrl": get_url}
+
+
 @router.delete("/{sr_id}/materials/{mat_id}/attachments/{attachment_id}")
 async def delete_material_attachment(
     sr_id: int,
@@ -750,13 +847,25 @@ async def delete_material_attachment(
 @router.post("/{sr_id}/raise-pr", response_model=PurchaseRequisitionResponse, status_code=201)
 async def raise_purchase_requisition(
     sr_id: int,
+    payload: PurchaseRequisitionRaisePayload,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("erp")),
 ):
     """Raise a Purchase Requisition from this SR's materials that aren't
     already linked to one, notifying the Purchase department (in-app +
-    email) that a PR is waiting on them for this project/SR."""
+    email) that a PR is waiting on them for this project/SR.
+
+    Requester and department are always taken from the logged-in user;
+    priority/required-by/reason are supplied by the caller and, once set,
+    are not editable afterwards."""
+    if payload.priority not in PR_PRIORITIES:
+        raise HTTPException(status_code=400, detail=f"Invalid priority '{payload.priority}' — must be one of {', '.join(PR_PRIORITIES)}")
+    if payload.category_code and payload.category_code not in PR_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category_code '{payload.category_code}'")
+    if payload.requirement_type and payload.requirement_type not in PR_REQUIREMENT_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid requirement_type '{payload.requirement_type}'")
+
     sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id, ServiceRequest.is_deleted == False).first()  # noqa: E712
     if not sr:
         raise HTTPException(status_code=404, detail="Service request not found")
@@ -775,10 +884,20 @@ async def raise_purchase_requisition(
         )
 
     project = db.query(Project).filter(Project.id == sr.project_id).first()
-    pr = raise_requisition(db, project_id=sr.project_id, service_request_id=sr.id, materials=materials, raised_by_id=user.id)
+    pr = raise_requisition(
+        db, project_id=sr.project_id, service_request_id=sr.id, materials=materials, raised_by_id=user.id,
+        priority=payload.priority, required_by_date=payload.required_by_date, reason=payload.reason,
+        category_code=payload.category_code, requirement_type=payload.requirement_type,
+        approver_id=payload.approver_id, approver_name=payload.approver_name,
+    )
+    detail_notes = [f"Priority: {payload.priority.title()}."]
+    if payload.required_by_date:
+        detail_notes.append(f"Required by: {payload.required_by_date.isoformat()}.")
+    if payload.reason:
+        detail_notes.append(f"Reason: {payload.reason}")
     _write_audit(
         db, sr.id, "pr_raised", user,
-        summary=f"{user.name or user.email} raised purchase requisition {pr.pr_number} with {len(materials)} material(s).",
+        summary=f"{user.name or user.email} raised purchase requisition {pr.pr_number} with {len(materials)} material(s). " + " ".join(detail_notes),
     )
 
     proj_name = f"{project.serial_number} — {project.model_name}" if project and project.model_name else (project.serial_number if project else f"Project #{sr.project_id}")
@@ -797,11 +916,15 @@ async def raise_purchase_requisition(
     background_tasks.add_task(_send_purchase_requisition_email_background, pr.id, sr.id)
 
     resp = PurchaseRequisitionResponse.model_validate(pr)
+    if pr.category_code:
+        resp.category_label = PR_CATEGORIES.get(pr.category_code, pr.category_code)
     resp.project_label = proj_name
     if project:
         resp.client_company = project.client_company
         resp.site_name = project.site_name
     resp.sr_request_number = sr.request_number
+    resp.raised_by_name = user.name or user.email
+    resp.department = user.department
     return resp
 
 

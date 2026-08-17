@@ -24,17 +24,14 @@ backend/
 ├── requirements.txt   # Python dependencies
 └── .env              # Environment variables (local)
 
-frontend/
+frontend/                    # Next.js 16 (App Router) + React 19 + TypeScript
 ├── public/            # Static files
 ├── src/
-│   ├── app/          # Main app shell
-│   ├── components/   # Reusable UI components
-│   ├── modules/      # Feature modules (CRM, ERP, RnD, etc.)
-│   ├── pages/        # Page-level components
-│   ├── services/     # API client services
-│   ├── hooks/        # Custom React hooks
-│   ├── store/        # State management
-│   └── styles/       # Global styles
+│   ├── app/           # App Router pages, incl. dashboard/{crm,erp,rnd,purchase,purchase-requisition,users}/
+│   ├── components/    # Reusable UI components (incl. erp/ subcomponents, Sidebar, notification bell)
+│   ├── hooks/         # Custom React hooks (e.g. useAuth.ts — SSO session, per-module & per-permission checks)
+│   ├── lib/           # API client (api.ts), design tokens (theme.ts), changelog.ts
+│   └── types/         # Shared TypeScript types (index.ts — AppModule, status enums, entity shapes)
 
 docs/                       # Documentation
 ├── api/API.md              # API documentation
@@ -150,8 +147,10 @@ PostgreSQL with SQLAlchemy ORM.
 - Psycopg — PostgreSQL driver
 
 **Frontend:**
-- HTML/CSS/JavaScript (plain, no framework yet)
-- Will add Vue.js or React in later stages
+- Next.js 16 (App Router) — routing, server/client components
+- React 19 + TypeScript
+- A full custom design system (`frontend/src/lib/theme.ts`) — glass-morphism surfaces, brand orange (`#FF7A45`), dark/light-aware tokens
+- No plain HTML/JS anywhere — the frontend is already a mature, far-along application, not a future step
 
 ## Development Guidelines
 
@@ -174,13 +173,12 @@ PostgreSQL with SQLAlchemy ORM.
 
 ## Next Steps
 
-- [ ] Stage 7: Full CRM module (model → schema → repo → service → route → test)
-- [ ] Stage 8: Frontend basics (plain HTML/JS calling API)
-- [ ] Stage 9: Pytest test suite
-- [ ] Stage 10: Repeat pattern for ERP and RnD modules
-- [ ] Add Alembic migrations
-- [ ] Add API documentation (OpenAPI)
-- [ ] Add logging and monitoring
+CRM, ERP, R&D, Purchase, and the standalone Purchase Requisition module are all built and live (backend + Next.js frontend), Alembic migrations are in active use, and OpenAPI docs are served at `/docs` — the items below are genuinely open, not a restatement of already-finished early-stage work. See `docs/product/PRODUCT.md` and `docs/product/DEPARTMENT_MODULES_ROADMAP.md` for the fuller roadmap.
+
+- [ ] New departments not yet built: Design, Electrical, Fluids, Production, Store, Quality, Maintenance, Operations, Project Management, Vendor Development (see `docs/product/DEPARTMENT_MODULES_ROADMAP.md`)
+- [ ] Purchase (SR-linked) module: vendor master, formal PO documents, costing/GRN/invoice tracking, reporting dashboard (see `docs/product/PURCHASE_MODULE_PLAN.md`) — or converge onto the standalone `purchase_requisition` module, which already covers much of this
+- [ ] Move module access (`AVAILABLE_APPS`) from a hardcoded set to a DB-backed module registry before adding more departments
+- [ ] Expand automated test coverage
 - [ ] Add rate limiting
 - [ ] Production deployment guide
 

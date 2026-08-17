@@ -52,7 +52,7 @@ def test_raise_pr_requires_sr_edit_permission(client, db):
     creator = make_user(db, "raiser1@premnathrail.com", erp_permissions=["sr_create"])
     _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-002")
 
-    response = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator))
+    response = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator))
     assert response.status_code == 403
 
 
@@ -65,7 +65,7 @@ def test_raise_pr_fails_with_no_unlinked_materials(client, db):
         headers=auth_header(creator),
     ).json()
 
-    response = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator))
+    response = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator))
     assert response.status_code == 400
 
 
@@ -73,7 +73,7 @@ def test_raise_pr_creates_requisition_and_links_material(client, db):
     creator = make_user(db, "raiser3@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     project, sr, mat = _make_sr_with_material(client, db, creator, "SN-PR-004")
 
-    response = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator))
+    response = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator))
     assert response.status_code == 201
     pr = response.json()
     assert pr["pr_number"].startswith("PR-")
@@ -93,7 +93,7 @@ def test_raise_pr_creates_requisition_and_links_material(client, db):
 def test_raise_pr_only_includes_unlinked_materials(client, db):
     creator = make_user(db, "raiser4@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-005")
-    first = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    first = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator)).json()
 
     # A second material added afterwards is not yet linked to any PR.
     client.post(
@@ -101,14 +101,14 @@ def test_raise_pr_only_includes_unlinked_materials(client, db):
         json={"material_name": "Seal Kit", "quantity": 2},
         headers=auth_header(creator),
     )
-    second = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator))
+    second = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator))
     assert second.status_code == 201
     assert second.json()["id"] != first["id"]
     assert len(second.json()["items"]) == 1
     assert second.json()["items"][0]["material_name"] == "Seal Kit"
 
     # No more unlinked materials left — raising again should fail.
-    third = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator))
+    third = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator))
     assert third.status_code == 400
 
 
@@ -123,7 +123,7 @@ def test_purchase_list_requires_purchase_app_access(client, db):
 def test_purchase_user_can_list_and_get_requisition(client, db):
     creator = make_user(db, "raiser6@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-006")
-    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator)).json()
 
     purchaser = _make_purchase_user(db, "purchase6@premnathrail.com")
     response = client.get("/api/v1/purchase/requisitions", headers=auth_header(purchaser))
@@ -140,7 +140,7 @@ def test_purchase_user_can_list_and_get_requisition(client, db):
 def test_approve_requisition(client, db):
     creator = make_user(db, "raiser7@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-007")
-    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator)).json()
 
     purchaser = _make_purchase_user(db, "purchase7@premnathrail.com")
     response = client.post(f"/api/v1/purchase/requisitions/{pr['id']}/approve", headers=auth_header(purchaser))
@@ -156,7 +156,7 @@ def test_approve_requisition(client, db):
 def test_reject_requisition_unlinks_materials(client, db):
     creator = make_user(db, "raiser8@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-008")
-    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator)).json()
 
     purchaser = _make_purchase_user(db, "purchase8@premnathrail.com")
     response = client.post(f"/api/v1/purchase/requisitions/{pr['id']}/reject", json={"reason": "Wrong part"}, headers=auth_header(purchaser))
@@ -168,7 +168,7 @@ def test_reject_requisition_unlinks_materials(client, db):
     assert materials[0]["pr_status"] is None
 
     # The now-unlinked material can be raised into a fresh PR.
-    response = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator))
+    response = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator))
     assert response.status_code == 201
     assert response.json()["id"] != pr["id"]
 
@@ -176,7 +176,7 @@ def test_reject_requisition_unlinks_materials(client, db):
 def test_cancel_requisition_requires_non_terminal_status(client, db):
     creator = make_user(db, "raiser9@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-009")
-    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator)).json()
 
     purchaser = _make_purchase_user(db, "purchase9@premnathrail.com")
     client.post(f"/api/v1/purchase/requisitions/{pr['id']}/cancel", json={}, headers=auth_header(purchaser))
@@ -191,7 +191,7 @@ def test_receive_material_requires_sr_edit_permission(client, db):
     creator = make_user(db, "raiser10@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     other = make_user(db, "other10@premnathrail.com", erp_permissions=["sr_edit"])
     _, sr, mat = _make_sr_with_material(client, db, creator, "SN-PR-010")
-    client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator))
+    client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator))
 
     response = client.post(
         f"/api/v1/erp/service-requests/{sr['id']}/materials/{mat['id']}/receive",
@@ -204,7 +204,7 @@ def test_receive_material_requires_sr_edit_permission(client, db):
 def test_partial_then_full_receive_advances_pr_to_received(client, db):
     creator = make_user(db, "raiser11@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, mat = _make_sr_with_material(client, db, creator, "SN-PR-011", quantity=3)
-    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator)).json()
 
     response = client.post(
         f"/api/v1/erp/service-requests/{sr['id']}/materials/{mat['id']}/receive",
@@ -233,7 +233,7 @@ def test_partial_then_full_receive_advances_pr_to_received(client, db):
 def test_received_quantity_clamped_to_material_quantity(client, db):
     creator = make_user(db, "raiser12@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, mat = _make_sr_with_material(client, db, creator, "SN-PR-012", quantity=2)
-    client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator))
+    client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator))
 
     response = client.post(
         f"/api/v1/erp/service-requests/{sr['id']}/materials/{mat['id']}/receive",
@@ -248,7 +248,7 @@ def test_received_quantity_clamped_to_material_quantity(client, db):
 def test_close_requires_received_status(client, db):
     creator = make_user(db, "raiser13@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, mat = _make_sr_with_material(client, db, creator, "SN-PR-013", quantity=1)
-    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator)).json()
     purchaser = _make_purchase_user(db, "purchase13@premnathrail.com")
 
     response = client.post(f"/api/v1/purchase/requisitions/{pr['id']}/close", headers=auth_header(purchaser))
@@ -274,7 +274,7 @@ def test_close_requires_received_status(client, db):
 def test_update_item_remarks(client, db):
     creator = make_user(db, "raiser14@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-014")
-    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator)).json()
     item_id = pr["items"][0]["id"]
 
     purchaser = _make_purchase_user(db, "purchase14@premnathrail.com")
@@ -295,7 +295,7 @@ def test_update_item_remarks(client, db):
 def test_update_item_remarks_unknown_item_404s(client, db):
     creator = make_user(db, "raiser15@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, _ = _make_sr_with_material(client, db, creator, "SN-PR-015")
-    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator)).json()
 
     purchaser = _make_purchase_user(db, "purchase15@premnathrail.com")
     response = client.patch(
@@ -326,7 +326,7 @@ def test_item_photos_are_view_only_from_purchase_side(client, db, monkeypatch):
 
     creator = make_user(db, "raiser16@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
     _, sr, mat = _make_sr_with_material(client, db, creator, "SN-PR-016")
-    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", headers=auth_header(creator)).json()
+    pr = client.post(f"/api/v1/erp/service-requests/{sr['id']}/raise-pr", json={}, headers=auth_header(creator)).json()
     item_id = pr["items"][0]["id"]
 
     client.post(

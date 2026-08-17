@@ -97,7 +97,7 @@ def test_admin_gets_all_apps_regardless_of_assignment(client, db):
     response = client.get("/api/v1/users", headers=auth_header(admin))
     assert response.status_code == 200
     me = next(u for u in response.json() if u["id"] == admin.id)
-    assert sorted(me["apps"]) == ["crm", "erp", "purchase", "rnd"]
+    assert sorted(me["apps"]) == ["crm", "erp", "p2p", "purchase", "rnd"]
 
 
 def test_admin_rejects_invalid_app_name(client, db):

@@ -20,10 +20,13 @@
         │  └──────────────────────┘   │
         │  ┌──────────────────────┐   │
         │  │  Routes / Endpoints  │   │
-        │  │  ├─ /auth/*          │   │
-        │  │  ├─ /api/v1/crm/*    │   │
-        │  │  ├─ /api/v1/erp/*    │   │
-        │  │  └─ /api/v1/rnd/*    │   │
+        │  │  ├─ /auth/*                        │   │
+        │  │  ├─ /api/v1/users, /notifications  │   │
+        │  │  ├─ /api/v1/erp/*                  │   │
+        │  │  ├─ /api/v1/purchase-requisitions/* │   │
+        │  │  ├─ /api/v1/p2p/*                   │   │
+        │  │  ├─ /api/v1/crm/*                  │   │
+        │  │  └─ /api/v1/rnd/*                  │   │
         │  └──────────────────────┘   │
         │  ┌──────────────────────┐   │
         │  │  Services Layer      │   │
@@ -176,6 +179,24 @@ class NoteResponse(BaseModel):
 > unwieldy. Tests live under the shared `backend/app/tests/` directory (not per-module),
 > matching pytest's existing fixture setup (`client`, `db`).
 
+As of this writing, `backend/app/modules/` contains six modules (verified against the
+imports/routers wired up in `backend/app/main.py`):
+
+| Module | Path | Purpose |
+|---|---|---|
+| `main` | `app/modules/main/` | Users, Microsoft SSO auth (`routes/auth.py`), audit log, notifications, feedback, API keys, presence |
+| `erp` | `app/modules/erp/` | Projects, Service Requests, Service Materials (+ their SharePoint-backed attachments) |
+| `crm` | `app/modules/crm/` | Organizations, Inquiries, Tenders, Activities, Notes, Documents, workflow (tasks/approvals/quotations/POs), dashboard |
+| `purchase` | `app/modules/purchase/` | Purchase Requisitions **raised from an ERP Service Request's materials** — tightly coupled to `erp` (imports `Project`/`ServiceRequest` models, mirrors status back onto `ServiceMaterial`). See "Purchase Module" below. |
+| `p2p` | `app/modules/p2p/` | A **separate, newer, standalone** P2P request workflow for any department (not just ERP/Service). Tables `p2p_requests`/`p2p_request_items`/`p2p_request_attachments`. Does not import anything from `erp` or `purchase` — see ADR 0003. |
+| `rnd` | `app/modules/rnd/` | R&D calculation tools (braking, hydraulic, load distribution, Qmax, spline, tractive effort, vehicle performance) + calculation history |
+
+There is **no** `app/modules/service/` directory in the current codebase — grepped and
+confirmed absent. "Service" in this codebase refers to the ERP module's **Service
+Request** feature (`app/modules/erp/models/service_request.py`,
+`app/modules/erp/routes/service_requests.py`), not a separate module. If you see
+"service module" referenced elsewhere, it almost certainly means this.
+
 Each feature module (CRM, ERP, RnD) follows this actual pattern:
 
 ```
@@ -285,28 +306,68 @@ table — `_to_response()` in `purchase_requisitions.py` loads each item's linke
 photo uploaded from the SR side shows up on the PR item automatically with no sync step
 and no purchase-side upload/delete route.
 
+## Standalone P2P Module (`p2p`)
+
+Distinct from the "Purchase Module" above, `app/modules/p2p/` is a
+**fully independent** P2P request workflow any department can use directly (not only
+Service Requests raised via ERP): `POST /api/v1/p2p/requests` lets any user
+with the `p2p` app raise a request against a free-text `project_label`,
+attach items, and route it to an approver; the `purchase` app grants processing access
+(assign buyer, quotations, vendor selection, PO creation, receiving). Access gating is
+in `routes/p2p_requests.py::_requester_or_purchase()`.
+
+Its models (`models/p2p_request.py`, `p2p_request_item.py`, `p2p_request_attachment.py`)
+import nothing from `erp` or `purchase` — confirmed by inspection, there is no
+cross-module model import, unlike the `purchase` module's deliberate two-model read-only
+coupling to ERP described below. See ADR 0003 for why this was built as a clean second
+module rather than folding the "any department" use case into the existing `purchase`
+module.
+
+Attachments (`P2PRequestAttachment`) go through the same `app/utils/sharepoint.py`
+helper as every other SharePoint-backed upload in this codebase — see
+`routes/p2p_requests.py`'s `upload_attachments()` (around line 528), which calls
+`upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, f)`.
+
 ## Authentication & Authorization
 
-### Flow:
-1. User goes to `/auth/microsoft-login`
-2. Redirects to Microsoft login page
-3. User authenticates with Microsoft account
-4. Redirects back to `/auth/callback` with authorization code
-5. App exchanges code for access token
-6. App fetches user profile from Microsoft Graph API
-7. App checks if user exists in DB:
-   - **No** → Create new user (auto-provision)
-   - **Yes** → Update user profile (sync with Azure)
-8. App creates JWT token
-9. Returns token to frontend
+### Flow (browser, `backend/app/modules/main/routes/auth.py`):
+1. User goes to `GET /api/v1/auth/microsoft-login` — backend generates a CSRF `state`
+   token (server-side in-memory dict, not a cookie, to dodge SameSite issues) and
+   redirects to the Microsoft identity platform authorize URL
+2. User authenticates with Microsoft (MFA, conditional access, etc. all handled by
+   Microsoft — the app never sees credentials)
+3. Microsoft redirects back to `GET /api/v1/auth/callback?code=...&state=...`
+4. Backend validates `state`, exchanges `code` for an access token
+   (`app/auth/microsoft.py::exchange_code_for_token`), fetches the profile from
+   Microsoft Graph (`get_microsoft_user_profile`)
+5. Optionally enforces `settings.DOMAIN_EMAIL` (restrict to `@premnathrail.com`)
+6. Auto-provisions the user on first login or syncs name/department/designation/phone
+   on every subsequent login
+7. Backend mints its own JWT (`create_access_token`) and redirects to the frontend,
+   setting it as an httponly `session_token` cookie (see below)
+
+There is a **separate, parallel flow for Microsoft Teams** (the app is also installed
+as a Teams tab): `POST /api/v1/auth/teams-token` validates a Teams `getAuthToken()` SSO
+token directly against Azure AD's JWKS (signature + issuer + tenant + audience +
+replay checks, see `_check_replay`/`_jwks_cache` in `auth.py`) and starts a session
+without any redirect — plus an On-Behalf-Of exchange for a Graph delegated token used by
+Teams-specific Graph calls. A third variant (`/auth/callback` → `teams-exchange`)
+hands off the redirect-based flow's result into a Teams popup via a short-lived
+one-time code, since popup cookie jars are isolated from the main Teams frame.
 
 ### Token Usage:
 - Browser sessions: JWT delivered as an httponly `session_token` cookie by
-  `/auth/callback` and the Teams SSO routes — never exposed to page JS
+  `/auth/callback`, `/auth/teams-token`, and `/auth/teams-exchange` — never exposed to
+  page JS. The frontend's `useAuthStore` (`frontend/src/store/authStore.ts`) therefore
+  treats the fetched `user` object, not a locally-held token, as the "am I logged in"
+  signal.
 - API clients / tooling: `Authorization: Bearer <token>` header (same JWT, same
-  `get_current_user` dependency — cookie is just checked first)
-- Server verifies the token (or the cookie, or an `X-API-Key`) on every protected route
-- Token expires after 24 hours
+  `get_current_user` dependency in `auth.py` — cookie is checked first, then the header)
+- A third path exists for server-to-server integrations: an `X-API-Key` header,
+  resolved by `app/middleware/api_key.py::get_api_key_record` and checked *before* the
+  cookie/JWT path in `get_current_user` — it maps to an in-memory service-account `User`
+  (`id=0`, role `api_service`) scoped to whatever apps the key was granted.
+- Token expires after 24 hours (`ACCESS_TOKEN_EXPIRE_MINUTES`)
 
 ## Database Schema
 
@@ -352,16 +413,28 @@ and no purchase-side upload/delete route.
   plus a `remarks` text column (added in `a2d5e8f1c3b7_add_pr_item_remarks`). Photos are
   not stored here — see "Item remarks & photos" above.
 
-### RnD Tables (not yet created — module not ported)
-`app/modules/rnd` is currently empty scaffolding; these tables exist in legacy
-and will be created here once the calculation tools are ported (see
-[API.md — RnD Endpoints](../api/API.md#rnd-endpoints)):
-- `braking_calculations`, `hydraulic_calculations`, `load_distribution_calculations`,
-  `qmax_calculations`, `spline_calculations`, `tractive_effort_calculations`,
-  `vehicle_performance_calculations` — one table per tool, each storing that
+### RnD Tables
+`app/modules/rnd` is fully implemented (this corrects an earlier "not yet ported" note —
+verified via `__tablename__` in `app/modules/rnd/models/tool_calculations.py`):
+- `rnd_braking_calculations`, `rnd_hydraulic_calculations`,
+  `rnd_load_distribution_calculations`, `rnd_qmax_calculations`,
+  `rnd_spline_calculations`, `rnd_tractive_effort_calculations`,
+  `rnd_vehicle_performance_calculations` — one table per tool, each storing that
   tool's specific input parameters + computed results
 - `calculation_history` — cross-tool save/rename/list/delete log, one row per
   named save regardless of which tool produced it
+
+### Standalone P2P Tables (`p2p` module)
+- `p2p_requests` — one row per standalone P2P request (`p2p_number`, `category_code`,
+  `project_label` free text, `department`, `requested_by_id`, `approver_id`, status)
+- `p2p_request_items` — line items (`item_name`, `part_code`, `model_number`, `unit`,
+  `quantity`, `estimated_budget`, `reason`)
+- `p2p_request_attachments` — SharePoint pointer/metadata rows, same pattern as
+  `crm_documents`/`ServiceMaterialAttachment` elsewhere in the codebase
+
+This is a **separate table set** from the `purchase_requisitions`/
+`purchase_requisition_items` tables used by the ERP-coupled `purchase` module above —
+the similar naming is a common source of confusion; they are not related by foreign key.
 
 ## Background Jobs / Scheduled Tasks
 

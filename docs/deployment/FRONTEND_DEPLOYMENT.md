@@ -1,367 +1,101 @@
-# Next.js Frontend Deployment Guide
+# Frontend Deployment
 
-## Quick Deployment Options
+The frontend is **not deployed separately** in this repo — it is one
+build stage inside the single root [`Dockerfile`](../deployment/DOCKER.md),
+combined with the FastAPI backend into one container image and one
+running process tree. This doc exists to cover the frontend-specific
+parts of that build (Next.js version, scripts, env vars); for
+platform-independent Vercel/S3/DigitalOcean options that are not what
+this repo actually does, see the note at the bottom.
 
-| Platform | Difficulty | Cost | Setup Time |
-|----------|-----------|------|-----------|
-| **Vercel** ⭐ | Easy | Free tier | 2 min |
-| Docker | Medium | Flexible | 10 min |
-| AWS S3 + CloudFront | Medium | ~$10/mo | 20 min |
-| DigitalOcean | Medium | $6+/mo | 15 min |
-| GitHub Pages | Easy | Free | 5 min |
+## Stack
 
----
+From `frontend/package.json`:
 
-## Option 1: Vercel (RECOMMENDED)
+- Next.js `16.2.11`
+- React `19.2.4` / React DOM `19.2.4`
+- TypeScript `^5`, ESLint `^9` / `eslint-config-next 16.2.11`, Tailwind
+  CSS `^4`
+- State/data: `@tanstack/react-query ^5`, `zustand ^5`, `axios ^1.18`
+- `@microsoft/teams-js ^2.54.0` (Teams SSO embedding), `chart.js` /
+  `react-chartjs-2` for charts
 
-### **Step 1: Push to GitHub**
+npm scripts (`frontend/package.json`):
 
-```bash
-# Initialize git in Next.js project
-cd premnathrail-portal
-git init
-git add .
-git commit -m "Initial Next.js setup"
+| Script | Command | Use |
+|---|---|---|
+| `npm run dev` | `next dev` | Local development |
+| `npm run build` | `next build` | Production build (also run inside the Docker image) |
+| `npm run start` | `next start` | Serve a build without Docker |
+| `npm run lint` | `eslint` | Lint |
 
-# Create GitHub repo at github.com/new
-# Then push:
-git remote add origin https://github.com/username/premnathrail-portal.git
-git branch -M main
-git push -u origin main
-```
+## How it's actually built (inside the Docker image)
 
-### **Step 2: Deploy on Vercel**
-
-1. Go to **https://vercel.com**
-2. Click "New Project"
-3. Select "Import Git Repository"
-4. Select your `premnathrail-portal` repo
-5. Vercel auto-detects Next.js
-6. Set Environment Variables:
-   ```
-   NEXT_PUBLIC_API_URL=https://your-backend.com/api/v1
-   NEXT_PUBLIC_AUTH_URL=https://your-backend.com
-   NEXT_PUBLIC_FRONTEND_URL=https://your-app.vercel.app
-   ```
-7. Click "Deploy"
-
-**Done!** Your app is live at `https://your-app.vercel.app`
-
-### **Auto-Deploy**
-
-Every push to GitHub automatically deploys:
-```bash
-git push origin main  # Vercel auto-deploys
-```
-
----
-
-## Option 2: Docker Container
-
-### **Create Dockerfile**
-
-Create `premnathrail-portal/Dockerfile`:
-
-```dockerfile
-# Build stage
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci
-
-# Copy source code
-COPY . .
-
-# Build Next.js app
-RUN npm run build
-
-# Production stage
-FROM node:20-alpine
-
-WORKDIR /app
-
-# Copy built app from builder
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
-
-# Expose port
-EXPOSE 3000
-
-# Start app
-CMD ["npm", "start"]
-```
-
-### **Create .dockerignore**
-
-```
-node_modules
-.next
-.git
-.gitignore
-README.md
-.env
-.env.local
-.vercel
-```
-
-### **Build & Run Locally**
+The root `Dockerfile` builds the frontend with Next.js's **standalone
+output** mode across two stages (`frontend-deps`, `frontend-builder`),
+then copies only `.next/standalone`, `.next/static`, and `public/` into
+the final `production` stage — not the full `node_modules`/source tree.
+The final image's `CMD` runs the standalone server directly:
 
 ```bash
-# Build image
-docker build -t premnathrail-frontend .
-
-# Run container
-docker run -p 3000:3000 \
-  -e NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1 \
-  premnathrail-frontend
-
-# Opens at http://localhost:3000
+node /app/frontend/server.js
 ```
 
-### **Deploy to Docker Hub**
+`NEXT_PUBLIC_API_URL` is a build ARG, defaulting to `/api/v1` — a
+same-origin relative path. Because the frontend and backend live in the
+same container and the frontend proxies `/api/*` requests through to
+the internal backend, no absolute backend URL or CORS setup is needed
+for the packaged deployment. See [DOCKER.md](DOCKER.md) for the full
+stage-by-stage breakdown.
+
+`NEXT_PUBLIC_*` variables are **baked in at build time**, not read at
+container start — to change one, rebuild the image with a different
+`--build-arg`.
+
+## Local development (no Docker)
 
 ```bash
-# Login to Docker Hub
-docker login
-
-# Tag image
-docker tag premnathrail-frontend username/premnathrail-frontend:latest
-
-# Push
-docker push username/premnathrail-frontend:latest
+cd frontend
+npm install
+npm run dev
 ```
 
-Then on your server:
-```bash
-docker pull username/premnathrail-frontend:latest
-docker run -d -p 80:3000 username/premnathrail-frontend:latest
-```
+Runs on `http://localhost:3000` and expects the backend at
+`http://localhost:8000` (default `NEXT_PUBLIC_API_URL` for local dev —
+check `frontend/.env.local` if present). See the repo-root
+`start-servers.bat` for a one-shot script that launches both backend and
+frontend dev servers in separate windows on Windows.
+
+## CORS
+
+The frontend talks to the backend same-origin in the packaged
+deployment (proxied through Next.js), so CORS does not apply there. It
+only matters for local dev (frontend on `:3000`, backend on `:8000`,
+different origins) or if you ever split frontend/backend into separate
+deployed origins. That is fully covered in
+[../setup/BACKEND_CORS_CONFIG.md](../setup/BACKEND_CORS_CONFIG.md) —
+see that doc rather than duplicating it here, and cross-check
+`ALLOWED_ORIGINS` in [SERVER_CONFIGURATION.md](SERVER_CONFIGURATION.md).
+
+## Production checklist
+
+- [ ] `npm run build` succeeds with no TypeScript errors
+- [ ] `npm run lint` clean
+- [ ] `NEXT_PUBLIC_API_URL` build arg correct if not using the default
+      same-origin `/api/v1` path
+- [ ] Rebuild (not just restart) the image after any `NEXT_PUBLIC_*` change
+
+## If you ever split the frontend out as its own deployment
+
+Nothing in this repo does this today (no Vercel project file, no S3/CDN
+config, no separate frontend Dockerfile) — the platform-specific steps
+for Vercel, S3+CloudFront, or DigitalOcean App Platform are not
+documented here because they don't reflect what's actually deployed.
+If you introduce a split deployment, you would need to reintroduce CORS
+between the two origins (see the cross-linked CORS doc above) and set
+`NEXT_PUBLIC_API_URL` to an absolute backend URL.
 
 ---
 
-## Option 3: AWS (EC2 + S3 + CloudFront)
-
-### **Step 1: Build Static Export**
-
-```bash
-# Modify next.config.js
-cat > next.config.js << 'EOF'
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  output: 'export',  # Static export
-  images: {
-    unoptimized: true,
-  },
-}
-module.exports = nextConfig
-EOF
-
-# Build
-npm run build
-```
-
-### **Step 2: Upload to S3**
-
-```bash
-# Create S3 bucket
-aws s3 mb s3://premnathrail-portal
-
-# Upload build files
-aws s3 sync out/ s3://premnathrail-portal/
-
-# Make public (for CloudFront)
-aws s3api put-bucket-policy --bucket premnathrail-portal \
-  --policy '{
-    "Version": "2012-10-17",
-    "Statement": [{
-      "Effect": "Allow",
-      "Principal": "*",
-      "Action": "s3:GetObject",
-      "Resource": "arn:aws:s3:::premnathrail-portal/*"
-    }]
-  }'
-```
-
-### **Step 3: CloudFront Distribution**
-
-1. Go to CloudFront console
-2. Create distribution
-3. Origin: S3 bucket
-4. Enable HTTPS
-5. Wait 15 min for deployment
-
----
-
-## Option 4: DigitalOcean App Platform
-
-### **Step 1: Create app.yaml**
-
-```yaml
-name: premnathrail-portal
-services:
-- name: web
-  github:
-    repo: username/premnathrail-portal
-    branch: main
-  build_command: npm run build
-  run_command: npm start
-  http_port: 3000
-  envs:
-  - key: NEXT_PUBLIC_API_URL
-    scope: RUN_AND_BUILD_TIME
-    value: https://api.premnathrail.com/api/v1
-```
-
-### **Step 2: Deploy**
-
-1. Go to **https://cloud.digitalocean.com**
-2. Apps → Create App
-3. Connect GitHub repo
-4. Select `app.yaml`
-5. Click "Deploy"
-
----
-
-## Environment Variables for Production
-
-### **Vercel**
-
-Settings → Environment Variables:
-
-```
-NEXT_PUBLIC_API_URL=https://api.premnathrail.com/api/v1
-NEXT_PUBLIC_AUTH_URL=https://api.premnathrail.com
-NEXT_PUBLIC_FRONTEND_URL=https://premnathrail-portal.vercel.app
-NEXT_PUBLIC_ENABLE_CRM=true
-NEXT_PUBLIC_ENABLE_ERP=true
-NEXT_PUBLIC_ENABLE_RND=true
-```
-
-### **Docker**
-
-```bash
-docker run -d \
-  -e NEXT_PUBLIC_API_URL=https://api.premnathrail.com/api/v1 \
-  -e NEXT_PUBLIC_AUTH_URL=https://api.premnathrail.com \
-  -p 80:3000 \
-  premnathrail-frontend
-```
-
-### **.env.production**
-
-```env
-NEXT_PUBLIC_API_URL=https://api.premnathrail.com/api/v1
-NEXT_PUBLIC_AUTH_URL=https://api.premnathrail.com
-NEXT_PUBLIC_FRONTEND_URL=https://premnathrail-portal.vercel.app
-```
-
----
-
-## Production Checklist
-
-- [ ] TypeScript builds successfully: `npm run build`
-- [ ] No console errors: `npm run lint`
-- [ ] Environment variables set correctly
-- [ ] Backend API URL is HTTPS
-- [ ] CORS configured on backend
-- [ ] Auth tokens work in production
-- [ ] Images optimized
-- [ ] Error boundaries in place
-- [ ] Analytics configured
-- [ ] Security headers set
-
----
-
-## Backend API for Production
-
-Your backend API should be:
-
-1. **Secure**: HTTPS only
-2. **CORS configured**: Allow production frontend URL
-3. **Rate limited**: Prevent abuse
-4. **Monitored**: Logs and errors tracked
-5. **Scalable**: Can handle traffic
-
-Example backend production config:
-
-```python
-# app/main.py
-from app.core.config import settings
-
-origins = [
-    "https://premnathrail-portal.vercel.app",
-    "https://www.premnathrail.com",
-]
-
-if settings.environment == "development":
-    origins.extend([
-        "http://localhost:3000",
-        "http://localhost:5173",
-    ])
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
-)
-```
-
----
-
-## Monitor Production
-
-### **Vercel Analytics**
-
-Built-in (free):
-- Page load time
-- Core Web Vitals
-- Deployment history
-
-### **Error Tracking**
-
-Add Sentry:
-
-```bash
-npm install @sentry/nextjs
-```
-
-In `app/layout.tsx`:
-```typescript
-import * as Sentry from "@sentry/nextjs"
-
-Sentry.init({
-  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-  tracesSampleRate: 1.0,
-})
-```
-
----
-
-## Cost Estimation
-
-| Platform | Cost | Notes |
-|----------|------|-------|
-| Vercel | Free - $50/mo | Best for most projects |
-| DigitalOcean | $6 - $20/mo | Simple VPS |
-| AWS | $10 - $50+/mo | Pay per usage |
-| Docker (self-hosted) | $5 - $20/mo | Full control |
-
----
-
-## Done! 🚀
-
-Choose one:
-1. **Vercel** (easiest, recommended)
-2. **Docker** (most control)
-3. **AWS** (enterprise)
-4. **DigitalOcean** (balance)
-
-Deploy now!
+**See also:** [DOCKER.md](DOCKER.md) for the image build,
+[DEPLOYMENT.md](DEPLOYMENT.md) for the full deploy flow.

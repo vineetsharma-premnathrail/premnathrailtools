@@ -9,7 +9,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.service_request import ServiceRequest
 from app.modules.erp.models.service_material import ServiceMaterial
-from app.modules.purchase.models.purchase_requisition import PurchaseRequisition, PR_STATUSES
+from app.modules.purchase.models.purchase_requisition import PurchaseRequisition, PR_STATUSES, PR_CATEGORIES
 from app.modules.purchase.models.purchase_requisition_item import PurchaseRequisitionItem
 from app.modules.purchase.schemas.purchase_requisition import (
     PurchaseRequisitionResponse,
@@ -33,12 +33,19 @@ def _to_response(db: Session, pr: PurchaseRequisition) -> PurchaseRequisitionRes
     project = db.query(Project).filter(Project.id == pr.project_id).first()
     sr = db.query(ServiceRequest).filter(ServiceRequest.id == pr.service_request_id).first()
     resp = PurchaseRequisitionResponse.model_validate(pr)
+    if pr.category_code:
+        resp.category_label = PR_CATEGORIES.get(pr.category_code, pr.category_code)
     if project:
         resp.project_label = f"{project.serial_number} — {project.model_name}" if project.model_name else project.serial_number
         resp.client_company = project.client_company
         resp.site_name = project.site_name
     if sr:
         resp.sr_request_number = sr.request_number
+    if pr.raised_by_id:
+        raised_by = db.query(User).filter(User.id == pr.raised_by_id).first()
+        if raised_by:
+            resp.raised_by_name = raised_by.name or raised_by.email
+            resp.department = raised_by.department
 
     # Photos live on the underlying ServiceMaterial (same gallery the ERP side
     # uploads to) — surface them read/write from the PR item too, so Purchase

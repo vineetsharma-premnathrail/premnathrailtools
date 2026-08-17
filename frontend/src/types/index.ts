@@ -1,4 +1,4 @@
-export type AppModule = 'erp' | 'rnd' | 'crm' | 'purchase'
+export type AppModule = 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p'
 
 export interface User {
   id: number
@@ -106,7 +106,10 @@ export interface ServiceMaterial {
   service_request_id: number
   material_name: string
   part_number?: string
+  model_number?: string
   description?: string
+  estimated_budget?: number
+  reason?: string
   quantity: number
   unit: string
   status?: string
@@ -153,6 +156,18 @@ export interface ProjectAttachment {
   sharepoint_url?: string
   created_by_id?: number
   created_at?: string
+  is_private: boolean
+  shared_with_user_ids: number[]
+  shared_departments: string[]
+  shared_designations: string[]
+}
+
+export interface DirectoryUser {
+  id: number
+  name: string
+  email: string
+  department?: string | null
+  designation?: string | null
 }
 
 export interface AuditEntry {
@@ -273,6 +288,14 @@ export interface PurchaseRequisition {
   service_request_id: number
   status: PRStatus
   raised_by_id?: number
+  priority: 'low' | 'medium' | 'high'
+  required_by_date?: string
+  purchase_reason?: string
+  category_code?: string
+  category_label?: string
+  requirement_type?: string
+  approver_id?: number
+  approver_name?: string
   vendor?: string
   po_number?: string
   po_date?: string
@@ -289,6 +312,8 @@ export interface PurchaseRequisition {
   client_company?: string
   site_name?: string
   sr_request_number?: string
+  raised_by_name?: string
+  department?: string
 }
 
 // ── CRM ──────────────────────────────────────────────────────────────────
@@ -617,4 +642,111 @@ export interface CrmDashboard {
   recent_tenders: Tender[]
   recent_activities: CrmActivity[]
   recent_notes: CrmNote[]
+}
+
+// ---- Purchase Requisition (standalone module, distinct from PurchaseRequisition above) ----
+
+export type P2PRequestStatus =
+  | 'submitted'
+  | 'approved'
+  | 'po_raised'
+  | 'partially_received'
+  | 'received'
+  | 'closed'
+  | 'rejected'
+  | 'cancelled'
+
+export interface P2PRequestAttachment {
+  id: number
+  item_id?: number
+  doc_type: 'supporting' | 'specification' | 'po_document'
+  filename: string
+  content_type?: string
+  size?: number
+  sharepoint_url?: string
+  created_at?: string
+}
+
+export interface P2PRequestLineItem {
+  id: number
+  item_name: string
+  make?: string
+  part_code?: string
+  unit?: string
+  quantity: number
+  project_inhouse?: string
+  category?: string
+  ship_to?: string
+  attachments: P2PRequestAttachment[]
+}
+
+export interface P2PRequestLineItemInput {
+  item_name: string
+  make?: string
+  part_code?: string
+  unit?: string
+  quantity: number
+  project_inhouse?: string
+  category?: string
+  ship_to?: string
+}
+
+export interface P2PRequest {
+  id: number
+  pr_number: string
+  category_code: string
+  category_label?: string
+  project_label?: string
+  required_date?: string
+  requirement_type?: string
+  request_date: string
+  department?: string
+  requested_by_id?: number
+  requested_by_name?: string
+  priority: 'low' | 'medium' | 'high'
+  approver_id?: number
+  approver_name?: string
+  remarks?: string
+  status: P2PRequestStatus
+  approved_by_id?: number
+  approved_at?: string
+  rejected_reason?: string
+  cancelled_reason?: string
+  closed_by_id?: number
+  closed_at?: string
+
+  assigned_buyer_id?: number
+  assigned_buyer_name?: string
+  assignment_date?: string
+
+  vendor?: string
+  rfq_number?: string
+  quotation?: string
+  quotation_date?: string
+  vendor_comparison?: string
+  selected_vendor?: string
+
+  po_number?: string
+  po_date?: string
+  po_value?: number
+  expected_delivery?: string
+
+  ordered_quantity?: number
+  received_quantity?: number
+  pending_quantity?: number
+  receipt_status?: string
+  grn_number?: string
+  receipt_date?: string
+  receiving_remarks?: string
+
+  created_at?: string
+  updated_at?: string
+
+  items: P2PRequestLineItem[]
+  attachments: P2PRequestAttachment[]
+}
+
+export interface PRCategoryMeta {
+  code: string
+  label: string
 }

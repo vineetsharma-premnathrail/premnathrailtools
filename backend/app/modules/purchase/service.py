@@ -37,12 +37,22 @@ def raise_requisition(
     service_request_id: int,
     materials: list[ServiceMaterial],
     raised_by_id: int | None,
+    priority: str = "medium",
+    required_by_date: date | None = None,
+    reason: str | None = None,
+    category_code: str | None = None,
+    requirement_type: str | None = None,
+    approver_id: int | None = None,
+    approver_name: str | None = None,
 ) -> PurchaseRequisition:
     """Create a PR snapshotting `materials` and link each one back to it.
 
     Caller is responsible for filtering `materials` down to the ones that
     should go into this PR (e.g. not already linked to another open PR) and
     for flushing/committing afterwards.
+
+    `priority`/`required_by_date`/`reason` are collected once at raise time
+    (see the SR "Materials" tab) and are not editable afterwards.
     """
     pr = PurchaseRequisition(
         pr_number=generate_pr_number(db),
@@ -50,6 +60,13 @@ def raise_requisition(
         service_request_id=service_request_id,
         status="submitted",
         raised_by_id=raised_by_id,
+        priority=priority,
+        required_by_date=required_by_date,
+        purchase_reason=reason,
+        category_code=category_code,
+        requirement_type=requirement_type,
+        approver_id=approver_id,
+        approver_name=approver_name,
     )
     db.add(pr)
     db.flush()

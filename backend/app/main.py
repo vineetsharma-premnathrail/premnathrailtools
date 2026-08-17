@@ -20,6 +20,9 @@ from app.modules.erp.models.service_request_attachment import ServiceRequestAtta
 from app.modules.erp.models.service_material_attachment import ServiceMaterialAttachment
 from app.modules.purchase.models.purchase_requisition import PurchaseRequisition
 from app.modules.purchase.models.purchase_requisition_item import PurchaseRequisitionItem
+from app.modules.p2p.models.p2p_request import P2PRequest
+from app.modules.p2p.models.p2p_request_item import P2PRequestItem
+from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation,
     Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity, Note,
@@ -39,6 +42,7 @@ from app.modules.main.routes import presence as presence_routes
 from app.modules.erp.routes import projects as erp_projects_routes
 from app.modules.erp.routes import service_requests as erp_sr_routes
 from app.modules.purchase.routes import purchase_requisitions as purchase_requisitions_routes
+from app.modules.p2p.routes import p2p_requests as p2p_requests_routes
 from app.modules.crm.routes import organizations as crm_organizations_routes
 from app.modules.crm.routes import inquiries as crm_inquiries_routes
 from app.modules.crm.routes import tenders as crm_tenders_routes
@@ -104,6 +108,7 @@ app.include_router(users_routes.router, prefix="/api/v1")
 app.include_router(erp_projects_routes.router, prefix="/api/v1")
 app.include_router(erp_sr_routes.router, prefix="/api/v1")
 app.include_router(purchase_requisitions_routes.router, prefix="/api/v1")
+app.include_router(p2p_requests_routes.router, prefix="/api/v1")
 app.include_router(crm_organizations_routes.router, prefix="/api/v1")
 app.include_router(crm_inquiries_routes.router, prefix="/api/v1")
 app.include_router(crm_tenders_routes.router, prefix="/api/v1")

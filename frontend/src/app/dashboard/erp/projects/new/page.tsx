@@ -7,7 +7,7 @@ import ErpNav from '@/components/erp/ErpNav'
 import ProjectForm from '@/components/erp/ProjectForm'
 
 export default function NewProjectPage() {
-  const { isAuthorized, isLoading } = useRequireErpPermission('project_create', '/dashboard/erp/projects')
+  const { user, isAuthorized, isLoading } = useRequireErpPermission('project_create', '/dashboard/erp/projects')
   const router = useRouter()
 
   if (isLoading || !isAuthorized) return null
@@ -32,11 +32,12 @@ export default function NewProjectPage() {
 
       <ProjectForm
         submitLabel="Save Project"
+        currentUserId={user?.id}
         onCancel={() => router.push('/dashboard/erp/projects')}
-        onSubmit={async (payload, files) => {
+        onSubmit={async (payload, files, shareOptions) => {
           const created = await erpApi.createProject(payload)
           if (files.length > 0) {
-            await erpApi.uploadProjectAttachments(created.id, files)
+            await erpApi.uploadProjectAttachments(created.id, files, shareOptions)
           }
           router.push(`/dashboard/erp/projects/${created.id}`)
         }}

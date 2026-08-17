@@ -1,5 +1,7 @@
 # Purchase Module — Roadmap
 
+> ✅ **Partially implemented via a separate module.** The buyer-assignment → RFQ → vendor-selection → PO → receipt-tracking shape described in Phases 1–4 below now exists, but as a *separate, standalone* module (`backend/app/modules/p2p/`, frontend `dashboard/p2p/` + `dashboard/purchase/p2p-requests/`), not as an extension of the SR-linked `purchase` module this doc describes. See `docs/product/PRODUCT.md` ("Business Processes" → 3b) for the actual lifecycle. The `purchase` module's own `vendors/orders/rfqs/grn/invoices` frontend routes are still empty placeholders — worth deciding whether to build them out here or converge onto the standalone module instead of doing both.
+
 ## Current state (as of Aug 2026)
 
 The `purchase` module (`backend/app/modules/purchase/`) only covers **Purchase

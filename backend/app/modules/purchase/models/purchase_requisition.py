@@ -25,6 +25,26 @@ PR_STATUSES = (
     "rejected", "cancelled",
 )
 
+# Set once when the PR is raised (from the SR's Materials tab) and not
+# editable afterwards — see raise_requisition() in service.py.
+PR_PRIORITIES = ("low", "medium", "high")
+
+# Mirrors app.modules.purchase_requisition's category/requirement-type lists
+# (kept as separate literal copies, not a cross-import — the two PR modules
+# are intentionally independent apps, see the class docstring below).
+PR_CATEGORIES: dict[str, str] = {
+    "HYD": "Hydraulic",
+    "MEC": "Mechanical",
+    "ELE": "Electrical",
+    "ELN": "Electronics",
+    "CON": "Consumables",
+    "TLS": "Tools",
+    "SFT": "Software",
+    "OTH": "Others",
+}
+
+PR_REQUIREMENT_TYPES = ("Material", "Service", "Capital Equipment", "Others")
+
 
 class PurchaseRequisition(Base, TimestampMixin):
     """A purchase requisition raised against a Service Request's materials list.
@@ -49,6 +69,13 @@ class PurchaseRequisition(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(30), default="submitted", nullable=False)
 
     raised_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    priority: Mapped[str] = mapped_column(String(10), default="medium", nullable=False)
+    required_by_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    purchase_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    requirement_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    approver_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    approver_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     vendor: Mapped[str | None] = mapped_column(String(255), nullable=True)
     po_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     po_date: Mapped[date | None] = mapped_column(Date, nullable=True)

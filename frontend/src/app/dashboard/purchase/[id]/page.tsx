@@ -29,6 +29,9 @@ const STATUS_HEX: Record<string, string> = {
   cancelled: '#94a3b8',
 }
 
+const PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High' }
+const PRIORITY_HEX: Record<string, string> = { low: '#64748b', medium: '#f59e0b', high: '#dc2626' }
+
 interface AuditEntry {
   id: number
   action: string
@@ -142,6 +145,9 @@ export default function PurchaseRequisitionDetailPage() {
             <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${statusColor}1a`, color: statusColor }}>
               {STATUS_LABELS[pr.status] || pr.status}
             </span>
+            <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[pr.priority] || '#64748b'}1a`, color: PRIORITY_HEX[pr.priority] || '#64748b' }}>
+              {PRIORITY_LABELS[pr.priority] || pr.priority} Priority
+            </span>
           </div>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>
             {pr.project_label || `Project #${pr.project_id}`} ·{' '}
@@ -215,6 +221,21 @@ export default function PurchaseRequisitionDetailPage() {
               <button disabled={busy} onClick={saveDetails} style={primaryBtnStyle}>Save Details</button>
             </div>
           )}
+        </Card>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <Card title="Requisition Details">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
+            <InfoRow label="Requested By" value={pr.raised_by_name || '—'} />
+            <InfoRow label="Department" value={pr.department || '—'} />
+            <InfoRow label="Priority" value={PRIORITY_LABELS[pr.priority] || pr.priority || '—'} />
+            <InfoRow label="Required By" value={pr.required_by_date ? new Date(pr.required_by_date).toLocaleDateString() : '—'} />
+            <InfoRow label="Category" value={pr.category_label || pr.category_code || '—'} />
+            <InfoRow label="Requirement Type" value={pr.requirement_type || '—'} />
+            <InfoRow label="Approver" value={pr.approver_name || '—'} />
+          </div>
+          <InfoRow label="Reason for Purchase" value={pr.purchase_reason || '—'} />
         </Card>
       </div>
 

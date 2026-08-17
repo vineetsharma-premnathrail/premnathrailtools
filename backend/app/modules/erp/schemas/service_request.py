@@ -20,7 +20,10 @@ class ServiceMaterialAttachmentResponse(BaseModel):
 class ServiceMaterialCreate(BaseModel):
     material_name: str
     part_number: str | None = None
+    model_number: str | None = None
     description: str | None = None
+    estimated_budget: float | None = None
+    reason: str | None = None
     quantity: float = 1
     unit: str = "pcs"
     status: str | None = "pending"
@@ -29,7 +32,10 @@ class ServiceMaterialCreate(BaseModel):
 class ServiceMaterialUpdate(BaseModel):
     material_name: str | None = None
     part_number: str | None = None
+    model_number: str | None = None
     description: str | None = None
+    estimated_budget: float | None = None
+    reason: str | None = None
     quantity: float | None = None
     unit: str | None = None
     status: str | None = None
@@ -42,7 +48,10 @@ class ServiceMaterialResponse(BaseModel):
     service_request_id: int
     material_name: str
     part_number: str | None = None
+    model_number: str | None = None
     description: str | None = None
+    estimated_budget: float | None = None
+    reason: str | None = None
     quantity: float
     unit: str
     status: str | None = None

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.modules.main.models.user import User, AVAILABLE_APPS
 from app.modules.main.schemas.user import UserResponse, UserUpdate
@@ -10,6 +11,25 @@ from app.auth.microsoft import list_azure_org_users, get_azure_admin_ids
 router = APIRouter(prefix="/users", tags=["Users & Roles"])
 
 VALID_ROLES = {"user", "admin"}
+
+# Generic/shared inboxes that exist as directory objects but aren't real
+# people — never pull these into the local users table from an Azure sync.
+_EXCLUDED_MAILBOX_LOCAL_PARTS = {"accounts", "corporate", "info", "prpl", "pew.research", "service"}
+
+
+def _is_syncable_azure_user(email: str) -> bool:
+    """False for accounts outside our own tenant domain (guests/partners) or
+    known shared/generic mailboxes — both get excluded from Azure AD syncs so
+    the org directory only ever contains real internal employees."""
+    email = (email or "").strip().lower()
+    if not email or "@" not in email:
+        return False
+    local_part, _, domain = email.partition("@")
+    if settings.DOMAIN_EMAIL and domain != settings.DOMAIN_EMAIL.strip().lstrip("@").lower():
+        return False
+    if local_part in _EXCLUDED_MAILBOX_LOCAL_PARTS:
+        return False
+    return True
 
 # Granular ERP permission ids the "ERP Permissions" section of the Module
 # Access modal can grant. R&D Tools and CRM don't have a sub-permission
@@ -40,9 +60,23 @@ async def list_users(
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    """List all users (admin only)."""
+    """List all users (admin only) — excludes shared mailboxes / external-domain
+    accounts that shouldn't be managed as people (see _is_syncable_azure_user)."""
     users = db.query(User).order_by(User.name).offset(skip).limit(limit).all()
+    users = [u for u in users if _is_syncable_azure_user(u.email)]
     return [to_response(u) for u in users]
+
+
+@router.get("/directory", response_model=list[dict])
+async def list_user_directory(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Minimal active-user list (id/name/email) any signed-in user can read —
+    used for pickers like "share this document with" where the full
+    admin-only user-management payload (roles, permissions) isn't needed."""
+    users = db.query(User).filter(User.is_active == True).order_by(User.name).all()  # noqa: E712
+    return [{"id": u.id, "name": u.name, "email": u.email, "department": u.department, "designation": u.designation} for u in users]
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
@@ -132,6 +166,15 @@ async def sync_azure_users(
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Azure sync failed: {e}")
 
+    azure_users = [
+        au for au in azure_users
+        if _is_syncable_azure_user(au.get("mail") or au.get("userPrincipalName") or "")
+    ]
+
+    # Anyone already synced in previously (e.g. an external guest or shared
+    # mailbox pulled in before this filter existed) who no longer passes the
+    # filter is treated the same as someone removed from the tenant: they
+    # fall out of active_azure_ids below and get deactivated, not deleted.
     active_azure_ids = {au.get("id") for au in azure_users if au.get("id")}
 
     for au in azure_users:

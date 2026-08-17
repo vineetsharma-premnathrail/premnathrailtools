@@ -3,8 +3,8 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { erpApi } from '@/lib/api'
-import { AuditEntry, Project, ServiceRequest, ServiceMaterial } from '@/types'
+import { erpApi, prRequestApi, usersApi } from '@/lib/api'
+import { AuditEntry, Project, ServiceRequest, ServiceMaterial, DirectoryUser, PRCategoryMeta } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadPreview from '@/components/FileUploadPreview'
@@ -377,10 +377,20 @@ const PR_STATUS_BADGE: Record<string, { bg: string; fg: string; label: string }>
 function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean }) {
   const [materials, setMaterials] = useState<ServiceRequest['materials']>([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ material_name: '', part_number: '', quantity: '1', remarks: '' })
+  const [form, setForm] = useState({
+    material_name: '', part_number: '', model_number: '', unit: '', quantity: '1',
+    estimated_budget: '', description: '', reason: '',
+  })
   const [raisingPR, setRaisingPR] = useState(false)
   const [prMessage, setPrMessage] = useState('')
   const [prError, setPrError] = useState('')
+  const [showRaiseDialog, setShowRaiseDialog] = useState(false)
+  const [raiseForm, setRaiseForm] = useState({ priority: 'medium', required_by_date: '', reason: '', category_code: '', requirement_type: '' })
+  const [categories, setCategories] = useState<PRCategoryMeta[]>([])
+  const [requirementTypes, setRequirementTypes] = useState<string[]>([])
+  const [directory, setDirectory] = useState<DirectoryUser[]>([])
+  const [approverIds, setApproverIds] = useState<number[]>([])
+  const [approverSearch, setApproverSearch] = useState('')
   const [receiveInputs, setReceiveInputs] = useState<Record<number, string>>({})
   const [savingReceive, setSavingReceive] = useState<number | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -396,16 +406,27 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srId])
 
+  useEffect(() => {
+    if (!showRaiseDialog || categories.length > 0) return
+    prRequestApi.getMeta().then((m) => { setCategories(m.categories); setRequirementTypes(m.requirement_types) }).catch(() => {})
+    usersApi.directory().then(setDirectory).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRaiseDialog])
+
   const addMaterial = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.material_name.trim()) return
     await erpApi.addMaterial(srId, {
       material_name: form.material_name,
       part_number: form.part_number || undefined,
-      description: form.remarks || undefined,
+      model_number: form.model_number || undefined,
+      unit: form.unit || undefined,
       quantity: Number(form.quantity) || 1,
+      estimated_budget: form.estimated_budget ? Number(form.estimated_budget) : undefined,
+      description: form.description || undefined,
+      reason: form.reason || undefined,
     })
-    setForm({ material_name: '', part_number: '', quantity: '1', remarks: '' })
+    setForm({ material_name: '', part_number: '', model_number: '', unit: '', quantity: '1', estimated_budget: '', description: '', reason: '' })
     load()
   }
 
@@ -419,8 +440,22 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
     setPrError('')
     setPrMessage('')
     try {
-      const pr = await erpApi.raisePurchaseRequisition(srId)
+      const pr = await erpApi.raisePurchaseRequisition(srId, {
+        priority: raiseForm.priority,
+        required_by_date: raiseForm.required_by_date || undefined,
+        reason: raiseForm.reason || undefined,
+        category_code: raiseForm.category_code || undefined,
+        requirement_type: raiseForm.requirement_type || undefined,
+        approver_id: approverIds.length === 1 ? approverIds[0] : undefined,
+        approver_name: approverIds.length
+          ? approverIds.map((id) => directory.find((u) => u.id === id)?.name).filter(Boolean).join(', ')
+          : undefined,
+      })
       setPrMessage(`Purchase requisition ${pr.pr_number} raised — the Purchase department has been notified.`)
+      setShowRaiseDialog(false)
+      setRaiseForm({ priority: 'medium', required_by_date: '', reason: '', category_code: '', requirement_type: '' })
+      setApproverIds([])
+      setApproverSearch('')
     } catch (err: any) {
       // The request can fail on the client (network drop, dev-server reload,
       // timeout) even after the server already committed the PR — re-fetch
@@ -456,7 +491,7 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
           {prMessage && <span style={{ fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{prMessage}</span>}
           {prError && <span style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{prError}</span>}
           <button
-            onClick={raisePR}
+            onClick={() => setShowRaiseDialog(true)}
             disabled={raisingPR || !hasUnlinkedMaterials}
             style={{ ...primaryBtnStyle, opacity: raisingPR || !hasUnlinkedMaterials ? 0.55 : 1, cursor: raisingPR || !hasUnlinkedMaterials ? 'not-allowed' : 'pointer' }}
             title={!hasUnlinkedMaterials ? 'Every material already belongs to a purchase requisition' : ''}
@@ -466,13 +501,127 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
         </div>
       )}
 
+      {showRaiseDialog && (
+        <div onClick={() => !raisingPR && setShowRaiseDialog(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 14, maxHeight: '90vh', overflowY: 'auto' }}>
+            <p style={{ fontSize: 16, fontWeight: 800, color: '#1f1108', margin: 0 }}>Raise Purchase Requisition</p>
+            <p style={{ fontSize: 12.5, color: '#78716c', margin: 0 }}>These details are set once here and can&apos;t be changed later. Items come from the materials list below.</p>
+            <Field label="PR Category (optional)">
+              <select value={raiseForm.category_code} onChange={(e) => setRaiseForm((f) => ({ ...f, category_code: e.target.value }))} style={{ ...inputStyle, textTransform: 'none' }}>
+                <option value="">Select category…</option>
+                {categories.map((c) => <option key={c.code} value={c.code}>{c.label} ({c.code})</option>)}
+              </select>
+            </Field>
+            <Field label="Requirement Type (optional)">
+              <select value={raiseForm.requirement_type} onChange={(e) => setRaiseForm((f) => ({ ...f, requirement_type: e.target.value }))} style={{ ...inputStyle, textTransform: 'none' }}>
+                <option value="">Select type…</option>
+                {requirementTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="Priority">
+              <select value={raiseForm.priority} onChange={(e) => setRaiseForm((f) => ({ ...f, priority: e.target.value }))} style={{ ...inputStyle, textTransform: 'capitalize' }}>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </Field>
+            <Field label="Required By (optional)">
+              <input type="date" value={raiseForm.required_by_date} onChange={(e) => setRaiseForm((f) => ({ ...f, required_by_date: e.target.value }))} style={{ ...inputStyle, textTransform: 'none' }} />
+            </Field>
+            <Field label="Manager / Approver (optional)">
+              {approverIds.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                  {approverIds.map((id) => {
+                    const u = directory.find((x) => x.id === id)
+                    if (!u) return null
+                    return (
+                      <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '4px 6px 4px 10px', borderRadius: 8, background: 'rgba(244,113,59,0.1)', border: '1px solid rgba(244,113,59,0.25)', color: '#c2410c' }}>
+                        {u.name}
+                        <span onClick={() => setApproverIds((prev) => prev.filter((x) => x !== id))} style={{ cursor: 'pointer', fontWeight: 800 }}>×</span>
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
+              <input
+                value={approverSearch}
+                onChange={(e) => setApproverSearch(e.target.value)}
+                placeholder="Search by name or email…"
+                style={{ ...inputStyle, textTransform: 'none' }}
+              />
+              {approverSearch.trim() && (
+                <div style={{ marginTop: 6, maxHeight: 140, overflowY: 'auto', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff' }}>
+                  {directory
+                    .filter((u) => !approverIds.includes(u.id))
+                    .filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(approverSearch.trim().toLowerCase()))
+                    .slice(0, 8)
+                    .map((u) => (
+                      <div
+                        key={u.id}
+                        onClick={() => { setApproverIds((prev) => [...prev, u.id]); setApproverSearch('') }}
+                        style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid rgba(0,0,0,0.05)' }}
+                      >
+                        <span style={{ fontWeight: 700 }}>{u.name}</span>{' '}
+                        <span style={{ color: '#78716c', fontSize: 12 }}>({u.email})</span>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </Field>
+            <Field label="Reason for Purchase (optional)">
+              <textarea value={raiseForm.reason} onChange={(e) => setRaiseForm((f) => ({ ...f, reason: e.target.value }))} rows={3} style={{ ...inputStyle, textTransform: 'none', resize: 'vertical' }} />
+            </Field>
+            {prError && <span style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{prError}</span>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setShowRaiseDialog(false)} disabled={raisingPR} style={secondaryBtnStyle}>Cancel</button>
+              <button onClick={raisePR} disabled={raisingPR} style={{ ...primaryBtnStyle, opacity: raisingPR ? 0.6 : 1 }}>{raisingPR ? 'Raising…' : 'Confirm & Raise'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {canModify && (
-        <form onSubmit={addMaterial} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: 14, borderRadius: 14, background: '#faf9f7' }}>
-          <input placeholder="Material name" value={form.material_name} onChange={(e) => setForm((f) => ({ ...f, material_name: e.target.value }))} style={{ ...inputStyle, flex: '1 1 180px' }} />
-          <input placeholder="Part number" value={form.part_number} onChange={(e) => setForm((f) => ({ ...f, part_number: e.target.value }))} style={{ ...inputStyle, flex: '1 1 120px' }} />
-          <input type="number" min="0" step="0.01" placeholder="Qty" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} style={{ ...inputStyle, width: 90 }} />
-          <input placeholder="Remarks" value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} style={{ ...inputStyle, flex: '1 1 160px' }} />
-          <button type="submit" style={primaryBtnStyle}>Add</button>
+        <form onSubmit={addMaterial} style={{ padding: 14, borderRadius: 14, background: '#faf9f7', overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', minWidth: 1100 }}>
+            <thead>
+              <tr>
+                {['Part / Item Name *', 'Part Code', 'Model Number', 'Unit', 'Qty', 'Est. Budget', 'Description / Specification', 'Reason / Purpose', ''].map((h) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={{ padding: '0 8px', minWidth: 160 }}>
+                  <input value={form.material_name} onChange={(e) => setForm((f) => ({ ...f, material_name: e.target.value }))} style={inputStyle} />
+                </td>
+                <td style={{ padding: '0 8px', minWidth: 110 }}>
+                  <input value={form.part_number} onChange={(e) => setForm((f) => ({ ...f, part_number: e.target.value }))} style={inputStyle} />
+                </td>
+                <td style={{ padding: '0 8px', minWidth: 110 }}>
+                  <input value={form.model_number} onChange={(e) => setForm((f) => ({ ...f, model_number: e.target.value }))} style={inputStyle} />
+                </td>
+                <td style={{ padding: '0 8px', minWidth: 90 }}>
+                  <input placeholder="pcs / kg" value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} style={inputStyle} />
+                </td>
+                <td style={{ padding: '0 8px', minWidth: 70 }}>
+                  <input type="number" min="0" step="0.01" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} style={inputStyle} />
+                </td>
+                <td style={{ padding: '0 8px', minWidth: 100 }}>
+                  <input type="number" min="0" step="0.01" value={form.estimated_budget} onChange={(e) => setForm((f) => ({ ...f, estimated_budget: e.target.value }))} style={inputStyle} />
+                </td>
+                <td style={{ padding: '0 8px', minWidth: 160 }}>
+                  <input value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} style={inputStyle} />
+                </td>
+                <td style={{ padding: '0 8px', minWidth: 160 }}>
+                  <input value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} style={inputStyle} />
+                </td>
+                <td style={{ padding: '0 8px' }}>
+                  <button type="submit" style={primaryBtnStyle}>Add</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </form>
       )}
 
@@ -480,14 +629,14 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['Material', 'Photos', 'Part No.', 'Qty', 'Status', 'PR', 'Received', ''].map((h) => (
+              {['Material', 'Photos', 'Part No.', 'Model No.', 'Qty', 'Est. Budget', 'Status', 'PR', 'Received', ''].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && materials.length === 0 && <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No materials added.</td></tr>}
+            {loading && <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && materials.length === 0 && <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No materials added.</td></tr>}
             {materials.map((m) => {
               const statusBadge = MATERIAL_STATUS_BADGE[m.status || 'pending'] || MATERIAL_STATUS_BADGE.pending
               const prBadge = m.pr_status ? (PR_STATUS_BADGE[m.pr_status] || PR_STATUS_BADGE.submitted) : null
@@ -498,8 +647,10 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
               <tr style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                 <td style={{ padding: '10px 14px', fontSize: 13 }}>
                   {m.material_name}
-                  {m.description && (
-                    <div style={{ fontSize: 11, color: '#a8a29e', marginTop: 2 }}>{m.description}</div>
+                  {(m.description || m.reason) && (
+                    <div style={{ fontSize: 11, color: '#a8a29e', marginTop: 2 }}>
+                      {m.description}{m.description && m.reason ? ' — ' : ''}{m.reason}
+                    </div>
                   )}
                 </td>
                 <td style={{ padding: '10px 14px' }}>
@@ -511,7 +662,9 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
                   </button>
                 </td>
                 <td style={{ padding: '10px 14px', fontSize: 13, color: '#78716c' }}>{m.part_number || '—'}</td>
+                <td style={{ padding: '10px 14px', fontSize: 13, color: '#78716c' }}>{m.model_number || '—'}</td>
                 <td style={{ padding: '10px 14px', fontSize: 13 }}>{m.quantity}</td>
+                <td style={{ padding: '10px 14px', fontSize: 13, color: '#78716c' }}>{m.estimated_budget ?? '—'}</td>
                 <td style={{ padding: '10px 14px' }}>
                   <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 5, background: statusBadge.bg, color: statusBadge.fg }}>
                     {statusBadge.label}
@@ -666,10 +819,7 @@ function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
           {material.attachments.map((a) => (
             <div key={a.id} style={{ position: 'relative', width: 64, height: 64, flex: 'none' }}>
-              <a href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.sharepoint_url} alt={a.filename} style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />
-              </a>
+              <MaterialPhotoThumb srId={srId} matId={material.id} attachment={a} />
               {canModify && (
                 <button
                   onClick={() => handleDelete(a.id)}
@@ -684,6 +834,35 @@ function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: 
         </div>
       )}
     </div>
+  )
+}
+
+function MaterialPhotoThumb({ srId, matId, attachment }: { srId: number; matId: number; attachment: import('@/types').ServiceMaterialAttachment }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let url: string | null = null
+    erpApi.getMaterialAttachmentBlob(srId, matId, attachment.id).then((blob) => {
+      if (cancelled) return
+      url = URL.createObjectURL(blob)
+      setBlobUrl(url)
+    }).catch(() => {})
+    return () => {
+      cancelled = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [srId, matId, attachment.id])
+
+  return (
+    <button
+      onClick={() => blobUrl && window.open(blobUrl, '_blank', 'noopener,noreferrer')}
+      disabled={!blobUrl}
+      style={{ width: 64, height: 64, padding: 0, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 8, background: '#f5f5f4', cursor: blobUrl ? 'pointer' : 'default', overflow: 'hidden' }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {blobUrl && <img src={blobUrl} alt={attachment.filename} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+    </button>
   )
 }
 
@@ -718,6 +897,23 @@ function AttachmentsTab({ sr, canModify, onRefresh }: { sr: ServiceRequest; canM
   const handleDelete = async (attachmentId: number) => {
     await erpApi.deleteAttachment(sr.id, attachmentId)
     onRefresh()
+  }
+
+  const [previewLoadingId, setPreviewLoadingId] = useState<number | null>(null)
+
+  const openPreview = async (a: import('@/types').ServiceRequestAttachment) => {
+    setPreviewLoadingId(a.id)
+    setError('')
+    try {
+      // Permission-gated, short-lived Microsoft preview link — never the raw
+      // sharepoint_url. Opens in its own tab (that's the intended UX here).
+      const { getUrl } = await erpApi.previewAttachment(sr.id, a.id)
+      window.open(getUrl, '_blank', 'noopener,noreferrer')
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Could not open preview.')
+    } finally {
+      setPreviewLoadingId(null)
+    }
   }
 
   return (
@@ -788,9 +984,13 @@ function AttachmentsTab({ sr, canModify, onRefresh }: { sr: ServiceRequest; canM
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {sr.attachments.map((a) => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
-                <a href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}>
-                  {a.filename}
-                </a>
+                <button
+                  onClick={() => openPreview(a)}
+                  disabled={previewLoadingId === a.id}
+                  style={{ fontSize: 13, color: '#2563eb', background: 'none', border: 'none', padding: 0, cursor: previewLoadingId === a.id ? 'wait' : 'pointer', textDecoration: 'underline' }}
+                >
+                  {previewLoadingId === a.id ? 'Opening…' : a.filename}
+                </button>
                 {canModify && (
                   <button onClick={() => handleDelete(a.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>
                 )}

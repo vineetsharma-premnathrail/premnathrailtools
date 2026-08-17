@@ -35,6 +35,12 @@ backend/app/tests/
 │                                     that item photos are view-only (uploaded via the ERP
 │                                     route, no purchase-side upload/delete route exists) —
 │                                     see ARCHITECTURE.md#purchase-module for the lifecycle
+├── test_p2p_requests.py            # The standalone `p2p` module end-to-end:
+│                                     any department raising a PR directly (not derived from
+│                                     SR materials), category/requirement/approver workflow,
+│                                     priority/required-by/reason fields, attachments, item
+│                                     remarks/budget/model fields — entirely separate models/
+│                                     routes from test_purchase_requisitions.py above
 ├── test_crm.py                    # Organizations/Inquiries/Tenders CRUD, stage logging,
 │                                     duplicate-prevention, cascade delete/restore, permissions
 ├── test_crm_documents.py          # SharePoint-backed document upload/list/delete —
@@ -98,80 +104,47 @@ ptw app/tests
 
 ---
 
-## Test Types
+## Test Strategy — What "Unit" vs "Integration" vs "E2E" Actually Means Here
 
-### 1. Unit Tests
+**Honesty check:** `backend/app/tests/` contains three empty subfolders —
+`e2e/`, `integration/`, `unit/`. No test files live in them. They appear to be
+scaffolding left over from an earlier plan for a nested structure that was
+never followed through on; every real test lives flat under
+`backend/app/tests/*.py` as listed in the tree above. Don't be misled by
+their presence into thinking there's an enforced layering — there isn't.
+If you want that split to actually exist, it needs someone to either move
+tests into those folders or delete the folders; until then, treat this
+section as the honest description of what's there, not the empty dirs.
 
-**What:** Test individual functions/methods in isolation
+In practice, almost every test in this codebase is what most teams would
+call an **integration test**: it goes through `client` (a real `TestClient`
+wrapping the full FastAPI `app`, middleware included) and a real (in-memory
+SQLite) database, exercising route → auth → service/model → DB → response
+in one shot. There is no separate repository/service layer in this codebase
+to unit-test in isolation (see `ARCHITECTURE.md#module-structure`), so
+"unit tests" here mostly means tests of a single model method or pure
+function with the `db` fixture but no HTTP call — e.g. `test_user_model.py`
+(`User.get_apps()` logic) and `test_rnd_latex_escaping.py` (a pure string
+function). `test_followup_reminders.py` is the closest thing to a scheduled-
+job/"service layer" unit test — see the dedicated section below.
 
-**When:** Always — for services, repositories
+There are no true end-to-end tests in the sense of "spin up the real Next.js
+frontend and click through it" (no Playwright/Cypress in this repo — see
+`grep -r playwright cypress` returning nothing). "E2E" here would describe a
+backend test that chains multiple requests into one user workflow (e.g.
+create → approve → receive a purchase requisition in
+`test_purchase_requisitions.py`), but no folder or naming convention
+distinguishes those from single-request integration tests today.
 
-**How:**
-```python
-def test_create_note_validates_title(service):
-    """Test that create_note validates title."""
-    with pytest.raises(ValueError):
-        service.create_note(CreateNoteSchema(title="", description="..."))
-```
-
-**Where:** `test_*_service.py`
-
----
-
-### 2. Integration Tests
-
-**What:** Test flow through multiple layers (route → service → repository → database)
-
-**When:** For full features (create note with validation, db save, response)
-
-**How:**
-```python
-def test_create_note_endpoint(client, db):
-    """Test full flow: POST /api/v1/crm/notes."""
-    response = client.post(
-        "/api/v1/crm/notes",
-        json={"title": "Call", "description": "Follow up"},
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    assert response.status_code == 201
-    assert response.json()["title"] == "Call"
-```
-
-**Where:** `test_*_routes.py`
-
----
-
-### 3. End-to-End Tests
-
-**What:** Test complete user workflows
-
-**When:** For critical paths (login → create note → view note)
-
-**How:**
-```python
-def test_user_can_create_and_view_note(client, db):
-    """Test: Login → Create note → View note."""
-    # 1. Create user
-    user = create_test_user(db)
-    token = create_access_token({"sub": str(user.id)})
-    
-    # 2. Create note
-    response = client.post(
-        "/api/v1/crm/notes",
-        json={"title": "Test", "description": "..."},
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    note_id = response.json()["id"]
-    
-    # 3. View note
-    response = client.get(
-        f"/api/v1/crm/notes/{note_id}",
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    assert response.json()["title"] == "Test"
-```
-
-**Where:** `tests/integration/test_*.py`
+**Where things actually stand, plainly:**
+- **Unit-ish:** `test_user_model.py`, `test_rnd_latex_escaping.py`
+- **Integration (the large majority):** everything else — single or few
+  HTTP calls through `client` against the in-memory DB
+- **Multi-step workflow tests (informally "e2e"):** the request-lifecycle
+  tests inside `test_purchase_requisitions.py`, `test_teams_sso.py`
+  (token → session → replay), and `test_security_middleware.py`'s
+  violation-count → ban sequence
+- **`e2e/`, `integration/`, `unit/` subfolders:** empty, not used
 
 ---
 
@@ -279,9 +252,91 @@ Output shows:
 
 ## CI/CD Integration
 
-Tests run automatically on every commit (GitHub Actions / GitLab CI).
+**Correction:** there is currently no CI pipeline in this repo — `.github/workflows/`
+does not exist, and no GitLab CI config was found either. Tests are **not** run
+automatically on commits or PRs today; running `pytest app/tests` is a manual
+step a developer has to remember to do before merging. If you want tests to
+gate merges, that requires adding a workflow file — it isn't there yet.
 
-Failing tests block merge to main.
+---
+
+## Test Case Inventory
+
+Ground truth from `pytest --collect-only -q` against `backend/app/tests/` on
+2026-08-14: **260 tests collected**, 0 errors. Counts below are exact
+(from collect-only), not estimates.
+
+| File | Covers | Tests | Notes |
+|---|---|---|---|
+| `test_p2p_requests.py` | The standalone `p2p` module end-to-end (any department raising a PR directly, category/requirement/approver workflow, priority/required-by/reason, attachments, item remarks/budget/model) | 49 | Largest file — added after the module's initial buildout; closes the coverage gap previously flagged for this module (see below) |
+| `test_erp_projects.py` | ERP Projects CRUD, attachments, permissions | 22 | Largest ERP file; includes private-attachment access rules |
+| `test_security_middleware.py` | `OWASPMiddleware` — auth precheck, injection/SSRF/path-traversal blocking, rate limiting, IP bans, security headers, API keys | 19 | See dedicated section below |
+| `test_users.py` | User admin CRUD, role changes, ERP permission grants, Azure sync | 17 | |
+| `test_erp_service_requests.py` | ERP Service Requests CRUD, materials, permissions | 17 | |
+| `test_purchase_requisitions.py` | **ERP-module** PR lifecycle: raise from SR materials, approve/reject/cancel, partial/full receiving, item remarks/photos | 16 | Tests `app.modules.erp...`, not the new `p2p` module — see gap note below |
+| `test_rnd.py` | R&D module core routes | 15 | |
+| `test_microsoft_oauth.py` | Microsoft login/callback, auto-create user, domain restriction, JWT | 14 | See `TESTING_MICROSOFT_OAUTH.md` |
+| `test_crm.py` | Organizations/Inquiries/Tenders CRUD, stage logging, dup-prevention, cascade delete/restore | 12 | |
+| `test_feedback.py` | Feedback submission/listing | 11 | |
+| `test_teams_sso.py` | `/auth/teams-token`, `/auth/teams-exchange` — audience/issuer/replay checks, OBO | 10 | Unsigned-JWT technique, see section below |
+| `test_rnd_tool_snapshots.py` | R&D tool calculation snapshot table | 9 | |
+| `test_followup_reminders.py` | Scheduled activity follow-up reminder job | 9 | Not a route test, see dedicated section |
+| `test_user_model.py` | `User.get_apps()` logic, uniqueness constraints | 7 | Closest thing to a true unit test |
+| `test_crm_documents.py` | SharePoint-backed CRM document upload/list/delete (mocked) | 6 | |
+| `test_crm_activity_attachments.py` | Activity photo gallery (mocked SharePoint) | 5 | |
+| `test_audit_logs.py` | Audit log writes/queries | 5 | |
+| `test_presence.py` | "Who's viewing this" heartbeat/viewer list | 4 | |
+| `test_notifications.py` | In-app notifications | 4 | |
+| `test_auth.py` | Base auth/health checks | 4 | |
+| `test_rnd_latex_escaping.py` | Pure LaTeX-escaping helper function | 3 | Unit test, no `client`/`db` |
+| `test_crm_activities.py` | Activity list/create response enrichment | 2 | Thin — only 2 tests for an area with known org_id/stale-snapshot regressions (see `ARCHITECTURE.md`) |
+
+### API / Integration Tests
+The bulk of the table above — anything going through the `client` fixture
+against a real route — is what this repo's "integration test" means in
+practice (see Test Strategy above). Every ERP, CRM, purchase, R&D, users,
+and auth file falls in this bucket.
+
+### Security Tests
+`test_security_middleware.py` (19 tests) is the dedicated security suite. It
+asserts, through real HTTP requests (not by calling middleware internals
+directly):
+- Unauthenticated API requests get `401` before reaching the route; public
+  auth routes (e.g. `microsoft-login`) bypass that precheck.
+- Path traversal, SQL injection (query string and JSON body), and XSS
+  `<script>` payloads in requests are rejected with `400`.
+- An ordinary request containing an innocuous word like "Select" is **not**
+  falsely flagged (regression guard against overly broad injection regexes).
+- SSRF: private-IP query params are blocked; public URLs are not.
+- Bulk-delete guardrails: collection delete without an id, and bulk id-list
+  query params, are blocked.
+- Rate limiting kicks in after a threshold, and repeated violations trigger
+  an IP ban (with a documented one-request offset — the request that trips
+  the ban is still answered with the error that caused it; the ban itself
+  starts on the *next* request).
+- Standard security headers are present on responses.
+- API-key auth: a valid key authenticates like a user, an inactive key is
+  rejected, keys are scoped to their allowed apps, and only admins can
+  issue/list API keys.
+
+### Coverage Gaps Worth Flagging
+- ~~`p2p` module has zero dedicated tests~~ — **resolved.**
+  `test_p2p_requests.py` (49 tests) now covers the standalone
+  `backend/app/modules/p2p/` module end-to-end (it remains
+  entirely separate from the ERP-embedded purchase flow that
+  `test_purchase_requisitions.py`'s 16 tests cover — the two files test two
+  different modules with no model/route overlap).
+- `test_crm_activities.py` (2 tests) and `test_rnd_latex_escaping.py` (3
+  tests) are thin relative to the surface area they touch.
+- No tests reference `app/modules/purchase/service.py`'s notification or
+  SharePoint helpers directly, beyond what's exercised incidentally through
+  `test_purchase_requisitions.py`.
+- `backend/app/modules/{crm,main,rnd,service}/tests/` also exist as empty
+  directories — same situation as `app/tests/{unit,integration,e2e}/`, likely
+  leftover scaffolding, not an active convention.
+- No frontend test suite was found (no Jest/Vitest/Playwright config under
+  `frontend/`), so none of the Next.js pages/components listed in the
+  working tree's current diff have any automated coverage.
 
 ---
 
@@ -334,7 +389,7 @@ Special attention needed for testing authentication:
 - **See:** [TESTING_MICROSOFT_OAUTH.md](TESTING_MICROSOFT_OAUTH.md)
 - Tests verify users logging in from Microsoft
 - Uses mocks to avoid needing real Microsoft account
-- 8 comprehensive tests covering:
+- 14 tests (per `pytest --collect-only`, corrected from an earlier "8" here) covering:
   - Login redirect to Microsoft
   - User auto-creation on first login
   - Profile sync on repeat login

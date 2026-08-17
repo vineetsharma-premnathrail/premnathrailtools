@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -9,10 +9,16 @@ from app.core.permissions import require_app_access, has_erp_permission
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.erp.models.project import Project
-from app.modules.erp.models.project_attachment import ProjectAttachment
+from app.modules.erp.models.project_attachment import ProjectAttachment, ProjectAttachmentShare
 from app.modules.erp.models.service_request import ServiceRequest
-from app.modules.erp.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectAttachmentResponse
-from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint
+from app.modules.erp.schemas.project import (
+    ProjectCreate, ProjectUpdate, ProjectResponse, ProjectAttachmentResponse, ProjectAttachmentPermissionUpdate,
+)
+from fastapi.responses import Response
+from app.utils.sharepoint import (
+    upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint,
+    get_preview_url, download_file_content,
+)
 from app.utils.notifications import broadcast_notification, notify_user
 
 router = APIRouter(prefix="/erp/projects", tags=["ERP - Projects"])
@@ -264,19 +270,106 @@ async def get_project_audit(
 
 # ── Documents / Attachments (SharePoint) ────────────────────────────────────
 
+def _split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+
+def _split_csv_ints(value: str | None) -> list[int]:
+    return [int(v) for v in _split_csv(value) if v.isdigit()]
+
+
+def _build_share_rows(user_ids: list[int], departments: list[str], designations: list[str]) -> list[ProjectAttachmentShare]:
+    return (
+        [ProjectAttachmentShare(user_id=uid) for uid in dict.fromkeys(user_ids)]
+        + [ProjectAttachmentShare(department=d) for d in dict.fromkeys(departments)]
+        + [ProjectAttachmentShare(designation=d) for d in dict.fromkeys(designations)]
+    )
+
+
+def _can_view_attachment(user: User, attachment: ProjectAttachment) -> bool:
+    if user.role == "admin" or not attachment.is_private or attachment.created_by_id == user.id:
+        return True
+    if user.id in attachment.shared_with_user_ids:
+        return True
+    if user.department and user.department in attachment.shared_departments:
+        return True
+    if user.designation and user.designation in attachment.shared_designations:
+        return True
+    return False
+
+
 @router.get("/{project_id}/attachments", response_model=list[ProjectAttachmentResponse])
 async def list_project_attachments(
     project_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("erp")),
+    user: User = Depends(require_app_access("erp")),
 ):
-    return db.query(ProjectAttachment).filter(ProjectAttachment.project_id == project_id).all()
+    attachments = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
+        ProjectAttachment.project_id == project_id
+    ).all()
+    return [a for a in attachments if _can_view_attachment(user, a)]
+
+
+@router.get("/{project_id}/attachments/{attachment_id}/preview")
+async def preview_project_attachment(
+    project_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("erp")),
+):
+    attachment = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
+        ProjectAttachment.id == attachment_id, ProjectAttachment.project_id == project_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if not _can_view_attachment(user, attachment):
+        raise HTTPException(status_code=403, detail="You do not have permission to view this document.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    get_url = await get_preview_url(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
+    return {"getUrl": get_url}
+
+
+@router.get("/{project_id}/attachments/{attachment_id}/content")
+async def get_project_attachment_content(
+    project_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("erp")),
+):
+    """Raw file bytes for in-app preview (img/pdf/video tags on our own
+    origin) — for formats the browser can render natively. Office documents
+    (docx/xlsx/pptx) still need the /preview Microsoft-viewer link since a
+    browser can't render those on its own."""
+    attachment = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
+        ProjectAttachment.id == attachment_id, ProjectAttachment.project_id == project_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if not _can_view_attachment(user, attachment):
+        raise HTTPException(status_code=403, detail="You do not have permission to view this document.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
+    return Response(
+        content=content,
+        media_type=attachment.content_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+    )
 
 
 @router.post("/{project_id}/attachments", response_model=list[ProjectAttachmentResponse])
 async def upload_project_attachments(
     project_id: int,
     files: list[UploadFile] = File(...),
+    is_private: bool = Form(False),
+    shared_with_user_ids: str | None = Form(None),
+    shared_departments: str | None = Form(None),
+    shared_designations: str | None = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("erp")),
 ):
@@ -289,6 +382,12 @@ async def upload_project_attachments(
         raise HTTPException(status_code=404, detail="Machine not found")
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    share_rows: list[ProjectAttachmentShare] = []
+    if is_private:
+        share_rows = _build_share_rows(
+            _split_csv_ints(shared_with_user_ids), _split_csv(shared_departments), _split_csv(shared_designations)
+        )
 
     project_name = project.serial_number or project.model_name or str(project.id)
     folder_path = build_sharepoint_folder_path(user.name or user.email or "", project_name, "documents")
@@ -304,7 +403,16 @@ async def upload_project_attachments(
             sharepoint_path=result["path"],
             sharepoint_url=result.get("webUrl"),
             created_by_id=user.id,
+            is_private=is_private,
         )
+        if is_private:
+            # Each attachment gets its own fresh Share rows — sharing one
+            # ProjectAttachmentShare instance across attachments would try to
+            # insert the same primary key twice.
+            attachment.shares = [
+                ProjectAttachmentShare(user_id=s.user_id, department=s.department, designation=s.designation)
+                for s in share_rows
+            ]
         db.add(attachment)
         attachments.append(attachment)
 
@@ -317,6 +425,36 @@ async def upload_project_attachments(
 
     db.commit()
     return attachments
+
+
+@router.patch("/{project_id}/attachments/{attachment_id}/permissions", response_model=ProjectAttachmentResponse)
+async def update_project_attachment_permissions(
+    project_id: int,
+    attachment_id: int,
+    payload: ProjectAttachmentPermissionUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("erp")),
+):
+    attachment = db.query(ProjectAttachment).options(selectinload(ProjectAttachment.shares)).filter(
+        ProjectAttachment.id == attachment_id, ProjectAttachment.project_id == project_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if user.role != "admin" and attachment.created_by_id != user.id:
+        raise HTTPException(status_code=403, detail="Only the uploader or an admin can change this document's access.")
+
+    attachment.is_private = payload.is_private
+    attachment.shares = (
+        _build_share_rows(payload.shared_with_user_ids, payload.shared_departments, payload.shared_designations)
+        if payload.is_private else []
+    )
+    _write_audit(
+        db, project_id, "attachment_permissions_updated", user,
+        summary=f"{user.name or user.email} updated access for '{attachment.filename}'",
+    )
+    db.commit()
+    db.refresh(attachment)
+    return attachment
 
 
 @router.delete("/{project_id}/attachments/{attachment_id}")

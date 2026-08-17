@@ -15,6 +15,17 @@ class ProjectAttachmentResponse(BaseModel):
     sharepoint_url: str | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
+    is_private: bool = False
+    shared_with_user_ids: list[int] = []
+    shared_departments: list[str] = []
+    shared_designations: list[str] = []
+
+
+class ProjectAttachmentPermissionUpdate(BaseModel):
+    is_private: bool
+    shared_with_user_ids: list[int] = []
+    shared_departments: list[str] = []
+    shared_designations: list[str] = []
 
 
 class ProjectCreate(BaseModel):
