@@ -67,6 +67,91 @@ export const authApi = {
   },
 }
 
+export const hrApi = {
+  directory: async () => {
+    const { data } = await apiClient.get('/hr/directory')
+    return data
+  },
+
+  updateProfile: async (userId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/hr/employees/${userId}`, payload)
+    return data
+  },
+}
+
+export const designApi = {
+  listDocuments: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/design/documents', { params })
+    return data
+  },
+
+  revisionHistory: async (documentId: number) => {
+    const { data } = await apiClient.get(`/design/documents/${documentId}/revisions`)
+    return data
+  },
+
+  upload: async (form: FormData) => {
+    const { data } = await apiClient.post('/design/documents', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
+  updateStatus: async (documentId: number, status: string) => {
+    const { data } = await apiClient.patch(`/design/documents/${documentId}/status`, { status })
+    return data
+  },
+}
+
+export const electricalApi = {
+  list: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/electrical/work-orders', { params })
+    return data
+  },
+
+  get: async (id: number) => {
+    const { data } = await apiClient.get(`/electrical/work-orders/${id}`)
+    return data
+  },
+
+  create: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/electrical/work-orders', payload)
+    return data
+  },
+
+  update: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/electrical/work-orders/${id}`, payload)
+    return data
+  },
+
+  assign: async (id: number, assignedToId: number) => {
+    const { data } = await apiClient.post(`/electrical/work-orders/${id}/assign`, { assigned_to_id: assignedToId })
+    return data
+  },
+
+  changeStatus: async (id: number, status: string, resolutionNotes?: string) => {
+    const { data } = await apiClient.post(`/electrical/work-orders/${id}/status`, { status, resolution_notes: resolutionNotes })
+    return data
+  },
+}
+
+export const modulesApi = {
+  list: async () => {
+    const { data } = await apiClient.get('/modules')
+    return data
+  },
+
+  create: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/modules', payload)
+    return data
+  },
+
+  update: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/modules/${id}`, payload)
+    return data
+  },
+}
+
 export const usersApi = {
   list: async () => {
     const { data } = await apiClient.get('/users')
@@ -110,17 +195,6 @@ export const usersApi = {
 }
 
 export const crmApi = {
-  // Admin bulk CSV import — entity: 'organizations' | 'inquiries' | 'tenders' | 'activities'
-  bulkImport: async (entity: string, file: File, createdByEmail: string) => {
-    const form = new FormData()
-    form.append('file', file)
-    form.append('created_by_email', createdByEmail)
-    const { data } = await apiClient.post(`/crm/admin/import/${entity}`, form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return data
-  },
-
   // Dashboard
   getDashboard: async () => {
     const { data } = await apiClient.get('/crm/dashboard')
@@ -154,14 +228,6 @@ export const crmApi = {
   },
   deleteOrganization: async (id: number) => {
     await apiClient.delete(`/crm/organizations/${id}`)
-  },
-  restoreOrganization: async (id: number) => {
-    const { data } = await apiClient.post(`/crm/organizations/${id}/restore`)
-    return data
-  },
-  getDeletedOrganizations: async () => {
-    const { data } = await apiClient.get('/crm/organizations/recycle-bin/list')
-    return data
   },
   getOrganizationAudit: async (id: number) => {
     const { data } = await apiClient.get(`/crm/organizations/${id}/audit`)
@@ -207,14 +273,6 @@ export const crmApi = {
   deleteInquiry: async (id: number) => {
     await apiClient.delete(`/crm/inquiries/${id}`)
   },
-  restoreInquiry: async (id: number) => {
-    const { data } = await apiClient.post(`/crm/inquiries/${id}/restore`)
-    return data
-  },
-  getDeletedInquiries: async () => {
-    const { data } = await apiClient.get('/crm/inquiries/recycle-bin/list')
-    return data
-  },
   getInquiryAudit: async (id: number) => {
     const { data } = await apiClient.get(`/crm/inquiries/${id}/audit`)
     return data
@@ -255,14 +313,6 @@ export const crmApi = {
   },
   deleteTender: async (id: number) => {
     await apiClient.delete(`/crm/tenders/${id}`)
-  },
-  restoreTender: async (id: number) => {
-    const { data } = await apiClient.post(`/crm/tenders/${id}/restore`)
-    return data
-  },
-  getDeletedTenders: async () => {
-    const { data } = await apiClient.get('/crm/tenders/recycle-bin/list')
-    return data
   },
   getTenderAudit: async (id: number) => {
     const { data } = await apiClient.get(`/crm/tenders/${id}/audit`)
@@ -311,23 +361,6 @@ export const crmApi = {
     return data
   },
 
-  // Notes
-  listNotes: async (params: { search?: string; org_id?: number; related_module?: string; related_id?: number } = {}) => {
-    const { data } = await apiClient.get('/crm/notes', { params })
-    return data
-  },
-  createNote: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/crm/notes', payload)
-    return data
-  },
-  updateNote: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/crm/notes/${id}`, payload)
-    return data
-  },
-  deleteNote: async (id: number) => {
-    const { data } = await apiClient.delete(`/crm/notes/${id}`)
-    return data
-  },
 
   // Documents
   listDocuments: async (params: { related_module: string; related_id: number; related_sub_module?: string; related_sub_id?: number }) => {
@@ -740,6 +773,11 @@ export const p2pApi = {
     return data
   },
 
+  linkItemToStock: async (id: number, itemId: number, stockItemId: number | null) => {
+    const { data } = await apiClient.patch(`/p2p/requests/${id}/items/${itemId}/stock-link`, { stock_item_id: stockItemId })
+    return data
+  },
+
   close: async (id: number) => {
     const { data } = await apiClient.post(`/p2p/requests/${id}/close`)
     return data
@@ -758,6 +796,159 @@ export const p2pApi = {
 
   deleteAttachment: async (id: number, attachmentId: number) => {
     const { data } = await apiClient.delete(`/p2p/requests/${id}/attachments/${attachmentId}`)
+    return data
+  },
+}
+
+export const rfqApi = {
+  list: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/p2p/rfqs', { params })
+    return data
+  },
+
+  get: async (id: number) => {
+    const { data } = await apiClient.get(`/p2p/rfqs/${id}`)
+    return data
+  },
+
+  create: async (p2pRequestId: number) => {
+    const { data } = await apiClient.post('/p2p/rfqs', { p2p_request_id: p2pRequestId })
+    return data
+  },
+
+  update: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/p2p/rfqs/${id}`, payload)
+    return data
+  },
+
+  uploadAttachments: async (id: number, files: File[], vendorTier: string) => {
+    const formData = new FormData()
+    files.forEach((f) => formData.append('files', f))
+    formData.append('vendor_tier', vendorTier)
+    const { data } = await apiClient.post(`/p2p/rfqs/${id}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
+  deleteAttachment: async (id: number, attachmentId: number) => {
+    const { data } = await apiClient.delete(`/p2p/rfqs/${id}/attachments/${attachmentId}`)
+    return data
+  },
+
+  submit: async (id: number) => {
+    const { data } = await apiClient.post(`/p2p/rfqs/${id}/submit`)
+    return data
+  },
+}
+
+export const vendorsApi = {
+  getMeta: async () => {
+    const { data } = await apiClient.get('/vendors/meta')
+    return data
+  },
+
+  list: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/vendors', { params })
+    return data
+  },
+
+  get: async (id: number) => {
+    const { data } = await apiClient.get(`/vendors/${id}`)
+    return data
+  },
+
+  create: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/vendors', payload)
+    return data
+  },
+
+  update: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/vendors/${id}`, payload)
+    return data
+  },
+}
+
+export const purchaseOrdersApi = {
+  list: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/p2p/purchase-orders', { params })
+    return data
+  },
+
+  get: async (id: number) => {
+    const { data } = await apiClient.get(`/p2p/purchase-orders/${id}`)
+    return data
+  },
+
+  create: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/p2p/purchase-orders', payload)
+    return data
+  },
+
+  update: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/p2p/purchase-orders/${id}`, payload)
+    return data
+  },
+}
+
+export const storeApi = {
+  listLocations: async () => {
+    const { data } = await apiClient.get('/store/locations')
+    return data
+  },
+
+  createLocation: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/locations', payload)
+    return data
+  },
+
+  listItems: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/items', { params })
+    return data
+  },
+
+  createItem: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/items', payload)
+    return data
+  },
+
+  getItem: async (id: number) => {
+    const { data } = await apiClient.get(`/store/items/${id}`)
+    return data
+  },
+
+  updateItem: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/store/items/${id}`, payload)
+    return data
+  },
+
+  listTransactions: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/transactions', { params })
+    return data
+  },
+
+  stockIn: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/transactions/stock-in', payload)
+    return data
+  },
+
+  issue: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/transactions/issue', payload)
+    return data
+  },
+
+  transfer: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/transactions/transfer', payload)
+    return data
+  },
+
+  listBalances: async (locationId: number) => {
+    const { data } = await apiClient.get('/store/transactions/balances', { params: { location_id: locationId } })
+    return data
+  },
+
+  adjust: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/transactions/adjust', payload)
     return data
   },
 }

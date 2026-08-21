@@ -11,10 +11,10 @@ export default function P2PPoApprovalPage() {
 
   return (
     <div>
-      <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
+      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
         P2P Module
       </p>
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: TEXT.heading, margin: '0 0 20px' }}>P.O Approval</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>P.O Approval</h1>
       <P2PNav />
       <P2PRequestList statuses={['po_raised']} emptyLabel="No requests at PO Approval stage." />
     </div>

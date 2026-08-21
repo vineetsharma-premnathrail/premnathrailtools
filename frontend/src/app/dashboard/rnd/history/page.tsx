@@ -110,7 +110,7 @@ export default function RndHistoryPage() {
       <RndNav />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Calculation History</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Calculation History</h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>
             {adminMode ? "Admin view — all users' calculations" : 'My saved R&D calculations · View · Rename · Delete'}
           </p>
@@ -118,7 +118,7 @@ export default function RndHistoryPage() {
         {isAdmin && (
           <button
             onClick={() => { setAdminMode((v) => !v); setSelectedUserId(''); }}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 8, border: 'none', background: adminMode ? '#7c3aed' : '#fff', color: adminMode ? '#fff' : '#7c3aed', boxShadow: adminMode ? 'none' : '0 1px 3px rgba(0,0,0,0.08)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 8, border: 'none', background: adminMode ? '#7c3aed' : '#fff', color: adminMode ? '#fff' : '#7c3aed', boxShadow: adminMode ? 'none' : '0 1px 3px rgba(0,0,0,0.08)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
           >
             <UserIcon multiple={!adminMode} />
             {adminMode ? 'My History' : 'View All Users'}
@@ -128,11 +128,11 @@ export default function RndHistoryPage() {
 
       {adminMode && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, background: '#f5f3ff', border: '1px solid #ddd6fe', marginBottom: 14, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '.04em' }}>Admin View — All Users</span>
+          <span style={{ fontSize: 11.5, fontWeight: 600, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '.04em' }}>Admin View — All Users</span>
           <select
             value={selectedUserId}
             onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : '')}
-            style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ddd6fe', fontSize: 12.5 }}
+            style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd6fe', fontSize: 13, outline: 'none' }}
           >
             <option value="">All Users</option>
             {adminUsers.map((u) => (
@@ -159,7 +159,7 @@ export default function RndHistoryPage() {
           placeholder="Search by name…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12.5, width: 220 }}
+          style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #e2e8f0', fontSize: 13, width: 220, outline: 'none' }}
         />
       </div>
 
@@ -168,7 +168,7 @@ export default function RndHistoryPage() {
           <thead>
             <tr style={{ background: '#f8fafc' }}>
               {['#', 'Calculation Name', ...(adminMode ? ['User'] : []), 'Tool', 'Saved On', 'Actions'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>{h}</th>
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: '#94a3b8', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -181,18 +181,18 @@ export default function RndHistoryPage() {
               return (
                 <tr key={r.id} style={{ borderTop: '1px solid #f1f5f9' }}>
                   <td style={{ padding: '10px 14px', fontSize: 12, color: '#94a3b8' }}>{i + 1}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, fontWeight: 700, color: '#1e293b' }}>
+                  <td style={{ padding: '10px 14px', fontSize: 12.5, fontWeight: 600, color: '#1e293b' }}>
                     {renamingId === r.id ? (
                       <input
                         autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && confirmRename(r.id)}
-                        style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, width: 180 }}
+                        style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12.5, width: 180, outline: 'none' }}
                       />
                     ) : (r.calculation_name || '—')}
                   </td>
                   {adminMode && <td style={{ padding: '10px 14px', fontSize: 12, color: '#57534e' }}>{r.user_name || '—'}</td>}
                   <td style={{ padding: '10px 14px' }}>
-                    <span style={{ padding: '3px 10px', borderRadius: 9999, fontSize: 11, fontWeight: 700, background: toolColor.bg, color: toolColor.color }}>{TOOL_LABELS[r.tool_name] || r.tool_name}</span>
+                    <span style={{ padding: '3px 10px', borderRadius: 9999, fontSize: 11, fontWeight: 600, background: toolColor.bg, color: toolColor.color }}>{TOOL_LABELS[r.tool_name] || r.tool_name}</span>
                   </td>
                   <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                     <div style={{ fontSize: 12, color: '#334155' }}>{d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</div>
@@ -257,7 +257,7 @@ function FilterPill({ label, active, onClick }: { label: string; active: boolean
       style={{
         padding: '7px 14px', borderRadius: 9999, border: `1px solid ${active ? '#f97316' : '#e2e8f0'}`,
         background: active ? '#fff7ed' : '#fff', color: active ? '#c2410c' : '#64748b',
-        fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em', cursor: 'pointer',
+        fontSize: 11.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', cursor: 'pointer',
       }}
     >
       {label}
@@ -270,8 +270,8 @@ function StatCard({ label, value, bg }: { label: string; value: string; bg: stri
     <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
       <div style={{ width: 36, height: 36, borderRadius: 8, background: bg, flexShrink: 0 }} />
       <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '.05em', marginBottom: 2 }}>{label}</div>
-        <div style={{ fontSize: 20, fontWeight: 800, color: '#1e293b' }}>{value}</div>
+        <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '.05em', marginBottom: 2 }}>{label}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: '#1e293b' }}>{value}</div>
       </div>
     </div>
   )

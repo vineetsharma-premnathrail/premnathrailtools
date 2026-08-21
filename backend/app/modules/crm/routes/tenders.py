@@ -195,46 +195,17 @@ async def delete_tender(
 
     tender.is_deleted = True
     tender.deleted_at = datetime.now(timezone.utc)
-    _write_audit(db, tender.id, "deleted", user, summary=f"Tender {tender.universal_id} moved to recycle bin by {user.name or user.email}.")
+    _write_audit(db, tender.id, "deleted", user, summary=f"Tender {tender.universal_id} deleted by {user.name or user.email}.")
     broadcast_notification(
         db, title="Tender Deleted", message=f"Tender '{tender.universal_id}' was deleted by {user.name or user.email}.",
         notification_type="tender_deleted", entity_type="tender", entity_id=tender.id, exclude_user_id=user.id,
     )
     notify_user(
         db, user_id=user.id, title="Tender Deleted",
-        message=f"You deleted tender '{tender.universal_id}'. It can be restored from the recycle bin for 10 days.",
+        message=f"You deleted tender '{tender.universal_id}'.",
         notification_type="tender_deleted", entity_type="tender", entity_id=tender.id,
     )
     db.commit()
-
-
-@router.post("/{tender_id}/restore", response_model=TenderResponse)
-async def restore_tender(
-    tender_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
-):
-    tender = db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == True).first()  # noqa: E712
-    if not tender:
-        raise HTTPException(status_code=404, detail="Deleted tender not found")
-    tender.is_deleted = False
-    tender.deleted_at = None
-    _write_audit(db, tender.id, "restored", user, summary=f"Tender {tender.universal_id} restored from recycle bin.")
-    db.commit()
-    db.refresh(tender)
-    return tender
-
-
-@router.get("/recycle-bin/list")
-async def list_deleted_tenders(
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
-):
-    tenders = db.query(Tender).filter(Tender.is_deleted == True).all()  # noqa: E712
-    return [
-        {"id": t.id, "universal_id": t.universal_id, "tender_name": t.tender_name, "deleted_at": t.deleted_at.isoformat() if t.deleted_at else None}
-        for t in tenders
-    ]
 
 
 @router.get("/{tender_id}/audit")

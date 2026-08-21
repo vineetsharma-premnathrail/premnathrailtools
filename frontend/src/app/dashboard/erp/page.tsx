@@ -7,6 +7,7 @@ import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
+import { Section } from '@/components/shared/ui'
 
 const PRIORITY_COLORS: Record<string, string> = {
   critical: '#dc2626',
@@ -107,7 +108,7 @@ export default function ErpDashboardPage() {
   return (
     <div>
       <ErpNav />
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>Dashboard Panel</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Dashboard Panel</h1>
       <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>
         Welcome back, {user?.name || 'there'}. Here is the real-time operational state of your deployment assets.
       </p>
@@ -120,32 +121,26 @@ export default function ErpDashboardPage() {
       </div>
 
       <div className="grid-2" style={{ gap: 20, marginBottom: 24 }}>
-        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 18 }}>
-          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 16px' }}>
-            Project Deployment Status
-          </p>
+        <Section title="Project Deployment Status">
           {deploymentStatusBreakdown.length === 0 ? (
             <p style={{ fontSize: 13, color: '#a8a29e' }}>No data yet.</p>
           ) : (
             <BarChart data={deploymentStatusBreakdown} colorMap={STATUS_COLORS} />
           )}
-        </div>
+        </Section>
 
-        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 18 }}>
-          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 16px' }}>
-            Active Tickets Breakdown
-          </p>
+        <Section title="Active Tickets Breakdown">
           {activeTicketsByPriority.length === 0 ? (
             <p style={{ fontSize: 13, color: '#a8a29e' }}>No open tickets.</p>
           ) : (
             <PieChart data={activeTicketsByPriority} colorMap={PRIORITY_COLORS} />
           )}
-        </div>
+        </Section>
       </div>
 
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: '#1f1108', margin: 0 }}>Recent Service Tickets</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Recent Service Tickets</h2>
           <Link href="/dashboard/erp/service-requests" style={{ fontSize: 12, color: '#fa9b9b', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
         <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
@@ -153,7 +148,7 @@ export default function ErpDashboardPage() {
             <thead>
               <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
                 {['SR Number', 'Serial No.', 'Model', 'Machine Type', 'Client', 'Site', 'Issue Summary', 'Priority', 'Status', 'Age', 'Warranty', 'Actions'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -170,7 +165,7 @@ export default function ErpDashboardPage() {
                     style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                   >
                     <td style={{ padding: '10px 14px' }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 700, color: '#fa9b9b' }}>{sr.request_number}</span>
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#fa9b9b' }}>{sr.request_number}</span>
                     </td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.serial_number || '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.model_name || '—'}</td>
@@ -179,13 +174,13 @@ export default function ErpDashboardPage() {
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.site_name || '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', maxWidth: 220 }}>{sr.issue_title}</td>
                     <td style={{ padding: '10px 14px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>{sr.priority}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>{sr.priority}</span>
                     </td>
                     <td style={{ padding: '10px 14px', fontSize: 12, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{sr.status.replace('_', ' ')}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{age !== null ? `${age}d` : '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>
                     <td style={{ padding: '10px 14px' }}>
-                      <span style={{ fontSize: 11.5, fontWeight: 700, color: '#2563eb' }}>View</span>
+                      <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb' }}>View</span>
                     </td>
                   </tr>
                 )
@@ -197,7 +192,7 @@ export default function ErpDashboardPage() {
 
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: '#1f1108', margin: 0 }}>Machine Assets</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Machine Assets</h2>
           <Link href="/dashboard/erp/projects" style={{ fontSize: 12, color: '#fa9b9b', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
         <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
@@ -205,7 +200,7 @@ export default function ErpDashboardPage() {
             <thead>
               <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
                 {['Serial Number', 'Model', 'Machine Type', 'Application Type', 'Client', 'Site', 'Year of Mfg.', 'Dispatch Date', 'Commissioning Date', 'Status', 'Total SRs', 'Warranty', 'Actions'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+                  <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -219,7 +214,7 @@ export default function ErpDashboardPage() {
                   style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                 >
                   <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#fa9b9b' }}>{p.serial_number}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: '#fa9b9b' }}>{p.serial_number}</span>
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.model_name || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.machine_type || '—'}</td>
@@ -230,12 +225,12 @@ export default function ErpDashboardPage() {
                   <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.delivery_date || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.commissioning_date || '—'}</td>
                   <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'capitalize', color: STATUS_COLORS[p.status] || '#64748b' }}>{p.status.replace('_', ' ')}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: STATUS_COLORS[p.status] || '#64748b' }}>{p.status.replace('_', ' ')}</span>
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e' }}>{srCountByProject.get(p.id) || 0}</td>
                   <td style={{ padding: '10px 14px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(p)}</td>
                   <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: '#2563eb' }}>View</span>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb' }}>View</span>
                   </td>
                 </tr>
               ))}
@@ -250,8 +245,8 @@ export default function ErpDashboardPage() {
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div style={{ padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-      <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 6px' }}>{label}</p>
-      <p style={{ fontSize: 24, fontWeight: 800, color, margin: 0 }}>{value}</p>
+      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 6px' }}>{label}</p>
+      <p style={{ fontSize: 24, fontWeight: 700, color, margin: 0 }}>{value}</p>
     </div>
   )
 }
@@ -268,7 +263,7 @@ function BarChart({ data, colorMap }: { data: [string, number][]; colorMap: Reco
           <div style={{ flex: 1, height: 10, borderRadius: 6, background: 'rgba(0,0,0,0.05)', overflow: 'hidden' }}>
             <div style={{ width: `${(value / max) * 100}%`, height: '100%', background: colorMap[label] || '#fa9b9b', borderRadius: 6 }} />
           </div>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#1f1108', width: 24, textAlign: 'right' }}>{value}</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#1f1108', width: 24, textAlign: 'right' }}>{value}</span>
         </div>
       ))}
     </div>
@@ -311,7 +306,7 @@ function PieChart({ data, colorMap }: { data: [string, number][]; colorMap: Reco
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: colorMap[label] || '#a8a29e', flexShrink: 0 }} />
             <span style={{ fontSize: 12, color: '#57534e', textTransform: 'capitalize' }}>{label}</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#1f1108' }}>{value}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#1f1108' }}>{value}</span>
           </div>
         ))}
       </div>

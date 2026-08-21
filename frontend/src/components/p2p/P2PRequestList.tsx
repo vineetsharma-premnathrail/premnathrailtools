@@ -61,7 +61,7 @@ export default function P2PRequestList({ statuses, emptyLabel }: { statuses?: st
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
               {['PR Number', 'Category', 'Project', 'Required Date', 'Priority', 'Status', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
               ))}
@@ -74,18 +74,18 @@ export default function P2PRequestList({ statuses, emptyLabel }: { statuses?: st
             )}
             {prs.map((pr) => (
               <tr key={pr.id} onClick={() => router.push(`/dashboard/p2p/${pr.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: BRAND.primaryActive }}>{pr.pr_number}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{pr.p2p_number}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.category_label || pr.category_code}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.project_label || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{pr.required_date ? new Date(pr.required_date).toLocaleDateString() : '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textTransform: 'capitalize' }}>{pr.priority}</td>
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[pr.status]}1a`, color: STATUS_HEX[pr.status], whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[pr.status]}1a`, color: STATUS_HEX[pr.status], whiteSpace: 'nowrap' }}>
                     {STATUS_LABELS[pr.status] || pr.status}
                   </span>
                 </td>
                 <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(`/dashboard/p2p/${pr.id}`)} style={{ fontSize: 11.5, fontWeight: 700, color: '#2563eb', cursor: 'pointer' }}>View</span>
+                  <span onClick={() => router.push(`/dashboard/p2p/${pr.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

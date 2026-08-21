@@ -25,7 +25,7 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     bd_owner: Mapped[str | None] = mapped_column(String(150), nullable=True)
     sales_engineer: Mapped[str | None] = mapped_column(String(150), nullable=True)
 
-    status: Mapped[str] = mapped_column(String(50), default="New Inquiry", nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
     current_stage: Mapped[str] = mapped_column(String(50), default="Customer Requirement", nullable=False)
 
     product: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -108,6 +108,13 @@ class Quotation(Base):
     inquiry_id: Mapped[int] = mapped_column(Integer, ForeignKey("crm_inquiries.id"), nullable=False, index=True)
     quot_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     version: Mapped[str] = mapped_column(String(20), default="V1")
+    revision_number: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    quotation_type: Mapped[str] = mapped_column(String(20), default="Domestic", nullable=False)
+    quote_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_contact_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    client_contact_email: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    client_contact_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
     delivery_time: Mapped[str | None] = mapped_column(String(150), nullable=True)
@@ -119,3 +126,23 @@ class Quotation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     inquiry: Mapped["Inquiry"] = relationship("Inquiry", back_populates="quotations")
+    items: Mapped[list["QuotationLineItem"]] = relationship(
+        "QuotationLineItem", back_populates="quotation", cascade="all, delete-orphan", order_by="QuotationLineItem.sort_order"
+    )
+
+
+class QuotationLineItem(Base):
+    __tablename__ = "crm_quotation_line_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    quotation_id: Mapped[int] = mapped_column(Integer, ForeignKey("crm_quotations.id"), nullable=False, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_number: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gst_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    subtotal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    quotation: Mapped["Quotation"] = relationship("Quotation", back_populates="items")

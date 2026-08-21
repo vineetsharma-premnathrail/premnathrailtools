@@ -5,7 +5,7 @@ import { Organization, OrgContact } from '@/types'
 import { crmApi } from '@/lib/api'
 import PhoneField, { isPhoneValid } from '@/components/erp/PhoneField'
 import { isValidEmail, isValidGST, isValidWebsite } from './validators'
-import { ORG_TYPES, RAILWAY_ZONES } from './constants'
+import { ORG_TYPES, ORG_TYPE_LABELS, RAILWAY_ZONES, COUNTRIES } from './constants'
 import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from './ui'
 
 type FormState = {
@@ -15,6 +15,7 @@ type FormState = {
   railway_zone: string
   division_workshop: string
   address: string
+  country: string
   state: string
   city: string
   pin_code: string
@@ -41,6 +42,7 @@ function toFormState(initial?: Organization): FormState {
     railway_zone: initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? 'Other' : initial?.railway_zone || '',
     division_workshop: initial?.division_workshop || '',
     address: initial?.address || '',
+    country: initial?.country || 'India',
     state: initial?.state || '',
     city: initial?.city || '',
     pin_code: initial?.pin_code || '',
@@ -59,14 +61,23 @@ const emptyContact = (): ContactRow => ({ name: '', designation: '', department:
 
 const TABS = ['Information Details'] as const
 
+// inputStyle's border is a translucent white meant for the orange-tinted glass
+// section cards — invisible against the plain white contact-entry card below,
+// so these need their own visible border/background.
+const contactInputStyle: React.CSSProperties = { ...inputStyle, background: '#faf9f7', border: '1px solid rgba(0,0,0,0.12)' }
+
 export default function OrganizationForm({
   initial,
+  title,
+  breadcrumb,
   submitLabel,
   onCancel,
   onSubmit,
   onSaved,
 }: {
   initial?: Organization
+  title: string
+  breadcrumb: React.ReactNode
   submitLabel: string
   onCancel: () => void
   onSubmit: (payload: Record<string, unknown>) => Promise<Organization>
@@ -86,6 +97,8 @@ export default function OrganizationForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const showRailwayFields = form.org_type === 'Railway' || form.org_type === 'Govt Department'
+
   useEffect(() => {
     if (initial?.id) {
       setContactsLoading(true)
@@ -97,6 +110,17 @@ export default function OrganizationForm({
   }, [initial?.id])
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
+
+  const setOrgType = (value: string) => {
+    const showsZone = value === 'Railway' || value === 'Govt Department'
+    setForm((f) => ({
+      ...f,
+      org_type: value,
+      railway_zone: showsZone ? f.railway_zone : '',
+      division_workshop: showsZone ? f.division_workshop : '',
+    }))
+    if (!showsZone) setRailwayZoneCustom('')
+  }
 
   const setContact = (index: number, field: keyof ContactRow, value: string) => {
     setContacts((rows) => rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)))
@@ -173,72 +197,49 @@ export default function OrganizationForm({
 
   return (
     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div>
+          <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 6px' }}>{breadcrumb}</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: 0 }}>{title}</h1>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+          <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
+          <button type="submit" disabled={saving || contactsLoading} style={{ ...primaryBtnStyle, opacity: saving || contactsLoading ? 0.7 : 1 }}>
+            {saving ? 'Saving…' : submitLabel}
+          </button>
+        </div>
+      </div>
+
       {error && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {error}
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-        {TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            style={{
-              padding: '10px 6px', marginRight: 16, border: 'none', background: 'transparent',
-              borderBottom: tab === t ? '2px solid #fa9b9b' : '2px solid transparent',
-              color: tab === t ? '#fa9b9b' : '#78716c', fontWeight: 700, fontSize: 13, cursor: 'pointer',
-            }}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
       {tab === 'Information Details' && (
-        <>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 20 }}>
           <Section title="Identity">
-            <Field label="Organization Name">
-              <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Northern Railway HQ" style={inputStyle} />
-            </Field>
-            <Row>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              <div style={{ gridColumn: 'span 2' }}>
+                <Field label="Organization Name">
+                  <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Northern Railway HQ" style={inputStyle} />
+                </Field>
+              </div>
               <Field label="Organization Type">
-                <select value={form.org_type} onChange={(e) => set('org_type', e.target.value)} style={inputStyle}>
+                <select value={form.org_type} onChange={(e) => setOrgType(e.target.value)} style={inputStyle}>
                   <option value="">-- Select Type --</option>
-                  {ORG_TYPES.map((o) => <option key={o} value={o}>{o}</option>)}
+                  {ORG_TYPES.map((o) => <option key={o} value={o}>{ORG_TYPE_LABELS[o] || o}</option>)}
                 </select>
                 {form.org_type === 'Other' && (
                   <input value={orgTypeCustom} onChange={(e) => setOrgTypeCustom(e.target.value)} placeholder="Specify organization type" style={{ ...inputStyle, marginTop: 8 }} />
                 )}
               </Field>
               <Field label="Parent Organization"><input value={form.parent_org} onChange={(e) => set('parent_org', e.target.value)} placeholder="Optional parent org" style={inputStyle} /></Field>
-            </Row>
-          </Section>
-
-          <Section title="Railway Zone & Location">
-            <Row>
-              <Field label="Railway Zone">
-                <select value={form.railway_zone} onChange={(e) => set('railway_zone', e.target.value)} style={inputStyle}>
-                  <option value="">-- Select Zone --</option>
-                  {RAILWAY_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
-                </select>
-                {form.railway_zone === 'Other' && (
-                  <input value={railwayZoneCustom} onChange={(e) => setRailwayZoneCustom(e.target.value)} placeholder="Specify railway zone" style={{ ...inputStyle, marginTop: 8 }} />
-                )}
-              </Field>
-              <Field label="Division / Workshop"><input value={form.division_workshop} onChange={(e) => set('division_workshop', e.target.value)} placeholder="e.g. Agra Division" style={inputStyle} /></Field>
-            </Row>
-            <Field label="Address"><textarea value={form.address} onChange={(e) => set('address', e.target.value)} rows={2} placeholder="Street / locality" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-            <Row>
-              <Field label="City"><input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="e.g. New Delhi" style={inputStyle} /></Field>
-              <Field label="State / UT"><input value={form.state} onChange={(e) => set('state', e.target.value)} placeholder="e.g. Delhi" style={inputStyle} /></Field>
-            </Row>
-            <Field label="PIN Code"><input value={form.pin_code} onChange={(e) => set('pin_code', e.target.value)} maxLength={6} placeholder="110001" style={inputStyle} /></Field>
+            </div>
           </Section>
 
           <Section title="Contact & Financial">
-            <Row>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
               <Field label="Official Phone"><PhoneField value={form.official_phone} onChange={(v) => set('official_phone', v)} placeholder="+91 XXXXX XXXXX" style={inputStyle} /></Field>
               <Field label="Official Email">
                 <input
@@ -252,8 +253,6 @@ export default function OrganizationForm({
                   <p style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, margin: '4px 0 0' }}>Enter a valid email address.</p>
                 )}
               </Field>
-            </Row>
-            <Row>
               <Field label="GST Number">
                 <input
                   value={form.gst_number}
@@ -277,6 +276,36 @@ export default function OrganizationForm({
                   <p style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, margin: '4px 0 0' }}>Enter a valid website address.</p>
                 )}
               </Field>
+            </div>
+          </Section>
+
+          <Section title="Organization Location">
+            {showRailwayFields && (
+              <Row>
+                <Field label="Railway Zone">
+                  <select value={form.railway_zone} onChange={(e) => set('railway_zone', e.target.value)} style={inputStyle}>
+                    <option value="">-- Select Zone --</option>
+                    {RAILWAY_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+                  </select>
+                  {form.railway_zone === 'Other' && (
+                    <input value={railwayZoneCustom} onChange={(e) => setRailwayZoneCustom(e.target.value)} placeholder="Specify railway zone" style={{ ...inputStyle, marginTop: 8 }} />
+                  )}
+                </Field>
+                <Field label="Division / Workshop"><input value={form.division_workshop} onChange={(e) => set('division_workshop', e.target.value)} placeholder="e.g. Agra Division" style={inputStyle} /></Field>
+              </Row>
+            )}
+            <Field label="Address"><textarea value={form.address} onChange={(e) => set('address', e.target.value)} rows={2} placeholder="Street / locality" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+            <Row>
+              <Field label="Country">
+                <select value={form.country} onChange={(e) => set('country', e.target.value)} style={inputStyle}>
+                  {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </Field>
+              <Field label="State / UT"><input value={form.state} onChange={(e) => set('state', e.target.value)} placeholder="e.g. Delhi" style={inputStyle} /></Field>
+            </Row>
+            <Row>
+              <Field label="City"><input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="e.g. New Delhi" style={inputStyle} /></Field>
+              <Field label="PIN Code"><input value={form.pin_code} onChange={(e) => set('pin_code', e.target.value)} maxLength={6} placeholder="110001" style={{ ...inputStyle, maxWidth: 160 }} /></Field>
             </Row>
           </Section>
 
@@ -285,47 +314,40 @@ export default function OrganizationForm({
               <p style={{ fontSize: 13, color: '#a8a29e', margin: 0 }}>Loading contacts…</p>
             </Section>
           ) : (
-            <Section title="Contact Persons">
-              {contacts.map((row, i) => (
-                <div key={i} style={{ padding: 14, borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <Row>
-                    <Field label="Name *"><input value={row.name} onChange={(e) => setContact(i, 'name', e.target.value)} placeholder="Contact name" style={inputStyle} /></Field>
-                    <Field label="Designation"><input value={row.designation} onChange={(e) => setContact(i, 'designation', e.target.value)} placeholder="e.g. DEN" style={inputStyle} /></Field>
-                  </Row>
-                  <Row>
-                    <Field label="Department"><input value={row.department} onChange={(e) => setContact(i, 'department', e.target.value)} placeholder="Dept." style={inputStyle} /></Field>
-                    <Field label="Mobile"><PhoneField value={row.mobile} onChange={(v) => setContact(i, 'mobile', v)} placeholder="+91..." style={inputStyle} /></Field>
-                  </Row>
-                  <Field label="Email">
-                    <input
-                      type="email"
-                      value={row.email}
-                      onChange={(e) => setContact(i, 'email', e.target.value)}
-                      placeholder="email"
-                      style={{ ...inputStyle, ...(row.email && !isValidEmail(row.email) ? { borderColor: '#f87171' } : {}) }}
-                    />
-                    {row.email && !isValidEmail(row.email) && (
-                      <p style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, margin: '4px 0 0' }}>Enter a valid email address.</p>
+            <Section title="Contact Persons" style={{ maxHeight: 480, display: 'flex', flexDirection: 'column' }} contentStyle={{ flex: 1, minHeight: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4 }}>
+                {contacts.map((row, i) => (
+                  <div key={i} style={{ padding: 14, borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+                      <Field label="Name *"><input value={row.name} onChange={(e) => setContact(i, 'name', e.target.value)} placeholder="Contact name" style={contactInputStyle} /></Field>
+                      <Field label="Designation"><input value={row.designation} onChange={(e) => setContact(i, 'designation', e.target.value)} placeholder="e.g. DEN" style={contactInputStyle} /></Field>
+                      <Field label="Department"><input value={row.department} onChange={(e) => setContact(i, 'department', e.target.value)} placeholder="Dept." style={contactInputStyle} /></Field>
+                      <Field label="Mobile"><PhoneField value={row.mobile} onChange={(v) => setContact(i, 'mobile', v)} placeholder="+91..." style={contactInputStyle} /></Field>
+                      <Field label="Email">
+                        <input
+                          type="email"
+                          value={row.email}
+                          onChange={(e) => setContact(i, 'email', e.target.value)}
+                          placeholder="email"
+                          style={{ ...contactInputStyle, ...(row.email && !isValidEmail(row.email) ? { borderColor: '#f87171' } : {}) }}
+                        />
+                        {row.email && !isValidEmail(row.email) && (
+                          <p style={{ fontSize: 11, color: '#ef4444', fontWeight: 600, margin: '4px 0 0' }}>Enter a valid email address.</p>
+                        )}
+                      </Field>
+                    </div>
+                    {contacts.length > 1 && (
+                      <button type="button" onClick={() => removeContact(i)} style={{ ...dangerBtnStyle, alignSelf: 'flex-end', padding: '5px 12px', fontSize: 11.5 }}>Remove</button>
                     )}
-                  </Field>
-                  {contacts.length > 1 && (
-                    <button type="button" onClick={() => removeContact(i)} style={{ ...dangerBtnStyle, alignSelf: 'flex-end', padding: '5px 12px', fontSize: 11.5 }}>Remove</button>
-                  )}
-                </div>
-              ))}
-              <button type="button" onClick={addContact} style={{ ...secondaryBtnStyle, alignSelf: 'flex-start' }}>+ Add Contact</button>
-              <p style={{ fontSize: 12, color: '#a8a29e', margin: 0 }}>Add key contacts for this organization</p>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={addContact} style={{ ...secondaryBtnStyle, alignSelf: 'flex-start', marginTop: 12 }}>+ Add Contact</button>
+              <p style={{ fontSize: 12, color: '#a8a29e', margin: '8px 0 0' }}>Add key contacts for this organization</p>
             </Section>
           )}
-        </>
+        </div>
       )}
-
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between' }}>
-        <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-        <button type="submit" disabled={saving || contactsLoading} style={{ ...primaryBtnStyle, opacity: saving || contactsLoading ? 0.7 : 1 }}>
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-      </div>
     </form>
   )
 }

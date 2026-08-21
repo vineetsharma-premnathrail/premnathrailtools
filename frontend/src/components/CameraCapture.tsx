@@ -96,7 +96,7 @@ export default function CameraCapture({
               type="button"
               onClick={capture}
               disabled={!ready}
-              style={{ flex: 2, padding: '10px 16px', borderRadius: 10, border: 'none', background: ready ? 'linear-gradient(140deg,#fa9b9b,#ffe3d0)' : 'rgba(255,255,255,0.2)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: ready ? 'pointer' : 'wait' }}
+              style={{ flex: 2, padding: '10px 16px', borderRadius: 10, border: 'none', background: ready ? 'linear-gradient(140deg,#fa9b9b,#ffe3d0)' : 'rgba(255,255,255,0.2)', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: ready ? 'pointer' : 'wait' }}
             >
               📷 Capture
             </button>

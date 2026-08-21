@@ -92,9 +92,36 @@ class InquiryApprovalResponse(BaseModel):
 
 # ---------- Quotations ----------
 
+class QuotationLineItemPayload(BaseModel):
+    description: str | None = None
+    model_number: str | None = None
+    quantity: float | None = None
+    unit_price: float | None = None
+    gst_percent: float | None = None
+    subtotal: float | None = None
+    total: float | None = None
+
+
+class QuotationLineItemResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    description: str | None = None
+    model_number: str | None = None
+    quantity: float | None = None
+    unit_price: float | None = None
+    gst_percent: float | None = None
+    subtotal: float | None = None
+    total: float | None = None
+
+
 class QuotationCreate(BaseModel):
-    quot_number: str | None = None
-    version: str = "V1"
+    quotation_type: str = "Domestic"
+    quote_date: date | None = None
+    client_name: str | None = None
+    client_contact_name: str | None = None
+    client_contact_email: str | None = None
+    client_contact_phone: str | None = None
     valid_until: date | None = None
     price: float | None = None
     delivery_time: str | None = None
@@ -102,11 +129,16 @@ class QuotationCreate(BaseModel):
     submitted_date: date | None = None
     customer_response: str = "— Awaiting —"
     notes: str | None = None
+    items: list[QuotationLineItemPayload] = []
 
 
 class QuotationUpdate(BaseModel):
-    quot_number: str | None = None
-    version: str | None = None
+    quotation_type: str | None = None
+    quote_date: date | None = None
+    client_name: str | None = None
+    client_contact_name: str | None = None
+    client_contact_email: str | None = None
+    client_contact_phone: str | None = None
     valid_until: date | None = None
     price: float | None = None
     delivery_time: str | None = None
@@ -114,6 +146,7 @@ class QuotationUpdate(BaseModel):
     submitted_date: date | None = None
     customer_response: str | None = None
     notes: str | None = None
+    items: list[QuotationLineItemPayload] | None = None
 
 
 class QuotationResponse(BaseModel):
@@ -122,7 +155,13 @@ class QuotationResponse(BaseModel):
     id: int
     inquiry_id: int
     quot_number: str | None = None
-    version: str
+    revision_number: int
+    quotation_type: str
+    quote_date: date | None = None
+    client_name: str | None = None
+    client_contact_name: str | None = None
+    client_contact_email: str | None = None
+    client_contact_phone: str | None = None
     valid_until: date | None = None
     price: float | None = None
     delivery_time: str | None = None
@@ -132,6 +171,7 @@ class QuotationResponse(BaseModel):
     notes: str | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
+    items: list[QuotationLineItemResponse] = []
 
 
 # ---------- Purchase Orders ----------

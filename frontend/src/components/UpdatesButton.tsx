@@ -145,7 +145,7 @@ export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' |
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
             <div>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#1f1108' }}>What&apos;s new</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#1f1108' }}>What&apos;s new</span>
               {latestDate && (
                 <span style={{ fontSize: 10.5, color: '#a8a29e', marginLeft: 8 }}>
                   Last updated {new Date(latestDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -174,7 +174,7 @@ export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' |
               CHANGELOG.map((entry, i) => (
                 <div key={i} style={{ padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-                    <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: 0 }}>{entry.title}</p>
+                    <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: 0 }}>{entry.title}</p>
                     <span style={{ fontSize: 10.5, color: '#a8a29e', whiteSpace: 'nowrap' }}>
                       {new Date(entry.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                     </span>

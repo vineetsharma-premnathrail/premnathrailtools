@@ -64,14 +64,14 @@ export default function ConfirmDialog({
             <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
         </div>
-        <p style={{ fontSize: 16, fontWeight: 800, color: '#1f1108', margin: '0 0 8px' }}>{title}</p>
+        <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px' }}>{title}</p>
         <p style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 22px', lineHeight: 1.6 }}>{message}</p>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button
             onClick={onCancel}
             style={{
               fontSize: 13,
-              fontWeight: 700,
+              fontWeight: 600,
               padding: '9px 18px',
               borderRadius: 10,
               border: '1px solid rgba(0,0,0,0.12)',
@@ -86,7 +86,7 @@ export default function ConfirmDialog({
             onClick={onConfirm}
             style={{
               fontSize: 13,
-              fontWeight: 700,
+              fontWeight: 600,
               padding: '9px 18px',
               borderRadius: 10,
               border: 'none',

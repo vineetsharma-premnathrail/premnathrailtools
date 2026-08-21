@@ -203,13 +203,13 @@ function VehiclePerformancePageInner() {
       <RndNav />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Vehicle Performance Calculator</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Vehicle Performance Calculator</h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>Tractive effort · Speed vs slope · Shunting capability · Power analysis</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Export CSV</button>
-          <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Save Doc</button>
-          <a href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>History</a>
+          <button onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
+          <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Save Doc</button>
+          <a href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
         </div>
       </div>
 
@@ -288,11 +288,11 @@ function VehiclePerformancePageInner() {
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Torque Curve</span>
               <div style={{ display: 'flex', gap: 6 }}>
-                <label style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 11.5, fontWeight: 700, color: '#475569', cursor: 'pointer' }}>
+                <label style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 11.5, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>
                   Import
                   <input type="file" accept=".csv" onChange={importTorqueCsv} style={{ display: 'none' }} />
                 </label>
-                <button onClick={exportTorqueCsv} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 11.5, fontWeight: 700, color: '#475569', cursor: 'pointer' }}>Export</button>
+                <button onClick={exportTorqueCsv} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 11.5, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Export</button>
               </div>
             </div>
             <div style={{ padding: 12 }}>
@@ -306,13 +306,13 @@ function VehiclePerformancePageInner() {
                       <tr key={i}>
                         <td style={{ padding: '3px 6px' }}><input style={inputStyle} value={row.rpm} onChange={(e) => updateTorqueRow(i, 'rpm', e.target.value)} /></td>
                         <td style={{ padding: '3px 6px' }}><input style={inputStyle} value={row.torque} onChange={(e) => updateTorqueRow(i, 'torque', e.target.value)} /></td>
-                        <td style={{ padding: '3px 6px' }}><button onClick={() => removeTorqueRow(i)} style={{ border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', fontWeight: 800 }}>×</button></td>
+                        <td style={{ padding: '3px 6px' }}><button onClick={() => removeTorqueRow(i)} style={{ border: 'none', background: 'none', color: '#dc2626', cursor: 'pointer', fontWeight: 700 }}>×</button></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <button onClick={addTorqueRow} style={{ marginTop: 8, width: '100%', padding: '8px', borderRadius: 6, border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#64748b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ Add Row</button>
+              <button onClick={addTorqueRow} style={{ marginTop: 8, width: '100%', padding: '8px', borderRadius: 6, border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add Row</button>
             </div>
           </div>
 
@@ -365,8 +365,8 @@ function VehiclePerformancePageInner() {
 function SummaryTile({ label, value, unit, bg, color }: { label: string; value: string; unit: string; bg: string; color: string }) {
   return (
     <div style={{ padding: '14px 16px', borderRadius: 10, background: bg }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 800, color }}>{value}{unit && <span style={{ fontSize: 11, fontWeight: 500, marginLeft: 4 }}>{unit}</span>}</div>
+      <div style={{ fontSize: 10, fontWeight: 600, color: '#78716c', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}{unit && <span style={{ fontSize: 11, fontWeight: 500, marginLeft: 4 }}>{unit}</span>}</div>
     </div>
   )
 }

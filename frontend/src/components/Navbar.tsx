@@ -45,7 +45,7 @@ export default function Navbar({ user }: { user: User | null }) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#fff',
-                fontWeight: 700,
+                fontWeight: 600,
                 fontSize: 13,
                 background: 'linear-gradient(140deg,#fa9b9b,#ffffff)',
                 boxShadow: '0 4px 12px rgba(224,98,31,.35)',

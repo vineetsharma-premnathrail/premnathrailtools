@@ -85,8 +85,8 @@ export default function PurchaseTeamRequisitionsPage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Purchase Module</p>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: TEXT.heading, margin: '0 0 4px' }}>Standalone P2P Requests</h1>
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Purchase Module</p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Standalone P2P Requests</h1>
           <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{prs.length} PR(s) found — raised directly by departments</p>
         </div>
       </div>
@@ -94,11 +94,11 @@ export default function PurchaseTeamRequisitionsPage() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
         <button
           onClick={() => router.push('/dashboard/purchase')}
-          style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,.5)', color: TEXT.secondary, cursor: 'pointer' }}
+          style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 600, border: '1px solid rgba(0,0,0,0.1)', background: 'rgba(255,255,255,.5)', color: TEXT.secondary, cursor: 'pointer' }}
         >
           ← From Service Requests
         </button>
-        <div style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: 'linear-gradient(140deg,#0ea5e9,#38bdf8)', color: '#fff' }}>
+        <div style={{ padding: '9px 18px', borderRadius: 10, fontSize: 13, fontWeight: 600, background: 'linear-gradient(140deg,#0ea5e9,#38bdf8)', color: '#fff' }}>
           Standalone Requisitions
         </div>
       </div>
@@ -106,8 +106,8 @@ export default function PurchaseTeamRequisitionsPage() {
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
         {Object.entries(STATUS_LABELS).map(([key, label]) => (
           <div key={key} style={{ padding: '8px 14px', borderRadius: 10, background: `${STATUS_HEX[key]}14`, border: `1px solid ${STATUS_HEX[key]}33`, minWidth: 90 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: STATUS_HEX[key], margin: '0 0 2px' }}>{label}</p>
-            <p style={{ fontSize: 16, fontWeight: 800, color: TEXT.heading, margin: 0 }}>{counts[key] || 0}</p>
+            <p style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', color: STATUS_HEX[key], margin: '0 0 2px' }}>{label}</p>
+            <p style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{counts[key] || 0}</p>
           </div>
         ))}
       </div>
@@ -144,7 +144,7 @@ export default function PurchaseTeamRequisitionsPage() {
           <thead>
             <tr style={{ background: 'rgba(14,165,233,0.06)' }}>
               {['PR Number', 'Category', 'Project', 'Department', 'Requested By', 'Required Date', 'Priority', 'Status', 'Vendor', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#eaf6fc', zIndex: 1 }}>
+                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#eaf6fc', zIndex: 1 }}>
                   {h}
                 </th>
               ))}
@@ -155,21 +155,21 @@ export default function PurchaseTeamRequisitionsPage() {
             {!loading && prs.length === 0 && <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No P2P requests found.</td></tr>}
             {prs.map((pr) => (
               <tr key={pr.id} onClick={() => router.push(`/dashboard/purchase/p2p-requests/${pr.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#0369a1' }}>{pr.pr_number}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#0369a1' }}>{pr.p2p_number}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.category_label || pr.category_code}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.project_label || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.department || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.requested_by_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{pr.required_date ? new Date(pr.required_date).toLocaleDateString() : '—'}</td>
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[pr.priority] || '#64748b'}1a`, color: PRIORITY_HEX[pr.priority] || '#64748b', textTransform: 'capitalize' }}>{pr.priority}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[pr.priority] || '#64748b'}1a`, color: PRIORITY_HEX[pr.priority] || '#64748b', textTransform: 'capitalize' }}>{pr.priority}</span>
                 </td>
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[pr.status]}1a`, color: STATUS_HEX[pr.status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[pr.status] || pr.status}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[pr.status]}1a`, color: STATUS_HEX[pr.status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[pr.status] || pr.status}</span>
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.vendor || pr.selected_vendor || '—'}</td>
                 <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(`/dashboard/purchase/p2p-requests/${pr.id}`)} style={{ fontSize: 11.5, fontWeight: 700, color: '#2563eb', cursor: 'pointer' }}>View</span>
+                  <span onClick={() => router.push(`/dashboard/purchase/p2p-requests/${pr.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

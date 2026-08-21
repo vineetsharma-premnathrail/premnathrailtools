@@ -59,7 +59,7 @@ function ChipMultiSelect({
 
   return (
     <div style={{ marginTop: 10 }}>
-      <p style={{ fontSize: 11.5, fontWeight: 700, color: '#78716c', margin: '4px 0' }}>{label}</p>
+      <p style={{ fontSize: 11.5, fontWeight: 600, color: '#78716c', margin: '4px 0' }}>{label}</p>
       <input
         type="text"
         value={search}
@@ -76,7 +76,7 @@ function ChipMultiSelect({
             onClick={() => onToggle(value)}
             disabled={disabled}
             style={{
-              fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
+              fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
               border: `1px solid ${selected.includes(value) ? '#fa9b9b' : 'rgba(0,0,0,0.12)'}`,
               background: selected.includes(value) ? 'rgba(244,113,59,0.1)' : '#fff',
               color: selected.includes(value) ? '#fa9b9b' : '#57534e',
@@ -128,13 +128,13 @@ export default function SharePicker({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: '#1f1108', cursor: 'pointer' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#1f1108', cursor: 'pointer' }}>
         <input type="checkbox" checked={isPrivate} onChange={(e) => onTogglePrivate(e.target.checked)} disabled={disabled} />
         Make private (only you, admins, and people/departments/designations you choose can see this)
       </label>
       {isPrivate && (
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 700, color: '#78716c', margin: '4px 0' }}>Share with specific people</p>
+          <p style={{ fontSize: 11.5, fontWeight: 600, color: '#78716c', margin: '4px 0' }}>Share with specific people</p>
           <input
             type="text"
             value={search}
@@ -159,7 +159,7 @@ export default function SharePicker({
                   onClick={() => onToggleUser(d.id)}
                   disabled={disabled}
                   style={{
-                    fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
+                    fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
                     border: `1px solid ${selectedUserIds.includes(d.id) ? '#fa9b9b' : 'rgba(0,0,0,0.12)'}`,
                     background: selectedUserIds.includes(d.id) ? 'rgba(244,113,59,0.1)' : '#fff',
                     color: selectedUserIds.includes(d.id) ? '#fa9b9b' : '#57534e',

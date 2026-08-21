@@ -85,7 +85,7 @@ export default function FeedbackBell() {
               background: '#dc2626',
               color: '#fff',
               fontSize: 9.5,
-              fontWeight: 800,
+              fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -114,7 +114,7 @@ export default function FeedbackBell() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#1f1108' }}>User Feedback</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1f1108' }}>User Feedback</span>
             <button
               onClick={() => setOpen(false)}
               aria-label="Close"
@@ -146,7 +146,7 @@ export default function FeedbackBell() {
                   cursor: 'pointer',
                 }}
               >
-                <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: '0 0 2px' }}>{f.user_name}</p>
+                <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{f.user_name}</p>
                 <p style={{ fontSize: 11, color: '#a8a29e', margin: '0 0 4px' }}>{f.user_email}</p>
                 <p style={{ fontSize: 12, color: '#57534e', margin: 0, whiteSpace: 'pre-wrap' }}>{f.message}</p>
                 <p style={{ fontSize: 10.5, color: '#a8a29e', margin: '4px 0 0' }}>{new Date(f.created_at).toLocaleString()}</p>

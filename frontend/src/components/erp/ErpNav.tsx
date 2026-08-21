@@ -34,14 +34,15 @@ export default function ErpNav() {
   const pathname = usePathname()
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
-    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+    <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
       {TABS.map((tab) => {
         const isActive = tab.href === '/dashboard/erp' ? pathname === tab.href : pathname.startsWith(tab.href)
         return (
           <Link
             key={tab.href}
             href={tab.href}
+            className="nav-tab-link"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -49,7 +50,7 @@ export default function ErpNav() {
               padding: '10px 14px',
               marginBottom: -1,
               fontSize: 12.5,
-              fontWeight: 700,
+              fontWeight: 600,
               letterSpacing: '.02em',
               textTransform: 'uppercase',
               color: isActive ? '#fa9b9b' : '#78716c',
@@ -59,12 +60,12 @@ export default function ErpNav() {
             }}
           >
             <TabIcon name={tab.icon} />
-            {tab.label}
+            <span className="nav-tab-label">{tab.label}</span>
           </Link>
         )
       })}
     </div>
-      <div style={{ paddingBottom: 8 }}>
+      <div style={{ paddingBottom: 8, flex: 'none' }}>
         <NotificationBell />
       </div>
     </div>

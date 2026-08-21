@@ -190,7 +190,7 @@ function SplinePageInner() {
       <RndNav />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Spline Design Calculator</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Spline Design Calculator</h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>Involute spline · Torque capacity · Factor of safety · ANSI B92.1</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -216,7 +216,7 @@ function SplinePageInner() {
           <div style={cardStyle}>
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Geometry</span>
-              <label style={{ fontSize: 10.5, fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+              <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                 Import CSV
                 <input type="file" accept=".csv" onChange={importCsv} style={{ display: 'none' }} />
               </label>
@@ -264,7 +264,7 @@ function SplinePageInner() {
 
           {result && verdictStyle && (
             <div style={{ padding: '10px 16px', borderRadius: 10, background: verdictStyle.bg, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontWeight: 800, fontSize: 13, letterSpacing: '.04em', color: verdictStyle.text }}>{result.verdict}</span>
+              <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: '.04em', color: verdictStyle.text }}>{result.verdict}</span>
               <span style={{ fontSize: 12, color: verdictStyle.text }}>{result.reason}</span>
             </div>
           )}
@@ -313,8 +313,8 @@ function formatSplineLog(r: SplineResult): string {
 function StatTile({ label, value, unit, bg, color }: { label: string; value?: string; unit: string; bg: string; color: string }) {
   return (
     <div style={{ padding: '14px 16px', borderRadius: 10, background: bg, textAlign: 'center' }}>
-      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#78716c', letterSpacing: '.05em', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 800, color }}>{value || '—'}</div>
+      <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', color: '#78716c', letterSpacing: '.05em', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value || '—'}</div>
       <div style={{ fontSize: 10, color: '#94a3b8' }}>{unit}</div>
     </div>
   )
@@ -324,7 +324,7 @@ function DetailCell({ label, value, unit }: { label: string; value?: number; uni
   return (
     <div style={{ padding: '8px 10px', background: '#f8fafc', borderRadius: 6 }}>
       <div style={{ fontSize: 9.5, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 2 }}>{label}</div>
-      <div style={{ color: '#1e293b', fontWeight: 700 }}>{value != null ? value.toFixed(3) : '—'} {value != null ? unit : ''}</div>
+      <div style={{ color: '#1e293b', fontWeight: 600 }}>{value != null ? value.toFixed(3) : '—'} {value != null ? unit : ''}</div>
     </div>
   )
 }

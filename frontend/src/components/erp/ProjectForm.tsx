@@ -1,14 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { DirectoryUser, Project } from '@/types'
+import { useRef, useState } from 'react'
+import { Project } from '@/types'
 import DateField from './DateField'
 import PhoneField, { isPhoneValid } from './PhoneField'
 import YearField, { isFinancialYearValid } from './YearField'
 import ValidatedInput from '@/components/ValidatedInput'
-import SharePicker, { useShareSelection } from './SharePicker'
 import { isValidEmail, isValidGST, VALIDATION_MESSAGES } from '@/lib/validation'
-import { usersApi } from '@/lib/api'
+import { inputStyle, Field, Section, Row } from '@/components/shared/ui'
 
 const MACHINE_TYPES = ['Road Rail', 'Rail Bound', 'Accessories', 'Other']
 const APPLICATION_TYPES = ['OHE', 'FBW', 'CMC - Shunting', 'Track Laying', 'Other']
@@ -137,17 +136,11 @@ export default function ProjectForm({
   submitLabel,
   onSubmit,
   onCancel,
-  currentUserId,
 }: {
   initial?: Partial<Project>
   submitLabel: string
-  onSubmit: (
-    payload: Record<string, unknown>,
-    files: File[],
-    shareOptions: { isPrivate: boolean; sharedWithUserIds: number[]; sharedDepartments: string[]; sharedDesignations: string[] }
-  ) => Promise<void>
+  onSubmit: (payload: Record<string, unknown>, files: File[]) => Promise<void>
   onCancel: () => void
-  currentUserId?: number
 }) {
   const [tabIndex, setTabIndex] = useState(0)
   const [form, setForm] = useState<FormState>(() => toFormState(initial))
@@ -166,10 +159,6 @@ export default function ProjectForm({
   const fileRef = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const share = useShareSelection()
-  const [directory, setDirectory] = useState<DirectoryUser[]>([])
-
-  useEffect(() => { usersApi.directory().then(setDirectory).catch(() => {}) }, [])
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
 
@@ -236,10 +225,7 @@ export default function ProjectForm({
       Object.keys(payload).forEach((k) => {
         if (payload[k] === '') delete payload[k]
       })
-      await onSubmit(payload, queuedFiles, {
-        isPrivate: share.isPrivate, sharedWithUserIds: share.userIds,
-        sharedDepartments: share.departments, sharedDesignations: share.designations,
-      })
+      await onSubmit(payload, queuedFiles)
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Failed to save project.')
     } finally {
@@ -265,7 +251,7 @@ export default function ProjectForm({
               background: 'transparent',
               borderBottom: tabIndex === i ? '2px solid #fa9b9b' : '2px solid transparent',
               color: tabIndex === i ? '#fa9b9b' : '#78716c',
-              fontWeight: 700,
+              fontWeight: 600,
               fontSize: 13,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
@@ -476,11 +462,11 @@ export default function ProjectForm({
               }}
             >
               <input ref={fileRef} type="file" multiple hidden onChange={(e) => addFiles(e.target.files)} />
-              <p style={{ fontSize: 13.5, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Drag &amp; drop files here</p>
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: '0 0 4px' }}>Drag &amp; drop files here</p>
               <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>or click to browse</p>
               <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
                 {['PDF', 'DOCX', 'XLSX', 'JPG/PNG', 'MP4'].map((t) => (
-                  <span key={t} style={{ fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: 'rgba(0,0,0,0.05)', color: '#78716c' }}>{t}</span>
+                  <span key={t} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 6, background: 'rgba(0,0,0,0.05)', color: '#78716c' }}>{t}</span>
                 ))}
               </div>
             </div>
@@ -492,23 +478,6 @@ export default function ProjectForm({
                     <button type="button" onClick={() => setQueuedFiles((prev) => prev.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: 12 }}>Remove</button>
                   </div>
                 ))}
-              </div>
-            )}
-            {queuedFiles.length > 0 && (
-              <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
-                <SharePicker
-                  directory={directory}
-                  currentUserId={currentUserId}
-                  isPrivate={share.isPrivate}
-                  onTogglePrivate={share.setIsPrivate}
-                  selectedUserIds={share.userIds}
-                  onToggleUser={share.toggleUser}
-                  selectedDepartments={share.departments}
-                  onToggleDepartment={share.toggleDepartment}
-                  selectedDesignations={share.designations}
-                  onToggleDesignation={share.toggleDesignation}
-                  disabled={saving}
-                />
               </div>
             )}
           </Section>
@@ -529,46 +498,13 @@ export default function ProjectForm({
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ padding: 18, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-      <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#fa9b9b', margin: '0 0 14px' }}>{title}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>
-    </div>
-  )
-}
-
-function Row({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>{children}</div>
-}
-
 function Grid3({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 12 }}>{children}</div>
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: '#57534e', marginBottom: 6 }}>{label}</label>
-      {children}
-    </div>
-  )
-}
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 14px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.1)',
-  background: '#fff',
-  fontSize: 13.5,
-  outline: 'none',
-  boxSizing: 'border-box',
-}
-
 const primaryBtnStyle: React.CSSProperties = {
   fontSize: 13,
-  fontWeight: 700,
+  fontWeight: 600,
   padding: '10px 22px',
   borderRadius: 10,
   border: 'none',

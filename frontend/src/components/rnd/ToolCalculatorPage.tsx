@@ -4,6 +4,7 @@ import { ReactNode, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
+import { Field, inputStyle, primaryBtnStyle } from '@/components/shared/ui'
 
 export interface FieldDef {
   key: string
@@ -31,25 +32,6 @@ interface Props {
   renderResult?: (result: Record<string, unknown>) => ReactNode
 }
 
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.1)',
-  fontSize: 13,
-  width: '100%',
-  boxSizing: 'border-box',
-}
-
-const labelStyle: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 700,
-  letterSpacing: '.04em',
-  textTransform: 'uppercase',
-  color: '#78716c',
-  marginBottom: 6,
-  display: 'block',
-}
-
 /** Renders any JSON result as a plain key/value grid — used by every tool
  * that doesn't have a custom table renderer (see Braking for that pattern).
  * Many tools return a nested `{ results: {...} }` shape, so this flattens
@@ -72,10 +54,10 @@ function GenericResultGrid({ result }: { result: Record<string, unknown> }) {
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
       {entries.map(([key, value]) => (
         <div key={key} style={{ padding: '10px 12px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.05)' }}>
-          <p style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }}>
+          <p style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }}>
             {key.replace(/_/g, ' ')}
           </p>
-          <p style={{ fontSize: 13, fontWeight: 700, color: '#1f1108', margin: 0, wordBreak: 'break-word' }}>{String(value)}</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0, wordBreak: 'break-word' }}>{String(value)}</p>
         </div>
       ))}
     </div>
@@ -153,14 +135,13 @@ export default function ToolCalculatorPage({
   return (
     <div>
       <RndNav />
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>{title}</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>{title}</h1>
       <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>{description}</p>
 
       <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 24, alignItems: 'start' }}>
         <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
           {fields.map((f) => (
-            <div key={f.key}>
-              <label style={labelStyle}>{f.label}</label>
+            <Field key={f.key} label={f.label}>
               {f.options ? (
                 <select style={inputStyle} value={form[f.key] ?? ''} onChange={set(f.key)}>
                   {f.options.map((opt) => (
@@ -176,7 +157,7 @@ export default function ToolCalculatorPage({
                   onChange={set(f.key)}
                 />
               )}
-            </div>
+            </Field>
           ))}
 
           {error && <p style={{ fontSize: 12.5, color: '#dc2626', margin: 0 }}>{error}</p>}
@@ -184,11 +165,7 @@ export default function ToolCalculatorPage({
           <button
             onClick={runCalculate}
             disabled={busy}
-            style={{
-              padding: '11px 16px', borderRadius: 12, border: 'none', cursor: busy ? 'default' : 'pointer',
-              background: 'linear-gradient(135deg,#fa9b9b,#ffe3d0)', color: '#fff', fontWeight: 700, fontSize: 13.5,
-              opacity: busy ? 0.7 : 1,
-            }}
+            style={{ ...primaryBtnStyle, padding: '11px 16px', fontSize: 13.5, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1 }}
           >
             {busy ? 'Calculating…' : 'Calculate'}
           </button>
@@ -209,7 +186,7 @@ export default function ToolCalculatorPage({
                     key={d.label}
                     onClick={() => runDownload(d)}
                     disabled={busy}
-                    style={{ padding: '9px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#57534e' }}
+                    style={{ padding: '9px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: '#57534e' }}
                   >
                     {d.label}
                   </button>
@@ -223,7 +200,7 @@ export default function ToolCalculatorPage({
                 <button
                   onClick={saveToHistory}
                   disabled={busy}
-                  style={{ padding: '9px 14px', borderRadius: 10, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}
+                  style={{ padding: '9px 14px', borderRadius: 10, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}
                 >
                   Save to History
                 </button>

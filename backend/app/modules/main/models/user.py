@@ -1,4 +1,5 @@
-from sqlalchemy import JSON
+from datetime import date
+from sqlalchemy import JSON, ForeignKey, Date
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -6,7 +7,7 @@ from app.db.mixins import TimestampMixin
 # Modules a user's `assigned_apps` list may contain. The admin role
 # bypasses this entirely and gets access to every module regardless
 # of what's in the list (see get_user_apps() usage in routes).
-AVAILABLE_APPS = {"erp", "rnd", "crm", "purchase", "p2p"}
+AVAILABLE_APPS = {"erp", "rnd", "crm", "purchase", "p2p", "store", "hr", "design", "electrical"}
 
 
 class User(Base, TimestampMixin):
@@ -51,6 +52,12 @@ class User(Base, TimestampMixin):
     dismissed_announcements: Mapped[list[str]] = mapped_column(JSON, default=list)
     encrypted_graph_refresh_token: Mapped[str | None] = mapped_column(nullable=True)
     service_permissions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+
+    # HR directory/org-chart extension — see docs/product/HR_MODULE_PLAN.md
+    # Phase 1. Deliberately NOT payroll/attendance/leave (ADP remains system
+    # of record for those, per PRODUCT.md's stated non-goal).
+    reporting_manager_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    date_of_joining: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     def get_apps(self) -> list[str]:
         """Modules this user can see: admins get all of them, everyone else

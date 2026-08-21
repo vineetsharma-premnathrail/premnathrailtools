@@ -7,6 +7,7 @@ import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
+import { inputStyle, Field, pageBtnStyle } from '@/components/shared/ui'
 
 interface FilterOptions {
   statuses: string[]
@@ -132,7 +133,7 @@ export default function ProjectsRegistryPage() {
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>Projects Asset Register</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Projects Asset Register</h1>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>Inventory tracking of rolling machinery, catenary cars, and rail accessories.</p>
         </div>
         {canCreate && (
@@ -140,7 +141,7 @@ export default function ProjectsRegistryPage() {
             href="/dashboard/erp/projects/new"
             style={{
               fontSize: 13.5,
-              fontWeight: 700,
+              fontWeight: 600,
               padding: '10px 20px',
               borderRadius: 10,
               background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
@@ -170,39 +171,39 @@ export default function ProjectsRegistryPage() {
       <div style={{ padding: 16, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', marginBottom: 16 }}>
         <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, overflowX: 'auto' }}>
           <div style={{ flex: '1 1 200px', minWidth: 160 }}>
-            <FilterField label="Search Registry">
+            <Field label="Search Registry">
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Serial, model name…" style={inputStyle} />
-            </FilterField>
+            </Field>
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 150 }}>
-            <FilterField label="Machine Status">
+            <Field label="Machine Status">
               <select value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} style={inputStyle}>
                 <option value="all">All Statuses</option>
                 {STATUS_FILTER_OPTIONS.map((s) => (
                   <option key={s.value} value={s.value}>{s.label}</option>
                 ))}
               </select>
-            </FilterField>
+            </Field>
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 150 }}>
-            <FilterField label="Application Type">
+            <Field label="Application Type">
               <select value={draft.application_type} onChange={(e) => setDraft((d) => ({ ...d, application_type: e.target.value }))} style={inputStyle}>
                 <option value="all">All Applications</option>
                 {APPLICATION_TYPE_FILTER_OPTIONS.map((a) => (
                   <option key={a.value} value={a.value}>{a.label}</option>
                 ))}
               </select>
-            </FilterField>
+            </Field>
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 150 }}>
-            <FilterField label="Client Company">
+            <Field label="Client Company">
               <select value={draft.client_company} onChange={(e) => setDraft((d) => ({ ...d, client_company: e.target.value }))} style={inputStyle}>
                 <option value="all">All Clients</option>
                 {filterOptions.client_companies.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
-            </FilterField>
+            </Field>
           </div>
           <div style={{ display: 'flex', gap: 10, flex: 'none' }}>
             <button onClick={clearFilters} style={secondaryBtnStyle}>Clear Filters</button>
@@ -216,7 +217,7 @@ export default function ProjectsRegistryPage() {
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
               {['Serial No.', 'Model', 'Machine Type', 'Application Type', 'Client', 'Site', 'Year of Mfg.', 'Dispatch Date', 'Commissioning Date', 'Status', 'SRs', 'Warranty', 'Actions'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
               ))}
@@ -236,7 +237,7 @@ export default function ProjectsRegistryPage() {
                 style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
               >
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#fa9b9b' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#fa9b9b' }}>
                     {p.serial_number}
                   </span>
                 </td>
@@ -252,8 +253,8 @@ export default function ProjectsRegistryPage() {
                 <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#57534e' }}>{srCountByProject.get(p.id) || 0}</td>
                 <td style={{ padding: '12px 16px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(p)}</td>
                 <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: '#2563eb', marginRight: 10 }}>View</span>
-                  <Link href={`/dashboard/erp/projects/${p.id}/edit`} style={{ fontSize: 11.5, fontWeight: 700, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', marginRight: 10 }}>View</span>
+                  <Link href={`/dashboard/erp/projects/${p.id}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
                 </td>
               </tr>
             ))}
@@ -295,49 +296,15 @@ export default function ProjectsRegistryPage() {
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div style={{ padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-      <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 6px' }}>{label}</p>
-      <p style={{ fontSize: 24, fontWeight: 800, color, margin: 0 }}>{value}</p>
+      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 6px' }}>{label}</p>
+      <p style={{ fontSize: 24, fontWeight: 700, color, margin: 0 }}>{value}</p>
     </div>
   )
-}
-
-function pageBtnStyle(disabled: boolean): React.CSSProperties {
-  return {
-    fontSize: 12.5,
-    fontWeight: 700,
-    padding: '6px 11px',
-    borderRadius: 8,
-    border: '1px solid rgba(0,0,0,0.1)',
-    background: '#fff',
-    color: '#57534e',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.5 : 1,
-  }
-}
-
-function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', marginBottom: 6 }}>{label}</label>
-      {children}
-    </div>
-  )
-}
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 12px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.1)',
-  background: '#fff',
-  fontSize: 13,
-  outline: 'none',
-  boxSizing: 'border-box',
 }
 
 const primaryBtnStyle: React.CSSProperties = {
   fontSize: 12.5,
-  fontWeight: 700,
+  fontWeight: 600,
   padding: '9px 18px',
   borderRadius: 9,
   border: 'none',
@@ -350,7 +317,7 @@ const primaryBtnStyle: React.CSSProperties = {
 
 const secondaryBtnStyle: React.CSSProperties = {
   fontSize: 12.5,
-  fontWeight: 700,
+  fontWeight: 600,
   padding: '9px 18px',
   borderRadius: 9,
   border: '1px solid rgba(0,0,0,0.12)',

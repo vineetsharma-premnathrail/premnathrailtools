@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.core.permissions import require_app_access
 from app.modules.main.models.user import User
-from app.modules.crm.models.inquiry import Inquiry, InquiryTask, InquiryApproval, Quotation
+from app.modules.crm.models.inquiry import Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem
 from app.modules.crm.models.tender import Tender, TenderTask, TenderCompetitor
 from app.modules.crm.models.purchase_order import PurchaseOrder
 from app.modules.crm.models.discussion import CrmDiscussion
@@ -171,11 +171,30 @@ async def list_quotations(inquiry_id: int, db: Session = Depends(get_db), _user:
     return db.query(Quotation).filter(Quotation.inquiry_id == inquiry_id).order_by(Quotation.id.desc()).all()
 
 
+def _next_quot_number(db: Session, inquiry: Inquiry) -> tuple[str, int]:
+    revision_number = db.query(Quotation).filter(Quotation.inquiry_id == inquiry.id).count()
+    suffix = inquiry.universal_id.split("INQ-")[-1] if inquiry.universal_id else str(inquiry.id)
+    quot_number = f"QT-{suffix}"
+    if revision_number > 0:
+        quot_number = f"{quot_number}-R{revision_number}"
+    return quot_number, revision_number
+
+
 @router.post("/inquiries/{inquiry_id}/quotations", response_model=QuotationResponse, status_code=201)
 async def create_quotation(inquiry_id: int, payload: QuotationCreate, db: Session = Depends(get_db), user: User = Depends(require_app_access("crm"))):
-    if not db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first():  # noqa: E712
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
-    quot = Quotation(**payload.model_dump(), inquiry_id=inquiry_id, created_by_id=user.id, created_at=datetime.now(timezone.utc))
+    quot_number, revision_number = _next_quot_number(db, inquiry)
+    data = payload.model_dump(exclude={"items"})
+    if data.get("quotation_type") == "Export":
+        for item in payload.items:
+            item.gst_percent = None
+    quot = Quotation(
+        **data, inquiry_id=inquiry_id, quot_number=quot_number, revision_number=revision_number,
+        created_by_id=user.id, created_at=datetime.now(timezone.utc),
+    )
+    quot.items = [QuotationLineItem(**item.model_dump(), sort_order=i) for i, item in enumerate(payload.items)]
     db.add(quot)
     db.commit()
     db.refresh(quot)
@@ -189,8 +208,14 @@ async def update_quotation(inquiry_id: int, quot_id: int, payload: QuotationUpda
         raise HTTPException(status_code=404, detail="Quotation not found")
     if not _can_modify(quot, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this quotation.")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True, exclude={"items"})
+    for field, value in updates.items():
         setattr(quot, field, value)
+    if payload.items is not None:
+        if quot.quotation_type == "Export":
+            for item in payload.items:
+                item.gst_percent = None
+        quot.items = [QuotationLineItem(**item.model_dump(), sort_order=i) for i, item in enumerate(payload.items)]
     db.commit()
     db.refresh(quot)
     return quot

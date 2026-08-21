@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { inputStyle } from '@/components/shared/ui'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -20,7 +21,14 @@ export default function DateField({ value, onChange, style }: { value: string; o
 
   const reposition = () => {
     const rect = wrapperRef.current?.getBoundingClientRect()
-    if (rect) setCoords({ top: rect.bottom + 6, left: rect.left })
+    if (!rect) return
+    const calHeight = calendarRef.current?.offsetHeight || 340
+    const spaceBelow = window.innerHeight - rect.bottom
+    const openUpward = spaceBelow < calHeight + 12 && rect.top > calHeight + 12
+    setCoords({
+      top: openUpward ? rect.top - calHeight - 6 : rect.bottom + 6,
+      left: rect.left,
+    })
   }
 
   useEffect(() => {
@@ -145,7 +153,7 @@ export default function DateField({ value, onChange, style }: { value: string; o
         onBlur={handleBlur}
         placeholder="DD-MM-YYYY"
         inputMode="numeric"
-        style={{ ...dateInputStyle, ...style }}
+        style={{ ...inputStyle, padding: '10px 36px 10px 14px', ...style }}
       />
       <svg
         onClick={openCalendar}
@@ -176,12 +184,12 @@ export default function DateField({ value, onChange, style }: { value: string; o
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <button type="button" onClick={goPrevMonth} style={navBtnStyle}>‹</button>
-            <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1f1108' }}>{MONTHS[viewMonth]} {viewYear}</span>
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108' }}>{MONTHS[viewMonth]} {viewYear}</span>
             <button type="button" onClick={goNextMonth} style={navBtnStyle}>›</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
             {WEEKDAYS.map((w) => (
-              <span key={w} style={{ fontSize: 10.5, fontWeight: 700, color: '#a8a29e', textAlign: 'center' }}>{w}</span>
+              <span key={w} style={{ fontSize: 10.5, fontWeight: 600, color: '#a8a29e', textAlign: 'center' }}>{w}</span>
             ))}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
@@ -217,17 +225,6 @@ export default function DateField({ value, onChange, style }: { value: string; o
   )
 }
 
-const dateInputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 36px 10px 14px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.1)',
-  background: '#fff',
-  fontSize: 13.5,
-  outline: 'none',
-  boxSizing: 'border-box',
-}
-
 const navBtnStyle: React.CSSProperties = {
   width: 26,
   height: 26,
@@ -236,6 +233,6 @@ const navBtnStyle: React.CSSProperties = {
   background: 'transparent',
   color: '#57534e',
   fontSize: 15,
-  fontWeight: 700,
+  fontWeight: 600,
   cursor: 'pointer',
 }

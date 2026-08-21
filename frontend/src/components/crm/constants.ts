@@ -14,7 +14,7 @@ export const DOC_CATEGORIES = [
   'Quotation', 'Purchase Documents', 'Approval Documents', 'Other',
 ]
 
-export const ACTIVITY_TYPES = ['Introduction', 'Call', 'Email', 'Meeting', 'Site Visit', 'Demo', 'Follow-up', 'Submission', 'Technical Review', 'Other']
+export const ACTIVITY_TYPES = ['Call', 'Email', 'Meet at Client/Site Office', 'Meet at Own Office']
 
 export const RELATED_MODULES = [
   { value: '', label: '— None —' },
@@ -24,6 +24,12 @@ export const RELATED_MODULES = [
 ]
 
 export const ORG_TYPES = ['PSU', 'Govt Department', 'Railway', 'Private', 'Joint Venture', 'Other']
+
+// Stored values stay as the short codes above (existing records use them); this
+// only controls what's shown in the dropdown option text.
+export const ORG_TYPE_LABELS: Record<string, string> = {
+  PSU: 'Public Sector Undertaking (PSU)',
+}
 
 export const COUNTRIES = ['India', 'USA', 'UK', 'UAE', 'Other']
 
@@ -42,7 +48,25 @@ export const PRODUCT_CATEGORIES = ['Road Rail Vehicle', 'Rail Vehicle', 'Hydraul
 
 export const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 
-export const INQUIRY_STATUSES = ['New Inquiry', 'In Discussion', 'Quoted', 'Won', 'Lost', 'On Hold']
+export const INQUIRY_STATUSES = [
+  'Requirement Received',
+  'Quotation Under Creation',
+  'Quotation Sent',
+  'Negotiation',
+  'Closed - Ordered',
+  'Closed - Not Ordered',
+]
+
+export const INQUIRY_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  'Requirement Received': { bg: 'rgba(37,99,235,0.1)', text: '#1d4ed8' },
+  'Quotation Under Creation': { bg: 'rgba(234,179,8,0.14)', text: '#a16207' },
+  'Quotation Sent': { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed' },
+  Negotiation: { bg: 'rgba(249,115,22,0.12)', text: '#c2410c' },
+  'Closed - Ordered': { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
+  'Closed - Not Ordered': { bg: 'rgba(220,38,38,0.1)', text: '#b91c1c' },
+}
+
+export const inquiryStatusColor = (status: string) => INQUIRY_STATUS_COLORS[status] || { bg: 'rgba(0,0,0,0.06)', text: '#57534e' }
 
 export const INQ_STAGES = [
   'Customer Requirement', 'Design', 'R&D', 'Costing', 'Management Approval',

@@ -161,13 +161,13 @@ function LoadDistributionPageInner() {
       <RndNav />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Load Distribution Calculator</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Load Distribution Calculator</h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>Wheel load analysis · UIC 518 / EN 14363 · ΔQ/Q safety check</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Export CSV</button>
-          <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Export Report (.docx)</button>
-          <a href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>History</a>
+          <button onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
+          <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
+          <a href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
         </div>
       </div>
 
@@ -185,7 +185,7 @@ function LoadDistributionPageInner() {
                     style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 6px', borderRadius: 8, border: `1px solid ${configType === c.value ? '#f97316' : '#e2e8f0'}`, background: configType === c.value ? '#fff7ed' : '#fff' }}
                   >
                     <div style={{ fontSize: 20 }}>{c.icon}</div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: configType === c.value ? '#c2410c' : '#334155', marginTop: 4 }}>{c.value.toUpperCase()}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: configType === c.value ? '#c2410c' : '#334155', marginTop: 4 }}>{c.value.toUpperCase()}</div>
                   </div>
                 ))}
               </div>
@@ -196,7 +196,7 @@ function LoadDistributionPageInner() {
           <div style={cardStyle}>
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Vehicle &amp; Load Data</span>
-              <label style={{ fontSize: 10.5, fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+              <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                 Import CSV
                 <input type="file" accept=".csv" onChange={importCsv} style={{ display: 'none' }} />
               </label>
@@ -239,7 +239,7 @@ function LoadDistributionPageInner() {
               </div>
 
               <div style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>Safety Analysis (UIC 518)</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>Safety Analysis (UIC 518)</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <MiniStat label="QL (Min)" value={r?.ql_value.toFixed(3)} unit="Ton" />
                   <MiniStat label="Q (Heavier Avg)" value={r?.q_value.toFixed(3)} unit="Ton" />
@@ -247,11 +247,11 @@ function LoadDistributionPageInner() {
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
                   <div style={{ padding: '12px 14px', borderRadius: 8, textAlign: 'center', border: `1px solid ${result ? (pass ? '#bbf7d0' : '#fecaca') : '#e2e8f0'}`, background: result ? (pass ? '#f0fdf4' : '#fef2f2') : '#fff' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase' }}>ΔQ/Q Ratio</div>
-                    <div style={{ fontSize: 20, fontWeight: 800, color: result ? (pass ? '#166534' : '#991b1b') : '#94a3b8' }}>{r ? (r.delta_q_by_q * 100).toFixed(2) : '—'}</div>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>ΔQ/Q Ratio</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: result ? (pass ? '#166534' : '#991b1b') : '#94a3b8' }}>{r ? (r.delta_q_by_q * 100).toFixed(2) : '—'}</div>
                     <div style={{ fontSize: 10, color: '#94a3b8' }}>% (Limit: {r ? (r.limit * 100).toFixed(0) : 60}%)</div>
                   </div>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9999, fontWeight: 800, fontSize: 12, background: !result ? '#f1f5f9' : pass ? '#dcfce7' : '#fee2e2', color: !result ? '#64748b' : pass ? '#166534' : '#991b1b' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9999, fontWeight: 700, fontSize: 12, background: !result ? '#f1f5f9' : pass ? '#dcfce7' : '#fee2e2', color: !result ? '#64748b' : pass ? '#166534' : '#991b1b' }}>
                     {!result ? 'PENDING' : pass ? '✓ PASS' : '✗ FAIL'}
                   </span>
                 </div>
@@ -268,15 +268,15 @@ function LoadDistributionPageInner() {
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Formula Reference</span></div>
             <div style={{ padding: 16 }}>
               <div style={{ padding: 12, borderRadius: 8, background: '#f8fafc', fontFamily: 'monospace', fontSize: 11.5, color: '#334155', lineHeight: 1.8 }}>
-                <div style={{ color: '#c2410c', fontWeight: 700 }}>// Load Split</div>
+                <div style={{ color: '#c2410c', fontWeight: 600 }}>// Load Split</div>
                 <div>F = W × (front% / 100)</div>
                 <div>R = W − F</div>
-                <div style={{ color: '#c2410c', fontWeight: 700, marginTop: 8 }}>// Wheel Loads</div>
+                <div style={{ color: '#c2410c', fontWeight: 600, marginTop: 8 }}>// Wheel Loads</div>
                 <div>Q1 = F × (q1% / 100)</div>
                 <div>Q2 = F − Q1</div>
                 <div>Q3 = R × (q3% / 100)</div>
                 <div>Q4 = R − Q3</div>
-                <div style={{ color: '#c2410c', fontWeight: 700, marginTop: 8 }}>// Safety Check</div>
+                <div style={{ color: '#c2410c', fontWeight: 600, marginTop: 8 }}>// Safety Check</div>
                 <div>QL = min(Q1,Q2,Q3,Q4)</div>
                 <div>Q = avg of heavier pair</div>
                 <div>ΔQ = Q − QL</div>
@@ -318,16 +318,16 @@ function LoadDistributionPageInner() {
 function BogieBox({ title, left, right, leftVal, rightVal, sum }: { title: string; left: string; right: string; leftVal?: number; rightVal?: number; sum?: number }) {
   return (
     <div style={{ padding: 12, borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 10.5, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>{title}</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <div style={{ padding: 8, background: '#fff', borderRadius: 6 }}>
           <div style={{ fontSize: 10, color: '#94a3b8' }}>{left}</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{leftVal != null ? leftVal.toFixed(3) : '—'}</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#1e293b' }}>{leftVal != null ? leftVal.toFixed(3) : '—'}</div>
           <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Ton</div>
         </div>
         <div style={{ padding: 8, background: '#fff', borderRadius: 6 }}>
           <div style={{ fontSize: 10, color: '#94a3b8' }}>{right}</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{rightVal != null ? rightVal.toFixed(3) : '—'}</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#1e293b' }}>{rightVal != null ? rightVal.toFixed(3) : '—'}</div>
           <div style={{ fontSize: 9.5, color: '#94a3b8' }}>Ton</div>
         </div>
       </div>
@@ -339,8 +339,8 @@ function BogieBox({ title, left, right, leftVal, rightVal, sum }: { title: strin
 function MiniStat({ label, value, unit }: { label: string; value?: string; unit: string }) {
   return (
     <div style={{ padding: '10px 8px', borderRadius: 8, background: '#fff', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-      <div style={{ fontSize: 9.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b', margin: '2px 0' }}>{value || '—'}</div>
+      <div style={{ fontSize: 9.5, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: '#1e293b', margin: '2px 0' }}>{value || '—'}</div>
       <div style={{ fontSize: 9.5, color: '#94a3b8' }}>{unit}</div>
     </div>
   )

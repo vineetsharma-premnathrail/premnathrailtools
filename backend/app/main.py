@@ -12,6 +12,7 @@ from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.api_key import APIKey
+from app.modules.main.models.module import Module
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.project_attachment import ProjectAttachment
 from app.modules.erp.models.service_request import ServiceRequest
@@ -23,9 +24,19 @@ from app.modules.purchase.models.purchase_requisition_item import PurchaseRequis
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
+from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
+from app.modules.p2p.models.rfq import RFQ
+from app.modules.p2p.models.rfq_attachment import RFQAttachment
+from app.modules.vendor.models.vendor import Vendor
+from app.modules.store.models.location import StoreLocation
+from app.modules.store.models.stock_item import StockItem
+from app.modules.store.models.stock_balance import StockBalance
+from app.modules.store.models.stock_transaction import StockTransaction
+from app.modules.design.models.engineering_document import EngineeringDocument
+from app.modules.electrical.models.work_order import ElectricalWorkOrder
 from app.modules.crm.models import (
-    Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation,
-    Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity, Note,
+    Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem,
+    Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity,
     CrmDocument, CrmDiscussion, CrmStageLog,
 )
 from app.modules.rnd.models.calculation_history import CalculationHistory
@@ -38,20 +49,28 @@ from app.modules.main.routes import users as users_routes
 from app.modules.main.routes import notifications as notifications_routes
 from app.modules.main.routes import feedback as feedback_routes
 from app.modules.main.routes import api_keys as api_keys_routes
+from app.modules.main.routes import modules as modules_routes
+from app.modules.hr.routes import hr as hr_routes
+from app.modules.design.routes import engineering_documents as design_documents_routes
+from app.modules.electrical.routes import work_orders as electrical_work_orders_routes
 from app.modules.main.routes import presence as presence_routes
 from app.modules.erp.routes import projects as erp_projects_routes
 from app.modules.erp.routes import service_requests as erp_sr_routes
 from app.modules.purchase.routes import purchase_requisitions as purchase_requisitions_routes
 from app.modules.p2p.routes import p2p_requests as p2p_requests_routes
+from app.modules.p2p.routes import purchase_orders as p2p_purchase_orders_routes
+from app.modules.p2p.routes import rfq as p2p_rfq_routes
+from app.modules.vendor.routes import vendors as vendors_routes
+from app.modules.store.routes import locations as store_locations_routes
+from app.modules.store.routes import stock_items as store_stock_items_routes
+from app.modules.store.routes import stock_transactions as store_stock_transactions_routes
 from app.modules.crm.routes import organizations as crm_organizations_routes
 from app.modules.crm.routes import inquiries as crm_inquiries_routes
 from app.modules.crm.routes import tenders as crm_tenders_routes
 from app.modules.crm.routes import activities as crm_activities_routes
-from app.modules.crm.routes import notes as crm_notes_routes
 from app.modules.crm.routes import documents as crm_documents_routes
 from app.modules.crm.routes import workflow as crm_workflow_routes
 from app.modules.crm.routes import dashboard as crm_dashboard_routes
-from app.modules.crm.routes import bulk_import as crm_bulk_import_routes
 from app.modules.rnd.routes import calculations as rnd_calculations_routes
 from app.modules.rnd.routes import history as rnd_history_routes
 from app.middleware.error_handler import setup_error_handlers, LoggingMiddleware
@@ -109,18 +128,26 @@ app.include_router(erp_projects_routes.router, prefix="/api/v1")
 app.include_router(erp_sr_routes.router, prefix="/api/v1")
 app.include_router(purchase_requisitions_routes.router, prefix="/api/v1")
 app.include_router(p2p_requests_routes.router, prefix="/api/v1")
+app.include_router(p2p_purchase_orders_routes.router, prefix="/api/v1")
+app.include_router(p2p_rfq_routes.router, prefix="/api/v1")
+app.include_router(vendors_routes.router, prefix="/api/v1")
+app.include_router(store_locations_routes.router, prefix="/api/v1")
+app.include_router(store_stock_items_routes.router, prefix="/api/v1")
+app.include_router(store_stock_transactions_routes.router, prefix="/api/v1")
 app.include_router(crm_organizations_routes.router, prefix="/api/v1")
 app.include_router(crm_inquiries_routes.router, prefix="/api/v1")
 app.include_router(crm_tenders_routes.router, prefix="/api/v1")
 app.include_router(crm_activities_routes.router, prefix="/api/v1")
-app.include_router(crm_notes_routes.router, prefix="/api/v1")
 app.include_router(crm_documents_routes.router, prefix="/api/v1")
 app.include_router(crm_workflow_routes.router, prefix="/api/v1")
 app.include_router(crm_dashboard_routes.router, prefix="/api/v1")
-app.include_router(crm_bulk_import_routes.router, prefix="/api/v1")
 app.include_router(notifications_routes.router, prefix="/api/v1")
 app.include_router(feedback_routes.router, prefix="/api/v1")
 app.include_router(api_keys_routes.router, prefix="/api/v1")
+app.include_router(modules_routes.router, prefix="/api/v1")
+app.include_router(hr_routes.router, prefix="/api/v1")
+app.include_router(design_documents_routes.router, prefix="/api/v1")
+app.include_router(electrical_work_orders_routes.router, prefix="/api/v1")
 app.include_router(presence_routes.router, prefix="/api/v1")
 app.include_router(rnd_calculations_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_history_routes.router, prefix="/api/v1/rnd")

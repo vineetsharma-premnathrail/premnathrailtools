@@ -65,7 +65,7 @@ export default function RndLandingPage() {
   return (
     <div>
       <RndNav />
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>R&amp;D Engineering Tools</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>R&amp;D Engineering Tools</h1>
       <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>
         Calculation tools for braking, hydraulics, load capacity, and traction analysis.
       </p>
@@ -103,7 +103,7 @@ export default function RndLandingPage() {
             >
               {tool.icon}
             </div>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1f1108', margin: '0 0 6px' }}>{tool.title}</h3>
+            <h3 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: '0 0 6px' }}>{tool.title}</h3>
             <p style={{ fontSize: 12.5, color: '#78716c', margin: 0, lineHeight: 1.5 }}>{tool.description}</p>
           </div>
         ))}

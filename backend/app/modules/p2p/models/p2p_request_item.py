@@ -27,6 +27,11 @@ class P2PRequestItem(Base, TimestampMixin):
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ship_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Nullable, non-blocking mapping to the Store catalog — set by the buyer at
+    # GRN time (or left unmapped, see PURCHASE_STORE_INTEGRATION.md). Only
+    # items with this set get a stock-in transaction posted on receipt.
+    stock_item_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("stock_items.id"), nullable=True)
+
     p2p_request: Mapped["P2PRequest"] = relationship("P2PRequest", back_populates="items")
     attachments: Mapped[list["P2PRequestAttachment"]] = relationship(
         "P2PRequestAttachment", back_populates="item", cascade="all, delete-orphan"

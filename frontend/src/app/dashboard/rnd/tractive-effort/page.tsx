@@ -149,13 +149,13 @@ function TractiveEffortPageInner() {
       <RndNav />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Tractive Effort Calculator</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Tractive Effort Calculator</h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>TE · Power · OHE Current · Indian Railways resistance formulas</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Export CSV</button>
-          <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Export Report (.docx)</button>
-          <a href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}>History</a>
+          <button onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
+          <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
+          <a href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
         </div>
       </div>
 
@@ -168,7 +168,7 @@ function TractiveEffortPageInner() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {(['Running', 'Start'] as const).map((m) => (
                   <div key={m} onClick={() => setMode(m)} style={{ cursor: 'pointer', textAlign: 'center', padding: '14px 6px', borderRadius: 8, border: `1px solid ${mode === m ? '#f97316' : '#e2e8f0'}`, background: mode === m ? '#fff7ed' : '#fff' }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: mode === m ? '#c2410c' : '#334155' }}>{m.toUpperCase()}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: mode === m ? '#c2410c' : '#334155' }}>{m.toUpperCase()}</div>
                   </div>
                 ))}
               </div>
@@ -181,7 +181,7 @@ function TractiveEffortPageInner() {
           <div style={cardStyle}>
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Vehicle Data</span>
-              <label style={{ fontSize: 10.5, fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+              <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                 Import CSV
                 <input type="file" accept=".csv" onChange={importCsv} style={{ display: 'none' }} />
               </label>
@@ -236,14 +236,14 @@ function TractiveEffortPageInner() {
               </div>
 
               <div style={{ padding: 14, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>Resistance Components</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 10 }}>Resistance Components</div>
                 {RESISTANCE_LABELS.map(([key, label, color]) => {
                   const val = r ? r[key] : 0
                   return (
                     <div key={key} style={{ marginBottom: 8 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, marginBottom: 3 }}>
-                        <span style={{ color: '#475569', fontWeight: 700 }}>{key} {label.toUpperCase()}</span>
-                        <span style={{ fontWeight: 700, color: '#1e293b' }}>{r ? val.toFixed(0) : '—'} kg</span>
+                        <span style={{ color: '#475569', fontWeight: 600 }}>{key} {label.toUpperCase()}</span>
+                        <span style={{ fontWeight: 600, color: '#1e293b' }}>{r ? val.toFixed(0) : '—'} kg</span>
                       </div>
                       <div style={{ height: 8, borderRadius: 4, background: '#e2e8f0', overflow: 'hidden' }}>
                         <div style={{ width: r ? `${(val / maxBar) * 100}%` : '0%', height: '100%', background: color, borderRadius: 4 }} />
@@ -254,8 +254,8 @@ function TractiveEffortPageInner() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 10, textAlign: 'center' }}>
                   {RESISTANCE_LABELS.map(([key, , color]) => (
                     <div key={key}>
-                      <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>{key} %</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color }}>{r ? ((r[key] / total) * 100).toFixed(1) : '—'}</div>
+                      <div style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>{key} %</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color }}>{r ? ((r[key] / total) * 100).toFixed(1) : '—'}</div>
                     </div>
                   ))}
                 </div>
@@ -272,19 +272,19 @@ function TractiveEffortPageInner() {
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Formula Reference</span></div>
             <div style={{ padding: 16 }}>
               <div style={{ padding: 12, borderRadius: 8, background: '#f8fafc', fontFamily: 'monospace', fontSize: 11, color: '#334155', lineHeight: 1.8 }}>
-                <div style={{ color: '#c2410c', fontWeight: 700 }}>// Running Resistance</div>
+                <div style={{ color: '#c2410c', fontWeight: 600 }}>// Running Resistance</div>
                 <div>T1 = W × 1.3505</div>
                 <div>T2 = L × 2.913</div>
-                <div style={{ color: '#c2410c', fontWeight: 700, marginTop: 8 }}>// Start Resistance</div>
+                <div style={{ color: '#c2410c', fontWeight: 600, marginTop: 8 }}>// Start Resistance</div>
                 <div>T1 = W × 4.0</div>
                 <div>T2 = L × 6.0</div>
-                <div style={{ color: '#c2410c', fontWeight: 700, marginTop: 8 }}>// Gradient</div>
+                <div style={{ color: '#c2410c', fontWeight: 600, marginTop: 8 }}>// Gradient</div>
                 <div>T3 = (W+L)×1000/G [1 in G]</div>
                 <div>T3 = (W+L)×tan(θ)×1000 [°]</div>
-                <div style={{ color: '#c2410c', fontWeight: 700, marginTop: 8 }}>// Curvature</div>
+                <div style={{ color: '#c2410c', fontWeight: 600, marginTop: 8 }}>// Curvature</div>
                 <div>T4 = (W+L)×D [Degree]</div>
                 <div>T4 = (W+L)×700/R [Radius]</div>
-                <div style={{ color: '#c2410c', fontWeight: 700, marginTop: 8 }}>// Output</div>
+                <div style={{ color: '#c2410c', fontWeight: 600, marginTop: 8 }}>// Output</div>
                 <div>TE = T1+T2+T3+T4 [kg]</div>
                 <div>HP = TE×V / 270</div>
                 <div>kW = HP × 0.7457</div>
@@ -314,8 +314,8 @@ function TractiveEffortPageInner() {
 function SummaryTile({ label, value, unit, bg, color }: { label: string; value?: string; unit: string; bg: string; color: string }) {
   return (
     <div style={{ padding: '14px 10px', borderRadius: 10, background: bg, textAlign: 'center' }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#78716c', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 800, color }}>{value || '—'}</div>
+      <div style={{ fontSize: 10, fontWeight: 600, color: '#78716c', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value || '—'}</div>
       <div style={{ fontSize: 10, color: '#94a3b8' }}>{unit}</div>
     </div>
   )

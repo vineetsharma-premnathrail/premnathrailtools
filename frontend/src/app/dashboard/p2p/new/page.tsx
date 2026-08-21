@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { p2pApi, usersApi } from '@/lib/api'
 import { DirectoryUser, PRCategoryMeta, P2PRequestLineItemInput } from '@/types'
@@ -20,7 +20,7 @@ const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
   background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
 }
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
+const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
@@ -29,6 +29,7 @@ const sectionStyle: React.CSSProperties = {
 export default function NewP2PRequestPage() {
   const { isAuthorized, isLoading } = useRequireApp('p2p')
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [categories, setCategories] = useState<PRCategoryMeta[]>([])
   const [requirementTypes, setRequirementTypes] = useState<string[]>([])
@@ -49,6 +50,27 @@ export default function NewP2PRequestPage() {
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+
+  // Pre-fill from Store's "Raise P2P Request" low-stock action — see
+  // docs/product/PURCHASE_STORE_INTEGRATION.md integration point 2. Pure
+  // UI pre-fill only; nothing is submitted until the requester reviews and
+  // clicks Submit themselves.
+  useEffect(() => {
+    const itemName = searchParams.get('item_name')
+    if (!itemName) return
+    setItems([{
+      item_name: itemName,
+      make: searchParams.get('make') || '',
+      part_code: searchParams.get('part_code') || '',
+      unit: searchParams.get('unit') || '',
+      quantity: Number(searchParams.get('quantity')) || 1,
+      project_inhouse: 'Inhouse',
+      category: searchParams.get('category') || '',
+      ship_to: '',
+    }])
+    setRemarks(`Auto-suggested from Store low-stock alert${searchParams.get('part_code') ? ` for part ${searchParams.get('part_code')}` : ''}.`)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -122,10 +144,10 @@ export default function NewP2PRequestPage() {
 
   return (
     <div style={{ width: '100%' }}>
-      <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
+      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
         P2P Module
       </p>
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: TEXT.heading, margin: '0 0 20px' }}>New PR</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New PR</h1>
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -134,7 +156,7 @@ export default function NewP2PRequestPage() {
       )}
 
       <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 800, color: TEXT.heading, margin: '0 0 14px' }}>Request Details</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Request Details</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
           <div>
             <label style={labelStyle}>Project</label>
@@ -168,8 +190,8 @@ export default function NewP2PRequestPage() {
 
       <div style={sectionStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 800, color: TEXT.heading, margin: 0 }}>Item Details</h2>
-          <button onClick={addItem} type="button" style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${BRAND.primaryBorder}`, background: BRAND.primarySoft, color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Item Details</h2>
+          <button onClick={addItem} type="button" style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${BRAND.primaryBorder}`, background: BRAND.primarySoft, color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
             + Add Item
           </button>
         </div>
@@ -178,7 +200,7 @@ export default function NewP2PRequestPage() {
             <thead>
               <tr>
                 {['SL', 'Item Description *', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', ''].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>
+                  <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>
                     {h}
                   </th>
                 ))}
@@ -187,7 +209,7 @@ export default function NewP2PRequestPage() {
             <tbody>
               {items.map((item, idx) => (
                 <tr key={idx}>
-                  <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: TEXT.muted }}>{idx + 1}</td>
+                  <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 600, color: TEXT.muted }}>{idx + 1}</td>
                   <td style={{ padding: '6px 8px', minWidth: 160 }}>
                     <input style={inputStyle} value={item.item_name} onChange={(e) => updateItem(idx, 'item_name', e.target.value)} />
                   </td>
@@ -214,7 +236,7 @@ export default function NewP2PRequestPage() {
                   </td>
                   <td style={{ padding: '6px 8px' }}>
                     {items.length > 1 && (
-                      <span onClick={() => removeItem(idx)} style={{ fontSize: 11.5, fontWeight: 700, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</span>
+                      <span onClick={() => removeItem(idx)} style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</span>
                     )}
                   </td>
                 </tr>
@@ -225,7 +247,7 @@ export default function NewP2PRequestPage() {
       </div>
 
       <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 800, color: TEXT.heading, margin: '0 0 14px' }}>Approval</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Approval</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
           <div>
             <label style={labelStyle}>Priority</label>
@@ -241,9 +263,9 @@ export default function NewP2PRequestPage() {
                   const u = users.find((x) => x.id === id)
                   if (!u) return null
                   return (
-                    <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '4px 6px 4px 10px', borderRadius: 8, background: BRAND.primarySoft, border: `1px solid ${BRAND.primaryBorder}`, color: BRAND.primaryActive }}>
+                    <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '4px 6px 4px 10px', borderRadius: 8, background: BRAND.primarySoft, border: `1px solid ${BRAND.primaryBorder}`, color: BRAND.primaryActive }}>
                       {u.name}
-                      <span onClick={() => setApproverIds((prev) => prev.filter((x) => x !== id))} style={{ cursor: 'pointer', fontWeight: 800 }}>×</span>
+                      <span onClick={() => setApproverIds((prev) => prev.filter((x) => x !== id))} style={{ cursor: 'pointer', fontWeight: 700 }}>×</span>
                     </span>
                   )
                 })}
@@ -267,7 +289,7 @@ export default function NewP2PRequestPage() {
                       onClick={() => { setApproverIds((prev) => [...prev, u.id]); setApproverSearch('') }}
                       style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid rgba(0,0,0,0.05)' }}
                     >
-                      <span style={{ fontWeight: 700, color: TEXT.body }}>{u.name}</span>{' '}
+                      <span style={{ fontWeight: 600, color: TEXT.body }}>{u.name}</span>{' '}
                       <span style={{ color: TEXT.muted, fontSize: 12 }}>({u.email})</span>
                     </div>
                   ))}
@@ -285,7 +307,7 @@ export default function NewP2PRequestPage() {
       </div>
 
       <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 800, color: TEXT.heading, margin: '0 0 14px' }}>Documents</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Documents</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
           <div>
             <label style={labelStyle}>Supporting Documents</label>
@@ -302,7 +324,7 @@ export default function NewP2PRequestPage() {
         <button onClick={() => router.back()} type="button" style={{ padding: '12px 22px', borderRadius: 12, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
           Cancel
         </button>
-        <button onClick={handleSubmit} disabled={submitting} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 700, opacity: submitting ? 0.6 : 1 }}>
+        <button onClick={handleSubmit} disabled={submitting} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: submitting ? 0.6 : 1 }}>
           {submitting ? 'Submitting…' : 'Submit PR'}
         </button>
       </div>

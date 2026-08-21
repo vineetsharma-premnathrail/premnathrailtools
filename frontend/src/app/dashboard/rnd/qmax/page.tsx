@@ -173,9 +173,9 @@ function QmaxPageInner() {
       <RndNav />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Qmax Calculator</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Qmax Calculator</h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ background: '#fef2f2', color: '#dc2626', padding: '1px 7px', borderRadius: 9999, fontWeight: 700, fontSize: 10 }}>EN 13674</span>
+            <span style={{ background: '#fef2f2', color: '#dc2626', padding: '1px 7px', borderRadius: 9999, fontWeight: 600, fontSize: 10 }}>EN 13674</span>
             Maximum Permissible Wheel Load · Rail Head Contact Analysis
           </p>
         </div>
@@ -195,7 +195,7 @@ function QmaxPageInner() {
                     onClick={() => setMaterial(m.value)}
                     style={{ cursor: 'pointer', textAlign: 'center', padding: '10px 6px', borderRadius: 8, border: `1px solid ${material === m.value ? '#f97316' : '#e2e8f0'}`, background: material === m.value ? '#fff7ed' : '#fff' }}
                   >
-                    <div style={{ fontSize: 16, fontWeight: 800, color: material === m.value ? '#c2410c' : '#334155' }}>{m.label}</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: material === m.value ? '#c2410c' : '#334155' }}>{m.label}</div>
                     {m.value !== 'custom' && <div style={{ fontSize: 9, color: '#94a3b8' }}>N/MM²</div>}
                     <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 2 }}>{m.grade}</div>
                   </div>
@@ -210,7 +210,7 @@ function QmaxPageInner() {
           <div style={cardStyle}>
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Rail Parameters</span>
-              <label style={{ fontSize: 10.5, fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+              <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                 Import CSV
                 <input type="file" accept=".csv" onChange={importCsv} style={{ display: 'none' }} />
               </label>
@@ -257,8 +257,8 @@ function QmaxPageInner() {
             </div>
             <div style={{ padding: 16 }}>
               <div style={{ padding: 20, borderRadius: 10, background: 'linear-gradient(135deg,#fff7ed,#fef2f2)', border: '1px solid #fed7aa', textAlign: 'center', marginBottom: 12 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9a3412', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Maximum Permissible Wheel Load</div>
-                <div style={{ fontSize: 36, fontWeight: 800, color: '#c2410c' }}>{result ? result.results.qmax_kn.toFixed(2) : '—'}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#9a3412', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Maximum Permissible Wheel Load</div>
+                <div style={{ fontSize: 36, fontWeight: 700, color: '#c2410c' }}>{result ? result.results.qmax_kn.toFixed(2) : '—'}</div>
                 <div style={{ fontSize: 12, color: '#78716c', marginTop: 4 }}>kN</div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -269,7 +269,7 @@ function QmaxPageInner() {
               </div>
               {compliance && (
                 <div style={{ marginTop: 12, padding: 12, borderRadius: 8, textAlign: 'center', border: `1px solid ${compliance.pass ? '#bbf7d0' : '#fecaca'}`, background: compliance.pass ? '#f0fdf4' : '#fef2f2' }}>
-                  <span style={{ fontWeight: 800, fontSize: 13, color: compliance.pass ? '#166534' : '#991b1b' }}>{compliance.pass ? '✓ PASS' : '✗ FAIL'}</span>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: compliance.pass ? '#166534' : '#991b1b' }}>{compliance.pass ? '✓ PASS' : '✗ FAIL'}</span>
                   <span style={{ fontSize: 11.5, color: '#64748b', marginLeft: 8 }}>Margin: {compliance.margin.toFixed(2)}%</span>
                 </div>
               )}
@@ -280,7 +280,7 @@ function QmaxPageInner() {
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Formula Reference</span></div>
             <div style={{ padding: 16 }}>
               <div style={{ padding: 12, borderRadius: 8, background: '#f8fafc', fontFamily: 'monospace', fontSize: 12.5, color: '#334155', lineHeight: 1.9 }}>
-                <div style={{ color: '#c2410c', fontWeight: 700 }}>Qmax = C × (d/2) × (σB / v_head)²</div>
+                <div style={{ color: '#c2410c', fontWeight: 600 }}>Qmax = C × (d/2) × (σB / v_head)²</div>
                 <div>σB = Material tensile strength (N/mm²)</div>
                 <div>d = Worn rail head diameter (mm)</div>
                 <div>v = Safety factor (dimensionless)</div>
@@ -299,9 +299,9 @@ function QmaxPageInner() {
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Actions</span></div>
             <div style={cardBodyStyle}>
               <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Calculate'}</button>
-              <button onClick={exportCsv} style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Export CSV</button>
-              <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Export Report (.docx)</button>
-              <a href="/dashboard/rnd/history" style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'none', textAlign: 'center' }}>History</a>
+              <button onClick={exportCsv} style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
+              <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
+              <a href="/dashboard/rnd/history" style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', textAlign: 'center' }}>History</a>
             </div>
           </div>
           <TerminalPanel title="qmax_output.log" text={result?.report || '> System Ready.\n> Awaiting parameters...\n>\n> Configure inputs on the left and\n> click Calculate to begin.'} />
@@ -314,8 +314,8 @@ function QmaxPageInner() {
 function MiniResult({ label, value, unit, bg, color }: { label: string; value: string; unit: string; bg: string; color: string }) {
   return (
     <div style={{ padding: '10px 12px', borderRadius: 8, background: bg }}>
-      <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 700, color: '#1e293b', marginTop: 3 }}>{value === '—' ? '—' : value}</div>
+      <div style={{ fontSize: 9.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: '#1e293b', marginTop: 3 }}>{value === '—' ? '—' : value}</div>
       {unit && <div style={{ fontSize: 10, color: '#94a3b8' }}>{unit}</div>}
     </div>
   )

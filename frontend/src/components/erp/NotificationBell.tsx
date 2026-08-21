@@ -109,7 +109,7 @@ export default function NotificationBell() {
               background: '#dc2626',
               color: '#fff',
               fontSize: 9.5,
-              fontWeight: 800,
+              fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -138,9 +138,9 @@ export default function NotificationBell() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#1f1108' }}>Notifications</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1f1108' }}>Notifications</span>
             {unreadCount > 0 && (
-              <button onClick={markAllRead} style={{ fontSize: 11.5, fontWeight: 700, color: '#fa9b9b', background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button onClick={markAllRead} style={{ fontSize: 11.5, fontWeight: 600, color: '#fa9b9b', background: 'none', border: 'none', cursor: 'pointer' }}>
                 Mark all read
               </button>
             )}
@@ -163,7 +163,7 @@ export default function NotificationBell() {
                     cursor: 'pointer',
                   }}
                 >
-                  <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: '0 0 2px' }}>{n.title}</p>
+                  <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{n.title}</p>
                   <p style={{ fontSize: 12, color: '#78716c', margin: 0 }}>{n.message}</p>
                   {n.created_at && (
                     <p style={{ fontSize: 10.5, color: '#a8a29e', margin: '4px 0 0' }}>{new Date(n.created_at).toLocaleString()}</p>

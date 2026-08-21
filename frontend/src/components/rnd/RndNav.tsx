@@ -65,7 +65,7 @@ export default function RndNav() {
               padding: '10px 14px',
               marginBottom: -1,
               fontSize: 12.5,
-              fontWeight: 700,
+              fontWeight: 600,
               letterSpacing: '.02em',
               textTransform: 'uppercase',
               color: isActive ? '#fa9b9b' : '#78716c',

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import ErpNav from '@/components/erp/ErpNav'
+import { Section } from '@/components/shared/ui'
 
 interface DeletedProject {
   id: number
@@ -64,7 +65,7 @@ export default function RecycleBinPage() {
   return (
     <div>
       <ErpNav />
-      <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>Recycle Bin</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Recycle Bin</h1>
       <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>Deleted items are auto-purged after 10 days</p>
 
       {error && (
@@ -114,27 +115,18 @@ export default function RecycleBinPage() {
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#fa9b9b', margin: '0 0 10px' }}>{title}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{children}</div>
-    </div>
-  )
-}
-
 function RecycleRow({ primary, secondary, deletedAt, onRestore }: { primary: string; secondary?: string; deletedAt: string | null; onRestore: () => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
       <div>
-        <p style={{ fontSize: 13, fontWeight: 700, color: '#1f1108', margin: '0 0 2px' }}>{primary}</p>
+        <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{primary}</p>
         <p style={{ fontSize: 12, color: '#78716c', margin: 0 }}>
           {secondary} {deletedAt ? `· Deleted ${new Date(deletedAt).toLocaleDateString()}` : ''}
         </p>
       </div>
       <button
         onClick={onRestore}
-        style={{ fontSize: 12.5, fontWeight: 700, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
+        style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
       >
         Restore
       </button>

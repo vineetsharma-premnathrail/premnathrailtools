@@ -146,7 +146,7 @@ ALLOWED_CONTENT_TYPES = {
 # affect every row — block those outright (only per-resource delete is allowed).
 BULK_DELETE_COLLECTION_SUFFIXES = (
     "projects", "service-requests", "organizations", "inquiries", "tenders",
-    "users", "api-keys", "activities", "notes",
+    "users", "api-keys", "activities",
 )
 
 

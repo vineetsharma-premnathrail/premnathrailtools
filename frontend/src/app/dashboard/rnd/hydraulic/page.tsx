@@ -135,7 +135,7 @@ function HydraulicPageInner() {
             <span style={{ fontSize: 10.5, color: '#16a34a' }}>Suggested: {suggestion.toFixed(1)} cc</span>
             <button
               onClick={() => setForm((prev) => ({ ...prev, [f]: suggestion.toFixed(1) }))}
-              style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
+              style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
             >
               Use
             </button>
@@ -197,7 +197,7 @@ function HydraulicPageInner() {
       <RndNav />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Hydraulic Motor Calculator</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>Hydraulic Motor Calculator</h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>Pump &amp; Motor calculations · Torque · Efficiency</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -229,7 +229,7 @@ function HydraulicPageInner() {
               <div style={cardStyle}>
                 <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
                   <span style={cardTitleStyle}>Vehicle Data</span>
-                  <label style={{ fontSize: 10.5, fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+                  <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                     Import CSV
                     <input type="file" accept=".csv" onChange={importVehicleCsv} style={{ display: 'none' }} />
                   </label>
@@ -256,7 +256,7 @@ function HydraulicPageInner() {
                 <div style={cardStyle}>
                   <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
                     <span style={cardTitleStyle}>Track Parameters</span>
-                    <label style={{ fontSize: 10.5, fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+                    <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                       Import CSV
                       <input type="file" accept=".csv" onChange={importTrackCsv} style={{ display: 'none' }} />
                     </label>

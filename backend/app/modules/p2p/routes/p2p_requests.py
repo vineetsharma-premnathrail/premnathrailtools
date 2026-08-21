@@ -14,6 +14,11 @@ from app.modules.p2p.models.p2p_request import (
 )
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment, P2P_ATTACHMENT_DOC_TYPES
+from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
+from app.modules.vendor.models.vendor import Vendor
+from app.modules.store.models.stock_item import StockItem
+from app.modules.store.models.location import StoreLocation
+from app.modules.store.service import record_stock_receipt
 from app.modules.p2p.schemas.p2p_request import (
     P2PRequestCreate,
     P2PRequestResponse,
@@ -24,6 +29,7 @@ from app.modules.p2p.schemas.p2p_request import (
     P2PRequestSelectVendorPayload,
     P2PRequestCreatePOPayload,
     P2PRequestReceivePayload,
+    P2PRequestItemStockLinkPayload,
     P2PRequestAttachmentResponse,
 )
 from app.modules.p2p.service import generate_p2p_number
@@ -459,6 +465,12 @@ async def create_po(
     pr = _get_pr_or_404(db, pr_id)
     if pr.status != "approved":
         raise HTTPException(status_code=409, detail=f"A PO can only be raised on an approved PR (current status: {pr.status})")
+    if db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.po_number == payload.po_number).first():
+        raise HTTPException(status_code=409, detail=f"PO number '{payload.po_number}' already exists")
+
+    vendor_row = None
+    if pr.selected_vendor:
+        vendor_row = db.query(Vendor).filter(Vendor.name == pr.selected_vendor).first()
 
     old_status = pr.status
     pr.po_number = payload.po_number
@@ -467,6 +479,33 @@ async def create_po(
     pr.expected_delivery = payload.expected_delivery
     pr.ordered_quantity = payload.ordered_quantity if payload.ordered_quantity is not None else sum(i.quantity for i in pr.items)
     pr.status = "po_raised"
+
+    # The PR's po_* fields above are a denormalized snapshot for quick display;
+    # this linked P2PPurchaseOrder is the real record — see
+    # docs/product/PURCHASE_DEPARTMENT_MODULE_PLAN.md Phase 2.
+    po = P2PPurchaseOrder(
+        po_number=payload.po_number,
+        p2p_request_id=pr.id,
+        vendor_id=vendor_row.id if vendor_row else None,
+        vendor_name=pr.selected_vendor,
+        status="issued",
+        po_date=pr.po_date,
+        expected_delivery=pr.expected_delivery,
+        created_by_id=user.id,
+        total_value=payload.po_value,
+    )
+    db.add(po)
+    db.flush()
+    for item in pr.items:
+        db.add(P2PPurchaseOrderItem(
+            purchase_order_id=po.id,
+            item_name=item.item_name,
+            make=item.make,
+            part_code=item.part_code,
+            unit=item.unit,
+            quantity=item.quantity,
+        ))
+
     _write_audit(db, pr.id, "po_raised", user,
                  summary=f"{user.name or user.email} raised PO '{payload.po_number}' for {pr.p2p_number}.",
                  old_status=old_status, new_status="po_raised")
@@ -498,6 +537,16 @@ async def update_receipt(
     old_status = pr.status
     ordered = pr.ordered_quantity if pr.ordered_quantity is not None else sum(i.quantity for i in pr.items)
     received = max(0.0, min(payload.received_quantity, ordered)) if ordered else payload.received_quantity
+    previously_received = pr.received_quantity or 0.0
+    delta = received - previously_received
+
+    mapped_items = [item for item in pr.items if item.stock_item_id]
+    if delta > 0 and mapped_items and not payload.store_location_id:
+        raise HTTPException(
+            status_code=400,
+            detail="store_location_id is required — this PR has item(s) linked to a stock item, so receiving must post a stock-in transaction",
+        )
+
     pr.ordered_quantity = ordered
     pr.received_quantity = received
     pr.grn_number = payload.grn_number or pr.grn_number
@@ -513,10 +562,51 @@ async def update_receipt(
         pr.receipt_status = "received"
         pr.status = "received"
 
+    # Post the newly-received delta (this call may be a partial receipt on top
+    # of an earlier one) to Store for every item mapped to a stock catalog
+    # entry — unmapped items are silently skipped, not blocked. See
+    # docs/product/PURCHASE_STORE_INTEGRATION.md integration point 1.
+    if delta > 0 and ordered and mapped_items:
+        for item in mapped_items:
+            item_delta = delta * (item.quantity / ordered)
+            if item_delta > 0:
+                record_stock_receipt(
+                    db, stock_item_id=item.stock_item_id, location_id=payload.store_location_id,
+                    quantity=item_delta, reference_type="p2p_grn", reference_id=pr.id,
+                    performed_by_id=user.id, remarks=payload.receiving_remarks,
+                )
+
     _write_audit(db, pr.id, "receipt_updated", user,
                  summary=f"{user.name or user.email} recorded receipt of {received}/{ordered} for {pr.p2p_number}.",
                  old_status=old_status, new_status=pr.status)
 
+    db.commit()
+    db.refresh(pr)
+    return _to_response(db, pr)
+
+
+@router.patch("/{pr_id}/items/{item_id}/stock-link", response_model=P2PRequestResponse)
+async def link_item_to_stock(
+    pr_id: int,
+    item_id: int,
+    payload: P2PRequestItemStockLinkPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("purchase")),
+):
+    """Map (or unmap) a P2P request line to a Store catalog item, so a later
+    receipt on this PR can post a stock-in transaction for it. Non-blocking —
+    a PR can be received without every item being mapped."""
+    pr = _get_pr_or_404(db, pr_id)
+    item = next((i for i in pr.items if i.id == item_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found on this P2P request")
+
+    if payload.stock_item_id is not None:
+        stock_item = db.query(StockItem).filter(StockItem.id == payload.stock_item_id).first()
+        if not stock_item:
+            raise HTTPException(status_code=404, detail="Stock item not found")
+
+    item.stock_item_id = payload.stock_item_id
     db.commit()
     db.refresh(pr)
     return _to_response(db, pr)

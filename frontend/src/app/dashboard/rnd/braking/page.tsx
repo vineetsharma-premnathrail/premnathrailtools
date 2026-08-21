@@ -76,10 +76,10 @@ function rowKey(r: BrakingRow): string {
 }
 
 const inputStyle: React.CSSProperties = {
-  padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 13, width: '100%', maxWidth: 260, boxSizing: 'border-box',
+  padding: '10px 12px', borderRadius: 10, border: '1px solid #e2e8f0', fontSize: 13, width: '100%', maxWidth: 260, boxSizing: 'border-box', outline: 'none',
 }
 const labelStyle: React.CSSProperties = {
-  fontSize: 10.5, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.04em', display: 'block', marginBottom: 4,
+  fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.04em', display: 'block', marginBottom: 6,
 }
 const cardStyle: React.CSSProperties = {
   background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden',
@@ -88,7 +88,7 @@ const cardHeaderStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 16px', borderBottom: '1px solid #f1f5f9',
 }
 const cardTitleStyle: React.CSSProperties = {
-  fontSize: 12.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#1e293b',
+  fontSize: 12.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', color: '#1e293b',
 }
 const cardBodyStyle: React.CSSProperties = { padding: 16, display: 'grid', gap: 10 }
 const radioLabelStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: '#475569', cursor: 'pointer' }
@@ -358,11 +358,11 @@ function BrakingCalculatorPageInner() {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.02em', margin: 0 }}>
             Braking Performance Calculator
           </h1>
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ background: '#fff7ed', color: '#c2410c', padding: '1px 7px', borderRadius: 9999, fontWeight: 700, fontSize: 10 }}>DIN EN 15746-2</span>
+            <span style={{ background: '#fff7ed', color: '#c2410c', padding: '1px 7px', borderRadius: 9999, fontWeight: 600, fontSize: 10 }}>DIN EN 15746-2</span>
             Rail &amp; Road Braking Performance Analysis
           </p>
         </div>
@@ -396,7 +396,7 @@ function BrakingCalculatorPageInner() {
         <div style={cardStyle}>
           <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
             <span style={cardTitleStyle}>Vehicle Data</span>
-            <label style={{ fontSize: 10.5, fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+            <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
               Import CSV
               <input type="file" accept=".csv" onChange={importVehicleCsv} style={{ display: 'none' }} />
             </label>
@@ -433,7 +433,7 @@ function BrakingCalculatorPageInner() {
         <div style={cardStyle}>
           <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
             <span style={cardTitleStyle}>Track Data</span>
-            <label style={{ fontSize: 10.5, fontWeight: 700, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+            <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
               Import CSV
               <input type="file" accept=".csv" onChange={importTrackCsv} style={{ display: 'none' }} />
             </label>
@@ -471,7 +471,7 @@ function BrakingCalculatorPageInner() {
 
             {roadModeEnabled && (
               <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: 10, display: 'grid', gap: 8 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase' }}>Road Parameters</div>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#2563eb', textTransform: 'uppercase' }}>Road Parameters</div>
                 <div><label style={labelStyle}>Road Speed km/h (comma sep.)</label><input style={inputStyle} value={roadSpeedList} onChange={(e) => setRoadSpeedList(e.target.value)} /></div>
                 <div>
                   <label style={labelStyle}>Road Gradient</label>
@@ -578,7 +578,7 @@ function BrakingCalculatorPageInner() {
               <button
                 onClick={() => calculate()}
                 disabled={busy}
-                style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#f97316,#ea580c)', color: '#fff', fontWeight: 700, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.03em', cursor: busy ? 'default' : 'pointer', boxShadow: '0 4px 12px rgba(249,115,22,0.3)', opacity: busy ? 0.7 : 1 }}
+                style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#f97316,#ea580c)', color: '#fff', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.03em', cursor: busy ? 'default' : 'pointer', boxShadow: '0 4px 12px rgba(249,115,22,0.3)', opacity: busy ? 0.7 : 1 }}
               >
                 {busy ? 'Calculating…' : 'Calculate'}
               </button>
@@ -599,7 +599,7 @@ function BrakingCalculatorPageInner() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#1e293b' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f97316', boxShadow: '0 0 6px #f97316' }} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', textTransform: 'uppercase', letterSpacing: '.04em' }}>Calculation Results</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#fff', textTransform: 'uppercase', letterSpacing: '.04em' }}>Calculation Results</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {result && <span style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 600 }}>{visibleRows.length} rows</span>}
@@ -658,7 +658,7 @@ function BrakingCalculatorPageInner() {
                         onClick={() => calcMethod === 'detail' && setExpandedRowKey(isExpanded ? null : key)}
                       >
                         <td style={tdStyle('left')}>
-                          <span style={{ padding: '0 5px', borderRadius: 3, fontSize: 10, fontWeight: 700, background: r.mode === 'Rail' ? '#eff6ff' : '#f0fdf4', color: r.mode === 'Rail' ? '#1d4ed8' : '#15803d' }}>
+                          <span style={{ padding: '0 5px', borderRadius: 3, fontSize: 10, fontWeight: 600, background: r.mode === 'Rail' ? '#eff6ff' : '#f0fdf4', color: r.mode === 'Rail' ? '#1d4ed8' : '#15803d' }}>
                             {r.mode.toUpperCase()}
                           </span>
                         </td>
@@ -667,14 +667,14 @@ function BrakingCalculatorPageInner() {
                           <span style={{ fontSize: 12, fontWeight: 600, color: colors.text }}>{r.scenario}</span>
                           {calcMethod === 'detail' && <span style={{ marginLeft: 6, fontSize: 10, color: '#94a3b8' }}>{isExpanded ? '▲' : '▼'}</span>}
                         </td>
-                        <td style={{ ...tdStyle('right'), fontWeight: 700, color: '#1e293b' }}>{r.speed}</td>
+                        <td style={{ ...tdStyle('right'), fontWeight: 600, color: '#1e293b' }}>{r.speed}</td>
                         <td style={tdStyle('right')}>{vMsStr}</td>
                         <td style={tdStyle('right')}>{fmtKn(r.applied_force)}</td>
                         <td style={tdStyle('right')}>{fmtKn(r.gravitational_force)}</td>
                         <td style={tdStyle('right')}>{fmtKn(r.net_force)}</td>
                         <td style={tdStyle('right')}>{fmt(r.decel, 4)}</td>
                         <td style={tdStyle('right')}>{fmt(r.dist)}</td>
-                        <td style={{ ...tdStyle('right'), fontWeight: 700, color: '#1d4ed8', fontSize: 13 }}>{fmt(r.total)}</td>
+                        <td style={{ ...tdStyle('right'), fontWeight: 600, color: '#1d4ed8', fontSize: 13 }}>{fmt(r.total)}</td>
                         <td style={{ ...tdStyle('right'), color: '#94a3b8' }}>{enStd != null ? enStd.toFixed(1) : '—'}</td>
                         {calcMethod === 'distance' && (
                           <>
@@ -719,7 +719,7 @@ function BrakingCalculatorPageInner() {
         {/* EN Standard Reference */}
         <div style={{ ...cardStyle, overflow: 'hidden' }}>
           <div style={{ padding: '10px 14px', background: '#1e293b' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#fff', textTransform: 'uppercase', letterSpacing: '.04em' }}>EN Std. Distances</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textTransform: 'uppercase', letterSpacing: '.04em' }}>EN Std. Distances</span>
           </div>
           <div style={{ overflowY: 'auto', maxHeight: 400 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -733,7 +733,7 @@ function BrakingCalculatorPageInner() {
                 {Object.entries(EN_STOPPING_DISTANCES).map(([speed, dist], i) => (
                   <tr key={speed} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
                     <td style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 600, color: '#374151' }}>{speed}</td>
-                    <td style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 700, color: '#1e293b', textAlign: 'right' }}>{dist}</td>
+                    <td style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 600, color: '#1e293b', textAlign: 'right' }}>{dist}</td>
                   </tr>
                 ))}
               </tbody>
@@ -747,11 +747,11 @@ function BrakingCalculatorPageInner() {
 }
 
 function smBtnStyle(bg: string, border: string, color: string): React.CSSProperties {
-  return { padding: '7px 12px', borderRadius: 6, border: `1px solid ${border}`, background: bg, color, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }
+  return { padding: '7px 12px', borderRadius: 6, border: `1px solid ${border}`, background: bg, color, fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }
 }
 
 function thStyle(align: 'left' | 'right' | 'center'): React.CSSProperties {
-  return { textAlign: align, padding: '8px 10px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#64748b', whiteSpace: 'nowrap' }
+  return { textAlign: align, padding: '8px 10px', fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em', color: '#64748b', whiteSpace: 'nowrap' }
 }
 function tdStyle(align: 'left' | 'right' | 'center'): React.CSSProperties {
   return { textAlign: align, padding: '7px 10px', fontSize: 12.5, borderBottom: '1px solid #f1f5f9' }
@@ -763,7 +763,7 @@ function Badge({ kind, children }: { kind: 'pass' | 'fail' | 'na'; children: Rea
     fail: { background: '#fee2e2', color: '#991b1b' },
     na: { background: '#f1f5f9', color: '#64748b' },
   }[kind]
-  return <span style={{ display: 'inline-flex', padding: '1px 6px', borderRadius: 9999, fontSize: 10, fontWeight: 700, ...styles }}>{children}</span>
+  return <span style={{ display: 'inline-flex', padding: '1px 6px', borderRadius: 9999, fontSize: 10, fontWeight: 600, ...styles }}>{children}</span>
 }
 
 function StatCard({ label, value, unit, color, bg }: { label: string; value: string; unit: string; color: string; bg: string }) {
@@ -771,8 +771,8 @@ function StatCard({ label, value, unit, color, bg }: { label: string; value: str
     <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
       <div style={{ width: 36, height: 36, borderRadius: 8, background: bg, flexShrink: 0 }} />
       <div>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#94a3b8', marginBottom: 2 }}>{label}</div>
-        <div><span style={{ fontSize: 18, fontWeight: 700, color: '#1e293b' }}>{value}</span><span style={{ fontSize: 11, fontWeight: 500, color: '#64748b', marginLeft: 3 }}>{unit}</span></div>
+        <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', color: '#94a3b8', marginBottom: 2 }}>{label}</div>
+        <div><span style={{ fontSize: 18, fontWeight: 600, color: '#1e293b' }}>{value}</span><span style={{ fontSize: 11, fontWeight: 500, color: '#64748b', marginLeft: 3 }}>{unit}</span></div>
       </div>
     </div>
   )

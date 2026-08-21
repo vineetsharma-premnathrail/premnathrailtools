@@ -51,5 +51,5 @@ export default function TermsOfUsePage() {
   )
 }
 
-const sectionStyle: React.CSSProperties = { fontSize: 16, fontWeight: 700, color: '#3a2313', margin: '22px 0 8px' }
+const sectionStyle: React.CSSProperties = { fontSize: 16, fontWeight: 600, color: '#3a2313', margin: '22px 0 8px' }
 const listStyle: React.CSSProperties = { margin: '0 0 12px', paddingLeft: 20 }

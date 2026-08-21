@@ -43,6 +43,7 @@ export default function P2PNav() {
           <Link
             key={tab.href}
             href={tab.href}
+            className="nav-tab-link"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -50,7 +51,7 @@ export default function P2PNav() {
               padding: '10px 14px',
               marginBottom: -1,
               fontSize: 12.5,
-              fontWeight: 700,
+              fontWeight: 600,
               letterSpacing: '.02em',
               textTransform: 'uppercase',
               color: isActive ? '#FF6A2A' : '#78716c',
@@ -60,7 +61,7 @@ export default function P2PNav() {
             }}
           >
             <TabIcon name={tab.icon} />
-            {tab.label}
+            <span className="nav-tab-label">{tab.label}</span>
           </Link>
         )
       })}

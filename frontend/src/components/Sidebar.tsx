@@ -56,6 +56,33 @@ const icons: Record<string, ReactNode> = {
       <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
     </svg>
   ),
+  store: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 9l1-5h16l1 5" />
+      <path d="M4 9v10a1 1 0 001 1h14a1 1 0 001-1V9" />
+      <path d="M9 21V13h6v8" />
+    </svg>
+  ),
+  hr: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+      <path d="M22 11h-6" /><path d="M19 8v6" />
+    </svg>
+  ),
+  design: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 19l7-7 3 3-7 7-3-3z" />
+      <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+      <path d="M2 2l7.586 7.586" />
+      <circle cx="11" cy="11" r="2" />
+    </svg>
+  ),
+  electrical: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
+  ),
 }
 
 export default function Sidebar({ user, onNavigate }: { user: User | null; onNavigate?: () => void }) {
@@ -63,7 +90,25 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
   const router = useRouter()
   const logout = useAuthStore((state) => state.logout)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const scheduleCollapse = () => {
+    if (collapseTimer.current) clearTimeout(collapseTimer.current)
+    collapseTimer.current = setTimeout(() => {
+      setCollapsed(true)
+      setMenuOpen(false)
+    }, 600)
+  }
+
+  const cancelCollapse = () => {
+    if (collapseTimer.current) {
+      clearTimeout(collapseTimer.current)
+      collapseTimer.current = null
+    }
+    setCollapsed(false)
+  }
 
   const cancelMenuClose = () => {
     if (menuCloseTimer.current) {
@@ -91,20 +136,26 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     { href: '/dashboard/crm', label: 'CRM Module', icon: 'crm', visible: !!user?.apps?.includes('crm') },
     { href: '/dashboard/purchase', label: 'Purchase', icon: 'purchase', visible: !!user?.apps?.includes('purchase') },
     { href: '/dashboard/p2p', label: 'P2P', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
+    { href: '/dashboard/store', label: 'Store', icon: 'store', visible: !!user?.apps?.includes('store') },
+    { href: '/dashboard/hr', label: 'HR', icon: 'hr', visible: !!user?.apps?.includes('hr') },
+    { href: '/dashboard/design', label: 'Design', icon: 'design', visible: !!user?.apps?.includes('design') },
+    { href: '/dashboard/electrical', label: 'Electrical', icon: 'electrical', visible: !!user?.apps?.includes('electrical') },
     { href: '/dashboard/users', label: 'Users & Roles', icon: 'users', visible: isAdmin },
   ].filter((link) => link.visible)
 
   return (
     <aside
+      onMouseEnter={cancelCollapse}
+      onMouseLeave={scheduleCollapse}
       style={{
         position: 'sticky',
-        width: 260,
+        width: collapsed ? 84 : 260,
         flex: 'none',
         top: 16,
         height: 'calc(100vh - 32px)',
         display: 'flex',
         flexDirection: 'column',
-        padding: '28px 20px',
+        padding: collapsed ? '28px 16px' : '28px 20px',
         background: GLASS.card,
         backdropFilter: GLASS.blur,
         WebkitBackdropFilter: GLASS.blur,
@@ -112,21 +163,48 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
         boxShadow: SHADOWS.glass(),
         border: `1px solid ${GLASS.border}`,
         overflow: 'hidden',
+        transition: 'width .28s cubic-bezier(.4,0,.2,1), padding .28s cubic-bezier(.4,0,.2,1)',
       }}
     >
       {/* Glass edge highlight — a faint top sheen so the panel reads as
           "glass" even when the blurred backdrop alone isn't obvious. */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg,transparent,${GLASS.highlight},transparent)`, pointerEvents: 'none' }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px', marginBottom: 32 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 8px', marginBottom: 32, overflow: 'hidden' }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.png" alt="Premnathrail" style={{ width: 140, height: 32, borderRadius: 8, objectFit: 'contain', flex: 'none' }} />
+        <img
+          src="/logo.png"
+          alt="Premnathrail"
+          style={{
+            width: collapsed ? 40 : 140,
+            height: 32,
+            borderRadius: 8,
+            objectFit: collapsed ? 'cover' : 'contain',
+            objectPosition: 'left center',
+            flex: 'none',
+            transition: 'width .28s cubic-bezier(.4,0,.2,1)',
+          }}
+        />
       </div>
 
-      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.08em', color: TEXT.muted, padding: '0 8px', marginBottom: 12 }}>
+      <div
+        style={{
+          fontSize: 10.5,
+          fontWeight: 600,
+          letterSpacing: '.08em',
+          color: TEXT.muted,
+          padding: '0 8px',
+          marginBottom: 12,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          opacity: collapsed ? 0 : 1,
+          maxHeight: collapsed ? 0 : 20,
+          transition: 'opacity .18s, max-height .28s',
+        }}
+      >
         NAVIGATION
       </div>
 
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1 }}>
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
         {links.map((link) => {
           const isActive =
             link.href === '/dashboard'
@@ -137,11 +215,13 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
               key={link.href}
               href={link.href}
               onClick={onNavigate}
+              title={collapsed ? link.label : undefined}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 11,
-                padding: '10px 14px',
+                gap: collapsed ? 0 : 11,
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                padding: collapsed ? '10px' : '10px 14px',
                 borderRadius: 12,
                 textDecoration: 'none',
                 fontSize: 14,
@@ -149,17 +229,38 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                 color: isActive ? TEXT.white : TEXT.secondary,
                 background: isActive ? GRADIENTS.primary : 'transparent',
                 boxShadow: isActive ? `0 8px 20px ${SHADOWS.glowOrange}` : 'none',
+                transition: 'padding .28s cubic-bezier(.4,0,.2,1), justify-content .28s',
+                overflow: 'hidden',
               }}
             >
-              {icons[link.icon]}
-              {link.label}
+              <span style={{ flex: 'none', display: 'flex' }}>{icons[link.icon]}</span>
+              <span
+                style={{
+                  whiteSpace: 'nowrap',
+                  opacity: collapsed ? 0 : 1,
+                  maxWidth: collapsed ? 0 : 200,
+                  transition: 'opacity .18s, max-width .28s',
+                  overflow: 'hidden',
+                }}
+              >
+                {link.label}
+              </span>
             </Link>
           )
         })}
       </nav>
 
-      <FeedbackButton variant="row" />
-      <UpdatesButton variant="row" />
+      <div
+        style={{
+          opacity: collapsed ? 0 : 1,
+          maxHeight: collapsed ? 0 : 120,
+          overflow: 'hidden',
+          transition: 'opacity .18s, max-height .28s',
+        }}
+      >
+        <FeedbackButton variant="row" />
+        <UpdatesButton variant="row" />
+      </div>
 
       {user && (
         <div style={{ position: 'relative' }} onMouseEnter={cancelMenuClose} onMouseLeave={scheduleMenuClose}>
@@ -199,7 +300,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                       alignItems: 'center',
                       justifyContent: 'center',
                       color: '#fff',
-                      fontWeight: 700,
+                      fontWeight: 600,
                       fontSize: 15,
                       background: GRADIENTS.primary,
                       boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
@@ -208,7 +309,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                     {user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: '0 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: '#fff', margin: '0 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {user.name}
                     </p>
                     <span
@@ -279,7 +380,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                     background: 'rgba(220,38,38,0.08)',
                     cursor: 'pointer',
                     fontSize: 13.5,
-                    fontWeight: 700,
+                    fontWeight: 600,
                     color: '#dc2626',
                   }}
                 >
@@ -300,8 +401,9 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
               width: '100%',
               display: 'flex',
               alignItems: 'center',
+              justifyContent: collapsed ? 'center' : 'flex-start',
               gap: 10,
-              padding: '10px 12px',
+              padding: collapsed ? '10px 0' : '10px 12px',
               borderRadius: 14,
               border: `1px solid ${GLASS.border}`,
               background: GLASS.surface,
@@ -309,6 +411,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
               WebkitBackdropFilter: GLASS.blurLight,
               cursor: 'pointer',
               fontFamily: 'inherit',
+              transition: 'padding .28s cubic-bezier(.4,0,.2,1), justify-content .28s',
             }}
           >
             <div style={{ position: 'relative', flex: 'none' }}>
@@ -321,7 +424,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: '#fff',
-                  fontWeight: 700,
+                  fontWeight: 600,
                   fontSize: 12,
                   background: GRADIENTS.primary,
                 }}
@@ -341,25 +444,29 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                 }}
               />
             </div>
-            <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {user.name}
-              </p>
-              <p style={{ fontSize: 11, color: TEXT.muted, margin: 0, textTransform: 'capitalize' }}>{user.role}</p>
-            </div>
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={TEXT.muted}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flex: 'none' }}
-            >
-              <polyline points="18 15 12 9 6 15" />
-            </svg>
+            {!collapsed && (
+              <>
+                <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {user.name}
+                  </p>
+                  <p style={{ fontSize: 11, color: TEXT.muted, margin: 0, textTransform: 'capitalize' }}>{user.role}</p>
+                </div>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke={TEXT.muted}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flex: 'none' }}
+                >
+                  <polyline points="18 15 12 9 6 15" />
+                </svg>
+              </>
+            )}
           </button>
         </div>
       )}
@@ -386,10 +493,10 @@ function InfoRow({ label, value, icon }: { label: string; value: string; icon: R
         {icon}
       </div>
       <div style={{ minWidth: 0 }}>
-        <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>
+        <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>
           {label}
         </p>
-        <p style={{ fontSize: 13, fontWeight: 600, color: BRAND.primaryHover, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {value}
         </p>
       </div>

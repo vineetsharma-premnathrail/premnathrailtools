@@ -1,3 +1,4 @@
+from datetime import date
 from pydantic import BaseModel
 
 
@@ -13,6 +14,15 @@ class UserUpdate(BaseModel):
     role: str | None = None
     assigned_apps: list[str] | None = None
     erp_permissions: list[str] | None = None
+
+
+class UserHRUpdate(BaseModel):
+    """HR-owned profile fields — separate from UserUpdate since these are
+    edited from the HR module, not the Users & Roles admin screen."""
+    reporting_manager_id: int | None = None
+    date_of_joining: date | None = None
+    designation: str | None = None
+    department: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -31,3 +41,6 @@ class UserResponse(BaseModel):
     erp_permissions: list[str] = []
     apps: list[str] = []
     is_azure_admin: bool = False
+    reporting_manager_id: int | None = None
+    reporting_manager_name: str | None = None
+    date_of_joining: date | None = None

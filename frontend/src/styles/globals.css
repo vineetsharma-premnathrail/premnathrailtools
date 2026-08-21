@@ -115,6 +115,13 @@ img, svg { max-width: 100%; height: auto; }
   }
 }
 
+/* Module sub-nav (CrmNav/ErpNav/P2PNav): icon-only tabs on narrow screens so
+   the row never wraps/overflows and collides with the notification bell. */
+@media (max-width: 640px) {
+  .nav-tab-label { display: none; }
+  .nav-tab-link { padding: 10px !important; }
+}
+
 /* ===================== Generic responsive grid helpers =====================
    Use these className hooks (alongside/instead of an inline style object) on
    any multi-column layout so it collapses gracefully on small screens. */

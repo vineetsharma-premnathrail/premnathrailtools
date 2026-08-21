@@ -10,7 +10,7 @@ class InquiryCreate(BaseModel):
     lead_source: str | None = None
     bd_owner: str | None = None
     sales_engineer: str | None = None
-    status: str = "New Inquiry"
+    status: str = "Requirement Received"
     current_stage: str = "Customer Requirement"
     product: str | None = None
     product_category: str | None = None

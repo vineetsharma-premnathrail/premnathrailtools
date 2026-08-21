@@ -23,6 +23,25 @@ const UsersIcon = (
     <path d="M16 3.13a4 4 0 010 7.75" />
   </svg>
 )
+const BoltIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+  </svg>
+)
+const DraftingIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 19l7-7 3 3-7 7-3-3z" />
+    <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+    <circle cx="11" cy="11" r="2" />
+  </svg>
+)
+const UserGroupIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+    <path d="M22 11h-6" /><path d="M19 8v6" />
+  </svg>
+)
 const CartIcon = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="9" cy="21" r="1" />
@@ -105,6 +124,58 @@ const modules = [
     tagBg: 'rgba(14,165,233,0.12)',
     tagColor: '#0369a1',
   },
+  {
+    title: 'Store',
+    app: 'store' as const,
+    description: 'Stock ledger — items, locations, receipts, issues, and stock transactions.',
+    icon: CartIcon,
+    href: '/dashboard/store',
+    features: ['Stock Items', 'Locations', 'Transactions'],
+    barColor: 'linear-gradient(90deg,#14b8a6,#2dd4bf)',
+    iconBg: 'rgba(20,184,166,0.12)',
+    iconColor: '#0d9488',
+    tagBg: 'rgba(20,184,166,0.12)',
+    tagColor: '#0f766e',
+  },
+  {
+    title: 'HR',
+    app: 'hr' as const,
+    description: 'Employee directory and org chart.',
+    icon: UserGroupIcon,
+    href: '/dashboard/hr',
+    features: ['Directory', 'Org Chart'],
+    barColor: 'linear-gradient(90deg,#ec4899,#f472b6)',
+    iconBg: 'rgba(236,72,153,0.12)',
+    iconColor: '#db2777',
+    tagBg: 'rgba(236,72,153,0.12)',
+    tagColor: '#be185d',
+  },
+  {
+    title: 'Design',
+    app: 'design' as const,
+    description: 'Engineering drawings, BOM, and document revisions — shared across Mechanical, Electrical, Fluids, and R&D.',
+    icon: DraftingIcon,
+    href: '/dashboard/design',
+    features: ['Drawings', 'BOM', 'Revisions'],
+    barColor: 'linear-gradient(90deg,#6366f1,#818cf8)',
+    iconBg: 'rgba(99,102,241,0.12)',
+    iconColor: '#4f46e5',
+    tagBg: 'rgba(99,102,241,0.12)',
+    tagColor: '#4338ca',
+  },
+  {
+    title: 'Electrical',
+    app: 'electrical' as const,
+    description: 'Electrical work orders, fault tracking, and assignment.',
+    icon: BoltIcon,
+    href: '/dashboard/electrical',
+    features: ['Work Orders', 'Fault Tracking'],
+    barColor: 'linear-gradient(90deg,#eab308,#facc15)',
+    iconBg: 'rgba(234,179,8,0.12)',
+    iconColor: '#a16207',
+    tagBg: 'rgba(234,179,8,0.12)',
+    tagColor: '#854d0e',
+  },
 ]
 
 export default function DashboardPage() {
@@ -122,12 +193,12 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 30, fontWeight: 800, color: TEXT.heading, margin: '0 0 6px' }}>
+      <h1 style={{ fontSize: 30, fontWeight: 700, color: TEXT.heading, margin: '0 0 6px' }}>
         {greeting}, {user?.name.split(' ')[0]}
       </h1>
       <p style={{ fontSize: 14, color: TEXT.muted, margin: '0 0 36px' }}>{today}</p>
 
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', color: TEXT.muted, marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', color: TEXT.muted, marginBottom: 14 }}>
         YOUR APPLICATIONS
       </div>
 

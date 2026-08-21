@@ -9,6 +9,7 @@ import SearchableSelect from './SearchableSelect'
 import PhoneField, { isPhoneValid } from './PhoneField'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
+import { inputStyle, Field, Section, Row, Row3 } from '@/components/shared/ui'
 
 const PRIORITIES = [
   { value: 'critical', label: 'Critical', sub: 'Immediate response required', color: '#dc2626', bg: 'rgba(220,38,38,0.1)', icon: 'warning' },
@@ -288,7 +289,7 @@ export default function ServiceRequestForm({
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              <p style={{ fontSize: 13.5, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Drag &amp; drop files here</p>
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: '0 0 4px' }}>Drag &amp; drop files here</p>
               <p style={{ fontSize: 12, color: '#a8a29e', margin: 0 }}>or click to browse — images, videos, PDFs, Office documents</p>
             </div>
 
@@ -299,7 +300,7 @@ export default function ServiceRequestForm({
                 {queuedFiles.map((f, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderRadius: 8, background: '#faf9f7', border: '1px solid rgba(0,0,0,0.05)' }}>
                     <span style={{ fontSize: 12.5, color: '#57534e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                    <button type="button" onClick={() => setQueuedFiles((prev) => prev.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, flex: 'none', marginLeft: 10 }}>Remove</button>
+                    <button type="button" onClick={() => setQueuedFiles((prev) => prev.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, flex: 'none', marginLeft: 10 }}>Remove</button>
                   </div>
                 ))}
               </div>
@@ -328,7 +329,7 @@ export default function ServiceRequestForm({
                     <PriorityIcon name={p.icon} />
                   </span>
                   <span>
-                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: '#1f1108' }}>{p.label}</span>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: '#1f1108' }}>{p.label}</span>
                     <span style={{ display: 'block', fontSize: 11.5, color: '#a8a29e' }}>{p.sub}</span>
                   </span>
                 </label>
@@ -368,46 +369,9 @@ export default function ServiceRequestForm({
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ padding: 18, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-      <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#fa9b9b', margin: '0 0 14px' }}>{title}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>
-    </div>
-  )
-}
-
-function Row({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>{children}</div>
-}
-
-function Row3({ children }: { children: React.ReactNode }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>{children}</div>
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: '#57534e', marginBottom: 6 }}>{label}</label>
-      {children}
-    </div>
-  )
-}
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '10px 14px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.1)',
-  background: '#fff',
-  fontSize: 13.5,
-  outline: 'none',
-  boxSizing: 'border-box',
-}
-
 const primaryBtnStyle: React.CSSProperties = {
   fontSize: 13,
-  fontWeight: 700,
+  fontWeight: 600,
   padding: '10px 22px',
   borderRadius: 10,
   border: 'none',

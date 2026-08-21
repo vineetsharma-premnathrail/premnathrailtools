@@ -7,6 +7,7 @@ import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest, SRStatus } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
+import { inputStyle, pageBtnStyle } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<SRStatus, string> = {
   open: 'Open / Reported',
@@ -139,10 +140,10 @@ export default function ServiceRequestsPage() {
   return (
     <div>
       <ErpNav />
-      <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }}>Service Operations</p>
+      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }}>Service Operations</p>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>Service Request Registry</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Service Request Registry</h1>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{srs.length} Service Requests Found</p>
         </div>
         {canCreate && (
@@ -150,7 +151,7 @@ export default function ServiceRequestsPage() {
             href="/dashboard/erp/service-requests/new"
             style={{
               fontSize: 13.5,
-              fontWeight: 700,
+              fontWeight: 600,
               padding: '10px 20px',
               borderRadius: 10,
               background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
@@ -175,15 +176,15 @@ export default function ServiceRequestsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="SR#, title, serial, client..."
-          style={{ flex: '1 1 260px', padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 13.5, outline: 'none' }}
+          style={{ ...inputStyle, flex: '1 1 260px', width: 'auto' }}
         />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
           <option value="all">All Statuses</option>
           {Object.entries(STATUS_LABELS).map(([v, l]) => (
             <option key={v} value={v}>{l}</option>
           ))}
         </select>
-        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} style={selectStyle}>
+        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
           <option value="all">All Priorities</option>
           <option value="critical">Critical</option>
           <option value="high">High</option>
@@ -202,7 +203,7 @@ export default function ServiceRequestsPage() {
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
               {['SR Number', 'Machine Serial', 'Client & Site', 'Issue Summary', 'Priority', 'Status', 'Opening Date', 'Closing Date', 'Age', 'Warranty', 'Actions'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
               ))}
@@ -226,7 +227,7 @@ export default function ServiceRequestsPage() {
                   style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                 >
                   <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#fa9b9b' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#fa9b9b' }}>
                       {sr.request_number}
                     </span>
                   </td>
@@ -237,12 +238,12 @@ export default function ServiceRequestsPage() {
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', maxWidth: 240 }}>{sr.issue_title}</td>
                   <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>
                       {sr.priority}
                     </span>
                   </td>
                   <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: statusStyle.bg, color: statusStyle.fg, whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: statusStyle.bg, color: statusStyle.fg, whiteSpace: 'nowrap' }}>
                       {STATUS_LABELS[sr.status] || sr.status}
                     </span>
                   </td>
@@ -255,8 +256,8 @@ export default function ServiceRequestsPage() {
                   <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{age !== null ? `${age}d` : '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: '#2563eb', marginRight: 10 }}>View</span>
-                    <Link href={`/dashboard/erp/service-requests/${sr.id}/edit`} style={{ fontSize: 11.5, fontWeight: 700, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', marginRight: 10 }}>View</span>
+                    <Link href={`/dashboard/erp/service-requests/${sr.id}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
                   </td>
                 </tr>
               )
@@ -296,16 +297,6 @@ export default function ServiceRequestsPage() {
   )
 }
 
-const selectStyle: React.CSSProperties = {
-  padding: '10px 14px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.1)',
-  background: '#fff',
-  fontSize: 13,
-  fontWeight: 500,
-  color: '#57534e',
-}
-
 const secondaryBtnStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
@@ -316,18 +307,4 @@ const secondaryBtnStyle: React.CSSProperties = {
   color: '#57534e',
   cursor: 'pointer',
   whiteSpace: 'nowrap',
-}
-
-function pageBtnStyle(disabled: boolean): React.CSSProperties {
-  return {
-    fontSize: 12.5,
-    fontWeight: 700,
-    padding: '6px 11px',
-    borderRadius: 8,
-    border: '1px solid rgba(0,0,0,0.1)',
-    background: '#fff',
-    color: '#57534e',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.5 : 1,
-  }
 }

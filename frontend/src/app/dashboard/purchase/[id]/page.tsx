@@ -141,11 +141,11 @@ export default function PurchaseRequisitionDetailPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1f1108', margin: 0 }}>{pr.pr_number}</h1>
-            <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${statusColor}1a`, color: statusColor }}>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: 0 }}>{pr.pr_number}</h1>
+            <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${statusColor}1a`, color: statusColor }}>
               {STATUS_LABELS[pr.status] || pr.status}
             </span>
-            <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[pr.priority] || '#64748b'}1a`, color: PRIORITY_HEX[pr.priority] || '#64748b' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[pr.priority] || '#64748b'}1a`, color: PRIORITY_HEX[pr.priority] || '#64748b' }}>
               {PRIORITY_LABELS[pr.priority] || pr.priority} Priority
             </span>
           </div>
@@ -244,7 +244,7 @@ export default function PurchaseRequisitionDetailPage() {
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
               {['Material', 'Part No.', 'Qty Requested', 'Qty Received', 'Status', 'Photos', 'Remarks'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#a8a29e' }}>{h}</th>
+                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -256,7 +256,7 @@ export default function PurchaseRequisitionDetailPage() {
                 <td style={{ padding: '10px 14px', fontSize: 13 }}>{item.quantity_requested} {item.unit}</td>
                 <td style={{ padding: '10px 14px', fontSize: 13 }}>{item.quantity_received} {item.unit}</td>
                 <td style={{ padding: '10px 14px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'capitalize', color: item.item_status === 'received' ? '#16a34a' : item.item_status === 'partial' ? '#f97316' : '#a8a29e' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: item.item_status === 'received' ? '#16a34a' : item.item_status === 'partial' ? '#f97316' : '#a8a29e' }}>
                     {item.item_status}
                   </span>
                 </td>
@@ -324,7 +324,7 @@ export default function PurchaseRequisitionDetailPage() {
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ padding: 16, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-      <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#fa9b9b', margin: '0 0 12px' }}>{title}</p>
+      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#fa9b9b', margin: '0 0 12px' }}>{title}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
     </div>
   )
@@ -333,7 +333,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 3px' }}>{label}</p>
+      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 3px' }}>{label}</p>
       <p style={{ fontSize: 13.5, color: '#1f1108', margin: 0 }}>{value}</p>
     </div>
   )
@@ -342,7 +342,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }}>{label}</p>
+      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }}>{label}</p>
       {children}
     </div>
   )
@@ -361,7 +361,7 @@ const inputStyle: React.CSSProperties = {
 
 const primaryBtnStyle: React.CSSProperties = {
   fontSize: 13,
-  fontWeight: 700,
+  fontWeight: 600,
   padding: '9px 18px',
   borderRadius: 10,
   border: 'none',
@@ -383,7 +383,7 @@ const secondaryBtnStyle: React.CSSProperties = {
 
 const dangerBtnStyle: React.CSSProperties = {
   fontSize: 13,
-  fontWeight: 700,
+  fontWeight: 600,
   padding: '9px 16px',
   borderRadius: 10,
   border: '1px solid rgba(220,38,38,0.25)',

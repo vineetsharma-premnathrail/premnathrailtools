@@ -15,15 +15,11 @@ export default function NewOrganizationPage() {
   return (
     <div>
       <CrmNav />
-      <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e', margin: '0 0 6px' }}>
-          <span onClick={() => router.push('/dashboard/crm/organizations')} style={{ cursor: 'pointer' }}>Organizations</span> › New
-        </p>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1f1108', margin: 0 }}>Add Organization</h1>
-      </div>
 
       <OrganizationForm
-        submitLabel="Create Organization"
+        title="Add Organization"
+        breadcrumb={<><span onClick={() => router.push('/dashboard/crm/organizations')} style={{ cursor: 'pointer' }}>Organizations</span> › New</>}
+        submitLabel="Save Organization"
         onCancel={() => router.push('/dashboard/crm/organizations')}
         onSubmit={(payload) => crmApi.createOrganization(payload)}
         onSaved={(org) => router.push(`/dashboard/crm/organizations/${org.id}`)}

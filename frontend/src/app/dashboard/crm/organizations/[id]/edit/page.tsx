@@ -24,15 +24,11 @@ export default function EditOrganizationPage() {
   return (
     <div>
       <CrmNav />
-      <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 11.5, fontWeight: 700, color: '#a8a29e', margin: '0 0 6px' }}>
-          <span onClick={() => router.push(`/dashboard/crm/organizations/${orgId}`)} style={{ cursor: 'pointer' }}>{org.name}</span> › Edit
-        </p>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: '#1f1108', margin: 0 }}>Edit Organization</h1>
-      </div>
 
       <OrganizationForm
         initial={org}
+        title="Edit Organization"
+        breadcrumb={<><span onClick={() => router.push(`/dashboard/crm/organizations/${orgId}`)} style={{ cursor: 'pointer' }}>{org.name}</span> › Edit</>}
         submitLabel="Save Changes"
         onCancel={() => router.push(`/dashboard/crm/organizations/${orgId}`)}
         onSubmit={(payload) => crmApi.updateOrganization(orgId, payload)}

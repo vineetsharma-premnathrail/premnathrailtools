@@ -51,7 +51,7 @@ export default function LegalPageShell({ title, updatedDate, children }: { title
             padding: '32px 36px',
           }}
         >
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#3a2313', margin: '0 0 6px' }}>{title}</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#3a2313', margin: '0 0 6px' }}>{title}</h1>
           <p style={{ fontSize: 12.5, color: '#a8825f', margin: '0 0 24px' }}>Last updated {updatedDate}</p>
           <div style={{ fontSize: 14, lineHeight: 1.7, color: '#5c4130' }}>{children}</div>
         </div>

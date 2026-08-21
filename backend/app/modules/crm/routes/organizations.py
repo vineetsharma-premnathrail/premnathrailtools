@@ -176,7 +176,7 @@ async def delete_organization(
         tnd.is_deleted = True
         tnd.deleted_at = now
 
-    _write_audit(db, org.id, "deleted", user, summary=f"Organization {org.name} moved to recycle bin by {user.name or user.email}.")
+    _write_audit(db, org.id, "deleted", user, summary=f"Organization {org.name} deleted by {user.name or user.email}.")
     broadcast_notification(
         db, title="Organization Deleted",
         message=f"Organization '{org.name}' was deleted by {user.name or user.email}.",
@@ -185,45 +185,10 @@ async def delete_organization(
     )
     notify_user(
         db, user_id=user.id, title="Organization Deleted",
-        message=f"You deleted organization '{org.name}'. It can be restored from the recycle bin for 10 days.",
+        message=f"You deleted organization '{org.name}'.",
         notification_type="organization_deleted", entity_type="organization", entity_id=org.id,
     )
     db.commit()
-
-
-@router.post("/{org_id}/restore", response_model=OrganizationResponse)
-async def restore_organization(
-    org_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
-):
-    org = db.query(Organization).filter(Organization.id == org_id, Organization.is_deleted == True).first()  # noqa: E712
-    if not org:
-        raise HTTPException(status_code=404, detail="Deleted organization not found")
-    org.is_deleted = False
-    org.deleted_at = None
-    for inq in db.query(Inquiry).filter(Inquiry.org_id == org_id, Inquiry.is_deleted == True).all():  # noqa: E712
-        inq.is_deleted = False
-        inq.deleted_at = None
-    for tnd in db.query(Tender).filter(Tender.org_id == org_id, Tender.is_deleted == True).all():  # noqa: E712
-        tnd.is_deleted = False
-        tnd.deleted_at = None
-    _write_audit(db, org.id, "restored", user, summary=f"Organization {org.name} restored from recycle bin.")
-    db.commit()
-    db.refresh(org)
-    return org
-
-
-@router.get("/recycle-bin/list")
-async def list_deleted_organizations(
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
-):
-    orgs = db.query(Organization).filter(Organization.is_deleted == True).all()  # noqa: E712
-    return [
-        {"id": o.id, "name": o.name, "org_type": o.org_type, "deleted_at": o.deleted_at.isoformat() if o.deleted_at else None}
-        for o in orgs
-    ]
 
 
 @router.get("/{org_id}/audit")

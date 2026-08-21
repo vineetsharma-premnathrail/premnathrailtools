@@ -31,8 +31,8 @@ from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
 from app.modules.crm.models import (
-    Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation,
-    Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity, Note,
+    Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem,
+    Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity,
     CrmDocument, CrmDiscussion, CrmStageLog,
 )
 from app.modules.rnd.models.calculation_history import CalculationHistory

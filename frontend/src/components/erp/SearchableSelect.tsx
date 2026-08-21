@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { inputStyle } from '@/components/shared/ui'
 
 export interface SearchableOption {
   value: string
@@ -21,39 +21,13 @@ export default function SearchableSelect({
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
-  const portalRef = useRef<HTMLDivElement>(null)
 
   const selectedLabel = options.find((o) => o.value === value)?.label || ''
 
-  // The dropdown panel is portaled to <body> (see below) so it can't get
-  // trapped behind a later sibling card — any ancestor with backdrop-filter
-  // (our glass cards) creates its own CSS stacking context, which silently
-  // defeats a merely-local z-index. Portaling means we have to track the
-  // trigger's viewport position ourselves instead of relying on `position:
-  // absolute` within a `position: relative` parent.
-  const updateRect = () => {
-    if (!ref.current) return
-    const r = ref.current.getBoundingClientRect()
-    setRect({ top: r.bottom, left: r.left, width: r.width })
-  }
-
-  useEffect(() => {
-    if (!open) return
-    updateRect()
-    window.addEventListener('resize', updateRect)
-    window.addEventListener('scroll', updateRect, true)
-    return () => {
-      window.removeEventListener('resize', updateRect)
-      window.removeEventListener('scroll', updateRect, true)
-    }
-  }, [open])
-
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (ref.current && !ref.current.contains(target) && !portalRef.current?.contains(target)) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false)
         setQuery('')
       }
@@ -79,14 +53,10 @@ export default function SearchableSelect({
       <div
         onClick={() => setOpen((v) => !v)}
         style={{
+          ...inputStyle,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '10px 14px',
-          borderRadius: 10,
-          border: '1px solid rgba(0,0,0,0.1)',
-          background: '#fff',
-          fontSize: 13.5,
           cursor: 'pointer',
         }}
       >
@@ -98,16 +68,15 @@ export default function SearchableSelect({
         </svg>
       </div>
 
-      {open && rect && typeof document !== 'undefined' && createPortal(
+      {open && (
         <div
-          ref={portalRef}
           style={{
-            position: 'fixed',
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
             marginTop: 6,
-            zIndex: 1000,
+            zIndex: 50,
             background: '#fff',
             borderRadius: 12,
             border: '1px solid rgba(0,0,0,0.08)',
@@ -123,15 +92,7 @@ export default function SearchableSelect({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Type to search..."
-              style={{
-                width: '100%',
-                padding: '8px 10px',
-                borderRadius: 8,
-                border: '1px solid rgba(0,0,0,0.1)',
-                fontSize: 13,
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
+              style={{ ...inputStyle, padding: '8px 10px' }}
             />
           </div>
           <div style={{ overflowY: 'auto' }}>
@@ -158,8 +119,7 @@ export default function SearchableSelect({
               ))
             )}
           </div>
-        </div>,
-        document.body
+        </div>
       )}
     </div>
   )

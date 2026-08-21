@@ -1,4 +1,4 @@
-export type AppModule = 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p'
+export type AppModule = 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p' | 'store' | 'hr' | 'design' | 'electrical'
 
 export interface User {
   id: number
@@ -16,6 +16,9 @@ export interface User {
   erp_permissions?: string[]
   /** Modules this user can actually reach right now (admins get all, regardless of assigned_apps). */
   apps: AppModule[]
+  reporting_manager_id?: number
+  reporting_manager_name?: string
+  date_of_joining?: string
   created_at: string
   updated_at: string
 }
@@ -484,19 +487,6 @@ export interface CrmTeamMember {
   designation?: string
 }
 
-export interface CrmNote {
-  id: number
-  org_id?: number
-  org_contact_id?: number
-  related_module?: string
-  related_id?: number
-  universal_id?: string
-  note: string
-  created_by_name?: string
-  created_by_id?: number
-  created_at?: string
-}
-
 export interface CrmDocument {
   id: number
   related_module: string
@@ -575,11 +565,28 @@ export interface InquiryApprovalItem {
   created_at?: string
 }
 
+export interface QuotationLineItem {
+  id: number
+  description?: string
+  model_number?: string
+  quantity?: number
+  unit_price?: number
+  gst_percent?: number
+  subtotal?: number
+  total?: number
+}
+
 export interface QuotationItem {
   id: number
   inquiry_id: number
   quot_number?: string
-  version: string
+  revision_number: number
+  quotation_type: string
+  quote_date?: string
+  client_name?: string
+  client_contact_name?: string
+  client_contact_email?: string
+  client_contact_phone?: string
   valid_until?: string
   price?: number
   delivery_time?: string
@@ -589,6 +596,7 @@ export interface QuotationItem {
   notes?: string
   created_by_id?: number
   created_at?: string
+  items: QuotationLineItem[]
 }
 
 export interface PurchaseOrderItem {
@@ -636,12 +644,10 @@ export interface CrmDashboard {
   overdue_followups: number
   today_activities: number
   pending_tenders: number
-  recent_notes_count: number
   recent_organizations: Organization[]
   recent_inquiries: Inquiry[]
   recent_tenders: Tender[]
   recent_activities: CrmActivity[]
-  recent_notes: CrmNote[]
 }
 
 // ---- Purchase Requisition (standalone module, distinct from PurchaseRequisition above) ----
@@ -677,6 +683,7 @@ export interface P2PRequestLineItem {
   project_inhouse?: string
   category?: string
   ship_to?: string
+  stock_item_id?: number
   attachments: P2PRequestAttachment[]
 }
 
@@ -693,7 +700,7 @@ export interface P2PRequestLineItemInput {
 
 export interface P2PRequest {
   id: number
-  pr_number: string
+  p2p_number: string
   category_code: string
   category_label?: string
   project_label?: string
@@ -749,4 +756,215 @@ export interface P2PRequest {
 export interface PRCategoryMeta {
   code: string
   label: string
+}
+
+export interface RFQAttachment {
+  id: number
+  vendor_tier: 'L1' | 'L2' | 'L3' | 'L4'
+  filename: string
+  content_type?: string
+  size?: number
+  sharepoint_url?: string
+  created_at?: string
+}
+
+export type RFQStatus = 'draft' | 'locked'
+
+export interface RFQ {
+  id: number
+  rfq_number: string
+  p2p_request_id: number
+  p2p_number?: string
+  status: RFQStatus
+
+  is_single_quotation: boolean
+  single_quotation_reason?: string
+  comments?: string
+
+  payment_terms?: string
+  delivery_lead_time?: string
+  ld_clause?: string
+
+  created_by_id?: number
+  created_by_name?: string
+  locked_by_id?: number
+  locked_at?: string
+
+  created_at?: string
+  updated_at?: string
+
+  attachments: RFQAttachment[]
+}
+
+export interface Vendor {
+  id: number
+  name: string
+  contact_person?: string
+  phone?: string
+  email?: string
+  address?: string
+  gstin?: string
+  category: 'materials' | 'services' | 'both'
+  payment_terms?: string
+  bank_details?: string
+  status: 'active' | 'blacklisted' | 'under_review'
+  qualification_status: 'pending' | 'qualified' | 'disqualified'
+  is_avl: boolean
+  last_audit_date?: string
+  last_audit_score?: number
+  remarks?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface VendorInput {
+  name: string
+  contact_person?: string
+  phone?: string
+  email?: string
+  address?: string
+  gstin?: string
+  category: string
+  payment_terms?: string
+  bank_details?: string
+}
+
+export interface P2PPurchaseOrderItem {
+  id: number
+  item_name: string
+  make?: string
+  part_code?: string
+  unit?: string
+  quantity: number
+  unit_price?: number
+  tax_rate?: number
+  line_total?: number
+}
+
+export interface P2PPurchaseOrderItemInput {
+  item_name: string
+  make?: string
+  part_code?: string
+  unit?: string
+  quantity: number
+  unit_price?: number
+  tax_rate?: number
+}
+
+export interface ModuleMeta {
+  id: number
+  key: string
+  label: string
+  icon?: string
+  description?: string
+  is_active: boolean
+  sort_order: number
+}
+
+export interface StoreLocation {
+  id: number
+  name: string
+  code: string
+  address?: string
+  is_active: boolean
+}
+
+export interface StockItem {
+  id: number
+  part_code: string
+  description: string
+  make?: string
+  unit?: string
+  category?: string
+  reorder_point: number
+  reorder_quantity: number
+  standard_cost?: number
+  status: 'active' | 'obsolete'
+  remarks?: string
+  quantity_on_hand: number
+}
+
+export interface EngineeringDocument {
+  id: number
+  project_id: number
+  project_label?: string
+  discipline: 'mechanical' | 'electrical' | 'fluids' | 'rnd'
+  document_type: string
+  title: string
+  version: number
+  status: 'draft' | 'under_review' | 'approved' | 'released' | 'superseded'
+  superseded_by_id?: number
+  filename: string
+  content_type?: string
+  size?: number
+  sharepoint_url?: string
+  uploaded_by_id?: number
+  uploaded_by_name?: string
+  created_at?: string
+}
+
+export interface ElectricalWorkOrder {
+  id: number
+  work_order_number: string
+  project_id: number
+  project_label?: string
+  equipment_tag?: string
+  voltage_system?: string
+  fault_type?: string
+  description?: string
+  source_service_request_id?: number
+  status: 'open' | 'assigned' | 'in_progress' | 'testing' | 'resolved' | 'closed'
+  priority: 'low' | 'medium' | 'high' | 'critical'
+  assigned_to_id?: number
+  assigned_to_name?: string
+  raised_by_id?: number
+  raised_by_name?: string
+  expected_completion_date?: string
+  resolved_at?: string
+  closed_at?: string
+  resolution_notes?: string
+  created_at?: string
+}
+
+export interface StockBalanceRow {
+  stock_item_id: number
+  part_code: string
+  description: string
+  unit?: string
+  quantity_on_hand: number
+}
+
+export interface StockTransaction {
+  id: number
+  stock_item_id: number
+  location_id: number
+  type: 'receipt' | 'issue' | 'transfer_in' | 'transfer_out' | 'adjustment' | 'return'
+  quantity: number
+  reference_type?: string
+  reference_id?: number
+  performed_by_id?: number
+  remarks?: string
+  created_at?: string
+  stock_item_description?: string
+  location_name?: string
+  performed_by_name?: string
+}
+
+export interface P2PPurchaseOrder {
+  id: number
+  po_number: string
+  p2p_request_id?: number
+  p2p_request_number?: string
+  vendor_id?: number
+  vendor_name?: string
+  status: 'draft' | 'issued' | 'acknowledged' | 'partially_fulfilled' | 'fulfilled' | 'cancelled'
+  po_date: string
+  expected_delivery?: string
+  delivery_terms?: string
+  total_value?: number
+  created_by_id?: number
+  created_by_name?: string
+  created_at?: string
+  updated_at?: string
+  items: P2PPurchaseOrderItem[]
 }

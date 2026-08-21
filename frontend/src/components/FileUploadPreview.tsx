@@ -37,7 +37,7 @@ export default function FileUploadPreview({
 
   return (
     <div style={{ marginTop: 12, padding: 14, borderRadius: 12, border: '1px solid rgba(0,0,0,0.08)', background: '#fff' }}>
-      <p style={{ fontSize: 11.5, fontWeight: 700, color: '#78716c', textTransform: 'uppercase', letterSpacing: '.04em', margin: '0 0 10px' }}>
+      <p style={{ fontSize: 11.5, fontWeight: 600, color: '#78716c', textTransform: 'uppercase', letterSpacing: '.04em', margin: '0 0 10px' }}>
         Review before uploading ({files.length} file{files.length > 1 ? 's' : ''})
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
@@ -73,14 +73,14 @@ export default function FileUploadPreview({
         <button
           onClick={onConfirm}
           disabled={uploading}
-          style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', fontSize: 12.5, fontWeight: 700, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.7 : 1 }}
+          style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.7 : 1 }}
         >
           {uploading ? 'Uploading…' : `Upload ${files.length} file${files.length > 1 ? 's' : ''}`}
         </button>
         <button
           onClick={onCancel}
           disabled={uploading}
-          style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', fontSize: 12.5, fontWeight: 700, cursor: uploading ? 'default' : 'pointer' }}
+          style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', fontSize: 12.5, fontWeight: 600, cursor: uploading ? 'default' : 'pointer' }}
         >
           Cancel
         </button>

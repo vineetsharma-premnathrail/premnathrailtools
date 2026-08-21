@@ -172,8 +172,8 @@ export default function TenderForm({
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Tender Number</span>
-        <span style={{ fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 8, background: 'rgba(244,113,59,0.08)', color: '#fa9b9b' }}>
+        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Tender Number</span>
+        <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, background: 'rgba(244,113,59,0.08)', color: '#fa9b9b' }}>
           {initial?.universal_id || 'Auto-generated on save'}
         </span>
       </div>
@@ -187,7 +187,7 @@ export default function TenderForm({
             style={{
               padding: '10px 6px', marginRight: 16, border: 'none', background: 'transparent',
               borderBottom: tab === t ? '2px solid #fa9b9b' : '2px solid transparent',
-              color: tab === t ? '#fa9b9b' : '#78716c', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+              color: tab === t ? '#fa9b9b' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
             }}
           >
             {t}
@@ -247,12 +247,10 @@ export default function TenderForm({
       </Section>
 
       <Section title="Tender Details">
-        <Row3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
           <Field label="Tender Number"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></Field>
           <Field label="Tender Name"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></Field>
           <Field label="Tender Authority"><input value={form.tender_authority} onChange={(e) => set('tender_authority', e.target.value)} style={inputStyle} /></Field>
-        </Row3>
-        <Row3>
           <Field label="Tender Portal">
             <select value={form.tender_portal} onChange={(e) => set('tender_portal', e.target.value)} style={inputStyle}>
               <option value="">-- Select Portal --</option>
@@ -266,8 +264,6 @@ export default function TenderForm({
             </select>
           </Field>
           <Field label="Category"><input value={form.tender_category} onChange={(e) => set('tender_category', e.target.value)} style={inputStyle} /></Field>
-        </Row3>
-        <Row3>
           <Field label="Tender Value"><input type="number" value={form.tender_value} onChange={(e) => set('tender_value', e.target.value)} style={inputStyle} /></Field>
           <Field label="Currency">
             <select value={form.currency} onChange={(e) => set('currency', e.target.value)} style={inputStyle}>
@@ -279,24 +275,20 @@ export default function TenderForm({
               {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </Field>
-        </Row3>
+        </div>
       </Section>
 
       <Section title="Key Dates">
-        <Row3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
           <Field label="Publish Date"><DateField value={form.publish_date} onChange={(v) => set('publish_date', v)} /></Field>
           <Field label="Document Download Date"><DateField value={form.doc_download_date} onChange={(v) => set('doc_download_date', v)} /></Field>
           <Field label="Pre-Bid Meeting Date"><DateField value={form.pre_bid_meeting_date} onChange={(v) => set('pre_bid_meeting_date', v)} /></Field>
-        </Row3>
-        <Row3>
           <Field label="Query Submission Date"><DateField value={form.query_submission_date} onChange={(v) => set('query_submission_date', v)} /></Field>
           <Field label="Submission Date"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></Field>
           <Field label="Technical Opening Date"><DateField value={form.opening_date} onChange={(v) => set('opening_date', v)} /></Field>
-        </Row3>
-        <Row>
           <Field label="Financial Opening Date"><DateField value={form.financial_opening_date} onChange={(v) => set('financial_opening_date', v)} /></Field>
           <Field label="Expected Award Date"><DateField value={form.expected_award_date} onChange={(v) => set('expected_award_date', v)} /></Field>
-        </Row>
+        </div>
       </Section>
 
       <Section title="Participation Decision">

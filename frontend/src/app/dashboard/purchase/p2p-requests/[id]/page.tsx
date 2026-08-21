@@ -20,10 +20,10 @@ const cardStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: TEXT.muted, marginBottom: 4 }
+const fieldLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.04em', color: TEXT.muted, marginBottom: 4 }
 const fieldValue: React.CSSProperties = { fontSize: 14, color: TEXT.body, fontWeight: 600 }
 const inputStyle: React.CSSProperties = { width: '100%', padding: '9px 12px', borderRadius: 8, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.8)', fontSize: 13, outline: 'none' }
-const actionBtn: React.CSSProperties = { padding: '9px 16px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#fff' }
+const actionBtn: React.CSSProperties = { padding: '9px 16px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: '#fff' }
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -112,11 +112,11 @@ export default function PurchaseTeamRequisitionDetailPage() {
     <div style={{ maxWidth: 1040 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Purchase Module</p>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: TEXT.heading, margin: 0 }}>{pr.pr_number}</h1>
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Purchase Module</p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{pr.p2p_number}</h1>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 9999, background: `${STATUS_HEX[pr.status]}1a`, color: STATUS_HEX[pr.status] }}>
+          <span style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 9999, background: `${STATUS_HEX[pr.status]}1a`, color: STATUS_HEX[pr.status] }}>
             {STATUS_LABELS[pr.status] || pr.status}
           </span>
           <button onClick={() => router.push('/dashboard/purchase/p2p-requests')} style={{ padding: '8px 16px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
@@ -132,7 +132,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
       )}
 
       <div style={cardStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 800, color: TEXT.heading, margin: '0 0 14px' }}>PR Header</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>PR Header</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
           <Field label="Category" value={pr.category_label || pr.category_code} />
           <Field label="Priority" value={<span style={{ textTransform: 'capitalize' }}>{pr.priority}</span>} />
@@ -146,13 +146,13 @@ export default function PurchaseTeamRequisitionDetailPage() {
       </div>
 
       <div style={cardStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 800, color: TEXT.heading, margin: '0 0 14px' }}>Requirement Details</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Requirement Details</h2>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
             <thead>
               <tr>
-                {['Item Name', 'Part Code', 'Model No.', 'Unit', 'Qty', 'Budget', 'Description', 'Reason', 'Attachments'].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase' }}>{h}</th>
+                {['Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', 'Attachments'].map((h) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, color: TEXT.muted, textTransform: 'uppercase' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -160,13 +160,13 @@ export default function PurchaseTeamRequisitionDetailPage() {
               {pr.items.map((item) => (
                 <tr key={item.id} style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
                   <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 600 }}>{item.item_name}</td>
+                  <td style={{ padding: '10px 12px', fontSize: 13, color: TEXT.secondary }}>{item.make || '—'}</td>
                   <td style={{ padding: '10px 12px', fontSize: 13, color: TEXT.secondary }}>{item.part_code || '—'}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 13, color: TEXT.secondary }}>{item.model_number || '—'}</td>
                   <td style={{ padding: '10px 12px', fontSize: 13, color: TEXT.secondary }}>{item.unit || '—'}</td>
                   <td style={{ padding: '10px 12px', fontSize: 13, color: TEXT.secondary }}>{item.quantity}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 13, color: TEXT.secondary }}>{item.estimated_budget ?? '—'}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 12.5, color: TEXT.secondary }}>{item.description || '—'}</td>
-                  <td style={{ padding: '10px 12px', fontSize: 12.5, color: TEXT.secondary }}>{item.reason || '—'}</td>
+                  <td style={{ padding: '10px 12px', fontSize: 13, color: TEXT.secondary }}>{item.project_inhouse || '—'}</td>
+                  <td style={{ padding: '10px 12px', fontSize: 12.5, color: TEXT.secondary }}>{item.category || '—'}</td>
+                  <td style={{ padding: '10px 12px', fontSize: 12.5, color: TEXT.secondary }}>{item.ship_to || '—'}</td>
                   <td style={{ padding: '10px 12px', fontSize: 12 }}>
                     {item.attachments.length === 0 && <span style={{ color: TEXT.muted }}>—</span>}
                     {item.attachments.map((a) => (
@@ -195,7 +195,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
       </div>
 
       <div style={cardStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 800, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Processing</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Processing</h2>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
           <Field label="Assigned Buyer" value={pr.assigned_buyer_name} />
@@ -220,7 +220,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
         {pr.status === 'approved' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <div>
-              <p style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Assign Buyer</p>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 8px' }}>Assign Buyer</p>
               <div style={{ display: 'flex', gap: 10 }}>
                 <select value={buyerId} onChange={(e) => setBuyerId(e.target.value)} style={{ ...inputStyle, maxWidth: 260 }}>
                   <option value="">Select buyer…</option>
@@ -231,7 +231,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
             </div>
 
             <div>
-              <p style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Request Quotations / Vendor & RFQ</p>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 8px' }}>Request Quotations / Vendor & RFQ</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 10 }}>
                 <input style={inputStyle} placeholder="Vendor" value={vendor} onChange={(e) => setVendor(e.target.value)} />
                 <input style={inputStyle} placeholder="RFQ Number" value={rfqNumber} onChange={(e) => setRfqNumber(e.target.value)} />
@@ -245,7 +245,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
             </div>
 
             <div>
-              <p style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Select Vendor</p>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 8px' }}>Select Vendor</p>
               <div style={{ display: 'flex', gap: 10 }}>
                 <input style={{ ...inputStyle, maxWidth: 260 }} placeholder="Selected vendor" value={selectedVendor} onChange={(e) => setSelectedVendor(e.target.value)} />
                 <button disabled={busy || !selectedVendor} onClick={() => run(() => p2pApi.selectVendor(pr.id, selectedVendor))} style={{ ...actionBtn, background: BRAND.primary }}>Select Vendor</button>
@@ -253,7 +253,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
             </div>
 
             <div>
-              <p style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Create PO</p>
+              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 8px' }}>Create PO</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 10 }}>
                 <input style={inputStyle} placeholder="PO Number *" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
                 <input type="date" style={inputStyle} value={poDate} onChange={(e) => setPoDate(e.target.value)} />
@@ -280,7 +280,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
         {/* --- po_raised / partially_received: Update Received Quantity --- */}
         {(pr.status === 'po_raised' || pr.status === 'partially_received') && (
           <div>
-            <p style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Track Delivery / Update Received Quantity</p>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 8px' }}>Track Delivery / Update Received Quantity</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
               <input type="number" style={inputStyle} placeholder="Received quantity *" value={receivedQty} onChange={(e) => setReceivedQty(e.target.value)} />
               <input style={inputStyle} placeholder="GRN / Receipt Number" value={grnNumber} onChange={(e) => setGrnNumber(e.target.value)} />
@@ -302,7 +302,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
         {/* --- received: Close PR --- */}
         {pr.status === 'received' && (
           <div>
-            <p style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Verify Complete Receipt</p>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 8px' }}>Verify Complete Receipt</p>
             <button disabled={busy} onClick={() => run(() => p2pApi.close(pr.id))} style={{ ...actionBtn, background: '#16a34a' }}>Close PR</button>
           </div>
         )}
@@ -317,7 +317,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
       </div>
 
       <div style={cardStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 800, color: TEXT.heading, margin: '0 0 14px' }}>Audit Trail</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Audit Trail</h2>
         {audit.length === 0 ? (
           <p style={{ fontSize: 13, color: TEXT.muted }}>No history yet.</p>
         ) : (
@@ -326,7 +326,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
               <thead>
                 <tr>
                   {['Date & Time', 'User', 'Action', 'Previous Status', 'New Status', 'Remarks'].map((h) => (
-                    <th key={h} style={{ textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase' }}>{h}</th>
+                    <th key={h} style={{ textAlign: 'left', padding: '8px 12px', fontSize: 11, fontWeight: 600, color: TEXT.muted, textTransform: 'uppercase' }}>{h}</th>
                   ))}
                 </tr>
               </thead>

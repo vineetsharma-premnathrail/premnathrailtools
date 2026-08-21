@@ -131,7 +131,7 @@ export default function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' 
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#1f1108' }}>Send feedback</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1f1108' }}>Send feedback</span>
             <button
               onClick={() => setOpen(false)}
               aria-label="Close"
@@ -188,7 +188,7 @@ export default function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' 
                     background: submitting || !message.trim() ? '#fca87a' : '#fa9b9b',
                     color: '#fff',
                     fontSize: 13,
-                    fontWeight: 700,
+                    fontWeight: 600,
                     cursor: submitting || !message.trim() ? 'default' : 'pointer',
                   }}
                 >

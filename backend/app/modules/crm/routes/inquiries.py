@@ -10,7 +10,6 @@ from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.activity import Activity
-from app.modules.crm.models.note import Note
 from app.modules.crm.models.stage_log import CrmStageLog
 from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.schemas.inquiry import InquiryCreate, InquiryUpdate, InquiryResponse, StageLogEntry
@@ -109,12 +108,6 @@ async def create_inquiry(
             universal_id=universal_id, next_followup=inquiry.next_followup_date,
             assigned_to=inquiry.followup_assigned_to, created_by_id=user.id,
         ))
-    if inquiry.followup_remarks:
-        db.add(Note(
-            org_id=inquiry.org_id, related_module="inquiry", related_id=inquiry.id, universal_id=universal_id,
-            note=inquiry.followup_remarks, created_by_name=user.name or user.email, created_by_id=user.id,
-        ))
-
     _write_audit(db, inquiry.id, "created", user, summary=f"Inquiry {universal_id} created by {user.name or user.email}.")
     broadcast_notification(
         db, title="New Inquiry Raised", message=f"Inquiry '{universal_id}' was created by {user.name or user.email}.",
@@ -195,46 +188,17 @@ async def delete_inquiry(
 
     inquiry.is_deleted = True
     inquiry.deleted_at = datetime.now(timezone.utc)
-    _write_audit(db, inquiry.id, "deleted", user, summary=f"Inquiry {inquiry.universal_id} moved to recycle bin by {user.name or user.email}.")
+    _write_audit(db, inquiry.id, "deleted", user, summary=f"Inquiry {inquiry.universal_id} deleted by {user.name or user.email}.")
     broadcast_notification(
         db, title="Inquiry Deleted", message=f"Inquiry '{inquiry.universal_id}' was deleted by {user.name or user.email}.",
         notification_type="inquiry_deleted", entity_type="inquiry", entity_id=inquiry.id, exclude_user_id=user.id,
     )
     notify_user(
         db, user_id=user.id, title="Inquiry Deleted",
-        message=f"You deleted inquiry '{inquiry.universal_id}'. It can be restored from the recycle bin for 10 days.",
+        message=f"You deleted inquiry '{inquiry.universal_id}'.",
         notification_type="inquiry_deleted", entity_type="inquiry", entity_id=inquiry.id,
     )
     db.commit()
-
-
-@router.post("/{inquiry_id}/restore", response_model=InquiryResponse)
-async def restore_inquiry(
-    inquiry_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
-):
-    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == True).first()  # noqa: E712
-    if not inquiry:
-        raise HTTPException(status_code=404, detail="Deleted inquiry not found")
-    inquiry.is_deleted = False
-    inquiry.deleted_at = None
-    _write_audit(db, inquiry.id, "restored", user, summary=f"Inquiry {inquiry.universal_id} restored from recycle bin.")
-    db.commit()
-    db.refresh(inquiry)
-    return inquiry
-
-
-@router.get("/recycle-bin/list")
-async def list_deleted_inquiries(
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
-):
-    inquiries = db.query(Inquiry).filter(Inquiry.is_deleted == True).all()  # noqa: E712
-    return [
-        {"id": i.id, "universal_id": i.universal_id, "product": i.product, "deleted_at": i.deleted_at.isoformat() if i.deleted_at else None}
-        for i in inquiries
-    ]
 
 
 @router.get("/{inquiry_id}/audit")

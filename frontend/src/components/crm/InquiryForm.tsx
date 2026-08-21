@@ -7,7 +7,7 @@ import { Inquiry, Organization, OrgContact, Tender } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
-import { RAILWAY_ZONES, LEAD_SOURCES, PRODUCT_CATEGORIES, PRIORITIES, INQUIRY_STATUSES, ORG_TYPES, COUNTRIES, INDIA_STATES } from './constants'
+import { RAILWAY_ZONES, LEAD_SOURCES, PRODUCT_CATEGORIES, PRIORITIES, INQUIRY_STATUSES, ORG_TYPES, ORG_TYPE_LABELS, COUNTRIES, INDIA_STATES } from './constants'
 import { Field, Section, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle } from './ui'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
@@ -46,7 +46,7 @@ function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
     division: initial?.division || '',
     lead_source: initial?.lead_source || '',
     bd_owner: initial?.bd_owner || '',
-    status: initial?.status || 'New Inquiry',
+    status: initial?.status || 'Requirement Received',
     product: initial?.product || '',
     product_category: initial?.product_category || '',
     product_spec: initial?.product_spec || '',
@@ -101,6 +101,7 @@ export default function InquiryForm({
   const [duplicateWarning, setDuplicateWarning] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [previewNumber, setPreviewNumber] = useState('')
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
   const setMirror = (field: keyof typeof orgMirror, value: string) => setOrgMirror((m) => ({ ...m, [field]: value }))
@@ -108,6 +109,18 @@ export default function InquiryForm({
   useEffect(() => {
     crmApi.listOrganizations().then(setOrganizations)
   }, [])
+
+  useEffect(() => {
+    if (initial) return
+    crmApi.listInquiries().then((all: Inquiry[]) => {
+      const today = new Date()
+      const y = today.getFullYear()
+      const m = String(today.getMonth() + 1).padStart(2, '0')
+      const d = String(today.getDate()).padStart(2, '0')
+      const seq = String(all.length + 1).padStart(4, '0')
+      setPreviewNumber(`INQ-${y}${m}${d}-${seq}`)
+    }).catch(() => {})
+  }, [initial])
 
   useEffect(() => {
     if (!form.org_id) {
@@ -145,7 +158,7 @@ export default function InquiryForm({
         crmApi.listInquiries({ org_id: orgId }),
         crmApi.listTenders({ org_id: orgId }),
       ]).then(([inquiries, tenders]) => {
-        const openInquiries = inquiries.filter((i: Inquiry) => !['Won', 'Lost'].includes(i.status))
+        const openInquiries = inquiries.filter((i: Inquiry) => !i.status.startsWith('Closed'))
         const openTenders = tenders.filter((t: Tender) => !['Won', 'Lost', 'Cancelled'].includes(t.status))
         if (openInquiries.length || openTenders.length) {
           const parts: string[] = []
@@ -217,22 +230,19 @@ export default function InquiryForm({
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Inquiry Number</span>
-          <span style={{ fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 8, background: 'rgba(244,113,59,0.08)', color: '#fa9b9b' }}>
-            {initial?.universal_id || 'Auto-generated on save'}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Inquiry Date</span>
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: '#57534e' }}>
-            {initial?.created_at ? new Date(initial.created_at).toLocaleDateString() : new Date().toLocaleDateString()}
-          </span>
-        </div>
-      </div>
-
       <Section title="Basic Information">
+        <Row3>
+          <Field label={initial?.universal_id ? 'Inquiry Number' : 'Inquiry Number (preview)'}>
+            <input value={initial?.universal_id || previewNumber || 'Auto-generated on save'} disabled style={{ ...inputStyle, background: '#f5f5f4', color: initial?.universal_id ? '#fa9b9b' : '#a8a29e', fontWeight: 600 }} />
+          </Field>
+          <Field label="Inquiry Date">
+            <input
+              value={initial?.created_at ? new Date(initial.created_at).toLocaleDateString() : new Date().toLocaleDateString()}
+              disabled
+              style={{ ...inputStyle, background: '#f5f5f4', color: '#78716c' }}
+            />
+          </Field>
+        </Row3>
         <Row3>
           <Field label="Lead Source">
             <select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
@@ -257,7 +267,7 @@ export default function InquiryForm({
       </Section>
 
       <Section title="Company Information">
-        <Row>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
           <Field label="Client Company *">
             <SearchableSelect
               value={form.org_id}
@@ -273,18 +283,43 @@ export default function InquiryForm({
               <option value="__new__">+ Add New Contact</option>
             </select>
           </Field>
-        </Row>
-
-        <Field label="Client Type">
-          <select value={orgMirror.client_type} onChange={(e) => setMirror('client_type', e.target.value)} style={inputStyle}>
-            <option value="">-- Select --</option>
-            {ORG_TYPES.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-        </Field>
-        <Field label="GST Number"><input value={orgMirror.gst} onChange={(e) => setMirror('gst', e.target.value.toUpperCase())} placeholder="e.g. 07AACCC1234M1ZX" style={inputStyle} /></Field>
+          <Field label="Client Type">
+            <select value={orgMirror.client_type} onChange={(e) => setMirror('client_type', e.target.value)} style={inputStyle}>
+              <option value="">-- Select --</option>
+              {ORG_TYPES.map((o) => <option key={o} value={o}>{ORG_TYPE_LABELS[o] || o}</option>)}
+            </select>
+          </Field>
+          <Field label="GST Number"><input value={orgMirror.gst} onChange={(e) => setMirror('gst', e.target.value.toUpperCase())} placeholder="e.g. 07AACCC1234M1ZX" style={inputStyle} /></Field>
+          <Field label="Railway Zone">
+            <select value={form.railway_zone} onChange={(e) => set('railway_zone', e.target.value)} style={inputStyle}>
+              <option value="">-- Select Zone --</option>
+              {RAILWAY_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+            </select>
+            {form.railway_zone === 'Other' && (
+              <input value={railwayZoneCustom} onChange={(e) => setRailwayZoneCustom(e.target.value)} placeholder="Specify railway zone" style={{ ...inputStyle, marginTop: 8 }} />
+            )}
+          </Field>
+          <Field label="Division / Workshop"><input value={form.division} onChange={(e) => set('division', e.target.value)} placeholder="e.g. Delhi Division / Ghaziabad Workshop" style={inputStyle} /></Field>
+          <Field label="Country">
+            <select value={orgMirror.country} onChange={(e) => setMirror('country', e.target.value)} style={inputStyle}>
+              {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="State / UT">
+            <select value={orgMirror.state} onChange={(e) => setMirror('state', e.target.value)} style={inputStyle}>
+              <option value="">-- Select State --</option>
+              {INDIA_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
+          <Field label="City"><input value={orgMirror.city} onChange={(e) => setMirror('city', e.target.value)} placeholder="e.g. New Delhi" style={inputStyle} /></Field>
+          <Field label="PIN / Postal Code"><input value={orgMirror.pin} onChange={(e) => setMirror('pin', e.target.value)} placeholder="e.g. 110001" style={inputStyle} /></Field>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <Field label="Address"><input value={orgMirror.address} onChange={(e) => setMirror('address', e.target.value)} placeholder="Street / Office address" style={inputStyle} /></Field>
+          </div>
+        </div>
 
         {form.org_contact_id === '__new__' && (
-          <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
             <Row>
               <Field label="Name *"><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Rajesh Kumar" style={inputStyle} /></Field>
               <Field label="Designation"><input value={newContact.designation} onChange={(e) => setNewContact((c) => ({ ...c, designation: e.target.value }))} placeholder="Purchase Head / DGM" style={inputStyle} /></Field>
@@ -297,57 +332,24 @@ export default function InquiryForm({
         )}
 
         {duplicateWarning && (
-          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', color: '#a16207', fontSize: 12.5, display: 'flex', gap: 8 }}>
+          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)', color: '#a16207', fontSize: 12.5, display: 'flex', gap: 8, marginTop: 12 }}>
             <span>⚠</span>
             <span>{duplicateWarning}</span>
           </div>
         )}
-
-        <Row>
-          <Field label="Railway Zone">
-            <select value={form.railway_zone} onChange={(e) => set('railway_zone', e.target.value)} style={inputStyle}>
-              <option value="">-- Select Zone --</option>
-              {RAILWAY_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
-            </select>
-            {form.railway_zone === 'Other' && (
-              <input value={railwayZoneCustom} onChange={(e) => setRailwayZoneCustom(e.target.value)} placeholder="Specify railway zone" style={{ ...inputStyle, marginTop: 8 }} />
-            )}
-          </Field>
-          <Field label="Division / Workshop"><input value={form.division} onChange={(e) => set('division', e.target.value)} placeholder="e.g. Delhi Division / Ghaziabad Workshop" style={inputStyle} /></Field>
-        </Row>
-        <Field label="Address"><input value={orgMirror.address} onChange={(e) => setMirror('address', e.target.value)} placeholder="Street / Office address" style={inputStyle} /></Field>
-        <Row>
-          <Field label="Country">
-            <select value={orgMirror.country} onChange={(e) => setMirror('country', e.target.value)} style={inputStyle}>
-              {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="State / UT">
-            <select value={orgMirror.state} onChange={(e) => setMirror('state', e.target.value)} style={inputStyle}>
-              <option value="">-- Select State --</option>
-              {INDIA_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
-        </Row>
-        <Row>
-          <Field label="City"><input value={orgMirror.city} onChange={(e) => setMirror('city', e.target.value)} placeholder="e.g. New Delhi" style={inputStyle} /></Field>
-          <Field label="PIN / Postal Code"><input value={orgMirror.pin} onChange={(e) => setMirror('pin', e.target.value)} placeholder="e.g. 110001" style={inputStyle} /></Field>
-        </Row>
       </Section>
 
       <Section title="Communication">
-        <Row>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
           <Field label="Office Contact Number"><input value={orgMirror.office_phone} onChange={(e) => setMirror('office_phone', e.target.value)} placeholder="e.g. 011-XXXXXXXX / +91 XXXXX XXXXX" style={inputStyle} /></Field>
           <Field label="Office Email"><ValidatedInput value={orgMirror.office_email} onChange={(v) => setMirror('office_email', v)} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="e.g. purchase@cwc.gov.in" style={inputStyle} /></Field>
-        </Row>
-        <Row>
           <Field label="Website"><input value={orgMirror.website} onChange={(e) => setMirror('website', e.target.value)} placeholder="e.g. www.cwc.gov.in" style={inputStyle} /></Field>
           <Field label="Email on Website"><ValidatedInput value={orgMirror.web_email} onChange={(v) => setMirror('web_email', v)} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="e.g. info@cwc.gov.in" style={inputStyle} /></Field>
-        </Row>
+        </div>
       </Section>
 
       <Section title="Product Requirement">
-        <Row3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
           <Field label="Category *">
             <select value={form.product_category} onChange={(e) => set('product_category', e.target.value)} style={inputStyle}>
               <option value="">-- Select --</option>
@@ -356,19 +358,15 @@ export default function InquiryForm({
           </Field>
           <Field label="Product *"><input value={form.product} onChange={(e) => set('product', e.target.value)} placeholder="RRV System" style={inputStyle} /></Field>
           <Field label="Quantity *"><input type="number" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></Field>
-        </Row3>
-        <Row>
           <Field label="Unit"><input value={form.unit} onChange={(e) => set('unit', e.target.value)} style={inputStyle} /></Field>
           <Field label="Required Delivery Date"><DateField value={form.required_delivery_date} onChange={(v) => set('required_delivery_date', v)} /></Field>
-        </Row>
-        <Field label="Delivery Location"><input value={form.delivery_location} onChange={(e) => set('delivery_location', e.target.value)} placeholder="e.g. Allahabad, UP" style={inputStyle} /></Field>
+          <Field label="Delivery Location"><input value={form.delivery_location} onChange={(e) => set('delivery_location', e.target.value)} placeholder="e.g. Allahabad, UP" style={inputStyle} /></Field>
+          <Field label="Inspection Requirement"><input value={form.inspection_req} onChange={(e) => set('inspection_req', e.target.value)} placeholder="e.g. RDSO inspection, third party QA" style={inputStyle} /></Field>
+          <Field label="Warranty Requirement"><input value={form.warranty_req} onChange={(e) => set('warranty_req', e.target.value)} placeholder="e.g. 12 months from commissioning" style={inputStyle} /></Field>
+        </div>
         <Field label="Product Specification"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
         <Field label="Requirement Description"><textarea value={form.requirement_desc} onChange={(e) => set('requirement_desc', e.target.value)} rows={2} placeholder="Brief summary of the requirement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
         <Field label="Detailed Requirement"><textarea value={form.detailed_requirement} onChange={(e) => set('detailed_requirement', e.target.value)} rows={3} placeholder="Detailed technical specs, standards, testing requirements..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-        <Row>
-          <Field label="Inspection Requirement"><input value={form.inspection_req} onChange={(e) => set('inspection_req', e.target.value)} placeholder="e.g. RDSO inspection, third party QA" style={inputStyle} /></Field>
-          <Field label="Warranty Requirement"><input value={form.warranty_req} onChange={(e) => set('warranty_req', e.target.value)} placeholder="e.g. 12 months from commissioning" style={inputStyle} /></Field>
-        </Row>
       </Section>
 
       <Section title="Follow-up">

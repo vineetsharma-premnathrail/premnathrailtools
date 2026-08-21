@@ -44,7 +44,7 @@ export default function ModuleCard({ title, description, icon, href, features, b
             {icon}
           </div>
 
-          <h3 style={{ fontSize: 17, fontWeight: 800, color: TEXT.heading, margin: '0 0 8px' }}>{title}</h3>
+          <h3 style={{ fontSize: 17, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>{title}</h3>
           <p style={{ fontSize: 13, color: TEXT.muted, margin: '0 0 18px', lineHeight: 1.5, minHeight: 40 }}>{description}</p>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>

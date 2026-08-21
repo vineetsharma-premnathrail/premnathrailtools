@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { authApi } from '@/lib/api'
-import { BRAND, GRADIENTS } from '@/lib/theme'
+import { BRAND, GRADIENTS, TEXT } from '@/lib/theme'
 
 const modules = [
   { label: 'Service Module', desc: 'Vehicle & Service Management' },
@@ -170,8 +170,8 @@ function LoginPageInner() {
             <img src="/logo.png" alt="Premnathrail" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 3 }} />
           </div>
 
-          <div style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: BRAND.primaryActive, marginBottom: 11, fontWeight: 600 }}>Premnathrail Portal</div>
-          <h1 style={{ fontSize: 27, fontWeight: 800, letterSpacing: '-.01em', color: '#2e1c10', margin: '0 0 8px' }}>Welcome back</h1>
+          <div style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: TEXT.secondary, marginBottom: 11, fontWeight: 600 }}>Premnathrail Portal</div>
+          <h1 style={{ fontSize: 27, fontWeight: 700, letterSpacing: '-.01em', color: '#2e1c10', margin: '0 0 8px' }}>Welcome back</h1>
           <p style={{ fontSize: 14, color: '#7a5a42', margin: '0 0 26px', lineHeight: 1.5 }}>Sign in with your Microsoft account to continue.</p>
 
           {errorMessage && (

@@ -47,10 +47,14 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-def to_response(user: User) -> UserResponse:
+def to_response(user: User, db: Session | None = None) -> UserResponse:
     """Serialize a User row, computing `apps` from role + assigned_apps
     (admins implicitly get every module regardless of what's assigned)."""
-    return UserResponse.model_validate(user).model_copy(update={"apps": user.get_apps()})
+    updates = {"apps": user.get_apps()}
+    if user.reporting_manager_id and db is not None:
+        manager = db.query(User).filter(User.id == user.reporting_manager_id).first()
+        updates["reporting_manager_name"] = manager.name if manager else None
+    return UserResponse.model_validate(user).model_copy(update=updates)
 
 
 @router.get("", response_model=list[UserResponse])

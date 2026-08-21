@@ -120,11 +120,6 @@ def test_delete_organization_cascades_to_inquiries_and_tenders(client, db):
     assert client.get(f"/api/v1/crm/inquiries/{inquiry['id']}", headers=auth_header(user)).status_code == 404
     assert client.get(f"/api/v1/crm/tenders/{tender['id']}", headers=auth_header(user)).status_code == 404
 
-    restore = client.post(f"/api/v1/crm/organizations/{org['id']}/restore", headers=auth_header(user))
-    assert restore.status_code == 200
-    assert client.get(f"/api/v1/crm/inquiries/{inquiry['id']}", headers=auth_header(user)).status_code == 200
-    assert client.get(f"/api/v1/crm/tenders/{tender['id']}", headers=auth_header(user)).status_code == 200
-
 
 def test_dashboard_returns_counts(client, db):
     user = make_user(db, "crmdash@premnathrail.com")
@@ -133,20 +128,6 @@ def test_dashboard_returns_counts(client, db):
     assert response.status_code == 200
     data = response.json()
     assert data["total_organizations"] >= 1
-
-
-def test_create_note_on_inquiry(client, db):
-    user = make_user(db, "crmnote@premnathrail.com")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Note Org"}, headers=auth_header(user)).json()
-    inquiry = client.post("/api/v1/crm/inquiries", json={"org_id": org["id"]}, headers=auth_header(user)).json()
-
-    response = client.post(
-        "/api/v1/crm/notes",
-        json={"note": "Client wants faster delivery", "related_module": "inquiry", "related_id": inquiry["id"]},
-        headers=auth_header(user),
-    )
-    assert response.status_code == 201
-    assert response.json()["note"] == "Client wants faster delivery"
 
 
 def test_inquiry_task_permission_check(client, db):

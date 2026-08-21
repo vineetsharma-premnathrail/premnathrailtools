@@ -28,7 +28,7 @@ This document supersedes an earlier draft that described the product as an early
 - Admin: user directory, per-module access (`assigned_apps`), granular ERP sub-permissions, audit log, notifications, feedback inbox, API keys.
 
 **Explicitly out of scope (per original doc, still current unless a stakeholder says otherwise — see the flag in `DEPARTMENT_MODULES_ROADMAP.md`):**
-- ❌ Accounting/finance module (system of record is SAP)
+- ⚠️ ~~Accounting/finance module (system of record is SAP)~~ — **reversed 2026-08-18**: a full parallel GL/AP/AR ledger for Accounts has been explicitly confirmed and scoped in `ACCOUNTS_DEPARTMENT_MODULE_PLAN.md`. This portal will run its own Journal Entry/GL system alongside SAP going forward, not just a read-only rollup. Treat this line as historical context for *why* Accounts wasn't built earlier, not as current policy.
 - ❌ HR module (system of record is ADP)
 - ❌ Email client (use Outlook)
 - ❌ Document management (use SharePoint) — the portal only stores attachment *references* to SharePoint, never re-implements it

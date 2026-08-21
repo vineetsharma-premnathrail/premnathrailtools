@@ -2,21 +2,17 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRequireAdmin } from '@/hooks/useAuth'
-import { usersApi } from '@/lib/api'
-import { AppModule, User } from '@/types'
+import { usersApi, modulesApi } from '@/lib/api'
+import { User, ModuleMeta } from '@/types'
 import FeedbackBell from '@/components/FeedbackBell'
-
-const APPS: { id: AppModule; label: string }[] = [
-  { id: 'erp', label: 'Service Module' },
-  { id: 'rnd', label: 'R&D Tools' },
-  { id: 'crm', label: 'CRM' },
-  { id: 'purchase', label: 'Purchase' },
-  { id: 'p2p', label: 'P2P' },
-]
 
 export default function UsersRolesPage() {
   const { user: currentUser, isAuthorized, isLoading } = useRequireAdmin()
   const [users, setUsers] = useState<User[]>([])
+  // Assignable-apps checklist — driven by the modules registry (data change,
+  // not a frontend code change, to add a new department). See
+  // docs/product/ADMIN_MODULE_EXTENSION_PLAN.md Phase 1.
+  const [APPS, setAPPS] = useState<{ id: string; label: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -41,6 +37,13 @@ export default function UsersRolesPage() {
     if (isAuthorized) load()
   }, [isAuthorized])
 
+  useEffect(() => {
+    if (!isAuthorized) return
+    modulesApi.list()
+      .then((data: ModuleMeta[]) => setAPPS(data.map((m) => ({ id: m.key, label: m.label }))))
+      .catch(() => {})
+  }, [isAuthorized])
+
   const stats = useMemo(
     () => ({
       total: users.length,
@@ -57,7 +60,7 @@ export default function UsersRolesPage() {
     return users.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
   }, [users, search])
 
-  const handleSaveAccess = async (userId: number, apps: AppModule[], erpPermissions: string[]) => {
+  const handleSaveAccess = async (userId: number, apps: string[], erpPermissions: string[]) => {
     const updated = await usersApi.updateModuleAccess(userId, apps, erpPermissions)
     setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)))
     setEditingUser(null)
@@ -87,7 +90,7 @@ export default function UsersRolesPage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#1f1108', margin: '0 0 4px' }}>Users &amp; Roles</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Users &amp; Roles</h1>
           <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>
             Manage portal users, roles, and module access
           </p>
@@ -135,7 +138,7 @@ export default function UsersRolesPage() {
             background: syncing ? '#fca87a' : '#fa9b9b',
             color: '#fff',
             fontSize: 13.5,
-            fontWeight: 700,
+            fontWeight: 600,
             cursor: syncing ? 'default' : 'pointer',
             whiteSpace: 'nowrap',
           }}
@@ -156,7 +159,7 @@ export default function UsersRolesPage() {
                     textAlign: 'left',
                     padding: '12px 16px',
                     fontSize: 11,
-                    fontWeight: 700,
+                    fontWeight: 600,
                     letterSpacing: '.05em',
                     textTransform: 'uppercase',
                     color: '#a8a29e',
@@ -204,7 +207,7 @@ export default function UsersRolesPage() {
                           alignItems: 'center',
                           justifyContent: 'center',
                           color: '#fff',
-                          fontWeight: 700,
+                          fontWeight: 600,
                           fontSize: 11,
                           background: 'linear-gradient(135deg,#3b82f6,#60a5fa)',
                         }}
@@ -221,7 +224,7 @@ export default function UsersRolesPage() {
                     <span
                       style={{
                         fontSize: 12,
-                        fontWeight: 700,
+                        fontWeight: 600,
                         padding: '4px 10px',
                         borderRadius: 8,
                         textTransform: 'capitalize',
@@ -245,7 +248,7 @@ export default function UsersRolesPage() {
                             key={a}
                             style={{
                               fontSize: 10.5,
-                              fontWeight: 700,
+                              fontWeight: 600,
                               padding: '2px 8px',
                               borderRadius: 6,
                               background: 'rgba(59,130,246,0.1)',
@@ -263,7 +266,7 @@ export default function UsersRolesPage() {
                     <span
                       style={{
                         fontSize: 11.5,
-                        fontWeight: 700,
+                        fontWeight: 600,
                         padding: '4px 10px',
                         borderRadius: 9999,
                         whiteSpace: 'nowrap',
@@ -279,7 +282,7 @@ export default function UsersRolesPage() {
                       onClick={() => setEditingUser(u)}
                       style={{
                         fontSize: 12.5,
-                        fontWeight: 700,
+                        fontWeight: 600,
                         padding: '6px 16px',
                         borderRadius: 8,
                         border: 'none',
@@ -303,6 +306,7 @@ export default function UsersRolesPage() {
         <EditUserModal
           user={editingUser}
           isSelf={editingUser.id === currentUser?.id}
+          apps={APPS}
           onClose={() => setEditingUser(null)}
           onSave={handleSaveAccess}
           onToggleActive={handleToggleActive}
@@ -319,8 +323,8 @@ function StatCard({ label, value, color, icon }: { label: string; value: number;
         {icon}
       </div>
       <div>
-        <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 2px' }}>{label}</p>
-        <p style={{ fontSize: 22, fontWeight: 800, color: '#1f1108', margin: 0 }}>{value}</p>
+        <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 2px' }}>{label}</p>
+        <p style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: 0 }}>{value}</p>
       </div>
     </div>
   )
@@ -350,22 +354,24 @@ const ERP_PERMISSION_GROUPS: { label: string; icon: string; perms: { id: string;
 function EditUserModal({
   user,
   isSelf,
+  apps,
   onClose,
   onSave,
   onToggleActive,
 }: {
   user: User
   isSelf: boolean
+  apps: { id: string; label: string }[]
   onClose: () => void
-  onSave: (id: number, apps: AppModule[], erpPermissions: string[]) => Promise<void>
+  onSave: (id: number, apps: string[], erpPermissions: string[]) => Promise<void>
   onToggleActive: (u: User) => Promise<void>
 }) {
   const isAdminRole = user.role === 'admin'
-  const [selected, setSelected] = useState<AppModule[]>(user.assigned_apps || [])
+  const [selected, setSelected] = useState<string[]>(user.assigned_apps || [])
   const [erpPerms, setErpPerms] = useState<string[]>(user.erp_permissions || [])
   const [saving, setSaving] = useState(false)
 
-  const toggle = (app: AppModule) => {
+  const toggle = (app: string) => {
     setSelected((prev) => (prev.includes(app) ? prev.filter((a) => a !== app) : [...prev, app]))
   }
 
@@ -389,7 +395,7 @@ function EditUserModal({
     >
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, background: '#fff', borderRadius: 20, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-          <h2 style={{ fontSize: 17, fontWeight: 800, color: '#1f1108', margin: 0 }}>Module Access — {user.name}</h2>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1f1108', margin: 0 }}>Module Access — {user.name}</h2>
           <button onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#a8a29e', fontSize: 18 }}>
             ✕
           </button>
@@ -405,11 +411,11 @@ function EditUserModal({
             <Field label="Role" value={user.role.replace('_', ' ')} capitalize />
           </div>
 
-          <p style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 10px' }}>
+          <p style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 10px' }}>
             Module Access
           </p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {APPS.map((a) => (
+            {apps.map((a) => (
               <label
                 key={a.id}
                 style={{
@@ -440,12 +446,12 @@ function EditUserModal({
 
           {!isAdminRole && selected.includes('erp') && (
             <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: '#faf9f7' }}>
-              <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 12px' }}>
+              <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 12px' }}>
                 ERP Permissions
               </p>
               {ERP_PERMISSION_GROUPS.map((group, i) => (
                 <div key={group.label} style={{ marginBottom: i < ERP_PERMISSION_GROUPS.length - 1 ? 12 : 0 }}>
-                  <p style={{ fontSize: 12.5, fontWeight: 700, color: '#1f1108', margin: '0 0 6px' }}>{group.icon} {group.label}</p>
+                  <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 6px' }}>{group.icon} {group.label}</p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {group.perms.map((p) => (
                       <label
@@ -475,7 +481,7 @@ function EditUserModal({
             disabled={isSelf}
             style={{
               fontSize: 12.5,
-              fontWeight: 700,
+              fontWeight: 600,
               padding: '9px 16px',
               borderRadius: 10,
               border: '1px solid rgba(0,0,0,0.1)',
@@ -500,7 +506,7 @@ function EditUserModal({
               disabled={saving || isAdminRole}
               style={{
                 fontSize: 13,
-                fontWeight: 700,
+                fontWeight: 600,
                 padding: '10px 20px',
                 borderRadius: 10,
                 border: 'none',
@@ -522,7 +528,7 @@ function EditUserModal({
 function Field({ label, value, capitalize }: { label: string; value: string; capitalize?: boolean }) {
   return (
     <div>
-      <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 3px' }}>{label}</p>
+      <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 3px' }}>{label}</p>
       <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: 0, textTransform: capitalize ? 'capitalize' : 'none' }}>{value}</p>
     </div>
   )
