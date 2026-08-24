@@ -14,6 +14,8 @@ export interface User {
   assigned_apps: AppModule[]
   /** Granular ERP sub-permissions (e.g. "project_delete", "sr_view") — only meaningful when "erp" is in assigned_apps. */
   erp_permissions?: string[]
+  /** Head of `department` — auto-assigned as the approver on P2P requests raised from that department. */
+  is_department_head?: boolean
   /** Modules this user can actually reach right now (admins get all, regardless of assigned_apps). */
   apps: AppModule[]
   reporting_manager_id?: number
@@ -450,6 +452,7 @@ export interface MomItem {
 export interface CrmActivity {
   id: number
   activity_type?: string
+  subject?: string
   org_id?: number
   org_contact_id?: number
   related_module?: string

@@ -1,10 +1,13 @@
 'use client'
 
-export default function ConfirmDialog({
+import { useEffect, useState } from 'react'
+
+export default function PromptDialog({
   open,
   title,
   message,
-  confirmLabel = 'Delete',
+  placeholder = 'Optional reason…',
+  confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   danger = true,
   onConfirm,
@@ -12,13 +15,20 @@ export default function ConfirmDialog({
 }: {
   open: boolean
   title: string
-  message: string
+  message?: string
+  placeholder?: string
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
-  onConfirm: () => void
+  onConfirm: (value: string) => void
   onCancel: () => void
 }) {
+  const [value, setValue] = useState('')
+
+  useEffect(() => {
+    if (open) setValue('')
+  }, [open])
+
   if (!open) return null
 
   return (
@@ -41,33 +51,33 @@ export default function ConfirmDialog({
         className="dialog-panel"
         style={{
           width: '100%',
-          maxWidth: 400,
+          maxWidth: 420,
           background: '#fff',
           borderRadius: 18,
           padding: 24,
           boxShadow: '0 24px 60px rgba(0,0,0,0.25)',
         }}
       >
-        <div
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: danger ? 'rgba(220,38,38,0.1)' : 'rgba(244,113,59,0.1)',
-            marginBottom: 16,
-          }}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={danger ? '#dc2626' : '#fa9b9b'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-        </div>
         <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px' }}>{title}</p>
-        <p style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 22px', lineHeight: 1.6 }}>{message}</p>
+        {message && <p style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 14px', lineHeight: 1.6 }}>{message}</p>}
+        <textarea
+          autoFocus
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={placeholder}
+          rows={3}
+          style={{
+            width: '100%',
+            resize: 'vertical',
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: '1px solid rgba(0,0,0,0.12)',
+            fontSize: 13.5,
+            outline: 'none',
+            marginBottom: 20,
+            fontFamily: 'inherit',
+          }}
+        />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button
             onClick={onCancel}
@@ -85,7 +95,7 @@ export default function ConfirmDialog({
             {cancelLabel}
           </button>
           <button
-            onClick={onConfirm}
+            onClick={() => onConfirm(value.trim() || '')}
             style={{
               fontSize: 13,
               fontWeight: 600,

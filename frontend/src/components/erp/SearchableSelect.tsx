@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { inputStyle } from '@/components/shared/ui'
 
 export interface SearchableOption {
@@ -13,24 +14,50 @@ export default function SearchableSelect({
   onChange,
   options,
   placeholder = 'Select...',
+  disabled = false,
 }: {
   value: string
   onChange: (v: string) => void
   options: SearchableOption[]
   placeholder?: string
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   const selectedLabel = options.find((o) => o.value === value)?.label || ''
 
+  // Portaled to <body> with position:fixed, like DateField, so the dropdown
+  // isn't clipped or overlapped by sibling cards/sections that establish
+  // their own stacking context — it has to track the trigger's position
+  // manually across scroll/resize instead of relying on a positioned parent.
+  const reposition = () => {
+    const rect = wrapperRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setCoords({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+  }
+
+  useEffect(() => {
+    if (!open) return
+    reposition()
+    window.addEventListener('resize', reposition)
+    window.addEventListener('scroll', reposition, true)
+    return () => {
+      window.removeEventListener('resize', reposition)
+      window.removeEventListener('scroll', reposition, true)
+    }
+  }, [open])
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-        setQuery('')
-      }
+      const target = e.target as Node
+      if (wrapperRef.current?.contains(target)) return
+      if (dropdownRef.current?.contains(target)) return
+      setOpen(false)
+      setQuery('')
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -49,34 +76,38 @@ export default function SearchableSelect({
   }
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={wrapperRef} style={{ position: 'relative' }}>
       <div
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => !disabled && setOpen((v) => !v)}
         style={{
           ...inputStyle,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          cursor: 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          background: disabled ? '#f5f5f4' : inputStyle.background,
+          color: disabled ? '#78716c' : undefined,
         }}
       >
-        <span style={{ color: selectedLabel ? '#1f1108' : '#a8a29e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ color: disabled ? '#78716c' : selectedLabel ? '#1f1108' : '#a8a29e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {selectedLabel || placeholder}
         </span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a8a29e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', marginLeft: 8 }}>
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+        {!disabled && (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a8a29e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', marginLeft: 8 }}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        )}
       </div>
 
-      {open && (
+      {open && !disabled && createPortal(
         <div
+          ref={dropdownRef}
           style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            marginTop: 6,
-            zIndex: 50,
+            position: 'fixed',
+            top: coords.top,
+            left: coords.left,
+            width: coords.width,
+            zIndex: 1000,
             background: '#fff',
             borderRadius: 12,
             border: '1px solid rgba(0,0,0,0.08)',
@@ -119,7 +150,8 @@ export default function SearchableSelect({
               ))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

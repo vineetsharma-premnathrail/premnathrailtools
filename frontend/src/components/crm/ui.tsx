@@ -41,8 +41,8 @@ export const dangerBtnStyle: React.CSSProperties = {
   fontWeight: 600,
   padding: '9px 18px',
   borderRadius: RADII.lg,
-  border: BORDERS.dangerStrong,
-  background: 'rgba(220,38,38,0.06)',
+  border: BORDERS.default,
+  background: COLORS.surface,
   color: COLORS.danger,
   cursor: 'pointer',
 }

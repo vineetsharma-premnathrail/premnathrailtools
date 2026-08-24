@@ -9,7 +9,9 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
 import InquiryForm from '@/components/crm/InquiryForm'
 import ActivityForm from '@/components/crm/ActivityForm'
-import { INQ_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES, inquiryStatusColor } from '@/components/crm/constants'
+import { RichText } from '@/components/RichTextEditor'
+import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
+import { INQ_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES } from '@/components/crm/constants'
 import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos } from '@/components/crm/ui'
 
 const TABS = ['Info', 'Quotations', 'Sales', 'Documents', 'Mails', 'Follow Ups', 'Timeline'] as const
@@ -55,6 +57,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   }, [inquiryId])
 
   const canModify = !!inquiry && !!user && (user.role === 'admin' || inquiry.created_by_id === user.id)
+  const isAdmin = user?.role === 'admin'
 
   const patch = async (payload: Record<string, unknown>) => {
     if (!inquiry) return
@@ -82,15 +85,22 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#fa9b9b' }}>{inquiry.universal_id}</span>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: inquiryStatusColor(inquiry.status).bg, color: inquiryStatusColor(inquiry.status).text }}>{inquiry.status}</span>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(244,113,59,0.1)', color: '#fa9b9b' }}>{inquiry.priority}</span>
+            {inquiry.created_at && (
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#a8a29e' }}>{new Date(inquiry.created_at).toLocaleDateString('en-GB')}</span>
+            )}
+            <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
+            <span title={`Status: ${inquiry.status}`} style={{ fontSize: 11, fontWeight: 600, color: '#78716c' }}>{inquiry.status}</span>
+            <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
+            <span title={`Priority: ${inquiry.priority}`} style={{ fontSize: 11, fontWeight: 600, color: '#78716c' }}>{inquiry.priority}</span>
+            <span style={{ fontSize: 11, color: '#d6d3d1' }}>·</span>
+            <span title={`Stage: ${inquiry.current_stage}`} style={{ fontSize: 11, fontWeight: 600, color: '#78716c' }}>{inquiry.current_stage}</span>
           </div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org?.name || 'Inquiry'}</h1>
+          <h1 style={{ fontSize: 18, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org?.name || 'Inquiry'}</h1>
         </div>
-        {canModify && !editing && (
+        {(canModify || isAdmin) && !editing && (
           <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={() => { setEditing(true); setTab('Info') }} style={secondaryBtnStyle}>Edit</button>
-            <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>
+            {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} style={secondaryBtnStyle}>Edit</button>}
+            {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
           </div>
         )}
       </div>
@@ -103,7 +113,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
 
       <StageProgress stage={inquiry.current_stage} canModify={canModify} onRequestChange={setPendingStage} />
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
+      <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
         {TABS.map((t) => (
           <button
             key={t}
@@ -161,28 +171,63 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
 
 function StageProgress({ stage, canModify, onRequestChange }: { stage: string; canModify: boolean; onRequestChange: (s: string) => void }) {
   const activeIdx = INQ_STAGES.indexOf(stage)
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [open])
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', padding: '18px 20px', marginBottom: 20, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflowX: 'auto' }}>
-      {INQ_STAGES.map((s, i) => {
-        const done = i < activeIdx
-        const active = i === activeIdx
-        const clickable = canModify && !active
-        const circleBg = done ? '#22c55e' : active ? '#fa9b9b' : '#fff'
-        const circleColor = done || active ? '#fff' : '#a8a29e'
-        const circleBorder = done ? '#22c55e' : active ? '#fa9b9b' : 'rgba(0,0,0,0.1)'
-        const labelColor = active ? '#fa9b9b' : done ? '#16a34a' : '#a8a29e'
-        return (
-          <div key={s} style={{ display: 'flex', alignItems: 'center', flex: i < INQ_STAGES.length - 1 ? 1 : undefined }}>
-            <div onClick={clickable ? () => onRequestChange(s) : undefined} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: clickable ? 'pointer' : 'default', userSelect: 'none' }}>
-              <div style={{ width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: circleBg, color: circleColor, border: `2px solid ${circleBorder}`, fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
-                {done ? '✓' : i + 1}
-              </div>
-              <span style={{ fontSize: 8.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.02em', color: labelColor, whiteSpace: 'nowrap' }}>{s}</span>
-            </div>
-            {i < INQ_STAGES.length - 1 && <div style={{ flex: 1, height: 2, margin: '0 6px 14px', background: done ? '#4ade80' : 'rgba(0,0,0,0.08)' }} />}
+    <div ref={ref} style={{ position: 'relative', marginBottom: 20 }}>
+      <div
+        onClick={() => setOpen((v) => !v)}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', cursor: 'pointer', userSelect: 'none' }}
+      >
+        <div style={{ width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fa9b9b', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+          {activeIdx + 1}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e' }}>Stage {activeIdx + 1} of {INQ_STAGES.length}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#1f1108' }}>{stage}</span>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 100, height: 6, borderRadius: 999, background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+            <div style={{ width: `${((activeIdx + 1) / INQ_STAGES.length) * 100}%`, height: '100%', background: '#22c55e' }} />
           </div>
-        )
-      })}
+          <span style={{ fontSize: 14, color: '#a8a29e', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
+        </div>
+      </div>
+
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, zIndex: 20, maxHeight: 340, overflowY: 'auto', borderRadius: 14, background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.4)', boxShadow: '0 16px 40px rgba(15,23,42,0.22), 0 4px 10px rgba(15,23,42,.1)', padding: 6 }}>
+          {INQ_STAGES.map((s, i) => {
+            const done = i < activeIdx
+            const active = i === activeIdx
+            const clickable = canModify && !active
+            const circleBg = done ? '#22c55e' : active ? '#fa9b9b' : '#fff'
+            const circleColor = done || active ? '#fff' : '#a8a29e'
+            const circleBorder = done ? '#22c55e' : active ? '#fa9b9b' : 'rgba(0,0,0,0.15)'
+            return (
+              <div
+                key={s}
+                onClick={clickable ? () => { onRequestChange(s); setOpen(false) } : undefined}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: clickable ? 'pointer' : 'default', background: active ? 'rgba(250,155,155,0.1)' : 'transparent' }}
+                onMouseEnter={(e) => { if (clickable) e.currentTarget.style.background = 'rgba(0,0,0,0.04)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = active ? 'rgba(250,155,155,0.1)' : 'transparent' }}
+              >
+                <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: circleBg, color: circleColor, border: `2px solid ${circleBorder}`, fontSize: 9.5, fontWeight: 700, flexShrink: 0 }}>
+                  {done ? '✓' : i + 1}
+                </div>
+                <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 500, color: active ? '#fa9b9b' : done ? '#16a34a' : '#57534e' }}>{s}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -190,7 +235,7 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
 function InfoTab({ inquiry, org, contact }: { inquiry: Inquiry; org: Organization | null; contact: OrgContact | null }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
         <Card title="Organization">
           <InfoRow label="Name" value={org?.name || '—'} />
           <InfoRow label="GST Number" value={org?.gst_number || '—'} />
@@ -220,7 +265,7 @@ function InfoTab({ inquiry, org, contact }: { inquiry: Inquiry; org: Organizatio
         </Card>
       </div>
       <Card title="Product Requirement">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
           <InfoRow label="Product" value={inquiry.product || '—'} />
           <InfoRow label="Category" value={inquiry.product_category || '—'} />
           <InfoRow label="Quantity / Unit" value={inquiry.quantity != null ? `${inquiry.quantity} ${inquiry.unit || ''}` : '—'} />
@@ -281,7 +326,7 @@ function TasksTab({ inquiryId, canModify }: { inquiryId: number; canModify: bool
         <div>
           <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Task'}</button>
           {showForm && (
-            <form onSubmit={save} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <form onSubmit={save} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
               <Field label="Department">
                 <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} style={inputStyle}>
                   {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
@@ -414,7 +459,7 @@ function QuotationsTab({ inquiryId, canModify }: { inquiryId: number; canModify:
           <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Create Quote'}</button>
           {showForm && (
             <form onSubmit={save} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                 <Field label="Quotation Type">
                   <select value={form.quotation_type} onChange={(e) => setForm((f) => ({ ...f, quotation_type: e.target.value }))} style={inputStyle}>
                     <option value="Domestic">Domestic (INR)</option>
@@ -424,7 +469,7 @@ function QuotationsTab({ inquiryId, canModify }: { inquiryId: number; canModify:
                 <Field label="Date of Quote"><DateField value={form.quote_date} onChange={(v) => setForm((f) => ({ ...f, quote_date: v }))} /></Field>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                 <Field label="Client Name"><input value={form.client_name} onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))} style={inputStyle} /></Field>
                 <Field label="Contact Person Name"><input value={form.client_contact_name} onChange={(e) => setForm((f) => ({ ...f, client_contact_name: e.target.value }))} style={inputStyle} /></Field>
                 <Field label="Contact Email"><input type="email" value={form.client_contact_email} onChange={(e) => setForm((f) => ({ ...f, client_contact_email: e.target.value }))} style={inputStyle} /></Field>
@@ -450,7 +495,7 @@ function QuotationsTab({ inquiryId, canModify }: { inquiryId: number; canModify:
                 <button type="button" onClick={addItemRow} style={{ ...secondaryBtnStyle, marginTop: 8, padding: '6px 14px', fontSize: 12 }}>+ Add Line Item</button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                 <Field label="Delivery Time"><input value={form.delivery_time} onChange={(e) => setForm((f) => ({ ...f, delivery_time: e.target.value }))} placeholder="e.g. 12 weeks" style={inputStyle} /></Field>
                 <Field label="Quote Validity Date"><DateField value={form.valid_until} onChange={(v) => setForm((f) => ({ ...f, valid_until: v }))} /></Field>
                 <Field label="Customer Response">
@@ -568,7 +613,7 @@ function PurchaseOrdersTab({ inquiryId, orgId, canModify }: { inquiryId: number;
         <div>
           <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add PO'}</button>
           {showForm && (
-            <form onSubmit={save} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <form onSubmit={save} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
               <Field label="PO Number"><input value={form.po_number} onChange={(e) => setForm((f) => ({ ...f, po_number: e.target.value }))} style={inputStyle} /></Field>
               <Field label="PO Date"><DateField value={form.po_date} onChange={(v) => setForm((f) => ({ ...f, po_date: v }))} /></Field>
               <Field label="PO Value (₹)"><input type="number" value={form.po_value} onChange={(e) => setForm((f) => ({ ...f, po_value: e.target.value }))} style={inputStyle} /></Field>
@@ -622,7 +667,7 @@ function DocumentsTab({ inquiry, canModify }: { inquiry: Inquiry; canModify: boo
   const internalDocs = documents.filter((d) => d.folder_type === 'internal')
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
       <DocumentFolderPanel title="Client Documents" folderType="client" docs={clientDocs} inquiry={inquiry} canModify={canModify} onUploaded={load} onRemove={remove} error={error} setError={setError} />
       <DocumentFolderPanel title="Internal Documents" folderType="internal" docs={internalDocs} inquiry={inquiry} canModify={canModify} onUploaded={load} onRemove={remove} error={error} setError={setError} />
     </div>
@@ -760,9 +805,32 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
   const [activities, setActivities] = useState<CrmActivity[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editingActivity, setEditingActivity] = useState<CrmActivity | null>(null)
+  const [viewingActivity, setViewingActivity] = useState<CrmActivity | null>(null)
+  const [exportingMomId, setExportingMomId] = useState<number | null>(null)
+  const [momError, setMomError] = useState('')
 
   const load = () => crmApi.listActivities({ related_module: 'inquiry', related_id: inquiry.id }).then(setActivities)
   useEffect(() => { load() }, [inquiry.id])
+
+  const exportMom = async (a: CrmActivity) => {
+    setExportingMomId(a.id)
+    setMomError('')
+    try {
+      const blob = await crmApi.exportActivityMom(a.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      const orgSlug = (org?.name || 'Activity').replace(/\s+/g, '_').replace(/\//g, '-')
+      const dateSlug = (a.created_at || '').slice(0, 10).replace(/-/g, '') || 'undated'
+      link.download = `MOM_${orgSlug}_${dateSlug}.docx`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setMomError('MoM export failed.')
+    } finally {
+      setExportingMomId(null)
+    }
+  }
 
   const startEdit = (a: CrmActivity) => {
     setEditingActivity(a)
@@ -777,12 +845,15 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <button onClick={() => { if (showForm) cancelForm(); else { setEditingActivity(null); setShowForm(true) } }} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Log Follow Up'}</button>
+        <button onClick={() => { if (showForm) cancelForm(); else { setEditingActivity(null); setShowForm(true) } }} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Follow Up'}</button>
       </div>
+      {momError && (
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{momError}</div>
+      )}
       {showForm && (
         <ActivityForm
           initial={editingActivity || { org_id: inquiry.org_id, related_module: 'inquiry', related_id: inquiry.id, universal_id: inquiry.universal_id }}
-          submitLabel={editingActivity ? 'Save Changes' : 'Log Follow Up'}
+          submitLabel={editingActivity ? 'Save Changes' : 'Add Follow Up'}
           onCancel={cancelForm}
           onSubmit={async (payload, photos) => {
             const saved = editingActivity
@@ -794,14 +865,15 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
           }}
         />
       )}
-      {activities.length === 0 ? (
+      {!showForm && (activities.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No follow-ups logged.</p>
       ) : (
         activities.map((a) => (
           <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
             <div>
               <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>
-                {a.activity_type || 'Activity'} {a.assigned_to && <span style={{ fontWeight: 500, color: '#78716c' }}>· {a.assigned_to}</span>}
+                {a.activity_type || 'Activity'} {a.assigned_to && <span title={`Contact Person: ${a.assigned_to}`} style={{ fontWeight: 500, color: '#78716c' }}>· {a.assigned_to}</span>}
+                {a.created_at && <span title={`Created: ${new Date(a.created_at).toLocaleString('en-GB')}`} style={{ fontWeight: 500, color: '#a8a29e' }}> · {new Date(a.created_at).toLocaleString('en-GB')}</span>}
               </p>
               {a.mom_items?.length ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
@@ -816,18 +888,30 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
                 </div>
               ) : (
                 <>
-                  <p style={{ fontSize: 12, color: '#57534e', margin: 0 }}>{a.remarks || '—'} {a.next_followup && `· Due: ${a.next_followup}`}</p>
-                  {a.action_plan && <p style={{ fontSize: 12, color: '#78716c', margin: '2px 0 0' }}>Action Plan: {a.action_plan}</p>}
+                  {a.remarks ? <RichText html={a.remarks} style={{ fontSize: 12, color: '#57534e' }} /> : <p style={{ fontSize: 12, color: '#57534e', margin: 0 }}>—</p>}
+                  {a.next_followup && <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '2px 0 0' }}>Due: {a.next_followup}</p>}
+                  {a.action_plan && (
+                    <div style={{ marginTop: 2 }}>
+                      <span style={{ fontSize: 12, color: '#78716c', fontWeight: 600 }}>Action Plan: </span>
+                      <RichText html={a.action_plan} style={{ fontSize: 12, color: '#78716c', display: 'inline' }} />
+                    </div>
+                  )}
                 </>
               )}
               <ActivityPhotos attachments={a.attachments} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={() => setViewingActivity(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>View</button>
               <button onClick={() => startEdit(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>
+              <button disabled={exportingMomId === a.id} onClick={() => exportMom(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: exportingMomId === a.id ? 0.7 : 1 }}>
+                {exportingMomId === a.id ? 'Exporting…' : 'Export MoM'}
+              </button>
             </div>
           </div>
         ))
-      )}
+      ))}
+
+      <ActivityViewDialog activity={viewingActivity} onClose={() => setViewingActivity(null)} />
     </div>
   )
 }
@@ -910,7 +994,7 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
             </span>
             <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0 }}>{e.title}</p>
           </div>
-          {e.detail && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0' }}>{e.detail}</p>}
+          {e.detail && <RichText html={e.detail} style={{ fontSize: 12, color: '#57534e', margin: '2px 0' }} />}
           <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0 }}>{e.by || 'System'} · {e.date ? new Date(e.date).toLocaleString() : '—'}</p>
         </div>
       ))}

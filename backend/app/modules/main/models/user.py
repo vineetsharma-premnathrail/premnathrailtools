@@ -31,6 +31,12 @@ class User(Base, TimestampMixin):
     erp_permissions: Mapped[list[str]] = mapped_column(JSON, default=list)
     is_azure_admin: Mapped[bool] = mapped_column(default=False)
 
+    # Set from the Module Access modal (admin only). A department head is the
+    # approver auto-assigned to any P2P request raised from their department
+    # (see P2PRequest.approver_id in create_p2p_request) — matched by exact
+    # string equality against `department`, since that field has no enum/FK.
+    is_department_head: Mapped[bool] = mapped_column(default=False)
+
     # Present in the remote production DB (main.users) — added here so the
     # migration from that schema doesn't have to drop them. Not yet wired
     # into any route/UI in Ideal.

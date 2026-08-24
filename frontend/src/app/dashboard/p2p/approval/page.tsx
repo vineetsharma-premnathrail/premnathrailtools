@@ -16,7 +16,7 @@ export default function P2PApprovalPage() {
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>Approval</h1>
       <P2PNav />
-      <P2PRequestList statuses={['submitted', 'approved']} emptyLabel="No requests pending approval." />
+      <P2PRequestList statuses={['submitted', 'approved']} emptyLabel="No requests pending approval." context="approval" />
     </div>
   )
 }

@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import Sidebar from '@/components/Sidebar'
 import LoadingSpinner from '@/components/LoadingSpinner'
+import ScrollRevealObserver from '@/components/ScrollRevealObserver'
 import { GLASS, GRADIENTS } from '@/lib/theme'
 
 export default function DashboardLayout({
@@ -15,6 +16,7 @@ export default function DashboardLayout({
   const { user, isLoading } = useAuth()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const mainRef = useRef<HTMLElement>(null)
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => { setSidebarOpen(false) }, [pathname])
@@ -79,7 +81,10 @@ export default function DashboardLayout({
         <Sidebar user={user} onNavigate={() => setSidebarOpen(false)} />
       </div>
 
-      <main className="dashboard-main" style={{ flex: 1, minWidth: 0, minHeight: 0, padding: 5, overflow: 'auto' }}>{children}</main>
+      <main ref={mainRef} className="dashboard-main" style={{ flex: 1, minWidth: 0, minHeight: 0, padding: 5, overflow: 'auto' }}>
+        {children}
+      </main>
+      <ScrollRevealObserver containerRef={mainRef} />
     </div>
   )
 }

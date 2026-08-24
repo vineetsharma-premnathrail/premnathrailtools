@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { p2pApi, usersApi } from '@/lib/api'
-import { DirectoryUser, PRCategoryMeta, P2PRequestLineItemInput } from '@/types'
+import { p2pApi } from '@/lib/api'
+import { PRCategoryMeta, P2PRequestLineItemInput } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
@@ -33,7 +33,6 @@ export default function NewP2PRequestPage() {
 
   const [categories, setCategories] = useState<PRCategoryMeta[]>([])
   const [requirementTypes, setRequirementTypes] = useState<string[]>([])
-  const [users, setUsers] = useState<DirectoryUser[]>([])
   const [projects, setProjects] = useState<{ id: number; label: string }[]>([])
 
   const [projectId, setProjectId] = useState('')
@@ -41,8 +40,6 @@ export default function NewP2PRequestPage() {
   const [requiredDate, setRequiredDate] = useState('')
   const [requirementType, setRequirementType] = useState('')
   const [priority, setPriority] = useState('medium')
-  const [approverIds, setApproverIds] = useState<number[]>([])
-  const [approverSearch, setApproverSearch] = useState('')
   const [remarks, setRemarks] = useState('')
   const [items, setItems] = useState<P2PRequestLineItemInput[]>([emptyItem()])
   const [supportingFiles, setSupportingFiles] = useState<File[]>([])
@@ -76,10 +73,9 @@ export default function NewP2PRequestPage() {
     if (!isAuthorized) return
     ;(async () => {
       try {
-        const [meta, dirUsers, projectList] = await Promise.all([p2pApi.getMeta(), usersApi.directory(), p2pApi.listProjects()])
+        const [meta, projectList] = await Promise.all([p2pApi.getMeta(), p2pApi.listProjects()])
         setCategories(meta.categories)
         setRequirementTypes(meta.requirement_types)
-        setUsers(dirUsers)
         setProjects(projectList)
       } catch {
         setError('Failed to load form options.')
@@ -112,10 +108,6 @@ export default function NewP2PRequestPage() {
         required_date: requiredDate || undefined,
         requirement_type: requirementType || undefined,
         priority,
-        approver_id: approverIds.length === 1 ? approverIds[0] : undefined,
-        approver_name: approverIds.length
-          ? approverIds.map((id) => users.find((u) => u.id === id)?.name).filter(Boolean).join(', ')
-          : undefined,
         remarks: remarks || undefined,
         items: filledItems.map((it) => ({
           ...it,
@@ -144,6 +136,9 @@ export default function NewP2PRequestPage() {
 
   return (
     <div style={{ width: '100%' }}>
+      <button onClick={() => router.back()} type="button" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
+        ← Back
+      </button>
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
         P2P Module
       </p>
@@ -157,8 +152,8 @@ export default function NewP2PRequestPage() {
 
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Request Details</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
-          <div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
+          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
             <label style={labelStyle}>Project</label>
             <SearchableSelect
               value={projectId}
@@ -167,18 +162,18 @@ export default function NewP2PRequestPage() {
               placeholder="Search existing project…"
             />
           </div>
-          <div>
+          <div style={{ flex: '1 1 200px', minWidth: 180 }}>
             <label style={labelStyle}>PR Category *</label>
             <select style={inputStyle} value={categoryCode} onChange={(e) => setCategoryCode(e.target.value)}>
               <option value="">Select category…</option>
               {categories.map((c) => <option key={c.code} value={c.code}>{c.label} ({c.code})</option>)}
             </select>
           </div>
-          <div>
+          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
             <label style={labelStyle}>Required Date</label>
             <DateField value={requiredDate} onChange={setRequiredDate} />
           </div>
-          <div>
+          <div style={{ flex: '1 1 180px', minWidth: 160 }}>
             <label style={labelStyle}>Requirement Type</label>
             <select style={inputStyle} value={requirementType} onChange={(e) => setRequirementType(e.target.value)}>
               <option value="">Select type…</option>
@@ -186,10 +181,8 @@ export default function NewP2PRequestPage() {
             </select>
           </div>
         </div>
-      </div>
 
-      <div style={sectionStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Item Details</h2>
           <button onClick={addItem} type="button" style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${BRAND.primaryBorder}`, background: BRAND.primarySoft, color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
             + Add Item
@@ -226,7 +219,11 @@ export default function NewP2PRequestPage() {
                     <input type="number" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 130 }}>
-                    <input style={inputStyle} value={item.project_inhouse} onChange={(e) => updateItem(idx, 'project_inhouse', e.target.value)} placeholder="Project / Inhouse" />
+                    <select style={inputStyle} value={item.project_inhouse} onChange={(e) => updateItem(idx, 'project_inhouse', e.target.value)}>
+                      <option value="">Select…</option>
+                      <option value="Project">Project</option>
+                      <option value="Inhouse">Inhouse</option>
+                    </select>
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 130 }}>
                     <input style={inputStyle} value={item.category} onChange={(e) => updateItem(idx, 'category', e.target.value)} />
@@ -244,76 +241,28 @@ export default function NewP2PRequestPage() {
             </tbody>
           </table>
         </div>
-      </div>
 
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Approval</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
-          <div>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Priority & Remarks</h2>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
+          <div style={{ flex: '0 1 180px', minWidth: 160 }}>
             <label style={labelStyle}>Priority</label>
             <select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value)}>
               {PRIORITIES.map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
             </select>
           </div>
-          <div>
-            <label style={labelStyle}>Manager / Approver</label>
-            {approverIds.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                {approverIds.map((id) => {
-                  const u = users.find((x) => x.id === id)
-                  if (!u) return null
-                  return (
-                    <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '4px 6px 4px 10px', borderRadius: 8, background: BRAND.primarySoft, border: `1px solid ${BRAND.primaryBorder}`, color: BRAND.primaryActive }}>
-                      {u.name}
-                      <span onClick={() => setApproverIds((prev) => prev.filter((x) => x !== id))} style={{ cursor: 'pointer', fontWeight: 700 }}>×</span>
-                    </span>
-                  )
-                })}
-              </div>
-            )}
-            <input
-              style={inputStyle}
-              value={approverSearch}
-              onChange={(e) => setApproverSearch(e.target.value)}
-              placeholder="Search by name or email…"
-            />
-            {approverSearch.trim() && (
-              <div style={{ marginTop: 6, maxHeight: 160, overflowY: 'auto', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: '#fff' }}>
-                {users
-                  .filter((u) => !approverIds.includes(u.id))
-                  .filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(approverSearch.trim().toLowerCase()))
-                  .slice(0, 8)
-                  .map((u) => (
-                    <div
-                      key={u.id}
-                      onClick={() => { setApproverIds((prev) => [...prev, u.id]); setApproverSearch('') }}
-                      style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid rgba(0,0,0,0.05)' }}
-                    >
-                      <span style={{ fontWeight: 600, color: TEXT.body }}>{u.name}</span>{' '}
-                      <span style={{ color: TEXT.muted, fontSize: 12 }}>({u.email})</span>
-                    </div>
-                  ))}
-                {users.filter((u) => !approverIds.includes(u.id)).filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(approverSearch.trim().toLowerCase())).length === 0 && (
-                  <div style={{ padding: '8px 12px', fontSize: 12.5, color: TEXT.muted }}>No matches.</div>
-                )}
-              </div>
-            )}
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div style={{ flex: '1 1 320px' }}>
             <label style={labelStyle}>Remarks</label>
-            <textarea style={{ ...inputStyle, minHeight: 60 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+            <textarea style={{ ...inputStyle, minHeight: 42 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
           </div>
         </div>
-      </div>
 
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Documents</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
-          <div>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Documents</h2>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+          <div style={{ flex: '0 1 280px', minWidth: 240 }}>
             <label style={labelStyle}>Supporting Documents</label>
             <input type="file" multiple onChange={(e) => setSupportingFiles(Array.from(e.target.files || []))} style={inputStyle} />
           </div>
-          <div>
+          <div style={{ flex: '0 1 280px', minWidth: 240 }}>
             <label style={labelStyle}>Specification / Reference File</label>
             <input type="file" multiple onChange={(e) => setSpecFiles(Array.from(e.target.files || []))} style={inputStyle} />
           </div>

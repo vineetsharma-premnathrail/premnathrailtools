@@ -5,14 +5,13 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
-import { OrganizationDetail, Inquiry, Tender, CrmActivity, OrgContact } from '@/types'
+import { OrganizationDetail, Inquiry, Tender, OrgContact } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import InquiryForm from '@/components/crm/InquiryForm'
 import TenderForm from '@/components/crm/TenderForm'
-import ActivityForm from '@/components/crm/ActivityForm'
-import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos } from '@/components/crm/ui'
+import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
 
-const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Follow Ups', 'Audit Trail'] as const
+const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Audit Trail'] as const
 
 export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink = true }: { orgId: number; onDeleted?: () => void; showEditLink?: boolean }) {
   const { user } = useAuth()
@@ -42,6 +41,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
   }, [orgId])
 
   const canModify = !!org && !!user && (user.role === 'admin' || org.created_by_id === user.id)
+  const isAdmin = user?.role === 'admin'
 
   const handleDelete = async () => {
     await crmApi.deleteOrganization(orgId)
@@ -60,15 +60,15 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
           <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 4px' }}>{org.org_type || 'Organization'}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org.name}</h1>
         </div>
-        {canModify && (
+        {(canModify || isAdmin) && (
           <div style={{ display: 'flex', gap: 10 }}>
-            {showEditLink && <Link href={`/dashboard/crm/organizations/${org.id}/edit`} style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-block' }}>Edit</Link>}
-            <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>
+            {canModify && showEditLink && <Link href={`/dashboard/crm/organizations/${org.id}/edit`} style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-block' }}>Edit</Link>}
+            {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
           </div>
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
+      <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
         {TABS.map((t) => {
           const count = t === 'Inquiries' ? org.inquiry_count : t === 'Tenders' ? org.tender_count : t === 'Contacts' ? org.contacts.length : null
           return (
@@ -103,7 +103,6 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
       {tab === 'Contacts' && <ContactsTab org={org} canModify={canModify} onRefresh={load} />}
       {tab === 'Inquiries' && <InquiriesTab orgId={org.id} canModify={canModify} />}
       {tab === 'Tenders' && <TendersTab orgId={org.id} canModify={canModify} />}
-      {tab === 'Follow Ups' && <ActivitiesTab orgId={org.id} />}
       {tab === 'Audit Trail' && <AuditTab orgId={org.id} />}
 
       <ConfirmDialog
@@ -121,34 +120,42 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
       <Card title="Organization Details">
-        <InfoRow label="Type" value={org.org_type || '—'} />
-        <InfoRow label="Parent Organization" value={org.parent_org || '—'} />
-        <InfoRow label="Railway Zone" value={org.railway_zone || '—'} />
-        <InfoRow label="Division / Workshop" value={org.division_workshop || '—'} />
+        <InfoRow label="Type" value={org.org_type || 'Not provided'} />
+        <InfoRow label="Parent Organization" value={org.parent_org || 'Not provided'} />
+        <InfoRow label="Railway Zone" value={org.railway_zone || 'Not provided'} />
+        <InfoRow label="Division / Workshop" value={org.division_workshop || 'Not provided'} />
       </Card>
       <Card title="Location">
-        <InfoRow label="Address" value={org.address || '—'} />
-        <InfoRow label="City" value={org.city || '—'} />
-        <InfoRow label="State" value={org.state || '—'} />
-        <InfoRow label="PIN Code" value={org.pin_code || '—'} />
-        <InfoRow label="Country" value={org.country || '—'} />
+        <InfoRow label="Address" value={org.address || 'Not provided'} />
+        <InfoRow label="City" value={org.city || 'Not provided'} />
+        <InfoRow label="State" value={org.state || 'Not provided'} />
+        <InfoRow label="PIN Code" value={org.pin_code || 'Not provided'} />
+        <InfoRow label="Country" value={org.country || 'Not provided'} />
       </Card>
       <Card title="Contact & Registration">
-        <InfoRow label="GST Number" value={org.gst_number || '—'} />
-        <InfoRow label="Official Phone" value={org.official_phone || '—'} />
-        <InfoRow label="Official Email" value={org.official_email || '—'} />
-        <InfoRow label="Website" value={org.website || '—'} />
+        <InfoRow label="GST Number" value={org.gst_number || 'Not provided'} />
+        <InfoRow label="Official Phone" value={org.official_phone || 'Not provided'} />
+        <InfoRow label="Official Email" value={org.official_email || 'Not provided'} />
+        <InfoRow label="Website" value={org.website || 'Not provided'} />
       </Card>
     </div>
   )
 }
 
 function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; canModify: boolean; onRefresh: () => void }) {
+  const router = useRouter()
   const emptyForm = { name: '', designation: '', mobile: '', email: '', department: '' }
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [inquiries, setInquiries] = useState<Inquiry[]>([])
+  const [tenders, setTenders] = useState<Tender[]>([])
+
+  useEffect(() => {
+    crmApi.listInquiries({ org_id: org.id }).then(setInquiries).catch(() => setInquiries([]))
+    crmApi.listTenders({ org_id: org.id }).then(setTenders).catch(() => setTenders([]))
+  }, [org.id])
 
   const startEdit = (c: OrganizationDetail['contacts'][number]) => {
     setEditingId(c.id)
@@ -200,8 +207,12 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No contacts added yet.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {org.contacts.map((c) => (
-            <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
+          {org.contacts.map((c) => {
+            const linkedInquiries = inquiries.filter((i) => i.org_contact_id === c.id)
+            const linkedTenders = tenders.filter((t) => t.org_contact_id === c.id)
+            return (
+            <div key={c.id} style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                 <div
                   style={{
@@ -242,8 +253,33 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
               {canModify && (
                 <button onClick={() => startEdit(c)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>Edit</button>
               )}
+              </div>
+
+              {(linkedInquiries.length > 0 || linkedTenders.length > 0) && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 50 }}>
+                  {linkedInquiries.map((i) => (
+                    <span
+                      key={`inq-${i.id}`}
+                      onClick={() => router.push(`/dashboard/crm/inquiries/${i.id}`)}
+                      style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: 'rgba(59,130,246,0.1)', color: '#3b82f6', cursor: 'pointer', fontFamily: 'monospace' }}
+                    >
+                      Inquiry {i.universal_id || `#${i.id}`}
+                    </span>
+                  ))}
+                  {linkedTenders.map((t) => (
+                    <span
+                      key={`tnd-${t.id}`}
+                      onClick={() => router.push(`/dashboard/crm/tenders/${t.id}`)}
+                      style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: '#f4713b', cursor: 'pointer', fontFamily: 'monospace' }}
+                    >
+                      Tender {t.universal_id || `#${t.id}`}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
@@ -376,74 +412,6 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ActivitiesTab({ orgId }: { orgId: number }) {
-  const [activities, setActivities] = useState<CrmActivity[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [editing, setEditing] = useState<CrmActivity | null>(null)
-  const load = () => crmApi.listActivities({ org_id: orgId }).then(setActivities).finally(() => setLoading(false))
-  useEffect(() => { load() }, [orgId])
-
-  const cancelForm = () => {
-    setEditing(null)
-    setShowForm(false)
-  }
-
-  if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Log Follow Up'}</button>
-        {showForm && (
-          <div style={{ marginTop: 12 }}>
-            <ActivityForm
-              initial={editing || undefined}
-              defaultOrgId={orgId}
-              submitLabel={editing ? 'Save Changes' : 'Save Activity'}
-              onCancel={cancelForm}
-              onSubmit={async (payload, photos) => {
-                const saved = editing
-                  ? await crmApi.updateActivity(editing.id, payload)
-                  : await crmApi.createActivity(payload)
-                if (photos.length) await crmApi.uploadActivityAttachments(saved.id, photos)
-                cancelForm()
-                load()
-              }}
-            />
-          </div>
-        )}
-      </div>
-
-      {activities.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No follow-ups logged.</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {activities.map((a) => (
-            <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-              <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{a.activity_type || 'Follow Up'}</p>
-                <p style={{ fontSize: 12.5, color: '#57534e', margin: '0 0 4px' }}>{a.remarks || '—'}</p>
-                {a.action_plan && <p style={{ fontSize: 12, color: '#78716c', margin: '0 0 4px' }}>Action Plan: {a.action_plan}</p>}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: '#a8a29e' }}>
-                  {!!a.contact_names?.length && <span>Contact: {a.contact_names.join(', ')}</span>}
-                  {a.related_module && (a.related_label || a.universal_id) && (
-                    <span style={{ textTransform: 'capitalize' }}>{a.related_module}: {a.related_label || a.universal_id}</span>
-                  )}
-                  {a.assigned_to && <span>Assigned To: {a.assigned_to}</span>}
-                  {a.next_followup && <span>Follow-up: {a.next_followup}</span>}
-                </div>
-                <ActivityPhotos attachments={a.attachments} />
-              </div>
-              <button onClick={() => { setEditing(a); setShowForm(true) }} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>Edit</button>
-            </div>
-          ))}
         </div>
       )}
     </div>

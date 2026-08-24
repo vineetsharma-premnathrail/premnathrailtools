@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import io
 import os
+import re
+from html import unescape
 from typing import Any, Mapping, Sequence
 
 try:
@@ -26,6 +28,51 @@ except ImportError:
 
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "utils", "templates", "premnath_logo_mark.png")
 FONT_NAME = "Calibri"
+
+_TAG_RE = re.compile(r"<[^>]+>")
+_LI_RE = re.compile(r"<li[^>]*>(.*?)</li>", re.IGNORECASE | re.DOTALL)
+
+
+def strip_html(html: str | None) -> str:
+    """Plain text from the rich-text editor's HTML — just enough to drop
+    into a MOM cell (tags stripped, entities decoded)."""
+    if not html:
+        return ""
+    return unescape(_TAG_RE.sub("", html)).strip()
+
+
+def list_items(html: str | None) -> list[str]:
+    """Text of each <li> in a rich-text numbered/bulleted list, in order.
+    Empty if the field has no list — callers fall back to the whole field
+    as a single value in that case."""
+    if not html:
+        return []
+    return [strip_html(li) for li in _LI_RE.findall(html) if strip_html(li)]
+
+
+def mom_rows_from_activity(remarks: str | None, action_plan: str | None, responsibility: str | None, target: str | None) -> list[dict[str, Any]]:
+    """One MOM row per numbered/bulleted point shared between Observation
+    (`remarks`) and Action Plan, paired by position — or a single row of
+    the two fields verbatim (HTML stripped) when neither is a list."""
+    obs_items = list_items(remarks)
+    plan_items = list_items(action_plan)
+    point_count = max(len(obs_items), len(plan_items))
+    if point_count > 1:
+        return [
+            {
+                "observation": obs_items[i] if i < len(obs_items) else None,
+                "action_plan": plan_items[i] if i < len(plan_items) else None,
+                "responsibility": responsibility,
+                "target": target,
+            }
+            for i in range(point_count)
+        ]
+    return [{
+        "observation": strip_html(remarks) or None,
+        "action_plan": strip_html(action_plan) or None,
+        "responsibility": responsibility,
+        "target": target,
+    }]
 
 # Column widths in twips — lifted directly from the source template's
 # <w:tblGrid>, which Word treats as authoritative for a fixed-layout table

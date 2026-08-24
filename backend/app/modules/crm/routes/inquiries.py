@@ -15,7 +15,7 @@ from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.schemas.inquiry import InquiryCreate, InquiryUpdate, InquiryResponse, StageLogEntry
 from app.modules.crm.schemas.workflow import StageLogResponse
 from app.modules.crm.schemas.activity import MomExportRequest
-from app.modules.crm.reports.mom_docx import build_mom_docx
+from app.modules.crm.reports.mom_docx import build_mom_docx, mom_rows_from_activity
 from app.modules.crm.reports.mom_pdf import build_mom_pdf
 from app.utils.notifications import broadcast_notification, notify_user
 from fastapi.responses import Response
@@ -183,8 +183,8 @@ async def delete_inquiry(
     inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
-    if not _can_modify(inquiry, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this inquiry.")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can delete this inquiry.")
 
     inquiry.is_deleted = True
     inquiry.deleted_at = datetime.now(timezone.utc)
@@ -300,12 +300,8 @@ def _build_mom_ctx(inquiry_id: int, payload: MomExportRequest, db: Session) -> t
                     "target": item.get("target_date"),
                 })
         else:
-            rows.append({
-                "observation": a.remarks,
-                "action_plan": a.action_plan,
-                "responsibility": inquiry.bd_owner,
-                "target": a.next_followup.strftime("%d.%m.%Y") if a.next_followup else None,
-            })
+            target = a.next_followup.strftime("%d.%m.%Y") if a.next_followup else None
+            rows.extend(mom_rows_from_activity(a.remarks, a.action_plan, inquiry.bd_owner, target))
 
     ctx = {
         "org_name": org.name if org else None,

@@ -121,7 +121,7 @@ export default function ServiceRequestForm({
   const assignedToName = initial?.assigned_to_name || user?.name || ''
 
   useEffect(() => {
-    erpApi.listProjects().then(setProjects).catch(() => setError('Failed to load machines'))
+    erpApi.listProjects({ limit: 5000 }).then(setProjects).catch(() => setError('Failed to load machines'))
   }, [])
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
@@ -188,7 +188,7 @@ export default function ServiceRequestForm({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, alignItems: 'start' }}>
+      <form onSubmit={handleSubmit} className="sr-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <Section title="Issue Information">
             <Row>
@@ -365,6 +365,14 @@ export default function ServiceRequestForm({
           </button>
         </div>
       </form>
+
+      <style jsx>{`
+        @media (min-width: 768px) {
+          .sr-form-grid {
+            grid-template-columns: 2fr 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }

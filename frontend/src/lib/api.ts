@@ -168,8 +168,8 @@ export const usersApi = {
     return data
   },
 
-  updateModuleAccess: async (id: number, assigned_apps: string[], erp_permissions: string[]) => {
-    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions })
+  updateModuleAccess: async (id: number, assigned_apps: string[], erp_permissions: string[], is_department_head?: boolean) => {
+    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, is_department_head })
     return data
   },
 
@@ -347,6 +347,10 @@ export const crmApi = {
   deleteActivity: async (id: number) => {
     const { data } = await apiClient.delete(`/crm/activities/${id}`)
     return data
+  },
+  exportActivityMom: async (id: number) => {
+    const { data } = await apiClient.post(`/crm/activities/${id}/mom-docx`, null, { responseType: 'blob' })
+    return data as Blob
   },
   uploadActivityAttachments: async (activityId: number, files: File[]) => {
     const formData = new FormData()

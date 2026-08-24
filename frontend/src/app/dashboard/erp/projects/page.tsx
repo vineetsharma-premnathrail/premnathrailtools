@@ -169,7 +169,7 @@ export default function ProjectsRegistryPage() {
       </div>
 
       <div style={{ padding: 16, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', marginBottom: 16 }}>
-        <div style={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'flex-end', gap: 12, overflowX: 'auto' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
           <div style={{ flex: '1 1 200px', minWidth: 160 }}>
             <Field label="Search Registry">
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Serial, model name…" style={inputStyle} />

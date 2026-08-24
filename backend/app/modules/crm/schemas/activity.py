@@ -24,6 +24,7 @@ class MomItem(BaseModel):
 
 class ActivityCreate(BaseModel):
     activity_type: str | None = None
+    subject: str | None = None
     org_id: int | None = None
     org_contact_id: int | None = None
     contact_ids: list[int] | None = None
@@ -41,6 +42,7 @@ class ActivityCreate(BaseModel):
 
 class ActivityUpdate(BaseModel):
     activity_type: str | None = None
+    subject: str | None = None
     org_contact_id: int | None = None
     contact_ids: list[int] | None = None
     activity_date: date | None = None
@@ -57,6 +59,7 @@ class ActivityResponse(BaseModel):
 
     id: int
     activity_type: str | None = None
+    subject: str | None = None
     org_id: int | None = None
     org_contact_id: int | None = None
     contact_ids: list[int] | None = None

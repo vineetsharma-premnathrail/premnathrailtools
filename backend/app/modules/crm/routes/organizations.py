@@ -163,8 +163,8 @@ async def delete_organization(
     org = db.query(Organization).filter(Organization.id == org_id, Organization.is_deleted == False).first()  # noqa: E712
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
-    if not _can_modify(org, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this organization.")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can delete this organization.")
 
     now = datetime.now(timezone.utc)
     org.is_deleted = True

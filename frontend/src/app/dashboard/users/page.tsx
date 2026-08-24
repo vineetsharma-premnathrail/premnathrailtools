@@ -60,8 +60,8 @@ export default function UsersRolesPage() {
     return users.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
   }, [users, search])
 
-  const handleSaveAccess = async (userId: number, apps: string[], erpPermissions: string[]) => {
-    const updated = await usersApi.updateModuleAccess(userId, apps, erpPermissions)
+  const handleSaveAccess = async (userId: number, apps: string[], erpPermissions: string[], isDepartmentHead: boolean) => {
+    const updated = await usersApi.updateModuleAccess(userId, apps, erpPermissions, isDepartmentHead)
     setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)))
     setEditingUser(null)
   }
@@ -219,7 +219,12 @@ export default function UsersRolesPage() {
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{u.email}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{u.designation || '—'}</td>
-                  <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{u.department || '—'}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>
+                    {u.department || '—'}
+                    {u.is_department_head && (
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(250,155,155,0.15)', color: '#fa9b9b', textTransform: 'uppercase' }}>Head</span>
+                    )}
+                  </td>
                   <td style={{ padding: '12px 16px' }}>
                     <span
                       style={{
@@ -351,6 +356,36 @@ const ERP_PERMISSION_GROUPS: { label: string; icon: string; perms: { id: string;
   },
 ]
 
+const P2P_PERMISSION_GROUPS: { label: string; icon: string; perms: { id: string; label: string }[] }[] = [
+  {
+    label: 'Purchase Requisition', icon: '📝',
+    perms: [
+      { id: 'pr_create', label: 'Create' },
+    ],
+  },
+  {
+    label: 'Approval', icon: '✅',
+    perms: [
+      { id: 'approval_view', label: 'View' },
+      { id: 'approval_action', label: 'Action' },
+    ],
+  },
+  {
+    label: 'RFQ', icon: '📄',
+    perms: [
+      { id: 'rfq_view', label: 'View' },
+      { id: 'rfq_action', label: 'Action' },
+    ],
+  },
+  {
+    label: 'GRN', icon: '📦',
+    perms: [
+      { id: 'grn_view', label: 'View' },
+      { id: 'grn_action', label: 'Action' },
+    ],
+  },
+]
+
 function EditUserModal({
   user,
   isSelf,
@@ -363,12 +398,13 @@ function EditUserModal({
   isSelf: boolean
   apps: { id: string; label: string }[]
   onClose: () => void
-  onSave: (id: number, apps: string[], erpPermissions: string[]) => Promise<void>
+  onSave: (id: number, apps: string[], erpPermissions: string[], isDepartmentHead: boolean) => Promise<void>
   onToggleActive: (u: User) => Promise<void>
 }) {
   const isAdminRole = user.role === 'admin'
   const [selected, setSelected] = useState<string[]>(user.assigned_apps || [])
   const [erpPerms, setErpPerms] = useState<string[]>(user.erp_permissions || [])
+  const [isDepartmentHead, setIsDepartmentHead] = useState(!!user.is_department_head)
   const [saving, setSaving] = useState(false)
 
   const toggle = (app: string) => {
@@ -382,7 +418,7 @@ function EditUserModal({
   const save = async () => {
     setSaving(true)
     try {
-      await onSave(user.id, selected, erpPerms)
+      await onSave(user.id, selected, erpPerms, isDepartmentHead)
     } finally {
       setSaving(false)
     }
@@ -444,6 +480,35 @@ function EditUserModal({
           </div>
           <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '10px 0 0' }}>Admins have access to all modules automatically.</p>
 
+          <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: '#faf9f7' }}>
+            <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 10px' }}>
+              Department Head
+            </p>
+            <label
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
+                border: isDepartmentHead ? '1px solid #fa9b9b' : '1px solid rgba(0,0,0,0.1)',
+                background: isDepartmentHead ? 'rgba(244,113,59,0.05)' : '#fff',
+                cursor: !user.department ? 'not-allowed' : 'pointer',
+                opacity: !user.department ? 0.5 : 1,
+                fontSize: 13, fontWeight: 600, color: '#1f1108', width: 'fit-content',
+              }}
+            >
+              <input
+                type="checkbox"
+                disabled={!user.department}
+                checked={isDepartmentHead}
+                onChange={() => setIsDepartmentHead((v) => !v)}
+              />
+              Head of {user.department || 'department'}
+            </label>
+            <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '10px 0 0' }}>
+              {user.department
+                ? `Any P2P request raised by someone in "${user.department}" will be routed to this user for approval/rejection.`
+                : 'Set a department for this user (from the HR profile) before making them a department head.'}
+            </p>
+          </div>
+
           {!isAdminRole && selected.includes('erp') && (
             <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: '#faf9f7' }}>
               <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 12px' }}>
@@ -451,6 +516,36 @@ function EditUserModal({
               </p>
               {ERP_PERMISSION_GROUPS.map((group, i) => (
                 <div key={group.label} style={{ marginBottom: i < ERP_PERMISSION_GROUPS.length - 1 ? 12 : 0 }}>
+                  <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 6px' }}>{group.icon} {group.label}</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {group.perms.map((p) => (
+                      <label
+                        key={p.id}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8,
+                          border: erpPerms.includes(p.id) ? '1px solid #fa9b9b' : '1px solid rgba(0,0,0,0.1)',
+                          background: erpPerms.includes(p.id) ? 'rgba(244,113,59,0.05)' : '#fff',
+                          color: erpPerms.includes(p.id) ? '#fa9b9b' : '#1f1108',
+                          cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+                        }}
+                      >
+                        <input type="checkbox" checked={erpPerms.includes(p.id)} onChange={() => togglePerm(p.id)} />
+                        {p.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isAdminRole && selected.includes('p2p') && (
+            <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: '#faf9f7' }}>
+              <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 12px' }}>
+                P2P Permissions
+              </p>
+              {P2P_PERMISSION_GROUPS.map((group, i) => (
+                <div key={group.label} style={{ marginBottom: i < P2P_PERMISSION_GROUPS.length - 1 ? 12 : 0 }}>
                   <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 6px' }}>{group.icon} {group.label}</p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {group.perms.map((p) => (

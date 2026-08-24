@@ -12,7 +12,7 @@ import TenderDetailPanel from '@/components/crm/TenderDetailPanel'
 import { secondaryBtnStyle, pageBtnStyle } from '@/components/crm/ui'
 import { inquiryStatusColor } from '@/components/crm/constants'
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 16
 const PINNED_KEY = 'crm_pinned_inquiry_tender_keys'
 
 const panelOuterStyle: React.CSSProperties = {
@@ -180,7 +180,7 @@ export default function InquiriesPage() {
   )
 
   const searchBar = (
-    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 6, marginBottom: 16 }}>
+    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 6, marginBottom: 10 }}>
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -208,12 +208,12 @@ export default function InquiriesPage() {
 
   const fullTable = (
     <>
-      <div style={{ ...panelOuterStyle, height: 'auto', maxHeight: 'calc(100vh - 320px)', overflow: 'auto' }}>
+      <div style={{ ...panelOuterStyle, height: 'auto', overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
               {['Type', 'ID', 'Organization', 'Title', 'Stage', 'Status', 'Value / Priority', 'Date'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+                <th key={h} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -224,8 +224,8 @@ export default function InquiriesPage() {
               const pinned = pinnedKeys.includes(r.key)
               return (
               <tr key={r.key} onClick={() => openRow(r)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '12px 16px' }}>{typeBadge(r.kind)}</td>
-                <td style={{ padding: '12px 16px' }}>
+                <td style={{ padding: '7px 16px' }}>{typeBadge(r.kind)}</td>
+                <td style={{ padding: '7px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button
                       onClick={(e) => togglePin(r.key, e)}
@@ -239,18 +239,18 @@ export default function InquiriesPage() {
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#fa9b9b' }}>{r.universal_id}</span>
                   </div>
                 </td>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{orgById.get(r.org_id)?.name || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.title}</td>
-                <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.stage}</td>
-                <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{orgById.get(r.org_id)?.name || '—'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.title}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.stage}</td>
+                <td style={{ padding: '7px 16px', whiteSpace: 'nowrap' }}>
                   {r.kind === 'inquiry' ? (
                     <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: inquiryStatusColor(r.status).bg, color: inquiryStatusColor(r.status).text }}>{r.status}</span>
                   ) : (
                     <span style={{ fontSize: 12.5, color: '#57534e' }}>{r.status}</span>
                   )}
                 </td>
-                <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.secondary}</td>
-                <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.date}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.secondary}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.date}</td>
               </tr>
               )
             })}
@@ -259,7 +259,7 @@ export default function InquiriesPage() {
       </div>
 
       {!loading && sortedRows.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 10 }}>
           <span style={{ fontSize: 12.5, color: '#78716c' }}>
             {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sortedRows.length)} of {sortedRows.length}
           </span>

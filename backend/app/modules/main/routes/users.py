@@ -114,6 +114,9 @@ async def update_user(
             raise HTTPException(status_code=400, detail=f"Invalid permission(s): {', '.join(sorted(invalid))}")
         target.erp_permissions = payload.erp_permissions
 
+    if payload.is_department_head is not None:
+        target.is_department_head = payload.is_department_head
+
     if payload.name is not None:
         target.name = payload.name
 

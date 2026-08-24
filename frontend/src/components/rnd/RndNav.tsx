@@ -46,12 +46,8 @@ export default function RndNav() {
 
   return (
     <div
-      className="rnd-nav-scroll"
-      style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}
     >
-      <style jsx>{`
-        .rnd-nav-scroll::-webkit-scrollbar { display: none; }
-      `}</style>
       {TABS.map((tab) => {
         const isActive = tab.href === '/dashboard/rnd' ? pathname === tab.href : pathname.startsWith(tab.href)
         return (

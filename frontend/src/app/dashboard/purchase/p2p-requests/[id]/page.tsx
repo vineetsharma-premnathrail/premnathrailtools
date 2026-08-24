@@ -6,6 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { p2pApi, usersApi } from '@/lib/api'
 import { P2PRequest, AuditEntry, DirectoryUser } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND, GRADIENTS } from '@/lib/theme'
+import PromptDialog from '@/components/erp/PromptDialog'
 
 const STATUS_LABELS: Record<string, string> = {
   submitted: 'Submitted', approved: 'Approved', po_raised: 'PO Raised', partially_received: 'Partially Received',
@@ -62,6 +63,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
   const [grnNumber, setGrnNumber] = useState('')
   const [receiptDate, setReceiptDate] = useState('')
   const [receivingRemarks, setReceivingRemarks] = useState('')
+  const [promptAction, setPromptAction] = useState<'' | 'reject' | 'cancel'>('')
 
   const load = async () => {
     try {
@@ -102,6 +104,13 @@ export default function PurchaseTeamRequisitionDetailPage() {
     } finally {
       setBusy(false)
     }
+  }
+
+  const promptActionDo = (reason: string) => {
+    const action = promptAction
+    setPromptAction('')
+    if (action === 'reject') run(() => p2pApi.reject(pr!.id, reason || undefined))
+    if (action === 'cancel') run(() => p2pApi.cancel(pr!.id, reason || undefined))
   }
 
   if (isLoading || !isAuthorized) return null
@@ -212,7 +221,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
         {pr.status === 'submitted' && (
           <div style={{ display: 'flex', gap: 10 }}>
             <button disabled={busy} onClick={() => run(() => p2pApi.approve(pr.id))} style={{ ...actionBtn, background: '#16a34a' }}>Approve</button>
-            <button disabled={busy} onClick={() => { const reason = prompt('Reason for rejection (optional):') || undefined; run(() => p2pApi.reject(pr.id, reason)) }} style={{ ...actionBtn, background: '#dc2626' }}>Reject</button>
+            <button disabled={busy} onClick={() => setPromptAction('reject')} style={{ ...actionBtn, background: '#dc2626' }}>Reject</button>
           </div>
         )}
 
@@ -270,10 +279,6 @@ export default function PurchaseTeamRequisitionDetailPage() {
                 Create PO
               </button>
             </div>
-
-            <div>
-              <button disabled={busy} onClick={() => { const reason = prompt('Reason for rejection (optional):') || undefined; run(() => p2pApi.reject(pr.id, reason)) }} style={{ ...actionBtn, background: '#dc2626' }}>Reject</button>
-            </div>
           </div>
         )}
 
@@ -309,7 +314,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
 
         {['submitted', 'approved'].includes(pr.status) && (
           <div style={{ marginTop: 16 }}>
-            <button disabled={busy} onClick={() => { const reason = prompt('Reason for cancellation (optional):') || undefined; run(() => p2pApi.cancel(pr.id, reason)) }} style={{ ...actionBtn, background: '#64748b' }}>
+            <button disabled={busy} onClick={() => setPromptAction('cancel')} style={{ ...actionBtn, background: '#64748b' }}>
               Cancel PR
             </button>
           </div>
@@ -346,6 +351,23 @@ export default function PurchaseTeamRequisitionDetailPage() {
           </div>
         )}
       </div>
+
+      <PromptDialog
+        open={promptAction === 'reject'}
+        title="Reject this PR?"
+        placeholder="Reason for rejection (optional)"
+        confirmLabel="Reject"
+        onConfirm={promptActionDo}
+        onCancel={() => setPromptAction('')}
+      />
+      <PromptDialog
+        open={promptAction === 'cancel'}
+        title="Cancel this PR?"
+        placeholder="Reason for cancellation (optional)"
+        confirmLabel="Cancel Requisition"
+        onConfirm={promptActionDo}
+        onCancel={() => setPromptAction('')}
+      />
     </div>
   )
 }

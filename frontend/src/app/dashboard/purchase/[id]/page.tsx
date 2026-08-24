@@ -6,6 +6,8 @@ import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
 import { purchaseApi } from '@/lib/api'
 import { PurchaseRequisition } from '@/types'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import PromptDialog from '@/components/erp/PromptDialog'
 
 const STATUS_LABELS: Record<string, string> = {
   submitted: 'Submitted',
@@ -55,6 +57,8 @@ export default function PurchaseRequisitionDetailPage() {
   const [form, setForm] = useState({ vendor: '', po_number: '', po_date: '', expected_delivery_date: '', notes: '' })
   const [remarksDraft, setRemarksDraft] = useState<Record<number, string>>({})
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [promptAction, setPromptAction] = useState<'' | 'reject' | 'cancel'>('')
+  const [pendingStatus, setPendingStatus] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -107,14 +111,14 @@ export default function PurchaseRequisitionDetailPage() {
       })
     )
 
-  const reject = () => {
-    const reason = window.prompt('Reason for rejecting this PR (optional):') || undefined
-    runAction(() => purchaseApi.reject(prId, reason))
-  }
+  const reject = () => setPromptAction('reject')
+  const cancel = () => setPromptAction('cancel')
 
-  const cancel = () => {
-    const reason = window.prompt('Reason for cancelling this PR (optional):') || undefined
-    runAction(() => purchaseApi.cancel(prId, reason))
+  const promptActionDo = (reason: string) => {
+    const action = promptAction
+    setPromptAction('')
+    if (action === 'reject') runAction(() => purchaseApi.reject(prId, reason || undefined))
+    if (action === 'cancel') runAction(() => purchaseApi.cancel(prId, reason || undefined))
   }
 
   const saveRemarks = (itemId: number) =>
@@ -122,7 +126,12 @@ export default function PurchaseRequisitionDetailPage() {
 
   const changeStatus = (newStatus: string) => {
     if (!pr || newStatus === pr.status) return
-    if (!window.confirm(`Manually change status from "${STATUS_LABELS[pr.status] || pr.status}" to "${STATUS_LABELS[newStatus] || newStatus}"? This bypasses the normal approve/receive workflow.`)) return
+    setPendingStatus(newStatus)
+  }
+
+  const confirmChangeStatus = () => {
+    const newStatus = pendingStatus
+    setPendingStatus('')
     runAction(() => purchaseApi.update(prId, { status: newStatus }))
   }
 
@@ -172,7 +181,7 @@ export default function PurchaseRequisitionDetailPage() {
           {pr.status === 'submitted' && (
             <button disabled={busy} onClick={() => runAction(() => purchaseApi.approve(prId))} style={primaryBtnStyle}>Approve</button>
           )}
-          {['submitted', 'approved'].includes(pr.status) && (
+          {pr.status === 'submitted' && (
             <button disabled={busy} onClick={reject} style={dangerBtnStyle}>Reject</button>
           )}
           {!isTerminal && pr.status !== 'received' && (
@@ -317,6 +326,31 @@ export default function PurchaseRequisitionDetailPage() {
           ))}
         </Card>
       )}
+
+      <PromptDialog
+        open={promptAction === 'reject'}
+        title="Reject this PR?"
+        placeholder="Reason for rejecting (optional)"
+        confirmLabel="Reject"
+        onConfirm={promptActionDo}
+        onCancel={() => setPromptAction('')}
+      />
+      <PromptDialog
+        open={promptAction === 'cancel'}
+        title="Cancel this PR?"
+        placeholder="Reason for cancelling (optional)"
+        confirmLabel="Cancel Requisition"
+        onConfirm={promptActionDo}
+        onCancel={() => setPromptAction('')}
+      />
+      <ConfirmDialog
+        open={!!pendingStatus}
+        title="Change status manually?"
+        message={`Change status from "${pr ? STATUS_LABELS[pr.status] || pr.status : ''}" to "${STATUS_LABELS[pendingStatus] || pendingStatus}"? This bypasses the normal approve/receive workflow.`}
+        confirmLabel="Change Status"
+        onConfirm={confirmChangeStatus}
+        onCancel={() => setPendingStatus('')}
+      />
     </div>
   )
 }

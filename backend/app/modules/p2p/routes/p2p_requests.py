@@ -88,8 +88,24 @@ def _get_pr_or_404(db: Session, pr_id: int) -> P2PRequest:
 def _check_view_access(pr: P2PRequest, user: User) -> None:
     if _is_purchase_team(user):
         return
-    if pr.requested_by_id != user.id:
+    if pr.requested_by_id != user.id and pr.approver_id != user.id:
         raise HTTPException(status_code=403, detail="You may only view your own P2P requests")
+
+
+def _check_approver_access(pr: P2PRequest, user: User) -> None:
+    """A PR with an assigned department-head approver may only be
+    approved/rejected by that head (or an admin) — not just anyone with
+    `purchase` access. A PR with no head assigned (department has none
+    configured) falls back to the old purchase-team-wide behavior so it
+    doesn't get stuck unapprovable."""
+    if user.role == "admin":
+        return
+    if pr.approver_id is not None:
+        if user.id != pr.approver_id:
+            raise HTTPException(status_code=403, detail="Only this PR's assigned department head (or an admin) can approve or reject it.")
+        return
+    if not _is_purchase_team(user):
+        raise HTTPException(status_code=403, detail="Purchase module access required to approve or reject this PR.")
 
 
 @router.get("/meta")
@@ -138,6 +154,12 @@ async def create_p2p_request(
     if not payload.items:
         raise HTTPException(status_code=400, detail="At least one item is required")
 
+    dept_head = None
+    if user.department:
+        dept_head = db.query(User).filter(
+            User.department == user.department, User.is_department_head == True, User.is_active == True,  # noqa: E712
+        ).first()
+
     pr = P2PRequest(
         p2p_number=generate_p2p_number(db, payload.category_code),
         category_code=payload.category_code,
@@ -148,8 +170,8 @@ async def create_p2p_request(
         department=user.department,
         requested_by_id=user.id,
         priority=payload.priority,
-        approver_id=payload.approver_id,
-        approver_name=payload.approver_name,
+        approver_id=dept_head.id if dept_head else payload.approver_id,
+        approver_name=dept_head.name if dept_head else payload.approver_name,
         remarks=payload.remarks,
         status="submitted",
     )
@@ -171,9 +193,9 @@ async def create_p2p_request(
 
     _write_audit(db, pr.id, "created", user, summary=f"{user.name or user.email} raised P2P request {pr.p2p_number}.", new_status="submitted")
 
-    if payload.approver_id:
+    if pr.approver_id:
         notify_user(
-            db, user_id=payload.approver_id,
+            db, user_id=pr.approver_id,
             title="New P2P Request for Review",
             message=f"PR '{pr.p2p_number}' was raised by {user.name or user.email} and awaits your review.",
             notification_type="p2p_request_submitted", entity_type="p2p_request", entity_id=pr.id,
@@ -203,8 +225,11 @@ async def list_p2p_requests(
         selectinload(P2PRequest.attachments),
     )
     if not _is_purchase_team(user):
-        # Requesters only ever see their own history, regardless of filters.
-        query = query.filter(P2PRequest.requested_by_id == user.id)
+        # Requesters see their own history; a department head also sees PRs
+        # routed to them for approval — regardless of other filters.
+        query = query.filter(
+            (P2PRequest.requested_by_id == user.id) | (P2PRequest.approver_id == user.id)
+        )
     if status:
         query = query.filter(P2PRequest.status == status)
     if category_code:
@@ -302,9 +327,10 @@ async def update_p2p_request(
 async def approve_p2p_request(
     pr_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_requester_or_purchase),
 ):
     pr = _get_pr_or_404(db, pr_id)
+    _check_approver_access(pr, user)
     if pr.status != "submitted":
         raise HTTPException(status_code=409, detail=f"Only a submitted PR can be approved (current status: {pr.status})")
 
@@ -333,9 +359,10 @@ async def reject_p2p_request(
     pr_id: int,
     payload: P2PRequestActionPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_requester_or_purchase),
 ):
     pr = _get_pr_or_404(db, pr_id)
+    _check_approver_access(pr, user)
     if pr.status not in ("submitted", "approved"):
         raise HTTPException(status_code=409, detail=f"Cannot reject a PR with status '{pr.status}'")
 

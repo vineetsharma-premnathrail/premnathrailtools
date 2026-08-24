@@ -8,6 +8,8 @@ import { Tender, Organization, TenderTaskItem, TenderCompetitorItem, PurchaseOrd
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
 import TenderForm from '@/components/crm/TenderForm'
+import { RichText } from '@/components/RichTextEditor'
+import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import { TND_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, DOC_CATEGORIES } from '@/components/crm/constants'
 import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
 
@@ -46,6 +48,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   }, [tenderId])
 
   const canModify = !!tender && !!user && (user.role === 'admin' || tender.created_by_id === user.id)
+  const isAdmin = user?.role === 'admin'
 
   const patch = async (payload: Record<string, unknown>) => {
     if (!tender) return
@@ -73,14 +76,14 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#fa9b9b' }}>{tender.universal_id}</span>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(37,99,235,0.1)', color: '#1d4ed8' }}>{tender.status}</span>
+            <span title={`Status: ${tender.status}`} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(37,99,235,0.1)', color: '#1d4ed8' }}>{tender.status}</span>
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{tender.tender_name || org?.name || 'Tender'}</h1>
         </div>
-        {canModify && !editing && (
+        {(canModify || isAdmin) && !editing && (
           <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={() => { setEditing(true); setTab('Info') }} style={secondaryBtnStyle}>Edit</button>
-            <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>
+            {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} style={secondaryBtnStyle}>Edit</button>}
+            {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
           </div>
         )}
       </div>
@@ -93,7 +96,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
 
       <StageProgress stage={tender.current_stage} canModify={canModify} onRequestChange={setPendingStage} />
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
+      <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
         {TABS.map((t) => (
           <button
             key={t}
@@ -629,6 +632,7 @@ function DiscussionTab({ tenderId }: { tenderId: number }) {
 
 function ActivitiesTab({ tender }: { tender: Tender }) {
   const [activities, setActivities] = useState<CrmActivity[]>([])
+  const [viewingActivity, setViewingActivity] = useState<CrmActivity | null>(null)
   useEffect(() => { crmApi.listActivities({ related_module: 'tender', related_id: tender.id }).then(setActivities) }, [tender.id])
 
   if (activities.length === 0) return <p style={{ fontSize: 13, color: '#a8a29e' }}>No follow-ups logged.</p>
@@ -636,11 +640,21 @@ function ActivitiesTab({ tender }: { tender: Tender }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {activities.map((a) => (
-        <div key={a.id} style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-          <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{a.activity_type || 'Follow Up'}</p>
-          <p style={{ fontSize: 12, color: '#57534e', margin: 0 }}>{a.remarks || '—'} {a.next_followup && `· Due: ${a.next_followup}`}</p>
+        <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>
+              {a.activity_type || 'Follow Up'}
+              {a.assigned_to && <span title={`Contact Person: ${a.assigned_to}`} style={{ fontWeight: 500, color: '#78716c' }}> · {a.assigned_to}</span>}
+              {a.created_at && <span title={`Created: ${new Date(a.created_at).toLocaleString('en-GB')}`} style={{ fontWeight: 500, color: '#a8a29e' }}> · {new Date(a.created_at).toLocaleString('en-GB')}</span>}
+            </p>
+            {a.remarks ? <RichText html={a.remarks} style={{ fontSize: 12, color: '#57534e' }} /> : <p style={{ fontSize: 12, color: '#57534e', margin: 0 }}>—</p>}
+            {a.next_followup && <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '2px 0 0' }}>Due: {a.next_followup}</p>}
+          </div>
+          <button onClick={() => setViewingActivity(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>View</button>
         </div>
       ))}
+
+      <ActivityViewDialog activity={viewingActivity} onClose={() => setViewingActivity(null)} />
     </div>
   )
 }
@@ -714,7 +728,7 @@ function TimelineTab({ tenderId }: { tenderId: number }) {
             </span>
             <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0 }}>{e.title}</p>
           </div>
-          {e.detail && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0' }}>{e.detail}</p>}
+          {e.detail && <RichText html={e.detail} style={{ fontSize: 12, color: '#57534e', margin: '2px 0' }} />}
           <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0 }}>{e.by || 'System'} · {e.date ? new Date(e.date).toLocaleString() : '—'}</p>
         </div>
       ))}

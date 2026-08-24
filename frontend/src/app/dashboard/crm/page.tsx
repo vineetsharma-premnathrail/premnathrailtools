@@ -8,6 +8,7 @@ import { crmApi } from '@/lib/api'
 import { CrmDashboard } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
 import { inquiryStatusColor } from '@/components/crm/constants'
+import { stripHtml } from '@/components/RichTextEditor'
 
 export default function CrmDashboardPage() {
   const { user } = useAuth()
@@ -94,7 +95,7 @@ export default function CrmDashboardPage() {
                 return (
                   <div key={a.id} onClick={() => target && router.push(target)} style={{ ...rowStyle, cursor: target ? 'pointer' : 'default' }}>
                     <p style={rowTitle}>{a.activity_type || 'Follow Up'}</p>
-                    <p style={rowSub}>{a.remarks || '—'} · {a.status}</p>
+                    <p style={rowSub}>{(a.remarks ? stripHtml(a.remarks) : '') || '—'} · {a.status}</p>
                   </div>
                 )
               }}

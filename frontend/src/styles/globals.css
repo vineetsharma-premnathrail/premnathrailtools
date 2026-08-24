@@ -62,6 +62,17 @@ input[type='number'] {
    forcing horizontal page scroll on small screens. */
 img, svg { max-width: 100%; height: auto; }
 
+/* For swipeable single-row strips (tab bars, chip rows) that scroll
+   horizontally on narrow screens — keeps the scroll gesture but drops the
+   thick global scrollbar track, matching a native tab-bar feel. */
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* ===================== Responsive app shell ===================== */
 
 .app-shell { position: relative; }
@@ -165,6 +176,11 @@ img, svg { max-width: 100%; height: auto; }
   .braking-results-grid { grid-template-columns: 1fr !important; }
 }
 
+/* CRM Inquiry form: Basic Information + Company Information side-by-side row. */
+@media (max-width: 1000px) {
+  .inquiry-basic-company-grid { grid-template-columns: 1fr !important; }
+}
+
 /* Hydraulic page: form + sticky terminal log panel. */
 @media (max-width: 1024px) {
   .hydraulic-main-grid { grid-template-columns: 1fr !important; }
@@ -182,4 +198,77 @@ img, svg { max-width: 100%; height: auto; }
 }
 @media (max-width: 1100px) {
   .rnd-main-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ===================== App-wide interaction animations =====================
+   Applies everywhere automatically (buttons, links, clickable table rows) —
+   no per-component wiring needed. Disabled entirely for users who've asked
+   the OS for reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  button:not(:disabled),
+  a,
+  .nav-tab-link,
+  tr[style*='cursor: pointer'],
+  tr[style*='cursor:pointer'],
+  div[style*='cursor: pointer'],
+  div[style*='cursor:pointer'] {
+    transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease, background 0.16s ease;
+  }
+
+  /* Desktop: mouse-hover feedback (fine pointer only, so it never sticks
+     "hovered" on a tapped phone element). */
+  @media (hover: hover) and (pointer: fine) {
+    button:not(:disabled):hover,
+    a:hover {
+      transform: translateY(-1px);
+    }
+    tr[style*='cursor: pointer']:hover,
+    tr[style*='cursor:pointer']:hover {
+      background: rgba(244, 113, 59, 0.04);
+    }
+  }
+
+  /* Both desktop click and phone tap: a quick press-down confirms the touch
+     registered before the action/navigation fires. */
+  button:not(:disabled):active,
+  a:active {
+    transform: scale(0.97);
+  }
+  tr[style*='cursor: pointer']:active,
+  tr[style*='cursor:pointer']:active,
+  div[style*='cursor: pointer']:active,
+  div[style*='cursor:pointer']:active {
+    opacity: 0.85;
+  }
+
+  /* Popups/confirm dialogs (ConfirmDialog is shared across every module) fade
+     the backdrop in and pop the panel in with a slight overshoot, instead of
+     snapping into existence. */
+  @keyframes dialogBackdropIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes dialogPanelIn {
+    from { opacity: 0; transform: scale(0.94) translateY(6px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .dialog-backdrop {
+    animation: dialogBackdropIn 0.18s ease both;
+  }
+  .dialog-panel {
+    animation: dialogPanelIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  /* Scroll-reveal: add class="reveal-on-scroll" to any card/row/section and
+     it fades + rises into place the first time it enters the viewport
+     (mobile scroll and desktop scroll both trigger it — see useScrollReveal). */
+  .reveal-on-scroll {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  .reveal-on-scroll.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

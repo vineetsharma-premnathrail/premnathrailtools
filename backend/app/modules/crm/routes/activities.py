@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,7 @@ from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.schemas.activity import ActivityCreate, ActivityUpdate, ActivityResponse, ActivityAttachmentResponse
+from app.modules.crm.reports.mom_docx import build_mom_docx, mom_rows_from_activity
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint
 
 router = APIRouter(prefix="/crm/activities", tags=["CRM - Activities"])
@@ -245,9 +247,49 @@ async def delete_activity(
     activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    if not _can_modify(activity, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this activity.")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can delete this activity.")
     activity.is_deleted = True
     activity.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "Activity deleted"}
+
+
+@router.post("/{activity_id}/mom-docx")
+async def export_activity_mom(
+    activity_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """One-click MOM export for a single follow-up — no form. Everything
+    (subject, date, attendees) is pulled straight from what the user already
+    saved on the follow-up itself; there's nothing left to ask them."""
+    activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    org = db.query(Organization).filter(Organization.id == activity.org_id).first() if activity.org_id else None
+    contacts = (
+        db.query(OrgContact).filter(OrgContact.id.in_(activity.contact_ids)).all()
+        if activity.contact_ids else []
+    )
+    target = activity.next_followup.strftime("%d.%m.%Y") if activity.next_followup else None
+
+    ctx = {
+        "org_name": org.name if org else None,
+        "subject": activity.subject,
+        "meeting_date": activity.created_at.strftime("%d.%m.%Y") if activity.created_at else "",
+        "pew_members": [{"name": activity.assigned_to, "designation": None}] if activity.assigned_to else [],
+        "client_members": [{"name": c.name, "designation": c.designation} for c in contacts],
+        "activities": mom_rows_from_activity(activity.remarks, activity.action_plan, activity.assigned_to, target),
+    }
+    buf = build_mom_docx(ctx)
+
+    org_slug = (org.name if org else "Activity").replace(" ", "_").replace("/", "-")
+    date_slug = activity.created_at.strftime("%Y%m%d") if activity.created_at else "undated"
+    filename = f"MOM_{org_slug}_{date_slug}.docx"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

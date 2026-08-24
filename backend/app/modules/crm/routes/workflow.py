@@ -226,8 +226,8 @@ async def delete_quotation(inquiry_id: int, quot_id: int, db: Session = Depends(
     quot = db.query(Quotation).filter(Quotation.id == quot_id, Quotation.inquiry_id == inquiry_id).first()
     if not quot:
         raise HTTPException(status_code=404, detail="Quotation not found")
-    if not _can_modify(quot, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this quotation.")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can delete this quotation.")
     db.delete(quot)
     db.commit()
     return {"message": "Quotation deleted"}
@@ -286,8 +286,8 @@ async def delete_purchase_order(po_id: int, db: Session = Depends(get_db), user:
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    if not _can_modify(po, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this purchase order.")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can delete this purchase order.")
     db.delete(po)
     db.commit()
     return {"message": "Purchase order deleted"}

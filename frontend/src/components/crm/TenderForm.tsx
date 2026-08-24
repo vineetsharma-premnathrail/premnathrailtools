@@ -7,7 +7,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
 import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES } from './constants'
-import { Field, Section, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle } from './ui'
+import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle } from './ui'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
 
@@ -53,7 +53,7 @@ function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
     tender_number: initial?.tender_number || '',
     tender_name: initial?.tender_name || '',
     tender_authority: initial?.tender_authority || '',
-    tender_portal: initial?.tender_portal || '',
+    tender_portal: initial?.tender_portal && !TENDER_PORTALS.includes(initial.tender_portal) ? 'Other' : initial?.tender_portal || '',
     tender_type: initial?.tender_type || '',
     tender_category: initial?.tender_category || '',
     tender_value: initial?.tender_value != null ? String(initial.tender_value) : '',
@@ -95,20 +95,49 @@ export default function TenderForm({
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
 }) {
   const [tab, setTab] = useState<typeof TABS[number]>('Tender Information')
+  const orgLocked = !!defaultOrgId
   const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
   const [railwayZoneCustom, setRailwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
+  )
+  const [tenderPortalCustom, setTenderPortalCustom] = useState(
+    initial?.tender_portal && !TENDER_PORTALS.includes(initial.tender_portal) ? initial.tender_portal : ''
   )
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [contacts, setContacts] = useState<OrgContact[]>([])
   const [newContact, setNewContact] = useState({ name: '', designation: '', mobile: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [previewNumber, setPreviewNumber] = useState('')
 
   useEffect(() => { crmApi.listOrganizations().then(setOrganizations) }, [])
+
   useEffect(() => {
-    if (form.org_id) crmApi.listOrgContacts(Number(form.org_id)).then(setContacts)
-    else setContacts([])
+    if (initial) return
+    crmApi.listTenders().then((all: Tender[]) => {
+      const today = new Date()
+      const y = today.getFullYear()
+      const m = String(today.getMonth() + 1).padStart(2, '0')
+      const d = String(today.getDate()).padStart(2, '0')
+      const seq = String(all.length + 1).padStart(4, '0')
+      setPreviewNumber(`TND-${y}${m}${d}-${seq}`)
+    }).catch(() => {})
+  }, [initial])
+
+  useEffect(() => {
+    if (!form.org_id) {
+      setContacts([])
+      return
+    }
+    const orgId = Number(form.org_id)
+    crmApi.listOrgContacts(orgId).then(setContacts)
+    if (!initial) {
+      crmApi.getOrganization(orgId).then((org: Organization) => {
+        if (org.railway_zone) set('railway_zone', org.railway_zone)
+        if (org.division_workshop) set('division', org.division_workshop)
+      }).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.org_id])
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
@@ -149,6 +178,7 @@ export default function TenderForm({
         org_contact_id: orgContactId,
         tender_value: form.tender_value ? Number(form.tender_value) : undefined,
         railway_zone: form.railway_zone === 'Other' ? railwayZoneCustom : form.railway_zone,
+        tender_portal: form.tender_portal === 'Other' ? tenderPortalCustom : form.tender_portal,
         participate: form.participate === '' ? undefined : form.participate === 'yes',
         contract_value: form.contract_value ? Number(form.contract_value) : undefined,
       }
@@ -171,11 +201,19 @@ export default function TenderForm({
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Tender Number</span>
-        <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, background: 'rgba(244,113,59,0.08)', color: '#fa9b9b' }}>
-          {initial?.universal_id || 'Auto-generated on save'}
-        </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Tender Number</span>
+          <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, background: 'rgba(244,113,59,0.08)', color: '#fa9b9b' }}>
+            {initial?.universal_id || previewNumber || 'Auto-generated on save'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Tender Date</span>
+          <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, background: '#f5f5f4', color: '#78716c' }}>
+            {initial?.created_at ? new Date(initial.created_at).toLocaleDateString() : new Date().toLocaleDateString()}
+          </span>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
@@ -196,8 +234,7 @@ export default function TenderForm({
       </div>
 
       {tab === 'Tender Information' && (
-      <>
-        <Section title="Organization">
+        <Section title="Tender Information">
           <Row>
             <Field label="Organization">
               <SearchableSelect
@@ -205,6 +242,7 @@ export default function TenderForm({
                 onChange={(v) => set('org_id', v)}
                 options={organizations.map((o) => ({ value: String(o.id), label: o.name }))}
                 placeholder="Search existing organization…"
+                disabled={orgLocked}
               />
             </Field>
             <Field label="Contact Person">
@@ -228,97 +266,89 @@ export default function TenderForm({
               </Row>
             </div>
           )}
+
+          <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', margin: '4px 0' }} />
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
+              <Field label="Tender Number"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></Field>
+            </div>
+            <div style={{ flex: '1 1 180px', minWidth: 160, maxWidth: 260 }}>
+              <Field label="Tender Name"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></Field>
+            </div>
+            <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
+              <Field label="Tender Authority"><input value={form.tender_authority} onChange={(e) => set('tender_authority', e.target.value)} style={inputStyle} /></Field>
+            </div>
+            <div style={{ flex: '0 1 150px', minWidth: 130 }}>
+              <Field label="Tender Portal">
+                <select value={form.tender_portal} onChange={(e) => set('tender_portal', e.target.value)} style={inputStyle}>
+                  <option value="">-- Select Portal --</option>
+                  {TENDER_PORTALS.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+                {form.tender_portal === 'Other' && (
+                  <input value={tenderPortalCustom} onChange={(e) => setTenderPortalCustom(e.target.value)} placeholder="Specify portal" style={{ ...inputStyle, marginTop: 8 }} />
+                )}
+              </Field>
+            </div>
+            <div style={{ flex: '0 1 140px', minWidth: 120 }}>
+              <Field label="Tender Type">
+                <select value={form.tender_type} onChange={(e) => set('tender_type', e.target.value)} style={inputStyle}>
+                  <option value="">-- Select Type --</option>
+                  {TENDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div style={{ flex: '0 1 130px', minWidth: 110 }}>
+              <Field label="Category"><input value={form.tender_category} onChange={(e) => set('tender_category', e.target.value)} style={inputStyle} /></Field>
+            </div>
+            <div style={{ flex: '0 1 120px', minWidth: 100 }}>
+              <Field label="Tender Value"><input type="number" value={form.tender_value} onChange={(e) => set('tender_value', e.target.value)} style={inputStyle} /></Field>
+            </div>
+            <div style={{ flex: '0 1 90px', minWidth: 80 }}>
+              <Field label="Currency">
+                <select value={form.currency} onChange={(e) => set('currency', e.target.value)} style={inputStyle}>
+                  {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div style={{ flex: '0 1 120px', minWidth: 110 }}>
+              <Field label="Status">
+                <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
+                  {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </Field>
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', margin: '4px 0' }} />
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ flex: '0 1 150px', minWidth: 135 }}>
+              <Field label="Publish Date"><DateField value={form.publish_date} onChange={(v) => set('publish_date', v)} /></Field>
+            </div>
+            <div style={{ flex: '0 1 175px', minWidth: 160 }}>
+              <Field label="Document Download Date"><DateField value={form.doc_download_date} onChange={(v) => set('doc_download_date', v)} /></Field>
+            </div>
+            <div style={{ flex: '0 1 170px', minWidth: 155 }}>
+              <Field label="Pre-Bid Meeting Date"><DateField value={form.pre_bid_meeting_date} onChange={(v) => set('pre_bid_meeting_date', v)} /></Field>
+            </div>
+            <div style={{ flex: '0 1 175px', minWidth: 160 }}>
+              <Field label="Query Submission Date"><DateField value={form.query_submission_date} onChange={(v) => set('query_submission_date', v)} /></Field>
+            </div>
+            <div style={{ flex: '0 1 155px', minWidth: 140 }}>
+              <Field label="Submission Date"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></Field>
+            </div>
+            <div style={{ flex: '0 1 175px', minWidth: 160 }}>
+              <Field label="Technical Opening Date"><DateField value={form.opening_date} onChange={(v) => set('opening_date', v)} /></Field>
+            </div>
+            <div style={{ flex: '0 1 175px', minWidth: 160 }}>
+              <Field label="Financial Opening Date"><DateField value={form.financial_opening_date} onChange={(v) => set('financial_opening_date', v)} /></Field>
+            </div>
+            <div style={{ flex: '0 1 170px', minWidth: 155 }}>
+              <Field label="Expected Award Date"><DateField value={form.expected_award_date} onChange={(v) => set('expected_award_date', v)} /></Field>
+            </div>
+          </div>
         </Section>
-
-      <Section title="Railway / Org Details">
-        <Row3>
-          <Field label="Railway Zone">
-            <select value={form.railway_zone} onChange={(e) => set('railway_zone', e.target.value)} style={inputStyle}>
-              <option value="">-- Select Zone --</option>
-              {RAILWAY_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
-            </select>
-            {form.railway_zone === 'Other' && (
-              <input value={railwayZoneCustom} onChange={(e) => setRailwayZoneCustom(e.target.value)} placeholder="Specify railway zone" style={{ ...inputStyle, marginTop: 8 }} />
-            )}
-          </Field>
-          <Field label="Division"><input value={form.division} onChange={(e) => set('division', e.target.value)} style={inputStyle} /></Field>
-          <Field label="Workshop"><input value={form.workshop} onChange={(e) => set('workshop', e.target.value)} style={inputStyle} /></Field>
-        </Row3>
-      </Section>
-
-      <Section title="Tender Details">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-          <Field label="Tender Number"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></Field>
-          <Field label="Tender Name"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></Field>
-          <Field label="Tender Authority"><input value={form.tender_authority} onChange={(e) => set('tender_authority', e.target.value)} style={inputStyle} /></Field>
-          <Field label="Tender Portal">
-            <select value={form.tender_portal} onChange={(e) => set('tender_portal', e.target.value)} style={inputStyle}>
-              <option value="">-- Select Portal --</option>
-              {TENDER_PORTALS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </Field>
-          <Field label="Tender Type">
-            <select value={form.tender_type} onChange={(e) => set('tender_type', e.target.value)} style={inputStyle}>
-              <option value="">-- Select Type --</option>
-              {TENDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </Field>
-          <Field label="Category"><input value={form.tender_category} onChange={(e) => set('tender_category', e.target.value)} style={inputStyle} /></Field>
-          <Field label="Tender Value"><input type="number" value={form.tender_value} onChange={(e) => set('tender_value', e.target.value)} style={inputStyle} /></Field>
-          <Field label="Currency">
-            <select value={form.currency} onChange={(e) => set('currency', e.target.value)} style={inputStyle}>
-              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Status">
-            <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
-              {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
-        </div>
-      </Section>
-
-      <Section title="Key Dates">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-          <Field label="Publish Date"><DateField value={form.publish_date} onChange={(v) => set('publish_date', v)} /></Field>
-          <Field label="Document Download Date"><DateField value={form.doc_download_date} onChange={(v) => set('doc_download_date', v)} /></Field>
-          <Field label="Pre-Bid Meeting Date"><DateField value={form.pre_bid_meeting_date} onChange={(v) => set('pre_bid_meeting_date', v)} /></Field>
-          <Field label="Query Submission Date"><DateField value={form.query_submission_date} onChange={(v) => set('query_submission_date', v)} /></Field>
-          <Field label="Submission Date"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></Field>
-          <Field label="Technical Opening Date"><DateField value={form.opening_date} onChange={(v) => set('opening_date', v)} /></Field>
-          <Field label="Financial Opening Date"><DateField value={form.financial_opening_date} onChange={(v) => set('financial_opening_date', v)} /></Field>
-          <Field label="Expected Award Date"><DateField value={form.expected_award_date} onChange={(v) => set('expected_award_date', v)} /></Field>
-        </div>
-      </Section>
-
-      <Section title="Participation Decision">
-        <Row3>
-          <Field label="Participate?">
-            <select value={form.participate} onChange={(e) => set('participate', e.target.value)} style={inputStyle}>
-              <option value="">-- Select --</option>
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </Field>
-          <Field label="Decision By"><input value={form.decision_by} onChange={(e) => set('decision_by', e.target.value)} style={inputStyle} /></Field>
-          <Field label="Decision Date"><DateField value={form.decision_date} onChange={(v) => set('decision_date', v)} /></Field>
-        </Row3>
-        {form.participate === 'no' && (
-          <Field label="Reason (if Not Participating)">
-            <textarea value={form.reason_no_participate} onChange={(e) => set('reason_no_participate', e.target.value)} rows={2} placeholder="Reason for not participating…" style={{ ...inputStyle, resize: 'vertical' }} />
-          </Field>
-        )}
-      </Section>
-
-      <Section title="Outcome">
-        <Row3>
-          <Field label="Awarded To"><input value={form.awarded_to} onChange={(e) => set('awarded_to', e.target.value)} style={inputStyle} /></Field>
-          <Field label="LOI Number"><input value={form.loi_number} onChange={(e) => set('loi_number', e.target.value)} style={inputStyle} /></Field>
-          <Field label="Contract Value"><input type="number" value={form.contract_value} onChange={(e) => set('contract_value', e.target.value)} style={inputStyle} /></Field>
-        </Row3>
-        <Field label="Loss Reason"><textarea value={form.loss_reason} onChange={(e) => set('loss_reason', e.target.value)} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-      </Section>
-      </>
       )}
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between' }}>

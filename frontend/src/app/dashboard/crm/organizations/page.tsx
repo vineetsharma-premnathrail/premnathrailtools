@@ -10,7 +10,7 @@ import CrmNav from '@/components/crm/CrmNav'
 import OrganizationDetailPanel from '@/components/crm/OrganizationDetailPanel'
 import { secondaryBtnStyle, pageBtnStyle } from '@/components/crm/ui'
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 16
 const PINNED_ORGS_KEY = 'crm_pinned_org_ids'
 
 const panelOuterStyle: React.CSSProperties = {
@@ -105,9 +105,9 @@ export default function OrganizationsPage() {
 
   const header = (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Organizations</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Organizations</h1>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{sortedOrgs.length} Organizations Found</p>
         </div>
         <Link
@@ -127,7 +127,7 @@ export default function OrganizationsPage() {
   )
 
   const searchBar = (
-    <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+    <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', marginBottom: 10 }}>
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -140,12 +140,12 @@ export default function OrganizationsPage() {
 
   const fullTable = (
     <>
-      <div style={{ ...panelOuterStyle, height: 'auto', maxHeight: 'calc(100vh - 320px)', overflow: 'auto' }}>
+      <div style={{ ...panelOuterStyle, overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
               {['Name', 'Type', 'Railway Zone', 'City', 'State', 'GST Number', 'Phone'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+                <th key={h} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -156,7 +156,7 @@ export default function OrganizationsPage() {
               const pinned = pinnedIds.includes(o.id)
               return (
               <tr key={o.id} onClick={() => openOrg(o.id)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '12px 16px' }}>
+                <td style={{ padding: '7px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button
                       onClick={(e) => togglePin(o.id, e)}
@@ -170,12 +170,12 @@ export default function OrganizationsPage() {
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#fa9b9b' }}>{o.name}</span>
                   </div>
                 </td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.org_type || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.railway_zone || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.city || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.state || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.gst_number || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.official_phone || '—'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.org_type || 'Not provided'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.railway_zone || 'Not provided'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.city || 'Not provided'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.state || 'Not provided'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.gst_number || 'Not provided'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.official_phone || 'Not provided'}</td>
               </tr>
               )
             })}
@@ -184,7 +184,7 @@ export default function OrganizationsPage() {
       </div>
 
       {!loading && sortedOrgs.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 10 }}>
           <span style={{ fontSize: 12.5, color: '#78716c' }}>
             {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sortedOrgs.length)} of {sortedOrgs.length}
           </span>

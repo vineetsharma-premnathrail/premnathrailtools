@@ -12,6 +12,7 @@ class Activity(Base, TimestampMixin, SoftDeleteMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     activity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     org_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_organizations.id"), nullable=True, index=True)
     org_contact_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_org_contacts.id"), nullable=True)
     related_module: Mapped[str | None] = mapped_column(String(30), nullable=True)

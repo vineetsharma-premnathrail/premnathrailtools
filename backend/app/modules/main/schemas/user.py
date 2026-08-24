@@ -14,6 +14,7 @@ class UserUpdate(BaseModel):
     role: str | None = None
     assigned_apps: list[str] | None = None
     erp_permissions: list[str] | None = None
+    is_department_head: bool | None = None
 
 
 class UserHRUpdate(BaseModel):
@@ -39,6 +40,7 @@ class UserResponse(BaseModel):
     phone: str | None = None
     assigned_apps: list[str] = []
     erp_permissions: list[str] = []
+    is_department_head: bool = False
     apps: list[str] = []
     is_azure_admin: bool = False
     reporting_manager_id: int | None = None

@@ -28,11 +28,12 @@ const STATUS_HEX: Record<string, string> = {
   cancelled: '#94a3b8',
 }
 
-export default function P2PRequestList({ statuses, emptyLabel }: { statuses?: string[]; emptyLabel: string }) {
+export default function P2PRequestList({ statuses, emptyLabel, context }: { statuses?: string[]; emptyLabel: string; context?: string }) {
   const router = useRouter()
   const [prs, setPrs] = useState<P2PRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const detailHref = (id: number) => (context ? `/dashboard/p2p/${id}?from=${context}` : `/dashboard/p2p/${id}`)
 
   useEffect(() => {
     ;(async () => {
@@ -73,7 +74,7 @@ export default function P2PRequestList({ statuses, emptyLabel }: { statuses?: st
               <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{emptyLabel}</td></tr>
             )}
             {prs.map((pr) => (
-              <tr key={pr.id} onClick={() => router.push(`/dashboard/p2p/${pr.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
+              <tr key={pr.id} onClick={() => router.push(detailHref(pr.id))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{pr.p2p_number}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.category_label || pr.category_code}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.project_label || '—'}</td>
@@ -85,7 +86,7 @@ export default function P2PRequestList({ statuses, emptyLabel }: { statuses?: st
                   </span>
                 </td>
                 <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(`/dashboard/p2p/${pr.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
+                  <span onClick={() => router.push(detailHref(pr.id))} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

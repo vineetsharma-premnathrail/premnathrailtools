@@ -190,8 +190,8 @@ async def delete_tender(
     tender = db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == False).first()  # noqa: E712
     if not tender:
         raise HTTPException(status_code=404, detail="Tender not found")
-    if not _can_modify(tender, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this tender.")
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can delete this tender.")
 
     tender.is_deleted = True
     tender.deleted_at = datetime.now(timezone.utc)
