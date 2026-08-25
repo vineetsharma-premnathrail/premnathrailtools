@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { p2pApi } from '@/lib/api'
-import { PRCategoryMeta, P2PRequestLineItemInput } from '@/types'
+import { p2pApi, usersApi } from '@/lib/api'
+import { PRCategoryMeta, P2PRequestLineItemInput, DirectoryUser } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
@@ -34,6 +34,11 @@ export default function NewP2PRequestPage() {
   const [categories, setCategories] = useState<PRCategoryMeta[]>([])
   const [requirementTypes, setRequirementTypes] = useState<string[]>([])
   const [projects, setProjects] = useState<{ id: number; label: string }[]>([])
+  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([])
+
+  const [departmentHeadId, setDepartmentHeadId] = useState('')
+  const [projectHeadId, setProjectHeadId] = useState('')
+  const [plantHeadId, setPlantHeadId] = useState('')
 
   const [projectId, setProjectId] = useState('')
   const [categoryCode, setCategoryCode] = useState('')
@@ -73,15 +78,21 @@ export default function NewP2PRequestPage() {
     if (!isAuthorized) return
     ;(async () => {
       try {
-        const [meta, projectList] = await Promise.all([p2pApi.getMeta(), p2pApi.listProjects()])
+        const [meta, projectList, directory] = await Promise.all([p2pApi.getMeta(), p2pApi.listProjects(), usersApi.directory()])
         setCategories(meta.categories)
         setRequirementTypes(meta.requirement_types)
         setProjects(projectList)
+        setDirectoryUsers(directory)
       } catch {
         setError('Failed to load form options.')
       }
     })()
   }, [isAuthorized])
+
+  // Any active user can be picked for any of these three roles — search by name or email.
+  const departmentHeads = directoryUsers
+  const projectHeads = directoryUsers
+  const plantHeads = directoryUsers
 
   const updateItem = (idx: number, field: keyof P2PRequestLineItemInput, value: string | number) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)))
@@ -109,6 +120,12 @@ export default function NewP2PRequestPage() {
         requirement_type: requirementType || undefined,
         priority,
         remarks: remarks || undefined,
+        approver_id: departmentHeadId ? Number(departmentHeadId) : undefined,
+        approver_name: departmentHeads.find((u) => String(u.id) === departmentHeadId)?.name,
+        project_head_id: projectHeadId ? Number(projectHeadId) : undefined,
+        project_head_name: projectHeads.find((u) => String(u.id) === projectHeadId)?.name,
+        plant_head_id: plantHeadId ? Number(plantHeadId) : undefined,
+        plant_head_name: plantHeads.find((u) => String(u.id) === plantHeadId)?.name,
         items: filledItems.map((it) => ({
           ...it,
           quantity: Number(it.quantity) || 1,
@@ -255,6 +272,40 @@ export default function NewP2PRequestPage() {
             <textarea style={{ ...inputStyle, minHeight: 42 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
           </div>
         </div>
+
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Approval</h2>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
+          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+            <label style={labelStyle}>Department Head</label>
+            <SearchableSelect
+              value={departmentHeadId}
+              onChange={setDepartmentHeadId}
+              options={departmentHeads.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})${u.department ? ` — ${u.department}` : ''}` }))}
+              placeholder="Search department head…"
+            />
+          </div>
+          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+            <label style={labelStyle}>Project Head</label>
+            <SearchableSelect
+              value={projectHeadId}
+              onChange={setProjectHeadId}
+              options={projectHeads.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
+              placeholder="Search project head…"
+            />
+          </div>
+          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+            <label style={labelStyle}>Plant Head</label>
+            <SearchableSelect
+              value={plantHeadId}
+              onChange={setPlantHeadId}
+              options={plantHeads.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
+              placeholder="Search plant head…"
+            />
+          </div>
+        </div>
+        <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '-10px 0 24px' }}>
+          Leave blank to skip a role. If a Department Head isn&apos;t picked here, one is auto-assigned from your own department when configured.
+        </p>
 
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Documents</h2>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>

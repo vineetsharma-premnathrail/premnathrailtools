@@ -110,6 +110,7 @@ class Quotation(Base):
     version: Mapped[str] = mapped_column(String(20), default="V1")
     revision_number: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     quotation_type: Mapped[str] = mapped_column(String(20), default="Domestic", nullable=False)
+    gst_type: Mapped[str] = mapped_column(String(20), default="CGST_SGST", nullable=False)
     quote_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     client_contact_name: Mapped[str | None] = mapped_column(String(150), nullable=True)

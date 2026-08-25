@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.core.permissions import require_app_access
 from app.modules.main.models.user import User
 from app.modules.crm.models.inquiry import Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem
+from app.modules.crm.models.organization import Organization as OrgModel
 from app.modules.crm.models.tender import Tender, TenderTask, TenderCompetitor
 from app.modules.crm.models.purchase_order import PurchaseOrder
 from app.modules.crm.models.discussion import CrmDiscussion
@@ -17,6 +18,7 @@ from app.modules.crm.schemas.workflow import (
     CompetitorCreate, CompetitorUpdate, TenderCompetitorResponse,
     DiscussionCreate, DiscussionResponse,
 )
+from app.modules.crm.reports.quotation_pdf import build_quotation_pdf
 
 router = APIRouter(prefix="/crm", tags=["CRM - Workflow"])
 
@@ -219,6 +221,52 @@ async def update_quotation(inquiry_id: int, quot_id: int, payload: QuotationUpda
     db.commit()
     db.refresh(quot)
     return quot
+
+
+@router.get("/inquiries/{inquiry_id}/quotations/{quot_id}/pdf")
+async def download_quotation_pdf(inquiry_id: int, quot_id: int, db: Session = Depends(get_db), _user: User = Depends(require_app_access("crm"))):
+    quot = db.query(Quotation).filter(Quotation.id == quot_id, Quotation.inquiry_id == inquiry_id).first()
+    if not quot:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id).first()
+    org = db.query(OrgModel).filter(OrgModel.id == inquiry.org_id).first() if inquiry else None
+    client_address_parts = [p for p in [org.address if org else None, org.city if org else None, org.state if org else None, org.pin_code if org else None] if p]
+    ctx = {
+        "quot_number": quot.quot_number,
+        "revision_number": quot.revision_number,
+        "quotation_type": quot.quotation_type,
+        "gst_type": quot.gst_type,
+        "quote_date": quot.quote_date.isoformat() if quot.quote_date else None,
+        "client_name": quot.client_name,
+        "client_address": ", ".join(client_address_parts) or None,
+        "client_gst_number": org.gst_number if org else None,
+        "client_contact_name": quot.client_contact_name,
+        "client_contact_email": quot.client_contact_email,
+        "client_contact_phone": quot.client_contact_phone,
+        "valid_until": quot.valid_until.isoformat() if quot.valid_until else None,
+        "delivery_time": quot.delivery_time,
+        "payment_terms": quot.payment_terms,
+        "notes": quot.notes,
+        "currency_symbol": "$" if quot.quotation_type == "Export" else "Rs.",
+        "items": [
+            {
+                "description": item.description,
+                "model_number": item.model_number,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "gst_percent": item.gst_percent,
+                "subtotal": item.subtotal,
+                "total": item.total,
+            }
+            for item in quot.items
+        ],
+    }
+    buf = build_quotation_pdf(ctx)
+    filename = f"{quot.quot_number or f'Quotation-{quot.id}'}.pdf"
+    return Response(
+        content=buf.getvalue(), media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/inquiries/{inquiry_id}/quotations/{quot_id}")

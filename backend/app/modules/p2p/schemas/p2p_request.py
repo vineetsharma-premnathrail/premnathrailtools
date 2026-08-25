@@ -52,8 +52,17 @@ class P2PRequestCreate(BaseModel):
     required_date: date | None = None
     requirement_type: str | None = None
     priority: str = "medium"
+    # Department Head, Project Head, Plant Head — each picked by search-select
+    # on the New PR form from users flagged with that role; any left unpicked
+    # (e.g. no department head configured) simply isn't part of the approval
+    # chain for this PR. `approver_id`/`approver_name` is the Department Head
+    # slot's underlying column name (see P2PRequest model).
     approver_id: int | None = None
     approver_name: str | None = None
+    project_head_id: int | None = None
+    project_head_name: str | None = None
+    plant_head_id: int | None = None
+    plant_head_name: str | None = None
     remarks: str | None = None
     items: list[P2PRequestItemPayload] = Field(default_factory=list)
 
@@ -68,12 +77,20 @@ class P2PRequestUpdate(BaseModel):
     priority: str | None = None
     approver_id: int | None = None
     approver_name: str | None = None
+    project_head_id: int | None = None
+    project_head_name: str | None = None
+    plant_head_id: int | None = None
+    plant_head_name: str | None = None
     remarks: str | None = None
     status: str | None = None
 
 
 class P2PRequestActionPayload(BaseModel):
     reason: str | None = None
+
+
+class P2PRequestApprovePayload(BaseModel):
+    comment: str | None = None
 
 
 class P2PRequestAssignBuyerPayload(BaseModel):
@@ -127,6 +144,18 @@ class P2PRequestResponse(BaseModel):
     priority: str
     approver_id: int | None = None
     approver_name: str | None = None
+    department_head_approved_at: datetime | None = None
+    department_head_comment: str | None = None
+    project_head_id: int | None = None
+    project_head_name: str | None = None
+    project_head_approved_at: datetime | None = None
+    project_head_comment: str | None = None
+    plant_head_id: int | None = None
+    plant_head_name: str | None = None
+    plant_head_approved_at: datetime | None = None
+    plant_head_comment: str | None = None
+    pending_approval_roles: list[str] = Field(default_factory=list)
+    rejected_by_role: str | None = None
     remarks: str | None = None
     status: str
     approved_by_id: int | None = None

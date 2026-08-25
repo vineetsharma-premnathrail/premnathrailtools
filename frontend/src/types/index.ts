@@ -16,6 +16,9 @@ export interface User {
   erp_permissions?: string[]
   /** Head of `department` — auto-assigned as the approver on P2P requests raised from that department. */
   is_department_head?: boolean
+  /** Org-wide approver roles picked explicitly per-PR via search-select on the New PR form. */
+  is_project_head?: boolean
+  is_plant_head?: boolean
   /** Modules this user can actually reach right now (admins get all, regardless of assigned_apps). */
   apps: AppModule[]
   reporting_manager_id?: number
@@ -173,6 +176,9 @@ export interface DirectoryUser {
   email: string
   department?: string | null
   designation?: string | null
+  is_department_head?: boolean
+  is_project_head?: boolean
+  is_plant_head?: boolean
 }
 
 export interface AuditEntry {
@@ -352,6 +358,7 @@ export interface Organization {
   official_email?: string
   website?: string
   created_by_id?: number
+  created_by_name?: string
   created_at?: string
   updated_at?: string
   is_deleted: boolean
@@ -397,6 +404,7 @@ export interface Inquiry {
   followup_assigned_to?: string
   followup_remarks?: string
   created_by_id?: number
+  created_by_name?: string
   created_at?: string
   updated_at?: string
   is_deleted: boolean
@@ -437,6 +445,7 @@ export interface Tender {
   contract_value?: number
   loss_reason?: string
   created_by_id?: number
+  created_by_name?: string
   created_at?: string
   updated_at?: string
   is_deleted: boolean
@@ -585,6 +594,7 @@ export interface QuotationItem {
   quot_number?: string
   revision_number: number
   quotation_type: string
+  gst_type: string
   quote_date?: string
   client_name?: string
   client_contact_name?: string
@@ -714,8 +724,22 @@ export interface P2PRequest {
   requested_by_id?: number
   requested_by_name?: string
   priority: 'low' | 'medium' | 'high'
+  // Department Head slot (column name kept for backward compatibility).
   approver_id?: number
   approver_name?: string
+  department_head_approved_at?: string
+  department_head_comment?: string
+  project_head_id?: number
+  project_head_name?: string
+  project_head_approved_at?: string
+  project_head_comment?: string
+  plant_head_id?: number
+  plant_head_name?: string
+  plant_head_approved_at?: string
+  plant_head_comment?: string
+  /** Role slugs ('department_head'|'project_head'|'plant_head') still awaiting sign-off. */
+  pending_approval_roles?: string[]
+  rejected_by_role?: string
   remarks?: string
   status: P2PRequestStatus
   approved_by_id?: number

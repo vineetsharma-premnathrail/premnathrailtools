@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { p2pApi, usersApi, vendorsApi, storeApi } from '@/lib/api'
-import { P2PRequest, DirectoryUser, Vendor, StockItem, StoreLocation } from '@/types'
+import { p2pApi, vendorsApi, storeApi } from '@/lib/api'
+import { P2PRequest, Vendor, StockItem, StoreLocation } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
@@ -17,9 +17,23 @@ const STATUS_LABELS: Record<string, string> = {
   closed: 'Closed', rejected: 'Rejected', cancelled: 'Cancelled',
 }
 const STATUS_HEX: Record<string, string> = {
-  submitted: '#3b82f6', approved: '#8b5cf6', po_raised: '#f59e0b',
+  submitted: '#3b82f6', approved: '#22c55e', po_raised: '#f59e0b',
   partially_received: '#f97316', received: '#0ea5e9', closed: '#22c55e',
   rejected: '#dc2626', cancelled: '#94a3b8',
+}
+
+// A submitted PR where some (but not all) assigned heads have signed off
+// gets its own purple "Partially Approved" display — distinct from the
+// blue "Submitted" (nobody's approved yet) and green "Approved" (all done).
+function displayStatus(pr: P2PRequest): { label: string; hex: string } {
+  if (pr.status === 'submitted') {
+    const assignedCount = [pr.approver_id, pr.project_head_id, pr.plant_head_id].filter((v) => v != null).length
+    const pendingCount = pr.pending_approval_roles?.length ?? assignedCount
+    if (assignedCount > 0 && pendingCount > 0 && pendingCount < assignedCount) {
+      return { label: 'Partially Approved', hex: '#8b5cf6' }
+    }
+  }
+  return { label: STATUS_LABELS[pr.status] || pr.status, hex: STATUS_HEX[pr.status] || '#64748b' }
 }
 
 
@@ -54,7 +68,6 @@ export default function MyP2PRequestDetailPage() {
   const prId = Number(params.id)
 
   const [pr, setPr] = useState<P2PRequest | null>(null)
-  const [users, setUsers] = useState<DirectoryUser[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [stockItems, setStockItems] = useState<StockItem[]>([])
   const [storeLocations, setStoreLocations] = useState<StoreLocation[]>([])
@@ -63,8 +76,8 @@ export default function MyP2PRequestDetailPage() {
   const [busy, setBusy] = useState(false)
 
   const [activePanel, setActivePanel] = useState<'' | 'edit' | 'assign' | 'quotation' | 'vendor' | 'po' | 'receipt'>('')
-  const [confirmAction, setConfirmAction] = useState<'' | 'approve' | 'close'>('')
-  const [promptAction, setPromptAction] = useState<'' | 'cancel' | 'reject'>('')
+  const [confirmAction, setConfirmAction] = useState<'' | 'close'>('')
+  const [promptAction, setPromptAction] = useState<'' | 'cancel' | 'reject' | 'approve'>('')
 
   const [editProjectLabel, setEditProjectLabel] = useState('')
   const [editRequiredDate, setEditRequiredDate] = useState('')
@@ -72,8 +85,6 @@ export default function MyP2PRequestDetailPage() {
   const [editPriority, setEditPriority] = useState('medium')
   const [editRemarks, setEditRemarks] = useState('')
 
-  const [assignBuyerId, setAssignBuyerId] = useState('')
-  const [assignDate, setAssignDate] = useState('')
 
   const [qVendor, setQVendor] = useState('')
   const [qRfqNumber, setQRfqNumber] = useState('')
@@ -122,7 +133,6 @@ export default function MyP2PRequestDetailPage() {
 
   useEffect(() => {
     if (!isPurchaseTeam) return
-    usersApi.directory().then(setUsers).catch(() => {})
     vendorsApi.list({ limit: 500 }).then(setVendors).catch(() => {})
     storeApi.listItems({ limit: 1000 }).then(setStockItems).catch(() => {})
     storeApi.listLocations().then(setStoreLocations).catch(() => {})
@@ -144,22 +154,22 @@ export default function MyP2PRequestDetailPage() {
   }
 
   const cancel = () => setPromptAction('cancel')
-  const approve = () => setConfirmAction('approve')
+  const approve = () => setPromptAction('approve')
   const reject = () => setPromptAction('reject')
   const close = () => setConfirmAction('close')
 
   const confirmActionDo = () => {
     const action = confirmAction
     setConfirmAction('')
-    if (action === 'approve') runAction(() => p2pApi.approve(prId))
     if (action === 'close') runAction(() => p2pApi.close(prId))
   }
 
-  const promptActionDo = (reason: string) => {
+  const promptActionDo = (value: string) => {
     const action = promptAction
     setPromptAction('')
-    if (action === 'cancel') runAction(() => p2pApi.cancel(prId, reason || undefined))
-    if (action === 'reject') runAction(() => p2pApi.reject(prId, reason || undefined))
+    if (action === 'cancel') runAction(() => p2pApi.cancel(prId, value || undefined))
+    if (action === 'reject') runAction(() => p2pApi.reject(prId, value || undefined))
+    if (action === 'approve') runAction(() => p2pApi.approve(prId, value || undefined))
   }
 
   const saveEdit = () => runAction(() =>
@@ -171,11 +181,6 @@ export default function MyP2PRequestDetailPage() {
       remarks: editRemarks || undefined,
     })
   )
-
-  const saveAssignBuyer = () => {
-    if (!assignBuyerId) { setError('Select a buyer.'); return }
-    runAction(() => p2pApi.assignBuyer(prId, Number(assignBuyerId), assignDate || undefined))
-  }
 
   const saveQuotation = () => runAction(() =>
     p2pApi.requestQuotations(prId, {
@@ -237,14 +242,22 @@ export default function MyP2PRequestDetailPage() {
   if (error && !pr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
   if (!pr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>Not found.</p>
 
-  const statusColor = STATUS_HEX[pr.status] || '#64748b'
-  const isAssignedApprover = !!user?.id && pr.approver_id === user.id
-  const canApproveOrReject = (isPurchaseTeam || isAssignedApprover) && pr.status === 'submitted'
+  const status = displayStatus(pr)
+  const statusColor = status.hex
+  const isAdmin = user?.role === 'admin'
+  const approvalRoles = [
+    { role: 'department_head', label: 'Department Head', id: pr.approver_id, name: pr.approver_name, approvedAt: pr.department_head_approved_at, comment: pr.department_head_comment },
+    { role: 'project_head', label: 'Project Head', id: pr.project_head_id, name: pr.project_head_name, approvedAt: pr.project_head_approved_at, comment: pr.project_head_comment },
+    { role: 'plant_head', label: 'Plant Head', id: pr.plant_head_id, name: pr.plant_head_name, approvedAt: pr.plant_head_approved_at, comment: pr.plant_head_comment },
+  ]
+  const hasAssignedHeads = approvalRoles.some((r) => r.id != null)
+  const myPendingRole = approvalRoles.find((r) => r.id != null && r.id === user?.id && !r.approvedAt)
+  const canApproveOrReject = pr.status === 'submitted' && (hasAssignedHeads ? (!!myPendingRole || isAdmin) : isPurchaseTeam)
+  const canRejectAccess = pr.status === 'submitted' && (hasAssignedHeads ? (approvalRoles.some((r) => r.id != null && r.id === user?.id) || isAdmin) : isPurchaseTeam)
   const canCancel = ['submitted', 'approved'].includes(pr.status)
   const canApproveReject = fromApproval && canApproveOrReject
-  const canRejectStill = fromApproval && canApproveOrReject
-  const canAssignBuyer = isPurchaseTeam && pr.status === 'approved'
-  const canQuoteOrSelectVendorOrPO = isPurchaseTeam && pr.status === 'approved'
+  const canRejectStill = fromApproval && canRejectAccess
+  const canQuoteOrSelectVendorOrPO = !fromApproval && isPurchaseTeam && pr.status === 'approved'
   const canReceive = isPurchaseTeam && ['po_raised', 'partially_received'].includes(pr.status)
   const canClose = isPurchaseTeam && pr.status === 'received'
   const canEdit = isPurchaseTeam && !['closed', 'cancelled', 'rejected'].includes(pr.status)
@@ -260,7 +273,7 @@ export default function MyP2PRequestDetailPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{pr.p2p_number}</h1>
             <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${statusColor}1a`, color: statusColor }}>
-              {STATUS_LABELS[pr.status] || pr.status}
+              {status.label}
             </span>
           </div>
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{pr.category_label || pr.category_code} · {pr.project_label || 'No project specified'}</p>
@@ -330,16 +343,40 @@ export default function MyP2PRequestDetailPage() {
 
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Request Details</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
           <InfoRow label="Department" value={pr.department || '—'} />
           <InfoRow label="Requested By" value={pr.requested_by_name || '—'} />
-          <InfoRow label="Approver" value={pr.approver_name || '—'} />
           <InfoRow label="Request Date" value={new Date(pr.request_date).toLocaleDateString()} />
           <InfoRow label="Required Date" value={pr.required_date ? new Date(pr.required_date).toLocaleDateString() : '—'} />
           <InfoRow label="Requirement Type" value={pr.requirement_type || '—'} />
           <InfoRow label="Priority" value={pr.priority} />
+          <InfoRow label="Buyer" value={pr.assigned_buyer_name || '—'} />
         </div>
         {pr.remarks && <div style={{ marginTop: 10 }}><InfoRow label="Remarks" value={pr.remarks} /></div>}
+      </div>
+
+      <div style={sectionStyle}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Approval</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+          {approvalRoles.map((r) => (
+            <div key={r.role}>
+              <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{r.label}</p>
+              {r.id == null ? (
+                <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— not assigned</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                    {r.name || '—'}
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: r.approvedAt ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.15)', color: r.approvedAt ? '#16a34a' : '#64748b' }}>
+                      {r.approvedAt ? 'Approved' : 'Pending'}
+                    </span>
+                  </p>
+                  {r.comment && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{r.comment}&quot;</p>}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       <div style={{ ...sectionStyle, overflow: 'auto' }}>
@@ -393,14 +430,11 @@ export default function MyP2PRequestDetailPage() {
         </table>
       </div>
 
-      {isPurchaseTeam && (canAssignBuyer || canQuoteOrSelectVendorOrPO || canReceive) && (
+      {isPurchaseTeam && (canQuoteOrSelectVendorOrPO || canReceive) && (
         <div style={sectionStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Purchase Processing</h2>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {canAssignBuyer && (
-                <button disabled={busy} onClick={() => setActivePanel(activePanel === 'assign' ? '' : 'assign')} style={ghostBtn}>Assign Buyer</button>
-              )}
               {canQuoteOrSelectVendorOrPO && (
                 <>
                   <button disabled={busy} onClick={() => setActivePanel(activePanel === 'quotation' ? '' : 'quotation')} style={ghostBtn}>Vendor / RFQ</button>
@@ -413,27 +447,6 @@ export default function MyP2PRequestDetailPage() {
               )}
             </div>
           </div>
-
-          {activePanel === 'assign' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
-              <div>
-                <label style={labelStyle}>Buyer</label>
-                <SearchableSelect
-                  value={assignBuyerId}
-                  onChange={setAssignBuyerId}
-                  options={users.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
-                  placeholder="Search buyer…"
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Assignment Date</label>
-                <DateField value={assignDate} onChange={setAssignDate} />
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button disabled={busy} onClick={saveAssignBuyer} style={primaryBtn}>Assign Buyer</button>
-              </div>
-            </div>
-          )}
 
           {activePanel === 'quotation' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
@@ -580,14 +593,13 @@ export default function MyP2PRequestDetailPage() {
         </div>
       )}
 
-      <ConfirmDialog
-        open={confirmAction === 'approve'}
+      <PromptDialog
+        open={promptAction === 'approve'}
         title="Approve this PR?"
-        message="This will move the requisition forward for buyer assignment."
+        placeholder="Comment (optional)"
         confirmLabel="Approve"
-        danger={false}
-        onConfirm={confirmActionDo}
-        onCancel={() => setConfirmAction('')}
+        onConfirm={promptActionDo}
+        onCancel={() => setPromptAction('')}
       />
       <ConfirmDialog
         open={confirmAction === 'close'}

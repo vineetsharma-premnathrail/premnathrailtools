@@ -15,6 +15,8 @@ class UserUpdate(BaseModel):
     assigned_apps: list[str] | None = None
     erp_permissions: list[str] | None = None
     is_department_head: bool | None = None
+    is_project_head: bool | None = None
+    is_plant_head: bool | None = None
 
 
 class UserHRUpdate(BaseModel):
@@ -41,6 +43,8 @@ class UserResponse(BaseModel):
     assigned_apps: list[str] = []
     erp_permissions: list[str] = []
     is_department_head: bool = False
+    is_project_head: bool = False
+    is_plant_head: bool = False
     apps: list[str] = []
     is_azure_admin: bool = False
     reporting_manager_id: int | None = None

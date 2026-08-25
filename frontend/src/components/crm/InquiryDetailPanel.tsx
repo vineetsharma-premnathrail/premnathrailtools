@@ -141,7 +141,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         />
       )}
       {tab === 'Info' && !editing && <InfoTab inquiry={inquiry} org={org} contact={contact} />}
-      {tab === 'Quotations' && <QuotationsTab inquiryId={inquiry.id} canModify={canModify} />}
+      {tab === 'Quotations' && <QuotationsTab inquiryId={inquiry.id} canModify={canModify} org={org} contact={contact} />}
       {tab === 'Sales' && <PurchaseOrdersTab inquiryId={inquiry.id} orgId={inquiry.org_id} canModify={canModify} />}
       {tab === 'Documents' && <DocumentsTab inquiry={inquiry} canModify={canModify} />}
       {tab === 'Mails' && <MailsTab />}
@@ -382,23 +382,57 @@ function TasksTab({ inquiryId, canModify }: { inquiryId: number; canModify: bool
 
 const emptyLineItem = { description: '', model_number: '', quantity: '', unit_price: '', gst_percent: '', subtotal: '', total: '' }
 
-function QuotationsTab({ inquiryId, canModify }: { inquiryId: number; canModify: boolean }) {
+function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: number; canModify: boolean; org: Organization | null; contact: OrgContact | null }) {
   const [quotations, setQuotations] = useState<QuotationItem[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const todayIso = new Date().toISOString().slice(0, 10)
   const emptyForm = {
-    quotation_type: 'Domestic', quote_date: '', client_name: '', client_contact_name: '', client_contact_email: '', client_contact_phone: '',
+    quotation_type: 'Domestic', gst_type: 'CGST_SGST', quote_date: todayIso, client_name: org?.name || '', client_contact_name: contact?.name || '',
+    client_contact_email: contact?.email || '', client_contact_phone: contact?.mobile || '',
     valid_until: '', delivery_time: '', customer_response: '', submitted_date: '', payment_terms: '', notes: '',
   }
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState([{ ...emptyLineItem }])
+  const [downloadingId, setDownloadingId] = useState<number | null>(null)
+  const [pdfError, setPdfError] = useState('')
   const load = () => crmApi.listQuotations(inquiryId).then(setQuotations)
   useEffect(() => { load() }, [inquiryId])
+
+  useEffect(() => {
+    if (editingId || showForm) return
+    setForm((f) => ({
+      ...f,
+      client_name: f.client_name || org?.name || '',
+      client_contact_name: f.client_contact_name || contact?.name || '',
+      client_contact_email: f.client_contact_email || contact?.email || '',
+      client_contact_phone: f.client_contact_phone || contact?.mobile || '',
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org, contact])
+
+  const downloadPdf = async (q: QuotationItem) => {
+    setDownloadingId(q.id)
+    setPdfError('')
+    try {
+      const blob = await crmApi.downloadQuotationPdf(inquiryId, q.id)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${q.quot_number || `Quotation-${q.id}`}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      setPdfError('PDF generation failed.')
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   const startEdit = (q: QuotationItem) => {
     setEditingId(q.id)
     setForm({
-      quotation_type: q.quotation_type || 'Domestic', quote_date: q.quote_date || '', client_name: q.client_name || '',
+      quotation_type: q.quotation_type || 'Domestic', gst_type: q.gst_type || 'CGST_SGST', quote_date: q.quote_date || '', client_name: q.client_name || '',
       client_contact_name: q.client_contact_name || '', client_contact_email: q.client_contact_email || '', client_contact_phone: q.client_contact_phone || '',
       valid_until: q.valid_until || '', delivery_time: q.delivery_time || '', customer_response: q.customer_response || '',
       submitted_date: q.submitted_date || '', payment_terms: q.payment_terms || '', notes: q.notes || '',
@@ -425,7 +459,33 @@ function QuotationsTab({ inquiryId, canModify }: { inquiryId: number; canModify:
   const addItemRow = () => setItems((rows) => [...rows, { ...emptyLineItem }])
   const removeItemRow = (idx: number) => setItems((rows) => rows.filter((_, i) => i !== idx))
   const updateItemRow = (idx: number, field: keyof typeof emptyLineItem, value: string) =>
-    setItems((rows) => rows.map((row, i) => (i === idx ? { ...row, [field]: value } : row)))
+    setItems((rows) => rows.map((row, i) => {
+      if (i !== idx) return row
+      const updated = { ...row, [field]: value }
+      if (field === 'quantity' || field === 'unit_price' || field === 'gst_percent') {
+        const qty = Number(updated.quantity) || 0
+        const price = Number(updated.unit_price) || 0
+        const gst = form.quotation_type === 'Export' ? 0 : Number(updated.gst_percent) || 0
+        const subtotal = qty * price
+        const total = subtotal + subtotal * (gst / 100)
+        updated.subtotal = subtotal ? String(Number(subtotal.toFixed(2))) : ''
+        updated.total = subtotal ? String(Number(total.toFixed(2))) : ''
+      }
+      return updated
+    }))
+  const grandTotal = items.reduce((sum, it) => sum + (Number(it.total) || 0), 0)
+
+  useEffect(() => {
+    setItems((rows) => rows.map((row) => {
+      const qty = Number(row.quantity) || 0
+      const price = Number(row.unit_price) || 0
+      const gst = form.quotation_type === 'Export' ? 0 : Number(row.gst_percent) || 0
+      const subtotal = qty * price
+      const total = subtotal + subtotal * (gst / 100)
+      return { ...row, subtotal: subtotal ? String(Number(subtotal.toFixed(2))) : row.subtotal, total: subtotal ? String(Number(total.toFixed(2))) : row.total }
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.quotation_type])
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -466,6 +526,14 @@ function QuotationsTab({ inquiryId, canModify }: { inquiryId: number; canModify:
                     <option value="Export">Export (USD)</option>
                   </select>
                 </Field>
+                {!isExport && (
+                  <Field label="GST Type">
+                    <select value={form.gst_type} onChange={(e) => setForm((f) => ({ ...f, gst_type: e.target.value }))} style={inputStyle}>
+                      <option value="CGST_SGST">CGST + SGST (Intra-state)</option>
+                      <option value="IGST">IGST (Inter-state)</option>
+                    </select>
+                  </Field>
+                )}
                 <Field label="Date of Quote"><DateField value={form.quote_date} onChange={(v) => setForm((f) => ({ ...f, quote_date: v }))} /></Field>
               </div>
 
@@ -480,19 +548,21 @@ function QuotationsTab({ inquiryId, canModify }: { inquiryId: number; canModify:
                 <label style={{ fontSize: 12, fontWeight: 700, color: '#57534e', marginBottom: 6, display: 'block' }}>Line Items</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {items.map((row, idx) => (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: isExport ? '2fr 1.2fr 0.7fr 0.9fr 0.9fr 0.9fr auto' : '2fr 1.2fr 0.7fr 0.9fr 0.7fr 0.9fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: isExport ? '2fr 1.2fr 0.7fr 0.9fr 0.9fr auto' : '2fr 1.2fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
                       <input value={row.description} onChange={(e) => updateItemRow(idx, 'description', e.target.value)} placeholder="Description" style={inputStyle} />
                       <input value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No." style={inputStyle} />
                       <input type="number" value={row.quantity} onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} placeholder="Qty" style={inputStyle} />
                       <input type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol})`} style={inputStyle} />
                       {!isExport && <input type="number" value={row.gst_percent} onChange={(e) => updateItemRow(idx, 'gst_percent', e.target.value)} placeholder="GST %" style={inputStyle} />}
-                      <input type="number" value={row.subtotal} onChange={(e) => updateItemRow(idx, 'subtotal', e.target.value)} placeholder="Subtotal" style={inputStyle} />
-                      <input type="number" value={row.total} onChange={(e) => updateItemRow(idx, 'total', e.target.value)} placeholder="Total" style={inputStyle} />
+                      <input type="number" value={row.subtotal} readOnly placeholder="Subtotal" style={{ ...inputStyle, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
                       <button type="button" onClick={() => removeItemRow(idx)} style={{ ...secondaryBtnStyle, padding: '6px 10px', fontSize: 11 }}>✕</button>
                     </div>
                   ))}
                 </div>
                 <button type="button" onClick={addItemRow} style={{ ...secondaryBtnStyle, marginTop: 8, padding: '6px 14px', fontSize: 12 }}>+ Add Line Item</button>
+                <p style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: '#1f1108', textAlign: 'right' }}>
+                  Grand Total: {currencySymbol}{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
@@ -560,16 +630,30 @@ function QuotationsTab({ inquiryId, canModify }: { inquiryId: number; canModify:
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colSpan={q.quotation_type !== 'Export' ? 6 : 5} style={{ textAlign: 'right', padding: '4px 10px 0 0', fontWeight: 600, color: '#1f1108' }}>Grand Total</td>
+                        <td style={{ textAlign: 'right', padding: '4px 0 0 10px', fontWeight: 600, color: '#1f1108' }}>
+                          {q.items.reduce((sum, it) => sum + (Number(it.total) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               )}
               {q.payment_terms && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>Payment: {q.payment_terms}</p>}
               {q.notes && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>{q.notes}</p>}
             </div>
-            {canModify && <button onClick={() => startEdit(q)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>Edit</button>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+              <button onClick={() => downloadPdf(q)} disabled={downloadingId === q.id} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: downloadingId === q.id ? 0.7 : 1 }}>
+                {downloadingId === q.id ? 'Generating…' : 'Download PDF'}
+              </button>
+              {canModify && <button onClick={() => startEdit(q)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>}
+            </div>
           </div>
         ))
       )}
+      {pdfError && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{pdfError}</p>}
     </div>
   )
 }

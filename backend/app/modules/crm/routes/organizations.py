@@ -43,7 +43,18 @@ async def list_organizations(
         query = query.filter(
             (Organization.name.ilike(like)) | (Organization.gst_number.ilike(like)) | (Organization.city.ilike(like))
         )
-    return query.order_by(Organization.id.desc()).offset(skip).limit(limit).all()
+    orgs = query.order_by(Organization.id.desc()).offset(skip).limit(limit).all()
+    creator_ids = {o.created_by_id for o in orgs if o.created_by_id}
+    names_by_id = {}
+    if creator_ids:
+        for u in db.query(User).filter(User.id.in_(creator_ids)).all():
+            names_by_id[u.id] = u.name or u.email
+    results = []
+    for o in orgs:
+        resp = OrganizationResponse.model_validate(o)
+        resp.created_by_name = names_by_id.get(o.created_by_id)
+        results.append(resp)
+    return results
 
 
 @router.get("/search-name")

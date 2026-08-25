@@ -17,7 +17,7 @@ function sanitizeHtml(html: string): string {
           node.replaceChild(text, el)
           return
         }
-        const fontSize = el.tagName === 'SPAN' ? el.style.fontSize : ''
+        const fontSize = el.tagName === 'SPAN' ? (el as HTMLElement).style.fontSize : ''
         Array.from(el.attributes).forEach((attr) => el.removeAttribute(attr.name))
         if (fontSize && SAFE_FONT_SIZE.test(fontSize)) el.setAttribute('style', `font-size:${fontSize}`)
         walk(el)

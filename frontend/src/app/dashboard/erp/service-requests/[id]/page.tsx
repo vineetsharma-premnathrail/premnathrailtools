@@ -420,7 +420,7 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
     setPrError('')
     setPrMessage('')
     try {
-      const pr = await erpApi.raisePurchaseRequisition(srId)
+      const pr = await erpApi.raisePurchaseRequisition(srId, { priority: 'medium' })
       setPrMessage(`Purchase requisition ${pr.pr_number} raised — the Purchase department has been notified.`)
     } catch (err: any) {
       // The request can fail on the client (network drop, dev-server reload,

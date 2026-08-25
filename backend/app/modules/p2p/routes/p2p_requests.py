@@ -10,7 +10,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.routes.auth import get_current_user
 from app.modules.erp.models.project import Project
 from app.modules.p2p.models.p2p_request import (
-    P2PRequest, P2P_REQUEST_STATUSES, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES,
+    P2PRequest, P2P_REQUEST_STATUSES, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2P_CATEGORY_AUTO_BUYERS,
 )
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment, P2P_ATTACHMENT_DOC_TYPES
@@ -24,6 +24,7 @@ from app.modules.p2p.schemas.p2p_request import (
     P2PRequestResponse,
     P2PRequestUpdate,
     P2PRequestActionPayload,
+    P2PRequestApprovePayload,
     P2PRequestAssignBuyerPayload,
     P2PRequestQuotationPayload,
     P2PRequestSelectVendorPayload,
@@ -65,6 +66,7 @@ def _to_response(db: Session, pr: P2PRequest) -> P2PRequestResponse:
     resp = P2PRequestResponse.model_validate(pr)
     resp.category_label = P2P_CATEGORIES.get(pr.category_code, pr.category_code)
     resp.pending_quantity = pr.pending_quantity
+    resp.pending_approval_roles = pr.pending_approval_roles
     user_ids = {pr.requested_by_id, pr.assigned_buyer_id} - {None}
     if user_ids:
         users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
@@ -88,24 +90,42 @@ def _get_pr_or_404(db: Session, pr_id: int) -> P2PRequest:
 def _check_view_access(pr: P2PRequest, user: User) -> None:
     if _is_purchase_team(user):
         return
-    if pr.requested_by_id != user.id and pr.approver_id != user.id:
+    if user.id not in {pr.requested_by_id, pr.approver_id, pr.project_head_id, pr.plant_head_id}:
         raise HTTPException(status_code=403, detail="You may only view your own P2P requests")
 
 
-def _check_approver_access(pr: P2PRequest, user: User) -> None:
-    """A PR with an assigned department-head approver may only be
-    approved/rejected by that head (or an admin) — not just anyone with
-    `purchase` access. A PR with no head assigned (department has none
-    configured) falls back to the old purchase-team-wide behavior so it
-    doesn't get stuck unapprovable."""
+def _check_approve_access(pr: P2PRequest, user: User) -> str | None:
+    """Which approval slot `user` is acting as (None means either an admin
+    override or the legacy no-heads-assigned purchase-team-wide path — the
+    caller distinguishes those by role/assigned_approver_ids)."""
+    assigned = pr.assigned_approver_ids
+    if not assigned:
+        if user.role != "admin" and not _is_purchase_team(user):
+            raise HTTPException(status_code=403, detail="Purchase module access required to approve or reject this PR.")
+        return None
     if user.role == "admin":
-        return
-    if pr.approver_id is not None:
-        if user.id != pr.approver_id:
-            raise HTTPException(status_code=403, detail="Only this PR's assigned department head (or an admin) can approve or reject it.")
-        return
-    if not _is_purchase_team(user):
-        raise HTTPException(status_code=403, detail="Purchase module access required to approve or reject this PR.")
+        return None
+    for role, assigned_id in assigned.items():
+        if assigned_id == user.id and getattr(pr, f"{role}_approved_at") is None:
+            return role
+    raise HTTPException(status_code=403, detail="You are not an assigned approver for this PR, or you have already approved it.")
+
+
+def _check_reject_access(pr: P2PRequest, user: User) -> str:
+    """Who is rejecting, for `rejected_by_role` — any assigned head (approved
+    or not) or an admin may reject; falls back to purchase-team-wide when no
+    heads are assigned at all."""
+    if user.role == "admin":
+        return "admin"
+    assigned = pr.assigned_approver_ids
+    if not assigned:
+        if not _is_purchase_team(user):
+            raise HTTPException(status_code=403, detail="Purchase module access required to approve or reject this PR.")
+        return "purchase_team"
+    for role, assigned_id in assigned.items():
+        if assigned_id == user.id:
+            return role
+    raise HTTPException(status_code=403, detail="Only an assigned approver (or admin) can reject this PR.")
 
 
 @router.get("/meta")
@@ -143,6 +163,19 @@ async def list_projects_for_picker(
     ]
 
 
+def _validate_head(db: Session, user_id: int | None, role_label: str) -> User | None:
+    """The New PR form lets the requester pick any active user for each of
+    the three approval roles — not restricted to users flagged with that
+    role (those flags only drive the department-head auto-assign fallback).
+    Just confirm the picked id is a real, active user."""
+    if user_id is None:
+        return None
+    head = db.query(User).filter(User.id == user_id, User.is_active == True).first()  # noqa: E712
+    if not head:
+        raise HTTPException(status_code=400, detail=f"Selected {role_label} not found or inactive.")
+    return head
+
+
 @router.post("", response_model=P2PRequestResponse)
 async def create_p2p_request(
     payload: P2PRequestCreate,
@@ -154,11 +187,17 @@ async def create_p2p_request(
     if not payload.items:
         raise HTTPException(status_code=400, detail="At least one item is required")
 
-    dept_head = None
-    if user.department:
+    dept_head = _validate_head(db, payload.approver_id, "Department Head")
+    if dept_head is None and user.department:
         dept_head = db.query(User).filter(
             User.department == user.department, User.is_department_head == True, User.is_active == True,  # noqa: E712
         ).first()
+    project_head = _validate_head(db, payload.project_head_id, "Project Head")
+    plant_head = _validate_head(db, payload.plant_head_id, "Plant Head")
+
+    # Buyer is auto-assigned from the category — no manual "Assign Buyer"
+    # step needed once the PR is raised.
+    auto_buyer_id = P2P_CATEGORY_AUTO_BUYERS.get(payload.category_code)
 
     pr = P2PRequest(
         p2p_number=generate_p2p_number(db, payload.category_code),
@@ -170,8 +209,14 @@ async def create_p2p_request(
         department=user.department,
         requested_by_id=user.id,
         priority=payload.priority,
-        approver_id=dept_head.id if dept_head else payload.approver_id,
-        approver_name=dept_head.name if dept_head else payload.approver_name,
+        approver_id=dept_head.id if dept_head else None,
+        approver_name=dept_head.name if dept_head else None,
+        project_head_id=project_head.id if project_head else None,
+        project_head_name=project_head.name if project_head else None,
+        plant_head_id=plant_head.id if plant_head else None,
+        plant_head_name=plant_head.name if plant_head else None,
+        assigned_buyer_id=auto_buyer_id,
+        assignment_date=date.today() if auto_buyer_id else None,
         remarks=payload.remarks,
         status="submitted",
     )
@@ -193,9 +238,9 @@ async def create_p2p_request(
 
     _write_audit(db, pr.id, "created", user, summary=f"{user.name or user.email} raised P2P request {pr.p2p_number}.", new_status="submitted")
 
-    if pr.approver_id:
+    for head_id in {pr.approver_id, pr.project_head_id, pr.plant_head_id} - {None}:
         notify_user(
-            db, user_id=pr.approver_id,
+            db, user_id=head_id,
             title="New P2P Request for Review",
             message=f"PR '{pr.p2p_number}' was raised by {user.name or user.email} and awaits your review.",
             notification_type="p2p_request_submitted", entity_type="p2p_request", entity_id=pr.id,
@@ -225,10 +270,14 @@ async def list_p2p_requests(
         selectinload(P2PRequest.attachments),
     )
     if not _is_purchase_team(user):
-        # Requesters see their own history; a department head also sees PRs
-        # routed to them for approval — regardless of other filters.
+        # Requesters see their own history; an assigned department/project/
+        # plant head also sees PRs routed to them for approval — regardless
+        # of other filters.
         query = query.filter(
-            (P2PRequest.requested_by_id == user.id) | (P2PRequest.approver_id == user.id)
+            (P2PRequest.requested_by_id == user.id)
+            | (P2PRequest.approver_id == user.id)
+            | (P2PRequest.project_head_id == user.id)
+            | (P2PRequest.plant_head_id == user.id)
         )
     if status:
         query = query.filter(P2PRequest.status == status)
@@ -323,31 +372,53 @@ async def update_p2p_request(
     return _to_response(db, pr)
 
 
+_ROLE_LABELS = {"department_head": "Department Head", "project_head": "Project Head", "plant_head": "Plant Head"}
+
+
 @router.post("/{pr_id}/approve", response_model=P2PRequestResponse)
 async def approve_p2p_request(
     pr_id: int,
+    payload: P2PRequestApprovePayload = P2PRequestApprovePayload(),
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
     pr = _get_pr_or_404(db, pr_id)
-    _check_approver_access(pr, user)
     if pr.status != "submitted":
         raise HTTPException(status_code=409, detail=f"Only a submitted PR can be approved (current status: {pr.status})")
 
-    old_status = pr.status
-    pr.status = "approved"
-    pr.approved_by_id = user.id
-    pr.approved_at = datetime.now(timezone.utc)
-    _write_audit(db, pr.id, "approved", user, summary=f"{user.name or user.email} approved P2P request {pr.p2p_number}.",
-                 old_status=old_status, new_status="approved")
+    role = _check_approve_access(pr, user)
+    now = datetime.now(timezone.utc)
+    comment_note = f" Comment: {payload.comment}" if payload.comment else ""
 
-    if pr.requested_by_id:
-        notify_user(
-            db, user_id=pr.requested_by_id,
-            title="P2P Request Approved",
-            message=f"Your PR '{pr.p2p_number}' was approved by {user.name or user.email}.",
-            notification_type="p2p_request_approved", entity_type="p2p_request", entity_id=pr.id,
-        )
+    if role is not None:
+        setattr(pr, f"{role}_approved_at", now)
+        if payload.comment:
+            setattr(pr, f"{role}_comment", payload.comment)
+        _write_audit(db, pr.id, "approved", user,
+                     summary=f"{user.name or user.email} approved P2P request {pr.p2p_number} as {_ROLE_LABELS[role]}.{comment_note}")
+    elif user.role == "admin" and pr.pending_approval_roles:
+        # Admin override: signs off every still-pending slot at once.
+        for pending_role in pr.pending_approval_roles:
+            setattr(pr, f"{pending_role}_approved_at", now)
+            if payload.comment:
+                setattr(pr, f"{pending_role}_comment", payload.comment)
+        _write_audit(db, pr.id, "approved", user,
+                     summary=f"{user.name or user.email} approved P2P request {pr.p2p_number} (admin override).{comment_note}")
+
+    if not pr.pending_approval_roles:
+        old_status = pr.status
+        pr.status = "approved"
+        pr.approved_by_id = user.id
+        pr.approved_at = now
+        _write_audit(db, pr.id, "approved", user, summary=f"{user.name or user.email} approved P2P request {pr.p2p_number}.",
+                     old_status=old_status, new_status="approved")
+        if pr.requested_by_id:
+            notify_user(
+                db, user_id=pr.requested_by_id,
+                title="P2P Request Approved",
+                message=f"Your PR '{pr.p2p_number}' was approved by {user.name or user.email}.",
+                notification_type="p2p_request_approved", entity_type="p2p_request", entity_id=pr.id,
+            )
 
     db.commit()
     db.refresh(pr)
@@ -362,13 +433,14 @@ async def reject_p2p_request(
     user: User = Depends(_requester_or_purchase),
 ):
     pr = _get_pr_or_404(db, pr_id)
-    _check_approver_access(pr, user)
     if pr.status not in ("submitted", "approved"):
         raise HTTPException(status_code=409, detail=f"Cannot reject a PR with status '{pr.status}'")
+    role = _check_reject_access(pr, user)
 
     old_status = pr.status
     pr.status = "rejected"
     pr.rejected_reason = payload.reason
+    pr.rejected_by_role = role
     reason_note = f" Reason: {payload.reason}" if payload.reason else ""
     _write_audit(db, pr.id, "rejected", user, summary=f"{user.name or user.email} rejected P2P request {pr.p2p_number}.{reason_note}",
                  old_status=old_status, new_status="rejected")

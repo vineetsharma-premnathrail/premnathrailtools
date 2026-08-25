@@ -68,7 +68,18 @@ async def list_tenders(
         query = query.filter(
             (Tender.universal_id.ilike(like)) | (Tender.tender_number.ilike(like)) | (Tender.tender_name.ilike(like))
         )
-    return query.order_by(Tender.id.desc()).offset(skip).limit(limit).all()
+    tenders = query.order_by(Tender.id.desc()).offset(skip).limit(limit).all()
+    creator_ids = {t.created_by_id for t in tenders if t.created_by_id}
+    names_by_id = {}
+    if creator_ids:
+        for u in db.query(User).filter(User.id.in_(creator_ids)).all():
+            names_by_id[u.id] = u.name or u.email
+    results = []
+    for t in tenders:
+        resp = TenderResponse.model_validate(t)
+        resp.created_by_name = names_by_id.get(t.created_by_id)
+        results.append(resp)
+    return results
 
 
 @router.post("", response_model=TenderResponse, status_code=201)

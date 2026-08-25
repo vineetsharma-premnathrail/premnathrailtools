@@ -36,6 +36,11 @@ class User(Base, TimestampMixin):
     # (see P2PRequest.approver_id in create_p2p_request) — matched by exact
     # string equality against `department`, since that field has no enum/FK.
     is_department_head: Mapped[bool] = mapped_column(default=False)
+    # Project Head / Plant Head are org-wide approver roles (not tied to a
+    # `department` string) — picked explicitly per-PR via search-select on
+    # the New PR form, not auto-matched like the department head.
+    is_project_head: Mapped[bool] = mapped_column(default=False)
+    is_plant_head: Mapped[bool] = mapped_column(default=False)
 
     # Present in the remote production DB (main.users) — added here so the
     # migration from that schema doesn't have to drop them. Not yet wired

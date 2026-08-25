@@ -95,6 +95,7 @@ class OrganizationResponse(BaseModel):
     official_email: str | None = None
     website: str | None = None
     created_by_id: int | None = None
+    created_by_name: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     is_deleted: bool = False

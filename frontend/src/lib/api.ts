@@ -168,8 +168,15 @@ export const usersApi = {
     return data
   },
 
-  updateModuleAccess: async (id: number, assigned_apps: string[], erp_permissions: string[], is_department_head?: boolean) => {
-    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, is_department_head })
+  updateModuleAccess: async (
+    id: number,
+    assigned_apps: string[],
+    erp_permissions: string[],
+    is_department_head?: boolean,
+    is_project_head?: boolean,
+    is_plant_head?: boolean
+  ) => {
+    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, is_department_head, is_project_head, is_plant_head })
     return data
   },
 
@@ -401,6 +408,10 @@ export const crmApi = {
   createQuotation: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/quotations`, payload)).data,
   updateQuotation: async (inquiryId: number, quotId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/inquiries/${inquiryId}/quotations/${quotId}`, payload)).data,
   deleteQuotation: async (inquiryId: number, quotId: number) => (await apiClient.delete(`/crm/inquiries/${inquiryId}/quotations/${quotId}`)).data,
+  downloadQuotationPdf: async (inquiryId: number, quotId: number) => {
+    const { data } = await apiClient.get(`/crm/inquiries/${inquiryId}/quotations/${quotId}/pdf`, { responseType: 'blob' })
+    return data as Blob
+  },
 
   listInquiryPurchaseOrders: async (inquiryId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/purchase-orders`)).data,
   createInquiryPurchaseOrder: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/purchase-orders`, payload)).data,
@@ -737,8 +748,8 @@ export const p2pApi = {
     return data
   },
 
-  approve: async (id: number) => {
-    const { data } = await apiClient.post(`/p2p/requests/${id}/approve`)
+  approve: async (id: number, comment?: string) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/approve`, { comment })
     return data
   },
 

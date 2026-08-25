@@ -80,7 +80,13 @@ async def list_user_directory(
     used for pickers like "share this document with" where the full
     admin-only user-management payload (roles, permissions) isn't needed."""
     users = db.query(User).filter(User.is_active == True).order_by(User.name).all()  # noqa: E712
-    return [{"id": u.id, "name": u.name, "email": u.email, "department": u.department, "designation": u.designation} for u in users]
+    return [
+        {
+            "id": u.id, "name": u.name, "email": u.email, "department": u.department, "designation": u.designation,
+            "is_department_head": u.is_department_head, "is_project_head": u.is_project_head, "is_plant_head": u.is_plant_head,
+        }
+        for u in users
+    ]
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
@@ -116,6 +122,12 @@ async def update_user(
 
     if payload.is_department_head is not None:
         target.is_department_head = payload.is_department_head
+
+    if payload.is_project_head is not None:
+        target.is_project_head = payload.is_project_head
+
+    if payload.is_plant_head is not None:
+        target.is_plant_head = payload.is_plant_head
 
     if payload.name is not None:
         target.name = payload.name

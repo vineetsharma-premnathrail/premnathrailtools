@@ -71,7 +71,18 @@ async def list_inquiries(
         query = query.filter(
             (Inquiry.universal_id.ilike(like)) | (Inquiry.product.ilike(like)) | (Inquiry.bd_owner.ilike(like))
         )
-    return query.order_by(Inquiry.id.desc()).offset(skip).limit(limit).all()
+    inquiries = query.order_by(Inquiry.id.desc()).offset(skip).limit(limit).all()
+    creator_ids = {i.created_by_id for i in inquiries if i.created_by_id}
+    names_by_id = {}
+    if creator_ids:
+        for u in db.query(User).filter(User.id.in_(creator_ids)).all():
+            names_by_id[u.id] = u.name or u.email
+    results = []
+    for i in inquiries:
+        resp = InquiryResponse.model_validate(i)
+        resp.created_by_name = names_by_id.get(i.created_by_id)
+        results.append(resp)
+    return results
 
 
 @router.post("", response_model=InquiryResponse, status_code=201)

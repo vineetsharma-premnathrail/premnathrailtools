@@ -101,6 +101,7 @@ class InquiryResponse(BaseModel):
     followup_assigned_to: str | None = None
     followup_remarks: str | None = None
     created_by_id: int | None = None
+    created_by_name: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     is_deleted: bool = False

@@ -38,6 +38,8 @@ interface CombinedRow {
   status: string
   secondary: string
   date: string
+  created_at: string
+  created_by_name: string
 }
 
 export default function InquiriesPage() {
@@ -118,11 +120,13 @@ export default function InquiriesPage() {
       kind: 'inquiry',
       universal_id: i.universal_id,
       org_id: i.org_id,
-      title: i.product || '—',
-      stage: i.current_stage || '—',
-      status: i.status || '—',
-      secondary: i.priority || '—',
-      date: i.next_followup_date || '—',
+      title: i.product || 'Not provided',
+      stage: i.current_stage || 'Not provided',
+      status: i.status || 'Not provided',
+      secondary: i.priority || 'Not provided',
+      date: i.next_followup_date || 'Not provided',
+      created_at: i.created_at || 'Not provided',
+      created_by_name: i.created_by_name || 'Not provided',
     }))
     const fromTenders: CombinedRow[] = tenders.map((t) => ({
       key: `tender-${t.id}`,
@@ -130,11 +134,13 @@ export default function InquiriesPage() {
       kind: 'tender',
       universal_id: t.universal_id,
       org_id: t.org_id,
-      title: t.tender_name || t.tender_number || '—',
-      stage: t.current_stage || '—',
-      status: t.status || '—',
-      secondary: t.tender_value != null ? `${t.currency || ''} ${t.tender_value.toLocaleString()}` : '—',
-      date: t.submission_date || '—',
+      title: t.tender_name || t.tender_number || 'Not provided',
+      stage: t.current_stage || 'Not provided',
+      status: t.status || 'Not provided',
+      secondary: t.tender_value != null ? `${t.currency || ''} ${t.tender_value.toLocaleString()}` : 'Not provided',
+      date: t.submission_date || 'Not provided',
+      created_at: t.created_at || 'Not provided',
+      created_by_name: t.created_by_name || 'Not provided',
     }))
     const all = [...fromInquiries, ...fromTenders]
     return typeFilter === 'all' ? all : all.filter((r) => r.kind === typeFilter)
@@ -212,14 +218,14 @@ export default function InquiriesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['Type', 'ID', 'Organization', 'Title', 'Stage', 'Status', 'Value / Priority', 'Date'].map((h) => (
+              {['Type', 'ID', 'Organization', 'Title', 'Stage', 'Status', 'Value / Priority', 'Date', 'Created Date', 'Created By'].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
+            {loading && <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
             {paged.map((r) => {
               const pinned = pinnedKeys.includes(r.key)
               return (
@@ -239,7 +245,7 @@ export default function InquiriesPage() {
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#fa9b9b' }}>{r.universal_id}</span>
                   </div>
                 </td>
-                <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{orgById.get(r.org_id)?.name || '—'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{orgById.get(r.org_id)?.name || 'Not provided'}</td>
                 <td style={{ padding: '7px 16px', fontSize: 13, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.title}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.stage}</td>
                 <td style={{ padding: '7px 16px', whiteSpace: 'nowrap' }}>
@@ -251,6 +257,8 @@ export default function InquiriesPage() {
                 </td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.secondary}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.date}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : new Date(r.created_at).toLocaleDateString()}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_by_name}</td>
               </tr>
               )
             })}

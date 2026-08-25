@@ -117,6 +117,7 @@ class QuotationLineItemResponse(BaseModel):
 
 class QuotationCreate(BaseModel):
     quotation_type: str = "Domestic"
+    gst_type: str = "CGST_SGST"
     quote_date: date | None = None
     client_name: str | None = None
     client_contact_name: str | None = None
@@ -134,6 +135,7 @@ class QuotationCreate(BaseModel):
 
 class QuotationUpdate(BaseModel):
     quotation_type: str | None = None
+    gst_type: str | None = None
     quote_date: date | None = None
     client_name: str | None = None
     client_contact_name: str | None = None
@@ -157,6 +159,7 @@ class QuotationResponse(BaseModel):
     quot_number: str | None = None
     revision_number: int
     quotation_type: str
+    gst_type: str
     quote_date: date | None = None
     client_name: str | None = None
     client_contact_name: str | None = None

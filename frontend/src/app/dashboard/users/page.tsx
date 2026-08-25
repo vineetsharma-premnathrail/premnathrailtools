@@ -60,8 +60,15 @@ export default function UsersRolesPage() {
     return users.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
   }, [users, search])
 
-  const handleSaveAccess = async (userId: number, apps: string[], erpPermissions: string[], isDepartmentHead: boolean) => {
-    const updated = await usersApi.updateModuleAccess(userId, apps, erpPermissions, isDepartmentHead)
+  const handleSaveAccess = async (
+    userId: number,
+    apps: string[],
+    erpPermissions: string[],
+    isDepartmentHead: boolean,
+    isProjectHead: boolean,
+    isPlantHead: boolean
+  ) => {
+    const updated = await usersApi.updateModuleAccess(userId, apps, erpPermissions, isDepartmentHead, isProjectHead, isPlantHead)
     setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)))
     setEditingUser(null)
   }
@@ -222,7 +229,13 @@ export default function UsersRolesPage() {
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>
                     {u.department || '—'}
                     {u.is_department_head && (
-                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(250,155,155,0.15)', color: '#fa9b9b', textTransform: 'uppercase' }}>Head</span>
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(250,155,155,0.15)', color: '#fa9b9b', textTransform: 'uppercase' }}>Dept Head</span>
+                    )}
+                    {u.is_project_head && (
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(59,130,246,0.12)', color: '#2563eb', textTransform: 'uppercase' }}>Project Head</span>
+                    )}
+                    {u.is_plant_head && (
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#047857', textTransform: 'uppercase' }}>Plant Head</span>
                     )}
                   </td>
                   <td style={{ padding: '12px 16px' }}>
@@ -398,13 +411,15 @@ function EditUserModal({
   isSelf: boolean
   apps: { id: string; label: string }[]
   onClose: () => void
-  onSave: (id: number, apps: string[], erpPermissions: string[], isDepartmentHead: boolean) => Promise<void>
+  onSave: (id: number, apps: string[], erpPermissions: string[], isDepartmentHead: boolean, isProjectHead: boolean, isPlantHead: boolean) => Promise<void>
   onToggleActive: (u: User) => Promise<void>
 }) {
   const isAdminRole = user.role === 'admin'
   const [selected, setSelected] = useState<string[]>(user.assigned_apps || [])
   const [erpPerms, setErpPerms] = useState<string[]>(user.erp_permissions || [])
   const [isDepartmentHead, setIsDepartmentHead] = useState(!!user.is_department_head)
+  const [isProjectHead, setIsProjectHead] = useState(!!user.is_project_head)
+  const [isPlantHead, setIsPlantHead] = useState(!!user.is_plant_head)
   const [saving, setSaving] = useState(false)
 
   const toggle = (app: string) => {
@@ -418,7 +433,7 @@ function EditUserModal({
   const save = async () => {
     setSaving(true)
     try {
-      await onSave(user.id, selected, erpPerms, isDepartmentHead)
+      await onSave(user.id, selected, erpPerms, isDepartmentHead, isProjectHead, isPlantHead)
     } finally {
       setSaving(false)
     }
@@ -482,30 +497,56 @@ function EditUserModal({
 
           <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: '#faf9f7' }}>
             <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 10px' }}>
-              Department Head
+              Approval Roles
             </p>
-            <label
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
-                border: isDepartmentHead ? '1px solid #fa9b9b' : '1px solid rgba(0,0,0,0.1)',
-                background: isDepartmentHead ? 'rgba(244,113,59,0.05)' : '#fff',
-                cursor: !user.department ? 'not-allowed' : 'pointer',
-                opacity: !user.department ? 0.5 : 1,
-                fontSize: 13, fontWeight: 600, color: '#1f1108', width: 'fit-content',
-              }}
-            >
-              <input
-                type="checkbox"
-                disabled={!user.department}
-                checked={isDepartmentHead}
-                onChange={() => setIsDepartmentHead((v) => !v)}
-              />
-              Head of {user.department || 'department'}
-            </label>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <label
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
+                  border: isDepartmentHead ? '1px solid #fa9b9b' : '1px solid rgba(0,0,0,0.1)',
+                  background: isDepartmentHead ? 'rgba(244,113,59,0.05)' : '#fff',
+                  cursor: !user.department ? 'not-allowed' : 'pointer',
+                  opacity: !user.department ? 0.5 : 1,
+                  fontSize: 13, fontWeight: 600, color: '#1f1108',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  disabled={!user.department}
+                  checked={isDepartmentHead}
+                  onChange={() => setIsDepartmentHead((v) => !v)}
+                />
+                Department Head{user.department ? ` (${user.department})` : ''}
+              </label>
+              <label
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
+                  border: isProjectHead ? '1px solid #2563eb' : '1px solid rgba(0,0,0,0.1)',
+                  background: isProjectHead ? 'rgba(59,130,246,0.05)' : '#fff',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1f1108',
+                }}
+              >
+                <input type="checkbox" checked={isProjectHead} onChange={() => setIsProjectHead((v) => !v)} />
+                Project Head
+              </label>
+              <label
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
+                  border: isPlantHead ? '1px solid #047857' : '1px solid rgba(0,0,0,0.1)',
+                  background: isPlantHead ? 'rgba(16,185,129,0.06)' : '#fff',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1f1108',
+                }}
+              >
+                <input type="checkbox" checked={isPlantHead} onChange={() => setIsPlantHead((v) => !v)} />
+                Plant Head
+              </label>
+            </div>
             <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '10px 0 0' }}>
-              {user.department
-                ? `Any P2P request raised by someone in "${user.department}" will be routed to this user for approval/rejection.`
-                : 'Set a department for this user (from the HR profile) before making them a department head.'}
+              A Department Head is auto-routed any P2P request raised from their own department (
+              {user.department ? `set for this user` : 'set a department for this user first'}). On the New PR form the
+              requester can pick any user as Department Head, Project Head, or Plant Head — these checkboxes only
+              control the auto-routing above, not who&apos;s searchable there. A PR only moves to "approved" once every
+              role assigned to it has signed off.
             </p>
           </div>
 
@@ -598,7 +639,7 @@ function EditUserModal({
             </button>
             <button
               onClick={save}
-              disabled={saving || isAdminRole}
+              disabled={saving}
               style={{
                 fontSize: 13,
                 fontWeight: 600,
@@ -607,7 +648,7 @@ function EditUserModal({
                 border: 'none',
                 background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
                 color: '#fff',
-                cursor: saving || isAdminRole ? 'not-allowed' : 'pointer',
+                cursor: saving ? 'not-allowed' : 'pointer',
                 opacity: saving ? 0.7 : 1,
               }}
             >

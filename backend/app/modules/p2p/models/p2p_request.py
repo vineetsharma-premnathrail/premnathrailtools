@@ -27,14 +27,25 @@ P2P_REQUEST_PRIORITIES = ("low", "medium", "high")
 # Category code -> display label. Codes feed directly into the PR number
 # format P2P-[CODE]-[YEAR]-[NUMBER].
 P2P_CATEGORIES: dict[str, str] = {
-    "HYD": "Hydraulic",
-    "MEC": "Mechanical",
+    "MKT": "Market Items",
+    "PNH": "Pneumatic & Hydraulic",
+    "RAW": "Raw Material",
     "ELE": "Electrical",
-    "ELN": "Electronics",
-    "CON": "Consumables",
-    "TLS": "Tools",
-    "SFT": "Software",
+    "HWC": "Hardware & Consumables",
+    "JOB": "Job Work",
     "OTH": "Others",
+}
+
+# Buyer auto-assigned at PR creation based on category — replaces manually
+# picking a buyer from the Purchase Processing panel. User ids are fixed
+# per the current buyer roster; re-map here if buyers change.
+P2P_CATEGORY_AUTO_BUYERS: dict[str, int] = {
+    "MKT": 127,  # Suraj Panwar
+    "PNH": 127,  # Suraj Panwar
+    "RAW": 127,  # Suraj Panwar
+    "ELE": 174,  # Manish Kumar
+    "HWC": 137,  # Mahender Singh
+    "JOB": 130,  # Gaurav Katiyar
 }
 
 P2P_REQUIREMENT_TYPES = ("Material", "Service", "Material + Service", "Capital Equipment", "Others")
@@ -60,10 +71,26 @@ class P2PRequest(Base, TimestampMixin):
     department: Mapped[str | None] = mapped_column(String(100), nullable=True)
     requested_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
-    # Approval
+    # Approval — three independent sign-offs, each optional (a PR with none
+    # assigned falls back to the old "anyone with purchase access" behavior).
+    # `approver_id`/`approver_name` is the Department Head slot (kept under
+    # its original name for backward compatibility with the auto-assign-by-
+    # department flow already wired to it); Project Head and Plant Head are
+    # picked explicitly on the New PR form via search-select.
     priority: Mapped[str] = mapped_column(String(10), default="medium", nullable=False)
     approver_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     approver_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    department_head_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    department_head_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    project_head_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    project_head_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    project_head_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    project_head_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    plant_head_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    plant_head_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    plant_head_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    plant_head_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rejected_by_role: Mapped[str | None] = mapped_column(String(30), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     status: Mapped[str] = mapped_column(String(30), default="submitted", nullable=False)
@@ -113,3 +140,22 @@ class P2PRequest(Base, TimestampMixin):
         if self.ordered_quantity is None:
             return None
         return max(0.0, self.ordered_quantity - (self.received_quantity or 0))
+
+    # (assigned_id, name field, approved_at field, role key) for each of the
+    # three approver slots — a slot with no id assigned isn't required.
+    _APPROVAL_SLOTS = ("department_head", "project_head", "plant_head")
+
+    @property
+    def assigned_approver_ids(self) -> dict[str, int]:
+        return {
+            role: getattr(self, "approver_id" if role == "department_head" else f"{role}_id")
+            for role in self._APPROVAL_SLOTS
+            if getattr(self, "approver_id" if role == "department_head" else f"{role}_id") is not None
+        }
+
+    @property
+    def pending_approval_roles(self) -> list[str]:
+        return [
+            role for role, _id in self.assigned_approver_ids.items()
+            if getattr(self, f"{role}_approved_at") is None
+        ]
