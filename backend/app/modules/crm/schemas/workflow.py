@@ -119,6 +119,8 @@ class QuotationCreate(BaseModel):
     quotation_type: str = "Domestic"
     gst_type: str = "CGST_SGST"
     quote_date: date | None = None
+    technical_offer_number: str | None = None
+    technical_offer_date: date | None = None
     client_name: str | None = None
     client_contact_name: str | None = None
     client_contact_email: str | None = None
@@ -165,6 +167,8 @@ class QuotationResponse(BaseModel):
     quotation_type: str
     gst_type: str
     quote_date: date | None = None
+    technical_offer_number: str | None = None
+    technical_offer_date: date | None = None
     client_name: str | None = None
     client_contact_name: str | None = None
     client_contact_email: str | None = None

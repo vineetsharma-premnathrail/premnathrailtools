@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.core.permissions import require_app_access
+from app.modules.main.routes.auth import get_current_user
 from app.modules.main.models.user import User
 from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.models.organization import Organization
@@ -108,15 +109,24 @@ async def upload_documents(
 async def get_document_content(
     document_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    user: User = Depends(get_current_user),
 ):
     """Raw bytes for in-app viewing (img/pdf tags, or a same-origin download),
     fetched via the app-only Graph token — never the raw SharePoint webUrl,
     which bypasses our own auth and exposes the SharePoint folder structure
-    to anyone who has or guesses the link."""
+    to anyone who has or guesses the link.
+
+    Access check: normal CRM documents still require the 'crm' module grant.
+    Technical Offer Request PDFs are the one exception — they're emailed
+    cross-department (to R&D, who may not have 'crm' access at all), so any
+    logged-in portal user can fetch one *by its specific id*. That's narrower
+    than opening module access wide: you still need the id from a real email,
+    the doc list/other CRM data stays behind the normal 'crm' gate."""
     doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    if doc.doc_category != "technical_offer_request" and user.role != "admin" and "crm" not in user.get_apps():
+        raise HTTPException(status_code=403, detail="Access to 'crm' module required")
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 

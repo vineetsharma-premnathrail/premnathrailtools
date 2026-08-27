@@ -303,6 +303,8 @@ async def download_quotation_pdf(inquiry_id: int, quot_id: int, db: Session = De
         "quotation_type": quot.quotation_type,
         "gst_type": quot.gst_type,
         "quote_date": quot.quote_date.isoformat() if quot.quote_date else None,
+        "technical_offer_number": quot.technical_offer_number,
+        "technical_offer_date": quot.technical_offer_date.isoformat() if quot.technical_offer_date else None,
         "client_name": quot.client_name,
         "client_address": ", ".join(client_address_parts) or None,
         "client_gst_number": org.gst_number if org else None,

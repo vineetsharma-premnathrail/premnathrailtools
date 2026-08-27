@@ -203,7 +203,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         />
       )}
       {tab === 'Info' && !editing && <InfoTab inquiry={inquiry} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} />}
-      {tab === 'Quotations' && <QuotationsTab inquiryId={inquiry.id} canModify={canModify} org={org} contact={contact} />}
+      {tab === 'Quotations' && <QuotationsTab inquiryId={inquiry.id} canModify={canModify} org={org} contact={contact} inquiry={inquiry} />}
       {tab === 'Documents' && <DocumentsTab inquiry={inquiry} canModify={canModify} />}
       {tab === 'Follow Ups' && <ActivitiesTab inquiry={inquiry} org={org} />}
       {tab === 'Timeline' && <TimelineTab inquiryId={inquiry.id} />}
@@ -457,7 +457,7 @@ function TasksTab({ inquiryId, canModify }: { inquiryId: number; canModify: bool
 
 const emptyLineItem = { description: '', model_number: '', quantity: '', unit_price: '', gst_percent: '', subtotal: '', total: '' }
 
-function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: number; canModify: boolean; org: Organization | null; contact: OrgContact | null }) {
+function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquiryId: number; canModify: boolean; org: Organization | null; contact: OrgContact | null; inquiry: Inquiry }) {
   const [quotations, setQuotations] = useState<QuotationItem[]>([])
   const [showForm, setShowForm] = useState(false)
   const [revisingId, setRevisingId] = useState<number | null>(null)
@@ -465,6 +465,8 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
   const emptyForm = {
     quotation_type: 'Domestic', gst_type: 'CGST_SGST', quote_date: todayIso, client_name: org?.name || '', client_contact_name: contact?.name || '',
     client_contact_email: contact?.email || '', client_contact_phone: contact?.mobile || '',
+    technical_offer_number: inquiry?.technical_offer_number || '',
+    technical_offer_date: inquiry?.technical_offer_sent_at ? String(inquiry.technical_offer_sent_at).slice(0, 10) : '',
     valid_until: '', delivery_time: '', payment_terms: '', notes: '',
     discount: '', discount_type: 'percent', quote_conditions: '', quote_conditions_custom: '',
   }
@@ -678,6 +680,8 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
                   </Field>
                 )}
                 <Field label="Date of Quote"><DateField value={form.quote_date} onChange={(v) => setForm((f) => ({ ...f, quote_date: v }))} /></Field>
+                <Field label="Technical Offer Number"><input value={form.technical_offer_number} onChange={(e) => setForm((f) => ({ ...f, technical_offer_number: e.target.value }))} style={inputStyle} /></Field>
+                <Field label="Technical Offer Date"><DateField value={form.technical_offer_date} onChange={(v) => setForm((f) => ({ ...f, technical_offer_date: v }))} /></Field>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>

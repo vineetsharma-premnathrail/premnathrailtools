@@ -605,6 +605,8 @@ export interface QuotationItem {
   quotation_type: string
   gst_type: string
   quote_date?: string
+  technical_offer_number?: string
+  technical_offer_date?: string
   client_name?: string
   client_contact_name?: string
   client_contact_email?: string

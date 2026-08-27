@@ -261,18 +261,18 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     currency = ctx.get("currency_symbol") or "Rs."
     is_export = (ctx.get("quotation_type") or "Domestic") == "Export"
 
-    # ── Header band: company name/type on the left, big "QUOTE" title on the right ──
-    story.append(_p("QUOTE", size=HEADER_SIZE + 12, bold=True, align="right", color=ACCENT))
+    # ── Header band: company name/type on the left, big "QUOTATION" title on the right ──
+    story.append(_p("QUOTATION", size=HEADER_SIZE + 12, bold=True, align="right", color=ACCENT))
     story.append(Spacer(1, 2))
     story.append(_p(f"Quotation type: {ctx.get('quotation_type') or 'Domestic'}", size=BODY_SIZE, align="right", color=MUTED))
     story.append(Spacer(1, 14))
 
-    # ── Bill To (left) + Quote #/Date/Valid until/Delivery time (right) ──
+    # ── Client (left) + Quotation #/Date/Valid until/Delivery time (right) ──
     quote_number_display = ctx.get("quot_number") or "-"
     if ctx.get("revision_number"):
         quote_number_display += f"-r{ctx['revision_number']}"
 
-    bill_to_lines = [_p("BILL TO", size=BODY_SIZE - 1, bold=True, color=ACCENT), Spacer(1, 3),
+    bill_to_lines = [_p("CLIENT", size=BODY_SIZE - 1, bold=True, color=ACCENT), Spacer(1, 3),
                       _p(ctx.get("client_name") or "-", size=HEADER_SIZE + 1, bold=True)]
     if ctx.get("client_address"):
         bill_to_lines.append(_p(_sentence_case(ctx["client_address"])))
@@ -287,7 +287,11 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     bill_to = Table([[line] for line in bill_to_lines], colWidths=[USABLE_WIDTH * 0.55])
     bill_to.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
 
-    meta_pairs = [("Quote #", quote_number_display), ("Quote date", ctx.get("quote_date") or "-")]
+    meta_pairs = [("Quotation #", quote_number_display), ("Quotation date", ctx.get("quote_date") or "-")]
+    if ctx.get("technical_offer_number"):
+        meta_pairs.append(("Technical offer #", ctx["technical_offer_number"]))
+    if ctx.get("technical_offer_date"):
+        meta_pairs.append(("Technical offer date", ctx["technical_offer_date"]))
     if ctx.get("valid_until"):
         meta_pairs.append(("Valid until", ctx["valid_until"]))
     if ctx.get("delivery_time"):

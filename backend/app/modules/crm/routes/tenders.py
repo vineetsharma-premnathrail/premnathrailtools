@@ -314,9 +314,20 @@ async def create_technical_offer_request(
         settings.SHAREPOINT_SITE_ID, folder_path, offer_filename,
         "application/pdf", offer_bytes,
     )
-    # Link to the just-uploaded Technical Offer Request document itself — this is what
-    # goes in the email to R&D, distinct from existing_docs_link inside the doc's content.
-    tor_doc_link = upload_result.get("webUrl") or ""
+    tor_doc = CrmDocument(
+        related_module="tender", related_id=tender.id, universal_id=tender.universal_id,
+        folder_type="technical_offer", doc_category="technical_offer_request",
+        file_name=offer_filename, file_path=upload_result["path"], sharepoint_path=upload_result["path"],
+        sharepoint_url=upload_result.get("webUrl"), file_size=upload_result.get("size"),
+        mime_type="application/pdf", uploaded_by_name=raised_by, org_id=org.id if org else None,
+        created_by_id=user.id,
+    )
+    db.add(tor_doc)
+    db.flush()
+    db.refresh(tor_doc)
+    # Link goes to our own protected viewer, never the raw SharePoint webUrl —
+    # see the matching comment in inquiries.py for why.
+    tor_doc_link = f"{settings.FRONTEND_URL}/dashboard/crm/technical-offer/{tor_doc.id}"
 
     reference_documents = []
     if body.document_ids:
