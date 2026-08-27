@@ -293,9 +293,9 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     if ctx.get("technical_offer_date"):
         meta_pairs.append(("Technical offer date", ctx["technical_offer_date"]))
     if ctx.get("valid_until"):
-        meta_pairs.append(("Valid until", ctx["valid_until"]))
+        meta_pairs.append(("Valid Until", ctx["valid_until"]))
     if ctx.get("delivery_time"):
-        meta_pairs.append(("Delivery time", _sentence_case(ctx["delivery_time"])))
+        meta_pairs.append(("Delivery Time", _sentence_case(ctx["delivery_time"])))
     meta_rows = [[_p(label, bold=True, align="right", color=ACCENT), _p(value, align="right")] for label, value in meta_pairs]
     meta_table = Table(meta_rows, colWidths=[1.3 * inch, (USABLE_WIDTH * 0.45) - 1.3 * inch])
     meta_table.setStyle(TableStyle([
