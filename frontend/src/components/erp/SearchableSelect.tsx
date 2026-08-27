@@ -139,7 +139,7 @@ export default function SearchableSelect({
                     fontSize: 13,
                     cursor: 'pointer',
                     background: o.value === value ? 'rgba(244,113,59,0.08)' : 'transparent',
-                    color: o.value === value ? '#fa9b9b' : '#1f1108',
+                    color: o.value === value ? '#FF7A45' : '#1f1108',
                     fontWeight: o.value === value ? 700 : 500,
                   }}
                   onMouseEnter={(e) => { if (o.value !== value) e.currentTarget.style.background = '#faf9f7' }}

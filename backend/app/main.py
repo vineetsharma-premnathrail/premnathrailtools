@@ -37,7 +37,7 @@ from app.modules.electrical.models.work_order import ElectricalWorkOrder
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem,
     Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity,
-    CrmDocument, CrmDiscussion, CrmStageLog,
+    CrmDocument, CrmDiscussion, CrmStageLog, Product, PaymentTerm,
 )
 from app.modules.rnd.models.calculation_history import CalculationHistory
 from app.modules.rnd.models.tool_calculations import (
@@ -71,6 +71,8 @@ from app.modules.crm.routes import activities as crm_activities_routes
 from app.modules.crm.routes import documents as crm_documents_routes
 from app.modules.crm.routes import workflow as crm_workflow_routes
 from app.modules.crm.routes import dashboard as crm_dashboard_routes
+from app.modules.crm.routes import products as crm_products_routes
+from app.modules.crm.routes import payment_terms as crm_payment_terms_routes
 from app.modules.rnd.routes import calculations as rnd_calculations_routes
 from app.modules.rnd.routes import history as rnd_history_routes
 from app.middleware.error_handler import setup_error_handlers, LoggingMiddleware
@@ -141,6 +143,8 @@ app.include_router(crm_activities_routes.router, prefix="/api/v1")
 app.include_router(crm_documents_routes.router, prefix="/api/v1")
 app.include_router(crm_workflow_routes.router, prefix="/api/v1")
 app.include_router(crm_dashboard_routes.router, prefix="/api/v1")
+app.include_router(crm_products_routes.router, prefix="/api/v1")
+app.include_router(crm_payment_terms_routes.router, prefix="/api/v1")
 app.include_router(notifications_routes.router, prefix="/api/v1")
 app.include_router(feedback_routes.router, prefix="/api/v1")
 app.include_router(api_keys_routes.router, prefix="/api/v1")

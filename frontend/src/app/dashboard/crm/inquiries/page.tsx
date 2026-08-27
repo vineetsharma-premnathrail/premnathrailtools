@@ -11,6 +11,7 @@ import InquiryDetailPanel from '@/components/crm/InquiryDetailPanel'
 import TenderDetailPanel from '@/components/crm/TenderDetailPanel'
 import { secondaryBtnStyle, pageBtnStyle } from '@/components/crm/ui'
 import { inquiryStatusColor } from '@/components/crm/constants'
+import { BRAND, TEXT } from '@/lib/theme'
 
 const PAGE_SIZE = 16
 const PINNED_KEY = 'crm_pinned_inquiry_tender_keys'
@@ -40,6 +41,7 @@ interface CombinedRow {
   date: string
   created_at: string
   created_by_name: string
+  org_name: string
 }
 
 export default function InquiriesPage() {
@@ -111,7 +113,17 @@ export default function InquiriesPage() {
   }, [search])
 
   const orgById = useMemo(() => new Map(organizations.map((o) => [o.id, o])), [organizations])
-  const clearFilters = () => { setSearch(''); setTypeFilter('all') }
+
+  type ColFilterKey = 'stage' | 'status' | 'created_by_name'
+  const COL_FILTER_KEYS: ColFilterKey[] = ['stage', 'status', 'created_by_name']
+  const [colFilters, setColFilters] = useState<Record<ColFilterKey, string>>({ stage: '', status: '', created_by_name: '' })
+  const setColFilter = (key: ColFilterKey, value: string) => setColFilters((f) => ({ ...f, [key]: value }))
+
+  const clearFilters = () => {
+    setSearch('')
+    setTypeFilter('all')
+    setColFilters({ stage: '', status: '', created_by_name: '' })
+  }
 
   const combined = useMemo<CombinedRow[]>(() => {
     const fromInquiries: CombinedRow[] = inquiries.map((i) => ({
@@ -127,6 +139,7 @@ export default function InquiriesPage() {
       date: i.next_followup_date || 'Not provided',
       created_at: i.created_at || 'Not provided',
       created_by_name: i.created_by_name || 'Not provided',
+      org_name: orgById.get(i.org_id)?.name || 'Not provided',
     }))
     const fromTenders: CombinedRow[] = tenders.map((t) => ({
       key: `tender-${t.id}`,
@@ -141,17 +154,74 @@ export default function InquiriesPage() {
       date: t.submission_date || 'Not provided',
       created_at: t.created_at || 'Not provided',
       created_by_name: t.created_by_name || 'Not provided',
+      org_name: orgById.get(t.org_id)?.name || 'Not provided',
     }))
     const all = [...fromInquiries, ...fromTenders]
     return typeFilter === 'all' ? all : all.filter((r) => r.kind === typeFilter)
-  }, [inquiries, tenders, typeFilter])
+  }, [inquiries, tenders, typeFilter, orgById])
+
+  const colFilterOptions = useMemo(() => {
+    const options: Record<ColFilterKey, string[]> = { stage: [], status: [], created_by_name: [] }
+    for (const key of COL_FILTER_KEYS) {
+      const values = new Set<string>()
+      for (const r of combined) {
+        if (r[key] && r[key] !== 'Not provided') values.add(r[key])
+      }
+      options[key] = Array.from(values).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    }
+    return options
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [combined])
+
+  const filteredRows = useMemo(() => {
+    return combined.filter((r) => COL_FILTER_KEYS.every((key) => !colFilters[key] || r[key] === colFilters[key]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [combined, colFilters])
+
+  type SortKey = 'universal_id' | 'created_at'
+  const [sortKey, setSortKey] = useState<SortKey>('created_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'created_at' ? 'desc' : 'asc')
+    }
+  }
+
+  const columns: { label: string; key: SortKey | ColFilterKey | 'kind' | 'org_name' | 'secondary'; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
+    { label: 'Type', key: 'kind', type: 'filter' },
+    { label: 'ID', key: 'universal_id', type: 'sort', sortLabels: ['Old', 'Latest'] },
+    { label: 'Organization', key: 'org_name', type: 'none' },
+    { label: 'Stage', key: 'stage', type: 'filter' },
+    { label: 'Status', key: 'status', type: 'filter' },
+    { label: 'Value / Priority', key: 'secondary', type: 'none' },
+    { label: 'Created Date', key: 'created_at', type: 'sort', sortLabels: ['Old', 'Latest'] },
+    { label: 'Created By', key: 'created_by_name', type: 'filter' },
+  ]
 
   const sortedRows = useMemo(() => {
-    const alpha = (a: CombinedRow, b: CombinedRow) => (a.universal_id || '').localeCompare(b.universal_id || '', undefined, { sensitivity: 'base' })
-    const pinned = combined.filter((r) => pinnedKeys.includes(r.key)).sort(alpha)
-    const rest = combined.filter((r) => !pinnedKeys.includes(r.key)).sort(alpha)
+    const cmp = (a: CombinedRow, b: CombinedRow) => {
+      const rawA = a[sortKey]
+      const rawB = b[sortKey]
+      let av: string | number
+      let bv: string | number
+      if (sortKey === 'created_at') {
+        av = rawA && rawA !== 'Not provided' ? new Date(rawA).getTime() : 0
+        bv = rawB && rawB !== 'Not provided' ? new Date(rawB).getTime() : 0
+      } else {
+        av = (rawA ?? '').toString().toLowerCase()
+        bv = (rawB ?? '').toString().toLowerCase()
+      }
+      const result = av < bv ? -1 : av > bv ? 1 : 0
+      return sortDir === 'asc' ? result : -result
+    }
+    const pinned = filteredRows.filter((r) => pinnedKeys.includes(r.key)).sort(cmp)
+    const rest = filteredRows.filter((r) => !pinnedKeys.includes(r.key)).sort(cmp)
     return [...pinned, ...rest]
-  }, [combined, pinnedKeys])
+  }, [filteredRows, pinnedKeys, sortKey, sortDir])
 
   const openRow = (row: CombinedRow) => {
     router.push(`/dashboard/crm/inquiries?id=${row.id}&type=${row.kind}`)
@@ -164,17 +234,17 @@ export default function InquiriesPage() {
 
   const header = (
     <>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Inquiries &amp; Tenders</h1>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Inquiries &amp; Tenders</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <Link
+            href="/dashboard/crm/inquiries/new"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14.5, fontWeight: 700, padding: '12px 24px', borderRadius: 10, background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: TEXT.white, textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
+          >
+            <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> New Record
+          </Link>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{sortedRows.length} Records Found</p>
         </div>
-        <Link
-          href="/dashboard/crm/inquiries/new"
-          style={{ fontSize: 13.5, fontWeight: 600, padding: '10px 20px', borderRadius: 10, background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap' }}
-        >
-          + New Record
-        </Link>
       </div>
 
       {error && (
@@ -190,14 +260,9 @@ export default function InquiriesPage() {
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="Inquiry / Tender #, product..."
+        placeholder="Search ID, product, owner, zone, status, stage..."
         style={{ flex: '1 1 auto', minWidth: 0, padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 12.5, outline: 'none' }}
       />
-      <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as 'all' | Kind)} style={{ flex: '0 0 auto', width: 90, padding: '8px 4px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 11.5 }}>
-        <option value="all">All</option>
-        <option value="inquiry">Inquiry</option>
-        <option value="tender">Tender</option>
-      </select>
       <button onClick={clearFilters} style={{ ...secondaryBtnStyle, flex: '0 0 auto', padding: '8px 10px', fontSize: 11.5 }}>Clear</button>
     </div>
   )
@@ -206,7 +271,7 @@ export default function InquiriesPage() {
     <span style={{
       fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', padding: '2px 8px', borderRadius: 999,
       background: kind === 'tender' ? 'rgba(59,130,246,0.1)' : 'rgba(250,155,155,0.15)',
-      color: kind === 'tender' ? '#2563eb' : '#fa9b9b',
+      color: kind === 'tender' ? '#2563eb' : '#FF7A45',
     }}>
       {kind}
     </span>
@@ -218,14 +283,72 @@ export default function InquiriesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['Type', 'ID', 'Organization', 'Title', 'Stage', 'Status', 'Value / Priority', 'Date', 'Created Date', 'Created By'].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
-              ))}
+              {columns.map((col) => {
+                if (col.key === 'kind') {
+                  return (
+                    <th key={col.key} style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: typeFilter !== 'all' ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                      <select
+                        value={typeFilter}
+                        onChange={(e) => setTypeFilter(e.target.value as 'all' | Kind)}
+                        style={{ font: 'inherit', color: 'inherit', background: 'transparent', border: 'none', outline: 'none', cursor: 'pointer' }}
+                      >
+                        <option value="all">{col.label}</option>
+                        <option value="inquiry" style={{ textTransform: 'none', color: '#1f1108' }}>Inquiry</option>
+                        <option value="tender" style={{ textTransform: 'none', color: '#1f1108' }}>Tender</option>
+                      </select>
+                    </th>
+                  )
+                }
+                if (col.type === 'filter') {
+                  const key = col.key as ColFilterKey
+                  return (
+                    <th key={col.key} style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: colFilters[key] ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                      <select
+                        value={colFilters[key]}
+                        onChange={(e) => setColFilter(key, e.target.value)}
+                        style={{ font: 'inherit', color: 'inherit', background: 'transparent', border: 'none', outline: 'none', cursor: 'pointer', maxWidth: 140 }}
+                      >
+                        <option value="">{col.label}</option>
+                        {colFilterOptions[key].map((v) => (
+                          <option key={v} value={v} style={{ textTransform: 'none', color: '#1f1108' }}>{v}</option>
+                        ))}
+                      </select>
+                    </th>
+                  )
+                }
+                if (col.type === 'none') {
+                  return (
+                    <th key={col.key} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                      {col.label}
+                    </th>
+                  )
+                }
+                return (
+                  <th
+                    key={col.key}
+                    onClick={() => toggleSort(col.key as SortKey)}
+                    style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: sortKey === col.key ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      {col.label}
+                      {col.sortLabels && (
+                        <span style={{ fontSize: 9.5, fontWeight: 700, opacity: sortKey === col.key ? 1 : 0.45, textTransform: 'none' }}>
+                          ({sortKey === col.key ? col.sortLabels[sortDir === 'asc' ? 0 : 1] : `${col.sortLabels[0]}/${col.sortLabels[1]}`})
+                        </span>
+                      )}
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                        style={{ opacity: sortKey === col.key ? 1 : 0.35, transform: sortKey === col.key && sortDir === 'desc' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+                        <path d="M18 15l-6-6-6 6" />
+                      </svg>
+                    </span>
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
+            {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
             {paged.map((r) => {
               const pinned = pinnedKeys.includes(r.key)
               return (
@@ -238,15 +361,14 @@ export default function InquiriesPage() {
                       title={pinned ? 'Unpin' : 'Pin to top'}
                       style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? '#fa9b9b' : 'none'} stroke={pinned ? '#fa9b9b' : '#a8a29e'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? '#FF7A45' : 'none'} stroke={pinned ? '#FF7A45' : '#a8a29e'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z" />
                       </svg>
                     </button>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#fa9b9b' }}>{r.universal_id}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>{r.universal_id}</span>
                   </div>
                 </td>
                 <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{orgById.get(r.org_id)?.name || 'Not provided'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 13, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.title}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.stage}</td>
                 <td style={{ padding: '7px 16px', whiteSpace: 'nowrap' }}>
                   {r.kind === 'inquiry' ? (
@@ -256,7 +378,6 @@ export default function InquiriesPage() {
                   )}
                 </td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.secondary}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.date}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : new Date(r.created_at).toLocaleDateString()}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_by_name}</td>
               </tr>
@@ -284,7 +405,7 @@ export default function InquiriesPage() {
                 p === -1 ? (
                   <span key={`gap-${i}`} style={{ fontSize: 12.5, color: '#a8a29e', padding: '0 4px' }}>…</span>
                 ) : (
-                  <button key={p} onClick={() => setPage(p)} style={{ ...pageBtnStyle(false), background: p === page ? '#fa9b9b' : '#fff', color: p === page ? '#fff' : '#57534e' }}>
+                  <button key={p} onClick={() => setPage(p)} style={{ ...pageBtnStyle(false), background: p === page ? '#FF7A45' : '#fff', color: p === page ? '#fff' : '#57534e' }}>
                     {p}
                   </button>
                 )

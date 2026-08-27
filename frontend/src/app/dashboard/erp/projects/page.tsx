@@ -144,7 +144,7 @@ export default function ProjectsRegistryPage() {
               fontWeight: 600,
               padding: '10px 20px',
               borderRadius: 10,
-              background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
+              background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
               color: '#fff',
               textDecoration: 'none',
               whiteSpace: 'nowrap',
@@ -237,7 +237,7 @@ export default function ProjectsRegistryPage() {
                 style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
               >
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#fa9b9b' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>
                     {p.serial_number}
                   </span>
                 </td>
@@ -280,7 +280,7 @@ export default function ProjectsRegistryPage() {
                 p === -1 ? (
                   <span key={`gap-${i}`} style={{ fontSize: 12.5, color: '#a8a29e', padding: '0 4px' }}>…</span>
                 ) : (
-                  <button key={p} onClick={() => setPage(p)} style={{ ...pageBtnStyle(false), background: p === page ? '#fa9b9b' : '#fff', color: p === page ? '#fff' : '#57534e' }}>
+                  <button key={p} onClick={() => setPage(p)} style={{ ...pageBtnStyle(false), background: p === page ? '#FF7A45' : '#fff', color: p === page ? '#fff' : '#57534e' }}>
                     {p}
                   </button>
                 )

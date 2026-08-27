@@ -358,7 +358,7 @@ export default function PurchaseRequisitionDetailPage() {
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ padding: 16, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#fa9b9b', margin: '0 0 12px' }}>{title}</p>
+      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#FF7A45', margin: '0 0 12px' }}>{title}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
     </div>
   )
@@ -399,7 +399,7 @@ const primaryBtnStyle: React.CSSProperties = {
   padding: '9px 18px',
   borderRadius: 10,
   border: 'none',
-  background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
+  background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
   color: '#fff',
   cursor: 'pointer',
 }

@@ -45,13 +45,17 @@ def _requester_or_purchase(user: User = Depends(get_current_user)) -> User:
     `purchase` app (process all PRs) OR an admin may call these routes —
     per-route logic below narrows what each actually gets to see/do."""
     apps = user.get_apps()
-    if "p2p" not in apps and "purchase" not in apps:
+    if "p2p" not in apps and "purchase" not in apps and not _is_po_approver(user):
         raise HTTPException(status_code=403, detail="Access to the P2P module required")
     return user
 
 
 def _is_purchase_team(user: User) -> bool:
     return "purchase" in user.get_apps()
+
+
+def _is_po_approver(user: User) -> bool:
+    return user.is_purchase_head or user.is_director or user.is_md
 
 
 def _write_audit(db: Session, pr_id: int, action: str, user: User, summary: str | None = None,
@@ -67,6 +71,7 @@ def _to_response(db: Session, pr: P2PRequest) -> P2PRequestResponse:
     resp.category_label = P2P_CATEGORIES.get(pr.category_code, pr.category_code)
     resp.pending_quantity = pr.pending_quantity
     resp.pending_approval_roles = pr.pending_approval_roles
+    resp.pending_po_approval_roles = pr.pending_po_approval_roles
     user_ids = {pr.requested_by_id, pr.assigned_buyer_id} - {None}
     if user_ids:
         users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
@@ -88,7 +93,7 @@ def _get_pr_or_404(db: Session, pr_id: int) -> P2PRequest:
 
 
 def _check_view_access(pr: P2PRequest, user: User) -> None:
-    if _is_purchase_team(user):
+    if _is_purchase_team(user) or _is_po_approver(user):
         return
     if user.id not in {pr.requested_by_id, pr.approver_id, pr.project_head_id, pr.plant_head_id}:
         raise HTTPException(status_code=403, detail="You may only view your own P2P requests")
@@ -103,11 +108,17 @@ def _check_approve_access(pr: P2PRequest, user: User) -> str | None:
         if user.role != "admin" and not _is_purchase_team(user):
             raise HTTPException(status_code=403, detail="Purchase module access required to approve or reject this PR.")
         return None
-    if user.role == "admin":
-        return None
+
+    # Check if user is an assigned approver in one of the three roles.
     for role, assigned_id in assigned.items():
         if assigned_id == user.id and getattr(pr, f"{role}_approved_at") is None:
             return role
+
+    # If user is not an assigned approver but is admin, they can do an override.
+    if user.role == "admin":
+        return None
+
+    # Otherwise, user is not authorized to approve this PR.
     raise HTTPException(status_code=403, detail="You are not an assigned approver for this PR, or you have already approved it.")
 
 
@@ -126,6 +137,20 @@ def _check_reject_access(pr: P2PRequest, user: User) -> str:
         if assigned_id == user.id:
             return role
     raise HTTPException(status_code=403, detail="Only an assigned approver (or admin) can reject this PR.")
+
+
+def _check_po_approve_access(pr: P2PRequest, user: User) -> str:
+    role_flags = {
+        "purchase_head": user.is_purchase_head,
+        "director": user.is_director,
+        "md": user.is_md,
+    }
+    roles = [role for role, enabled in role_flags.items() if enabled and role in pr.pending_po_approval_roles]
+    if len(roles) == 1:
+        return roles[0]
+    if len(roles) > 1:
+        raise HTTPException(status_code=403, detail="Your account has more than one pending PO approval role. Ask an administrator to assign one role before approving.")
+    raise HTTPException(status_code=403, detail="You do not have a pending PO approval role for this request.")
 
 
 @router.get("/meta")
@@ -270,15 +295,18 @@ async def list_p2p_requests(
         selectinload(P2PRequest.attachments),
     )
     if not _is_purchase_team(user):
+        if _is_po_approver(user):
+            query = query.filter(P2PRequest.status == "po_raised")
+        else:
         # Requesters see their own history; an assigned department/project/
         # plant head also sees PRs routed to them for approval — regardless
         # of other filters.
-        query = query.filter(
-            (P2PRequest.requested_by_id == user.id)
-            | (P2PRequest.approver_id == user.id)
-            | (P2PRequest.project_head_id == user.id)
-            | (P2PRequest.plant_head_id == user.id)
-        )
+            query = query.filter(
+                (P2PRequest.requested_by_id == user.id)
+                | (P2PRequest.approver_id == user.id)
+                | (P2PRequest.project_head_id == user.id)
+                | (P2PRequest.plant_head_id == user.id)
+            )
     if status:
         query = query.filter(P2PRequest.status == status)
     if category_code:
@@ -373,6 +401,7 @@ async def update_p2p_request(
 
 
 _ROLE_LABELS = {"department_head": "Department Head", "project_head": "Project Head", "plant_head": "Plant Head"}
+_PO_ROLE_LABELS = {"purchase_head": "Purchase Head", "director": "Director", "md": "MD"}
 
 
 @router.post("/{pr_id}/approve", response_model=P2PRequestResponse)
@@ -419,6 +448,36 @@ async def approve_p2p_request(
                 message=f"Your PR '{pr.p2p_number}' was approved by {user.name or user.email}.",
                 notification_type="p2p_request_approved", entity_type="p2p_request", entity_id=pr.id,
             )
+
+    db.commit()
+    db.refresh(pr)
+    return _to_response(db, pr)
+
+
+@router.post("/{pr_id}/approve-po", response_model=P2PRequestResponse)
+async def approve_po(
+    pr_id: int,
+    payload: P2PRequestApprovePayload = P2PRequestApprovePayload(),
+    db: Session = Depends(get_db),
+    user: User = Depends(_requester_or_purchase),
+):
+    pr = _get_pr_or_404(db, pr_id)
+    if pr.status != "po_raised":
+        raise HTTPException(status_code=409, detail=f"Only a PO raised request can be approved (current status: {pr.status})")
+
+    role = _check_po_approve_access(pr, user)
+    now = datetime.now(timezone.utc)
+    setattr(pr, f"{role}_approved_at", now)
+    if payload.comment:
+        setattr(pr, f"{role}_comment", payload.comment)
+    _write_audit(db, pr.id, "po_approved", user,
+                 summary=f"{user.name or user.email} approved PO for {pr.p2p_number} as {_PO_ROLE_LABELS[role]}.")
+
+    if not pr.pending_po_approval_roles:
+        pr.status = "po_approved"
+        _write_audit(db, pr.id, "po_fully_approved", user,
+                     summary=f"PO for {pr.p2p_number} received all required approvals.",
+                     old_status="po_raised", new_status="po_approved")
 
     db.commit()
     db.refresh(pr)
@@ -630,7 +689,7 @@ async def update_receipt(
     user: User = Depends(require_app_access("purchase")),
 ):
     pr = _get_pr_or_404(db, pr_id)
-    if pr.status not in ("po_raised", "partially_received"):
+    if pr.status not in ("po_approved", "partially_received"):
         raise HTTPException(status_code=409, detail=f"Receipts can only be recorded once a PO is raised (current status: {pr.status})")
 
     old_status = pr.status

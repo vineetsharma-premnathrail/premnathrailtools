@@ -41,6 +41,9 @@ class User(Base, TimestampMixin):
     # the New PR form, not auto-matched like the department head.
     is_project_head: Mapped[bool] = mapped_column(default=False)
     is_plant_head: Mapped[bool] = mapped_column(default=False)
+    is_purchase_head: Mapped[bool] = mapped_column(default=False)
+    is_director: Mapped[bool] = mapped_column(default=False)
+    is_md: Mapped[bool] = mapped_column(default=False)
 
     # Present in the remote production DB (main.users) — added here so the
     # migration from that schema doesn't have to drop them. Not yet wired

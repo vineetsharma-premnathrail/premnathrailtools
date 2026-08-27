@@ -133,7 +133,7 @@ export default function PurchaseRequisitionsPage() {
             {!loading && prs.length === 0 && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No purchase requisitions found.</td></tr>}
             {prs.map((pr) => (
               <tr key={pr.id} onClick={() => router.push(`/dashboard/purchase/${pr.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#fa9b9b' }}>{pr.pr_number}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>{pr.pr_number}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e' }}>{pr.project_label || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e' }}>{pr.sr_request_number || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#57534e' }}>{pr.client_company || '—'}</td>

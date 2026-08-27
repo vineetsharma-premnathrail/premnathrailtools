@@ -94,7 +94,7 @@ export default function RndLandingPage() {
                 height: 44,
                 borderRadius: 12,
                 background: 'accent' in tool ? tool.accent : 'rgba(244,113,59,0.1)',
-                color: 'accent' in tool ? '#7c3aed' : '#fa9b9b',
+                color: 'accent' in tool ? '#7c3aed' : '#FF7A45',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

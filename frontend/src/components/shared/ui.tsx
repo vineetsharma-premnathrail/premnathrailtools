@@ -58,7 +58,7 @@ export function Field({ label, children }: { label: string; children: React.Reac
 
 export function Section({ title, children, style, contentStyle }: { title: string; children: React.ReactNode; style?: React.CSSProperties; contentStyle?: React.CSSProperties }) {
   return (
-    <div style={{ padding: 18, borderRadius: RADII['3xl'], background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), ...style }}>
+    <div className="glass-section" style={{ padding: 18, borderRadius: RADII['3xl'], background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), ...style }}>
       <p className="section-title" style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }}>{title}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, ...contentStyle }}>{children}</div>
     </div>
@@ -78,7 +78,7 @@ export function Row3({ children }: { children: React.ReactNode }) {
 
 export function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ padding: 16, borderRadius: RADII['3xl'], background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass() }}>
+    <div className="glass-section" style={{ padding: 16, borderRadius: RADII['3xl'], background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass() }}>
       <p className="card-title" style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: COLORS.ink, margin: '0 0 12px' }}>{title}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
     </div>

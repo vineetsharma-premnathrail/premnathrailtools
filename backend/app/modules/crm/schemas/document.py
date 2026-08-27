@@ -24,3 +24,7 @@ class CrmDocumentResponse(BaseModel):
     org_id: int | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
+
+
+class TechnicalOfferRequestBody(BaseModel):
+    document_ids: list[int] = []

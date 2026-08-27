@@ -57,6 +57,11 @@ def _enrich(db: Session, activities: list[Activity]) -> list[ActivityResponse]:
     inquiry_labels = {i.id: i.universal_id for i in db.query(Inquiry).filter(Inquiry.id.in_(inquiry_ids)).all()} if inquiry_ids else {}
     tender_labels = {t.id: t.universal_id for t in db.query(Tender).filter(Tender.id.in_(tender_ids)).all()} if tender_ids else {}
 
+    creator_ids = {a.created_by_id for a in activities if a.created_by_id}
+    creators_by_id: dict[int, str] = {}
+    if creator_ids:
+        creators_by_id = {u.id: (u.name or u.email) for u in db.query(User).filter(User.id.in_(creator_ids)).all()}
+
     activity_ids = [a.id for a in activities]
     attachments_by_activity: dict[int, list[ActivityAttachment]] = {aid: [] for aid in activity_ids}
     if activity_ids:
@@ -75,6 +80,7 @@ def _enrich(db: Session, activities: list[Activity]) -> list[ActivityResponse]:
         elif a.related_module == "tender":
             resp.related_label = tender_labels.get(a.related_id)
         resp.attachments = [ActivityAttachmentResponse.model_validate(att) for att in attachments_by_activity.get(a.id, [])]
+        resp.created_by_name = creators_by_id.get(a.created_by_id)
         results.append(resp)
     return results
 
@@ -179,7 +185,7 @@ async def upload_activity_attachments(
         org = db.query(Organization).filter(Organization.id == activity.org_id).first()
         if org:
             org_name = org.name
-    folder_path = build_sharepoint_folder_path(user.name or user.email or "", org_name, f"crm/activity/{activity.id}")
+    folder_path = build_sharepoint_folder_path(user.name or user.email or "", org_name, f"crm/activity/{activity.id}", root_folder="CRM-media")
 
     uploaded, failed = [], []
     for f in files:

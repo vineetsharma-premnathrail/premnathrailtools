@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import Sidebar from '@/components/Sidebar'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import ScrollRevealObserver from '@/components/ScrollRevealObserver'
-import { GLASS, GRADIENTS } from '@/lib/theme'
+import { GLASS } from '@/lib/theme'
 
 export default function DashboardLayout({
   children,
@@ -17,9 +17,20 @@ export default function DashboardLayout({
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const mainRef = useRef<HTMLElement>(null)
+  const dropRef = useRef<HTMLDivElement>(null)
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => { setSidebarOpen(false) }, [pathname])
+
+  // Water-ripple wrapper follows the cursor — moves via transform written
+  // directly to the DOM (not React state) so mousemove never triggers a
+  // re-render; the "wave" motion itself comes from the rings' own CSS
+  // keyframe animation (waterRippleExpand), not from this transform.
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = dropRef.current
+    if (!el) return
+    el.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`
+  }
 
   if (isLoading) {
     return <LoadingSpinner />
@@ -31,17 +42,17 @@ export default function DashboardLayout({
 
   return (
     <div
-      className="app-shell"
+      className="app-shell animated-gradient-bg"
       style={{
         position: 'relative',
         display: 'flex',
         height: '100vh',
         overflow: 'hidden',
-        background: GRADIENTS.page,
         padding: 16,
         gap: 16,
         boxSizing: 'border-box',
       }}
+      onMouseMove={handleMouseMove}
     >
       {/* Decorative color blobs — a glass panel needs something visibly
           textured behind it to blur/refract; a flat gradient alone makes
@@ -59,6 +70,16 @@ export default function DashboardLayout({
         <div style={{ position: 'absolute', top: '-10%', left: '15%', width: 460, height: 460, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,69,0.38), transparent 70%)', filter: 'blur(10px)' }} />
         <div style={{ position: 'absolute', bottom: '-15%', left: '35%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,90,31,0.26), transparent 70%)', filter: 'blur(10px)' }} />
         <div style={{ position: 'absolute', top: '20%', right: '5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.20), transparent 70%)', filter: 'blur(10px)' }} />
+
+        {/* Water-ripple cursor follower — lives inside this same zIndex:-1
+            layer as the decorative blobs above, so opaque card content
+            always paints on top of it and text is never covered. Only
+            visible in open gaps/background and through glass-panel blur. */}
+        <div ref={dropRef} style={{ position: 'fixed', top: 0, left: 0, pointerEvents: 'none' }}>
+          <div className="water-ripple-ring" style={{ animationDelay: '0s' }} />
+          <div className="water-ripple-ring" style={{ animationDelay: '0.8s' }} />
+          <div className="water-ripple-ring" style={{ animationDelay: '1.6s' }} />
+        </div>
       </div>
 
       <div className="mobile-topbar" style={{ position: 'sticky', zIndex: 50, alignItems: 'center', gap: 12, padding: '12px 16px', top: 0, background: GLASS.strong, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, borderBottom: `1px solid ${GLASS.border}` }}>

@@ -37,6 +37,7 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     delivery_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     requirement_desc: Mapped[str | None] = mapped_column(Text, nullable=True)
     detailed_requirement: Mapped[str | None] = mapped_column(Text, nullable=True)
+    project_details: Mapped[str | None] = mapped_column(Text, nullable=True)
     inspection_req: Mapped[str | None] = mapped_column(String(255), nullable=True)
     warranty_req: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
@@ -50,6 +51,11 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     followup_priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
     followup_assigned_to: Mapped[str | None] = mapped_column(String(150), nullable=True)
     followup_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Technical Offer Request — button is enabled again whenever the inquiry is updated
+    # after the last request was sent (technical_offer_sent_at < updated_at).
+    technical_offer_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    technical_offer_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
@@ -107,6 +113,9 @@ class Quotation(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     inquiry_id: Mapped[int] = mapped_column(Integer, ForeignKey("crm_inquiries.id"), nullable=False, index=True)
     quot_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Base number ("QT-<inquiry-suffix>-<seq>") — never changes once assigned. The displayed
+    # quot_number appends "-r<revision_number>" on top of this each time the quote is revised.
+    quot_number_base: Mapped[str | None] = mapped_column(String(100), nullable=True)
     version: Mapped[str] = mapped_column(String(20), default="V1")
     revision_number: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     quotation_type: Mapped[str] = mapped_column(String(20), default="Domestic", nullable=False)
@@ -122,6 +131,9 @@ class Quotation(Base):
     payment_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     customer_response: Mapped[str] = mapped_column(String(30), default="— Awaiting —")
+    discount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    discount_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    quote_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

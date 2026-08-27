@@ -83,7 +83,7 @@ export default function ServiceRequestDetailPage() {
       <ErpNav />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: 12, fontWeight: 600, color: '#fa9b9b', margin: '0 0 4px' }}>{sr.request_number}</p>
+          <p style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45', margin: '0 0 4px' }}>{sr.request_number}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{sr.issue_title}</h1>
         </div>
         {canModify && (
@@ -117,8 +117,8 @@ export default function ServiceRequestDetailPage() {
               marginRight: 16,
               border: 'none',
               background: 'transparent',
-              borderBottom: tab === t ? '2px solid #fa9b9b' : '2px solid transparent',
-              color: tab === t ? '#fa9b9b' : '#78716c',
+              borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
+              color: tab === t ? '#FF7A45' : '#78716c',
               fontWeight: 600,
               fontSize: 13,
               cursor: 'pointer',
@@ -169,10 +169,10 @@ function WorkflowSteps({ status, canModify, onRequestChange }: { status: string;
         const done = i < activeIdx
         const active = i === activeIdx
         const clickable = canModify && !active
-        const circleBg = done ? '#22c55e' : active ? '#fa9b9b' : '#fff'
+        const circleBg = done ? '#22c55e' : active ? '#FF7A45' : '#fff'
         const circleColor = done || active ? '#fff' : '#a8a29e'
-        const circleBorder = done ? '#22c55e' : active ? '#fa9b9b' : 'rgba(0,0,0,0.1)'
-        const labelColor = active ? '#fa9b9b' : done ? '#16a34a' : '#a8a29e'
+        const circleBorder = done ? '#22c55e' : active ? '#FF7A45' : 'rgba(0,0,0,0.1)'
+        const labelColor = active ? '#FF7A45' : done ? '#16a34a' : '#a8a29e'
         return (
           <div key={step.key} style={{ display: 'flex', alignItems: 'center', flex: i < WORKFLOW_STEPS.length - 1 ? 1 : undefined }}>
             <div
@@ -640,7 +640,7 @@ function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: 
             disabled={uploading}
             aria-label="Browse photos"
             title="Browse photos, or drag &amp; drop here"
-            style={{ width: 46, height: 46, flex: 'none', borderRadius: 12, border: `1px solid ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.1)'}`, background: dragOver ? 'rgba(244,113,59,0.08)' : '#faf9f7', fontSize: 19, cursor: uploading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: 46, height: 46, flex: 'none', borderRadius: 12, border: `1px solid ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.1)'}`, background: dragOver ? 'rgba(244,113,59,0.08)' : '#faf9f7', fontSize: 19, cursor: uploading ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             🖼️
           </button>
@@ -743,7 +743,7 @@ function AttachmentsTab({ sr, canModify, onRefresh }: { sr: ServiceRequest; canM
             style={{
               padding: '32px 20px',
               borderRadius: 14,
-              border: `2px dashed ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.15)'}`,
+              border: `2px dashed ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.15)'}`,
               background: dragOver ? 'rgba(244,113,59,0.05)' : '#fff',
               textAlign: 'center',
               cursor: uploading ? 'wait' : 'pointer',
@@ -762,7 +762,7 @@ function AttachmentsTab({ sr, canModify, onRefresh }: { sr: ServiceRequest; canM
             </p>
             {!uploading && (
               <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>
-                or <span style={{ color: '#fa9b9b', fontWeight: 600 }}>click to browse</span>
+                or <span style={{ color: '#FF7A45', fontWeight: 600 }}>click to browse</span>
               </p>
             )}
             <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
@@ -836,7 +836,7 @@ const primaryBtnStyle: React.CSSProperties = {
   padding: '9px 18px',
   borderRadius: 10,
   border: 'none',
-  background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
+  background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
   color: '#fff',
   cursor: 'pointer',
   whiteSpace: 'nowrap',

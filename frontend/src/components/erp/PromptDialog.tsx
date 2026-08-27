@@ -102,7 +102,7 @@ export default function PromptDialog({
               padding: '9px 18px',
               borderRadius: 10,
               border: 'none',
-              background: danger ? '#dc2626' : 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
+              background: danger ? '#dc2626' : 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
               color: '#fff',
               cursor: 'pointer',
             }}

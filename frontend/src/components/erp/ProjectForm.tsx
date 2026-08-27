@@ -10,6 +10,7 @@ import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, isValidGST, VALIDATION_MESSAGES } from '@/lib/validation'
 import { inputStyle, Field, Section, Row } from '@/components/shared/ui'
 import SharePicker, { useShareSelection } from './SharePicker'
+import Checkbox from '@/components/Checkbox'
 
 export type ProjectAttachmentShareOptions = {
   isPrivate?: boolean
@@ -271,8 +272,8 @@ export default function ProjectForm({
               marginRight: 16,
               border: 'none',
               background: 'transparent',
-              borderBottom: tabIndex === i ? '2px solid #fa9b9b' : '2px solid transparent',
-              color: tabIndex === i ? '#fa9b9b' : '#78716c',
+              borderBottom: tabIndex === i ? '2px solid #FF7A45' : '2px solid transparent',
+              color: tabIndex === i ? '#FF7A45' : '#78716c',
               fontWeight: 600,
               fontSize: 13,
               cursor: 'pointer',
@@ -339,9 +340,8 @@ export default function ProjectForm({
         {tabIndex === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             <Section title="Operational Site Location">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e' }}>
-                <input
-                  type="checkbox"
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e' }}>
+                <Checkbox
                   checked={isExport}
                   onChange={(e) => {
                     const checked = e.target.checked
@@ -354,7 +354,7 @@ export default function ProjectForm({
                   }}
                 />
                 International / Export Deployment
-              </label>
+              </span>
               <Row>
                 <Field label="Site Name"><input value={form.site_name} onChange={(e) => set('site_name', e.target.value)} placeholder="Enter railway station/site name" style={inputStyle} /></Field>
                 <Field label="Site Location"><input value={form.site_location} onChange={(e) => set('site_location', e.target.value)} placeholder="City or Division" style={inputStyle} /></Field>
@@ -445,10 +445,10 @@ export default function ProjectForm({
               <Field label="Warranty Terms & Scope">
                 <input value={form.warranty_override} onChange={(e) => set('warranty_override', e.target.value)} placeholder="Clauses, limit conditions" style={inputStyle} />
               </Field>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e' }}>
-                <input type="checkbox" checked={extendedWarranty} onChange={(e) => setExtendedWarranty(e.target.checked)} />
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e' }}>
+                <Checkbox checked={extendedWarranty} onChange={(e) => setExtendedWarranty(e.target.checked)} />
                 Extended Warranty
-              </label>
+              </span>
               {extendedWarranty && (
                 <Field label="Extended Warranty End">
                   <DateField value={extendedWarrantyEnd} onChange={setExtendedWarrantyEnd} />
@@ -477,7 +477,7 @@ export default function ProjectForm({
               style={{
                 padding: '32px 20px',
                 borderRadius: 14,
-                border: `2px dashed ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.15)'}`,
+                border: `2px dashed ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.15)'}`,
                 background: dragOver ? 'rgba(244,113,59,0.05)' : '#fff',
                 textAlign: 'center',
                 cursor: 'pointer',
@@ -546,7 +546,7 @@ const primaryBtnStyle: React.CSSProperties = {
   padding: '10px 22px',
   borderRadius: 10,
   border: 'none',
-  background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
+  background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
   color: '#fff',
   cursor: 'pointer',
   whiteSpace: 'nowrap',

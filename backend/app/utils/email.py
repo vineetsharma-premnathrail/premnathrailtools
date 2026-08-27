@@ -43,7 +43,13 @@ def _write_audit(db: Session, entity_id: int, action: str, performed_by_id: int 
     db.add(AuditLog(entity_type="service_request", entity_id=entity_id, action=action, performed_by_id=performed_by_id, summary=summary))
 
 
-async def _send_graph_mail(sender_email: str, subject: str, html_body: str, to_email: str, to_name: str) -> tuple[bool, str]:
+async def _send_graph_mail(
+    sender_email: str, subject: str, html_body: str, to_email: str, to_name: str,
+    extra_attachments: list[dict] | None = None,
+    sender_name: str = "Premnathrail Service Team",
+) -> tuple[bool, str]:
+    """extra_attachments: list of {"name": str, "content_type": str, "content_bytes": bytes} —
+    sent as regular (non-inline) downloadable file attachments, e.g. a generated report."""
     try:
         token = await get_app_graph_token()
     except Exception as exc:
@@ -51,20 +57,30 @@ async def _send_graph_mail(sender_email: str, subject: str, html_body: str, to_e
 
     message: dict[str, object] = {
         "subject": subject,
-        "from": {"emailAddress": {"name": "Premnathrail Service Team", "address": sender_email}},
+        "from": {"emailAddress": {"name": sender_name, "address": sender_email}},
         "body": {"contentType": "HTML", "content": html_body},
         "toRecipients": [{"emailAddress": {"name": to_name, "address": to_email}}],
     }
+    attachments: list[dict] = []
     logo_b64 = _logo_base64()
     if logo_b64:
-        message["attachments"] = [{
+        attachments.append({
             "@odata.type": "#microsoft.graph.fileAttachment",
             "name": "logo.png",
             "contentType": "image/png",
             "contentBytes": logo_b64,
             "isInline": True,
             "contentId": _LOGO_CONTENT_ID,
-        }]
+        })
+    for att in extra_attachments or []:
+        attachments.append({
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": att["name"],
+            "contentType": att.get("content_type", "application/octet-stream"),
+            "contentBytes": base64.b64encode(att["content_bytes"]).decode("ascii"),
+        })
+    if attachments:
+        message["attachments"] = attachments
     payload = {"message": message, "saveToSentItems": True}
     try:
         async with httpx.AsyncClient(timeout=20) as client:
@@ -298,3 +314,85 @@ async def send_purchase_requisition_email(db: Session, pr, sr, project, material
         logger.warning("Purchase requisition email failed: %s", "; ".join(errors))
         _write_audit(db, sr.id, "email_failed", None, f"Purchase requisition email ({pr.pr_number}) failed. {'; '.join(errors)}")
     return any_success
+
+
+async def send_technical_offer_request_email(
+    db: Session, entity_type: str, entity_id: int, offer_number: str,
+    universal_id: str, org_name: str, project_name: str, documents_link: str,
+    actor_id: int | None, actor_name: str,
+    reference_documents: list[dict] | None = None,
+    actor_email: str | None = None,
+) -> tuple[bool, str]:
+    """Emails R&D a link to the Technical Offer Request .docx (already uploaded to
+    SharePoint by the caller — see technical_offer_docx.py / upload_file_to_sharepoint),
+    with the offer number they must reference in their reply. Writes an AuditLog row
+    either way (entity_type is "inquiry" or "tender"), which the Timeline tab picks up
+    to show exactly when the request was sent.
+
+    Sent "from" the acting user's own mailbox (actor_email) rather than the fixed
+    SENDER_EMAIL, so R&D sees it came from whoever actually clicked Send — falls back
+    to SENDER_EMAIL only if the caller didn't have the user's email on hand."""
+    sender_email = actor_email or settings.SENDER_EMAIL
+    rnd_email = settings.RND_EMAIL
+    if not sender_email or not rnd_email:
+        return False, "Sender or R&D email is not configured."
+
+    subject = f"Technical Offer Request {offer_number} — {universal_id}"
+    ref_docs_html = ""
+    if reference_documents:
+        items = "".join(
+            f'<li style="margin:0 0 6px"><a href="{d["url"]}" style="color:#2563eb">{d["name"]}</a></li>'
+            for d in reference_documents if d.get("url")
+        )
+        if items:
+            ref_docs_html = f"""
+    <p style="margin:0 0 8px;font-size:13.5px;color:#1e293b;font-weight:700">Reference Documents</p>
+    <ul style="margin:0 0 20px;padding-left:20px;font-size:13.5px;color:#475569">{items}</ul>"""
+    body_content = f"""
+    <p style="margin:0 0 16px;font-size:14px;color:#1e293b;font-weight:700">Dear R&amp;D Team,</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.7">
+      A Technical Offer Request has been raised for the requirement below. The full details
+      (Organization, Project, and Product Requirement) are in the document linked below.
+    </p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
+      {_sr_email_table_row("Technical Offer No.", offer_number, True)}
+      {_sr_email_table_row("Reference ID", universal_id, False)}
+      {_sr_email_table_row("Organization", org_name or "—", True)}
+      {_sr_email_table_row("Project", project_name or "—", False)}
+      {_sr_email_table_row("Raised By", actor_name, True)}
+    </table>
+    <p style="margin:0 0 8px;font-size:13.5px;color:#1e293b;font-weight:700">Please quote <span style="color:#f97316">{offer_number}</span> in your technical offer.</p>
+    <p style="margin:0 0 20px;font-size:13.5px;color:#475569">Technical Offer Request document: <a href="{documents_link}" style="color:#2563eb">{documents_link}</a></p>
+    {ref_docs_html}
+    <p style="margin:0;font-size:14px;color:#1e293b">Regards,<br><strong>{actor_name}</strong></p>"""
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f1f5f9">
+<div style="font-family:Arial,sans-serif;max-width:660px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)">
+  <div style="background:#fff;padding:20px 28px;border-bottom:3px solid #f97316">{_logo_header()}</div>
+  <div style="background:#0f172a;padding:18px 28px">
+    <p style="color:#94a3b8;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:1px">Technical Offer Request</p>
+    <h2 style="color:#fff;margin:0;font-size:20px;font-weight:700">{offer_number}</h2>
+  </div>
+  <div style="padding:28px">{body_content}</div>
+  <div style="background:#f8fafc;padding:14px 28px;border-top:1px solid #e2e8f0">
+    <p style="font-size:11px;color:#94a3b8;margin:0;text-align:center">This is an automated notification from the Premnathrail CRM.</p>
+  </div>
+</div>
+</body></html>"""
+
+    success, error = await _send_graph_mail(
+        sender_email, subject, html, rnd_email, "R&D Team",
+        sender_name=actor_name if actor_email else "Premnathrail Service Team",
+    )
+    summary = (
+        f"Technical Offer Request {offer_number} sent to {rnd_email} from {sender_email}."
+        if success else
+        f"Technical Offer Request {offer_number} to {rnd_email} failed. {error}"
+    )
+    db.add(AuditLog(
+        entity_type=entity_type, entity_id=entity_id,
+        action="technical_offer_sent" if success else "technical_offer_failed",
+        performed_by_id=actor_id, summary=summary,
+    ))
+    return success, error

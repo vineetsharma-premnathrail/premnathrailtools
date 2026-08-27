@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import cast, String as SAString
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
@@ -40,8 +41,17 @@ async def list_organizations(
         query = query.filter(Organization.railway_zone == railway_zone)
     if search:
         like = f"%{search}%"
+        creator_ids_matching = db.query(User.id).filter(
+            (User.name.ilike(like)) | (User.email.ilike(like))
+        )
         query = query.filter(
-            (Organization.name.ilike(like)) | (Organization.gst_number.ilike(like)) | (Organization.city.ilike(like))
+            (Organization.name.ilike(like)) | (Organization.org_type.ilike(like)) | (Organization.parent_org.ilike(like))
+            | (Organization.railway_zone.ilike(like)) | (Organization.division_workshop.ilike(like))
+            | (Organization.address.ilike(like)) | (Organization.country.ilike(like)) | (Organization.state.ilike(like))
+            | (Organization.city.ilike(like)) | (Organization.pin_code.ilike(like))
+            | (Organization.website.ilike(like))
+            | (cast(Organization.created_at, SAString).ilike(like))
+            | (Organization.created_by_id.in_(creator_ids_matching))
         )
     orgs = query.order_by(Organization.id.desc()).offset(skip).limit(limit).all()
     creator_ids = {o.created_by_id for o in orgs if o.created_by_id}

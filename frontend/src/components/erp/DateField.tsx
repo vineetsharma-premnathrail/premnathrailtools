@@ -157,7 +157,7 @@ export default function DateField({ value, onChange, style }: { value: string; o
       />
       <svg
         onClick={openCalendar}
-        width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fa9b9b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF7A45" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
         style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer' }}
       >
         <rect x="3" y="4" width="18" height="18" rx="2" />

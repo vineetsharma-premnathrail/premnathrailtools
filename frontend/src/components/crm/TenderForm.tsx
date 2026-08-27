@@ -7,7 +7,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
 import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES } from './constants'
-import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle } from './ui'
+import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle, handleEnterAsTab } from './ui'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
 
@@ -194,7 +194,7 @@ export default function TenderForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <form onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {error && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {error}
@@ -203,13 +203,13 @@ export default function TenderForm({
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Tender Number</span>
-          <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, background: 'rgba(244,113,59,0.08)', color: '#fa9b9b' }}>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Internal Tender ID</span>
+          <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, background: 'rgba(244,113,59,0.08)', color: '#FF7A45' }}>
             {initial?.universal_id || previewNumber || 'Auto-generated on save'}
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Tender Date</span>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Internal Tender Creation Date</span>
           <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, background: '#f5f5f4', color: '#78716c' }}>
             {initial?.created_at ? new Date(initial.created_at).toLocaleDateString() : new Date().toLocaleDateString()}
           </span>
@@ -224,8 +224,8 @@ export default function TenderForm({
             onClick={() => setTab(t)}
             style={{
               padding: '10px 6px', marginRight: 16, border: 'none', background: 'transparent',
-              borderBottom: tab === t ? '2px solid #fa9b9b' : '2px solid transparent',
-              color: tab === t ? '#fa9b9b' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+              borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
+              color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
             }}
           >
             {t}
@@ -236,7 +236,7 @@ export default function TenderForm({
       {tab === 'Tender Information' && (
         <Section title="Tender Information">
           <Row>
-            <Field label="Organization">
+            <Field label="Organization *">
               <SearchableSelect
                 value={form.org_id}
                 onChange={(v) => set('org_id', v)}

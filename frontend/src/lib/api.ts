@@ -174,9 +174,12 @@ export const usersApi = {
     erp_permissions: string[],
     is_department_head?: boolean,
     is_project_head?: boolean,
-    is_plant_head?: boolean
+    is_plant_head?: boolean,
+    is_purchase_head?: boolean,
+    is_director?: boolean,
+    is_md?: boolean
   ) => {
-    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, is_department_head, is_project_head, is_plant_head })
+    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, is_department_head, is_project_head, is_plant_head, is_purchase_head, is_director, is_md })
     return data
   },
 
@@ -280,8 +283,16 @@ export const crmApi = {
   deleteInquiry: async (id: number) => {
     await apiClient.delete(`/crm/inquiries/${id}`)
   },
+  createInquiryTechnicalOfferRequest: async (id: number, documentIds: number[] = []) => {
+    const { data } = await apiClient.post(`/crm/inquiries/${id}/technical-offer-request`, { document_ids: documentIds })
+    return data
+  },
   getInquiryAudit: async (id: number) => {
     const { data } = await apiClient.get(`/crm/inquiries/${id}/audit`)
+    return data
+  },
+  getInquirySpecRevisions: async (id: number) => {
+    const { data } = await apiClient.get(`/crm/inquiries/${id}/spec-revisions`)
     return data
   },
   listInquiryStages: async (id: number) => {
@@ -321,8 +332,16 @@ export const crmApi = {
   deleteTender: async (id: number) => {
     await apiClient.delete(`/crm/tenders/${id}`)
   },
+  createTenderTechnicalOfferRequest: async (id: number, documentIds: number[] = []) => {
+    const { data } = await apiClient.post(`/crm/tenders/${id}/technical-offer-request`, { document_ids: documentIds })
+    return data
+  },
   getTenderAudit: async (id: number) => {
     const { data } = await apiClient.get(`/crm/tenders/${id}/audit`)
+    return data
+  },
+  getTenderSpecRevisions: async (id: number) => {
+    const { data } = await apiClient.get(`/crm/tenders/${id}/spec-revisions`)
     return data
   },
   listTenderStages: async (id: number) => {
@@ -388,6 +407,10 @@ export const crmApi = {
     const { data } = await apiClient.post('/crm/documents', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
     return data
   },
+  getDocumentContent: async (id: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/crm/documents/${id}/content`, { responseType: 'blob' })
+    return data
+  },
   deleteDocument: async (id: number) => {
     const { data } = await apiClient.delete(`/crm/documents/${id}`)
     return data
@@ -408,10 +431,21 @@ export const crmApi = {
   createQuotation: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/quotations`, payload)).data,
   updateQuotation: async (inquiryId: number, quotId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/inquiries/${inquiryId}/quotations/${quotId}`, payload)).data,
   deleteQuotation: async (inquiryId: number, quotId: number) => (await apiClient.delete(`/crm/inquiries/${inquiryId}/quotations/${quotId}`)).data,
+  getQuotationRevisions: async (inquiryId: number, quotId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/quotations/${quotId}/revisions`)).data,
   downloadQuotationPdf: async (inquiryId: number, quotId: number) => {
     const { data } = await apiClient.get(`/crm/inquiries/${inquiryId}/quotations/${quotId}/pdf`, { responseType: 'blob' })
     return data as Blob
   },
+
+  listProducts: async (search?: string) => (await apiClient.get('/crm/products', { params: search ? { search } : {} })).data,
+  createProduct: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/products', payload)).data,
+  updateProduct: async (id: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/products/${id}`, payload)).data,
+  deleteProduct: async (id: number) => (await apiClient.delete(`/crm/products/${id}`)).data,
+
+  listPaymentTerms: async () => (await apiClient.get('/crm/payment-terms')).data,
+  createPaymentTerm: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/payment-terms', payload)).data,
+  updatePaymentTerm: async (id: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/payment-terms/${id}`, payload)).data,
+  deletePaymentTerm: async (id: number) => (await apiClient.delete(`/crm/payment-terms/${id}`)).data,
 
   listInquiryPurchaseOrders: async (inquiryId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/purchase-orders`)).data,
   createInquiryPurchaseOrder: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/purchase-orders`, payload)).data,
@@ -750,6 +784,11 @@ export const p2pApi = {
 
   approve: async (id: number, comment?: string) => {
     const { data } = await apiClient.post(`/p2p/requests/${id}/approve`, { comment })
+    return data
+  },
+
+  approvePO: async (id: number, comment?: string) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/approve-po`, { comment })
     return data
   },
 

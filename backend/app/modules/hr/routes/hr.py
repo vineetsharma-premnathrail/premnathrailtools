@@ -37,8 +37,19 @@ async def update_hr_profile(
     if "reporting_manager_id" in updates and updates["reporting_manager_id"] is not None:
         if updates["reporting_manager_id"] == user_id:
             raise HTTPException(status_code=400, detail="An employee cannot be their own reporting manager")
-        if not db.query(User).filter(User.id == updates["reporting_manager_id"]).first():
+        manager = db.query(User).filter(User.id == updates["reporting_manager_id"], User.is_active == True).first()  # noqa: E712
+        if not manager:
             raise HTTPException(status_code=404, detail="Reporting manager not found")
+        seen = {user_id}
+        current_id = manager.reporting_manager_id
+        while current_id is not None:
+            if current_id in seen:
+                raise HTTPException(status_code=400, detail="This reporting-manager change would create a circular org chart")
+            seen.add(current_id)
+            current = db.query(User).filter(User.id == current_id).first()
+            if not current:
+                break
+            current_id = current.reporting_manager_id
 
     for field, val in updates.items():
         setattr(target, field, val)

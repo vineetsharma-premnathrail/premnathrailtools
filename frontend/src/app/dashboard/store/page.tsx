@@ -8,6 +8,7 @@ import { StockItem } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 import StoreNav from '@/components/store/StoreNav'
 import { inputStyle, primaryBtnStyle } from '@/components/shared/ui'
+import Checkbox from '@/components/Checkbox'
 
 export default function StoreItemsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -72,10 +73,10 @@ export default function StoreItemsPage() {
           placeholder="Search by description or part code…"
           style={{ ...inputStyle, flex: '1 1 260px', width: 'auto' }}
         />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer' }}>
-          <input type="checkbox" checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} />
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary }}>
+          <Checkbox checked={lowStockOnly} onChange={(e) => setLowStockOnly(e.target.checked)} />
           Low stock only
-        </label>
+        </span>
       </div>
 
       {error && (

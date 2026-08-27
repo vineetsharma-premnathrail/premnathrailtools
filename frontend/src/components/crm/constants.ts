@@ -82,6 +82,16 @@ export const TND_STAGES = [
 
 export const TENDER_STATUSES = ['Active', 'Submitted', 'Won', 'Lost', 'Cancelled']
 
+export const TENDER_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  Active: { bg: 'rgba(37,99,235,0.1)', text: '#1d4ed8' },
+  Submitted: { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed' },
+  Won: { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
+  Lost: { bg: 'rgba(220,38,38,0.1)', text: '#b91c1c' },
+  Cancelled: { bg: 'rgba(0,0,0,0.06)', text: '#57534e' },
+}
+
+export const tenderStatusColor = (status: string) => TENDER_STATUS_COLORS[status] || { bg: 'rgba(0,0,0,0.06)', text: '#57534e' }
+
 export const TENDER_PORTALS = ['GeM', 'IREPS', 'CPP Portal', 'eProcure', 'Direct', 'Other']
 
 export const TENDER_TYPES = ['Open', 'Limited', 'Single', 'Global']
@@ -95,3 +105,5 @@ export const APPROVAL_TYPES = ['Technical', 'Design', 'Commercial', 'Management'
 export const CUSTOMER_RESPONSES = ['— Awaiting —', 'Accepted', 'Rejected', 'Negotiating']
 
 export const PO_STATUSES = ['Active', 'Closed', 'Cancelled']
+
+export const QUOTE_CONDITIONS = ['Standard T&C', 'Ex-works', 'FOR Destination', 'FOB', 'CIF', 'Other/Custom']

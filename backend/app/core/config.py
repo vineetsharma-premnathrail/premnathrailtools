@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     SENDER_EMAIL: str = ""
     TEAM_EMAIL: str = ""
     PURCHASE_EMAIL: str = ""
+    RND_EMAIL: str = ""
     APP_BASE_URL: str = "http://localhost:8000"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

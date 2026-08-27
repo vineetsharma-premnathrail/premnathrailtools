@@ -52,9 +52,12 @@ function NodeCard({ node }: { node: TreeNode }) {
       {expanded && children.length > 0 && (
         <>
           <div style={{ width: 1, height: 16, background: BORDER.normal }} />
-          <div style={{ display: 'flex', gap: 24, paddingTop: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 24, paddingTop: 16, borderTop: `1px solid ${BORDER.normal}` }}>
             {children.map((child) => (
-              <NodeCard key={child.employee.id} node={child} />
+              <div key={child.employee.id} style={{ position: 'relative', paddingTop: 0 }}>
+                <div style={{ position: 'absolute', top: -16, left: '50%', width: 1, height: 16, background: BORDER.normal }} />
+                <NodeCard node={child} />
+              </div>
             ))}
           </div>
         </>
@@ -79,6 +82,8 @@ export default function OrgChartPage() {
   }, [isAuthorized])
 
   const forest = useMemo(() => buildForest(employees), [employees])
+  const assignedForest = useMemo(() => forest.filter((root) => root.children.length > 0), [forest])
+  const unassigned = useMemo(() => forest.filter((root) => root.children.length === 0).map((root) => root.employee), [forest])
 
   if (isLoading || !isAuthorized) return null
 
@@ -102,18 +107,33 @@ export default function OrgChartPage() {
       ) : forest.length === 0 ? (
         <p style={{ fontSize: 13, color: TEXT.muted }}>No employees found.</p>
       ) : (
-        <div style={{ overflowX: 'auto', paddingBottom: 20 }}>
-          <div style={{ display: 'flex', gap: 40, minWidth: 'max-content', padding: '10px 4px' }}>
-            {forest.map((root) => (
-              <NodeCard key={root.employee.id} node={root} />
-            ))}
-          </div>
+        <div style={{ paddingBottom: 20 }}>
+          {assignedForest.length > 0 && (
+            <div style={{ overflowX: 'auto', padding: '10px 4px 24px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: 56, minWidth: 'max-content' }}>
+                {assignedForest.map((root) => <NodeCard key={root.employee.id} node={root} />)}
+              </div>
+            </div>
+          )}
+          {unassigned.length > 0 && (
+            <div style={{ marginTop: assignedForest.length ? 8 : 0, padding: 16, borderRadius: 14, background: 'rgba(148,163,184,0.08)', border: `1px dashed ${BORDER.normal}` }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, margin: '0 0 12px' }}>Employees awaiting reporting manager</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 12 }}>
+                {unassigned.map((employee) => (
+                  <div key={employee.id} style={{ borderRadius: 12, background: GLASS.card, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: '9px 14px', minWidth: 150, textAlign: 'center' }}>
+                    <p style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, margin: '0 0 2px' }}>{employee.name}</p>
+                    <p style={{ fontSize: 11, color: TEXT.muted, margin: 0 }}>{employee.designation || employee.department || '—'}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {forest.length > 1 && (
+      {unassigned.length > 0 && (
         <p style={{ fontSize: 12, color: TEXT.muted, marginTop: 8 }}>
-          {forest.length} employee(s) have no reporting manager set — each shown as a separate root above.
+          {unassigned.length} employee(s) have no reporting manager set. Assign managers from the Directory to build the pyramid hierarchy.
         </p>
       )}
     </div>

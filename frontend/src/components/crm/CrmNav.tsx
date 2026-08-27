@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import NotificationBell from '@/components/erp/NotificationBell'
+import { BRAND } from '@/lib/theme'
 
 const TABS = [
   { href: '/dashboard/crm', label: 'Dashboard', icon: 'grid' },
@@ -19,6 +20,8 @@ function TabIcon({ name }: { name: string }) {
       return <svg {...common}><rect x="4" y="2" width="16" height="20" /><line x1="9" y1="6" x2="9" y2="6.01" /><line x1="15" y1="6" x2="15" y2="6.01" /><line x1="9" y1="10" x2="9" y2="10.01" /><line x1="15" y1="10" x2="15" y2="10.01" /><line x1="9" y1="14" x2="9" y2="14.01" /><line x1="15" y1="14" x2="15" y2="14.01" /></svg>
     case 'file':
       return <svg {...common}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+    case 'box':
+      return <svg {...common}><path d="M21 8l-9-5-9 5 9 5 9-5z" /><path d="M3 8v8l9 5 9-5V8" /><path d="M12 13v8" /></svg>
     default:
       return null
   }
@@ -47,8 +50,8 @@ export default function CrmNav() {
                 fontWeight: 600,
                 letterSpacing: '.02em',
                 textTransform: 'uppercase',
-                color: isActive ? '#fa9b9b' : '#78716c',
-                borderBottom: isActive ? '2px solid #fa9b9b' : '2px solid transparent',
+                color: isActive ? BRAND.primary : '#78716c',
+                borderBottom: isActive ? `2px solid ${BRAND.primary}` : '2px solid transparent',
                 textDecoration: 'none',
                 whiteSpace: 'nowrap',
               }}

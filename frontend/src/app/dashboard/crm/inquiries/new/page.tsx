@@ -41,7 +41,7 @@ export default function NewInquiryOrTenderPage() {
                 fontWeight: 600,
                 textTransform: 'capitalize',
                 background: type === k ? '#fff' : 'transparent',
-                color: type === k ? '#fa9b9b' : '#78716c',
+                color: type === k ? '#FF7A45' : '#78716c',
                 boxShadow: type === k ? '0 2px 8px rgba(0,0,0,0.08)' : 'none',
               }}
             >

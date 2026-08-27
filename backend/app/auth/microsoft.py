@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 from msal import ConfidentialClientApplication
 from app.core.config import settings
@@ -79,6 +80,22 @@ async def list_azure_org_users() -> list[dict]:
             users.extend(data.get("value", []))
             url = data.get("@odata.nextLink")
             params = {}
+        async def fetch_manager(user: dict) -> None:
+            user_id = user.get("id")
+            if not user_id:
+                return
+            manager_resp = await client.get(
+                f"https://graph.microsoft.com/v1.0/users/{user_id}/manager",
+                params={"$select": "id"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if manager_resp.status_code == 404:
+                user["manager"] = None
+                return
+            manager_resp.raise_for_status()
+            user["manager"] = manager_resp.json()
+
+        await asyncio.gather(*(fetch_manager(user) for user in users))
     return users
 
 

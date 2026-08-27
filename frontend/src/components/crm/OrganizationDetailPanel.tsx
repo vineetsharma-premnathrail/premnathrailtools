@@ -9,7 +9,7 @@ import { OrganizationDetail, Inquiry, Tender, OrgContact } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import InquiryForm from '@/components/crm/InquiryForm'
 import TenderForm from '@/components/crm/TenderForm'
-import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
+import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab } from '@/components/crm/ui'
 
 const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Audit Trail'] as const
 
@@ -78,8 +78,8 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '10px 6px', marginRight: 16, border: 'none', background: 'transparent', whiteSpace: 'nowrap',
-                borderBottom: tab === t ? '2px solid #fa9b9b' : '2px solid transparent',
-                color: tab === t ? '#fa9b9b' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
+                color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
               }}
             >
               {t}
@@ -88,7 +88,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
                   style={{
                     fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 9999,
                     background: tab === t ? 'rgba(250,155,155,0.15)' : 'rgba(0,0,0,0.06)',
-                    color: tab === t ? '#fa9b9b' : '#78716c',
+                    color: tab === t ? '#FF7A45' : '#78716c',
                   }}
                 >
                   {count}
@@ -189,8 +189,8 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
         <div>
           <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Contact'}</button>
           {showForm && (
-            <form onSubmit={submit} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-              <Field label="Name"><input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
+            <form onSubmit={submit} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+              <Field label="Name *"><input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
               <Field label="Designation"><input value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} style={inputStyle} /></Field>
               <Field label="Department"><input value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} style={inputStyle} /></Field>
               <Field label="Mobile"><input value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} style={inputStyle} /></Field>
@@ -217,7 +217,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
                 <div
                   style={{
                     width: 38, height: 38, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', fontSize: 13, fontWeight: 600,
+                    background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', fontSize: 13, fontWeight: 600,
                   }}
                 >
                   {c.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
@@ -226,7 +226,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: 0 }}>{c.name}</p>
                     {c.designation && (
-                      <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: '#fa9b9b' }}>{c.designation}</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: '#FF7A45' }}>{c.designation}</span>
                     )}
                     {c.department && (
                       <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: '#78716c' }}>{c.department}</span>
@@ -341,7 +341,7 @@ function InquiriesTab({ orgId, canModify }: { orgId: number; canModify: boolean 
             <tbody>
               {inquiries.map((i) => (
                 <tr key={i.id} onClick={() => router.push(`/dashboard/crm/inquiries/${i.id}`)} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }}>
-                  <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: 12, color: '#fa9b9b', fontWeight: 600 }}>{i.universal_id || '—'}</td>
+                  <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: 12, color: '#FF7A45', fontWeight: 600 }}>{i.universal_id || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#1f1108', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.product || '—'}</td>
                   <td style={{ padding: '10px 16px' }}><StatusPill value={i.status} /></td>
                   <td style={{ padding: '10px 16px' }}><StatusPill value={i.priority} /></td>
@@ -402,8 +402,14 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
             </thead>
             <tbody>
               {tenders.map((t) => (
-                <tr key={t.id} onClick={() => router.push(`/dashboard/crm/tenders/${t.id}`)} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }}>
-                  <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: 12, color: '#fa9b9b', fontWeight: 600 }}>{t.universal_id || '—'}</td>
+                <tr
+                  key={t.id}
+                  onClick={() => router.push(`/dashboard/crm/tenders/${t.id}`)}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,122,69,0.05)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }}
+                >
+                  <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: 12, color: '#FF7A45', fontWeight: 600 }}>{t.universal_id || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#57534e' }}>{t.tender_number || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#1f1108', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.tender_name || '—'}</td>
                   <td style={{ padding: '10px 16px' }}><StatusPill value={t.status} /></td>

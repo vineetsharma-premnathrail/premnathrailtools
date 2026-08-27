@@ -106,6 +106,8 @@ class TenderResponse(BaseModel):
     loi_number: str | None = None
     contract_value: float | None = None
     loss_reason: str | None = None
+    technical_offer_number: str | None = None
+    technical_offer_sent_at: datetime | None = None
     created_by_id: int | None = None
     created_by_name: str | None = None
     created_at: datetime | None = None

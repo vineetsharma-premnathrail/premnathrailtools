@@ -216,7 +216,7 @@ export default function OrganizationForm({
         <Section title="Organization Details">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '2 1 260px', minWidth: 220 }}>
-              <Field label="Organization Name">
+              <Field label="Organization Name *">
                 <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Northern Railway HQ" style={inputStyle} />
               </Field>
             </div>

@@ -19,12 +19,18 @@ interface ModuleCardProps {
 
 export default function ModuleCard({ title, description, icon, href, features, barColor, iconBg, iconColor, tagBg, tagColor }: ModuleCardProps) {
   const [hover, setHover] = useState(false)
+  // Uiverse-style press feedback (https://uiverse.io, by SteveBloX): a
+  // slight overshoot scale + rotate on click, distinct from the plain
+  // hover-lift below — gives the card a tactile "picked up" feel.
+  const [pressed, setPressed] = useState(false)
 
   return (
     <Link href={href} style={{ textDecoration: 'none' }}>
       <div
         onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
+        onMouseLeave={() => { setHover(false); setPressed(false) }}
+        onMouseDown={() => setPressed(true)}
+        onMouseUp={() => setPressed(false)}
         style={{
           position: 'relative',
           borderRadius: 22,
@@ -32,9 +38,13 @@ export default function ModuleCard({ title, description, icon, href, features, b
           background: hover ? GLASS.strong : GLASS.card,
           backdropFilter: hover ? GLASS.blurStrong : GLASS.blur,
           WebkitBackdropFilter: hover ? GLASS.blurStrong : GLASS.blur,
-          border: `1px solid ${GLASS.border}`,
+          border: hover ? '1px solid rgba(15,23,42,0.28)' : `1px solid ${GLASS.border}`,
           boxShadow: SHADOWS.glass(hover),
-          transform: hover ? 'translateY(-3px)' : 'translateY(0)',
+          transform: pressed
+            ? 'scale(0.96) rotateZ(1.2deg)'
+            : hover
+              ? 'translateY(-3px) scale(1.02)'
+              : 'translateY(0) scale(1)',
           transition: 'all .2s ease-out',
         }}
       >

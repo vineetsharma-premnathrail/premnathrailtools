@@ -115,7 +115,7 @@ export default function ErpDashboardPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
         <StatCard label="Total Projects" value={stats.totalProjects} color="#3b82f6" />
-        <StatCard label="Total Service Requests" value={stats.totalSrs} color="#fa9b9b" />
+        <StatCard label="Total Service Requests" value={stats.totalSrs} color="#FF7A45" />
         <StatCard label="Monthly SRs" value={stats.thisMonthSrs} color="#10b981" />
         <StatCard label="Total Active Tickets" value={stats.activeTickets} color="#eab308" />
       </div>
@@ -141,7 +141,7 @@ export default function ErpDashboardPage() {
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Recent Service Tickets</h2>
-          <Link href="/dashboard/erp/service-requests" style={{ fontSize: 12, color: '#fa9b9b', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
+          <Link href="/dashboard/erp/service-requests" style={{ fontSize: 12, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
         <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
@@ -165,7 +165,7 @@ export default function ErpDashboardPage() {
                     style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                   >
                     <td style={{ padding: '10px 14px' }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#fa9b9b' }}>{sr.request_number}</span>
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#FF7A45' }}>{sr.request_number}</span>
                     </td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.serial_number || '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.model_name || '—'}</td>
@@ -193,7 +193,7 @@ export default function ErpDashboardPage() {
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Machine Assets</h2>
-          <Link href="/dashboard/erp/projects" style={{ fontSize: 12, color: '#fa9b9b', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
+          <Link href="/dashboard/erp/projects" style={{ fontSize: 12, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
         <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
@@ -214,7 +214,7 @@ export default function ErpDashboardPage() {
                   style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                 >
                   <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: '#fa9b9b' }}>{p.serial_number}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: '#FF7A45' }}>{p.serial_number}</span>
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.model_name || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{p.machine_type || '—'}</td>
@@ -261,7 +261,7 @@ function BarChart({ data, colorMap }: { data: [string, number][]; colorMap: Reco
             {label.replace(/_/g, ' ')}
           </span>
           <div style={{ flex: 1, height: 10, borderRadius: 6, background: 'rgba(0,0,0,0.05)', overflow: 'hidden' }}>
-            <div style={{ width: `${(value / max) * 100}%`, height: '100%', background: colorMap[label] || '#fa9b9b', borderRadius: 6 }} />
+            <div style={{ width: `${(value / max) * 100}%`, height: '100%', background: colorMap[label] || '#FF7A45', borderRadius: 6 }} />
           </div>
           <span style={{ fontSize: 12, fontWeight: 600, color: '#1f1108', width: 24, textAlign: 'right' }}>{value}</span>
         </div>

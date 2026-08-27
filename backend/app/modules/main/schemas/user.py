@@ -17,6 +17,9 @@ class UserUpdate(BaseModel):
     is_department_head: bool | None = None
     is_project_head: bool | None = None
     is_plant_head: bool | None = None
+    is_purchase_head: bool | None = None
+    is_director: bool | None = None
+    is_md: bool | None = None
 
 
 class UserHRUpdate(BaseModel):
@@ -45,6 +48,9 @@ class UserResponse(BaseModel):
     is_department_head: bool = False
     is_project_head: bool = False
     is_plant_head: bool = False
+    is_purchase_head: bool = False
+    is_director: bool = False
+    is_md: bool = False
     apps: list[str] = []
     is_azure_admin: bool = False
     reporting_manager_id: int | None = None

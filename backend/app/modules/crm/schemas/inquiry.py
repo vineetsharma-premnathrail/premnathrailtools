@@ -21,6 +21,7 @@ class InquiryCreate(BaseModel):
     delivery_location: str | None = None
     requirement_desc: str | None = None
     detailed_requirement: str | None = None
+    project_details: str | None = None
     inspection_req: str | None = None
     warranty_req: str | None = None
     budget: float | None = None
@@ -53,6 +54,7 @@ class InquiryUpdate(BaseModel):
     delivery_location: str | None = None
     requirement_desc: str | None = None
     detailed_requirement: str | None = None
+    project_details: str | None = None
     inspection_req: str | None = None
     warranty_req: str | None = None
     budget: float | None = None
@@ -89,6 +91,7 @@ class InquiryResponse(BaseModel):
     delivery_location: str | None = None
     requirement_desc: str | None = None
     detailed_requirement: str | None = None
+    project_details: str | None = None
     inspection_req: str | None = None
     warranty_req: str | None = None
     budget: float | None = None
@@ -100,6 +103,8 @@ class InquiryResponse(BaseModel):
     followup_priority: str | None = None
     followup_assigned_to: str | None = None
     followup_remarks: str | None = None
+    technical_offer_number: str | None = None
+    technical_offer_sent_at: datetime | None = None
     created_by_id: int | None = None
     created_by_name: str | None = None
     created_at: datetime | None = None

@@ -185,7 +185,7 @@ export default function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' 
                     padding: '10px 14px',
                     borderRadius: 10,
                     border: 'none',
-                    background: submitting || !message.trim() ? '#fca87a' : '#fa9b9b',
+                    background: submitting || !message.trim() ? '#fca87a' : '#FF7A45',
                     color: '#fff',
                     fontSize: 13,
                     fontWeight: 600,

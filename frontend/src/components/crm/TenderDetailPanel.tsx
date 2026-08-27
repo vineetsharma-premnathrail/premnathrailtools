@@ -10,10 +10,11 @@ import DateField from '@/components/erp/DateField'
 import TenderForm from '@/components/crm/TenderForm'
 import { RichText } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
-import { TND_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, DOC_CATEGORIES } from '@/components/crm/constants'
-import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
+import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
+import { TND_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, DOC_CATEGORIES, tenderStatusColor } from '@/components/crm/constants'
+import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, handleEnterAsTab } from '@/components/crm/ui'
 
-const TABS = ['Info', 'Dates', 'Department Tasks', 'Competitor Analysis', 'Sales', 'Documents', 'Discussion', 'Follow Ups', 'Timeline'] as const
+const TABS = ['Info', 'Dates', 'Documents', 'Follow Ups', 'Timeline'] as const
 
 export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
@@ -27,6 +28,11 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pendingStage, setPendingStage] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  const [revisions, setRevisions] = useState<SpecRevision[]>([])
+  const [selectedRevId, setSelectedRevId] = useState<number | null>(null)
+  const [sendingTOR, setSendingTOR] = useState(false)
+  const [torError, setTorError] = useState('')
+  const [showTorPicker, setShowTorPicker] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -35,6 +41,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       const data = await crmApi.getTender(tenderId)
       setTender(data)
       crmApi.getOrganization(data.org_id).then(setOrg).catch(() => {})
+      crmApi.getTenderSpecRevisions(tenderId).then(setRevisions).catch(() => setRevisions([]))
     } catch {
       setError('Tender not found.')
     } finally {
@@ -54,6 +61,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
     if (!tender) return
     try {
       setTender(await crmApi.updateTender(tender.id, payload))
+      crmApi.getTenderSpecRevisions(tender.id).then(setRevisions).catch(() => {})
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Update failed.')
     }
@@ -66,6 +74,25 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
     else router.push('/dashboard/crm/tenders')
   }
 
+  const torActive = !!tender && (
+    !tender.technical_offer_sent_at ||
+    (!!tender.updated_at && new Date(tender.updated_at) > new Date(tender.technical_offer_sent_at))
+  )
+
+  const sendTechnicalOfferRequest = async (documentIds: number[]) => {
+    if (!tender || !torActive) return
+    setSendingTOR(true)
+    setTorError('')
+    try {
+      setTender(await crmApi.createTenderTechnicalOfferRequest(tender.id, documentIds))
+      setShowTorPicker(false)
+    } catch (err: any) {
+      setTorError(err?.response?.data?.detail || 'Failed to send Technical Offer Request.')
+    } finally {
+      setSendingTOR(false)
+    }
+  }
+
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
   if (error && !tender) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
   if (!tender) return null
@@ -75,18 +102,40 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#fa9b9b' }}>{tender.universal_id}</span>
-            <span title={`Status: ${tender.status}`} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(37,99,235,0.1)', color: '#1d4ed8' }}>{tender.status}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{tender.universal_id}</span>
+            <span title={`Status: ${tender.status}`} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: tenderStatusColor(tender.status).bg, color: tenderStatusColor(tender.status).text }}>{tender.status}</span>
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{tender.tender_name || org?.name || 'Tender'}</h1>
         </div>
-        {(canModify || isAdmin) && !editing && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} style={secondaryBtnStyle}>Edit</button>}
-            {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
+        {!editing && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, width: '100%', maxWidth: '100%' }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', width: '100%' }}>
+              <button
+                onClick={() => setShowTorPicker(true)}
+                disabled={!torActive || sendingTOR}
+                title={!torActive ? `Already sent as ${tender.technical_offer_number} — edit the tender to send again.` : 'Emails R&D the Organization, Project, and Product Requirement details as a PDF.'}
+                style={{ ...secondaryBtnStyle, opacity: !torActive || sendingTOR ? 0.5 : 1, cursor: !torActive || sendingTOR ? 'not-allowed' : 'pointer' }}
+              >
+                {sendingTOR ? 'Sending…' : 'Send Technical Offer Request to R&D'}
+              </button>
+              {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} style={secondaryBtnStyle}>Edit</button>}
+              {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
+            </div>
+            {tender.technical_offer_number && (
+              <span style={{ fontSize: 11, color: '#78716c' }}>
+                {torActive ? 'Previously sent as ' : 'Sent as '}<strong>{tender.technical_offer_number}</strong>
+                {tender.technical_offer_sent_at && ` on ${new Date(tender.technical_offer_sent_at).toLocaleString()}`}
+              </span>
+            )}
           </div>
         )}
       </div>
+
+      {torError && (
+        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+          {torError}
+        </div>
+      )}
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -98,17 +147,27 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
 
       <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
         {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              padding: '10px 6px', marginRight: 16, border: 'none', background: 'transparent', whiteSpace: 'nowrap',
-              borderBottom: tab === t ? '2px solid #fa9b9b' : '2px solid transparent',
-              color: tab === t ? '#fa9b9b' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-            }}
-          >
-            {t}
-          </button>
+          <div key={t} style={{ display: 'inline-flex', alignItems: 'center', marginRight: 16 }}>
+            <button
+              onClick={() => setTab(t)}
+              style={{
+                padding: '10px 6px', border: 'none', background: 'transparent', whiteSpace: 'nowrap',
+                borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
+                color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              {t}
+              {t === 'Info' && tab === t && revisions.length > 0 && (
+                <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'rgba(255,122,69,0.15)', color: '#FF7A45' }}>
+                  {revisions.length}
+                </span>
+              )}
+            </button>
+            {t === 'Info' && tab === t && !editing && revisions.length > 0 && (
+              <RevisionSelector revisions={revisions} selectedId={selectedRevId} onSelect={setSelectedRevId} />
+            )}
+          </div>
         ))}
       </div>
 
@@ -123,15 +182,20 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
           }}
         />
       )}
-      {tab === 'Info' && !editing && <InfoTab tender={tender} org={org} />}
+      {tab === 'Info' && !editing && <InfoTab tender={tender} org={org} revisions={revisions} selectedRevId={selectedRevId} />}
       {tab === 'Dates' && <DatesTab tender={tender} />}
-      {tab === 'Department Tasks' && <TasksTab tenderId={tender.id} canModify={canModify} />}
-      {tab === 'Competitor Analysis' && <CompetitorsTab tenderId={tender.id} canModify={canModify} />}
-      {tab === 'Sales' && <PurchaseOrdersTab tenderId={tender.id} orgId={tender.org_id} canModify={canModify} />}
       {tab === 'Documents' && <DocumentsTab tender={tender} canModify={canModify} />}
-      {tab === 'Discussion' && <DiscussionTab tenderId={tender.id} />}
       {tab === 'Follow Ups' && <ActivitiesTab tender={tender} />}
       {tab === 'Timeline' && <TimelineTab tenderId={tender.id} />}
+
+      <TechnicalOfferPickerDialog
+        open={showTorPicker}
+        relatedModule="tender"
+        relatedId={tender.id}
+        sending={sendingTOR}
+        onSend={sendTechnicalOfferRequest}
+        onCancel={() => setShowTorPicker(false)}
+      />
 
       <ConfirmDialog
         open={showDeleteConfirm}
@@ -156,52 +220,90 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
 
 function StageProgress({ stage, canModify, onRequestChange }: { stage: string; canModify: boolean; onRequestChange: (s: string) => void }) {
   const activeIdx = TND_STAGES.indexOf(stage)
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [open])
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', padding: '18px 20px', marginBottom: 20, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflowX: 'auto' }}>
-      {TND_STAGES.map((s, i) => {
-        const done = i < activeIdx
-        const active = i === activeIdx
-        const clickable = canModify && !active
-        const circleBg = done ? '#22c55e' : active ? '#fa9b9b' : '#fff'
-        const circleColor = done || active ? '#fff' : '#a8a29e'
-        const circleBorder = done ? '#22c55e' : active ? '#fa9b9b' : 'rgba(0,0,0,0.1)'
-        const labelColor = active ? '#fa9b9b' : done ? '#16a34a' : '#a8a29e'
-        return (
-          <div key={s} style={{ display: 'flex', alignItems: 'center', flex: i < TND_STAGES.length - 1 ? 1 : undefined }}>
-            <div onClick={clickable ? () => onRequestChange(s) : undefined} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: clickable ? 'pointer' : 'default', userSelect: 'none' }}>
-              <div style={{ width: 26, height: 26, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: circleBg, color: circleColor, border: `2px solid ${circleBorder}`, fontSize: 10, fontWeight: 600, flexShrink: 0 }}>
-                {done ? '✓' : i + 1}
-              </div>
-              <span style={{ fontSize: 8.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.02em', color: labelColor, whiteSpace: 'nowrap' }}>{s}</span>
-            </div>
-            {i < TND_STAGES.length - 1 && <div style={{ flex: 1, height: 2, margin: '0 6px 14px', background: done ? '#4ade80' : 'rgba(0,0,0,0.08)' }} />}
+    <div ref={ref} style={{ position: 'relative', marginBottom: 20 }}>
+      <div
+        onClick={() => setOpen((v) => !v)}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', cursor: 'pointer', userSelect: 'none' }}
+      >
+        <div style={{ width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FF7A45', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+          {activeIdx + 1}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e' }}>Stage {activeIdx + 1} of {TND_STAGES.length}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#1f1108' }}>{stage}</span>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 100, height: 6, borderRadius: 999, background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+            <div style={{ width: `${((activeIdx + 1) / TND_STAGES.length) * 100}%`, height: '100%', background: '#22c55e' }} />
           </div>
-        )
-      })}
+          <span style={{ fontSize: 14, color: '#a8a29e', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
+        </div>
+      </div>
+
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, zIndex: 20, maxHeight: 340, overflowY: 'auto', borderRadius: 14, background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.4)', boxShadow: '0 16px 40px rgba(15,23,42,0.22), 0 4px 10px rgba(15,23,42,.1)', padding: 6 }}>
+          {TND_STAGES.map((s, i) => {
+            const done = i < activeIdx
+            const active = i === activeIdx
+            const clickable = canModify && !active
+            const circleBg = done ? '#22c55e' : active ? '#FF7A45' : '#fff'
+            const circleColor = done || active ? '#fff' : '#a8a29e'
+            const circleBorder = done ? '#22c55e' : active ? '#FF7A45' : 'rgba(0,0,0,0.15)'
+            return (
+              <div
+                key={s}
+                onClick={clickable ? () => { onRequestChange(s); setOpen(false) } : undefined}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: clickable ? 'pointer' : 'default', background: active ? 'rgba(255,122,69,0.1)' : 'transparent' }}
+                onMouseEnter={(e) => { if (clickable) e.currentTarget.style.background = 'rgba(0,0,0,0.04)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = active ? 'rgba(255,122,69,0.1)' : 'transparent' }}
+              >
+                <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: circleBg, color: circleColor, border: `2px solid ${circleBorder}`, fontSize: 9.5, fontWeight: 700, flexShrink: 0 }}>
+                  {done ? '✓' : i + 1}
+                </div>
+                <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 500, color: active ? '#FF7A45' : done ? '#16a34a' : '#57534e' }}>{s}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
 
-function InfoTab({ tender, org }: { tender: Tender; org: Organization | null }) {
+function InfoTab({ tender, org, revisions, selectedRevId }: { tender: Tender; org: Organization | null; revisions: SpecRevision[]; selectedRevId: number | null }) {
   const showResult = tender.status === 'Won' || tender.status === 'Lost' || tender.awarded_to || tender.loss_reason
+  const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
+  const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
         <Card title="Tender Details">
-          <InfoRow label="Tender No." value={tender.tender_number || '—'} />
-          <InfoRow label="Authority" value={tender.tender_authority || '—'} />
-          <InfoRow label="Portal" value={tender.tender_portal || '—'} />
-          <InfoRow label="Type" value={tender.tender_type || '—'} />
-          <InfoRow label="Category" value={tender.tender_category || '—'} />
-          <InfoRow label="Value" value={tender.tender_value != null ? `${tender.currency} ${tender.tender_value.toLocaleString()}` : '—'} />
+          <SpecInfoRow label="Tender No." value={tender.tender_number || '—'} change={changeFor('tender_number')} />
+          <SpecInfoRow label="Authority" value={tender.tender_authority || '—'} change={changeFor('tender_authority')} />
+          <SpecInfoRow label="Portal" value={tender.tender_portal || '—'} change={changeFor('tender_portal')} />
+          <SpecInfoRow label="Type" value={tender.tender_type || '—'} change={changeFor('tender_type')} />
+          <SpecInfoRow label="Category" value={tender.tender_category || '—'} change={changeFor('tender_category')} />
+          <SpecInfoRow label="Value" value={tender.tender_value != null ? `${tender.currency} ${tender.tender_value.toLocaleString()}` : '—'} change={changeFor('tender_value') || changeFor('currency')} />
           <InfoRow label="Currency" value={tender.currency} />
           <InfoRow label="Current Stage" value={tender.current_stage} />
         </Card>
         <Card title="Organization">
           <InfoRow label="Name" value={org?.name || '—'} />
-          <InfoRow label="Railway Zone" value={tender.railway_zone || '—'} />
-          <InfoRow label="Division" value={tender.division || '—'} />
-          <InfoRow label="Workshop" value={tender.workshop || '—'} />
+          <SpecInfoRow label="Railway Zone" value={tender.railway_zone || '—'} change={changeFor('railway_zone')} />
+          <SpecInfoRow label="Division" value={tender.division || '—'} change={changeFor('division')} />
+          <SpecInfoRow label="Workshop" value={tender.workshop || '—'} change={changeFor('workshop')} />
           <div style={{ paddingTop: 10, marginTop: 4, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
             <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#1f1108', margin: '0 0 10px' }}>Participation</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -281,8 +383,10 @@ function TasksTab({ tenderId, canModify }: { tenderId: number; canModify: boolea
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.task_title.trim()) return
-    if (editingId) await crmApi.updateTenderTask(tenderId, editingId, form)
-    else await crmApi.createTenderTask(tenderId, form)
+    const payload: Record<string, unknown> = { ...form }
+    Object.keys(payload).forEach((k) => { if (payload[k] === '') delete payload[k] })
+    if (editingId) await crmApi.updateTenderTask(tenderId, editingId, payload)
+    else await crmApi.createTenderTask(tenderId, payload)
     cancelForm()
     load()
   }
@@ -298,7 +402,7 @@ function TasksTab({ tenderId, canModify }: { tenderId: number; canModify: boolea
         <div>
           <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Task'}</button>
           {showForm && (
-            <form onSubmit={save} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <form onSubmit={save} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Field label="Department">
                 <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} style={inputStyle}>
                   {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
@@ -380,7 +484,7 @@ function CompetitorsTab({ tenderId, canModify }: { tenderId: number; canModify: 
         <div>
           <button onClick={() => setShowForm((v) => !v)} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Competitor'}</button>
           {showForm && (
-            <form onSubmit={create} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <form onSubmit={create} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Field label="Competitor Name"><input value={form.competitor_name} onChange={(e) => setForm((f) => ({ ...f, competitor_name: e.target.value }))} style={inputStyle} /></Field>
               <Field label="Expected Price (₹)"><input type="number" value={form.expected_price} onChange={(e) => setForm((f) => ({ ...f, expected_price: e.target.value }))} style={inputStyle} /></Field>
               <div style={{ gridColumn: '1 / -1' }}>
@@ -437,7 +541,8 @@ function PurchaseOrdersTab({ tenderId, orgId, canModify }: { tenderId: number; o
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
-    const payload = { ...form, po_value: form.po_value ? Number(form.po_value) : undefined }
+    const payload: Record<string, unknown> = { ...form, po_value: form.po_value ? Number(form.po_value) : undefined }
+    Object.keys(payload).forEach((k) => { if (payload[k] === '') delete payload[k] })
     if (editingId) await crmApi.updatePurchaseOrder(editingId, payload)
     else await crmApi.createTenderPurchaseOrder(tenderId, { ...payload, org_id: orgId })
     cancelForm()
@@ -450,7 +555,7 @@ function PurchaseOrdersTab({ tenderId, orgId, canModify }: { tenderId: number; o
         <div>
           <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add PO'}</button>
           {showForm && (
-            <form onSubmit={save} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <form onSubmit={save} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Field label="PO Number"><input value={form.po_number} onChange={(e) => setForm((f) => ({ ...f, po_number: e.target.value }))} style={inputStyle} /></Field>
               <Field label="PO Date"><DateField value={form.po_date} onChange={(v) => setForm((f) => ({ ...f, po_date: v }))} /></Field>
               <Field label="PO Value (₹)"><input type="number" value={form.po_value} onChange={(e) => setForm((f) => ({ ...f, po_value: e.target.value }))} style={inputStyle} /></Field>
@@ -504,7 +609,7 @@ function DocumentsTab({ tender, canModify }: { tender: Tender; canModify: boolea
   const internalDocs = documents.filter((d) => d.folder_type === 'internal')
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
       <TenderDocumentFolderPanel title="Client Documents" folderType="client" docs={clientDocs} tender={tender} canModify={canModify} onUploaded={load} onRemove={remove} error={error} setError={setError} />
       <TenderDocumentFolderPanel title="Internal Documents" folderType="internal" docs={internalDocs} tender={tender} canModify={canModify} onUploaded={load} onRemove={remove} error={error} setError={setError} />
     </div>
@@ -545,7 +650,14 @@ function TenderDocumentFolderPanel({ title, folderType, docs, tender, canModify,
   }
 
   return (
-    <div style={{ padding: 16, borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ position: 'relative', padding: 16, borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {uploading && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 2, borderRadius: 14, background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(2px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <div style={{ width: 26, height: 26, borderRadius: '50%', border: '3px solid rgba(255,122,69,0.2)', borderTopColor: '#FF7A45', animation: 'crm-spin 0.8s linear infinite' }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>Uploading…</span>
+          <style>{'@keyframes crm-spin { to { transform: rotate(360deg) } }'}</style>
+        </div>
+      )}
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: 0 }}>{title}</p>
       {docs.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>None</p>
@@ -554,7 +666,19 @@ function TenderDocumentFolderPanel({ title, folderType, docs, tender, canModify,
           {docs.map((d) => (
             <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
               <div>
-                <a href={d.sharepoint_url || '#'} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}>{d.file_name}</a>
+                <a
+                  href="#"
+                  onClick={async (e) => {
+                    e.preventDefault()
+                    try {
+                      const blob = await crmApi.getDocumentContent(d.id)
+                      window.open(URL.createObjectURL(blob), '_blank')
+                    } catch {
+                      setError('Unable to open document.')
+                    }
+                  }}
+                  style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none', cursor: 'pointer' }}
+                >{d.file_name}</a>
                 <p style={{ fontSize: 11, color: '#a8a29e', margin: '2px 0 0' }}>{d.doc_category || '—'}</p>
               </div>
               {canModify && <button onClick={() => onRemove(d.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>}
@@ -569,7 +693,6 @@ function TenderDocumentFolderPanel({ title, folderType, docs, tender, canModify,
             {DOC_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <input ref={fileRef} type="file" multiple onChange={(e) => handleUpload(e.target.files)} disabled={uploading} style={inputStyle} />
-          {uploading && <span style={{ fontSize: 12.5, color: '#78716c' }}>Uploading…</span>}
         </div>
       )}
       {error && <p style={{ fontSize: 12.5, color: '#b91c1c' }}>{error}</p>}
@@ -661,7 +784,7 @@ function ActivitiesTab({ tender }: { tender: Tender }) {
 
 type TenderTimelineEntry = {
   key: string
-  kind: 'created' | 'updated' | 'deleted' | 'stage' | 'followup'
+  kind: 'created' | 'updated' | 'deleted' | 'stage' | 'followup' | 'info' | 'email' | 'email_failed'
   title: string
   detail?: string
   by?: string
@@ -674,6 +797,59 @@ const TENDER_TIMELINE_KIND_STYLE: Record<TenderTimelineEntry['kind'], { bg: stri
   deleted: { bg: 'rgba(220,38,38,0.1)', text: '#b91c1c', label: 'Deleted' },
   stage: { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed', label: 'Stage' },
   followup: { bg: 'rgba(249,115,22,0.12)', text: '#c2410c', label: 'Follow Up' },
+  info: { bg: 'rgba(99,102,241,0.12)', text: '#4338ca', label: 'Info Update' },
+  email: { bg: 'rgba(13,148,136,0.12)', text: '#0f766e', label: 'Email Sent' },
+  email_failed: { bg: 'rgba(220,38,38,0.1)', text: '#b91c1c', label: 'Email Failed' },
+}
+
+function auditActionKind(action: string): TenderTimelineEntry['kind'] {
+  if (action === 'created') return 'created'
+  if (action === 'deleted') return 'deleted'
+  if (action.endsWith('_sent')) return 'email'
+  if (action.endsWith('_failed')) return 'email_failed'
+  return 'updated'
+}
+
+const TENDER_AUDIT_FIELD_LABELS: Record<string, string> = {
+  tender_number: 'Tender No.', tender_name: 'Tender Name', tender_authority: 'Tender Authority',
+  tender_portal: 'Portal', tender_type: 'Type', tender_category: 'Category', tender_value: 'Value',
+  currency: 'Currency', status: 'Status', current_stage: 'Stage', railway_zone: 'Railway Zone',
+  division: 'Division', workshop: 'Workshop', org_id: 'Organization', org_contact_id: 'Contact',
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
+ * Renders a spec revision's field-level changes as "old → new" lines for the Timeline detail.
+ * When only one field changed, its label is already the entry's title, so it's dropped here
+ * to avoid repeating it twice; with multiple fields each line is prefixed with its label.
+ */
+function specRevisionDetailHtml(changes: { field: string; old: unknown; new: unknown }[]): string {
+  const single = changes.length === 1
+  return changes.map((c) => {
+    const label = TENDER_AUDIT_FIELD_LABELS[c.field] || c.field
+    const oldText = c.old == null || String(c.old).trim() === '' ? '(empty)' : String(c.old)
+    const newText = c.new == null || String(c.new).trim() === '' ? '(empty)' : String(c.new)
+    const prefix = single ? '' : `<strong>${escapeHtml(label)}:</strong> `
+    return `<div>${prefix}<span style="color:#b91c1c;text-decoration:line-through;">${escapeHtml(oldText)}</span> → <span style="color:#166534;font-weight:600;">${escapeHtml(newText)}</span></div>`
+  }).join('')
+}
+
+/**
+ * Audit summaries were historically stored as free text, e.g. "Name updated: field1, field2."
+ * The name is shown separately in the meta line, and the "Updated" badge already says what
+ * happened — so this cleans the title down to just the field list, with field names labeled.
+ */
+function cleanAuditTitle(summary: string | null, actor: string | null | undefined): string | null {
+  if (!summary) return summary
+  let s = summary
+  if (actor && s.startsWith(actor)) s = s.slice(actor.length).replace(/^\s+/, '')
+  s = s.replace(/^updated:\s*/i, '').replace(/\.\s*$/, '')
+  s = s.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi, (token) => TENDER_AUDIT_FIELD_LABELS[token.toLowerCase()] || token)
+  if (!s) return summary
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function TimelineTab({ tenderId }: { tenderId: number }) {
@@ -684,14 +860,28 @@ function TimelineTab({ tenderId }: { tenderId: number }) {
       crmApi.getTenderAudit(tenderId),
       crmApi.listTenderStages(tenderId),
       crmApi.listActivities({ related_module: 'tender', related_id: tenderId }),
-    ]).then(([audit, stages, activities]) => {
+      crmApi.getTenderSpecRevisions(tenderId),
+    ]).then(([audit, stages, activities, specRevisions]) => {
       const merged: TenderTimelineEntry[] = [
-        ...audit.map((a: { id: number; action: string; summary: string | null; performed_by: string; performed_at: string | null }) => ({
-          key: `audit-${a.id}`,
-          kind: (a.action === 'created' ? 'created' : a.action === 'deleted' ? 'deleted' : 'updated') as TenderTimelineEntry['kind'],
-          title: a.summary || `Tender ${a.action}`,
-          by: a.performed_by,
-          date: a.performed_at,
+        // Generic "updated" audit rows carry no diff detail — every real edit now produces
+        // a proper Info Update entry (below) instead, so a bare "Updated: field" row with
+        // nothing else to show is just noise. Only created/deleted are worth keeping here.
+        ...audit
+          .filter((a: { action: string }) => a.action !== 'updated')
+          .map((a: { id: number; action: string; summary: string | null; performed_by: string; performed_at: string | null }) => ({
+            key: `audit-${a.id}`,
+            kind: auditActionKind(a.action),
+            title: cleanAuditTitle(a.summary, a.performed_by) || `Tender ${a.action}`,
+            by: a.performed_by,
+            date: a.performed_at,
+          })),
+        ...specRevisions.map((r: SpecRevision) => ({
+          key: `spec-${r.id}`,
+          kind: 'info' as const,
+          title: r.changes.map((c) => TENDER_AUDIT_FIELD_LABELS[c.field] || c.field).join(', '),
+          detail: specRevisionDetailHtml(r.changes),
+          by: r.performed_by,
+          date: r.performed_at,
         })),
         ...stages.map((s: CrmStageLogEntry) => ({
           key: `stage-${s.id}`,
@@ -704,13 +894,13 @@ function TimelineTab({ tenderId }: { tenderId: number }) {
         ...activities.map((a: CrmActivity) => ({
           key: `followup-${a.id}`,
           kind: 'followup' as const,
-          title: a.activity_type || 'Follow Up',
+          title: a.subject || a.contact_names?.join(', ') || a.activity_type || 'Follow Up',
           detail: a.remarks,
-          by: a.assigned_to,
+          by: a.created_by_name,
           date: a.activity_date || a.created_at || null,
         })),
       ]
-      merged.sort((a, b) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime())
+      merged.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
       setEntries(merged)
     })
   }, [tenderId])
@@ -722,14 +912,16 @@ function TimelineTab({ tenderId }: { tenderId: number }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {entries.map((e) => (
         <div key={e.key} style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: TENDER_TIMELINE_KIND_STYLE[e.kind].bg, color: TENDER_TIMELINE_KIND_STYLE[e.kind].text }}>
-              {TENDER_TIMELINE_KIND_STYLE[e.kind].label}
-            </span>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0 }}>{e.title}</p>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: TENDER_TIMELINE_KIND_STYLE[e.kind].bg, color: TENDER_TIMELINE_KIND_STYLE[e.kind].text }}>
+                {TENDER_TIMELINE_KIND_STYLE[e.kind].label}
+              </span>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0 }}>{e.title}</p>
+            </div>
+            <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.by || 'System'} · {e.date ? new Date(e.date).toLocaleString() : '—'}</p>
           </div>
           {e.detail && <RichText html={e.detail} style={{ fontSize: 12, color: '#57534e', margin: '2px 0' }} />}
-          <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0 }}>{e.by || 'System'} · {e.date ? new Date(e.date).toLocaleString() : '—'}</p>
         </div>
       ))}
     </div>

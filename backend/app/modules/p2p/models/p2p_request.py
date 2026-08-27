@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 #   submitted -> approved -> po_raised -> partially_received -> received -> closed
 #            \-> rejected            \-> cancelled
 P2P_REQUEST_STATUSES = (
-    "submitted", "approved", "po_raised",
+    "submitted", "approved", "po_raised", "po_approved",
     "partially_received", "received", "closed",
     "rejected", "cancelled",
 )
@@ -90,6 +90,12 @@ class P2PRequest(Base, TimestampMixin):
     plant_head_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     plant_head_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     plant_head_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    purchase_head_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purchase_head_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    director_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    director_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    md_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    md_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     rejected_by_role: Mapped[str | None] = mapped_column(String(30), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -157,5 +163,12 @@ class P2PRequest(Base, TimestampMixin):
     def pending_approval_roles(self) -> list[str]:
         return [
             role for role, _id in self.assigned_approver_ids.items()
+            if getattr(self, f"{role}_approved_at") is None
+        ]
+
+    @property
+    def pending_po_approval_roles(self) -> list[str]:
+        return [
+            role for role in ("purchase_head", "director", "md")
             if getattr(self, f"{role}_approved_at") is None
         ]

@@ -16,7 +16,7 @@ export default function P2PPoApprovalPage() {
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>P.O Approval</h1>
       <P2PNav />
-      <P2PRequestList statuses={['po_raised']} emptyLabel="No requests at PO Approval stage." />
+      <P2PRequestList statuses={['po_raised']} emptyLabel="No requests at PO Approval stage." context="po-approval" />
     </div>
   )
 }

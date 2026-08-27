@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
+import Checkbox from '@/components/Checkbox'
 
 interface BrakingRow {
   mode: 'Rail' | 'Road'
@@ -366,7 +367,7 @@ function BrakingCalculatorPageInner() {
             Rail &amp; Road Braking Performance Analysis
           </p>
         </div>
-        <nav style={{ fontSize: 11.5, color: '#94a3b8' }}>R&amp;D Tools / <span style={{ color: '#fa9b9b', fontWeight: 600 }}>Braking Calculator</span></nav>
+        <nav style={{ fontSize: 11.5, color: '#94a3b8' }}>R&amp;D Tools / <span style={{ color: '#FF7A45', fontWeight: 600 }}>Braking Calculator</span></nav>
       </div>
 
       {/* Stat cards */}
@@ -556,19 +557,19 @@ function BrakingCalculatorPageInner() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
               <div>
                 <div style={{ ...labelStyle, marginBottom: 6 }}>Mode</div>
-                <label style={radioLabelStyle}><input type="checkbox" checked={roadModeEnabled} onChange={(e) => setRoadModeEnabled(e.target.checked)} /> Road Mode</label>
+                <span style={radioLabelStyle}><Checkbox checked={roadModeEnabled} onChange={(e) => setRoadModeEnabled(e.target.checked)} /> Road Mode</span>
               </div>
               <div>
                 <div style={{ ...labelStyle, marginBottom: 6 }}>Scenarios</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <label style={radioLabelStyle}><input type="checkbox" checked={showStraight} onChange={(e) => setShowStraight(e.target.checked)} /> Straight</label>
-                  <label style={radioLabelStyle}><input type="checkbox" checked={showMovingUp} onChange={(e) => setShowMovingUp(e.target.checked)} /> Moving Up</label>
-                  <label style={radioLabelStyle}><input type="checkbox" checked={showMovingDown} onChange={(e) => setShowMovingDown(e.target.checked)} /> Moving Down</label>
+                  <span style={radioLabelStyle}><Checkbox checked={showStraight} onChange={(e) => setShowStraight(e.target.checked)} /> Straight</span>
+                  <span style={radioLabelStyle}><Checkbox checked={showMovingUp} onChange={(e) => setShowMovingUp(e.target.checked)} /> Moving Up</span>
+                  <span style={radioLabelStyle}><Checkbox checked={showMovingDown} onChange={(e) => setShowMovingDown(e.target.checked)} /> Moving Down</span>
                 </div>
               </div>
               <div>
                 <div style={{ ...labelStyle, marginBottom: 6 }}>Options</div>
-                <label style={radioLabelStyle}><input type="checkbox" checked={showGBR} onChange={(e) => setShowGBR(e.target.checked)} /> Show GBR %</label>
+                <span style={radioLabelStyle}><Checkbox checked={showGBR} onChange={(e) => setShowGBR(e.target.checked)} /> Show GBR %</span>
               </div>
             </div>
 

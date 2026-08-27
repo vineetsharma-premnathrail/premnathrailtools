@@ -126,7 +126,7 @@ function RecycleRow({ primary, secondary, deletedAt, onRestore }: { primary: str
       </div>
       <button
         onClick={onRestore}
-        style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
+        style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
       >
         Restore
       </button>

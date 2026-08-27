@@ -73,7 +73,7 @@ export default function FileUploadPreview({
         <button
           onClick={onConfirm}
           disabled={uploading}
-          style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.7 : 1 }}
+          style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.7 : 1 }}
         >
           {uploading ? 'Uploading…' : `Upload ${files.length} file${files.length > 1 ? 's' : ''}`}
         </button>

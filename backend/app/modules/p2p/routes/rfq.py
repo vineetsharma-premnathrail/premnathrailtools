@@ -222,11 +222,22 @@ async def submit_rfq(
     if not rfq.ld_clause:
         raise HTTPException(status_code=400, detail="LD clause is required")
 
+    pr = db.query(P2PRequest).filter(P2PRequest.id == rfq.p2p_request_id).first()
+    if not pr:
+        raise HTTPException(status_code=404, detail="Linked P2P request not found")
+    if pr.status != "approved":
+        raise HTTPException(status_code=409, detail=f"The linked P2P request cannot enter PO approval from status '{pr.status}'")
+
     rfq.is_single_quotation = is_single
     rfq.status = "locked"
     rfq.locked_by_id = user.id
     rfq.locked_at = datetime.now(timezone.utc)
     _write_audit(db, rfq.id, "submitted", user, summary=f"{user.name or user.email} submitted and locked RFQ '{rfq.rfq_number}'.")
+    pr.status = "po_raised"
+    pr.rfq_number = rfq.rfq_number
+    _write_audit(db, pr.id, "po_approval_started", user,
+                 summary=f"RFQ '{rfq.rfq_number}' was locked and {pr.p2p_number} moved to PO approval.",
+                 old_status="approved", new_status="po_raised")
 
     db.commit()
     db.refresh(rfq)

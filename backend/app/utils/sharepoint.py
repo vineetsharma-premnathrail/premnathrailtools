@@ -1,9 +1,28 @@
+import io
 import re
 from urllib.parse import quote
 from fastapi import HTTPException, UploadFile
 import httpx
 from app.core.config import settings
 from app.auth.microsoft import get_app_graph_token
+
+
+class _InMemoryUploadFile:
+    """Minimal UploadFile stand-in for server-generated files (e.g. a report built
+    with reportlab/python-docx) that were never part of an incoming request — only
+    exposes what upload_file_to_sharepoint/_validate_uploaded_file actually touch:
+    .filename, .content_type, and a seekable .file."""
+
+    def __init__(self, filename: str, content_type: str, data: bytes):
+        self.filename = filename
+        self.content_type = content_type
+        self.file = io.BytesIO(data)
+
+
+async def upload_bytes_to_sharepoint(site_id: str, folder_path: str, filename: str, content_type: str, data: bytes) -> dict:
+    """Same return shape as upload_file_to_sharepoint, for bytes generated in-process
+    rather than uploaded by a browser."""
+    return await upload_file_to_sharepoint(site_id, folder_path, _InMemoryUploadFile(filename, content_type, data))
 
 GRAPH_API = "https://graph.microsoft.com/v1.0"
 MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB practical limit
@@ -312,9 +331,9 @@ async def get_preview_url(site_id: str, file_path: str) -> str:
     return get_url
 
 
-def build_sharepoint_folder_path(user_name: str, project_name: str, service_request_number: str) -> str:
-    root_folder = sanitize_folder_name(settings.SHAREPOINT_FOLDER or "ERP-media")
+def build_sharepoint_folder_path(user_name: str, project_name: str, service_request_number: str, root_folder: str | None = None) -> str:
+    root = sanitize_folder_name(root_folder or settings.SHAREPOINT_FOLDER or "ERP-media")
     user_folder = sanitize_folder_name(user_name or "unknown")
     project_folder = sanitize_folder_name(project_name or "project")
     service_folder = sanitize_folder_name(service_request_number or "service-request")
-    return f"{root_folder}/{user_folder}/{project_folder}/{service_folder}"
+    return f"{root}/{user_folder}/{project_folder}/{service_folder}"

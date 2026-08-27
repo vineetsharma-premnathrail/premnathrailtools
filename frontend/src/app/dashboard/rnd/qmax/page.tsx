@@ -179,7 +179,7 @@ function QmaxPageInner() {
             Maximum Permissible Wheel Load · Rail Head Contact Analysis
           </p>
         </div>
-        <nav style={{ fontSize: 11.5, color: '#94a3b8' }}>R&amp;D Tools / <span style={{ color: '#fa9b9b', fontWeight: 600 }}>Qmax Calculator</span></nav>
+        <nav style={{ fontSize: 11.5, color: '#94a3b8' }}>R&amp;D Tools / <span style={{ color: '#FF7A45', fontWeight: 600 }}>Qmax Calculator</span></nav>
       </div>
 
       <div className="rnd-main-grid" style={{ display: 'grid', gridTemplateColumns: '300px 1fr 260px', gap: 12, alignItems: 'start' }}>

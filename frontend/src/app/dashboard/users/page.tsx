@@ -5,6 +5,7 @@ import { useRequireAdmin } from '@/hooks/useAuth'
 import { usersApi, modulesApi } from '@/lib/api'
 import { User, ModuleMeta } from '@/types'
 import FeedbackBell from '@/components/FeedbackBell'
+import Checkbox from '@/components/Checkbox'
 
 export default function UsersRolesPage() {
   const { user: currentUser, isAuthorized, isLoading } = useRequireAdmin()
@@ -66,9 +67,12 @@ export default function UsersRolesPage() {
     erpPermissions: string[],
     isDepartmentHead: boolean,
     isProjectHead: boolean,
-    isPlantHead: boolean
+    isPlantHead: boolean,
+    isPurchaseHead: boolean,
+    isDirector: boolean,
+    isMd: boolean
   ) => {
-    const updated = await usersApi.updateModuleAccess(userId, apps, erpPermissions, isDepartmentHead, isProjectHead, isPlantHead)
+    const updated = await usersApi.updateModuleAccess(userId, apps, erpPermissions, isDepartmentHead, isProjectHead, isPlantHead, isPurchaseHead, isDirector, isMd)
     setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)))
     setEditingUser(null)
   }
@@ -116,7 +120,7 @@ export default function UsersRolesPage() {
         <StatCard label="Total Users" value={stats.total} color="#3b82f6" icon={<UsersIcon />} />
         <StatCard label="Active" value={stats.active} color="#10b981" icon={<CheckIcon />} />
         <StatCard label="Inactive" value={stats.inactive} color="#ef4444" icon={<XIcon />} />
-        <StatCard label="Admins" value={stats.admins} color="#fa9b9b" icon={<ShieldIcon />} />
+        <StatCard label="Admins" value={stats.admins} color="#FF7A45" icon={<ShieldIcon />} />
       </div>
 
       {/* Search */}
@@ -142,7 +146,7 @@ export default function UsersRolesPage() {
             padding: '10px 18px',
             borderRadius: 10,
             border: 'none',
-            background: syncing ? '#fca87a' : '#fa9b9b',
+            background: syncing ? '#fca87a' : '#FF7A45',
             color: '#fff',
             fontSize: 13.5,
             fontWeight: 600,
@@ -229,7 +233,7 @@ export default function UsersRolesPage() {
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>
                     {u.department || '—'}
                     {u.is_department_head && (
-                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(250,155,155,0.15)', color: '#fa9b9b', textTransform: 'uppercase' }}>Dept Head</span>
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(250,155,155,0.15)', color: '#FF7A45', textTransform: 'uppercase' }}>Dept Head</span>
                     )}
                     {u.is_project_head && (
                       <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(59,130,246,0.12)', color: '#2563eb', textTransform: 'uppercase' }}>Project Head</span>
@@ -411,7 +415,7 @@ function EditUserModal({
   isSelf: boolean
   apps: { id: string; label: string }[]
   onClose: () => void
-  onSave: (id: number, apps: string[], erpPermissions: string[], isDepartmentHead: boolean, isProjectHead: boolean, isPlantHead: boolean) => Promise<void>
+  onSave: (id: number, apps: string[], erpPermissions: string[], isDepartmentHead: boolean, isProjectHead: boolean, isPlantHead: boolean, isPurchaseHead: boolean, isDirector: boolean, isMd: boolean) => Promise<void>
   onToggleActive: (u: User) => Promise<void>
 }) {
   const isAdminRole = user.role === 'admin'
@@ -420,6 +424,9 @@ function EditUserModal({
   const [isDepartmentHead, setIsDepartmentHead] = useState(!!user.is_department_head)
   const [isProjectHead, setIsProjectHead] = useState(!!user.is_project_head)
   const [isPlantHead, setIsPlantHead] = useState(!!user.is_plant_head)
+  const [isPurchaseHead, setIsPurchaseHead] = useState(!!user.is_purchase_head)
+  const [isDirector, setIsDirector] = useState(!!user.is_director)
+  const [isMd, setIsMd] = useState(!!user.is_md)
   const [saving, setSaving] = useState(false)
 
   const toggle = (app: string) => {
@@ -433,7 +440,7 @@ function EditUserModal({
   const save = async () => {
     setSaving(true)
     try {
-      await onSave(user.id, selected, erpPerms, isDepartmentHead, isProjectHead, isPlantHead)
+      await onSave(user.id, selected, erpPerms, isDepartmentHead, isProjectHead, isPlantHead, isPurchaseHead, isDirector, isMd)
     } finally {
       setSaving(false)
     }
@@ -467,7 +474,7 @@ function EditUserModal({
           </p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {apps.map((a) => (
-              <label
+              <span
                 key={a.id}
                 style={{
                   display: 'flex',
@@ -476,21 +483,19 @@ function EditUserModal({
                   padding: '9px 14px',
                   borderRadius: 10,
                   border: '1px solid rgba(0,0,0,0.1)',
-                  cursor: isAdminRole ? 'not-allowed' : 'pointer',
                   opacity: isAdminRole ? 0.5 : 1,
                   fontSize: 13,
                   fontWeight: 600,
                   color: '#1f1108',
                 }}
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   disabled={isAdminRole}
                   checked={isAdminRole || selected.includes(a.id)}
                   onChange={() => toggle(a.id)}
                 />
                 {a.label}
-              </label>
+              </span>
             ))}
           </div>
           <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '10px 0 0' }}>Admins have access to all modules automatically.</p>
@@ -500,53 +505,63 @@ function EditUserModal({
               Approval Roles
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <label
+              <span
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
-                  border: isDepartmentHead ? '1px solid #fa9b9b' : '1px solid rgba(0,0,0,0.1)',
+                  border: isDepartmentHead ? '1px solid #FF7A45' : '1px solid rgba(0,0,0,0.1)',
                   background: isDepartmentHead ? 'rgba(244,113,59,0.05)' : '#fff',
-                  cursor: !user.department ? 'not-allowed' : 'pointer',
                   opacity: !user.department ? 0.5 : 1,
                   fontSize: 13, fontWeight: 600, color: '#1f1108',
                 }}
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   disabled={!user.department}
                   checked={isDepartmentHead}
                   onChange={() => setIsDepartmentHead((v) => !v)}
                 />
                 Department Head{user.department ? ` (${user.department})` : ''}
-              </label>
-              <label
+              </span>
+              <span
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
                   border: isProjectHead ? '1px solid #2563eb' : '1px solid rgba(0,0,0,0.1)',
                   background: isProjectHead ? 'rgba(59,130,246,0.05)' : '#fff',
-                  cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1f1108',
+                  fontSize: 13, fontWeight: 600, color: '#1f1108',
                 }}
               >
-                <input type="checkbox" checked={isProjectHead} onChange={() => setIsProjectHead((v) => !v)} />
+                <Checkbox checked={isProjectHead} onChange={() => setIsProjectHead((v) => !v)} />
                 Project Head
-              </label>
-              <label
+              </span>
+              <span
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
                   border: isPlantHead ? '1px solid #047857' : '1px solid rgba(0,0,0,0.1)',
                   background: isPlantHead ? 'rgba(16,185,129,0.06)' : '#fff',
-                  cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1f1108',
+                  fontSize: 13, fontWeight: 600, color: '#1f1108',
                 }}
               >
-                <input type="checkbox" checked={isPlantHead} onChange={() => setIsPlantHead((v) => !v)} />
+                <Checkbox checked={isPlantHead} onChange={() => setIsPlantHead((v) => !v)} />
                 Plant Head
-              </label>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isPurchaseHead ? '1px solid #c2410c' : '1px solid rgba(0,0,0,0.1)', background: isPurchaseHead ? 'rgba(234,88,12,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: '#1f1108' }}>
+                <Checkbox checked={isPurchaseHead} onChange={() => setIsPurchaseHead((v) => !v)} />
+                Purchase Head
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isDirector ? '1px solid #7c3aed' : '1px solid rgba(0,0,0,0.1)', background: isDirector ? 'rgba(124,58,237,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: '#1f1108' }}>
+                <Checkbox checked={isDirector} onChange={() => setIsDirector((v) => !v)} />
+                Director
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isMd ? '1px solid #be123c' : '1px solid rgba(0,0,0,0.1)', background: isMd ? 'rgba(190,18,60,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: '#1f1108' }}>
+                <Checkbox checked={isMd} onChange={() => setIsMd((v) => !v)} />
+                MD
+              </span>
             </div>
             <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '10px 0 0' }}>
               A Department Head is auto-routed any P2P request raised from their own department (
               {user.department ? `set for this user` : 'set a department for this user first'}). On the New PR form the
               requester can pick any user as Department Head, Project Head, or Plant Head — these checkboxes only
-              control the auto-routing above, not who&apos;s searchable there. A PR only moves to "approved" once every
-              role assigned to it has signed off.
+              control the auto-routing above, not who&apos;s searchable there. A PR only moves to &quot;approved&quot; once every
+              role assigned to it has signed off. After RFQ, a PO requires Purchase Head, Director, and MD approval from their own accounts.
             </p>
           </div>
 
@@ -560,19 +575,19 @@ function EditUserModal({
                   <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 6px' }}>{group.icon} {group.label}</p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {group.perms.map((p) => (
-                      <label
+                      <span
                         key={p.id}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8,
-                          border: erpPerms.includes(p.id) ? '1px solid #fa9b9b' : '1px solid rgba(0,0,0,0.1)',
+                          border: erpPerms.includes(p.id) ? '1px solid #FF7A45' : '1px solid rgba(0,0,0,0.1)',
                           background: erpPerms.includes(p.id) ? 'rgba(244,113,59,0.05)' : '#fff',
-                          color: erpPerms.includes(p.id) ? '#fa9b9b' : '#1f1108',
-                          cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+                          color: erpPerms.includes(p.id) ? '#FF7A45' : '#1f1108',
+                          fontSize: 12.5, fontWeight: 600,
                         }}
                       >
-                        <input type="checkbox" checked={erpPerms.includes(p.id)} onChange={() => togglePerm(p.id)} />
+                        <Checkbox checked={erpPerms.includes(p.id)} onChange={() => togglePerm(p.id)} />
                         {p.label}
-                      </label>
+                      </span>
                     ))}
                   </div>
                 </div>
@@ -590,19 +605,19 @@ function EditUserModal({
                   <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 6px' }}>{group.icon} {group.label}</p>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {group.perms.map((p) => (
-                      <label
+                      <span
                         key={p.id}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8,
-                          border: erpPerms.includes(p.id) ? '1px solid #fa9b9b' : '1px solid rgba(0,0,0,0.1)',
+                          border: erpPerms.includes(p.id) ? '1px solid #FF7A45' : '1px solid rgba(0,0,0,0.1)',
                           background: erpPerms.includes(p.id) ? 'rgba(244,113,59,0.05)' : '#fff',
-                          color: erpPerms.includes(p.id) ? '#fa9b9b' : '#1f1108',
-                          cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+                          color: erpPerms.includes(p.id) ? '#FF7A45' : '#1f1108',
+                          fontSize: 12.5, fontWeight: 600,
                         }}
                       >
-                        <input type="checkbox" checked={erpPerms.includes(p.id)} onChange={() => togglePerm(p.id)} />
+                        <Checkbox checked={erpPerms.includes(p.id)} onChange={() => togglePerm(p.id)} />
                         {p.label}
-                      </label>
+                      </span>
                     ))}
                   </div>
                 </div>
@@ -646,7 +661,7 @@ function EditUserModal({
                 padding: '10px 20px',
                 borderRadius: 10,
                 border: 'none',
-                background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
+                background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
                 color: '#fff',
                 cursor: saving ? 'not-allowed' : 'pointer',
                 opacity: saving ? 0.7 : 1,

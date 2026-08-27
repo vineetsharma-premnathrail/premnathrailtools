@@ -90,7 +90,7 @@ export default function ProjectDetailPage() {
           {canCreateSr && (
             <Link
               href={{ pathname: '/dashboard/erp/service-requests/new' }}
-              style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)', color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap' }}
+              style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap' }}
             >
               + New Service Request
             </Link>
@@ -132,8 +132,8 @@ export default function ProjectDetailPage() {
               marginRight: 16,
               border: 'none',
               background: 'transparent',
-              borderBottom: tab === t ? '2px solid #fa9b9b' : '2px solid transparent',
-              color: tab === t ? '#fa9b9b' : '#78716c',
+              borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
+              color: tab === t ? '#FF7A45' : '#78716c',
               fontWeight: 600,
               fontSize: 13,
               cursor: 'pointer',
@@ -259,7 +259,7 @@ function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
           {srs.map((sr) => (
             <tr key={sr.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
               <td style={{ padding: '10px 14px' }}>
-                <Link href={`/dashboard/erp/service-requests/${sr.id}`} style={{ fontSize: 13, fontWeight: 600, color: '#fa9b9b', textDecoration: 'none' }}>
+                <Link href={`/dashboard/erp/service-requests/${sr.id}`} style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', textDecoration: 'none' }}>
                   {sr.request_number}
                 </Link>
               </td>
@@ -338,7 +338,7 @@ function DocumentsTab({ projectId }: { projectId: number }) {
           style={{
             padding: '32px 20px',
             borderRadius: 14,
-            border: `2px dashed ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.15)'}`,
+            border: `2px dashed ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.15)'}`,
             background: dragOver ? 'rgba(244,113,59,0.05)' : '#fff',
             textAlign: 'center',
             cursor: uploading ? 'wait' : 'pointer',
@@ -357,7 +357,7 @@ function DocumentsTab({ projectId }: { projectId: number }) {
           </p>
           {!uploading && (
             <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>
-              or <span style={{ color: '#fa9b9b', fontWeight: 600 }}>click to browse</span>
+              or <span style={{ color: '#FF7A45', fontWeight: 600 }}>click to browse</span>
             </p>
           )}
           <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>

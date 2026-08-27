@@ -129,26 +129,30 @@ class QuotationCreate(BaseModel):
     payment_terms: str | None = None
     submitted_date: date | None = None
     customer_response: str = "— Awaiting —"
+    discount: float | None = None
+    discount_type: str | None = None
+    quote_conditions: str | None = None
     notes: str | None = None
     items: list[QuotationLineItemPayload] = []
 
 
+class QuotationReviseItem(BaseModel):
+    """Only the line item's price can be revised post-creation — never its description,
+    model, quantity, or GST%. `id` identifies the existing QuotationLineItem row."""
+    id: int
+    unit_price: float | None = None
+
+
 class QuotationUpdate(BaseModel):
-    quotation_type: str | None = None
-    gst_type: str | None = None
-    quote_date: date | None = None
-    client_name: str | None = None
-    client_contact_name: str | None = None
-    client_contact_email: str | None = None
-    client_contact_phone: str | None = None
-    valid_until: date | None = None
-    price: float | None = None
-    delivery_time: str | None = None
+    """Once a quotation is created, only these fields may change — a limited revision, not a
+    full edit. `customer_response`/`submitted_date` are status tracking, not content, so they
+    don't count as a revision. Anything else requires creating a new quotation instead."""
     payment_terms: str | None = None
-    submitted_date: date | None = None
+    valid_until: date | None = None
+    delivery_time: str | None = None
     customer_response: str | None = None
-    notes: str | None = None
-    items: list[QuotationLineItemPayload] | None = None
+    submitted_date: date | None = None
+    items: list[QuotationReviseItem] | None = None
 
 
 class QuotationResponse(BaseModel):
@@ -171,6 +175,9 @@ class QuotationResponse(BaseModel):
     payment_terms: str | None = None
     submitted_date: date | None = None
     customer_response: str
+    discount: float | None = None
+    discount_type: str | None = None
+    quote_conditions: str | None = None
     notes: str | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None

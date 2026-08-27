@@ -54,6 +54,11 @@ class Tender(Base, TimestampMixin, SoftDeleteMixin):
     contract_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     loss_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Technical Offer Request — button is enabled again whenever the tender is updated
+    # after the last request was sent (technical_offer_sent_at < updated_at).
+    technical_offer_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    technical_offer_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     organization: Mapped["Organization"] = relationship("Organization", back_populates="tenders")

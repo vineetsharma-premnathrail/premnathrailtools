@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone, date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -15,9 +16,15 @@ from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.schemas.inquiry import InquiryCreate, InquiryUpdate, InquiryResponse, StageLogEntry
 from app.modules.crm.schemas.workflow import StageLogResponse
 from app.modules.crm.schemas.activity import MomExportRequest
+from app.modules.crm.schemas.document import TechnicalOfferRequestBody
+from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.reports.mom_docx import build_mom_docx, mom_rows_from_activity
 from app.modules.crm.reports.mom_pdf import build_mom_pdf
+from app.modules.crm.reports.technical_offer_pdf import build_technical_offer_pdf
 from app.utils.notifications import broadcast_notification, notify_user
+from app.utils.email import send_technical_offer_request_email
+from app.utils.sharepoint import upload_bytes_to_sharepoint, build_sharepoint_folder_path
+from app.core.config import settings
 from fastapi.responses import Response
 
 router = APIRouter(prefix="/crm/inquiries", tags=["CRM - Inquiries"])
@@ -31,6 +38,15 @@ INQ_STAGES = [
 
 def _write_audit(db: Session, inquiry_id: int, action: str, user: User, summary: str | None = None):
     db.add(AuditLog(entity_type="inquiry", entity_id=inquiry_id, action=action, performed_by_id=user.id, summary=summary))
+
+
+def _write_spec_revision(db: Session, inquiry_id: int, user: User, old_vals: dict, new_vals: dict):
+    db.add(AuditLog(
+        entity_type="inquiry_spec", entity_id=inquiry_id, action="spec_revision",
+        old_value=json.dumps(old_vals, default=str), new_value=json.dumps(new_vals, default=str),
+        summary=f"{user.name or user.email} updated requirement spec: {', '.join(new_vals.keys())}.",
+        performed_by_id=user.id,
+    ))
 
 
 def _can_modify(record, user: User) -> bool:
@@ -70,6 +86,11 @@ async def list_inquiries(
         like = f"%{search}%"
         query = query.filter(
             (Inquiry.universal_id.ilike(like)) | (Inquiry.product.ilike(like)) | (Inquiry.bd_owner.ilike(like))
+            | (Inquiry.sales_engineer.ilike(like)) | (Inquiry.railway_zone.ilike(like)) | (Inquiry.division.ilike(like))
+            | (Inquiry.lead_source.ilike(like)) | (Inquiry.status.ilike(like)) | (Inquiry.current_stage.ilike(like))
+            | (Inquiry.product_category.ilike(like)) | (Inquiry.delivery_location.ilike(like))
+            | (Inquiry.requirement_desc.ilike(like)) | (Inquiry.detailed_requirement.ilike(like))
+            | (Inquiry.followup_assigned_to.ilike(like)) | (Inquiry.priority.ilike(like))
         )
     inquiries = query.order_by(Inquiry.id.desc()).offset(skip).limit(limit).all()
     creator_ids = {i.created_by_id for i in inquiries if i.created_by_id}
@@ -161,11 +182,17 @@ async def update_inquiry(
     updates = payload.model_dump(exclude_unset=True)
     stage_changed = "current_stage" in updates and updates["current_stage"] != inquiry.current_stage
     changed = [f for f, v in updates.items() if str(getattr(inquiry, f, None)) != str(v)]
+    # Stage changes get their own timeline entry (_log_stage below) — everything else
+    # that changed in this single save is combined into ONE info-update entry, so a
+    # multi-field edit shows as one timeline row instead of one per field.
+    info_changed = [f for f in changed if f != "current_stage"]
+    info_old = {f: getattr(inquiry, f, None) for f in info_changed}
+    info_new = {f: updates[f] for f in info_changed}
     for field, value in updates.items():
         setattr(inquiry, field, value)
 
-    if changed:
-        _write_audit(db, inquiry.id, "updated", user, summary=f"{user.name or user.email} updated: {', '.join(changed[:5])}.")
+    if info_changed:
+        _write_spec_revision(db, inquiry.id, user, info_old, info_new)
     if stage_changed:
         _log_stage(db, inquiry.id, inquiry.universal_id, "Stage updated", user, notes=f"Moved to {inquiry.current_stage}")
         broadcast_notification(
@@ -234,6 +261,111 @@ async def get_inquiry_audit(
         }
         for log in logs
     ]
+
+
+@router.post("/{inquiry_id}/technical-offer-request", response_model=InquiryResponse)
+async def create_technical_offer_request(
+    inquiry_id: int,
+    body: TechnicalOfferRequestBody = TechnicalOfferRequestBody(),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+
+    org = db.query(Organization).filter(Organization.id == inquiry.org_id).first()
+    contact = db.query(OrgContact).filter(OrgContact.id == inquiry.org_contact_id).first() if inquiry.org_contact_id else None
+    suffix = inquiry.universal_id.split("INQ-")[-1] if inquiry.universal_id else str(inquiry.id)
+    offer_number = f"TOR-{suffix}"
+
+    raised_by = user.name or user.email
+    now = datetime.now(timezone.utc)
+
+    ctx = {
+        "offer_number": offer_number, "universal_id": inquiry.universal_id,
+        "org_name": org.name if org else None, "org_type": org.org_type if org else None,
+        "org_address": org.address if org else None, "org_gst_number": org.gst_number if org else None,
+        "org_city": org.city if org else None, "org_state": org.state if org else None,
+        "contact_name": contact.name if contact else None, "contact_designation": contact.designation if contact else None,
+        "contact_department": contact.department if contact else None, "contact_mobile": contact.mobile if contact else None,
+        "contact_email": contact.email if contact else None,
+        "product_category": inquiry.product_category, "product": inquiry.product,
+        "quantity_display": f"{inquiry.quantity:g} {inquiry.unit or ''}".strip() if inquiry.quantity is not None else None,
+        "inspection_req": inquiry.inspection_req, "product_spec": inquiry.product_spec,
+        "requirement_desc": inquiry.requirement_desc, "detailed_requirement": inquiry.detailed_requirement,
+        "project_details": inquiry.project_details, "raised_by": raised_by,
+        "raised_at": now.strftime("%d %b %Y, %I:%M %p"),
+    }
+    offer_filename = f"{offer_number}.pdf"
+    offer_bytes = build_technical_offer_pdf(ctx).read()
+
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+    folder_path = build_sharepoint_folder_path(raised_by, org.name if org else "General", f"crm/inquiry/{inquiry.universal_id}/technical-offer", root_folder="CRM-media")
+    upload_result = await upload_bytes_to_sharepoint(
+        settings.SHAREPOINT_SITE_ID, folder_path, offer_filename, "application/pdf", offer_bytes,
+    )
+    # Link to the just-uploaded Technical Offer Request document itself — this is what
+    # goes in the email to R&D, distinct from existing_docs_link inside the doc's content.
+    tor_doc_link = upload_result.get("webUrl") or ""
+
+    reference_documents = []
+    if body.document_ids:
+        selected_docs = db.query(CrmDocument).filter(
+            CrmDocument.id.in_(body.document_ids),
+            CrmDocument.related_module == "inquiry", CrmDocument.related_id == inquiry.id,
+            CrmDocument.is_deleted == False,  # noqa: E712
+        ).all()
+        reference_documents = [{"name": d.file_name, "url": d.sharepoint_url} for d in selected_docs]
+
+    success, error = await send_technical_offer_request_email(
+        db, entity_type="inquiry", entity_id=inquiry.id, offer_number=offer_number,
+        universal_id=inquiry.universal_id, org_name=org.name if org else "", project_name=inquiry.product or "",
+        documents_link=tor_doc_link, actor_id=user.id, actor_name=raised_by,
+        reference_documents=reference_documents, actor_email=user.email,
+    )
+    if not success:
+        db.commit()
+        raise HTTPException(status_code=502, detail=f"Failed to send Technical Offer Request email. {error}")
+
+    inquiry.technical_offer_number = offer_number
+    inquiry.technical_offer_sent_at = now
+    db.commit()
+    db.refresh(inquiry)
+    return inquiry
+
+
+@router.get("/{inquiry_id}/spec-revisions")
+async def list_inquiry_spec_revisions(
+    inquiry_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    logs = db.query(AuditLog).filter(
+        AuditLog.entity_type == "inquiry_spec", AuditLog.entity_id == inquiry_id
+    ).order_by(AuditLog.performed_at.asc()).all()
+    user_ids = {log.performed_by_id for log in logs if log.performed_by_id}
+    user_map: dict[int, str] = {}
+    if user_ids:
+        for u in db.query(User).filter(User.id.in_(user_ids)).all():
+            user_map[u.id] = u.name or u.email or f"User #{u.id}"
+    result = []
+    for seq, log in enumerate(logs, start=1):
+        old_vals = json.loads(log.old_value) if log.old_value else {}
+        new_vals = json.loads(log.new_value) if log.new_value else {}
+        result.append({
+            "id": log.id,
+            "revision_id": f"Rev-{seq}",
+            "performed_by": user_map.get(log.performed_by_id, "System") if log.performed_by_id else "System",
+            "performed_at": log.performed_at.isoformat() if log.performed_at else None,
+            "changes": [
+                {"field": f, "old": old_vals.get(f), "new": new_vals.get(f)}
+                for f in new_vals.keys()
+            ],
+        })
+    result.reverse()
+    return result
 
 
 @router.get("/{inquiry_id}/stages", response_model=list[StageLogResponse])

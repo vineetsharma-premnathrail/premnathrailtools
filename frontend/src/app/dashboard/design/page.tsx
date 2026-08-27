@@ -7,6 +7,7 @@ import { designApi, p2pApi } from '@/lib/api'
 import { EngineeringDocument } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, BRAND } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import Checkbox from '@/components/Checkbox'
 
 const DISCIPLINES = [
   { value: 'mechanical', label: 'Mechanical' },
@@ -167,10 +168,10 @@ export default function DesignDocumentsPage() {
           <option value="">All Disciplines</option>
           {DISCIPLINES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
         </select>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer' }}>
-          <input type="checkbox" checked={latestOnly} onChange={(e) => setLatestOnly(e.target.checked)} />
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary }}>
+          <Checkbox checked={latestOnly} onChange={(e) => setLatestOnly(e.target.checked)} />
           Latest revision only
-        </label>
+        </span>
       </div>
 
       <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 420px)' }}>

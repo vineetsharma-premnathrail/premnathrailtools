@@ -53,8 +53,8 @@ export default function ErpNav() {
               fontWeight: 600,
               letterSpacing: '.02em',
               textTransform: 'uppercase',
-              color: isActive ? '#fa9b9b' : '#78716c',
-              borderBottom: isActive ? '2px solid #fa9b9b' : '2px solid transparent',
+              color: isActive ? '#FF7A45' : '#78716c',
+              borderBottom: isActive ? '2px solid #FF7A45' : '2px solid transparent',
               textDecoration: 'none',
               whiteSpace: 'nowrap',
             }}

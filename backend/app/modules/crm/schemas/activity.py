@@ -80,6 +80,7 @@ class ActivityResponse(BaseModel):
     # itself) — see `_enrich()` in routes/activities.py.
     contact_names: list[str] = []
     related_label: str | None = None
+    created_by_name: str | None = None
     attachments: list[ActivityAttachmentResponse] = []
 
 

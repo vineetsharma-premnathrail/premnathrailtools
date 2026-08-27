@@ -12,6 +12,7 @@ import { ACTIVITY_TYPES } from './constants'
 import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle } from './ui'
 import CameraCapture from '@/components/CameraCapture'
 import RichTextEditor from '@/components/RichTextEditor'
+import Checkbox from '@/components/Checkbox'
 
 type FormState = {
   activity_type: string
@@ -290,7 +291,9 @@ export default function ActivityForm({
                                     onClick={() => toggleContact(c.id)}
                                     style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: selectedContactIds.includes(c.id) ? 'rgba(244,113,59,0.08)' : 'transparent', color: selectedContactIds.includes(c.id) ? '#c2410c' : '#1f1108' }}
                                   >
-                                    <input type="checkbox" checked={selectedContactIds.includes(c.id)} readOnly style={{ pointerEvents: 'none' }} />
+                                    <span style={{ pointerEvents: 'none' }}>
+                                      <Checkbox checked={selectedContactIds.includes(c.id)} onChange={() => {}} />
+                                    </span>
                                     {c.name}
                                   </div>
                                 ))
@@ -298,7 +301,7 @@ export default function ActivityForm({
                           </div>
                           <div
                             onClick={() => setAddingContact(true)}
-                            style={{ padding: '10px 14px', fontSize: 12.5, fontWeight: 600, color: '#fa9b9b', cursor: 'pointer', borderTop: '1px solid rgba(0,0,0,0.06)' }}
+                            style={{ padding: '10px 14px', fontSize: 12.5, fontWeight: 600, color: '#FF7A45', cursor: 'pointer', borderTop: '1px solid rgba(0,0,0,0.06)' }}
                           >
                             + Add New Contact
                           </div>

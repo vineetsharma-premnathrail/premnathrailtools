@@ -8,6 +8,7 @@ import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest, SRStatus } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import { inputStyle, pageBtnStyle } from '@/components/shared/ui'
+import Checkbox from '@/components/Checkbox'
 
 const STATUS_LABELS: Record<SRStatus, string> = {
   open: 'Open / Reported',
@@ -154,7 +155,7 @@ export default function ServiceRequestsPage() {
               fontWeight: 600,
               padding: '10px 20px',
               borderRadius: 10,
-              background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
+              background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
               color: '#fff',
               textDecoration: 'none',
               whiteSpace: 'nowrap',
@@ -191,10 +192,10 @@ export default function ServiceRequestsPage() {
           <option value="medium">Medium</option>
           <option value="low">Low</option>
         </select>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px', fontSize: 13, fontWeight: 600, color: '#57534e', cursor: 'pointer' }}>
-          <input type="checkbox" checked={overdueOnly} onChange={(e) => { setOverdueOnly(e.target.checked); setPage(1) }} style={{ width: 16, height: 16, accentColor: '#fa9b9b' }} />
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 6px', fontSize: 13, fontWeight: 600, color: '#57534e' }}>
+          <Checkbox checked={overdueOnly} onChange={(e) => { setOverdueOnly(e.target.checked); setPage(1) }} />
           Overdue Only
-        </label>
+        </span>
         <button onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>
       </div>
 
@@ -227,7 +228,7 @@ export default function ServiceRequestsPage() {
                   style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                 >
                   <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#fa9b9b' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>
                       {sr.request_number}
                     </span>
                   </td>
@@ -284,7 +285,7 @@ export default function ServiceRequestsPage() {
                 p === -1 ? (
                   <span key={`gap-${i}`} style={{ fontSize: 12.5, color: '#a8a29e', padding: '0 4px' }}>…</span>
                 ) : (
-                  <button key={p} onClick={() => setPage(p)} style={{ ...pageBtnStyle(false), background: p === page ? '#fa9b9b' : '#fff', color: p === page ? '#fff' : '#57534e' }}>
+                  <button key={p} onClick={() => setPage(p)} style={{ ...pageBtnStyle(false), background: p === page ? '#FF7A45' : '#fff', color: p === page ? '#fff' : '#57534e' }}>
                     {p}
                   </button>
                 )

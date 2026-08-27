@@ -27,8 +27,8 @@ export const BRAND = {
 export const TEXT = {
   heading: '#0F172A',
   body: '#1E293B',
-  secondary: '#475569',
-  muted: '#94A3B8',
+  secondary: '#334155',
+  muted: '#64748B',
   white: '#FFFFFF',
 } as const
 

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -9,7 +9,10 @@ from app.modules.main.models.user import User
 from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.models.organization import Organization
 from app.modules.crm.schemas.document import CrmDocumentResponse
-from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint
+from app.utils.sharepoint import (
+    upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint,
+    download_file_content,
+)
 
 router = APIRouter(prefix="/crm/documents", tags=["CRM - Documents"])
 
@@ -64,7 +67,8 @@ async def upload_documents(
             org_name = org.name
 
     folder_path = build_sharepoint_folder_path(
-        user.name or user.email or "", org_name, f"crm/{related_module}/{universal_id or related_id}"
+        user.name or user.email or "", org_name, f"crm/{related_module}/{universal_id or related_id}",
+        root_folder="CRM-media",
     )
 
     documents = []
@@ -98,6 +102,30 @@ async def upload_documents(
             db.refresh(d)
     db.commit()
     return documents
+
+
+@router.get("/{document_id}/content")
+async def get_document_content(
+    document_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """Raw bytes for in-app viewing (img/pdf tags, or a same-origin download),
+    fetched via the app-only Graph token — never the raw SharePoint webUrl,
+    which bypasses our own auth and exposes the SharePoint folder structure
+    to anyone who has or guesses the link."""
+    doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
+    return Response(
+        content=content,
+        media_type=doc.mime_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{doc.file_name}"'},
+    )
 
 
 @router.delete("/{document_id}")

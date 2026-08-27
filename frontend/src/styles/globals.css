@@ -24,10 +24,314 @@ body {
   max-width: 100%;
 }
 
+/* Default look for any plain <button> that doesn't set its own background —
+   most buttons in this app set an inline background per-action (primary/
+   danger/etc.), which always wins over this (inline beats a bare element
+   selector), so this only affects genuinely unstyled buttons. Colors use the
+   brand orange family instead of the literal blue from the source snippet,
+   to stay consistent with the rest of the palette. */
+button {
+  background-color: #fff2eb;
+  color: #ff7a45;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: 0.3s;
+}
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):hover {
+    background-color: #ff7a45;
+    box-shadow: 0 0 0 5px rgba(255, 122, 69, 0.37);
+    color: #fff;
+  }
+}
+
+/* iOS-style checkbox (Checkbox.tsx). Colors use the brand orange family
+   instead of the source snippet's blue, to match the rest of the palette;
+   the "red" modifier is kept as-is for destructive/danger checkboxes. */
+.ios-checkbox {
+  --checkbox-size: 22px;
+  --checkbox-color: #ff7a45;
+  --checkbox-bg: #fff2eb;
+  --checkbox-border: #ffc3a8;
+
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.ios-checkbox input {
+  display: none;
+}
+.checkbox-wrapper {
+  position: relative;
+  width: var(--checkbox-size);
+  height: var(--checkbox-size);
+  border-radius: 7px;
+  transition: transform 0.2s ease;
+}
+.checkbox-bg {
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  border: 2px solid var(--checkbox-border);
+  background: white;
+  transition: all 0.2s ease;
+}
+.checkbox-icon {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 80%;
+  height: 80%;
+  color: white;
+  transform: scale(0);
+  transition: all 0.2s ease;
+}
+.check-path {
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  transition: stroke-dashoffset 0.3s ease 0.1s;
+}
+.ios-checkbox input:checked + .checkbox-wrapper .checkbox-bg {
+  background: var(--checkbox-color);
+  border-color: var(--checkbox-color);
+}
+.ios-checkbox input:checked + .checkbox-wrapper .checkbox-icon {
+  transform: scale(1);
+}
+.ios-checkbox input:checked + .checkbox-wrapper .check-path {
+  stroke-dashoffset: 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ios-checkbox:hover .checkbox-wrapper {
+    transform: scale(1.05);
+  }
+}
+.ios-checkbox:active .checkbox-wrapper {
+  transform: scale(0.95);
+}
+.ios-checkbox input:focus-visible + .checkbox-wrapper .checkbox-bg {
+  box-shadow: 0 0 0 4px var(--checkbox-bg);
+}
+.ios-checkbox.red {
+  --checkbox-color: #ef4444;
+  --checkbox-bg: #fee2e2;
+  --checkbox-border: #fca5a5;
+}
+@keyframes checkboxBounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+.ios-checkbox input:checked + .checkbox-wrapper {
+  animation: checkboxBounce 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* Safety net: tables and other wide, non-shrinking content are the #1 cause
    of page-wide horizontal scrollbars. Any <table> not explicitly wrapped in
    a .table-scroll container gets this behavior anyway. */
 table { max-width: 100%; }
+
+/* Animated-angle background gradient — the angle itself loops 0deg -> 360deg
+   -> 0deg (not just a repositioned gradient), which needs @property so the
+   browser knows to interpolate --grad-angle as an <angle>, not swap it as a
+   plain string. */
+@property --grad-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 287deg;
+}
+@keyframes gradientAngleLoop {
+  0% { --grad-angle: 0deg; }
+  50% { --grad-angle: 360deg; }
+  100% { --grad-angle: 0deg; }
+}
+.animated-gradient-bg {
+  /* Pearlescent multi-stop instead of a flat two-tone fade — a warm ivory
+     midpoint (not plain gray) reads as premium rather than "washed out". */
+  background: linear-gradient(var(--grad-angle), #c50a0a05 0%, #faf6f0 30%, #fdfcfa 60%, rgb(255 255 255) 100%);
+  animation: gradientAngleLoop 60s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animated-gradient-bg { animation: none; }
+}
+
+/* Water-ripple cursor follower — concentric rings that expand and fade like
+   a drop landing, staggered so a new ring starts as the previous one fades.
+   Lives behind real content (see .cursor-ripple-wrap's zIndex in layout.tsx)
+   so it never covers text — only visible in open background/gaps and
+   through glass panels' backdrop-filter. */
+@keyframes waterRippleExpand {
+  0% { transform: scale(0.25); opacity: 0.28; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+.water-ripple-ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 70px;
+  height: 70px;
+  margin-left: -35px;
+  margin-top: -35px;
+  border-radius: 50%;
+  /* Hairline brand-gold edge instead of plain white — a faint warm accent
+     against the glass fill is what reads as "premium" vs. generic frosted. */
+  border: 1px solid rgba(255,196,148,0.5);
+  background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.4), rgba(255,216,199,0.10) 55%, transparent 75%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), inset 0 0 20px rgba(255,255,255,0.12), 0 0 12px rgba(255,196,148,0.10);
+  animation: waterRippleExpand 3s cubic-bezier(0.22,1,0.36,1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .water-ripple-ring { animation: none; opacity: 0; }
+}
+
+/* App-wide hover/focus feel for text-like inputs, selects, and textareas —
+   applies automatically everywhere, no wrapper class needed. Only touches
+   border/background/shadow (not layout: width/height/padding are left to
+   each page's own inputStyle), so it composes with existing per-page inline
+   styles instead of fighting them. Brand light-orange accent. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']),
+select,
+textarea {
+  transition: border-color .25s ease, box-shadow .25s ease, background-color .25s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):hover:not(:disabled),
+  select:hover:not(:disabled),
+  textarea:hover:not(:disabled) {
+    border-color: #ffc3a8 !important;
+    box-shadow: 0 0 0 4px rgba(255, 122, 69, 0.14);
+  }
+}
+input:not([type='checkbox']):not([type='radio']):not([type='range']):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #ff7a45 !important;
+  box-shadow: 0 0 0 4px rgba(255, 122, 69, 0.20);
+}
+
+/* Glass Section/Card containers (shared/ui.tsx, crm/ui.tsx) — a subtle lift
+   + brand-tinted border/shadow on hover so the whole card feels interactive,
+   not just its individual inputs. */
+@media (hover: hover) and (pointer: fine) {
+  .glass-section {
+    transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+  }
+  .glass-section:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 122, 69, 0.35) !important;
+    box-shadow: 0 16px 40px rgba(255, 122, 69, 0.12), 0 2px 6px rgba(15,23,42,.08);
+  }
+}
+
+/* .input-wrapper: a self-contained variant (background/radius/height too,
+   not just the hover ring) for a page that wants the fuller look without
+   inheriting its own inputStyle. */
+.input-wrapper {
+  display: flex;
+  line-height: 30px;
+  align-items: center;
+  position: relative;
+}
+.input-wrapper input {
+  width: 100%;
+  height: 45px;
+  line-height: 30px;
+  padding: 0 1rem;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  outline: none;
+  background-color: #f8fafc;
+  color: #0d0c22;
+}
+.input-wrapper input::placeholder {
+  color: #94a3b8;
+}
+.input-wrapper input:focus,
+.input-wrapper input:hover {
+  background-color: #fff;
+}
+.input-wrapper .icon {
+  position: absolute;
+  left: 1rem;
+  fill: none;
+  width: 1rem;
+  height: 1rem;
+  pointer-events: none;
+}
+.input-wrapper input:has(~ .icon),
+.input-wrapper .icon ~ input {
+  padding-left: 2.6rem;
+}
+
+/* Jumping-square loader (LoadingSpinner.tsx) */
+.loader {
+  width: 48px;
+  height: 48px;
+  margin: auto;
+  position: relative;
+}
+
+.loader:before {
+  content: '';
+  width: 48px;
+  height: 5px;
+  background: #f0808050;
+  position: absolute;
+  top: 60px;
+  left: 0;
+  border-radius: 50%;
+  animation: shadow324 0.5s linear infinite;
+}
+
+.loader:after {
+  content: '';
+  width: 100%;
+  height: 100%;
+  background: #f08080;
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 4px;
+  animation: jump7456 0.5s linear infinite;
+}
+
+@keyframes jump7456 {
+  15% {
+    border-bottom-right-radius: 3px;
+  }
+
+  25% {
+    transform: translateY(9px) rotate(22.5deg);
+  }
+
+  50% {
+    transform: translateY(18px) scale(1, .9) rotate(45deg);
+    border-bottom-right-radius: 40px;
+  }
+
+  75% {
+    transform: translateY(9px) rotate(67.5deg);
+  }
+
+  100% {
+    transform: translateY(0) rotate(90deg);
+  }
+}
+
+@keyframes shadow324 {
+  0%, 100% {
+    transform: scale(1, 1);
+  }
+
+  50% {
+    transform: scale(1.2, 1);
+  }
+}
 
 /* Hide number input spinner arrows everywhere */
 input[type='number']::-webkit-outer-spin-button,
@@ -131,6 +435,18 @@ img, svg { max-width: 100%; height: auto; }
 @media (max-width: 640px) {
   .nav-tab-label { display: none; }
   .nav-tab-link { padding: 10px !important; }
+}
+
+/* Uiverse-style tab feedback: a light glass fill on hover, matching the
+   card-button press feel below, instead of only the color/underline swap
+   the tabs already had. */
+.nav-tab-link {
+  border-radius: 10px 10px 0 0;
+}
+@media (hover: hover) and (pointer: fine) {
+  .nav-tab-link:hover {
+    background: rgba(217, 217, 217, 0.22);
+  }
 }
 
 /* ===================== Generic responsive grid helpers =====================

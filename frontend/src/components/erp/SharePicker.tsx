@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { DirectoryUser } from '@/types'
+import Checkbox from '@/components/Checkbox'
 
 /** Bundles the 4 pieces of state a private-document share selection needs
  * (private flag + 3 independent OR-matched picks) so the three places that
@@ -77,9 +78,9 @@ function ChipMultiSelect({
             disabled={disabled}
             style={{
               fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
-              border: `1px solid ${selected.includes(value) ? '#fa9b9b' : 'rgba(0,0,0,0.12)'}`,
+              border: `1px solid ${selected.includes(value) ? '#FF7A45' : 'rgba(0,0,0,0.12)'}`,
               background: selected.includes(value) ? 'rgba(244,113,59,0.1)' : '#fff',
-              color: selected.includes(value) ? '#fa9b9b' : '#57534e',
+              color: selected.includes(value) ? '#FF7A45' : '#57534e',
             }}
           >
             {selected.includes(value) ? '✓ ' : ''}{value}
@@ -128,10 +129,10 @@ export default function SharePicker({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#1f1108', cursor: 'pointer' }}>
-        <input type="checkbox" checked={isPrivate} onChange={(e) => onTogglePrivate(e.target.checked)} disabled={disabled} />
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#1f1108' }}>
+        <Checkbox checked={isPrivate} onChange={(e) => onTogglePrivate(e.target.checked)} disabled={disabled} />
         Make private (only you, admins, and people/departments/designations you choose can see this)
-      </label>
+      </span>
       {isPrivate && (
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, color: '#78716c', margin: '4px 0' }}>Share with specific people</p>
@@ -160,9 +161,9 @@ export default function SharePicker({
                   disabled={disabled}
                   style={{
                     fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, cursor: 'pointer',
-                    border: `1px solid ${selectedUserIds.includes(d.id) ? '#fa9b9b' : 'rgba(0,0,0,0.12)'}`,
+                    border: `1px solid ${selectedUserIds.includes(d.id) ? '#FF7A45' : 'rgba(0,0,0,0.12)'}`,
                     background: selectedUserIds.includes(d.id) ? 'rgba(244,113,59,0.1)' : '#fff',
-                    color: selectedUserIds.includes(d.id) ? '#fa9b9b' : '#57534e',
+                    color: selectedUserIds.includes(d.id) ? '#FF7A45' : '#57534e',
                   }}
                 >
                   {selectedUserIds.includes(d.id) ? '✓ ' : ''}{d.name}

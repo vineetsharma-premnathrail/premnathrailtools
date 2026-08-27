@@ -3,21 +3,20 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { p2pApi, vendorsApi, storeApi } from '@/lib/api'
-import { P2PRequest, Vendor, StockItem, StoreLocation } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER } from '@/lib/theme'
-import SearchableSelect from '@/components/erp/SearchableSelect'
+
+import { p2pApi } from '@/lib/api'
+import { P2PRequest } from '@/types'
+import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
-import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 
 const STATUS_LABELS: Record<string, string> = {
-  submitted: 'Submitted', approved: 'Approved', po_raised: 'PO Raised',
+  submitted: 'Submitted', approved: 'Approved', po_raised: 'PO Raised', po_approved: 'PO Approved',
   partially_received: 'Partially Received', received: 'Received',
   closed: 'Closed', rejected: 'Rejected', cancelled: 'Cancelled',
 }
 const STATUS_HEX: Record<string, string> = {
-  submitted: '#3b82f6', approved: '#22c55e', po_raised: '#f59e0b',
+  submitted: '#3b82f6', approved: '#22c55e', po_raised: '#f59e0b', po_approved: '#22c55e',
   partially_received: '#f97316', received: '#0ea5e9', closed: '#22c55e',
   rejected: '#dc2626', cancelled: '#94a3b8',
 }
@@ -50,10 +49,6 @@ const primaryBtn: React.CSSProperties = {
   padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
   background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
 }
-const ghostBtn: React.CSSProperties = {
-  padding: '9px 18px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, cursor: 'pointer',
-  background: '#fff', color: TEXT.secondary, fontSize: 13, fontWeight: 600,
-}
 const dangerBtn: React.CSSProperties = {
   fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10,
   border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: 'pointer',
@@ -65,19 +60,16 @@ export default function MyP2PRequestDetailPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const fromApproval = searchParams.get('from') === 'approval'
+  const fromPoApproval = searchParams.get('from') === 'po-approval'
   const prId = Number(params.id)
 
   const [pr, setPr] = useState<P2PRequest | null>(null)
-  const [vendors, setVendors] = useState<Vendor[]>([])
-  const [stockItems, setStockItems] = useState<StockItem[]>([])
-  const [storeLocations, setStoreLocations] = useState<StoreLocation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const [activePanel, setActivePanel] = useState<'' | 'edit' | 'assign' | 'quotation' | 'vendor' | 'po' | 'receipt'>('')
-  const [confirmAction, setConfirmAction] = useState<'' | 'close'>('')
-  const [promptAction, setPromptAction] = useState<'' | 'cancel' | 'reject' | 'approve'>('')
+  const [activePanel, setActivePanel] = useState<'' | 'edit'>('')
+  const [promptAction, setPromptAction] = useState<'' | 'cancel' | 'reject' | 'approve' | 'approve-po'>('')
 
   const [editProjectLabel, setEditProjectLabel] = useState('')
   const [editRequiredDate, setEditRequiredDate] = useState('')
@@ -86,25 +78,7 @@ export default function MyP2PRequestDetailPage() {
   const [editRemarks, setEditRemarks] = useState('')
 
 
-  const [qVendor, setQVendor] = useState('')
-  const [qRfqNumber, setQRfqNumber] = useState('')
-  const [qQuotation, setQQuotation] = useState('')
-  const [qQuotationDate, setQQuotationDate] = useState('')
-  const [qVendorComparison, setQVendorComparison] = useState('')
 
-  const [selectedVendor, setSelectedVendor] = useState('')
-
-  const [poNumber, setPoNumber] = useState('')
-  const [poDate, setPoDate] = useState('')
-  const [poValue, setPoValue] = useState('')
-  const [expectedDelivery, setExpectedDelivery] = useState('')
-  const [orderedQuantity, setOrderedQuantity] = useState('')
-
-  const [receivedQuantity, setReceivedQuantity] = useState('')
-  const [grnNumber, setGrnNumber] = useState('')
-  const [receiptDate, setReceiptDate] = useState('')
-  const [receivingRemarks, setReceivingRemarks] = useState('')
-  const [storeLocationId, setStoreLocationId] = useState('')
 
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
 
@@ -131,12 +105,7 @@ export default function MyP2PRequestDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, prId])
 
-  useEffect(() => {
-    if (!isPurchaseTeam) return
-    vendorsApi.list({ limit: 500 }).then(setVendors).catch(() => {})
-    storeApi.listItems({ limit: 1000 }).then(setStockItems).catch(() => {})
-    storeApi.listLocations().then(setStoreLocations).catch(() => {})
-  }, [isPurchaseTeam])
+
 
   const runAction = async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -153,16 +122,8 @@ export default function MyP2PRequestDetailPage() {
     }
   }
 
-  const cancel = () => setPromptAction('cancel')
   const approve = () => setPromptAction('approve')
   const reject = () => setPromptAction('reject')
-  const close = () => setConfirmAction('close')
-
-  const confirmActionDo = () => {
-    const action = confirmAction
-    setConfirmAction('')
-    if (action === 'close') runAction(() => p2pApi.close(prId))
-  }
 
   const promptActionDo = (value: string) => {
     const action = promptAction
@@ -170,6 +131,7 @@ export default function MyP2PRequestDetailPage() {
     if (action === 'cancel') runAction(() => p2pApi.cancel(prId, value || undefined))
     if (action === 'reject') runAction(() => p2pApi.reject(prId, value || undefined))
     if (action === 'approve') runAction(() => p2pApi.approve(prId, value || undefined))
+    if (action === 'approve-po') runAction(() => p2pApi.approvePO(prId, value || undefined))
   }
 
   const saveEdit = () => runAction(() =>
@@ -182,60 +144,7 @@ export default function MyP2PRequestDetailPage() {
     })
   )
 
-  const saveQuotation = () => runAction(() =>
-    p2pApi.requestQuotations(prId, {
-      vendor: qVendor || undefined,
-      rfq_number: qRfqNumber || undefined,
-      quotation: qQuotation || undefined,
-      quotation_date: qQuotationDate || undefined,
-      vendor_comparison: qVendorComparison || undefined,
-    })
-  )
 
-  const saveSelectVendor = () => {
-    if (!selectedVendor.trim()) { setError('Enter the selected vendor.'); return }
-    runAction(() => p2pApi.selectVendor(prId, selectedVendor.trim()))
-  }
-
-  const saveCreatePO = () => {
-    if (!poNumber.trim()) { setError('Enter a PO number.'); return }
-    runAction(() =>
-      p2pApi.createPO(prId, {
-        po_number: poNumber.trim(),
-        po_date: poDate || undefined,
-        po_value: poValue ? Number(poValue) : undefined,
-        expected_delivery: expectedDelivery || undefined,
-        ordered_quantity: orderedQuantity ? Number(orderedQuantity) : undefined,
-      })
-    )
-  }
-
-  const saveReceipt = () => {
-    if (!receivedQuantity) { setError('Enter received quantity.'); return }
-    runAction(() =>
-      p2pApi.updateReceipt(prId, {
-        received_quantity: Number(receivedQuantity),
-        grn_number: grnNumber || undefined,
-        receipt_date: receiptDate || undefined,
-        receiving_remarks: receivingRemarks || undefined,
-        store_location_id: storeLocationId ? Number(storeLocationId) : undefined,
-      })
-    )
-  }
-
-  const linkStock = async (itemId: number, stockItemId: string) => {
-    setBusy(true)
-    setError('')
-    try {
-      await p2pApi.linkItemToStock(prId, itemId, stockItemId ? Number(stockItemId) : null)
-      await load()
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } }
-      setError(err.response?.data?.detail || 'Failed to link stock item.')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   if (isLoading || !isAuthorized) return null
   if (loading) return <p style={{ fontSize: 13, color: TEXT.secondary }}>Loading…</p>
@@ -250,17 +159,19 @@ export default function MyP2PRequestDetailPage() {
     { role: 'project_head', label: 'Project Head', id: pr.project_head_id, name: pr.project_head_name, approvedAt: pr.project_head_approved_at, comment: pr.project_head_comment },
     { role: 'plant_head', label: 'Plant Head', id: pr.plant_head_id, name: pr.plant_head_name, approvedAt: pr.plant_head_approved_at, comment: pr.plant_head_comment },
   ]
+  const poApprovalRoles = [
+    { role: 'purchase_head', label: 'Purchase Head', approvedAt: pr.purchase_head_approved_at, comment: pr.purchase_head_comment },
+    { role: 'director', label: 'Director', approvedAt: pr.director_approved_at, comment: pr.director_comment },
+    { role: 'md', label: 'MD', approvedAt: pr.md_approved_at, comment: pr.md_comment },
+  ]
   const hasAssignedHeads = approvalRoles.some((r) => r.id != null)
   const myPendingRole = approvalRoles.find((r) => r.id != null && r.id === user?.id && !r.approvedAt)
   const canApproveOrReject = pr.status === 'submitted' && (hasAssignedHeads ? (!!myPendingRole || isAdmin) : isPurchaseTeam)
   const canRejectAccess = pr.status === 'submitted' && (hasAssignedHeads ? (approvalRoles.some((r) => r.id != null && r.id === user?.id) || isAdmin) : isPurchaseTeam)
-  const canCancel = ['submitted', 'approved'].includes(pr.status)
   const canApproveReject = fromApproval && canApproveOrReject
   const canRejectStill = fromApproval && canRejectAccess
-  const canQuoteOrSelectVendorOrPO = !fromApproval && isPurchaseTeam && pr.status === 'approved'
-  const canReceive = isPurchaseTeam && ['po_raised', 'partially_received'].includes(pr.status)
-  const canClose = isPurchaseTeam && pr.status === 'received'
-  const canEdit = isPurchaseTeam && !['closed', 'cancelled', 'rejected'].includes(pr.status)
+  const poRole = user?.is_purchase_head ? 'purchase_head' : user?.is_director ? 'director' : user?.is_md ? 'md' : null
+  const canApprovePo = fromPoApproval && pr.status === 'po_raised' && poRole != null && (pr.pending_po_approval_roles || []).includes(poRole)
 
   return (
     <div>
@@ -282,11 +193,11 @@ export default function MyP2PRequestDetailPage() {
           {canApproveReject && (
             <button disabled={busy} onClick={approve} style={primaryBtn}>Approve</button>
           )}
+          {canApprovePo && (
+            <button disabled={busy} onClick={() => setPromptAction('approve-po')} style={primaryBtn}>Approve PO</button>
+          )}
           {canRejectStill && (
             <button disabled={busy} onClick={reject} style={dangerBtn}>Reject</button>
-          )}
-          {canClose && (
-            <button disabled={busy} onClick={close} style={primaryBtn}>Close Request</button>
           )}
         </div>
       </div>
@@ -355,6 +266,25 @@ export default function MyP2PRequestDetailPage() {
         {pr.remarks && <div style={{ marginTop: 10 }}><InfoRow label="Remarks" value={pr.remarks} /></div>}
       </div>
 
+      {pr.status === 'po_raised' || pr.status === 'po_approved' || pr.po_number ? (
+        <div style={sectionStyle}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>PO Approval</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+            {poApprovalRoles.map((r) => (
+              <div key={r.role}>
+                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{r.label}</p>
+                <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: r.approvedAt ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.15)', color: r.approvedAt ? '#16a34a' : '#64748b' }}>
+                    {r.approvedAt ? 'Approved' : 'Pending'}
+                  </span>
+                </p>
+                {r.comment && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{r.comment}&quot;</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Approval</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
@@ -409,176 +339,14 @@ export default function MyP2PRequestDetailPage() {
                     </a>
                   ))}
                 </td>
-                {isPurchaseTeam && (
-                  <td style={{ padding: '8px 10px', minWidth: 180 }}>
-                    <select
-                      disabled={busy}
-                      style={{ ...inputStyle, padding: '6px 8px', fontSize: 12 }}
-                      value={it.stock_item_id ? String(it.stock_item_id) : ''}
-                      onChange={(e) => linkStock(it.id, e.target.value)}
-                    >
-                      <option value="">Not linked…</option>
-                      {stockItems.map((si) => (
-                        <option key={si.id} value={si.id}>{si.description} ({si.part_code})</option>
-                      ))}
-                    </select>
-                  </td>
-                )}
+
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {isPurchaseTeam && (canQuoteOrSelectVendorOrPO || canReceive) && (
-        <div style={sectionStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Purchase Processing</h2>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {canQuoteOrSelectVendorOrPO && (
-                <>
-                  <button disabled={busy} onClick={() => setActivePanel(activePanel === 'quotation' ? '' : 'quotation')} style={ghostBtn}>Vendor / RFQ</button>
-                  <button disabled={busy} onClick={() => setActivePanel(activePanel === 'vendor' ? '' : 'vendor')} style={ghostBtn}>Select Vendor</button>
-                  <button disabled={busy} onClick={() => setActivePanel(activePanel === 'po' ? '' : 'po')} style={ghostBtn}>Create PO</button>
-                </>
-              )}
-              {canReceive && (
-                <button disabled={busy} onClick={() => setActivePanel(activePanel === 'receipt' ? '' : 'receipt')} style={ghostBtn}>Update Receipt</button>
-              )}
-            </div>
-          </div>
 
-          {activePanel === 'quotation' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
-              <div>
-                <label style={labelStyle}>Vendor</label>
-                <input style={inputStyle} value={qVendor} onChange={(e) => setQVendor(e.target.value)} />
-              </div>
-              <div>
-                <label style={labelStyle}>RFQ Number</label>
-                <input style={inputStyle} value={qRfqNumber} onChange={(e) => setQRfqNumber(e.target.value)} />
-              </div>
-              <div>
-                <label style={labelStyle}>Quotation Reference</label>
-                <input style={inputStyle} value={qQuotation} onChange={(e) => setQQuotation(e.target.value)} />
-              </div>
-              <div>
-                <label style={labelStyle}>Quotation Date</label>
-                <DateField value={qQuotationDate} onChange={setQQuotationDate} />
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>Vendor Comparison</label>
-                <textarea style={{ ...inputStyle, minHeight: 60 }} value={qVendorComparison} onChange={(e) => setQVendorComparison(e.target.value)} />
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button disabled={busy} onClick={saveQuotation} style={primaryBtn}>Save Vendor / RFQ Details</button>
-              </div>
-            </div>
-          )}
-
-          {activePanel === 'vendor' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>Selected Vendor</label>
-                <SearchableSelect
-                  value={vendors.find((v) => v.name === selectedVendor)?.id ? String(vendors.find((v) => v.name === selectedVendor)?.id) : ''}
-                  onChange={(id) => setSelectedVendor(vendors.find((v) => String(v.id) === id)?.name || '')}
-                  options={vendors.map((v) => ({ value: String(v.id), label: `${v.name}${v.qualification_status !== 'qualified' ? ` (${v.qualification_status})` : ''}` }))}
-                  placeholder={pr.selected_vendor || 'Search vendor…'}
-                />
-                {selectedVendor && vendors.find((v) => v.name === selectedVendor)?.qualification_status !== 'qualified' && (
-                  <p style={{ fontSize: 12, color: '#b45309', margin: '6px 0 0' }}>
-                    ⚠ This vendor is not yet marked "qualified" — confirm with Vendor Development before raising a PO.
-                  </p>
-                )}
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button disabled={busy} onClick={saveSelectVendor} style={primaryBtn}>Select Vendor</button>
-              </div>
-            </div>
-          )}
-
-          {activePanel === 'po' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
-              <div>
-                <label style={labelStyle}>PO Number *</label>
-                <input style={inputStyle} value={poNumber} onChange={(e) => setPoNumber(e.target.value)} />
-              </div>
-              <div>
-                <label style={labelStyle}>PO Date</label>
-                <DateField value={poDate} onChange={setPoDate} />
-              </div>
-              <div>
-                <label style={labelStyle}>PO Value</label>
-                <input type="number" style={inputStyle} value={poValue} onChange={(e) => setPoValue(e.target.value)} />
-              </div>
-              <div>
-                <label style={labelStyle}>Expected Delivery</label>
-                <DateField value={expectedDelivery} onChange={setExpectedDelivery} />
-              </div>
-              <div>
-                <label style={labelStyle}>Ordered Quantity</label>
-                <input type="number" style={inputStyle} value={orderedQuantity} onChange={(e) => setOrderedQuantity(e.target.value)} placeholder={String(pr.items.reduce((s, i) => s + i.quantity, 0))} />
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button disabled={busy} onClick={saveCreatePO} style={primaryBtn}>Raise Purchase Order</button>
-              </div>
-            </div>
-          )}
-
-          {activePanel === 'receipt' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
-              <div>
-                <label style={labelStyle}>Received Quantity *</label>
-                <input type="number" style={inputStyle} value={receivedQuantity} onChange={(e) => setReceivedQuantity(e.target.value)} />
-              </div>
-              <div>
-                <label style={labelStyle}>GRN Number</label>
-                <input style={inputStyle} value={grnNumber} onChange={(e) => setGrnNumber(e.target.value)} />
-              </div>
-              <div>
-                <label style={labelStyle}>Receipt Date</label>
-                <DateField value={receiptDate} onChange={setReceiptDate} />
-              </div>
-              {pr.items.some((it) => it.stock_item_id) && (
-                <div>
-                  <label style={labelStyle}>Store Location *</label>
-                  <SearchableSelect
-                    value={storeLocationId}
-                    onChange={setStoreLocationId}
-                    options={storeLocations.map((l) => ({ value: String(l.id), label: l.name }))}
-                    placeholder="Where does this stock land?"
-                  />
-                  <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '6px 0 0' }}>
-                    Required — {pr.items.filter((it) => it.stock_item_id).length} item(s) are linked to a stock catalog entry and will post a stock-in transaction.
-                  </p>
-                </div>
-              )}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={labelStyle}>Receiving Remarks</label>
-                <textarea style={{ ...inputStyle, minHeight: 60 }} value={receivingRemarks} onChange={(e) => setReceivingRemarks(e.target.value)} />
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button disabled={busy} onClick={saveReceipt} style={primaryBtn}>Save Receipt</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {(pr.status === 'po_raised' || pr.status === 'partially_received' || pr.status === 'received' || pr.status === 'closed') && (
-        <div style={sectionStyle}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Order & Receiving</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-            <InfoRow label="PO Number" value={pr.po_number || '—'} />
-            <InfoRow label="PO Date" value={pr.po_date ? new Date(pr.po_date).toLocaleDateString() : '—'} />
-            <InfoRow label="Expected Delivery" value={pr.expected_delivery ? new Date(pr.expected_delivery).toLocaleDateString() : '—'} />
-            <InfoRow label="Ordered / Received" value={`${pr.ordered_quantity ?? '—'} / ${pr.received_quantity ?? 0}`} />
-            <InfoRow label="GRN Number" value={pr.grn_number || '—'} />
-            <InfoRow label="Receipt Date" value={pr.receipt_date ? new Date(pr.receipt_date).toLocaleDateString() : '—'} />
-          </div>
-        </div>
-      )}
 
       {pr.attachments.length > 0 && (
         <div style={sectionStyle}>
@@ -601,14 +369,13 @@ export default function MyP2PRequestDetailPage() {
         onConfirm={promptActionDo}
         onCancel={() => setPromptAction('')}
       />
-      <ConfirmDialog
-        open={confirmAction === 'close'}
-        title="Close this PR?"
-        message="This confirms all items were received satisfactorily."
-        confirmLabel="Close Request"
-        danger={false}
-        onConfirm={confirmActionDo}
-        onCancel={() => setConfirmAction('')}
+      <PromptDialog
+        open={promptAction === 'approve-po'}
+        title="Approve this PO?"
+        placeholder="Comment (optional)"
+        confirmLabel="Approve PO"
+        onConfirm={promptActionDo}
+        onCancel={() => setPromptAction('')}
       />
       <PromptDialog
         open={promptAction === 'cancel'}

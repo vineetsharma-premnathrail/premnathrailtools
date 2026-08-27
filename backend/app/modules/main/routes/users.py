@@ -129,6 +129,15 @@ async def update_user(
     if payload.is_plant_head is not None:
         target.is_plant_head = payload.is_plant_head
 
+    if payload.is_purchase_head is not None:
+        target.is_purchase_head = payload.is_purchase_head
+
+    if payload.is_director is not None:
+        target.is_director = payload.is_director
+
+    if payload.is_md is not None:
+        target.is_md = payload.is_md
+
     if payload.name is not None:
         target.name = payload.name
 
@@ -196,6 +205,7 @@ async def sync_azure_users(
     # fall out of active_azure_ids below and get deactivated, not deleted.
     active_azure_ids = {au.get("id") for au in azure_users if au.get("id")}
 
+    azure_id_to_user: dict[str, User] = {}
     for au in azure_users:
         email = au.get("mail") or au.get("userPrincipalName", "")
         if not email:
@@ -215,8 +225,7 @@ async def sync_azure_users(
             if is_az_admin and target.role == "user":
                 target.role = "admin"
         else:
-            db.add(
-                User(
+            target = User(
                     email=email,
                     name=au.get("displayName") or email.split("@")[0],
                     azure_id=azure_id,
@@ -228,7 +237,21 @@ async def sync_azure_users(
                     is_azure_admin=is_az_admin,
                     assigned_apps=[],
                 )
-            )
+            db.add(target)
+        if azure_id:
+            azure_id_to_user[azure_id] = target
+
+    # Resolve manager links only after every Azure user has a local row.
+    # Graph returns the manager's Azure object id in the expanded relation.
+    db.flush()
+    for au in azure_users:
+        azure_id = au.get("id")
+        target = azure_id_to_user.get(azure_id) if azure_id else None
+        manager = au.get("manager") or {}
+        if target and "manager" in au:
+            manager_id = manager.get("id")
+            manager_user = azure_id_to_user.get(manager_id) if manager_id else None
+            target.reporting_manager_id = manager_user.id if manager_user else None
 
     # Deactivate any azure-linked local users no longer in the active tenant list
     for u in db.query(User).filter(User.azure_id.isnot(None)).all():
@@ -237,4 +260,4 @@ async def sync_azure_users(
 
     db.commit()
     users = db.query(User).order_by(User.name).all()
-    return [to_response(u) for u in users]
+    return [to_response(u, db) for u in users]

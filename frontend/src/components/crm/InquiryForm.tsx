@@ -8,7 +8,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
 import { RAILWAY_ZONES, LEAD_SOURCES, PRODUCT_CATEGORIES, PRIORITIES, INQUIRY_STATUSES } from './constants'
-import { Field, Section, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle } from './ui'
+import { Field, Section, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, handleEnterAsTab } from './ui'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
 
@@ -29,6 +29,7 @@ type FormState = {
   delivery_location: string
   requirement_desc: string
   detailed_requirement: string
+  project_details: string
   inspection_req: string
   warranty_req: string
   priority: string
@@ -56,6 +57,7 @@ function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
     delivery_location: initial?.delivery_location || '',
     requirement_desc: initial?.requirement_desc || '',
     detailed_requirement: initial?.detailed_requirement || '',
+    project_details: initial?.project_details || '',
     inspection_req: initial?.inspection_req || '',
     warranty_req: initial?.warranty_req || '',
     priority: initial?.priority || 'Medium',
@@ -205,7 +207,7 @@ export default function InquiryForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <form onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {error && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {error}
@@ -220,7 +222,7 @@ export default function InquiryForm({
               <input
                 value={initial?.universal_id || previewNumber || 'Auto-generated on save'}
                 disabled
-                style={{ ...inputStyle, padding: '8px 10px', fontSize: 12, background: 'rgba(244,113,59,0.08)', color: '#fa9b9b', fontWeight: 600 }}
+                style={{ ...inputStyle, padding: '8px 10px', fontSize: 12, background: 'rgba(244,113,59,0.08)', color: '#FF7A45', fontWeight: 600 }}
               />
             </Field>
           </div>
@@ -342,6 +344,7 @@ export default function InquiryForm({
         <Field label="Product Specification"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
         <Field label="Requirement Description"><textarea value={form.requirement_desc} onChange={(e) => set('requirement_desc', e.target.value)} rows={2} placeholder="Brief summary of the requirement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
         <Field label="Detailed Requirement"><textarea value={form.detailed_requirement} onChange={(e) => set('detailed_requirement', e.target.value)} rows={3} placeholder="Detailed technical specs, standards, testing requirements..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        <Field label="Project Details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
       </Section>
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between' }}>

@@ -47,7 +47,7 @@ export default function Navbar({ user }: { user: User | null }) {
                 color: '#fff',
                 fontWeight: 600,
                 fontSize: 13,
-                background: 'linear-gradient(140deg,#fa9b9b,#ffffff)',
+                background: 'linear-gradient(140deg,#FF7A45,#ffffff)',
                 boxShadow: '0 4px 12px rgba(224,98,31,.35)',
               }}
             >

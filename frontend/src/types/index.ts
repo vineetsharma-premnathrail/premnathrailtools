@@ -19,6 +19,9 @@ export interface User {
   /** Org-wide approver roles picked explicitly per-PR via search-select on the New PR form. */
   is_project_head?: boolean
   is_plant_head?: boolean
+  is_purchase_head?: boolean
+  is_director?: boolean
+  is_md?: boolean
   /** Modules this user can actually reach right now (admins get all, regardless of assigned_apps). */
   apps: AppModule[]
   reporting_manager_id?: number
@@ -392,6 +395,7 @@ export interface Inquiry {
   delivery_location?: string
   requirement_desc?: string
   detailed_requirement?: string
+  project_details?: string | null
   inspection_req?: string
   warranty_req?: string
   budget?: number
@@ -403,6 +407,8 @@ export interface Inquiry {
   followup_priority?: string
   followup_assigned_to?: string
   followup_remarks?: string
+  technical_offer_number?: string
+  technical_offer_sent_at?: string
   created_by_id?: number
   created_by_name?: string
   created_at?: string
@@ -444,6 +450,8 @@ export interface Tender {
   loi_number?: string
   contract_value?: number
   loss_reason?: string
+  technical_offer_number?: string
+  technical_offer_sent_at?: string
   created_by_id?: number
   created_by_name?: string
   created_at?: string
@@ -481,6 +489,7 @@ export interface CrmActivity {
   // backend/app/modules/crm/routes/activities.py.
   contact_names?: string[]
   related_label?: string
+  created_by_name?: string
   attachments?: CrmActivityAttachment[]
 }
 
@@ -606,6 +615,9 @@ export interface QuotationItem {
   payment_terms?: string
   submitted_date?: string
   customer_response: string
+  discount?: number
+  discount_type?: string
+  quote_conditions?: string
   notes?: string
   created_by_id?: number
   created_at?: string
@@ -669,6 +681,7 @@ export type P2PRequestStatus =
   | 'submitted'
   | 'approved'
   | 'po_raised'
+  | 'po_approved'
   | 'partially_received'
   | 'received'
   | 'closed'
@@ -737,8 +750,15 @@ export interface P2PRequest {
   plant_head_name?: string
   plant_head_approved_at?: string
   plant_head_comment?: string
+  purchase_head_approved_at?: string
+  purchase_head_comment?: string
+  director_approved_at?: string
+  director_comment?: string
+  md_approved_at?: string
+  md_comment?: string
   /** Role slugs ('department_head'|'project_head'|'plant_head') still awaiting sign-off. */
   pending_approval_roles?: string[]
+  pending_po_approval_roles?: string[]
   rejected_by_role?: string
   remarks?: string
   status: P2PRequestStatus

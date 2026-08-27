@@ -7,6 +7,8 @@ from app.modules.crm.models.activity_attachment import ActivityAttachment
 from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.models.discussion import CrmDiscussion
 from app.modules.crm.models.stage_log import CrmStageLog
+from app.modules.crm.models.product import Product
+from app.modules.crm.models.payment_term import PaymentTerm
 
 __all__ = [
     "Organization",
@@ -25,4 +27,6 @@ __all__ = [
     "CrmDocument",
     "CrmDiscussion",
     "CrmStageLog",
+    "Product",
+    "PaymentTerm",
 ]

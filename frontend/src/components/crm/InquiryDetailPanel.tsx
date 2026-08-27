@@ -11,10 +11,11 @@ import InquiryForm from '@/components/crm/InquiryForm'
 import ActivityForm from '@/components/crm/ActivityForm'
 import { RichText } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
-import { INQ_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES } from '@/components/crm/constants'
-import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos } from '@/components/crm/ui'
+import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
+import { INQ_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES, QUOTE_CONDITIONS } from '@/components/crm/constants'
+import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab } from '@/components/crm/ui'
 
-const TABS = ['Info', 'Quotations', 'Sales', 'Documents', 'Mails', 'Follow Ups', 'Timeline'] as const
+const TABS = ['Info', 'Quotations', 'Documents', 'Follow Ups', 'Timeline'] as const
 
 export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
@@ -29,6 +30,11 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pendingStage, setPendingStage] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  const [revisions, setRevisions] = useState<SpecRevision[]>([])
+  const [selectedRevId, setSelectedRevId] = useState<number | null>(null)
+  const [sendingTOR, setSendingTOR] = useState(false)
+  const [torError, setTorError] = useState('')
+  const [showTorPicker, setShowTorPicker] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -44,6 +50,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       } else {
         setContact(null)
       }
+      crmApi.getInquirySpecRevisions(inquiryId).then(setRevisions).catch(() => setRevisions([]))
     } catch {
       setError('Inquiry not found.')
     } finally {
@@ -63,6 +70,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     if (!inquiry) return
     try {
       setInquiry(await crmApi.updateInquiry(inquiry.id, payload))
+      crmApi.getInquirySpecRevisions(inquiry.id).then(setRevisions).catch(() => {})
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Update failed.')
     }
@@ -75,6 +83,28 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     else router.push('/dashboard/crm/inquiries')
   }
 
+  // Enabled the first time, and again any time the inquiry is edited after the last
+  // request was sent — greyed out otherwise so R&D isn't emailed duplicate requests
+  // for an unchanged requirement.
+  const torActive = !!inquiry && (
+    !inquiry.technical_offer_sent_at ||
+    (!!inquiry.updated_at && new Date(inquiry.updated_at) > new Date(inquiry.technical_offer_sent_at))
+  )
+
+  const sendTechnicalOfferRequest = async (documentIds: number[]) => {
+    if (!inquiry || !torActive) return
+    setSendingTOR(true)
+    setTorError('')
+    try {
+      setInquiry(await crmApi.createInquiryTechnicalOfferRequest(inquiry.id, documentIds))
+      setShowTorPicker(false)
+    } catch (err: any) {
+      setTorError(err?.response?.data?.detail || 'Failed to send Technical Offer Request.')
+    } finally {
+      setSendingTOR(false)
+    }
+  }
+
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
   if (error && !inquiry) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
   if (!inquiry) return null
@@ -84,7 +114,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#fa9b9b' }}>{inquiry.universal_id}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{inquiry.universal_id}</span>
             {inquiry.created_at && (
               <span style={{ fontSize: 11, fontWeight: 600, color: '#a8a29e' }}>{new Date(inquiry.created_at).toLocaleDateString('en-GB')}</span>
             )}
@@ -97,13 +127,35 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
           </div>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org?.name || 'Inquiry'}</h1>
         </div>
-        {(canModify || isAdmin) && !editing && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} style={secondaryBtnStyle}>Edit</button>}
-            {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
+        {!editing && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, width: '100%', maxWidth: '100%' }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', width: '100%' }}>
+              <button
+                onClick={() => setShowTorPicker(true)}
+                disabled={!torActive || sendingTOR}
+                title={!torActive ? `Already sent as ${inquiry.technical_offer_number} — edit the inquiry to send again.` : 'Emails R&D the Organization, Project, and Product Requirement details as a PDF.'}
+                style={{ ...secondaryBtnStyle, opacity: !torActive || sendingTOR ? 0.5 : 1, cursor: !torActive || sendingTOR ? 'not-allowed' : 'pointer' }}
+              >
+                {sendingTOR ? 'Sending…' : 'Send Technical Offer Request to R&D'}
+              </button>
+              {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} style={secondaryBtnStyle}>Edit</button>}
+              {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
+            </div>
+            {inquiry.technical_offer_number && (
+              <span style={{ fontSize: 11, color: '#78716c' }}>
+                {torActive ? 'Previously sent as ' : 'Sent as '}<strong>{inquiry.technical_offer_number}</strong>
+                {inquiry.technical_offer_sent_at && ` on ${new Date(inquiry.technical_offer_sent_at).toLocaleString()}`}
+              </span>
+            )}
           </div>
         )}
       </div>
+
+      {torError && (
+        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+          {torError}
+        </div>
+      )}
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -115,17 +167,27 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
 
       <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
         {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              padding: '10px 6px', marginRight: 16, border: 'none', background: 'transparent', whiteSpace: 'nowrap',
-              borderBottom: tab === t ? '2px solid #fa9b9b' : '2px solid transparent',
-              color: tab === t ? '#fa9b9b' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-            }}
-          >
-            {t}
-          </button>
+          <div key={t} style={{ display: 'inline-flex', alignItems: 'center', marginRight: 16 }}>
+            <button
+              onClick={() => setTab(t)}
+              style={{
+                padding: '10px 6px', border: 'none', background: 'transparent', whiteSpace: 'nowrap',
+                borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
+                color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              {t}
+              {t === 'Info' && tab === t && revisions.length > 0 && (
+                <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'rgba(255,122,69,0.15)', color: '#FF7A45' }}>
+                  {revisions.length}
+                </span>
+              )}
+            </button>
+            {t === 'Info' && tab === t && !editing && revisions.length > 0 && (
+              <RevisionSelector revisions={revisions} selectedId={selectedRevId} onSelect={setSelectedRevId} />
+            )}
+          </div>
         ))}
       </div>
 
@@ -140,13 +202,20 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
           }}
         />
       )}
-      {tab === 'Info' && !editing && <InfoTab inquiry={inquiry} org={org} contact={contact} />}
+      {tab === 'Info' && !editing && <InfoTab inquiry={inquiry} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} />}
       {tab === 'Quotations' && <QuotationsTab inquiryId={inquiry.id} canModify={canModify} org={org} contact={contact} />}
-      {tab === 'Sales' && <PurchaseOrdersTab inquiryId={inquiry.id} orgId={inquiry.org_id} canModify={canModify} />}
       {tab === 'Documents' && <DocumentsTab inquiry={inquiry} canModify={canModify} />}
-      {tab === 'Mails' && <MailsTab />}
       {tab === 'Follow Ups' && <ActivitiesTab inquiry={inquiry} org={org} />}
       {tab === 'Timeline' && <TimelineTab inquiryId={inquiry.id} />}
+
+      <TechnicalOfferPickerDialog
+        open={showTorPicker}
+        relatedModule="inquiry"
+        relatedId={inquiry.id}
+        sending={sendingTOR}
+        onSend={sendTechnicalOfferRequest}
+        onCancel={() => setShowTorPicker(false)}
+      />
 
       <ConfirmDialog
         open={showDeleteConfirm}
@@ -187,7 +256,7 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
         onClick={() => setOpen((v) => !v)}
         style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', cursor: 'pointer', userSelect: 'none' }}
       >
-        <div style={{ width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fa9b9b', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+        <div style={{ width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FF7A45', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
           {activeIdx + 1}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -208,9 +277,9 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
             const done = i < activeIdx
             const active = i === activeIdx
             const clickable = canModify && !active
-            const circleBg = done ? '#22c55e' : active ? '#fa9b9b' : '#fff'
+            const circleBg = done ? '#22c55e' : active ? '#FF7A45' : '#fff'
             const circleColor = done || active ? '#fff' : '#a8a29e'
-            const circleBorder = done ? '#22c55e' : active ? '#fa9b9b' : 'rgba(0,0,0,0.15)'
+            const circleBorder = done ? '#22c55e' : active ? '#FF7A45' : 'rgba(0,0,0,0.15)'
             return (
               <div
                 key={s}
@@ -222,7 +291,7 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
                 <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: circleBg, color: circleColor, border: `2px solid ${circleBorder}`, fontSize: 9.5, fontWeight: 700, flexShrink: 0 }}>
                   {done ? '✓' : i + 1}
                 </div>
-                <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 500, color: active ? '#fa9b9b' : done ? '#16a34a' : '#57534e' }}>{s}</span>
+                <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 500, color: active ? '#FF7A45' : done ? '#16a34a' : '#57534e' }}>{s}</span>
               </div>
             )
           })}
@@ -232,7 +301,10 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
   )
 }
 
-function InfoTab({ inquiry, org, contact }: { inquiry: Inquiry; org: Organization | null; contact: OrgContact | null }) {
+function InfoTab({ inquiry, org, contact, revisions, selectedRevId }: { inquiry: Inquiry; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null }) {
+  const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
+  const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
@@ -266,20 +338,21 @@ function InfoTab({ inquiry, org, contact }: { inquiry: Inquiry; org: Organizatio
       </div>
       <Card title="Product Requirement">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
-          <InfoRow label="Product" value={inquiry.product || '—'} />
-          <InfoRow label="Category" value={inquiry.product_category || '—'} />
-          <InfoRow label="Quantity / Unit" value={inquiry.quantity != null ? `${inquiry.quantity} ${inquiry.unit || ''}` : '—'} />
-          <InfoRow label="Required Delivery" value={inquiry.required_delivery_date || '—'} />
-          <InfoRow label="Delivery Location" value={inquiry.delivery_location || '—'} />
+          <SpecInfoRow label="Product" value={inquiry.product || '—'} change={changeFor('product')} />
+          <SpecInfoRow label="Category" value={inquiry.product_category || '—'} change={changeFor('product_category')} />
+          <SpecInfoRow label="Quantity / Unit" value={inquiry.quantity != null ? `${inquiry.quantity} ${inquiry.unit || ''}` : '—'} change={changeFor('quantity') || changeFor('unit')} />
+          <SpecInfoRow label="Required Delivery" value={inquiry.required_delivery_date || '—'} change={changeFor('required_delivery_date')} />
+          <SpecInfoRow label="Delivery Location" value={inquiry.delivery_location || '—'} change={changeFor('delivery_location')} />
           <InfoRow label="Expected Value" value={inquiry.expected_value != null ? `₹${inquiry.expected_value.toLocaleString()}` : '—'} />
           <InfoRow label="Budget" value={inquiry.budget != null ? `₹${inquiry.budget.toLocaleString()}` : '—'} />
           <InfoRow label="Expected Order Date" value={inquiry.expected_order_date || '—'} />
-          <InfoRow label="Inspection Req." value={inquiry.inspection_req || '—'} />
-          <InfoRow label="Warranty Req." value={inquiry.warranty_req || '—'} />
+          <SpecInfoRow label="Inspection Req." value={inquiry.inspection_req || '—'} change={changeFor('inspection_req')} />
+          <SpecInfoRow label="Warranty Req." value={inquiry.warranty_req || '—'} change={changeFor('warranty_req')} />
         </div>
-        <InfoRow label="Specification" value={inquiry.product_spec || '—'} />
-        <InfoRow label="Requirement Summary" value={inquiry.requirement_desc || '—'} />
-        <InfoRow label="Detailed Requirement" value={inquiry.detailed_requirement || '—'} />
+        <SpecInfoRow label="Specification" value={inquiry.product_spec || '—'} change={changeFor('product_spec')} />
+        <SpecInfoRow label="Requirement Summary" value={inquiry.requirement_desc || '—'} change={changeFor('requirement_desc')} />
+        <SpecInfoRow label="Detailed Requirement" value={inquiry.detailed_requirement || '—'} change={changeFor('detailed_requirement')} />
+        <InfoRow label="Project Details" value={inquiry.project_details || '—'} />
       </Card>
     </div>
   )
@@ -309,8 +382,10 @@ function TasksTab({ inquiryId, canModify }: { inquiryId: number; canModify: bool
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.task_title.trim()) return
-    if (editingId) await crmApi.updateInquiryTask(inquiryId, editingId, form)
-    else await crmApi.createInquiryTask(inquiryId, form)
+    const payload: Record<string, unknown> = { ...form }
+    Object.keys(payload).forEach((k) => { if (payload[k] === '') delete payload[k] })
+    if (editingId) await crmApi.updateInquiryTask(inquiryId, editingId, payload)
+    else await crmApi.createInquiryTask(inquiryId, payload)
     cancelForm()
     load()
   }
@@ -326,7 +401,7 @@ function TasksTab({ inquiryId, canModify }: { inquiryId: number; canModify: bool
         <div>
           <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Task'}</button>
           {showForm && (
-            <form onSubmit={save} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            <form onSubmit={save} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
               <Field label="Department">
                 <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} style={inputStyle}>
                   {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
@@ -385,22 +460,79 @@ const emptyLineItem = { description: '', model_number: '', quantity: '', unit_pr
 function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: number; canModify: boolean; org: Organization | null; contact: OrgContact | null }) {
   const [quotations, setQuotations] = useState<QuotationItem[]>([])
   const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const [revisingId, setRevisingId] = useState<number | null>(null)
   const todayIso = new Date().toISOString().slice(0, 10)
   const emptyForm = {
     quotation_type: 'Domestic', gst_type: 'CGST_SGST', quote_date: todayIso, client_name: org?.name || '', client_contact_name: contact?.name || '',
     client_contact_email: contact?.email || '', client_contact_phone: contact?.mobile || '',
-    valid_until: '', delivery_time: '', customer_response: '', submitted_date: '', payment_terms: '', notes: '',
+    valid_until: '', delivery_time: '', payment_terms: '', notes: '',
+    discount: '', discount_type: 'percent', quote_conditions: '', quote_conditions_custom: '',
   }
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState([{ ...emptyLineItem }])
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
   const [pdfError, setPdfError] = useState('')
-  const load = () => crmApi.listQuotations(inquiryId).then(setQuotations)
+  const [formError, setFormError] = useState('')
+  const [products, setProducts] = useState<{ id: number; name: string; model_number?: string | null; unit_price?: number | null; default_price?: number | null }[]>([])
+  const [paymentTerms, setPaymentTerms] = useState<{ id: number; label: string; description?: string | null }[]>([])
+  const [quotRevisions, setQuotRevisions] = useState<Record<number, SpecRevision[]>>({})
+  const [selectedQuotRev, setSelectedQuotRev] = useState<Record<number, number | null>>({})
+  const load = () => {
+    crmApi.listQuotations(inquiryId).then((data: QuotationItem[]) => {
+      setQuotations(data)
+      data.filter((q) => q.revision_number > 0).forEach((q) => {
+        crmApi.getQuotationRevisions(inquiryId, q.id).then((revs) => setQuotRevisions((m) => ({ ...m, [q.id]: revs }))).catch(() => {})
+      })
+    })
+  }
+  // Status tracking, not a revision — updates independently of the price/payment-terms
+  // revision flow, so it lives outside ReviseQuotationForm as its own control.
+  const updateCustomerResponse = async (quotId: number, value: string) => {
+    await crmApi.updateQuotation(inquiryId, quotId, { customer_response: value || undefined })
+    load()
+  }
   useEffect(() => { load() }, [inquiryId])
+  useEffect(() => {
+    crmApi.listProducts().then(setProducts).catch(() => {})
+    crmApi.listPaymentTerms().then(setPaymentTerms).catch(() => {})
+  }, [])
+
+  const applyProductToRow = (idx: number, product: { name: string; model_number?: string | null; default_price?: number | null }) => {
+    setItems((rows) => rows.map((row, i) => i === idx ? {
+      ...row,
+      description: product.name,
+      model_number: product.model_number || '',
+      unit_price: product.default_price != null ? String(product.default_price) : row.unit_price,
+    } : row))
+  }
+
+  // Saves whatever the user already typed into that row's Description/Model No. fields as a
+  // new Product — no separate popup, since the row's own inputs already hold the values.
+  const createProductFromRow = async (idx: number, typedName: string) => {
+    const row = items[idx]
+    const name = typedName.trim()
+    if (!name) return
+    const created = await crmApi.createProduct({
+      name,
+      model_number: row.model_number.trim() || undefined,
+      default_price: row.unit_price ? Number(row.unit_price) : undefined,
+    })
+    setProducts((p) => [...p, created])
+    updateItemRow(idx, 'description', created.name)
+  }
+
+  // Saves whatever the user already typed into the Payment Terms field as a new Payment Term —
+  // no separate popup, the typed text becomes both the label and the terms text.
+  const createPaymentTermFromField = async (typedText: string) => {
+    const text = typedText.trim()
+    if (!text) return
+    const created = await crmApi.createPaymentTerm({ label: text, description: text })
+    setPaymentTerms((p) => [...p, created])
+    setForm((f) => ({ ...f, payment_terms: created.description || created.label }))
+  }
 
   useEffect(() => {
-    if (editingId || showForm) return
+    if (showForm) return
     setForm((f) => ({
       ...f,
       client_name: f.client_name || org?.name || '',
@@ -429,30 +561,10 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
     }
   }
 
-  const startEdit = (q: QuotationItem) => {
-    setEditingId(q.id)
-    setForm({
-      quotation_type: q.quotation_type || 'Domestic', gst_type: q.gst_type || 'CGST_SGST', quote_date: q.quote_date || '', client_name: q.client_name || '',
-      client_contact_name: q.client_contact_name || '', client_contact_email: q.client_contact_email || '', client_contact_phone: q.client_contact_phone || '',
-      valid_until: q.valid_until || '', delivery_time: q.delivery_time || '', customer_response: q.customer_response || '',
-      submitted_date: q.submitted_date || '', payment_terms: q.payment_terms || '', notes: q.notes || '',
-    })
-    setItems(
-      q.items.length > 0
-        ? q.items.map((it) => ({
-            description: it.description || '', model_number: it.model_number || '', quantity: it.quantity != null ? String(it.quantity) : '',
-            unit_price: it.unit_price != null ? String(it.unit_price) : '', gst_percent: it.gst_percent != null ? String(it.gst_percent) : '',
-            subtotal: it.subtotal != null ? String(it.subtotal) : '', total: it.total != null ? String(it.total) : '',
-          }))
-        : [{ ...emptyLineItem }]
-    )
-    setShowForm(true)
-  }
-
   const cancelForm = () => {
-    setEditingId(null)
     setForm(emptyForm)
     setItems([{ ...emptyLineItem }])
+    setFormError('')
     setShowForm(false)
   }
 
@@ -489,10 +601,23 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
-    const payload = {
-      ...form,
-      items: items
-        .filter((it) => it.description || it.model_number || it.quantity || it.unit_price)
+    setFormError('')
+    if (!form.client_name.trim()) {
+      setFormError('Client Name is required.')
+      return
+    }
+    const validItems = items.filter((it) => it.description || it.model_number || it.quantity || it.unit_price)
+    if (validItems.length === 0) {
+      setFormError('Add at least one line item.')
+      return
+    }
+    const { quote_conditions_custom, ...rest } = form
+    const payload: Record<string, unknown> = {
+      ...rest,
+      discount: form.discount ? Number(form.discount) : undefined,
+      discount_type: form.discount ? form.discount_type : undefined,
+      quote_conditions: form.quote_conditions === 'Other/Custom' ? (quote_conditions_custom || undefined) : (form.quote_conditions || undefined),
+      items: validItems
         .map((it) => ({
           description: it.description || undefined,
           model_number: it.model_number || undefined,
@@ -503,8 +628,17 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
           total: it.total ? Number(it.total) : undefined,
         })),
     }
-    if (editingId) await crmApi.updateQuotation(inquiryId, editingId, payload)
-    else await crmApi.createQuotation(inquiryId, payload)
+    // Date fields (and any other optional field left blank) must be omitted, not sent as ''
+    // — the backend expects a real date or nothing, and an empty string fails validation.
+    Object.keys(payload).forEach((k) => {
+      if (payload[k] === '') delete payload[k]
+    })
+    try {
+      await crmApi.createQuotation(inquiryId, payload)
+    } catch (err: any) {
+      setFormError(err?.response?.data?.detail || 'Failed to save quotation.')
+      return
+    }
     cancelForm()
     load()
   }
@@ -516,9 +650,18 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {canModify && (
         <div>
-          <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Create Quote'}</button>
+          <button onClick={() => (showForm ? cancelForm() : (setFormError(''), setShowForm(true)))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Create Quote'}</button>
           {showForm && (
-            <form onSubmit={save} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <form
+              onSubmit={save}
+              onKeyDown={handleEnterAsTab}
+              style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'flex', flexDirection: 'column', gap: 14 }}
+            >
+              {formError && (
+                <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                  {formError}
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                 <Field label="Quotation Type">
                   <select value={form.quotation_type} onChange={(e) => setForm((f) => ({ ...f, quotation_type: e.target.value }))} style={inputStyle}>
@@ -538,18 +681,26 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <Field label="Client Name"><input value={form.client_name} onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))} style={inputStyle} /></Field>
+                <Field label="Client Name *"><input value={form.client_name} onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))} style={inputStyle} /></Field>
                 <Field label="Contact Person Name"><input value={form.client_contact_name} onChange={(e) => setForm((f) => ({ ...f, client_contact_name: e.target.value }))} style={inputStyle} /></Field>
                 <Field label="Contact Email"><input type="email" value={form.client_contact_email} onChange={(e) => setForm((f) => ({ ...f, client_contact_email: e.target.value }))} style={inputStyle} /></Field>
                 <Field label="Contact Phone"><input value={form.client_contact_phone} onChange={(e) => setForm((f) => ({ ...f, client_contact_phone: e.target.value }))} style={inputStyle} /></Field>
               </div>
 
               <div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#57534e', marginBottom: 6, display: 'block' }}>Line Items</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#57534e', marginBottom: 6, display: 'block' }}>Line Items *</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {items.map((row, idx) => (
                     <div key={idx} style={{ display: 'grid', gridTemplateColumns: isExport ? '2fr 1.2fr 0.7fr 0.9fr 0.9fr auto' : '2fr 1.2fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
-                      <input value={row.description} onChange={(e) => updateItemRow(idx, 'description', e.target.value)} placeholder="Description" style={inputStyle} />
+                      <ComboBox
+                        value={row.description}
+                        onChange={(v) => updateItemRow(idx, 'description', v)}
+                        onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) applyProductToRow(idx, p) }}
+                        onCreateNew={(query) => createProductFromRow(idx, query)}
+                        createLabel="New Product"
+                        options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.model_number || undefined }))}
+                        placeholder="Description — type or pick a product"
+                      />
                       <input value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No." style={inputStyle} />
                       <input type="number" value={row.quantity} onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} placeholder="Qty" style={inputStyle} />
                       <input type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol})`} style={inputStyle} />
@@ -559,7 +710,9 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
                     </div>
                   ))}
                 </div>
-                <button type="button" onClick={addItemRow} style={{ ...secondaryBtnStyle, marginTop: 8, padding: '6px 14px', fontSize: 12 }}>+ Add Line Item</button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={addItemRow} style={{ ...secondaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>+ Add Line Item</button>
+                </div>
                 <p style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: '#1f1108', textAlign: 'right' }}>
                   Grand Total: {currencySymbol}{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
@@ -568,18 +721,41 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
                 <Field label="Delivery Time"><input value={form.delivery_time} onChange={(e) => setForm((f) => ({ ...f, delivery_time: e.target.value }))} placeholder="e.g. 12 weeks" style={inputStyle} /></Field>
                 <Field label="Quote Validity Date"><DateField value={form.valid_until} onChange={(v) => setForm((f) => ({ ...f, valid_until: v }))} /></Field>
-                <Field label="Customer Response">
-                  <select value={form.customer_response} onChange={(e) => setForm((f) => ({ ...f, customer_response: e.target.value }))} style={inputStyle}>
-                    <option value="">— Awaiting —</option>
-                    {CUSTOMER_RESPONSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                <Field label="Discount">
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input type="number" value={form.discount} onChange={(e) => setForm((f) => ({ ...f, discount: e.target.value }))} placeholder="0" style={inputStyle} />
+                    <select value={form.discount_type} onChange={(e) => setForm((f) => ({ ...f, discount_type: e.target.value }))} style={{ ...inputStyle, width: 90, flex: '0 0 90px' }}>
+                      <option value="percent">%</option>
+                      <option value="flat">{isExport ? 'USD' : 'INR'}</option>
+                    </select>
+                  </div>
+                </Field>
+                <Field label="Quote Conditions">
+                  <select value={form.quote_conditions} onChange={(e) => setForm((f) => ({ ...f, quote_conditions: e.target.value }))} style={inputStyle}>
+                    <option value="">— Select —</option>
+                    {QUOTE_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </Field>
-                <Field label="Submitted Date"><DateField value={form.submitted_date} onChange={(v) => setForm((f) => ({ ...f, submitted_date: v }))} /></Field>
               </div>
-              <Field label="Payment Terms"><textarea value={form.payment_terms} onChange={(e) => setForm((f) => ({ ...f, payment_terms: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+              {form.quote_conditions === 'Other/Custom' && (
+                <Field label="Custom Quote Conditions">
+                  <textarea value={form.quote_conditions_custom} onChange={(e) => setForm((f) => ({ ...f, quote_conditions_custom: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+                </Field>
+              )}
+              <Field label="Payment Terms">
+                <ComboBox
+                  value={form.payment_terms}
+                  onChange={(v) => setForm((f) => ({ ...f, payment_terms: v }))}
+                  onPick={(o) => { const t = paymentTerms.find((pt) => String(pt.id) === o.key); setForm((f) => ({ ...f, payment_terms: t ? (t.description || t.label) : o.label })) }}
+                  onCreateNew={(query) => createPaymentTermFromField(query)}
+                  createLabel="New Payment Term"
+                  options={paymentTerms.map((t) => ({ key: String(t.id), label: t.label, sublabel: t.description || undefined }))}
+                  placeholder="Select from Payment Terms list or type your own"
+                />
+              </Field>
               <Field label="Notes"><textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
               <div>
-                <button type="submit" style={primaryBtnStyle}>{editingId ? 'Save Changes' : 'Save Quotation'}</button>
+                <button type="submit" style={primaryBtnStyle}>Save Quotation</button>
               </div>
             </form>
           )}
@@ -589,15 +765,52 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No quotations yet.</p>
       ) : (
         quotations.map((q) => (
-          <div key={q.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>
-                {q.quot_number}{q.revision_number > 0 ? ` (Revision ${q.revision_number})` : ''} · {q.quotation_type}
-              </p>
-              <p style={{ fontSize: 12.5, color: '#57534e', margin: 0 }}>
-                {q.client_name || '—'} · {q.delivery_time || '—'} · {q.customer_response || '— Awaiting —'}
+          <div key={q.id} style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0 }}>
+                  {q.quot_number} · {q.quotation_type}
+                </p>
+                {(quotRevisions[q.id]?.length || 0) > 0 && (
+                  <RevisionSelector
+                    revisions={quotRevisions[q.id]}
+                    selectedId={selectedQuotRev[q.id] ?? null}
+                    onSelect={(id) => setSelectedQuotRev((m) => ({ ...m, [q.id]: id }))}
+                  />
+                )}
+              </div>
+              {selectedQuotRev[q.id] != null && (() => {
+                const rev = quotRevisions[q.id]?.find((r) => r.id === selectedQuotRev[q.id])
+                if (!rev) return null
+                return (
+                  <div style={{ marginBottom: 6, padding: '6px 10px', borderRadius: 8, background: 'rgba(255,122,69,0.06)', border: '1px dashed rgba(255,122,69,0.3)' }}>
+                    {rev.changes.map((c, i) => (
+                      <p key={i} style={{ fontSize: 12, margin: i === 0 ? 0 : '2px 0 0' }}>
+                        <strong>{quotationRevisionFieldLabel(c.field)}:</strong>{' '}
+                        <span style={{ color: '#b91c1c', textDecoration: 'line-through' }}>{c.old == null || String(c.old).trim() === '' ? '(empty)' : String(c.old)}</span>
+                        {' → '}
+                        <span style={{ color: '#166534', fontWeight: 600 }}>{c.new == null || String(c.new).trim() === '' ? '(empty)' : String(c.new)}</span>
+                      </p>
+                    ))}
+                  </div>
+                )
+              })()}
+              <p style={{ fontSize: 12.5, color: '#57534e', margin: 0, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                {q.client_name || '—'} · {q.delivery_time || '—'} ·
+                {canModify ? (
+                  <select
+                    value={q.customer_response || ''}
+                    onChange={(e) => updateCustomerResponse(q.id, e.target.value)}
+                    style={{ ...inputStyle, width: 'auto', padding: '3px 8px', fontSize: 12.5 }}
+                  >
+                    <option value="">— Awaiting —</option>
+                    {CUSTOMER_RESPONSES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                ) : (q.customer_response || '— Awaiting —')}
                 {q.valid_until && ` · Valid: ${q.valid_until}`}{q.submitted_date && ` · Submitted: ${q.submitted_date}`}
+                {q.discount != null && ` · Discount: ${q.discount_type === 'flat' ? (q.quotation_type === 'Export' ? 'USD ' : 'INR ') : ''}${q.discount}${q.discount_type === 'flat' ? '' : '%'}`}
               </p>
+              {q.quote_conditions && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>Conditions: {q.quote_conditions}</p>}
               {q.client_contact_name && (
                 <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>
                   Contact: {q.client_contact_name}{q.client_contact_email && ` · ${q.client_contact_email}`}{q.client_contact_phone && ` · ${q.client_contact_phone}`}
@@ -643,12 +856,26 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
               )}
               {q.payment_terms && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>Payment: {q.payment_terms}</p>}
               {q.notes && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>{q.notes}</p>}
+              {revisingId === q.id && (
+                <ReviseQuotationForm
+                  inquiryId={inquiryId}
+                  quotation={q}
+                  paymentTerms={paymentTerms}
+                  onCreatePaymentTerm={createPaymentTermFromField}
+                  onCancel={() => setRevisingId(null)}
+                  onSaved={() => { setRevisingId(null); load() }}
+                />
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
               <button onClick={() => downloadPdf(q)} disabled={downloadingId === q.id} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: downloadingId === q.id ? 0.7 : 1 }}>
                 {downloadingId === q.id ? 'Generating…' : 'Download PDF'}
               </button>
-              {canModify && <button onClick={() => startEdit(q)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>}
+              {canModify && (
+                <button onClick={() => setRevisingId((id) => (id === q.id ? null : q.id))} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>
+                  {revisingId === q.id ? 'Cancel' : 'Revise'}
+                </button>
+              )}
             </div>
           </div>
         ))
@@ -656,6 +883,113 @@ function QuotationsTab({ inquiryId, canModify, org, contact }: { inquiryId: numb
       {pdfError && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{pdfError}</p>}
     </div>
   )
+}
+
+/**
+ * Post-creation edits to a quotation are deliberately limited to price/unit, payment terms,
+ * validity, and delivery time (plus status tracking) — everything else about the quote is
+ * fixed once created. A bigger change means creating a new quotation for the inquiry instead.
+ * Each save here bumps the quote's revision number and is recorded in its revision history.
+ */
+function ReviseQuotationForm({
+  inquiryId, quotation, paymentTerms, onCreatePaymentTerm, onCancel, onSaved,
+}: {
+  inquiryId: number
+  quotation: QuotationItem
+  paymentTerms: { id: number; label: string; description?: string | null }[]
+  onCreatePaymentTerm: (text: string) => Promise<void>
+  onCancel: () => void
+  onSaved: () => void
+}) {
+  const [paymentTermsValue, setPaymentTermsValue] = useState(quotation.payment_terms || '')
+  const [validUntil, setValidUntil] = useState(quotation.valid_until || '')
+  const [deliveryTime, setDeliveryTime] = useState(quotation.delivery_time || '')
+  const [itemPrices, setItemPrices] = useState<Record<number, string>>(
+    Object.fromEntries(quotation.items.map((it) => [it.id, it.unit_price != null ? String(it.unit_price) : '']))
+  )
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    const payload: Record<string, unknown> = {
+      payment_terms: paymentTermsValue || undefined,
+      valid_until: validUntil || undefined,
+      delivery_time: deliveryTime || undefined,
+      items: quotation.items
+        .filter((it) => itemPrices[it.id] !== '' && Number(itemPrices[it.id]) !== it.unit_price)
+        .map((it) => ({ id: it.id, unit_price: Number(itemPrices[it.id]) })),
+    }
+    try {
+      await crmApi.updateQuotation(inquiryId, quotation.id, payload)
+      onSaved()
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to save revision.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 10, padding: 12, borderRadius: 10, background: 'rgba(255,122,69,0.05)', border: '1px dashed rgba(255,122,69,0.3)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {error && <p style={{ fontSize: 12, color: '#b91c1c', margin: 0 }}>{error}</p>}
+      <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: '#c2410c', margin: 0 }}>
+        Revise Quotation — price, payment terms, validity, delivery time only
+      </p>
+      {quotation.items.length > 0 && (
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#78716c', marginBottom: 6, display: 'block' }}>Price / Unit</label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {quotation.items.map((it) => (
+              <div key={it.id} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 12.5, color: '#57534e' }}>{it.description || `Item #${it.id}`}{it.model_number ? ` · ${it.model_number}` : ''}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 11, color: '#a8a29e', flexShrink: 0 }}>Price/unit</span>
+                  <input
+                    type="number"
+                    value={itemPrices[it.id] ?? ''}
+                    onChange={(e) => setItemPrices((p) => ({ ...p, [it.id]: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+        <Field label="Payment Terms">
+          <ComboBox
+            value={paymentTermsValue}
+            onChange={setPaymentTermsValue}
+            onPick={(o) => { const t = paymentTerms.find((pt) => String(pt.id) === o.key); setPaymentTermsValue(t ? (t.description || t.label) : o.label) }}
+            onCreateNew={(query) => onCreatePaymentTerm(query).then(() => setPaymentTermsValue(query))}
+            createLabel="New Payment Term"
+            options={paymentTerms.map((t) => ({ key: String(t.id), label: t.label, sublabel: t.description || undefined }))}
+            placeholder="Payment Terms"
+          />
+        </Field>
+        <Field label="Quote Validity Date"><DateField value={validUntil} onChange={setValidUntil} /></Field>
+        <Field label="Delivery Time"><input value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} placeholder="e.g. 12 weeks" style={inputStyle} /></Field>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" onClick={save} disabled={saving} style={{ ...primaryBtnStyle, padding: '6px 14px', fontSize: 12, opacity: saving ? 0.7 : 1 }}>
+          {saving ? 'Saving…' : 'Save Revision'}
+        </button>
+        <button type="button" onClick={onCancel} style={{ ...secondaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+const QUOTATION_REVISION_FIELD_LABELS: Record<string, string> = {
+  payment_terms: 'Payment Terms', valid_until: 'Quote Validity', delivery_time: 'Delivery Time',
+}
+
+function quotationRevisionFieldLabel(field: string): string {
+  if (field.startsWith('item_') && field.endsWith('_unit_price')) return 'Price'
+  return QUOTATION_REVISION_FIELD_LABELS[field] || field
 }
 
 function PurchaseOrdersTab({ inquiryId, orgId, canModify }: { inquiryId: number; orgId: number; canModify: boolean }) {
@@ -684,7 +1018,8 @@ function PurchaseOrdersTab({ inquiryId, orgId, canModify }: { inquiryId: number;
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
-    const payload = { ...form, po_value: form.po_value ? Number(form.po_value) : undefined }
+    const payload: Record<string, unknown> = { ...form, po_value: form.po_value ? Number(form.po_value) : undefined }
+    Object.keys(payload).forEach((k) => { if (payload[k] === '') delete payload[k] })
     if (editingId) await crmApi.updatePurchaseOrder(editingId, payload)
     else await crmApi.createInquiryPurchaseOrder(inquiryId, { ...payload, org_id: orgId })
     cancelForm()
@@ -697,7 +1032,7 @@ function PurchaseOrdersTab({ inquiryId, orgId, canModify }: { inquiryId: number;
         <div>
           <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add PO'}</button>
           {showForm && (
-            <form onSubmit={save} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            <form onSubmit={save} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
               <Field label="PO Number"><input value={form.po_number} onChange={(e) => setForm((f) => ({ ...f, po_number: e.target.value }))} style={inputStyle} /></Field>
               <Field label="PO Date"><DateField value={form.po_date} onChange={(v) => setForm((f) => ({ ...f, po_date: v }))} /></Field>
               <Field label="PO Value (₹)"><input type="number" value={form.po_value} onChange={(e) => setForm((f) => ({ ...f, po_value: e.target.value }))} style={inputStyle} /></Field>
@@ -792,7 +1127,14 @@ function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, onUp
   }
 
   return (
-    <div style={{ padding: 16, borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ position: 'relative', padding: 16, borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {uploading && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 2, borderRadius: 14, background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(2px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+          <div style={{ width: 26, height: 26, borderRadius: '50%', border: '3px solid rgba(255,122,69,0.2)', borderTopColor: '#FF7A45', animation: 'crm-spin 0.8s linear infinite' }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>Uploading…</span>
+          <style>{'@keyframes crm-spin { to { transform: rotate(360deg) } }'}</style>
+        </div>
+      )}
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: 0 }}>{title}</p>
       {docs.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>None</p>
@@ -801,7 +1143,19 @@ function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, onUp
           {docs.map((d) => (
             <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
               <div>
-                <a href={d.sharepoint_url || '#'} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}>{d.file_name}</a>
+                <a
+                  href="#"
+                  onClick={async (e) => {
+                    e.preventDefault()
+                    try {
+                      const blob = await crmApi.getDocumentContent(d.id)
+                      window.open(URL.createObjectURL(blob), '_blank')
+                    } catch {
+                      setError('Unable to open document.')
+                    }
+                  }}
+                  style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none', cursor: 'pointer' }}
+                >{d.file_name}</a>
                 <p style={{ fontSize: 11, color: '#a8a29e', margin: '2px 0 0' }}>{d.doc_category || '—'}</p>
               </div>
               {canModify && <button onClick={() => onRemove(d.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>}
@@ -816,7 +1170,6 @@ function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, onUp
             {DOC_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <input ref={fileRef} type="file" multiple onChange={(e) => handleUpload(e.target.files)} disabled={uploading} style={inputStyle} />
-          {uploading && <span style={{ fontSize: 12.5, color: '#78716c' }}>Uploading…</span>}
         </div>
       )}
       {error && <p style={{ fontSize: 12.5, color: '#b91c1c' }}>{error}</p>}
@@ -1002,7 +1355,7 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
 
 type TimelineEntry = {
   key: string
-  kind: 'created' | 'updated' | 'deleted' | 'stage' | 'followup' | 'quotation'
+  kind: 'created' | 'updated' | 'deleted' | 'stage' | 'followup' | 'quotation' | 'info' | 'email' | 'email_failed'
   title: string
   detail?: string
   by?: string
@@ -1016,6 +1369,65 @@ const TIMELINE_KIND_STYLE: Record<TimelineEntry['kind'], { bg: string; text: str
   stage: { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed', label: 'Stage' },
   followup: { bg: 'rgba(249,115,22,0.12)', text: '#c2410c', label: 'Follow Up' },
   quotation: { bg: 'rgba(234,179,8,0.14)', text: '#a16207', label: 'Quotation' },
+  info: { bg: 'rgba(99,102,241,0.12)', text: '#4338ca', label: 'Info Update' },
+  email: { bg: 'rgba(13,148,136,0.12)', text: '#0f766e', label: 'Email Sent' },
+  email_failed: { bg: 'rgba(220,38,38,0.1)', text: '#b91c1c', label: 'Email Failed' },
+}
+
+function auditActionKind(action: string): TimelineEntry['kind'] {
+  if (action === 'created') return 'created'
+  if (action === 'deleted') return 'deleted'
+  if (action.endsWith('_sent')) return 'email'
+  if (action.endsWith('_failed')) return 'email_failed'
+  return 'updated'
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
+ * Renders a spec revision's field-level changes as "old → new" lines for the Timeline detail.
+ * When only one field changed, its label is already the entry's title, so it's dropped here
+ * to avoid repeating it twice; with multiple fields each line is prefixed with its label.
+ */
+function specRevisionDetailHtml(changes: { field: string; old: unknown; new: unknown }[]): string {
+  const single = changes.length === 1
+  return changes.map((c) => {
+    const label = AUDIT_FIELD_LABELS[c.field] || c.field
+    const oldText = c.old == null || String(c.old).trim() === '' ? '(empty)' : String(c.old)
+    const newText = c.new == null || String(c.new).trim() === '' ? '(empty)' : String(c.new)
+    const prefix = single ? '' : `<strong>${escapeHtml(label)}:</strong> `
+    return `<div>${prefix}<span style="color:#b91c1c;text-decoration:line-through;">${escapeHtml(oldText)}</span> → <span style="color:#166534;font-weight:600;">${escapeHtml(newText)}</span></div>`
+  }).join('')
+}
+
+const AUDIT_FIELD_LABELS: Record<string, string> = {
+  product_category: 'Category', product: 'Product', quantity: 'Quantity', unit: 'Unit',
+  required_delivery_date: 'Required Delivery Date', delivery_location: 'Delivery Location',
+  inspection_req: 'Inspection Requirement', warranty_req: 'Warranty Requirement', product_spec: 'Specification',
+  requirement_desc: 'Requirement Summary', detailed_requirement: 'Detailed Requirement', project_details: 'Project Details',
+  railway_zone: 'Railway Zone', division: 'Division', lead_source: 'Lead Source', bd_owner: 'BD Owner',
+  sales_engineer: 'Sales Engineer', status: 'Status', current_stage: 'Stage', budget: 'Budget',
+  expected_value: 'Expected Value', probability: 'Probability', expected_order_date: 'Expected Order Date',
+  priority: 'Priority', next_followup_date: 'Follow-up Date', followup_priority: 'Follow-up Priority',
+  followup_assigned_to: 'Follow-up Assigned To', followup_remarks: 'Follow-up Remarks',
+  org_id: 'Organization', org_contact_id: 'Contact',
+}
+
+/**
+ * Audit summaries were historically stored as free text, e.g. "Name updated: field1, field2."
+ * The name is shown separately in the meta line, and the "Updated" badge already says what
+ * happened — so this cleans the title down to just the field list, with field names labeled.
+ */
+function cleanAuditTitle(summary: string | null, actor: string | null | undefined): string | null {
+  if (!summary) return summary
+  let s = summary
+  if (actor && s.startsWith(actor)) s = s.slice(actor.length).replace(/^\s+/, '')
+  s = s.replace(/^updated:\s*/i, '').replace(/\.\s*$/, '')
+  s = s.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi, (token) => AUDIT_FIELD_LABELS[token.toLowerCase()] || token)
+  if (!s) return summary
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function TimelineTab({ inquiryId }: { inquiryId: number }) {
@@ -1027,14 +1439,28 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
       crmApi.listInquiryStages(inquiryId),
       crmApi.listActivities({ related_module: 'inquiry', related_id: inquiryId }),
       crmApi.listQuotations(inquiryId),
-    ]).then(([audit, stages, activities, quotations]) => {
+      crmApi.getInquirySpecRevisions(inquiryId),
+    ]).then(([audit, stages, activities, quotations, specRevisions]) => {
       const merged: TimelineEntry[] = [
-        ...audit.map((a: { id: number; action: string; summary: string | null; performed_by: string; performed_at: string | null }) => ({
-          key: `audit-${a.id}`,
-          kind: (a.action === 'created' ? 'created' : a.action === 'deleted' ? 'deleted' : 'updated') as TimelineEntry['kind'],
-          title: a.summary || `Inquiry ${a.action}`,
-          by: a.performed_by,
-          date: a.performed_at,
+        // Generic "updated" audit rows carry no diff detail — every real edit now produces
+        // a proper Info Update entry (below) instead, so a bare "Updated: field" row with
+        // nothing else to show is just noise. Only created/deleted are worth keeping here.
+        ...audit
+          .filter((a: { action: string }) => a.action !== 'updated')
+          .map((a: { id: number; action: string; summary: string | null; performed_by: string; performed_at: string | null }) => ({
+            key: `audit-${a.id}`,
+            kind: auditActionKind(a.action),
+            title: cleanAuditTitle(a.summary, a.performed_by) || `Inquiry ${a.action}`,
+            by: a.performed_by,
+            date: a.performed_at,
+          })),
+        ...specRevisions.map((r: SpecRevision) => ({
+          key: `spec-${r.id}`,
+          kind: 'info' as const,
+          title: r.changes.map((c) => AUDIT_FIELD_LABELS[c.field] || c.field).join(', '),
+          detail: specRevisionDetailHtml(r.changes),
+          by: r.performed_by,
+          date: r.performed_at,
         })),
         ...stages.map((s: CrmStageLogEntry) => ({
           key: `stage-${s.id}`,
@@ -1047,9 +1473,9 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
         ...activities.map((a: CrmActivity) => ({
           key: `followup-${a.id}`,
           kind: 'followup' as const,
-          title: a.activity_type || 'Follow Up',
+          title: a.subject || a.contact_names?.join(', ') || a.activity_type || 'Follow Up',
           detail: a.remarks,
-          by: a.assigned_to,
+          by: a.created_by_name,
           date: a.activity_date || a.created_at || null,
         })),
         ...quotations.map((q: QuotationItem) => ({
@@ -1060,7 +1486,7 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
           date: q.submitted_date || q.created_at || null,
         })),
       ]
-      merged.sort((a, b) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime())
+      merged.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
       setEntries(merged)
     })
   }, [inquiryId])
@@ -1072,14 +1498,18 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {entries.map((e) => (
         <div key={e.key} style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: TIMELINE_KIND_STYLE[e.kind].bg, color: TIMELINE_KIND_STYLE[e.kind].text }}>
-              {TIMELINE_KIND_STYLE[e.kind].label}
-            </span>
-            <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0 }}>{e.title}</p>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: TIMELINE_KIND_STYLE[e.kind].bg, color: TIMELINE_KIND_STYLE[e.kind].text }}>
+                {TIMELINE_KIND_STYLE[e.kind].label}
+              </span>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0 }}>{e.title}</p>
+            </div>
+            <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>
+              {e.by || 'System'} · {e.date ? new Date(e.date).toLocaleString() : '—'}
+            </p>
           </div>
           {e.detail && <RichText html={e.detail} style={{ fontSize: 12, color: '#57534e', margin: '2px 0' }} />}
-          <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0 }}>{e.by || 'System'} · {e.date ? new Date(e.date).toLocaleString() : '—'}</p>
         </div>
       ))}
     </div>

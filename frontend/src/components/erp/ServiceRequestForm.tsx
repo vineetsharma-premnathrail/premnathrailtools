@@ -271,7 +271,7 @@ export default function ServiceRequestForm({
               style={{
                 padding: '28px 20px',
                 borderRadius: 14,
-                border: `2px dashed ${dragOver ? '#fa9b9b' : 'rgba(0,0,0,0.15)'}`,
+                border: `2px dashed ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.15)'}`,
                 background: dragOver ? 'rgba(244,113,59,0.05)' : '#fff',
                 textAlign: 'center',
                 cursor: 'pointer',
@@ -284,7 +284,7 @@ export default function ServiceRequestForm({
                 hidden
                 onChange={(e) => e.target.files && setQueuedFiles((prev) => [...prev, ...Array.from(e.target.files!)])}
               />
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fa9b9b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 8px' }}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FF7A45" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 8px' }}>
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
@@ -383,7 +383,7 @@ const primaryBtnStyle: React.CSSProperties = {
   padding: '10px 22px',
   borderRadius: 10,
   border: 'none',
-  background: 'linear-gradient(140deg,#fa9b9b,#ffe3d0)',
+  background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
   color: '#fff',
   cursor: 'pointer',
   whiteSpace: 'nowrap',
