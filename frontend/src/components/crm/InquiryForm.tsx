@@ -207,7 +207,12 @@ export default function InquiryForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <form onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ display: 'flex', flexDirection: 'column', gap: 20, position: 'relative' }}>
+      {saving && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(2px)' }}>
+          <div className="loader" />
+        </div>
+      )}
       {error && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {error}

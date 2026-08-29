@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
-import { purchaseApi } from '@/lib/api'
-import { PurchaseRequisition } from '@/types'
+import { useAttachmentBlobUrl } from '@/hooks/useAttachmentBlobUrl'
+import { purchaseApi, erpApi } from '@/lib/api'
+import { PurchaseRequisition, PurchaseRequisitionItemAttachment } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 
@@ -273,13 +274,12 @@ export default function PurchaseRequisitionDetailPage() {
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     {(item.attachments || []).length === 0 && <span style={{ fontSize: 12, color: '#a8a29e' }}>—</span>}
                     {(item.attachments || []).map((att) => (
-                      <img
+                      <MaterialPhotoThumb
                         key={att.id}
-                        src={att.sharepoint_url}
-                        alt={att.filename}
-                        onClick={() => setLightboxUrl(att.sharepoint_url || null)}
-                        title="View photo"
-                        style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', cursor: 'pointer', border: '1px solid rgba(0,0,0,0.08)' }}
+                        srId={pr.service_request_id}
+                        matId={att.service_material_id}
+                        attachment={att}
+                        onOpen={setLightboxUrl}
                       />
                     ))}
                   </div>
@@ -352,6 +352,31 @@ export default function PurchaseRequisitionDetailPage() {
         onCancel={() => setPendingStatus('')}
       />
     </div>
+  )
+}
+
+function MaterialPhotoThumb({
+  srId, matId, attachment, onOpen,
+}: {
+  srId: number
+  matId: number
+  attachment: PurchaseRequisitionItemAttachment
+  onOpen: (url: string | null) => void
+}) {
+  const fetchBlob = useMemo(
+    () => () => erpApi.getMaterialAttachmentBlob(srId, matId, attachment.id),
+    [srId, matId, attachment.id]
+  )
+  const src = useAttachmentBlobUrl(fetchBlob)
+  if (!src) return null
+  return (
+    <img
+      src={src}
+      alt={attachment.filename}
+      onClick={() => onOpen(src)}
+      title="View photo"
+      style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', cursor: 'pointer', border: '1px solid rgba(0,0,0,0.08)' }}
+    />
   )
 }
 

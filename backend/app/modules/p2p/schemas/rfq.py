@@ -6,11 +6,11 @@ class RFQAttachmentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    rfq_id: int
     vendor_tier: str
     filename: str
     content_type: str | None = None
     size: int | None = None
-    sharepoint_url: str | None = None
     created_at: datetime | None = None
 
 

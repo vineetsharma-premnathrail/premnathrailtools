@@ -1,10 +1,11 @@
 'use client'
 
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { erpApi } from '@/lib/api'
-import { AuditEntry, Project, ServiceRequest, ServiceMaterial } from '@/types'
+import { AuditEntry, Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadPreview from '@/components/FileUploadPreview'
@@ -667,10 +668,7 @@ function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
           {material.attachments.map((a) => (
             <div key={a.id} style={{ position: 'relative', width: 64, height: 64, flex: 'none' }}>
-              <a href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.sharepoint_url} alt={a.filename} style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />
-              </a>
+              <MaterialPhotoThumb srId={srId} matId={material.id} attachment={a} />
               {canModify && (
                 <button
                   onClick={() => handleDelete(a.id)}
@@ -789,7 +787,11 @@ function AttachmentsTab({ sr, canModify, onRefresh }: { sr: ServiceRequest; canM
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {sr.attachments.map((a) => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
-                <a href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}>
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => erpApi.getAttachmentBlob(sr.id, a.id)) }}
+                  style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}
+                >
                   {a.filename}
                 </a>
                 {canModify && (
@@ -801,6 +803,20 @@ function AttachmentsTab({ sr, canModify, onRefresh }: { sr: ServiceRequest; canM
         )}
       </div>
     </div>
+  )
+}
+
+function MaterialPhotoThumb({ srId, matId, attachment }: { srId: number; matId: number; attachment: ServiceMaterialAttachment }) {
+  const fetchBlob = useMemo(
+    () => () => erpApi.getMaterialAttachmentBlob(srId, matId, attachment.id),
+    [srId, matId, attachment.id]
+  )
+  const src = useAttachmentBlobUrl(fetchBlob)
+  return (
+    <a href="#" onClick={(e) => { e.preventDefault(); openAttachmentBlob(fetchBlob) }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {src && <img src={src} alt={attachment.filename} style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />}
+    </a>
   )
 }
 

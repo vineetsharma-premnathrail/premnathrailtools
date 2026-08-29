@@ -140,7 +140,6 @@ export interface ServiceMaterialAttachment {
   content_type?: string
   size?: number
   sharepoint_path?: string
-  sharepoint_url?: string
   created_by_id?: number
   created_at?: string
 }
@@ -152,7 +151,6 @@ export interface ServiceRequestAttachment {
   content_type?: string
   size?: number
   sharepoint_path?: string
-  sharepoint_url?: string
   created_by_id?: number
   created_at?: string
 }
@@ -164,7 +162,6 @@ export interface ProjectAttachment {
   content_type?: string
   size?: number
   sharepoint_path?: string
-  sharepoint_url?: string
   created_by_id?: number
   created_at?: string
   is_private: boolean
@@ -275,10 +272,10 @@ export type PRStatus =
 
 export interface PurchaseRequisitionItemAttachment {
   id: number
+  service_material_id: number
   filename: string
   content_type?: string
   size?: number
-  sharepoint_url?: string
   created_at?: string
 }
 
@@ -495,10 +492,10 @@ export interface CrmActivity {
 
 export interface CrmActivityAttachment {
   id: number
+  activity_id: number
   filename: string
   content_type?: string
   size?: number
-  sharepoint_url?: string
   created_at?: string
 }
 
@@ -520,7 +517,6 @@ export interface CrmDocument {
   file_name: string
   file_path: string
   sharepoint_path?: string
-  sharepoint_url?: string
   file_size?: number
   mime_type?: string
   description?: string
@@ -692,12 +688,12 @@ export type P2PRequestStatus =
 
 export interface P2PRequestAttachment {
   id: number
+  p2p_request_id: number
   item_id?: number
   doc_type: 'supporting' | 'specification' | 'po_document'
   filename: string
   content_type?: string
   size?: number
-  sharepoint_url?: string
   created_at?: string
 }
 
@@ -809,11 +805,11 @@ export interface PRCategoryMeta {
 
 export interface RFQAttachment {
   id: number
+  rfq_id: number
   vendor_tier: 'L1' | 'L2' | 'L3' | 'L4'
   filename: string
   content_type?: string
   size?: number
-  sharepoint_url?: string
   created_at?: string
 }
 
@@ -946,7 +942,6 @@ export interface EngineeringDocument {
   filename: string
   content_type?: string
   size?: number
-  sharepoint_url?: string
   uploaded_by_id?: number
   uploaded_by_name?: string
   created_at?: string

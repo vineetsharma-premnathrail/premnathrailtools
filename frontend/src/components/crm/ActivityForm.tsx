@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { crmApi } from '@/lib/api'
 import { CrmActivity, OrgContact } from '@/types'
 import DateField from '@/components/erp/DateField'
@@ -361,6 +362,7 @@ export default function ActivityForm({
         {(!!existingAttachments?.length || stagedPhotos.length > 0) && (
           <Field label="Photos">
             <PhotoThumbnails
+              activityId={initial?.id}
               stagedPhotos={stagedPhotos}
               onRemoveStaged={(i) => setStagedPhotos((prev) => prev.filter((_, idx) => idx !== i))}
               existingAttachments={existingAttachments}
@@ -382,12 +384,14 @@ export default function ActivityForm({
 }
 
 function PhotoThumbnails({
+  activityId,
   stagedPhotos,
   onRemoveStaged,
   existingAttachments,
   onDeleteExisting,
   deletingAttachmentId,
 }: {
+  activityId: number | undefined
   stagedPhotos: File[]
   onRemoveStaged: (index: number) => void
   existingAttachments: CrmActivity['attachments']
@@ -403,10 +407,7 @@ function PhotoThumbnails({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
           {existingAttachments.map((a) => (
             <div key={a.id} style={{ position: 'relative', width: 56, height: 56, flex: 'none' }}>
-              <a href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.sharepoint_url} alt={a.filename} style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />
-              </a>
+              <ActivityPhotoThumb activityId={activityId} attachment={a} />
               <button
                 type="button"
                 onClick={() => onDeleteExisting(a.id)}
@@ -437,5 +438,23 @@ function PhotoThumbnails({
       )}
 
     </>
+  )
+}
+
+function ActivityPhotoThumb({ activityId, attachment }: { activityId: number | undefined; attachment: { id: number; filename: string } }) {
+  const fetchBlob = useMemo(
+    () => (activityId ? () => crmApi.getActivityAttachmentBlob(activityId, attachment.id) : null),
+    [activityId, attachment.id]
+  )
+  const src = useAttachmentBlobUrl(fetchBlob)
+  return (
+    <a
+      href="#"
+      onClick={(e) => { e.preventDefault(); if (fetchBlob) openAttachmentBlob(fetchBlob) }}
+      style={{ display: 'block', width: 56, height: 56 }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {src && <img src={src} alt={attachment.filename} style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />}
+    </a>
   )
 }

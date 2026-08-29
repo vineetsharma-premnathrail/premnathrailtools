@@ -15,7 +15,7 @@ from app.modules.crm.models.tender import Tender
 from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.schemas.activity import ActivityCreate, ActivityUpdate, ActivityResponse, ActivityAttachmentResponse
 from app.modules.crm.reports.mom_docx import build_mom_docx, mom_rows_from_activity
-from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint
+from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint, download_file_content
 
 router = APIRouter(prefix="/crm/activities", tags=["CRM - Activities"])
 
@@ -211,6 +211,31 @@ async def upload_activity_attachments(
     db.commit()
     db.refresh(activity)
     return _enrich(db, [activity])[0]
+
+
+@router.get("/{activity_id}/attachments/{attachment_id}/content")
+async def get_activity_attachment_content(
+    activity_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """Raw bytes for in-app preview, fetched via the app-only Graph token —
+    never the raw SharePoint webUrl."""
+    attachment = db.query(ActivityAttachment).filter(
+        ActivityAttachment.id == attachment_id, ActivityAttachment.activity_id == activity_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
+    return Response(
+        content=content,
+        media_type=attachment.content_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+    )
 
 
 @router.delete("/{activity_id}/attachments/{attachment_id}", response_model=ActivityResponse)

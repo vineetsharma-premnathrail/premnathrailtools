@@ -7,8 +7,11 @@ from app.db.session import get_db
 from app.core.permissions import require_app_access
 from app.modules.main.routes.auth import get_current_user
 from app.modules.main.models.user import User
+from app.auth.jwt_handler import verify_document_share_token
 from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.models.organization import Organization
+from app.modules.crm.models.inquiry import Inquiry
+from app.modules.crm.models.tender import Tender
 from app.modules.crm.schemas.document import CrmDocumentResponse
 from app.utils.sharepoint import (
     upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint,
@@ -105,6 +108,34 @@ async def upload_documents(
     return documents
 
 
+@router.get("/{document_id}/shared-content")
+async def get_shared_document_content(
+    document_id: int,
+    token: str,
+    db: Session = Depends(get_db),
+):
+    """Unauthenticated document fetch for recipients with no portal account at
+    all (e.g. external vendors on a Technical Offer Request email) — the
+    signed `token` (see create_document_share_token) is the only credential,
+    scoped to this exact document id and time-limited. Still never exposes
+    the raw SharePoint webUrl; bytes are fetched server-side with the
+    app-only Graph token same as get_document_content below."""
+    if not verify_document_share_token(token, "crm_document", document_id):
+        raise HTTPException(status_code=403, detail="This link is invalid or has expired.")
+    doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
+    return Response(
+        content=content,
+        media_type=doc.mime_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{doc.file_name}"'},
+    )
+
+
 @router.get("/{document_id}/content")
 async def get_document_content(
     document_id: int,
@@ -117,16 +148,31 @@ async def get_document_content(
     to anyone who has or guesses the link.
 
     Access check: normal CRM documents still require the 'crm' module grant.
-    Technical Offer Request PDFs are the one exception — they're emailed
-    cross-department (to R&D, who may not have 'crm' access at all), so any
-    logged-in portal user can fetch one *by its specific id*. That's narrower
-    than opening module access wide: you still need the id from a real email,
-    the doc list/other CRM data stays behind the normal 'crm' gate."""
+    Two exceptions, both because these get emailed cross-department to R&D
+    (who may not have 'crm' access at all) — any logged-in portal user can
+    fetch these *by their specific id*, which is narrower than opening
+    module access wide (you still need the id from a real email, the doc
+    list/other CRM data stays behind the normal 'crm' gate):
+    - Technical Offer Request PDFs (doc_category == "technical_offer_request").
+    - Reference documents attached to an inquiry/tender that has actually had
+      a Technical Offer Request sent — these are the docs the sender chose to
+      share alongside it (see inquiries.py/tenders.py technical-offer-request)."""
     doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     if doc.doc_category != "technical_offer_request" and user.role != "admin" and "crm" not in user.get_apps():
-        raise HTTPException(status_code=403, detail="Access to 'crm' module required")
+        shared_via_tor = False
+        if doc.related_id:
+            if doc.related_module == "inquiry":
+                shared_via_tor = db.query(Inquiry).filter(
+                    Inquiry.id == doc.related_id, Inquiry.technical_offer_sent_at.isnot(None)
+                ).first() is not None
+            elif doc.related_module == "tender":
+                shared_via_tor = db.query(Tender).filter(
+                    Tender.id == doc.related_id, Tender.technical_offer_sent_at.isnot(None)
+                ).first() is not None
+        if not shared_via_tor:
+            raise HTTPException(status_code=403, detail="Access to 'crm' module required")
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 

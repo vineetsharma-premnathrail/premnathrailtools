@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -13,7 +14,7 @@ from app.modules.p2p.models.rfq import RFQ, RFQ_VENDOR_TIERS
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
 from app.modules.p2p.schemas.rfq import RFQCreate, RFQUpdate, RFQResponse, RFQAttachmentResponse
 from app.modules.p2p.service import generate_rfq_number
-from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path
+from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
 
 router = APIRouter(prefix="/p2p/rfqs", tags=["P2P"])
 
@@ -168,6 +169,32 @@ async def upload_rfq_attachments(
             db.refresh(a)
     db.commit()
     return saved
+
+
+@router.get("/{rfq_id}/attachments/{attachment_id}/content")
+async def get_rfq_attachment_content(
+    rfq_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("purchase")),
+):
+    """Raw bytes for in-app preview, fetched via the app-only Graph token —
+    never the raw SharePoint webUrl."""
+    rfq = _get_rfq_or_404(db, rfq_id)
+    attachment = db.query(RFQAttachment).filter(
+        RFQAttachment.id == attachment_id, RFQAttachment.rfq_id == rfq_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
+    return Response(
+        content=content,
+        media_type=attachment.content_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+    )
 
 
 @router.delete("/{rfq_id}/attachments/{attachment_id}")

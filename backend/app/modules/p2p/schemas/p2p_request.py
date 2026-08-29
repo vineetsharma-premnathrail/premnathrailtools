@@ -6,12 +6,12 @@ class P2PRequestAttachmentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    p2p_request_id: int
     item_id: int | None = None
     doc_type: str
     filename: str
     content_type: str | None = None
     size: int | None = None
-    sharepoint_url: str | None = None
     created_at: datetime | None = None
 
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { p2pApi, usersApi } from '@/lib/api'
 import { P2PRequest, AuditEntry, DirectoryUser } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND, GRADIENTS } from '@/lib/theme'
@@ -179,7 +180,12 @@ export default function PurchaseTeamRequisitionDetailPage() {
                   <td style={{ padding: '10px 12px', fontSize: 12 }}>
                     {item.attachments.length === 0 && <span style={{ color: TEXT.muted }}>—</span>}
                     {item.attachments.map((a) => (
-                      <a key={a.id} href={a.sharepoint_url} target="_blank" rel="noreferrer" style={{ display: 'block', color: '#2563eb', textDecoration: 'none' }}>
+                      <a
+                        key={a.id}
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAttachmentBlob(pr.id, a.id)) }}
+                        style={{ display: 'block', color: '#2563eb', textDecoration: 'none' }}
+                      >
                         {a.filename}
                       </a>
                     ))}
@@ -194,7 +200,12 @@ export default function PurchaseTeamRequisitionDetailPage() {
             <p style={fieldLabel}>Attachments</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
               {pr.attachments.map((a) => (
-                <a key={a.id} href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, padding: '6px 12px', borderRadius: 8, background: 'rgba(0,0,0,0.04)', color: TEXT.body, textDecoration: 'none' }}>
+                <a
+                  key={a.id}
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAttachmentBlob(pr.id, a.id)) }}
+                  style={{ fontSize: 12.5, padding: '6px 12px', borderRadius: 8, background: 'rgba(0,0,0,0.04)', color: TEXT.body, textDecoration: 'none' }}
+                >
                   {a.filename} <span style={{ color: TEXT.muted }}>({a.doc_type})</span>
                 </a>
               ))}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { rfqApi } from '@/lib/api'
 import { RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER } from '@/lib/theme'
@@ -143,7 +144,11 @@ export default function RfqDetailPage() {
               <div key={tier}>
                 <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{tier}</p>
                 {attachment ? (
-                  <a href={attachment.sharepoint_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: TEXT.heading, textDecoration: 'none' }}>
+                  <a
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getAttachmentBlob(rfq.id, attachment.id)) }}
+                    style={{ fontSize: 13, color: TEXT.heading, textDecoration: 'none' }}
+                  >
                     {attachment.filename}
                   </a>
                 ) : (

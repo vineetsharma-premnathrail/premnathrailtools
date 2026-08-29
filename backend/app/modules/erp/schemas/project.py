@@ -12,7 +12,6 @@ class ProjectAttachmentResponse(BaseModel):
     content_type: str | None = None
     size: int | None = None
     sharepoint_path: str | None = None
-    sharepoint_url: str | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
     is_private: bool = False

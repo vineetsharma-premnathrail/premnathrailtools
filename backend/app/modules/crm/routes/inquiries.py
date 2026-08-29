@@ -24,6 +24,7 @@ from app.modules.crm.reports.technical_offer_pdf import build_technical_offer_pd
 from app.utils.notifications import broadcast_notification, notify_user
 from app.utils.email import send_technical_offer_request_email
 from app.utils.sharepoint import upload_bytes_to_sharepoint, build_sharepoint_folder_path
+from app.auth.jwt_handler import create_document_share_token
 from app.core.config import settings
 from fastapi.responses import Response
 
@@ -144,6 +145,7 @@ async def create_inquiry(
     broadcast_notification(
         db, title="New Inquiry Raised", message=f"Inquiry '{universal_id}' was created by {user.name or user.email}.",
         notification_type="inquiry_created", entity_type="inquiry", entity_id=inquiry.id, exclude_user_id=user.id,
+        app_name="crm",
     )
     notify_user(
         db, user_id=user.id, title="Inquiry Created", message=f"You created inquiry '{universal_id}'.",
@@ -199,7 +201,7 @@ async def update_inquiry(
             db, title="Inquiry Stage Updated",
             message=f"Inquiry '{inquiry.universal_id}' moved to '{inquiry.current_stage}' by {user.name or user.email}.",
             notification_type="inquiry_stage_updated", entity_type="inquiry", entity_id=inquiry.id,
-            exclude_user_id=user.id,
+            exclude_user_id=user.id, app_name="crm",
         )
         notify_user(
             db, user_id=user.id, title="Inquiry Stage Updated",
@@ -230,6 +232,7 @@ async def delete_inquiry(
     broadcast_notification(
         db, title="Inquiry Deleted", message=f"Inquiry '{inquiry.universal_id}' was deleted by {user.name or user.email}.",
         notification_type="inquiry_deleted", entity_type="inquiry", entity_id=inquiry.id, exclude_user_id=user.id,
+        app_name="crm",
     )
     notify_user(
         db, user_id=user.id, title="Inquiry Deleted",
@@ -317,12 +320,15 @@ async def create_technical_offer_request(
     db.add(tor_doc)
     db.flush()
     db.refresh(tor_doc)
-    # Link goes to our own protected viewer, never the raw SharePoint webUrl —
-    # that URL bypasses the app entirely and, if the SharePoint site grants any
-    # broad org-wide access, lets the recipient browse the whole folder/site
-    # directly. This route (see documents.py get_document_content) requires a
-    # portal login and only serves bytes for this specific document id.
-    tor_doc_link = f"{settings.FRONTEND_URL}/dashboard/crm/technical-offer/{tor_doc.id}"
+    # Recipients (e.g. external vendors) often have no portal account and no
+    # SharePoint access at all, so the link can't require an app login or
+    # rely on SharePoint's own sharing (which depends on tenant/site policy
+    # we don't control and, if opened up, would risk exposing the whole
+    # document library). Instead this is our own signed, time-limited,
+    # single-document token — verified by get_shared_document_content in
+    # documents.py, which fetches the bytes server-side with the app-only
+    # Graph token. SharePoint's own sharing settings are irrelevant to it.
+    tor_doc_link = f"{settings.APP_BASE_URL}/api/v1/crm/documents/{tor_doc.id}/shared-content?token={create_document_share_token('crm_document', tor_doc.id)}"
 
     reference_documents = []
     if body.document_ids:
@@ -331,7 +337,10 @@ async def create_technical_offer_request(
             CrmDocument.related_module == "inquiry", CrmDocument.related_id == inquiry.id,
             CrmDocument.is_deleted == False,  # noqa: E712
         ).all()
-        reference_documents = [{"name": d.file_name, "url": d.sharepoint_url} for d in selected_docs]
+        reference_documents = [
+            {"name": d.file_name, "url": f"{settings.APP_BASE_URL}/api/v1/crm/documents/{d.id}/shared-content?token={create_document_share_token('crm_document', d.id)}"}
+            for d in selected_docs
+        ]
 
     success, error = await send_technical_offer_request_email(
         db, entity_type="inquiry", entity_id=inquiry.id, offer_number=offer_number,

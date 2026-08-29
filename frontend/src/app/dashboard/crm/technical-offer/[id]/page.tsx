@@ -18,6 +18,7 @@ export default function TechnicalOfferViewerPage() {
   const id = Number(params.id)
 
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [isPdf, setIsPdf] = useState(false)
   const [error, setError] = useState('')
   const [loadingDoc, setLoadingDoc] = useState(true)
 
@@ -27,6 +28,7 @@ export default function TechnicalOfferViewerPage() {
     crmApi.getDocumentContent(id)
       .then((blob) => {
         objectUrl = URL.createObjectURL(blob)
+        setIsPdf(blob.type === 'application/pdf')
         setBlobUrl(objectUrl)
       })
       .catch((err) => {
@@ -52,10 +54,10 @@ export default function TechnicalOfferViewerPage() {
           <p style={{ padding: 24, fontSize: 13, color: '#b91c1c' }}>{error}</p>
         ) : blobUrl ? (
           <>
-            <embed src={blobUrl} type="application/pdf" style={{ width: '100%', height: '80vh', border: 'none' }} />
-            <div style={{ padding: 16, borderTop: `1px solid ${GLASS.border}` }}>
-              <a href={blobUrl} download={`technical-offer-${id}.pdf`} style={{ fontSize: 13, fontWeight: 600, color: BRAND.primary, textDecoration: 'none' }}>
-                Download PDF
+            {isPdf && <embed src={blobUrl} type="application/pdf" style={{ width: '100%', height: '80vh', border: 'none' }} />}
+            <div style={{ padding: 16, borderTop: isPdf ? `1px solid ${GLASS.border}` : undefined }}>
+              <a href={blobUrl} download style={{ fontSize: 13, fontWeight: 600, color: BRAND.primary, textDecoration: 'none' }}>
+                Download document
               </a>
             </div>
           </>

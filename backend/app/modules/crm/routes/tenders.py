@@ -22,6 +22,7 @@ from app.modules.crm.reports.technical_offer_pdf import build_technical_offer_pd
 from app.utils.notifications import broadcast_notification, notify_user
 from app.utils.email import send_technical_offer_request_email
 from app.utils.sharepoint import upload_bytes_to_sharepoint, build_sharepoint_folder_path
+from app.auth.jwt_handler import create_document_share_token
 from app.core.config import settings
 
 router = APIRouter(prefix="/crm/tenders", tags=["CRM - Tenders"])
@@ -154,6 +155,7 @@ async def create_tender(
     broadcast_notification(
         db, title="New Tender Added", message=f"Tender '{universal_id}' was created by {user.name or user.email}.",
         notification_type="tender_created", entity_type="tender", entity_id=tender.id, exclude_user_id=user.id,
+        app_name="crm",
     )
     notify_user(
         db, user_id=user.id, title="Tender Created", message=f"You created tender '{universal_id}'.",
@@ -205,7 +207,7 @@ async def update_tender(
             db, title="Tender Stage Updated",
             message=f"Tender '{tender.universal_id}' moved to '{tender.current_stage}' by {user.name or user.email}.",
             notification_type="tender_stage_updated", entity_type="tender", entity_id=tender.id,
-            exclude_user_id=user.id,
+            exclude_user_id=user.id, app_name="crm",
         )
         notify_user(
             db, user_id=user.id, title="Tender Stage Updated",
@@ -236,6 +238,7 @@ async def delete_tender(
     broadcast_notification(
         db, title="Tender Deleted", message=f"Tender '{tender.universal_id}' was deleted by {user.name or user.email}.",
         notification_type="tender_deleted", entity_type="tender", entity_id=tender.id, exclude_user_id=user.id,
+        app_name="crm",
     )
     notify_user(
         db, user_id=user.id, title="Tender Deleted",
@@ -325,9 +328,10 @@ async def create_technical_offer_request(
     db.add(tor_doc)
     db.flush()
     db.refresh(tor_doc)
-    # Link goes to our own protected viewer, never the raw SharePoint webUrl —
-    # see the matching comment in inquiries.py for why.
-    tor_doc_link = f"{settings.FRONTEND_URL}/dashboard/crm/technical-offer/{tor_doc.id}"
+    # See the matching comment in inquiries.py — our own signed, time-limited,
+    # single-document token, not SharePoint's own sharing (tenant/site policy
+    # we don't control) and not the raw SharePoint webUrl.
+    tor_doc_link = f"{settings.APP_BASE_URL}/api/v1/crm/documents/{tor_doc.id}/shared-content?token={create_document_share_token('crm_document', tor_doc.id)}"
 
     reference_documents = []
     if body.document_ids:
@@ -336,7 +340,10 @@ async def create_technical_offer_request(
             CrmDocument.related_module == "tender", CrmDocument.related_id == tender.id,
             CrmDocument.is_deleted == False,  # noqa: E712
         ).all()
-        reference_documents = [{"name": d.file_name, "url": d.sharepoint_url} for d in selected_docs]
+        reference_documents = [
+            {"name": d.file_name, "url": f"{settings.APP_BASE_URL}/api/v1/crm/documents/{d.id}/shared-content?token={create_document_share_token('crm_document', d.id)}"}
+            for d in selected_docs
+        ]
 
     success, error = await send_technical_offer_request_email(
         db, entity_type="tender", entity_id=tender.id, offer_number=offer_number,

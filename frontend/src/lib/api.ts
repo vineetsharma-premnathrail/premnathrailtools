@@ -101,6 +101,11 @@ export const designApi = {
     const { data } = await apiClient.patch(`/design/documents/${documentId}/status`, { status })
     return data
   },
+
+  getDocumentBlob: async (documentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/design/documents/${documentId}/content`, { responseType: 'blob' })
+    return data
+  },
 }
 
 export const electricalApi = {
@@ -390,6 +395,10 @@ export const crmApi = {
     const { data } = await apiClient.delete(`/crm/activities/${activityId}/attachments/${attachmentId}`)
     return data
   },
+  getActivityAttachmentBlob: async (activityId: number, attachmentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/crm/activities/${activityId}/attachments/${attachmentId}/content`, { responseType: 'blob' })
+    return data
+  },
 
 
   // Documents
@@ -552,6 +561,11 @@ export const erpApi = {
     return data
   },
 
+  getProjectAttachmentBlob: async (id: number, attachmentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/erp/projects/${id}/attachments/${attachmentId}/content`, { responseType: 'blob' })
+    return data
+  },
+
   updateProjectAttachmentPermissions: async (
     id: number,
     attachmentId: number,
@@ -691,6 +705,11 @@ export const erpApi = {
 
   previewAttachment: async (srId: number, attachmentId: number): Promise<{ getUrl: string }> => {
     const { data } = await apiClient.get(`/erp/service-requests/${srId}/attachments/${attachmentId}/preview`)
+    return data
+  },
+
+  getAttachmentBlob: async (srId: number, attachmentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/erp/service-requests/${srId}/attachments/${attachmentId}/content`, { responseType: 'blob' })
     return data
   },
 
@@ -852,6 +871,11 @@ export const p2pApi = {
     const { data } = await apiClient.delete(`/p2p/requests/${id}/attachments/${attachmentId}`)
     return data
   },
+
+  getAttachmentBlob: async (id: number, attachmentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/p2p/requests/${id}/attachments/${attachmentId}/content`, { responseType: 'blob' })
+    return data
+  },
 }
 
 export const rfqApi = {
@@ -887,6 +911,11 @@ export const rfqApi = {
 
   deleteAttachment: async (id: number, attachmentId: number) => {
     const { data } = await apiClient.delete(`/p2p/rfqs/${id}/attachments/${attachmentId}`)
+    return data
+  },
+
+  getAttachmentBlob: async (id: number, attachmentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/p2p/rfqs/${id}/attachments/${attachmentId}/content`, { responseType: 'blob' })
     return data
   },
 

@@ -1,7 +1,10 @@
 'use client'
 
+import { useMemo } from 'react'
 import { COLORS, RADII, BORDERS, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import { CrmActivityAttachment } from '@/types'
+import { crmApi } from '@/lib/api'
+import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 
 export const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -102,12 +105,23 @@ export function ActivityPhotos({ attachments }: { attachments?: CrmActivityAttac
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
       {attachments.map((a) => (
-        <a key={a.id} href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={a.sharepoint_url} alt={a.filename} style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />
-        </a>
+        <ActivityPhotoThumb key={a.id} attachment={a} />
       ))}
     </div>
+  )
+}
+
+function ActivityPhotoThumb({ attachment }: { attachment: CrmActivityAttachment }) {
+  const fetchBlob = useMemo(
+    () => () => crmApi.getActivityAttachmentBlob(attachment.activity_id, attachment.id),
+    [attachment.activity_id, attachment.id]
+  )
+  const src = useAttachmentBlobUrl(fetchBlob)
+  return (
+    <a href="#" onClick={(e) => { e.preventDefault(); openAttachmentBlob(fetchBlob) }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {src && <img src={src} alt={attachment.filename} style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', border: '1px solid rgba(0,0,0,0.08)' }} />}
+    </a>
   )
 }
 

@@ -16,7 +16,6 @@ class CrmDocumentResponse(BaseModel):
     file_name: str
     file_path: str
     sharepoint_path: str | None = None
-    sharepoint_url: str | None = None
     file_size: int | None = None
     mime_type: str | None = None
     description: str | None = None

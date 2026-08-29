@@ -1,5 +1,6 @@
 """In-app notification side effects for ERP events (sync SQLAlchemy Session)."""
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 import httpx
 from sqlalchemy.orm import Session
@@ -8,6 +9,14 @@ from app.modules.main.models.notification import Notification
 from app.auth.microsoft import get_msal_app
 
 logger = logging.getLogger(__name__)
+
+# Teams pushes are a real network call to Graph (token + HTTP POST) per
+# recipient — doing that inline used to block the triggering request (e.g.
+# creating an Inquiry) for several seconds per notified user, long enough to
+# blow past the frontend's request timeout while the write itself had
+# already succeeded. Fire them from a background pool instead so the
+# request returns as soon as the DB write is done.
+_teams_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="teams-notify")
 
 # Must match teams-app/manifest.json's root "id" (the Teams catalog app ID —
 # NOT webApplicationInfo.id, which is the AAD client ID used for SSO) and the
@@ -49,13 +58,20 @@ def _send_teams_activity_notification(azure_user_id: str, title: str, message: s
         resp.raise_for_status()
 
 
+def _notify_teams_sync(user_id: int, azure_id: str, title: str, message: str) -> None:
+    try:
+        _send_teams_activity_notification(azure_id, title, message)
+    except Exception:
+        logger.exception("Failed to send Teams notification to user %s: '%s'", user_id, title)
+
+
 def _notify_teams(user: User, title: str, message: str) -> None:
     if not user.azure_id:
         return
-    try:
-        _send_teams_activity_notification(user.azure_id, title, message)
-    except Exception:
-        logger.exception("Failed to send Teams notification to user %s: '%s'", user.id, title)
+    # Read the scalar fields now (while the ORM object is still attached to
+    # its session) and hand only those off to the background thread — the
+    # User instance itself must not be touched outside the request's thread.
+    _teams_executor.submit(_notify_teams_sync, user.id, user.azure_id, title, message)
 
 
 def broadcast_notification(

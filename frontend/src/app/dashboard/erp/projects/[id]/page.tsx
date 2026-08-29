@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
+import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { erpApi } from '@/lib/api'
 import { AuditEntry, Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
@@ -385,7 +386,11 @@ function DocumentsTab({ projectId }: { projectId: number }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {attachments.map((a) => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
-                <a href={a.sharepoint_url || '#'} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}>
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => erpApi.getProjectAttachmentBlob(projectId, a.id)) }}
+                  style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}
+                >
                   {a.filename}
                 </a>
                 <button onClick={() => handleDelete(a.id)} style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: 'pointer' }}>

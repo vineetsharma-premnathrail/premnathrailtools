@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { designApi } from '@/lib/api'
 import { EngineeringDocument } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
@@ -112,13 +113,13 @@ export default function DesignDocumentDetailPage() {
 
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Current File</h2>
-        {current.sharepoint_url ? (
-          <a href={current.sharepoint_url} target="_blank" rel="noreferrer" style={{ fontSize: 13.5, color: TEXT.heading, textDecoration: 'none' }}>
-            {current.filename}
-          </a>
-        ) : (
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No file link available.</p>
-        )}
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => designApi.getDocumentBlob(current.id)) }}
+          style={{ fontSize: 13.5, color: TEXT.heading, textDecoration: 'none' }}
+        >
+          {current.filename}
+        </a>
       </div>
 
       <div style={{ ...sectionStyle, overflow: 'auto' }}>
@@ -139,9 +140,13 @@ export default function DesignDocumentDetailPage() {
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{rev.uploaded_by_name || '—'}</td>
                 <td style={{ padding: '8px 10px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{rev.created_at ? new Date(rev.created_at).toLocaleString() : '—'}</td>
                 <td style={{ padding: '8px 10px', fontSize: 12.5 }}>
-                  {rev.sharepoint_url ? (
-                    <a href={rev.sharepoint_url} target="_blank" rel="noreferrer" style={{ color: TEXT.heading, textDecoration: 'none' }}>{rev.filename}</a>
-                  ) : '—'}
+                  <a
+                    href="#"
+                    onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => designApi.getDocumentBlob(rev.id)) }}
+                    style={{ color: TEXT.heading, textDecoration: 'none' }}
+                  >
+                    {rev.filename}
+                  </a>
                 </td>
               </tr>
             ))}

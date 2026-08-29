@@ -105,7 +105,7 @@ async def create_organization(
         db, title="New Organization Added",
         message=f"Organization '{org.name}' was added by {user.name or user.email}.",
         notification_type="organization_created", entity_type="organization", entity_id=org.id,
-        exclude_user_id=user.id,
+        exclude_user_id=user.id, app_name="crm",
     )
     notify_user(
         db, user_id=user.id, title="Organization Added",
@@ -202,7 +202,7 @@ async def delete_organization(
         db, title="Organization Deleted",
         message=f"Organization '{org.name}' was deleted by {user.name or user.email}.",
         notification_type="organization_deleted", entity_type="organization", entity_id=org.id,
-        exclude_user_id=user.id,
+        exclude_user_id=user.id, app_name="crm",
     )
     notify_user(
         db, user_id=user.id, title="Organization Deleted",

@@ -6,10 +6,10 @@ class ActivityAttachmentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    activity_id: int
     filename: str
     content_type: str | None = None
     size: int | None = None
-    sharepoint_url: str | None = None
     created_at: datetime | None = None
 
 

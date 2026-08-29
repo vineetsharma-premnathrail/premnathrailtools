@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -34,7 +35,7 @@ from app.modules.p2p.schemas.p2p_request import (
     P2PRequestAttachmentResponse,
 )
 from app.modules.p2p.service import generate_p2p_number
-from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path
+from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
 from app.utils.notifications import notify_user
 
 router = APIRouter(prefix="/p2p/requests", tags=["P2P"])
@@ -846,6 +847,35 @@ async def upload_attachments(
             db.refresh(a)
     db.commit()
     return saved
+
+
+@router.get("/{pr_id}/attachments/{attachment_id}/content")
+async def get_p2p_attachment_content(
+    pr_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_requester_or_purchase),
+):
+    """Raw bytes for in-app preview, fetched via the app-only Graph token —
+    never the raw SharePoint webUrl."""
+    pr = _get_pr_or_404(db, pr_id)
+    if not _is_purchase_team(user) and pr.requested_by_id != user.id:
+        raise HTTPException(status_code=403, detail="You may only view attachments on your own P2P requests")
+
+    attachment = db.query(P2PRequestAttachment).filter(
+        P2PRequestAttachment.id == attachment_id, P2PRequestAttachment.p2p_request_id == pr_id
+    ).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, attachment.sharepoint_path or "")
+    return Response(
+        content=content,
+        media_type=attachment.content_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+    )
 
 
 @router.delete("/{pr_id}/attachments/{attachment_id}")

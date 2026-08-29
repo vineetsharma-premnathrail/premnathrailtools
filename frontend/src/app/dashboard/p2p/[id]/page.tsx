@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 
 import { p2pApi } from '@/lib/api'
 import { P2PRequest } from '@/types'
@@ -334,7 +335,12 @@ export default function MyP2PRequestDetailPage() {
                 <td style={{ padding: '8px 10px', fontSize: 12.5 }}>
                   {it.attachments.length === 0 && <span style={{ color: TEXT.muted }}>—</span>}
                   {it.attachments.map((a) => (
-                    <a key={a.id} href={a.sharepoint_url} target="_blank" rel="noreferrer" style={{ display: 'block', color: TEXT.heading, textDecoration: 'none' }}>
+                    <a
+                      key={a.id}
+                      href="#"
+                      onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAttachmentBlob(pr.id, a.id)) }}
+                      style={{ display: 'block', color: TEXT.heading, textDecoration: 'none' }}
+                    >
                       {a.filename}
                     </a>
                   ))}
@@ -353,7 +359,12 @@ export default function MyP2PRequestDetailPage() {
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Attachments</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {pr.attachments.map((a) => (
-              <a key={a.id} href={a.sharepoint_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: TEXT.heading, textDecoration: 'none' }}>
+              <a
+                key={a.id}
+                href="#"
+                onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAttachmentBlob(pr.id, a.id)) }}
+                style={{ fontSize: 13, color: TEXT.heading, textDecoration: 'none' }}
+              >
                 {a.filename} <span style={{ color: TEXT.muted, fontSize: 11 }}>({a.doc_type})</span>
               </a>
             ))}

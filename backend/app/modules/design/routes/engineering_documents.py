@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -12,7 +13,7 @@ from app.modules.design.models.engineering_document import (
 from app.modules.design.schemas.engineering_document import (
     EngineeringDocumentResponse, EngineeringDocumentStatusUpdate,
 )
-from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path
+from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
 
 router = APIRouter(prefix="/design/documents", tags=["Design"])
 
@@ -132,6 +133,28 @@ async def upload_document(
     db.commit()
     db.refresh(doc)
     return _to_response(db, doc)
+
+
+@router.get("/{document_id}/content")
+async def get_document_content(
+    document_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("design")),
+):
+    """Raw bytes for in-app preview, fetched via the app-only Graph token —
+    never the raw SharePoint webUrl."""
+    doc = db.query(EngineeringDocument).filter(EngineeringDocument.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
+    return Response(
+        content=content,
+        media_type=doc.content_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{doc.filename}"'},
+    )
 
 
 @router.patch("/{document_id}/status", response_model=EngineeringDocumentResponse)

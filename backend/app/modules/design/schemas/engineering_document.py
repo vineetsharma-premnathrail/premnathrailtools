@@ -16,7 +16,6 @@ class EngineeringDocumentResponse(BaseModel):
     filename: str
     content_type: str | None = None
     size: int | None = None
-    sharepoint_url: str | None = None
     uploaded_by_id: int | None = None
     created_at: datetime | None = None
 
