@@ -251,16 +251,16 @@ function OverviewTab({ sr, project, canModify, onPatch }: { sr: ServiceRequest; 
     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Card title="Issue Details">
-          <InfoRow label="Category" value={sr.issue_category || '—'} />
-          <InfoRow label="Sub-Category" value={sr.sub_category || '—'} />
-          <InfoRow label="Failure Mode" value={sr.failure_mode || '—'} />
-          <InfoRow label="Description" value={sr.issue_description || '—'} />
+          <InfoRow label="Category" value={sr.issue_category || 'Not provided'} />
+          <InfoRow label="Sub-Category" value={sr.sub_category || 'Not provided'} />
+          <InfoRow label="Failure Mode" value={sr.failure_mode || 'Not provided'} />
+          <InfoRow label="Description" value={sr.issue_description || 'Not provided'} />
         </Card>
 
         <Card title="Reported By">
-          <InfoRow label="Name" value={sr.reported_by_name || '—'} />
-          <InfoRow label="Phone" value={sr.reported_by_phone || '—'} />
-          <InfoRow label="Email" value={sr.reported_by_email || '—'} />
+          <InfoRow label="Name" value={sr.reported_by_name || 'Not provided'} />
+          <InfoRow label="Phone" value={sr.reported_by_phone || 'Not provided'} />
+          <InfoRow label="Email" value={sr.reported_by_email || 'Not provided'} />
         </Card>
 
         <Card title="Status & Priority">
@@ -293,9 +293,9 @@ function OverviewTab({ sr, project, canModify, onPatch }: { sr: ServiceRequest; 
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <Card title="Asset Context">
-          <InfoRow label="Machine" value={project ? `${project.serial_number}${project.model_name ? ` — ${project.model_name}` : ''}` : '—'} />
-          <InfoRow label="Site / Location" value={project?.site_name || '—'} />
-          <InfoRow label="Request Date" value={sr.created_at ? new Date(sr.created_at).toLocaleDateString() : '—'} />
+          <InfoRow label="Machine" value={project ? `${project.serial_number}${project.model_name ? ` — ${project.model_name}` : ''}` : 'Not provided'} />
+          <InfoRow label="Site / Location" value={project?.site_name || 'Not provided'} />
+          <InfoRow label="Request Date" value={sr.created_at ? new Date(sr.created_at).toLocaleDateString() : 'Not provided'} />
         </Card>
 
         <Card title="Assignment">
@@ -307,14 +307,14 @@ function OverviewTab({ sr, project, canModify, onPatch }: { sr: ServiceRequest; 
               <span style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108' }}>{sr.assigned_to_name}</span>
             </div>
           )}
-          <InfoRow label="Opened" value={sr.opened_at ? new Date(sr.opened_at).toLocaleDateString() : '—'} />
-          <InfoRow label="Expected Attend" value={sr.expected_date_to_attend || '—'} />
-          <InfoRow label="Expected Close" value={sr.expected_completion_date || '—'} />
-          <InfoRow label="Closed" value={sr.closed_at ? new Date(sr.closed_at).toLocaleDateString() : '—'} />
+          <InfoRow label="Opened" value={sr.opened_at ? new Date(sr.opened_at).toLocaleDateString() : 'Not provided'} />
+          <InfoRow label="Expected Attend" value={sr.expected_date_to_attend || 'Not provided'} />
+          <InfoRow label="Expected Close" value={sr.expected_completion_date || 'Not provided'} />
+          <InfoRow label="Closed" value={sr.closed_at ? new Date(sr.closed_at).toLocaleDateString() : 'Not provided'} />
         </Card>
 
         <Card title="Service Notes">
-          <p style={{ fontSize: 13.5, color: '#1f1108', margin: 0 }}>{sr.service_report_notes || '—'}</p>
+          <p style={{ fontSize: 13.5, color: '#1f1108', margin: 0 }}>{sr.service_report_notes || 'Not provided'}</p>
         </Card>
       </div>
     </div>
@@ -557,7 +557,7 @@ function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boo
                     Photos ({m.attachments?.length || 0}) {isExpanded ? '▴' : '▾'}
                   </button>
                 </td>
-                <td style={{ padding: '10px 14px', fontSize: 13, color: '#78716c' }}>{m.part_number || '—'}</td>
+                <td style={{ padding: '10px 14px', fontSize: 13, color: '#78716c' }}>{m.part_number || 'Not provided'}</td>
                 <td style={{ padding: '10px 14px', fontSize: 13 }}>{m.quantity}</td>
                 <td style={{ padding: '10px 14px' }}>
                   <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 5, background: statusBadge.bg, color: statusBadge.fg }}>

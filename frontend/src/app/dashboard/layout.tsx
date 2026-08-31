@@ -67,9 +67,11 @@ export default function DashboardLayout({
           all real content. Clipping locally keeps that overflow invisible
           regardless of the shell's own overflow setting. */}
       <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: -1 }}>
-        <div style={{ position: 'absolute', top: '-10%', left: '15%', width: 460, height: 460, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,69,0.38), transparent 70%)', filter: 'blur(10px)' }} />
-        <div style={{ position: 'absolute', bottom: '-15%', left: '35%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,90,31,0.26), transparent 70%)', filter: 'blur(10px)' }} />
-        <div style={{ position: 'absolute', top: '20%', right: '5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.20), transparent 70%)', filter: 'blur(10px)' }} />
+        <div className="bg-blob" style={{ position: 'absolute', top: '-10%', left: '15%', width: 460, height: 460, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,69,0.48), transparent 70%)', filter: 'blur(8px)' }} />
+        <div className="bg-blob" style={{ position: 'absolute', bottom: '-15%', left: '35%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,90,31,0.34), transparent 70%)', filter: 'blur(8px)' }} />
+        <div className="bg-blob" style={{ position: 'absolute', top: '20%', right: '5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.28), transparent 70%)', filter: 'blur(8px)' }} />
+        <div className="bg-blob" style={{ position: 'absolute', top: '55%', left: '5%', width: 360, height: 360, borderRadius: '50%', background: 'radial-gradient(circle, rgba(16,185,129,0.30), transparent 70%)', filter: 'blur(8px)' }} />
+        <div className="bg-blob" style={{ position: 'absolute', top: '5%', right: '25%', width: 320, height: 320, borderRadius: '50%', background: 'radial-gradient(circle, rgba(236,72,153,0.26), transparent 70%)', filter: 'blur(8px)' }} />
 
         {/* Water-ripple cursor follower — lives inside this same zIndex:-1
             layer as the decorative blobs above, so opaque card content

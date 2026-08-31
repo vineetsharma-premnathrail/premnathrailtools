@@ -14,10 +14,25 @@ if TYPE_CHECKING:
 # department (distinct from app.modules.purchase, which only handles PRs
 # raised out of a Service Request's Materials tab).
 #
-#   submitted -> approved -> po_raised -> partially_received -> received -> closed
+#   submitted -> approved -> vendor_quotations -> [technical_evaluation] ->
+#   commercial_evaluation -> vendor_selected -> po_drafted -> po_raised ->
+#   po_approved -> partially_received -> received -> closed
 #            \-> rejected            \-> cancelled
+#
+# The RFQ tab (see models/rfq.py) is raised once a PR is "approved"; once
+# that RFQ is submitted/locked the PR moves to "vendor_quotations" — buyer
+# records structured VendorQuotation rows (see models/vendor_quotation.py)
+# against it. "technical_evaluation" is skipped straight to
+# "commercial_evaluation" when the RFQ's requires_technical_evaluation flag
+# is False. "po_drafted" is an editable draft P2PPurchaseOrder (status
+# 'draft') built from the selected vendor's quotation; finalizing it moves
+# the PR to "po_raised" and the PO to status 'issued' — unchanged from here
+# on (PO approval chain, GRN, Payment).
 P2P_REQUEST_STATUSES = (
-    "submitted", "approved", "po_raised", "po_approved",
+    "submitted", "approved",
+    "vendor_quotations", "technical_evaluation", "commercial_evaluation",
+    "vendor_selected", "po_drafted",
+    "po_raised", "po_approved",
     "partially_received", "received", "closed",
     "rejected", "cancelled",
 )

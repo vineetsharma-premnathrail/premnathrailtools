@@ -126,7 +126,7 @@ const modules = [
     tagColor: '#6b21a8',
   },
   {
-    title: 'P2P',
+    title: 'Procure-to-Pay',
     app: 'p2p' as const,
     description: 'Standalone purchase requisitions — raise, approve, and track requests.',
     icon: FileTextIcon,
@@ -216,9 +216,21 @@ export default function DashboardPage() {
         YOUR APPLICATIONS
       </div>
 
+      {/* Shared goo filter for ModuleCard's hover blob effect — defined once
+          here since all cards reference the same filter id. */}
+      <svg width="0" height="0" style={{ position: 'absolute' }}>
+        <defs>
+          <filter id="module-card-goo">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur" />
+            <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9" result="goo" />
+            <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+          </filter>
+        </defs>
+      </svg>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 20 }}>
-        {visibleModules.map((module) => (
-          <ModuleCard key={module.title} {...module} />
+        {visibleModules.map((module, index) => (
+          <ModuleCard key={module.title} {...module} index={index} />
         ))}
       </div>
     </div>

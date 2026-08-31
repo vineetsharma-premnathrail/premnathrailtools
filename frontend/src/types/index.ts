@@ -343,6 +343,7 @@ export interface OrgContact {
 
 export interface Organization {
   id: number
+  org_code?: string
   name: string
   org_type?: string
   parent_org?: string
@@ -678,6 +679,11 @@ export interface CrmDashboard {
 export type P2PRequestStatus =
   | 'submitted'
   | 'approved'
+  | 'vendor_quotations'
+  | 'technical_evaluation'
+  | 'commercial_evaluation'
+  | 'vendor_selected'
+  | 'po_drafted'
   | 'po_raised'
   | 'po_approved'
   | 'partially_received'
@@ -815,16 +821,57 @@ export interface RFQAttachment {
 
 export type RFQStatus = 'draft' | 'locked'
 
+export type VendorQuotationTechnicalStatus = 'pending' | 'qualified' | 'disqualified'
+export type VendorQuotationCommercialStatus = 'pending' | 'approved' | 'rejected'
+
+export interface VendorQuotation {
+  id: number
+  rfq_id: number
+  p2p_request_id: number
+  vendor_name: string
+  vendor_id?: number
+  quoted_price?: number
+  delivery_time?: string
+  payment_terms?: string
+  remarks?: string
+  technical_status: VendorQuotationTechnicalStatus
+  technical_remarks?: string
+  technical_evaluated_by_id?: number
+  technical_evaluated_by_name?: string
+  technical_evaluated_at?: string
+  commercial_status: VendorQuotationCommercialStatus
+  commercial_remarks?: string
+  commercial_evaluated_by_id?: number
+  commercial_evaluated_by_name?: string
+  commercial_evaluated_at?: string
+  is_selected: boolean
+  created_by_id?: number
+  created_by_name?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface VendorQuotationInput {
+  vendor_name: string
+  vendor_id?: number
+  quoted_price?: number
+  delivery_time?: string
+  payment_terms?: string
+  remarks?: string
+}
+
 export interface RFQ {
   id: number
   rfq_number: string
   p2p_request_id: number
   p2p_number?: string
+  p2p_status?: P2PRequestStatus
   status: RFQStatus
 
   is_single_quotation: boolean
   single_quotation_reason?: string
   comments?: string
+  requires_technical_evaluation: boolean
 
   payment_terms?: string
   delivery_lead_time?: string
@@ -839,6 +886,7 @@ export interface RFQ {
   updated_at?: string
 
   attachments: RFQAttachment[]
+  vendor_quotations: VendorQuotation[]
 }
 
 export interface Vendor {

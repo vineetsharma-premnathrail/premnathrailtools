@@ -8,6 +8,7 @@ from app.db.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.modules.p2p.models.rfq_attachment import RFQAttachment
+    from app.modules.p2p.models.vendor_quotation import VendorQuotation
 
 # draft: still being filled in, editable by its creator/purchase team.
 # locked: submitted — read-only for everyone except an admin override.
@@ -36,6 +37,12 @@ class RFQ(Base, TimestampMixin):
     single_quotation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     comments: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # When true, vendor quotations must pass a Technical Evaluation stage
+    # before Commercial Evaluation opens; when false, that stage is skipped
+    # entirely — see routes/rfq.py start_technical_evaluation /
+    # start_commercial_evaluation.
+    requires_technical_evaluation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     payment_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
     delivery_lead_time: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ld_clause: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -46,4 +53,7 @@ class RFQ(Base, TimestampMixin):
 
     attachments: Mapped[list["RFQAttachment"]] = relationship(
         "RFQAttachment", back_populates="rfq", cascade="all, delete-orphan"
+    )
+    vendor_quotations: Mapped[list["VendorQuotation"]] = relationship(
+        "VendorQuotation", back_populates="rfq", cascade="all, delete-orphan"
     )

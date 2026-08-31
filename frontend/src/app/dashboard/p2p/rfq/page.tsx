@@ -60,8 +60,11 @@ export default function P2PRfqPage() {
 
   return (
     <div>
+      <button onClick={() => router.push('/dashboard/p2p')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
+        ← Back
+      </button>
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-        P2P Module
+        Procure-to-Pay Module
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>R.F.Q</h1>
       <P2PNav />
@@ -77,13 +80,13 @@ export default function P2PRfqPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
-              {['PR Number', 'Category', 'Project', 'Required Date', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+              {['Purchase Requisition Number', 'Category', 'Project', 'Required Date', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && prsAwaitingRfq.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No approved PRs awaiting an RFQ.</td></tr>
+              <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No approved Purchase Requisitions awaiting an RFQ.</td></tr>
             )}
             {prsAwaitingRfq.map((pr) => (
               <tr
@@ -113,7 +116,7 @@ export default function P2PRfqPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
-              {['RFQ Number', 'PR Number', 'Status', 'Single Quotation', 'Created', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+              {['RFQ Number', 'Purchase Requisition Number', 'Status', 'Single Quotation', 'Created', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}
             </tr>
           </thead>
           <tbody>

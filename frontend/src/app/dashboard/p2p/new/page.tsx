@@ -106,7 +106,7 @@ export default function NewP2PRequestPage() {
 
   const handleSubmit = async () => {
     setError('')
-    if (!categoryCode) { setError('Please select a PR category.'); return }
+    if (!categoryCode) { setError('Please select a Purchase Requisition category.'); return }
     if (items.length === 0 || !items[0].item_name) { setError('At least one item is required.'); return }
 
     setSubmitting(true)
@@ -143,7 +143,7 @@ export default function NewP2PRequestPage() {
       router.push(`/dashboard/p2p/${pr.id}`)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
-      setError(err.response?.data?.detail || 'Failed to submit PR.')
+      setError(err.response?.data?.detail || 'Failed to submit Purchase Requisition.')
     } finally {
       setSubmitting(false)
     }
@@ -157,9 +157,9 @@ export default function NewP2PRequestPage() {
         ← Back
       </button>
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-        P2P Module
+        Procure-to-Pay Module
       </p>
-      <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New PR</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New Purchase Requisition</h1>
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -180,7 +180,7 @@ export default function NewP2PRequestPage() {
             />
           </div>
           <div style={{ flex: '1 1 200px', minWidth: 180 }}>
-            <label style={labelStyle}>PR Category *</label>
+            <label style={labelStyle}>Purchase Requisition Category *</label>
             <select style={inputStyle} value={categoryCode} onChange={(e) => setCategoryCode(e.target.value)}>
               <option value="">Select category…</option>
               {categories.map((c) => <option key={c.code} value={c.code}>{c.label} ({c.code})</option>)}
@@ -325,7 +325,7 @@ export default function NewP2PRequestPage() {
           Cancel
         </button>
         <button onClick={handleSubmit} disabled={submitting} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: submitting ? 0.6 : 1 }}>
-          {submitting ? 'Submitting…' : 'Submit PR'}
+          {submitting ? 'Submitting…' : 'Submit Purchase Requisition'}
         </button>
       </div>
     </div>

@@ -557,7 +557,7 @@ function EditUserModal({
               </span>
             </div>
             <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '10px 0 0' }}>
-              A Department Head is auto-routed any P2P request raised from their own department (
+              A Department Head is auto-routed any Procure-to-Pay request raised from their own department (
               {user.department ? `set for this user` : 'set a department for this user first'}). On the New PR form the
               requester can pick any user as Department Head, Project Head, or Plant Head — these checkboxes only
               control the auto-routing above, not who&apos;s searchable there. A PR only moves to &quot;approved&quot; once every
@@ -598,7 +598,7 @@ function EditUserModal({
           {!isAdminRole && selected.includes('p2p') && (
             <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: '#faf9f7' }}>
               <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 12px' }}>
-                P2P Permissions
+                Procure-to-Pay Permissions
               </p>
               {P2P_PERMISSION_GROUPS.map((group, i) => (
                 <div key={group.label} style={{ marginBottom: i < P2P_PERMISSION_GROUPS.length - 1 ? 12 : 0 }}>

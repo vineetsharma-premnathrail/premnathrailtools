@@ -59,7 +59,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
         const data = await p2pApi.list({ limit: 500 })
         setPrs(statuses ? data.filter((pr: P2PRequest) => statuses.includes(pr.status)) : data)
       } catch {
-        setError('Failed to load your P2P requests.')
+        setError('Failed to load your Procure-to-Pay requests.')
       } finally {
         setLoading(false)
       }
@@ -77,7 +77,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
-              {['PR Number', 'Category', 'Project', 'Required Date', 'Priority', 'Status', ''].map((h) => (
+              {['Purchase Requisition Number', 'Category', 'Project', 'Required Date', 'Priority', 'Status', ''].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>

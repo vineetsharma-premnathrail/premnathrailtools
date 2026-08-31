@@ -57,7 +57,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 4px' }}>{org.org_type || 'Organization'}</p>
+          <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 4px' }}>{org.org_type || 'Organization'}{org.org_code ? ` · ${org.org_code}` : ''}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org.name}</h1>
         </div>
         {(canModify || isAdmin) && (
@@ -120,6 +120,7 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
       <Card title="Organization Details">
+        <InfoRow label="Organization Code" value={org.org_code || 'Not provided'} />
         <InfoRow label="Type" value={org.org_type || 'Not provided'} />
         <InfoRow label="Parent Organization" value={org.parent_org || 'Not provided'} />
         <InfoRow label="Railway Zone" value={org.railway_zone || 'Not provided'} />

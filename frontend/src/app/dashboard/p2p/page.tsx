@@ -17,9 +17,9 @@ export default function P2PHomePage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            P2P Module
+            Procure-to-Pay Module
           </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>My PRs</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>My Purchase Requisitions</h1>
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>{user?.department ? `${user.department} — ` : ''}Purchase Requisitions</p>
         </div>
         <button
@@ -30,13 +30,13 @@ export default function P2PHomePage() {
             boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
           }}
         >
-          + New PR
+          + New Purchase Requisition
         </button>
       </div>
 
       <P2PNav />
 
-      <P2PRequestList emptyLabel="You haven't raised any PRs yet." />
+      <P2PRequestList emptyLabel="You haven't raised any Purchase Requisitions yet." />
     </div>
   )
 }

@@ -49,7 +49,7 @@ export default function PurchaseTeamRequisitionsPage() {
       })
       setPrs(data)
     } catch {
-      setError('Failed to load P2P requests.')
+      setError('Failed to load Procure-to-Pay requests.')
     } finally {
       setLoading(false)
     }
@@ -86,7 +86,7 @@ export default function PurchaseTeamRequisitionsPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Purchase Module</p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Standalone P2P Requests</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Standalone Procure-to-Pay Requests</h1>
           <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{prs.length} PR(s) found — raised directly by departments</p>
         </div>
       </div>
@@ -152,7 +152,7 @@ export default function PurchaseTeamRequisitionsPage() {
           </thead>
           <tbody>
             {loading && <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && prs.length === 0 && <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No P2P requests found.</td></tr>}
+            {!loading && prs.length === 0 && <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No Procure-to-Pay requests found.</td></tr>}
             {prs.map((pr) => (
               <tr key={pr.id} onClick={() => router.push(`/dashboard/purchase/p2p-requests/${pr.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: '#0369a1' }}>{pr.p2p_number}</td>

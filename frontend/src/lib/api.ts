@@ -889,8 +889,8 @@ export const rfqApi = {
     return data
   },
 
-  create: async (p2pRequestId: number) => {
-    const { data } = await apiClient.post('/p2p/rfqs', { p2p_request_id: p2pRequestId })
+  create: async (p2pRequestId: number, requiresTechnicalEvaluation: boolean = false) => {
+    const { data } = await apiClient.post('/p2p/rfqs', { p2p_request_id: p2pRequestId, requires_technical_evaluation: requiresTechnicalEvaluation })
     return data
   },
 
@@ -921,6 +921,63 @@ export const rfqApi = {
 
   submit: async (id: number) => {
     const { data } = await apiClient.post(`/p2p/rfqs/${id}/submit`)
+    return data
+  },
+
+  // Vendor Quotations -> Quotation Comparison -> Technical Evaluation
+  // (optional) -> Commercial Evaluation -> Vendor Selection -> PO Draft
+  addVendorQuotation: async (rfqId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/vendor-quotations`, payload)
+    return data
+  },
+
+  listVendorQuotations: async (rfqId: number) => {
+    const { data } = await apiClient.get(`/p2p/rfqs/${rfqId}/vendor-quotations`)
+    return data
+  },
+
+  updateVendorQuotation: async (rfqId: number, vqId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/p2p/rfqs/${rfqId}/vendor-quotations/${vqId}`, payload)
+    return data
+  },
+
+  startTechnicalEvaluation: async (rfqId: number) => {
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/start-technical-evaluation`)
+    return data
+  },
+
+  evaluateTechnical: async (rfqId: number, vqId: number, status: string, remarks?: string) => {
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/vendor-quotations/${vqId}/technical-evaluation`, { status, remarks })
+    return data
+  },
+
+  startCommercialEvaluation: async (rfqId: number) => {
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/start-commercial-evaluation`)
+    return data
+  },
+
+  evaluateCommercial: async (rfqId: number, vqId: number, status: string, remarks?: string) => {
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/vendor-quotations/${vqId}/commercial-evaluation`, { status, remarks })
+    return data
+  },
+
+  selectVendorQuotation: async (rfqId: number, vendorQuotationId: number) => {
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/select-vendor-quotation`, { vendor_quotation_id: vendorQuotationId })
+    return data
+  },
+
+  createPoDraft: async (rfqId: number, payload: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/po-draft`, payload)
+    return data
+  },
+
+  updatePoDraft: async (rfqId: number, poId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/p2p/rfqs/${rfqId}/po-draft/${poId}`, payload)
+    return data
+  },
+
+  submitPoDraft: async (rfqId: number, poId: number) => {
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/po-draft/${poId}/submit`)
     return data
   },
 }

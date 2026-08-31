@@ -131,7 +131,7 @@ export default function StockItemDetailPage() {
               }}
               style={primaryBtn}
             >
-              Raise P2P Request
+              Raise Procure-to-Pay Request
             </button>
           )}
         </div>

@@ -129,7 +129,7 @@ export default function StoreItemsPage() {
                         }}
                         style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer' }}
                       >
-                        Raise P2P Request
+                        Raise Procure-to-Pay Request
                       </span>
                     )}
                   </td>

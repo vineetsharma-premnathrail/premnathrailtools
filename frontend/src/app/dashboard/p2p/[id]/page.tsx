@@ -374,7 +374,7 @@ export default function MyP2PRequestDetailPage() {
 
       <PromptDialog
         open={promptAction === 'approve'}
-        title="Approve this PR?"
+        title="Approve this Purchase Requisition?"
         placeholder="Comment (optional)"
         confirmLabel="Approve"
         onConfirm={promptActionDo}
@@ -390,7 +390,7 @@ export default function MyP2PRequestDetailPage() {
       />
       <PromptDialog
         open={promptAction === 'cancel'}
-        title="Cancel this PR?"
+        title="Cancel this Purchase Requisition?"
         placeholder="Reason for cancelling (optional)"
         confirmLabel="Cancel Requisition"
         onConfirm={promptActionDo}
@@ -398,7 +398,7 @@ export default function MyP2PRequestDetailPage() {
       />
       <PromptDialog
         open={promptAction === 'reject'}
-        title="Reject this PR?"
+        title="Reject this Purchase Requisition?"
         placeholder="Reason for rejecting (optional)"
         confirmLabel="Reject"
         onConfirm={promptActionDo}

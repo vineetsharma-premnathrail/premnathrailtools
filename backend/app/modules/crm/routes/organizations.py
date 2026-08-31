@@ -8,6 +8,7 @@ from app.core.permissions import require_app_access
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.organization import Organization, OrgContact
+from app.modules.crm.services.org_code import generate_org_code
 from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.schemas.organization import (
@@ -97,7 +98,7 @@ async def create_organization(
         if gst_clash:
             raise HTTPException(status_code=409, detail="An organization with this GST number already exists")
 
-    org = Organization(**payload.model_dump(), created_by_id=user.id)
+    org = Organization(**payload.model_dump(), org_code=generate_org_code(db), created_by_id=user.id)
     db.add(org)
     db.flush()
     _write_audit(db, org.id, "created", user, summary=f"Organization {org.name} created by {user.name or user.email}.")

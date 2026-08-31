@@ -80,6 +80,7 @@ class OrganizationResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    org_code: str | None = None
     name: str
     org_type: str | None = None
     parent_org: str | None = None

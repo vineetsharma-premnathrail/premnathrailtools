@@ -204,7 +204,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       )}
       {tab === 'Info' && !editing && <InfoTab inquiry={inquiry} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} />}
       {tab === 'Quotations' && <QuotationsTab inquiryId={inquiry.id} canModify={canModify} org={org} contact={contact} inquiry={inquiry} />}
-      {tab === 'Documents' && <DocumentsTab inquiry={inquiry} canModify={canModify} />}
+      {tab === 'Documents' && <DocumentsTab inquiry={inquiry} canModify={canModify} isAdmin={isAdmin} />}
       {tab === 'Follow Ups' && <ActivitiesTab inquiry={inquiry} org={org} />}
       {tab === 'Timeline' && <TimelineTab inquiryId={inquiry.id} />}
 
@@ -309,50 +309,50 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId }: { inquiry:
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
         <Card title="Organization">
-          <InfoRow label="Name" value={org?.name || '—'} />
-          <InfoRow label="GST Number" value={org?.gst_number || '—'} />
-          <InfoRow label="Type" value={org?.org_type || '—'} />
-          <InfoRow label="City" value={org?.city || '—'} />
-          <InfoRow label="State" value={org?.state || '—'} />
-          <InfoRow label="Address" value={org?.address || '—'} />
+          <InfoRow label="Name" value={org?.name || 'Not provided'} />
+          <InfoRow label="GST Number" value={org?.gst_number || 'Not provided'} />
+          <InfoRow label="Type" value={org?.org_type || 'Not provided'} />
+          <InfoRow label="City" value={org?.city || 'Not provided'} />
+          <InfoRow label="State" value={org?.state || 'Not provided'} />
+          <InfoRow label="Address" value={org?.address || 'Not provided'} />
           <div style={{ paddingTop: 10, marginTop: 4, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
             <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#1f1108', margin: '0 0 10px' }}>Contact Person</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <InfoRow label="Name" value={contact?.name || '—'} />
-              <InfoRow label="Mobile" value={contact?.mobile || '—'} />
-              <InfoRow label="Email" value={contact?.email || '—'} />
-              <InfoRow label="Department" value={contact?.department || '—'} />
+              <InfoRow label="Name" value={contact?.name || 'Not provided'} />
+              <InfoRow label="Mobile" value={contact?.mobile || 'Not provided'} />
+              <InfoRow label="Email" value={contact?.email || 'Not provided'} />
+              <InfoRow label="Department" value={contact?.department || 'Not provided'} />
             </div>
           </div>
         </Card>
         <Card title="Lead Info">
-          <InfoRow label="Lead Source" value={inquiry.lead_source || '—'} />
-          <InfoRow label="BD Owner" value={inquiry.bd_owner || '—'} />
-          <InfoRow label="Sales Engineer" value={inquiry.sales_engineer || '—'} />
-          <InfoRow label="Created On" value={inquiry.created_at ? new Date(inquiry.created_at).toLocaleDateString() : '—'} />
-          <InfoRow label="Follow-up Date" value={inquiry.next_followup_date || '—'} />
-          <InfoRow label="Follow-up Priority" value={inquiry.followup_priority || '—'} />
-          <InfoRow label="Assigned To" value={inquiry.followup_assigned_to || '—'} />
-          <InfoRow label="Follow-up Remarks" value={inquiry.followup_remarks || '—'} />
+          <InfoRow label="Lead Source" value={inquiry.lead_source || 'Not provided'} />
+          <InfoRow label="BD Owner" value={inquiry.bd_owner || 'Not provided'} />
+          <InfoRow label="Sales Engineer" value={inquiry.sales_engineer || 'Not provided'} />
+          <InfoRow label="Created On" value={inquiry.created_at ? new Date(inquiry.created_at).toLocaleDateString() : 'Not provided'} />
+          <InfoRow label="Follow-up Date" value={inquiry.next_followup_date || 'Not provided'} />
+          <InfoRow label="Follow-up Priority" value={inquiry.followup_priority || 'Not provided'} />
+          <InfoRow label="Assigned To" value={inquiry.followup_assigned_to || 'Not provided'} />
+          <InfoRow label="Follow-up Remarks" value={inquiry.followup_remarks || 'Not provided'} />
         </Card>
       </div>
       <Card title="Product Requirement">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
-          <SpecInfoRow label="Product" value={inquiry.product || '—'} change={changeFor('product')} />
-          <SpecInfoRow label="Category" value={inquiry.product_category || '—'} change={changeFor('product_category')} />
-          <SpecInfoRow label="Quantity / Unit" value={inquiry.quantity != null ? `${inquiry.quantity} ${inquiry.unit || ''}` : '—'} change={changeFor('quantity') || changeFor('unit')} />
-          <SpecInfoRow label="Required Delivery" value={inquiry.required_delivery_date || '—'} change={changeFor('required_delivery_date')} />
-          <SpecInfoRow label="Delivery Location" value={inquiry.delivery_location || '—'} change={changeFor('delivery_location')} />
-          <InfoRow label="Expected Value" value={inquiry.expected_value != null ? `₹${inquiry.expected_value.toLocaleString()}` : '—'} />
-          <InfoRow label="Budget" value={inquiry.budget != null ? `₹${inquiry.budget.toLocaleString()}` : '—'} />
-          <InfoRow label="Expected Order Date" value={inquiry.expected_order_date || '—'} />
-          <SpecInfoRow label="Inspection Req." value={inquiry.inspection_req || '—'} change={changeFor('inspection_req')} />
-          <SpecInfoRow label="Warranty Req." value={inquiry.warranty_req || '—'} change={changeFor('warranty_req')} />
+          <SpecInfoRow label="Product" value={inquiry.product || 'Not provided'} change={changeFor('product')} />
+          <SpecInfoRow label="Category" value={inquiry.product_category || 'Not provided'} change={changeFor('product_category')} />
+          <SpecInfoRow label="Quantity / Unit" value={inquiry.quantity != null ? `${inquiry.quantity} ${inquiry.unit || ''}` : 'Not provided'} change={changeFor('quantity') || changeFor('unit')} />
+          <SpecInfoRow label="Required Delivery" value={inquiry.required_delivery_date || 'Not provided'} change={changeFor('required_delivery_date')} />
+          <SpecInfoRow label="Delivery Location" value={inquiry.delivery_location || 'Not provided'} change={changeFor('delivery_location')} />
+          <InfoRow label="Expected Value" value={inquiry.expected_value != null ? `₹${inquiry.expected_value.toLocaleString()}` : 'Not provided'} />
+          <InfoRow label="Budget" value={inquiry.budget != null ? `₹${inquiry.budget.toLocaleString()}` : 'Not provided'} />
+          <InfoRow label="Expected Order Date" value={inquiry.expected_order_date || 'Not provided'} />
+          <SpecInfoRow label="Inspection Req." value={inquiry.inspection_req || 'Not provided'} change={changeFor('inspection_req')} />
+          <SpecInfoRow label="Warranty Req." value={inquiry.warranty_req || 'Not provided'} change={changeFor('warranty_req')} />
         </div>
-        <SpecInfoRow label="Specification" value={inquiry.product_spec || '—'} change={changeFor('product_spec')} />
-        <SpecInfoRow label="Requirement Summary" value={inquiry.requirement_desc || '—'} change={changeFor('requirement_desc')} />
-        <SpecInfoRow label="Detailed Requirement" value={inquiry.detailed_requirement || '—'} change={changeFor('detailed_requirement')} />
-        <InfoRow label="Project Details" value={inquiry.project_details || '—'} />
+        <SpecInfoRow label="Specification" value={inquiry.product_spec || 'Not provided'} change={changeFor('product_spec')} />
+        <SpecInfoRow label="Requirement Summary" value={inquiry.requirement_desc || 'Not provided'} change={changeFor('requirement_desc')} />
+        <SpecInfoRow label="Detailed Requirement" value={inquiry.detailed_requirement || 'Not provided'} change={changeFor('detailed_requirement')} />
+        <InfoRow label="Project Details" value={inquiry.project_details || 'Not provided'} />
       </Card>
     </div>
   )
@@ -1074,7 +1074,7 @@ function PurchaseOrdersTab({ inquiryId, orgId, canModify }: { inquiryId: number;
   )
 }
 
-function DocumentsTab({ inquiry, canModify }: { inquiry: Inquiry; canModify: boolean }) {
+function DocumentsTab({ inquiry, canModify, isAdmin }: { inquiry: Inquiry; canModify: boolean; isAdmin: boolean }) {
   const [documents, setDocuments] = useState<CrmDocument[]>([])
   const [error, setError] = useState('')
 
@@ -1091,18 +1091,19 @@ function DocumentsTab({ inquiry, canModify }: { inquiry: Inquiry; canModify: boo
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-      <DocumentFolderPanel title="Client Documents" folderType="client" docs={clientDocs} inquiry={inquiry} canModify={canModify} onUploaded={load} onRemove={remove} error={error} setError={setError} />
-      <DocumentFolderPanel title="Internal Documents" folderType="internal" docs={internalDocs} inquiry={inquiry} canModify={canModify} onUploaded={load} onRemove={remove} error={error} setError={setError} />
+      <DocumentFolderPanel title="Client Documents" folderType="client" docs={clientDocs} inquiry={inquiry} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
+      <DocumentFolderPanel title="Internal Documents" folderType="internal" docs={internalDocs} inquiry={inquiry} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
     </div>
   )
 }
 
-function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, onUploaded, onRemove, error, setError }: {
+function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, canDelete, onUploaded, onRemove, error, setError }: {
   title: string
   folderType: 'client' | 'internal'
   docs: CrmDocument[]
   inquiry: Inquiry
   canModify: boolean
+  canDelete: boolean
   onUploaded: () => void
   onRemove: (id: number) => void
   error: string
@@ -1162,7 +1163,7 @@ function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, onUp
                 >{d.file_name}</a>
                 <p style={{ fontSize: 11, color: '#a8a29e', margin: '2px 0 0' }}>{d.doc_category || '—'}</p>
               </div>
-              {canModify && <button onClick={() => onRemove(d.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>}
+              {canDelete && <button onClick={() => onRemove(d.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>}
             </div>
           ))}
         </div>

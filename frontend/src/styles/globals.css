@@ -151,10 +151,32 @@ table { max-width: 100%; }
   /* Pearlescent multi-stop instead of a flat two-tone fade — a warm ivory
      midpoint (not plain gray) reads as premium rather than "washed out". */
   background: linear-gradient(var(--grad-angle), #c50a0a05 0%, #faf6f0 30%, #fdfcfa 60%, rgb(255 255 255) 100%);
-  animation: gradientAngleLoop 60s ease-in-out infinite;
+  animation: gradientAngleLoop 14s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   .animated-gradient-bg { animation: none; }
+}
+
+/* Slow drifting float for the decorative background blobs (dashboard +
+   login) — gives the background more visible life than a static gradient
+   alone, without competing with foreground content since it only moves
+   position/scale, never opacity/color. */
+@keyframes bgBlobDrift {
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(4%, -6%) scale(1.08); }
+  66%  { transform: translate(-5%, 4%) scale(0.95); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+.bg-blob {
+  animation: bgBlobDrift 9s ease-in-out infinite;
+}
+.bg-blob:nth-child(2) { animation-duration: 11s; animation-delay: -3s; }
+.bg-blob:nth-child(3) { animation-duration: 7.5s; animation-delay: -1.5s; }
+.bg-blob:nth-child(4) { animation-duration: 10s; animation-delay: -5s; }
+.bg-blob:nth-child(5) { animation-duration: 8s; animation-delay: -2.5s; }
+.bg-blob:nth-child(6) { animation-duration: 12s; animation-delay: -6.5s; }
+@media (prefers-reduced-motion: reduce) {
+  .bg-blob { animation: none; }
 }
 
 /* Water-ripple cursor follower — concentric rings that expand and fade like
@@ -446,6 +468,35 @@ img, svg { max-width: 100%; height: auto; }
 @media (hover: hover) and (pointer: fine) {
   .nav-tab-link:hover {
     background: rgba(217, 217, 217, 0.22);
+  }
+}
+
+/* Sidebar nav link hover movement + glow: slides the row right, nudges the
+   icon, and glows the icon only via filter:drop-shadow (not box-shadow) —
+   box-shadow on a row inside this sidebar's clipped/blurred glass container
+   bled into neighboring rows (Feedback, the user card) as a torn/dashed
+   edge, a Chromium rendering artifact from box-shadow + overflow:hidden +
+   backdrop-filter stacking. drop-shadow on the icon alone avoids it. */
+.sidebar-nav-link {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease-out;
+}
+.sidebar-nav-link .sidebar-nav-icon {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.25s ease-out;
+}
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-nav-link:hover {
+    transform: translateX(4px);
+    background: rgba(255, 122, 69, 0.1);
+  }
+  .sidebar-nav-link:hover .sidebar-nav-icon {
+    transform: translateX(2px) scale(1.12);
+    filter: drop-shadow(0 0 4px rgba(255, 122, 69, 0.8));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-nav-link,
+  .sidebar-nav-link .sidebar-nav-icon {
+    transition: none;
   }
 }
 

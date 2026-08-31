@@ -27,6 +27,7 @@ from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
+from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.vendor.models.vendor import Vendor
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_item import StockItem

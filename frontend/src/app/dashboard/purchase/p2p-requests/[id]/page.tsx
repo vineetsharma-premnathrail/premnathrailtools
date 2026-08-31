@@ -80,7 +80,7 @@ export default function PurchaseTeamRequisitionDetailPage() {
       setPoValue(prData.po_value ? String(prData.po_value) : '')
       setExpectedDelivery(prData.expected_delivery || '')
     } catch {
-      setError('Failed to load this P2P request.')
+      setError('Failed to load this Procure-to-Pay request.')
     }
   }
 

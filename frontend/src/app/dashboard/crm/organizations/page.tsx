@@ -274,7 +274,10 @@ export default function OrganizationsPage() {
                         <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z" />
                       </svg>
                     </button>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>{o.name}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>{o.name}</span>
+                      <span style={{ fontSize: 11, color: '#a8a29e' }}>{o.org_code || 'Not provided'}</span>
+                    </div>
                   </div>
                 </td>
                 <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.org_type || 'Not provided'}</td>

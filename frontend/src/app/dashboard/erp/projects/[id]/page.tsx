@@ -85,7 +85,7 @@ export default function ProjectDetailPage() {
               {project.status}
             </span>
           </div>
-          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{project.model_name || '—'} {project.client_company ? `· ${project.client_company}` : ''}</p>
+          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{project.model_name || 'Not provided'} {project.client_company ? `· ${project.client_company}` : ''}</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           {canCreateSr && (
@@ -166,44 +166,44 @@ function OverviewTab({ project }: { project: Project }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       <Card title="Machine Identity">
-        <InfoRow label="Machine Type" value={project.machine_type || '—'} />
-        <InfoRow label="Application Type" value={project.application_type || '—'} />
-        <InfoRow label="Engine Number" value={project.engine_number || '—'} />
-        <InfoRow label="Chassis Number" value={project.chassis_number || '—'} />
-        <InfoRow label="Year of Manufacture" value={project.year_of_manufacture || '—'} />
+        <InfoRow label="Machine Type" value={project.machine_type || 'Not provided'} />
+        <InfoRow label="Application Type" value={project.application_type || 'Not provided'} />
+        <InfoRow label="Engine Number" value={project.engine_number || 'Not provided'} />
+        <InfoRow label="Chassis Number" value={project.chassis_number || 'Not provided'} />
+        <InfoRow label="Year of Manufacture" value={project.year_of_manufacture || 'Not provided'} />
       </Card>
 
       <Card title="Timeline">
-        <InfoRow label="PO Date" value={project.po_date || '—'} />
-        <InfoRow label="Dispatch Date" value={project.delivery_date || '—'} />
-        <InfoRow label="Commissioning Date" value={project.commissioning_date || '—'} />
-        <InfoRow label="Handover Date" value={project.handover_date || '—'} />
+        <InfoRow label="PO Date" value={project.po_date || 'Not provided'} />
+        <InfoRow label="Dispatch Date" value={project.delivery_date || 'Not provided'} />
+        <InfoRow label="Commissioning Date" value={project.commissioning_date || 'Not provided'} />
+        <InfoRow label="Handover Date" value={project.handover_date || 'Not provided'} />
       </Card>
 
       <Card title="Client & Site">
-        <InfoRow label="Client Company" value={project.client_company || '—'} />
-        <InfoRow label="Contact Name" value={project.client_name || '—'} />
-        <InfoRow label="Contact Designation" value={project.client_designation || '—'} />
-        <InfoRow label="Contact Email" value={project.client_email || '—'} />
-        <InfoRow label="Contact Phone" value={project.client_phone || '—'} />
-        <InfoRow label="Alternate Phone" value={project.client_phone_alt || '—'} />
-        <InfoRow label="Client GST" value={project.client_gst || '—'} />
-        <InfoRow label="Site" value={project.site_name || '—'} />
-        <InfoRow label="Site Location" value={project.site_location || '—'} />
-        <InfoRow label="Site State" value={project.site_state || '—'} />
-        <InfoRow label="Site Pincode" value={project.site_pincode || '—'} />
-        <InfoRow label="Site Country" value={project.site_country || '—'} />
-        <InfoRow label="Zone" value={project.zone || '—'} />
+        <InfoRow label="Client Company" value={project.client_company || 'Not provided'} />
+        <InfoRow label="Contact Name" value={project.client_name || 'Not provided'} />
+        <InfoRow label="Contact Designation" value={project.client_designation || 'Not provided'} />
+        <InfoRow label="Contact Email" value={project.client_email || 'Not provided'} />
+        <InfoRow label="Contact Phone" value={project.client_phone || 'Not provided'} />
+        <InfoRow label="Alternate Phone" value={project.client_phone_alt || 'Not provided'} />
+        <InfoRow label="Client GST" value={project.client_gst || 'Not provided'} />
+        <InfoRow label="Site" value={project.site_name || 'Not provided'} />
+        <InfoRow label="Site Location" value={project.site_location || 'Not provided'} />
+        <InfoRow label="Site State" value={project.site_state || 'Not provided'} />
+        <InfoRow label="Site Pincode" value={project.site_pincode || 'Not provided'} />
+        <InfoRow label="Site Country" value={project.site_country || 'Not provided'} />
+        <InfoRow label="Zone" value={project.zone || 'Not provided'} />
         <InfoRow label="Export Deployment" value={project.is_export ? 'Yes' : 'No'} />
       </Card>
 
       <Card title="Warranty & AMC">
-        <InfoRow label="Warranty Start" value={project.warranty_start_date || '—'} />
-        <InfoRow label="Warranty End" value={project.warranty_end_date || '—'} />
-        <InfoRow label="Warranty Terms" value={project.warranty_override || '—'} />
-        <InfoRow label="Extended Warranty" value={project.extended_warranty ? `Yes (until ${project.extended_warranty_end || '—'})` : 'No'} />
-        <InfoRow label="AMC Status" value={project.amc_status || '—'} />
-        <InfoRow label="AMC End Date" value={project.amc_end_date || '—'} />
+        <InfoRow label="Warranty Start" value={project.warranty_start_date || 'Not provided'} />
+        <InfoRow label="Warranty End" value={project.warranty_end_date || 'Not provided'} />
+        <InfoRow label="Warranty Terms" value={project.warranty_override || 'Not provided'} />
+        <InfoRow label="Extended Warranty" value={project.extended_warranty ? `Yes (until ${project.extended_warranty_end || 'Not provided'})` : 'No'} />
+        <InfoRow label="AMC Status" value={project.amc_status || 'Not provided'} />
+        <InfoRow label="AMC End Date" value={project.amc_end_date || 'Not provided'} />
       </Card>
 
       {project.notes && (
@@ -219,17 +219,17 @@ function TechnicalSpecsTab({ project }: { project: Project }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       <Card title="Operator Details">
-        <InfoRow label="Operator Name" value={project.operator_name || '—'} />
-        <InfoRow label="Operator Phone" value={project.operator_phone || '—'} />
-        <InfoRow label="Operator Email" value={project.operator_email || '—'} />
-        <InfoRow label="Qualification" value={project.operator_qualification || '—'} />
+        <InfoRow label="Operator Name" value={project.operator_name || 'Not provided'} />
+        <InfoRow label="Operator Phone" value={project.operator_phone || 'Not provided'} />
+        <InfoRow label="Operator Email" value={project.operator_email || 'Not provided'} />
+        <InfoRow label="Qualification" value={project.operator_qualification || 'Not provided'} />
       </Card>
 
       <Card title="Technical Specifications">
-        <InfoRow label="Software Version" value={project.software_version || '—'} />
-        <InfoRow label="Installed Options" value={project.installed_options || '—'} />
-        <InfoRow label="Specifications" value={project.specifications || '—'} />
-        <InfoRow label="Engineering Notes" value={project.tech_notes || '—'} />
+        <InfoRow label="Software Version" value={project.software_version || 'Not provided'} />
+        <InfoRow label="Installed Options" value={project.installed_options || 'Not provided'} />
+        <InfoRow label="Specifications" value={project.specifications || 'Not provided'} />
+        <InfoRow label="Engineering Notes" value={project.tech_notes || 'Not provided'} />
       </Card>
     </div>
   )

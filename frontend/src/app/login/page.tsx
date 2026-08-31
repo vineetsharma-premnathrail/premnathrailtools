@@ -1,17 +1,11 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { authApi } from '@/lib/api'
-import { BRAND, GRADIENTS, TEXT } from '@/lib/theme'
-
-const modules = [
-  { label: 'Service Module', desc: 'Vehicle & Service Management' },
-  { label: 'R&D Tools', desc: 'Engineering Calculation Suite' },
-  { label: 'CRM', desc: 'Customer Relationship Management' },
-]
+import { GRADIENTS, TEXT } from '@/lib/theme'
 
 const ERROR_MESSAGES: Record<string, string> = {
   unauthorized: 'Your Microsoft account\'s email domain is not authorized for this portal.',
@@ -33,6 +27,13 @@ function LoginPageInner() {
   const [busy, setBusy] = useState(false)
   const [inTeams, setInTeams] = useState(false)
   const [teamsMessage, setTeamsMessage] = useState('')
+  const dropRef = useRef<HTMLDivElement>(null)
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = dropRef.current
+    if (!el) return
+    el.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`
+  }
 
   const errorParam = searchParams.get('error')
   const errorMessage = errorParam ? ERROR_MESSAGES[errorParam] || 'Sign-in failed. Please try again.' : null
@@ -123,7 +124,7 @@ function LoginPageInner() {
 
   return (
     <div
-      className="login-shell"
+      className="login-shell animated-gradient-bg"
       style={{
         position: 'relative',
         display: 'flex',
@@ -131,48 +132,78 @@ function LoginPageInner() {
         width: '100%',
         fontFamily: 'Inter, system-ui, sans-serif',
         color: '#3a2416',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
         overflow: 'hidden',
-        background: GRADIENTS.page,
       }}
+      onMouseMove={handleMouseMove}
     >
-      {/* floating warm orbs */}
-      <div style={{ position: 'absolute', top: -140, left: '8%', width: 440, height: 440, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,255,255,.9), transparent 68%)', filter: 'blur(30px)', animation: 'gl-orb1 16s ease-in-out infinite', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', bottom: -160, left: '34%', width: 520, height: 520, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,157,92,.85), transparent 66%)', filter: 'blur(34px)', animation: 'gl-orb2 19s ease-in-out infinite', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', top: '20%', right: '6%', width: 420, height: 420, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,196,140,.9), transparent 66%)', filter: 'blur(30px)', animation: 'gl-orb3 21s ease-in-out infinite', pointerEvents: 'none' }} />
-
-      {/* LEFT / BRAND */}
-      <div className="login-left" style={{ position: 'relative', flex: '1.1', minWidth: 0, padding: '64px 72px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <div style={{ position: 'relative', maxWidth: 520 }}>
-          <p style={{ maxWidth: 420, fontSize: 17, lineHeight: 1.6, color: '#6e4a2e', margin: '0 0 44px' }}>
-            One workspace for Engineering, Service Management, and Business Operations — everything your team runs, in a single place.
-          </p>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 460 }}>
-            {modules.map((m) => (
-              <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: 15, padding: '16px 18px', borderRadius: 16, background: 'rgba(255,255,255,.5)', border: '1px solid rgba(255,255,255,.7)', backdropFilter: 'blur(18px)', boxShadow: '0 8px 24px rgba(180,90,40,.1)' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#2e1c10' }}>{m.label}</div>
-                  <div style={{ fontSize: 12, color: '#8a6547', marginTop: 1 }}>{m.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* Decorative color blobs + water-ripple cursor follower, same as the dashboard background */}
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
+        <div className="bg-blob" style={{ position: 'absolute', top: '-10%', left: '15%', width: 460, height: 460, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,69,0.48), transparent 70%)', filter: 'blur(10px)' }} />
+        <div className="bg-blob" style={{ position: 'absolute', bottom: '-15%', left: '35%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,90,31,0.34), transparent 70%)', filter: 'blur(10px)' }} />
+        <div className="bg-blob" style={{ position: 'absolute', top: '20%', right: '5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.28), transparent 70%)', filter: 'blur(10px)' }} />
+        <div className="bg-blob" style={{ position: 'absolute', top: '55%', left: '5%', width: 360, height: 360, borderRadius: '50%', background: 'radial-gradient(circle, rgba(16,185,129,0.30), transparent 70%)', filter: 'blur(10px)' }} />
+        <div className="bg-blob" style={{ position: 'absolute', top: '5%', right: '25%', width: 320, height: 320, borderRadius: '50%', background: 'radial-gradient(circle, rgba(236,72,153,0.26), transparent 70%)', filter: 'blur(10px)' }} />
+        <div className="bg-blob" style={{ position: 'absolute', bottom: '5%', right: '30%', width: 380, height: 380, borderRadius: '50%', background: 'radial-gradient(circle, rgba(234,179,8,0.28), transparent 70%)', filter: 'blur(10px)' }} />
+        <div ref={dropRef} style={{ position: 'fixed', top: 0, left: 0, pointerEvents: 'none' }}>
+          <div className="water-ripple-ring" style={{ animationDelay: '0s' }} />
+          <div className="water-ripple-ring" style={{ animationDelay: '0.8s' }} />
+          <div className="water-ripple-ring" style={{ animationDelay: '1.6s' }} />
         </div>
       </div>
 
-      {/* RIGHT / SIGN-IN */}
-      <div className="login-right" style={{ position: 'relative', flex: 1, minWidth: 380, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 48 }}>
-        <div style={{ position: 'relative', width: '100%', maxWidth: 400, padding: 40, borderRadius: 26, background: 'rgba(255,255,255,.6)', backdropFilter: 'blur(26px) saturate(1.4)', border: '1px solid rgba(255,255,255,.85)', boxShadow: '0 24px 60px rgba(160,80,30,.25), inset 0 1px 0 rgba(255,255,255,.7)' }}>
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: 'linear-gradient(90deg,transparent,rgba(255,255,255,.9),transparent)' }} />
+      {/* paper grain texture overlay */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 1,
+          opacity: 0.9,
+          mixBlendMode: 'multiply',
+          pointerEvents: 'none',
+          backgroundImage:
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.2 0 0 0 0 0.14 0 0 0 0 0.06 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
+        }}
+      />
 
-          <div style={{ width: 184, height: 40, borderRadius: 10, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, boxShadow: '0 6px 18px rgba(224,98,31,.3)', overflow: 'hidden' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Premnathrail" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 3 }} />
-          </div>
+      {/* SIGN-IN CARD */}
+      <div
+        className="login-card"
+        style={{
+          position: 'relative',
+          zIndex: 2,
+          width: '100%',
+          maxWidth: 480,
+          padding: 48,
+          borderRadius: 30,
+          background: '#FCFAF7',
+          boxShadow: '-1px 1px 0px rgba(40,25,10,.35), -4px 5px 3px rgba(40,25,10,.32), -25px 32px 26px -6px rgba(40,25,10,.7)',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: -1,
+            opacity: 0.9,
+            mixBlendMode: 'multiply',
+            pointerEvents: 'none',
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.2 0 0 0 0 0.14 0 0 0 0 0.06 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
+          }}
+        />
 
-          <div style={{ fontSize: 11, letterSpacing: '.16em', textTransform: 'uppercase', color: TEXT.secondary, marginBottom: 11, fontWeight: 600 }}>Premnathrail Portal</div>
-          <h1 style={{ fontSize: 27, fontWeight: 700, letterSpacing: '-.01em', color: '#2e1c10', margin: '0 0 8px' }}>Welcome back</h1>
-          <p style={{ fontSize: 14, color: '#7a5a42', margin: '0 0 26px', lineHeight: 1.5 }}>Sign in with your Microsoft account to continue.</p>
+        <div style={{ width: 220, height: 48, borderRadius: 12, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 28, boxShadow: '-1px 1px 0px rgba(224,98,31,.35), -3px 4px 3px rgba(224,98,31,.3), -8px 11px 10px -3px rgba(224,98,31,.5)', overflow: 'hidden' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Premnathrail" style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 3 }} />
+        </div>
+
+        <div style={{ fontSize: 13, letterSpacing: '.16em', textTransform: 'uppercase', color: TEXT.secondary, marginBottom: 13, fontWeight: 600 }}>Premnathrail Portal</div>
+        <h1 style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-.01em', color: '#2e1c10', margin: '0 0 10px' }}>Welcome back</h1>
+        <p style={{ fontSize: 16, color: '#7a5a42', margin: '0 0 30px', lineHeight: 1.5 }}>Sign in with your Microsoft account to continue.</p>
 
           {errorMessage && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 18, padding: '13px 15px', borderRadius: 14, background: 'rgba(220,38,38,.08)', border: '1px solid rgba(220,38,38,.25)' }}>
@@ -199,17 +230,17 @@ function LoginPageInner() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 11,
-              height: 52,
-              borderRadius: 15,
+              gap: 13,
+              height: 60,
+              borderRadius: 17,
               border: 'none',
               cursor: busy ? 'default' : 'pointer',
               fontFamily: 'inherit',
-              fontSize: 15,
+              fontSize: 17,
               fontWeight: 600,
               color: '#fff',
               background: GRADIENTS.primary,
-              boxShadow: '0 10px 24px rgba(224,98,31,.4)',
+              boxShadow: '-1px 1px 0px rgba(224,98,31,.4), -4px 5px 4px rgba(224,98,31,.35), -12px 16px 14px -3px rgba(224,98,31,.55)',
               opacity: busy ? 0.75 : 1,
               transition: 'transform .15s ease-out, box-shadow .2s',
             }}
@@ -217,8 +248,8 @@ function LoginPageInner() {
             {busy ? (
               <span style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid rgba(255,255,255,.35)', borderTopColor: '#fff', animation: 'gl-spin .7s linear infinite' }} />
             ) : (
-              <span style={{ width: 26, height: 26, borderRadius: 7, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-                <svg width="15" height="15" viewBox="0 0 23 23">
+              <span style={{ width: 30, height: 30, borderRadius: 8, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                <svg width="17" height="17" viewBox="0 0 23 23">
                   <rect x="1" y="1" width="10" height="10" fill="#f25022" />
                   <rect x="12" y="1" width="10" height="10" fill="#7fba00" />
                   <rect x="1" y="12" width="10" height="10" fill="#00a4ef" />
@@ -229,51 +260,30 @@ function LoginPageInner() {
             {busy ? 'Redirecting to Microsoft…' : 'Sign in with Microsoft'}
           </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 14, padding: '13px 15px', borderRadius: 14, background: 'rgba(255,255,255,.5)', border: '1px solid rgba(255,255,255,.7)' }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#c07038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginTop: 16, padding: '15px 17px', borderRadius: 16, background: 'rgba(255,255,255,.5)', border: '1px solid rgba(255,255,255,.7)' }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#c07038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
               <circle cx="12" cy="12" r="10" />
               <line x1="12" y1="16" x2="12" y2="12" />
               <line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
-            <span style={{ fontSize: 12.5, color: '#8a6547' }}>Use your official work email address to sign in.</span>
+            <span style={{ fontSize: 14, color: '#8a6547' }}>Use your official work email address to sign in.</span>
           </div>
 
-          <div style={{ height: 1, background: 'rgba(180,120,80,.25)', margin: '26px 0 16px' }} />
-          <div style={{ textAlign: 'center', fontSize: 11, color: '#a8825f', lineHeight: 1.6 }}>
+          <div style={{ height: 1, background: 'rgba(180,120,80,.25)', margin: '30px 0 18px' }} />
+          <div style={{ textAlign: 'center', fontSize: 12.5, color: '#a8825f', lineHeight: 1.6 }}>
             By using Premnathrail Portal, you agree to the{' '}
             <Link href="/legal/privacy-policy" style={{ color: '#c07038', fontWeight: 600 }}>Privacy Policy</Link>,{' '}
             <Link href="/legal/terms-of-use" style={{ color: '#c07038', fontWeight: 600 }}>Terms of Use</Link>, and{' '}
             <Link href="/legal/permissions" style={{ color: '#c07038', fontWeight: 600 }}>Permissions</Link>.
           </div>
-          <div style={{ textAlign: 'center', fontSize: 11, color: '#a8825f', marginTop: 8 }}>© 2026 Premnathrail. All rights reserved.</div>
-        </div>
+          <div style={{ textAlign: 'center', fontSize: 12.5, color: '#a8825f', marginTop: 9 }}>© 2026 Premnathrail. All rights reserved.</div>
       </div>
 
       <style jsx>{`
-        @keyframes gl-orb1 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(60px, -40px) scale(1.12); } }
-        @keyframes gl-orb2 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-50px, 50px) scale(1.15); } }
-        @keyframes gl-orb3 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(40px, 60px) scale(0.9); } }
         @keyframes gl-spin { to { transform: rotate(360deg); } }
-        @media (max-width: 900px) {
-          .login-shell {
-            flex-direction: column;
-            overflow-y: auto;
-            height: auto;
-          }
-          .login-left {
-            padding: 40px 24px 24px !important;
-          }
-          .login-right {
-            min-width: 0 !important;
-            padding: 24px !important;
-          }
-        }
         @media (max-width: 480px) {
-          .login-left {
-            padding: 32px 18px 16px !important;
-          }
-          .login-right {
-            padding: 16px !important;
+          .login-card {
+            padding: 28px 24px !important;
           }
         }
       `}</style>

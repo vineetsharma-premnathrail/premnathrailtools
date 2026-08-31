@@ -142,7 +142,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     { href: '/dashboard/rnd', label: 'R&D Tools', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
     { href: '/dashboard/crm', label: 'CRM Module', icon: 'crm', visible: !!user?.apps?.includes('crm') },
     { href: '/dashboard/purchase', label: 'Purchase', icon: 'purchase', visible: !!user?.apps?.includes('purchase') },
-    { href: '/dashboard/p2p', label: 'P2P', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
+    { href: '/dashboard/p2p', label: 'Procure-to-Pay', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
     { href: '/dashboard/store', label: 'Store', icon: 'store', visible: !!user?.apps?.includes('store') },
     { href: '/dashboard/hr', label: 'HR', icon: 'hr', visible: !!user?.apps?.includes('hr') },
     { href: '/dashboard/design', label: 'Design', icon: 'design', visible: !!user?.apps?.includes('design') },
@@ -151,15 +151,29 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
   ].filter((link) => link.visible)
 
   return (
-    <aside
-      onMouseEnter={cancelCollapse}
-      onMouseLeave={scheduleCollapse}
+    <div
       style={{
         position: 'sticky',
         width: collapsed ? 84 : 260,
         flex: 'none',
         top: 16,
         height: 'calc(100vh - 32px)',
+        borderRadius: 26,
+        // box-shadow lives on this plain wrapper — no overflow:hidden and no
+        // backdrop-filter here — while the <aside> below keeps those. Mixing
+        // box-shadow with overflow:hidden + backdrop-filter on the same
+        // element caused a jagged/dashed rendering artifact that bled into
+        // neighboring rows (Feedback, the user card).
+        boxShadow: '-1px 1px 0px rgba(15,23,42,0.14), -4px 5px 3px rgba(15,23,42,0.1), -20px 26px 22px -6px rgba(15,23,42,0.25)',
+        transition: 'width .28s cubic-bezier(.4,0,.2,1)',
+      }}
+    >
+    <aside
+      onMouseEnter={cancelCollapse}
+      onMouseLeave={scheduleCollapse}
+      style={{
+        width: '100%',
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
         padding: collapsed ? '28px 16px' : '28px 20px',
@@ -167,10 +181,9 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
         backdropFilter: GLASS.blur,
         WebkitBackdropFilter: GLASS.blur,
         borderRadius: 26,
-        boxShadow: SHADOWS.glass(),
         border: `1px solid ${GLASS.border}`,
         overflow: 'hidden',
-        transition: 'width .28s cubic-bezier(.4,0,.2,1), padding .28s cubic-bezier(.4,0,.2,1)',
+        transition: 'padding .28s cubic-bezier(.4,0,.2,1)',
       }}
     >
       {/* Glass edge highlight — a faint top sheen so the panel reads as
@@ -223,6 +236,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
               href={link.href}
               onClick={onNavigate}
               title={collapsed ? link.label : undefined}
+              className="sidebar-nav-link"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -235,12 +249,17 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                 fontWeight: isActive ? 600 : 500,
                 color: isActive ? TEXT.white : TEXT.secondary,
                 background: isActive ? GRADIENTS.primary : 'transparent',
-                boxShadow: isActive ? `0 8px 20px ${SHADOWS.glowOrange}` : 'none',
+                // Same crisp offset-shadow language as the module cards, but
+                // with a small, tight blur/spread — a wider blur here bleeds
+                // past this row's own bounds into neighboring sidebar rows
+                // (Feedback, the user card) since they all share the
+                // sidebar's clipped, blurred glass container.
+                boxShadow: isActive ? '-1px 1px 0px rgba(224,98,31,0.3), -2px 3px 2px rgba(224,98,31,0.22), -4px 6px 5px -2px rgba(224,98,31,0.35)' : 'none',
                 transition: 'padding .28s cubic-bezier(.4,0,.2,1), justify-content .28s',
                 overflow: 'hidden',
               }}
             >
-              <span style={{ flex: 'none', display: 'flex' }}>{icons[link.icon]}</span>
+              <span className="sidebar-nav-icon" style={{ flex: 'none', display: 'flex' }}>{icons[link.icon]}</span>
               <span
                 style={{
                   whiteSpace: 'nowrap',
@@ -478,6 +497,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
         </div>
       )}
     </aside>
+    </div>
   )
 }
 

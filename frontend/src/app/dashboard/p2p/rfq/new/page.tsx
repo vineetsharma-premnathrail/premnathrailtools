@@ -45,6 +45,7 @@ export default function NewRfqPage() {
   const [paymentTerms, setPaymentTerms] = useState('')
   const [deliveryLeadTime, setDeliveryLeadTime] = useState('')
   const [ldClause, setLdClause] = useState('')
+  const [requiresTechnicalEvaluation, setRequiresTechnicalEvaluation] = useState(false)
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -75,7 +76,7 @@ export default function NewRfqPage() {
 
     setBusy(true)
     try {
-      const rfq = await rfqApi.create(Number(prId))
+      const rfq = await rfqApi.create(Number(prId), requiresTechnicalEvaluation)
       for (const tier of TIERS) {
         const file = files[tier]
         if (file) await rfqApi.uploadAttachments(rfq.id, [file], tier)
@@ -114,13 +115,13 @@ export default function NewRfqPage() {
       )}
 
       <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Request</h2>
-        <label style={labelStyle}>Select PR *</label>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Requisition</h2>
+        <label style={labelStyle}>Select Purchase Requisition *</label>
         <SearchableSelect
           value={prId}
           onChange={setPrId}
           options={prs.map((pr) => ({ value: String(pr.id), label: `${pr.p2p_number} — ${pr.category_label || pr.category_code}` }))}
-          placeholder="Search approved PR…"
+          placeholder="Search approved Purchase Requisition…"
         />
         {selectedPr && (
           <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '8px 0 0' }}>
@@ -178,8 +179,19 @@ export default function NewRfqPage() {
             <input style={inputStyle} value={deliveryLeadTime} onChange={(e) => setDeliveryLeadTime(e.target.value)} placeholder="e.g. 4 weeks" />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>L.D. Clause *</label>
+            <label style={labelStyle}>Liquidated Damages Clause *</label>
             <textarea style={{ ...inputStyle, minHeight: 60 }} value={ldClause} onChange={(e) => setLdClause(e.target.value)} placeholder="Liquidated Damages clause" />
+          </div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              id="requiresTechnicalEvaluation"
+              checked={requiresTechnicalEvaluation}
+              onChange={(e) => setRequiresTechnicalEvaluation(e.target.checked)}
+            />
+            <label htmlFor="requiresTechnicalEvaluation" style={{ fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
+              This RFQ requires a Technical Evaluation stage before Commercial Evaluation
+            </label>
           </div>
         </div>
       </div>

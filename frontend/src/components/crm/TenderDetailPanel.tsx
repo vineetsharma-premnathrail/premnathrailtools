@@ -184,7 +184,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       )}
       {tab === 'Info' && !editing && <InfoTab tender={tender} org={org} revisions={revisions} selectedRevId={selectedRevId} />}
       {tab === 'Dates' && <DatesTab tender={tender} />}
-      {tab === 'Documents' && <DocumentsTab tender={tender} canModify={canModify} />}
+      {tab === 'Documents' && <DocumentsTab tender={tender} canModify={canModify} isAdmin={isAdmin} />}
       {tab === 'Follow Ups' && <ActivitiesTab tender={tender} />}
       {tab === 'Timeline' && <TimelineTab tenderId={tender.id} />}
 
@@ -593,7 +593,7 @@ function PurchaseOrdersTab({ tenderId, orgId, canModify }: { tenderId: number; o
   )
 }
 
-function DocumentsTab({ tender, canModify }: { tender: Tender; canModify: boolean }) {
+function DocumentsTab({ tender, canModify, isAdmin }: { tender: Tender; canModify: boolean; isAdmin: boolean }) {
   const [documents, setDocuments] = useState<CrmDocument[]>([])
   const [error, setError] = useState('')
 
@@ -610,18 +610,19 @@ function DocumentsTab({ tender, canModify }: { tender: Tender; canModify: boolea
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-      <TenderDocumentFolderPanel title="Client Documents" folderType="client" docs={clientDocs} tender={tender} canModify={canModify} onUploaded={load} onRemove={remove} error={error} setError={setError} />
-      <TenderDocumentFolderPanel title="Internal Documents" folderType="internal" docs={internalDocs} tender={tender} canModify={canModify} onUploaded={load} onRemove={remove} error={error} setError={setError} />
+      <TenderDocumentFolderPanel title="Client Documents" folderType="client" docs={clientDocs} tender={tender} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
+      <TenderDocumentFolderPanel title="Internal Documents" folderType="internal" docs={internalDocs} tender={tender} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
     </div>
   )
 }
 
-function TenderDocumentFolderPanel({ title, folderType, docs, tender, canModify, onUploaded, onRemove, error, setError }: {
+function TenderDocumentFolderPanel({ title, folderType, docs, tender, canModify, canDelete, onUploaded, onRemove, error, setError }: {
   title: string
   folderType: 'client' | 'internal'
   docs: CrmDocument[]
   tender: Tender
   canModify: boolean
+  canDelete: boolean
   onUploaded: () => void
   onRemove: (id: number) => void
   error: string
@@ -681,7 +682,7 @@ function TenderDocumentFolderPanel({ title, folderType, docs, tender, canModify,
                 >{d.file_name}</a>
                 <p style={{ fontSize: 11, color: '#a8a29e', margin: '2px 0 0' }}>{d.doc_category || '—'}</p>
               </div>
-              {canModify && <button onClick={() => onRemove(d.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>}
+              {canDelete && <button onClick={() => onRemove(d.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>}
             </div>
           ))}
         </div>
