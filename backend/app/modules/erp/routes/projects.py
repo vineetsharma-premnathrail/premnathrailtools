@@ -208,6 +208,8 @@ async def restore_project(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("erp")),
 ):
+    if not has_erp_permission(user, "project_delete"):
+        raise HTTPException(status_code=403, detail="You do not have permission to restore projects.")
     project = db.query(Project).filter(Project.id == project_id, Project.is_deleted == True).first()  # noqa: E712
     if not project:
         raise HTTPException(status_code=404, detail="Deleted machine not found")

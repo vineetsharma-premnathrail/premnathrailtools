@@ -148,7 +148,7 @@ export default function ProjectDetailPage() {
       {tab === 'Overview' && <OverviewTab project={project} />}
       {tab === 'Technical Specs' && <TechnicalSpecsTab project={project} />}
       {tab === 'Maintenance History' && <MaintenanceHistoryTab projectId={project.id} />}
-      {tab === 'Documents' && <DocumentsTab projectId={project.id} />}
+      {tab === 'Documents' && <DocumentsTab projectId={project.id} canEdit={canEdit} canDelete={canDelete} />}
       {tab === 'Audit Trail' && <AuditTab projectId={project.id} />}
 
       <ConfirmDialog
@@ -276,7 +276,7 @@ function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
   )
 }
 
-function DocumentsTab({ projectId }: { projectId: number }) {
+function DocumentsTab({ projectId, canEdit, canDelete }: { projectId: number; canEdit: boolean; canDelete: boolean }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [attachments, setAttachments] = useState<import('@/types').ProjectAttachment[]>([])
   const [loading, setLoading] = useState(true)
@@ -314,8 +314,12 @@ function DocumentsTab({ projectId }: { projectId: number }) {
   }
 
   const handleDelete = async (attachmentId: number) => {
-    await erpApi.deleteProjectAttachment(projectId, attachmentId)
-    load()
+    try {
+      await erpApi.deleteProjectAttachment(projectId, attachmentId)
+      load()
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to delete document.')
+    }
   }
 
   return (
@@ -331,50 +335,54 @@ function DocumentsTab({ projectId }: { projectId: number }) {
       </div>
 
       <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div
-          onClick={() => !uploading && fileRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); stageFiles(e.dataTransfer.files) }}
-          style={{
-            padding: '32px 20px',
-            borderRadius: 14,
-            border: `2px dashed ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.15)'}`,
-            background: dragOver ? 'rgba(244,113,59,0.05)' : '#fff',
-            textAlign: 'center',
-            cursor: uploading ? 'wait' : 'pointer',
-          }}
-        >
-          <input ref={fileRef} type="file" multiple hidden onChange={(e) => stageFiles(e.target.files)} disabled={uploading} />
-          <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#78716c" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-          </div>
-          <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: '0 0 4px' }}>
-            {uploading ? 'Uploading…' : 'Drag & drop files here'}
-          </p>
-          {!uploading && (
-            <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>
-              or <span style={{ color: '#FF7A45', fontWeight: 600 }}>click to browse</span>
+        {canEdit && (
+          <div
+            onClick={() => !uploading && fileRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); stageFiles(e.dataTransfer.files) }}
+            style={{
+              padding: '32px 20px',
+              borderRadius: 14,
+              border: `2px dashed ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.15)'}`,
+              background: dragOver ? 'rgba(244,113,59,0.05)' : '#fff',
+              textAlign: 'center',
+              cursor: uploading ? 'wait' : 'pointer',
+            }}
+          >
+            <input ref={fileRef} type="file" multiple hidden onChange={(e) => stageFiles(e.target.files)} disabled={uploading} />
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#78716c" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </div>
+            <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: '0 0 4px' }}>
+              {uploading ? 'Uploading…' : 'Drag & drop files here'}
             </p>
-          )}
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
-            {['PDF', 'DOCX', 'XLSX', 'JPG/PNG', 'MP4'].map((t) => (
-              <span key={t} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 6, background: 'rgba(0,0,0,0.05)', color: '#78716c' }}>{t}</span>
-            ))}
+            {!uploading && (
+              <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>
+                or <span style={{ color: '#FF7A45', fontWeight: 600 }}>click to browse</span>
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+              {['PDF', 'DOCX', 'XLSX', 'JPG/PNG', 'MP4'].map((t) => (
+                <span key={t} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 6, background: 'rgba(0,0,0,0.05)', color: '#78716c' }}>{t}</span>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        <FileUploadPreview
-          files={staged}
-          uploading={uploading}
-          onRemove={(i) => setStaged((prev) => prev.filter((_, idx) => idx !== i))}
-          onConfirm={confirmUpload}
-          onCancel={() => { setStaged([]); if (fileRef.current) fileRef.current.value = '' }}
-        />
+        {canEdit && (
+          <FileUploadPreview
+            files={staged}
+            uploading={uploading}
+            onRemove={(i) => setStaged((prev) => prev.filter((_, idx) => idx !== i))}
+            onConfirm={confirmUpload}
+            onCancel={() => { setStaged([]); if (fileRef.current) fileRef.current.value = '' }}
+          />
+        )}
 
         {error && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: 0 }}>{error}</p>}
 
@@ -393,9 +401,11 @@ function DocumentsTab({ projectId }: { projectId: number }) {
                 >
                   {a.filename}
                 </a>
-                <button onClick={() => handleDelete(a.id)} style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: 'pointer' }}>
-                  Delete
-                </button>
+                {canDelete && (
+                  <button onClick={() => handleDelete(a.id)} style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: 'pointer' }}>
+                    Delete
+                  </button>
+                )}
               </div>
             ))}
           </div>

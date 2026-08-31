@@ -66,6 +66,10 @@ function warrantyLabel(project?: Project) {
 export default function ServiceRequestsPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('erp')
   const canCreate = hasErpPermission(user, 'sr_create')
+  // Mirrors the backend's `_can_edit` in service_requests.py — admins always
+  // pass, everyone else must both own the SR and hold "sr_edit".
+  const canEditSr = (sr: ServiceRequest) =>
+    user?.role === 'admin' || (sr.created_by_id === user?.id && hasErpPermission(user, 'sr_edit'))
   const router = useRouter()
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -258,7 +262,9 @@ export default function ServiceRequestsPage() {
                   <td style={{ padding: '12px 16px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                     <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', marginRight: 10 }}>View</span>
-                    <Link href={`/dashboard/erp/service-requests/${sr.id}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
+                    {canEditSr(sr) && (
+                      <Link href={`/dashboard/erp/service-requests/${sr.id}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
+                    )}
                   </td>
                 </tr>
               )

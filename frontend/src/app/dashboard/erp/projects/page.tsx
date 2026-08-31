@@ -44,6 +44,7 @@ function warrantyLabel(project: Project) {
 export default function ProjectsRegistryPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('erp')
   const canCreate = hasErpPermission(user, 'project_create')
+  const canEdit = hasErpPermission(user, 'project_edit')
   const router = useRouter()
   const [projects, setProjects] = useState<Project[]>([])
   const [srs, setSrs] = useState<ServiceRequest[]>([])
@@ -254,7 +255,9 @@ export default function ProjectsRegistryPage() {
                 <td style={{ padding: '12px 16px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(p)}</td>
                 <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                   <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', marginRight: 10 }}>View</span>
-                  <Link href={`/dashboard/erp/projects/${p.id}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
+                  {canEdit && (
+                    <Link href={`/dashboard/erp/projects/${p.id}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
+                  )}
                 </td>
               </tr>
             ))}

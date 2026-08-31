@@ -1,104 +1,125 @@
-# Premnathrail Portal (Ideal Architecture)
+# Premnathrail Portal — Ideal Architecture
 
 A modern, modular full-stack application for managing CRM, ERP, and R&D tools using FastAPI, PostgreSQL, and Microsoft SSO authentication.
 
 ## Project Structure
 
-```
+```text
 backend/
 ├── app/
-│   ├── core/          # Configuration, settings, security
-│   ├── db/            # Database connection, session management
-│   ├── auth/          # Authentication (JWT, Microsoft OAuth)
-│   ├── middleware/    # HTTP middleware (CORS, security, etc.)
-│   ├── modules/       # Feature modules (CRM, ERP, RnD, Main)
+│   ├── core/              # Configuration, settings, security
+│   ├── db/                # Database connection and session management
+│   ├── auth/              # Authentication (JWT, Microsoft OAuth)
+│   ├── middleware/        # HTTP middleware (CORS, security, etc.)
+│   ├── modules/           # Feature modules (CRM, ERP, R&D, Main)
 │   │   └── main/
-│   │       ├── models/      # SQLAlchemy models
-│   │       ├── schemas/     # Pydantic request/response schemas
-│   │       ├── repositories/ # Database access layer
-│   │       ├── services/    # Business logic layer
-│   │       └── routes/      # API endpoints
-│   ├── tests/         # Unit and integration tests
-│   └── main.py        # FastAPI app instance
-├── migrations/        # Alembic database migrations
-├── requirements.txt   # Python dependencies
-└── .env              # Environment variables (local)
+│   │       ├── models/          # SQLAlchemy models
+│   │       ├── schemas/         # Pydantic request/response schemas
+│   │       ├── repositories/    # Database access layer
+│   │       ├── services/        # Business logic layer
+│   │       └── routes/           # API endpoints
+│   ├── tests/             # Unit and integration tests
+│   └── main.py            # FastAPI application instance
+├── migrations/            # Alembic database migrations
+├── requirements.txt       # Python dependencies
+└── .env                   # Local environment variables
 
-frontend/                    # Next.js 16 (App Router) + React 19 + TypeScript
-├── public/            # Static files
+frontend/
+├── public/                # Static files
 ├── src/
-│   ├── app/           # App Router pages, incl. dashboard/{crm,erp,rnd,purchase,purchase-requisition,users}/
-│   ├── components/    # Reusable UI components (incl. erp/ subcomponents, Sidebar, notification bell)
-│   ├── hooks/         # Custom React hooks (e.g. useAuth.ts — SSO session, per-module & per-permission checks)
-│   ├── lib/           # API client (api.ts), design tokens (theme.ts), changelog.ts
-│   └── types/         # Shared TypeScript types (index.ts — AppModule, status enums, entity shapes)
+│   ├── app/               # Next.js App Router pages
+│   │   └── dashboard/
+│   │       ├── crm/
+│   │       ├── erp/
+│   │       ├── rnd/
+│   │       ├── purchase/
+│   │       ├── purchase-requisition/
+│   │       └── users/
+│   ├── components/        # Reusable UI components
+│   ├── hooks/             # Custom React hooks
+│   ├── lib/               # API client, theme, changelog
+│   └── types/             # Shared TypeScript types
 
-docs/                       # Documentation
-├── api/API.md              # API documentation
-├── architecture/           # ARCHITECTURE.md, FRONTEND_ARCHITECTURE.md
-├── setup/                  # SETUP.md and other getting-started guides
-├── testing/                # TESTING.md, TESTING_MICROSOFT_OAUTH.md
-├── troubleshooting/        # TROUBLESHOOTING.md, FRONTEND_TROUBLESHOOTING.md
-├── deployment/             # DEPLOYMENT.md, FRONTEND_DEPLOYMENT.md
-├── runbook/RUNBOOK.md      # Operational procedures
-├── product/PRODUCT.md
-├── security/SECURITY.md
-└── adr/                    # Architecture Decision Records
+docs/
+├── application-programming-interface/
+├── architecture/
+├── setup/
+├── testing/
+├── troubleshooting/
+├── deployment/
+├── runbook/
+├── product/
+├── security/
+└── architecture-decision-records/
 ```
 
 ## Architecture Pattern: Modular Monolith
 
-Each feature (CRM, ERP, RnD) is organized as a **self-contained module** with:
-- **Models** — Database schema
-- **Schemas** — Request/response validation
-- **Repositories** — Data access (SQL queries)
-- **Services** — Business logic
-- **Routes** — HTTP endpoints
+Each feature is organized as a self-contained module with:
 
-This separation enables:
-- ✅ Clear separation of concerns
-- ✅ Easy testing (mock each layer)
-- ✅ Team collaboration (different teams can work on different modules)
-- ✅ Future migration to microservices (convert module to separate service)
+* **Models** — Database schema
+* **Schemas** — Request/response validation
+* **Repositories** — Data access
+* **Services** — Business logic
+* **Routes** — HTTP endpoints
+
+This provides:
+
+* Clear separation of concerns
+* Easier testing
+* Independent team ownership
+* A potential path toward future microservice extraction
 
 ## Quick Start
 
 ### Prerequisites
-- Python 3.14+
-- PostgreSQL 18+
-- Node.js 24+
+
+* Python 3.14+
+* PostgreSQL 18+
+* Node.js 24+
 
 ### Backend Setup
 
-1. **Create virtual environment:**
-   ```bash
-   cd backend
-   python -m venv venv
-   venv\Scripts\activate  # Windows
-   source venv/bin/activate  # macOS/Linux
-   ```
+```bash
+cd backend
+python -m venv venv
 
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+# Windows
+venv\Scripts\activate
 
-3. **Configure `.env`:**
-   ```env
-   DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/premnathrail_ideal
-   AZURE_CLIENT_ID=your-client-id
-   AZURE_CLIENT_SECRET=your-client-secret
-   AZURE_TENANT_ID=your-tenant-id
-   SECRET_KEY=change-this-in-production
-   ```
+# macOS/Linux
+source venv/bin/activate
 
-4. **Run server:**
-   ```bash
-   uvicorn app.main:app --reload
-   ```
+pip install -r requirements.txt
+```
 
-   Server runs at: `http://localhost:8000`
-   API docs at: `http://localhost:8000/docs`
+Configure `backend/.env`:
+
+```env
+DATABASE_URL=postgresql+psycopg://user:password@localhost:5432/premnathrail_ideal
+AZURE_CLIENT_ID=your-client-id
+AZURE_CLIENT_SECRET=your-client-secret
+AZURE_TENANT_ID=your-tenant-id
+SECRET_KEY=change-this-in-production
+```
+
+Run the backend:
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Backend:
+
+```text
+http://localhost:8000
+```
+
+API documentation:
+
+```text
+http://localhost:8000/docs
+```
 
 ### Testing
 
@@ -108,83 +129,112 @@ pytest app/tests -v
 
 ## Authentication
 
-Uses **Microsoft SSO (Single Sign-On)**:
-- Users login via `/auth/microsoft-login`
-- Microsoft verifies identity
-- App auto-creates/updates user in database
-- JWT token issued for API access
-- Protected routes check token via `Authorization: Bearer <token>`
+The application uses Microsoft SSO:
 
-## API Endpoints
+1. User starts Microsoft login.
+2. Microsoft verifies the user's identity.
+3. The application creates or updates the user.
+4. A JWT is issued for API access.
+5. Protected routes validate the Bearer token.
+
+```text
+Authorization: Bearer <token>
+```
+
+### Authentication Endpoints
+
+```text
+GET /auth/microsoft-login
+GET /auth/callback
+GET /auth/me
+```
+
+## API
 
 ### Health Check
-```
-GET /health
-```
 
-### Authentication
-```
-GET /auth/microsoft-login          # Start login flow
-GET /auth/callback                  # OAuth callback (auto-handled)
-GET /auth/me                        # Get current user (protected)
+```text
+GET /health
 ```
 
 ## Database
 
-PostgreSQL with SQLAlchemy ORM.
+PostgreSQL is used with SQLAlchemy ORM.
 
-**Key Models:**
-- `User` — Portal users (email, role, Azure profile)
+Key model:
+
+```text
+User
+├── email
+├── role
+└── Azure profile information
+```
+
+Database schema changes are managed through Alembic migrations.
 
 ## Technology Stack
 
-**Backend:**
-- FastAPI — Web framework
-- SQLAlchemy — ORM
-- Pydantic — Data validation
-- Python-Jose — JWT tokens
-- MSAL — Microsoft authentication
-- Psycopg — PostgreSQL driver
+### Backend
 
-**Frontend:**
-- Next.js 16 (App Router) — routing, server/client components
-- React 19 + TypeScript
-- A full custom design system (`frontend/src/lib/theme.ts`) — glass-morphism surfaces, brand orange (`#FF7A45`), dark/light-aware tokens
-- No plain HTML/JS anywhere — the frontend is already a mature, far-along application, not a future step
+* FastAPI
+* SQLAlchemy
+* Pydantic
+* Python-Jose
+* MSAL
+* Psycopg
+* PostgreSQL
+* Alembic
+
+### Frontend
+
+* Next.js 16 App Router
+* React 19
+* TypeScript
+* Custom design system
+* Zustand
+* Axios
+
+The frontend uses `frontend/src/lib/theme.ts` for design tokens, including glass-morphism surfaces and light/dark-aware styling.
 
 ## Development Guidelines
 
 ### Code Organization
-- **Models** — Database schema only (no methods)
-- **Repositories** — SQL queries only (no business logic)
-- **Services** — Business rules, validation, orchestration
-- **Routes** — Request parsing, response formatting, error handling
-- **Tests** — One test file per module, focus on business logic
+
+* **Models** — Database schema only
+* **Repositories** — Database access only
+* **Services** — Business rules and orchestration
+* **Routes** — Request/response handling
+* **Tests** — Business and integration behavior
 
 ### Comments
-- Add comments only for WHY (not WHAT)
-- Self-explanatory code is preferred
-- Docstrings for public functions
+
+* Comments should explain **why**, not **what**.
+* Prefer self-explanatory code.
+* Use docstrings for public functions.
 
 ### Commits
-- One feature per commit
-- Descriptive messages
-- Include issue/task reference if applicable
 
-## Next Steps
+* One feature per commit.
+* Use descriptive commit messages.
+* Include an issue/task reference where applicable.
 
-CRM, ERP, R&D, Purchase, and the standalone Purchase Requisition module are all built and live (backend + Next.js frontend), Alembic migrations are in active use, and OpenAPI docs are served at `/docs` — the items below are genuinely open, not a restatement of already-finished early-stage work. See `docs/product/PRODUCT.md` and `docs/product/DEPARTMENT_MODULES_ROADMAP.md` for the fuller roadmap.
+## Current Project Direction
 
-- [ ] New departments not yet built: Design, Electrical, Fluids, Production, Store, Quality, Maintenance, Operations, Project Management, Vendor Development (see `docs/product/DEPARTMENT_MODULES_ROADMAP.md`)
-- [ ] Purchase (SR-linked) module: vendor master, formal PO documents, costing/GRN/invoice tracking, reporting dashboard (see `docs/product/PURCHASE_MODULE_PLAN.md`) — or converge onto the standalone `purchase_requisition` module, which already covers much of this
-- [ ] Move module access (`AVAILABLE_APPS`) from a hardcoded set to a DB-backed module registry before adding more departments
-- [ ] Expand automated test coverage
-- [ ] Add rate limiting
-- [ ] Production deployment guide
+The portal has already progressed beyond the initial foundation. CRM, ERP, R&D, Purchase, P2P, HR, Design, Electrical, Store, and Vendor functionality exist in the current codebase.
+
+The documentation and architecture should therefore describe the **actual implemented system**, not fictional future-stage scaffolding.
+
+Current priorities include:
+
+* Expanding department modules where required
+* Expanding automated test coverage
+* Continuing security hardening
+* Improving deployment and operational maturity
+* Maintaining the modular architecture as the application grows
 
 ## License
 
-Internal use only
+Internal use only.
 
 ## Authors
 

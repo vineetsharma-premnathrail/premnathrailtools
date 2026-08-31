@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import ErpNav from '@/components/erp/ErpNav'
 import { Section } from '@/components/shared/ui'
@@ -25,7 +25,9 @@ interface DeletedSR {
 }
 
 export default function RecycleBinPage() {
-  const { isAuthorized, isLoading } = useRequireApp('erp')
+  const { user, isAuthorized, isLoading } = useRequireApp('erp')
+  const canRestoreProjects = hasErpPermission(user, 'project_delete')
+  const canRestoreSrs = hasErpPermission(user, 'sr_delete')
   const [projects, setProjects] = useState<DeletedProject[]>([])
   const [srs, setSrs] = useState<DeletedSR[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,13 +53,21 @@ export default function RecycleBinPage() {
   }, [isAuthorized])
 
   const restoreProject = async (id: number) => {
-    await erpApi.restoreProject(id)
-    load()
+    try {
+      await erpApi.restoreProject(id)
+      load()
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to restore machine.')
+    }
   }
 
   const restoreSr = async (id: number) => {
-    await erpApi.restoreServiceRequest(id)
-    load()
+    try {
+      await erpApi.restoreServiceRequest(id)
+      load()
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to restore service request.')
+    }
   }
 
   if (isLoading || !isAuthorized) return null
@@ -88,7 +98,7 @@ export default function RecycleBinPage() {
                   primary={p.serial_number}
                   secondary={[p.model_name, p.client_company].filter(Boolean).join(' · ')}
                   deletedAt={p.deleted_at}
-                  onRestore={() => restoreProject(p.id)}
+                  onRestore={canRestoreProjects ? () => restoreProject(p.id) : undefined}
                 />
               ))
             )}
@@ -104,7 +114,7 @@ export default function RecycleBinPage() {
                   primary={sr.request_number}
                   secondary={`${sr.issue_description || ''} — ${sr.days_remaining} day(s) left`}
                   deletedAt={sr.deleted_at}
-                  onRestore={() => restoreSr(sr.id)}
+                  onRestore={canRestoreSrs ? () => restoreSr(sr.id) : undefined}
                 />
               ))
             )}
@@ -115,7 +125,7 @@ export default function RecycleBinPage() {
   )
 }
 
-function RecycleRow({ primary, secondary, deletedAt, onRestore }: { primary: string; secondary?: string; deletedAt: string | null; onRestore: () => void }) {
+function RecycleRow({ primary, secondary, deletedAt, onRestore }: { primary: string; secondary?: string; deletedAt: string | null; onRestore?: () => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
       <div>
@@ -124,12 +134,14 @@ function RecycleRow({ primary, secondary, deletedAt, onRestore }: { primary: str
           {secondary} {deletedAt ? `· Deleted ${new Date(deletedAt).toLocaleDateString()}` : ''}
         </p>
       </div>
-      <button
-        onClick={onRestore}
-        style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
-      >
-        Restore
-      </button>
+      {onRestore && (
+        <button
+          onClick={onRestore}
+          style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
+        >
+          Restore
+        </button>
+      )}
     </div>
   )
 }

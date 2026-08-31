@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { erpApi } from '@/lib/api'
 import { AuditEntry, Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment } from '@/types'
@@ -13,14 +13,24 @@ import CameraCapture from '@/components/CameraCapture'
 import Link from 'next/link'
 import { inputStyle, Field, Card, InfoRow } from '@/components/shared/ui'
 
+// Every non-terminal-branch SRStatus, in the order they normally happen —
+// must stay in sync with the full SRStatus union (types/index.ts) and the
+// STATUS_LABELS map on the list page. "cancelled" is deliberately excluded:
+// it's a side-exit, not a step in the forward flow, so it's handled as its
+// own banner in WorkflowSteps/status dropdown instead of a numbered circle.
 const WORKFLOW_STEPS = [
   { key: 'open', label: 'Reported' },
   { key: 'acknowledged', label: 'Acknowledged' },
+  { key: 'assigned', label: 'Assigned' },
+  { key: 'scheduled', label: 'Scheduled' },
   { key: 'in_progress', label: 'In Progress' },
   { key: 'pending_parts', label: 'Pending Parts' },
-  { key: 'resolved', label: 'Resolved' },
+  { key: 'on_hold', label: 'On Hold' },
+  { key: 'work_completed', label: 'Work Completed' },
+  { key: 'review', label: 'Review' },
   { key: 'closed', label: 'Closed' },
 ]
+const CANCELLED_STEP = { key: 'cancelled', label: 'Cancelled' }
 const TABS = ['Overview', 'Diagnostics & RCA', 'Materials', 'Attachments', 'Audit Trail'] as const
 
 export default function ServiceRequestDetailPage() {
@@ -56,7 +66,11 @@ export default function ServiceRequestDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, srId])
 
-  const canModify = !!sr && !!user && (user.role === 'admin' || sr.created_by_id === user.id)
+  // Mirrors the backend's `_can_edit`/`_can_delete` in service_requests.py —
+  // admins always pass, everyone else must both own the SR and hold the
+  // matching granular permission.
+  const canEdit = !!sr && !!user && (user.role === 'admin' || (sr.created_by_id === user.id && hasErpPermission(user, 'sr_edit')))
+  const canDelete = !!sr && !!user && (user.role === 'admin' || (sr.created_by_id === user.id && hasErpPermission(user, 'sr_delete')))
 
   const patch = async (payload: Record<string, unknown>) => {
     if (!sr) return
@@ -70,8 +84,13 @@ export default function ServiceRequestDetailPage() {
 
   const handleDelete = async () => {
     if (!sr) return
-    await erpApi.deleteServiceRequest(sr.id)
-    router.push('/dashboard/erp/service-requests')
+    try {
+      await erpApi.deleteServiceRequest(sr.id)
+      router.push('/dashboard/erp/service-requests')
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to delete service request.')
+      setShowDeleteConfirm(false)
+    }
   }
 
   if (isLoading || !isAuthorized) return null
@@ -87,15 +106,19 @@ export default function ServiceRequestDetailPage() {
           <p style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45', margin: '0 0 4px' }}>{sr.request_number}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{sr.issue_title}</h1>
         </div>
-        {canModify && (
+        {(canEdit || canDelete) && (
           <div style={{ display: 'flex', gap: 10 }}>
-            <Link
-              href={`/dashboard/erp/service-requests/${sr.id}/edit`}
-              style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', textDecoration: 'none', whiteSpace: 'nowrap' }}
-            >
-              Edit
-            </Link>
-            <button onClick={() => setShowDeleteConfirm(true)} style={{ ...dangerBtnStyle }}>Delete</button>
+            {canEdit && (
+              <Link
+                href={`/dashboard/erp/service-requests/${sr.id}/edit`}
+                style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', textDecoration: 'none', whiteSpace: 'nowrap' }}
+              >
+                Edit
+              </Link>
+            )}
+            {canDelete && (
+              <button onClick={() => setShowDeleteConfirm(true)} style={{ ...dangerBtnStyle }}>Delete</button>
+            )}
           </div>
         )}
       </div>
@@ -106,7 +129,7 @@ export default function ServiceRequestDetailPage() {
         </div>
       )}
 
-      <WorkflowSteps status={sr.status} canModify={canModify && !sr.is_locked} onRequestChange={setPendingStatus} />
+      <WorkflowSteps status={sr.status} canModify={canEdit && !sr.is_locked} onRequestChange={setPendingStatus} />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
         {TABS.map((t) => (
@@ -130,10 +153,10 @@ export default function ServiceRequestDetailPage() {
         ))}
       </div>
 
-      {tab === 'Overview' && <OverviewTab sr={sr} project={project} canModify={canModify} onPatch={patch} />}
-      {tab === 'Diagnostics & RCA' && <RcaTab sr={sr} canModify={canModify} onPatch={patch} />}
-      {tab === 'Materials' && <MaterialsTab srId={sr.id} canModify={canModify} />}
-      {tab === 'Attachments' && <AttachmentsTab sr={sr} canModify={canModify} onRefresh={load} />}
+      {tab === 'Overview' && <OverviewTab sr={sr} project={project} canModify={canEdit} onPatch={patch} />}
+      {tab === 'Diagnostics & RCA' && <RcaTab sr={sr} canModify={canEdit} onPatch={patch} />}
+      {tab === 'Materials' && <MaterialsTab srId={sr.id} canEdit={canEdit} canDelete={canDelete} />}
+      {tab === 'Attachments' && <AttachmentsTab sr={sr} canEdit={canEdit} canDelete={canDelete} onRefresh={load} />}
       {tab === 'Audit Trail' && <AuditTab srId={sr.id} />}
 
       <ConfirmDialog
@@ -163,6 +186,15 @@ export default function ServiceRequestDetailPage() {
 
 function WorkflowSteps({ status, canModify, onRequestChange }: { status: string; canModify: boolean; onRequestChange: (key: string) => void }) {
   const activeIdx = WORKFLOW_STEPS.findIndex((s) => s.key === status)
+
+  if (status === CANCELLED_STEP.key) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '18px 20px', marginBottom: 20, borderRadius: 16, background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.2)' }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#b91c1c' }}>Cancelled</span>
+        <span style={{ fontSize: 12.5, color: '#78716c' }}>This service request was cancelled and is no longer moving through the normal workflow.</span>
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '18px 20px', marginBottom: 20, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflowX: 'auto' }}>
@@ -239,7 +271,7 @@ function OverviewTab({ sr, project, canModify, onPatch }: { sr: ServiceRequest; 
               onChange={(e) => onPatch({ status: e.target.value })}
               style={inputStyle}
             >
-              {WORKFLOW_STEPS.map((s) => (
+              {[...WORKFLOW_STEPS, CANCELLED_STEP].map((s) => (
                 <option key={s.key} value={s.key}>{s.label}</option>
               ))}
             </select>
@@ -376,7 +408,7 @@ const PR_STATUS_BADGE: Record<string, { bg: string; fg: string; label: string }>
   cancelled: { bg: '#94a3b81a', fg: '#94a3b8', label: 'Cancelled' },
 }
 
-function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean }) {
+function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boolean; canDelete: boolean }) {
   const [materials, setMaterials] = useState<ServiceRequest['materials']>([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({ material_name: '', part_number: '', quantity: '1', remarks: '' })
@@ -398,22 +430,34 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srId])
 
+  const [materialsError, setMaterialsError] = useState('')
+
   const addMaterial = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.material_name.trim()) return
-    await erpApi.addMaterial(srId, {
-      material_name: form.material_name,
-      part_number: form.part_number || undefined,
-      description: form.remarks || undefined,
-      quantity: Number(form.quantity) || 1,
-    })
-    setForm({ material_name: '', part_number: '', quantity: '1', remarks: '' })
-    load()
+    setMaterialsError('')
+    try {
+      await erpApi.addMaterial(srId, {
+        material_name: form.material_name,
+        part_number: form.part_number || undefined,
+        description: form.remarks || undefined,
+        quantity: Number(form.quantity) || 1,
+      })
+      setForm({ material_name: '', part_number: '', quantity: '1', remarks: '' })
+      load()
+    } catch (err: any) {
+      setMaterialsError(err?.response?.data?.detail || 'Failed to add material.')
+    }
   }
 
   const removeMaterial = async (matId: number) => {
-    await erpApi.deleteMaterial(srId, matId)
-    load()
+    setMaterialsError('')
+    try {
+      await erpApi.deleteMaterial(srId, matId)
+      load()
+    } catch (err: any) {
+      setMaterialsError(err?.response?.data?.detail || 'Failed to remove material.')
+    }
   }
 
   const raisePR = async () => {
@@ -453,7 +497,8 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {canModify && (
+      {materialsError && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: 0 }}>{materialsError}</p>}
+      {canEdit && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           {prMessage && <span style={{ fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{prMessage}</span>}
           {prError && <span style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{prError}</span>}
@@ -468,7 +513,7 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
         </div>
       )}
 
-      {canModify && (
+      {canEdit && (
         <form onSubmit={addMaterial} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: 14, borderRadius: 14, background: '#faf9f7' }}>
           <input placeholder="Material name" value={form.material_name} onChange={(e) => setForm((f) => ({ ...f, material_name: e.target.value }))} style={{ ...inputStyle, flex: '1 1 180px' }} />
           <input placeholder="Part number" value={form.part_number} onChange={(e) => setForm((f) => ({ ...f, part_number: e.target.value }))} style={{ ...inputStyle, flex: '1 1 120px' }} />
@@ -493,7 +538,7 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
             {materials.map((m) => {
               const statusBadge = MATERIAL_STATUS_BADGE[m.status || 'pending'] || MATERIAL_STATUS_BADGE.pending
               const prBadge = m.pr_status ? (PR_STATUS_BADGE[m.pr_status] || PR_STATUS_BADGE.submitted) : null
-              const canReceive = canModify && !!m.pr_id && m.receiving_status !== 'received'
+              const canReceive = canEdit && !!m.pr_id && m.receiving_status !== 'received'
               const isExpanded = expandedId === m.id
               return (
               <Fragment key={m.id}>
@@ -558,7 +603,7 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
                   )}
                 </td>
                 <td style={{ padding: '10px 14px' }}>
-                  {canModify && (
+                  {canDelete && (
                     <button onClick={() => removeMaterial(m.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Remove</button>
                   )}
                 </td>
@@ -566,7 +611,7 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
               {isExpanded && (
                 <tr>
                   <td colSpan={8} style={{ padding: '0 14px 14px' }}>
-                    <MaterialPhotoGallery srId={srId} material={m} canModify={canModify} onChanged={load} />
+                    <MaterialPhotoGallery srId={srId} material={m} canEdit={canEdit} canDelete={canDelete} onChanged={load} />
                   </td>
                 </tr>
               )}
@@ -580,7 +625,7 @@ function MaterialsTab({ srId, canModify }: { srId: number; canModify: boolean })
   )
 }
 
-function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: number; material: ServiceMaterial; canModify: boolean; onChanged: () => void }) {
+function MaterialPhotoGallery({ srId, material, canEdit, canDelete, onChanged }: { srId: number; material: ServiceMaterial; canEdit: boolean; canDelete: boolean; onChanged: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -610,8 +655,12 @@ function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: 
   }
 
   const handleDelete = async (attachmentId: number) => {
-    await erpApi.deleteMaterialAttachment(srId, material.id, attachmentId)
-    onChanged()
+    try {
+      await erpApi.deleteMaterialAttachment(srId, material.id, attachmentId)
+      onChanged()
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to delete photo.')
+    }
   }
 
   return (
@@ -619,7 +668,7 @@ function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: 
       {showCamera && (
         <CameraCapture onCapture={(file) => stageFiles([file])} onClose={() => setShowCamera(false)} />
       )}
-      {canModify && (
+      {canEdit && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <button
             type="button"
@@ -669,7 +718,7 @@ function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: 
           {material.attachments.map((a) => (
             <div key={a.id} style={{ position: 'relative', width: 64, height: 64, flex: 'none' }}>
               <MaterialPhotoThumb srId={srId} matId={material.id} attachment={a} />
-              {canModify && (
+              {canDelete && (
                 <button
                   onClick={() => handleDelete(a.id)}
                   aria-label={`Delete ${a.filename}`}
@@ -686,7 +735,7 @@ function MaterialPhotoGallery({ srId, material, canModify, onChanged }: { srId: 
   )
 }
 
-function AttachmentsTab({ sr, canModify, onRefresh }: { sr: ServiceRequest; canModify: boolean; onRefresh: () => void }) {
+function AttachmentsTab({ sr, canEdit, canDelete, onRefresh }: { sr: ServiceRequest; canEdit: boolean; canDelete: boolean; onRefresh: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
@@ -715,8 +764,12 @@ function AttachmentsTab({ sr, canModify, onRefresh }: { sr: ServiceRequest; canM
   }
 
   const handleDelete = async (attachmentId: number) => {
-    await erpApi.deleteAttachment(sr.id, attachmentId)
-    onRefresh()
+    try {
+      await erpApi.deleteAttachment(sr.id, attachmentId)
+      onRefresh()
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Failed to delete attachment.')
+    }
   }
 
   return (
@@ -732,7 +785,7 @@ function AttachmentsTab({ sr, canModify, onRefresh }: { sr: ServiceRequest; canM
       </div>
 
       <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {canModify && (
+        {canEdit && (
           <div
             onClick={() => !uploading && fileRef.current?.click()}
             onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
@@ -794,7 +847,7 @@ function AttachmentsTab({ sr, canModify, onRefresh }: { sr: ServiceRequest; canM
                 >
                   {a.filename}
                 </a>
-                {canModify && (
+                {canDelete && (
                   <button onClick={() => handleDelete(a.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>
                 )}
               </div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
@@ -27,7 +27,7 @@ export default function EditServiceRequestPage() {
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
   if (error || !sr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error || 'Service request not found.'}</p>
 
-  const canModify = !!user && (user.role === 'admin' || sr.created_by_id === user.id)
+  const canModify = !!user && (user.role === 'admin' || (sr.created_by_id === user.id && hasErpPermission(user, 'sr_edit')))
   if (!canModify) {
     router.push(`/dashboard/erp/service-requests/${srId}`)
     return null

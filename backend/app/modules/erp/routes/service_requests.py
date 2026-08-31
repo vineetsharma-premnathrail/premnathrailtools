@@ -440,6 +440,8 @@ async def restore_service_request(
     sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id, ServiceRequest.is_deleted == True).first()  # noqa: E712
     if not sr:
         raise HTTPException(status_code=404, detail="Deleted service request not found")
+    if not _can_delete(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with delete permission) can restore this service request.")
     sr.is_deleted = False
     sr.deleted_at = None
     _write_audit(db, sr.id, "restored", user, summary=f"Service request {sr.request_number} restored from recycle bin.")
