@@ -909,6 +909,20 @@ export interface Vendor {
   last_audit_date?: string
   last_audit_score?: number
   remarks?: string
+  supplier_type?: string
+  supplier_group?: string
+  gst_category?: string
+  contact_first_name?: string
+  contact_last_name?: string
+  contact_email?: string
+  contact_mobile?: string
+  address_line1?: string
+  address_line2?: string
+  city?: string
+  postal_code?: string
+  state?: string
+  country?: string
+  is_draft: boolean
   created_at?: string
   updated_at?: string
 }
@@ -923,6 +937,20 @@ export interface VendorInput {
   category: string
   payment_terms?: string
   bank_details?: string
+  supplier_type?: string
+  supplier_group?: string
+  gst_category?: string
+  contact_first_name?: string
+  contact_last_name?: string
+  contact_email?: string
+  contact_mobile?: string
+  address_line1?: string
+  address_line2?: string
+  city?: string
+  postal_code?: string
+  state?: string
+  country?: string
+  is_draft?: boolean
 }
 
 export interface P2PPurchaseOrderItem {

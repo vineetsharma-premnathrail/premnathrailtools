@@ -40,9 +40,9 @@ export const BG = {
 } as const
 
 export const BORDER = {
-  light: 'rgba(255,255,255,.20)',
-  normal: 'rgba(255,255,255,.32)',
-  strong: 'rgba(255,255,255,.45)',
+  light: 'rgba(15,23,42,0.10)',
+  normal: 'rgba(15,23,42,0.18)',
+  strong: 'rgba(15,23,42,0.28)',
 } as const
 
 export const SUCCESS = { primary: '#16A34A', hover: '#15803D', light: '#F0FDF4', border: '#BBF7D0', text: '#166534' } as const

@@ -14,6 +14,8 @@ export default function P2PHomePage() {
 
   return (
     <div>
+      <P2PNav />
+
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
@@ -33,8 +35,6 @@ export default function P2PHomePage() {
           + New Purchase Requisition
         </button>
       </div>
-
-      <P2PNav />
 
       <P2PRequestList emptyLabel="You haven't raised any Purchase Requisitions yet." />
     </div>

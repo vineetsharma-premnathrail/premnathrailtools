@@ -60,6 +60,7 @@ export default function P2PRfqPage() {
 
   return (
     <div>
+      <P2PNav />
       <button onClick={() => router.push('/dashboard/p2p')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
         ← Back
       </button>
@@ -67,7 +68,6 @@ export default function P2PRfqPage() {
         Procure-to-Pay Module
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>R.F.Q</h1>
-      <P2PNav />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

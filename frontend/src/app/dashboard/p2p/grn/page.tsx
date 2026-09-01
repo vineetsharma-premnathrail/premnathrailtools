@@ -13,6 +13,7 @@ export default function P2PGrnPage() {
 
   return (
     <div>
+      <P2PNav />
       <button onClick={() => router.push('/dashboard/p2p')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
         ← Back
       </button>
@@ -20,7 +21,6 @@ export default function P2PGrnPage() {
         Procure-to-Pay Module
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>G.R.N</h1>
-      <P2PNav />
       <P2PRequestList statuses={['partially_received', 'received']} emptyLabel="No requests at GRN stage." />
     </div>
   )

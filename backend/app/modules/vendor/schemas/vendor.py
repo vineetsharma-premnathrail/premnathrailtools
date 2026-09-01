@@ -12,6 +12,20 @@ class VendorCreate(BaseModel):
     category: str = "materials"
     payment_terms: str | None = None
     bank_details: str | None = None
+    supplier_type: str | None = None
+    supplier_group: str | None = None
+    gst_category: str | None = None
+    contact_first_name: str | None = None
+    contact_last_name: str | None = None
+    contact_email: str | None = None
+    contact_mobile: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    postal_code: str | None = None
+    state: str | None = None
+    country: str | None = None
+    is_draft: bool = False
 
 
 class VendorUpdate(BaseModel):
@@ -30,6 +44,20 @@ class VendorUpdate(BaseModel):
     last_audit_date: date | None = None
     last_audit_score: float | None = None
     remarks: str | None = None
+    supplier_type: str | None = None
+    supplier_group: str | None = None
+    gst_category: str | None = None
+    contact_first_name: str | None = None
+    contact_last_name: str | None = None
+    contact_email: str | None = None
+    contact_mobile: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    postal_code: str | None = None
+    state: str | None = None
+    country: str | None = None
+    is_draft: bool | None = None
 
 
 class VendorResponse(BaseModel):
@@ -51,5 +79,19 @@ class VendorResponse(BaseModel):
     last_audit_date: date | None = None
     last_audit_score: float | None = None
     remarks: str | None = None
+    supplier_type: str | None = None
+    supplier_group: str | None = None
+    gst_category: str | None = None
+    contact_first_name: str | None = None
+    contact_last_name: str | None = None
+    contact_email: str | None = None
+    contact_mobile: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    postal_code: str | None = None
+    state: str | None = None
+    country: str | None = None
+    is_draft: bool
     created_at: datetime | None = None
     updated_at: datetime | None = None

@@ -219,6 +219,11 @@ input:not([type='checkbox']):not([type='radio']):not([type='range']),
 select,
 textarea {
   transition: border-color .25s ease, box-shadow .25s ease, background-color .25s ease;
+  /* Baseline visible outline for any input/select/textarea that doesn't set
+     its own border inline — plain (non-!important) CSS loses to inline
+     styles, so this only fills the gap on fields that would otherwise be
+     borderless, without touching pages that already style their own. */
+  border: 1px solid rgba(15, 23, 42, 0.18);
 }
 @media (hover: hover) and (pointer: fine) {
   input:not([type='checkbox']):not([type='radio']):not([type='range']):hover:not(:disabled),

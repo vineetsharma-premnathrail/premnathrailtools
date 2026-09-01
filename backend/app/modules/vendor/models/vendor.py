@@ -12,6 +12,10 @@ from app.db.mixins import TimestampMixin
 VENDOR_CATEGORIES = ("materials", "services", "both")
 VENDOR_STATUSES = ("active", "blacklisted", "under_review")
 VENDOR_QUALIFICATION_STATUSES = ("pending", "qualified", "disqualified")
+SUPPLIER_GROUPS = (
+    "Distributor", "Electrical", "Hardware", "Local", "Raw Material",
+    "Services", "Pneumatic", "Hydraulic", "Consumable", "Market",
+)
 
 
 class Vendor(Base, TimestampMixin):
@@ -36,3 +40,19 @@ class Vendor(Base, TimestampMixin):
     last_audit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     last_audit_score: Mapped[float | None] = mapped_column(nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # P2P Supplier quick-create form fields.
+    supplier_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    supplier_group: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    gst_category: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    contact_first_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    contact_last_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_mobile: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    address_line1: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    address_line2: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    is_draft: Mapped[bool] = mapped_column(default=False, nullable=False)
