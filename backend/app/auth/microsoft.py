@@ -44,9 +44,24 @@ async def get_microsoft_user_profile(access_token: str) -> dict:
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             "https://graph.microsoft.com/v1.0/me",
-            params={"$select": "id,displayName,mail,userPrincipalName,jobTitle,department,mobilePhone"},
+            params={"$select": "id,displayName,mail,userPrincipalName,jobTitle,department,mobilePhone,officeLocation"},
             headers={"Authorization": f"Bearer {access_token}"},
         )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def get_microsoft_manager_profile(access_token: str) -> dict | None:
+    """Fetch the signed-in user's manager from Microsoft Graph, or None if
+    they have no manager set in Azure AD (a 404 from Graph)."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://graph.microsoft.com/v1.0/me/manager",
+            params={"$select": "id,mail,userPrincipalName"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if resp.status_code == 404:
+            return None
         resp.raise_for_status()
         return resp.json()
 
@@ -68,7 +83,7 @@ async def list_azure_org_users() -> list[dict]:
     users: list[dict] = []
     url = "https://graph.microsoft.com/v1.0/users"
     params = {
-        "$select": "id,displayName,mail,userPrincipalName,jobTitle,department,mobilePhone,accountEnabled",
+        "$select": "id,displayName,mail,userPrincipalName,jobTitle,department,mobilePhone,officeLocation,accountEnabled",
         "$filter": "accountEnabled eq true",
         "$top": 999,
     }

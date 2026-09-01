@@ -7,6 +7,8 @@ from app.modules.main.models.user import User, AVAILABLE_APPS
 from app.modules.main.schemas.user import UserResponse, UserUpdate
 from app.modules.main.routes.auth import get_current_user
 from app.auth.microsoft import list_azure_org_users, get_azure_admin_ids
+from app.modules.organization.services.provisioning import sync_user_org_links
+from app.modules.organization.models.branch import Branch
 
 router = APIRouter(prefix="/users", tags=["Users & Roles"])
 
@@ -54,6 +56,9 @@ def to_response(user: User, db: Session | None = None) -> UserResponse:
     if user.reporting_manager_id and db is not None:
         manager = db.query(User).filter(User.id == user.reporting_manager_id).first()
         updates["reporting_manager_name"] = manager.name if manager else None
+    if user.branch_id and db is not None:
+        branch = db.query(Branch).filter(Branch.id == user.branch_id).first()
+        updates["branch_name"] = branch.name if branch else None
     return UserResponse.model_validate(user).model_copy(update=updates)
 
 
@@ -220,6 +225,7 @@ async def sync_azure_users(
             target.department = au.get("department") or target.department
             target.designation = au.get("jobTitle") or target.designation
             target.phone = au.get("mobilePhone") or target.phone
+            target.office_location = au.get("officeLocation") or target.office_location
             target.is_active = True
             target.is_azure_admin = is_az_admin
             if is_az_admin and target.role == "user":
@@ -232,6 +238,7 @@ async def sync_azure_users(
                     department=au.get("department"),
                     designation=au.get("jobTitle"),
                     phone=au.get("mobilePhone"),
+                    office_location=au.get("officeLocation"),
                     role="admin" if is_az_admin else "user",
                     is_active=True,
                     is_azure_admin=is_az_admin,
@@ -252,6 +259,12 @@ async def sync_azure_users(
             manager_id = manager.get("id")
             manager_user = azure_id_to_user.get(manager_id) if manager_id else None
             target.reporting_manager_id = manager_user.id if manager_user else None
+
+    # Auto-link every synced user to a Branch (from office_location) and
+    # Department (from department) now that reporting_manager_id is
+    # resolved — see provisioning.py docstring.
+    for target in azure_id_to_user.values():
+        sync_user_org_links(db, target)
 
     # Deactivate any azure-linked local users no longer in the active tenant list
     for u in db.query(User).filter(User.azure_id.isnot(None)).all():

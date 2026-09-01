@@ -32,10 +32,19 @@ export default function Navbar({ user }: { user: User | null }) {
       <div />
 
       {user && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 20,
+            padding: '6px 14px',
+            borderRadius: 16,
+            border: '1px solid rgba(15,23,42,0.12)',
+          }}
+        >
           <UpdatesButton />
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 14, cursor: 'pointer' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 14, cursor: 'pointer', border: '1px solid rgba(15,23,42,0.08)' }}>
             <div
               style={{
                 width: 36,

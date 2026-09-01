@@ -1093,6 +1093,115 @@ export const storeApi = {
   },
 }
 
+export const organizationApi = {
+  listCompanies: async () => {
+    const { data } = await apiClient.get('/organization/companies')
+    return data
+  },
+  createCompany: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/organization/companies', payload)
+    return data
+  },
+  updateCompany: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/organization/companies/${id}`, payload)
+    return data
+  },
+  deleteCompany: async (id: number) => {
+    await apiClient.delete(`/organization/companies/${id}`)
+  },
+
+  listBranches: async () => {
+    const { data } = await apiClient.get('/organization/branches')
+    return data
+  },
+  createBranch: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/organization/branches', payload)
+    return data
+  },
+  updateBranch: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/organization/branches/${id}`, payload)
+    return data
+  },
+  deleteBranch: async (id: number) => {
+    await apiClient.delete(`/organization/branches/${id}`)
+  },
+
+  listDepartments: async () => {
+    const { data } = await apiClient.get('/organization/departments')
+    return data
+  },
+  createDepartment: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/organization/departments', payload)
+    return data
+  },
+  updateDepartment: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/organization/departments/${id}`, payload)
+    return data
+  },
+  deleteDepartment: async (id: number) => {
+    await apiClient.delete(`/organization/departments/${id}`)
+  },
+  getDepartmentMembers: async (id: number) => {
+    const { data } = await apiClient.get(`/organization/departments/${id}/members`)
+    return data
+  },
+}
+
+export const manufacturingApi = {
+  getDashboard: async () => {
+    const { data } = await apiClient.get('/manufacturing/dashboard')
+    return data
+  },
+
+  listMaterials: async () => {
+    const { data } = await apiClient.get('/manufacturing/materials')
+    return data
+  },
+  createMaterial: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/manufacturing/materials', payload)
+    return data
+  },
+  updateMaterial: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/manufacturing/materials/${id}`, payload)
+    return data
+  },
+
+  listBOMs: async () => {
+    const { data } = await apiClient.get('/manufacturing/boms')
+    return data
+  },
+  createBOM: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/manufacturing/boms', payload)
+    return data
+  },
+  updateBOM: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/manufacturing/boms/${id}`, payload)
+    return data
+  },
+
+  listWorkOrders: async () => {
+    const { data } = await apiClient.get('/manufacturing/work-orders')
+    return data
+  },
+  createWorkOrder: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/manufacturing/work-orders', payload)
+    return data
+  },
+  updateWorkOrder: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/manufacturing/work-orders/${id}`, payload)
+    return data
+  },
+
+  listStockEntries: async () => {
+    const { data } = await apiClient.get('/manufacturing/stock-entries')
+    return data
+  },
+  createStockEntry: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/manufacturing/stock-entries', payload)
+    return data
+  },
+}
+
 const RND_TOOL_PATHS: Record<string, string> = {
   braking: 'braking',
   hydraulic: 'hydraulic',

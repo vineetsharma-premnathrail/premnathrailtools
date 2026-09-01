@@ -17,7 +17,8 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.schemas.auth import TokenResponse, CurrentUserResponse
 from app.auth.jwt_handler import create_access_token, verify_access_token
-from app.auth.microsoft import get_auth_url, exchange_code_for_token, get_microsoft_user_profile
+from app.auth.microsoft import get_auth_url, exchange_code_for_token, get_microsoft_user_profile, get_microsoft_manager_profile
+from app.modules.organization.services.provisioning import sync_user_org_links
 from app.core.config import settings
 from app.middleware.api_key import get_api_key_record
 
@@ -184,6 +185,7 @@ async def oauth_callback(code: str, state: str, db: Session = Depends(get_db)):
         designation = profile.get("jobTitle")
         department = profile.get("department")
         phone = profile.get("mobilePhone")
+        office_location = profile.get("officeLocation")
 
         if settings.DOMAIN_EMAIL:
             allowed_domain = settings.DOMAIN_EMAIL.strip().lstrip("@").lower()
@@ -195,6 +197,7 @@ async def oauth_callback(code: str, state: str, db: Session = Depends(get_db)):
             user = User(
                 email=email, name=name, azure_id=azure_id, role="user", is_active=True,
                 designation=designation, department=department, phone=phone,
+                office_location=office_location,
             )
             db.add(user)
             db.commit()
@@ -205,8 +208,29 @@ async def oauth_callback(code: str, state: str, db: Session = Depends(get_db)):
             user.designation = designation
             user.department = department
             user.phone = phone
+            user.office_location = office_location
             db.commit()
             db.refresh(user)
+
+        # Best-effort manager resolution — reading the manager relationship
+        # needs more than the plain User.Read delegated scope this flow
+        # requests, so a 403 here is expected on tenants that haven't granted
+        # it; the admin's Sync Azure Users action (app-only token) is the
+        # reliable path for this, this is just a bonus on regular login.
+        try:
+            manager_profile = await get_microsoft_manager_profile(ms_access_token)
+            if manager_profile:
+                manager_email = manager_profile.get("mail") or manager_profile.get("userPrincipalName")
+                manager_user = db.query(User).filter(User.email == manager_email).first() if manager_email else None
+                user.reporting_manager_id = manager_user.id if manager_user else user.reporting_manager_id
+                db.commit()
+        except Exception:
+            pass
+
+        # Auto-link this user to a Branch (from office_location) and
+        # Department (from department) — see provisioning.py docstring.
+        sync_user_org_links(db, user)
+        db.commit()
 
         if not user.is_active:
             return RedirectResponse(url=f"{frontend_url}/login?error=inactive", status_code=302)

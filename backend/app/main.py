@@ -13,6 +13,13 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.api_key import APIKey
 from app.modules.main.models.module import Module
+from app.modules.organization.models.company import Company
+from app.modules.organization.models.branch import Branch
+from app.modules.organization.models.department import Department
+from app.modules.manufacturing.models.material import Material as MfgMaterial
+from app.modules.manufacturing.models.bom import BOM, BOMItem
+from app.modules.manufacturing.models.work_order import WorkOrder as MfgWorkOrder
+from app.modules.manufacturing.models.stock_entry import StockEntry as MfgStockEntry
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.project_attachment import ProjectAttachment
 from app.modules.erp.models.service_request import ServiceRequest
@@ -76,6 +83,14 @@ from app.modules.crm.routes import products as crm_products_routes
 from app.modules.crm.routes import payment_terms as crm_payment_terms_routes
 from app.modules.rnd.routes import calculations as rnd_calculations_routes
 from app.modules.rnd.routes import history as rnd_history_routes
+from app.modules.organization.routes import company as organization_company_routes
+from app.modules.organization.routes import branch as organization_branch_routes
+from app.modules.organization.routes import department as organization_department_routes
+from app.modules.manufacturing.routes import materials as manufacturing_materials_routes
+from app.modules.manufacturing.routes import boms as manufacturing_boms_routes
+from app.modules.manufacturing.routes import work_orders as manufacturing_work_orders_routes
+from app.modules.manufacturing.routes import stock_entries as manufacturing_stock_entries_routes
+from app.modules.manufacturing.routes import dashboard as manufacturing_dashboard_routes
 from app.middleware.error_handler import setup_error_handlers, LoggingMiddleware
 from app.middleware.owasp import OWASPMiddleware
 
@@ -156,6 +171,14 @@ app.include_router(electrical_work_orders_routes.router, prefix="/api/v1")
 app.include_router(presence_routes.router, prefix="/api/v1")
 app.include_router(rnd_calculations_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_history_routes.router, prefix="/api/v1/rnd")
+app.include_router(organization_company_routes.router, prefix="/api/v1")
+app.include_router(organization_branch_routes.router, prefix="/api/v1")
+app.include_router(organization_department_routes.router, prefix="/api/v1")
+app.include_router(manufacturing_materials_routes.router, prefix="/api/v1")
+app.include_router(manufacturing_boms_routes.router, prefix="/api/v1")
+app.include_router(manufacturing_work_orders_routes.router, prefix="/api/v1")
+app.include_router(manufacturing_stock_entries_routes.router, prefix="/api/v1")
+app.include_router(manufacturing_dashboard_routes.router, prefix="/api/v1")
 
 
 @app.get("/health")

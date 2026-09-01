@@ -43,6 +43,9 @@ class UserResponse(BaseModel):
     designation: str | None = None
     department: str | None = None
     phone: str | None = None
+    office_location: str | None = None
+    branch_id: int | None = None
+    branch_name: str | None = None
     assigned_apps: list[str] = []
     erp_permissions: list[str] = []
     is_department_head: bool = False

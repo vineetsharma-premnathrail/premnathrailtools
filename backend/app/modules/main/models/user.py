@@ -7,7 +7,7 @@ from app.db.mixins import TimestampMixin
 # Modules a user's `assigned_apps` list may contain. The admin role
 # bypasses this entirely and gets access to every module regardless
 # of what's in the list (see get_user_apps() usage in routes).
-AVAILABLE_APPS = {"erp", "rnd", "crm", "purchase", "p2p", "store", "hr", "design", "electrical"}
+AVAILABLE_APPS = {"erp", "rnd", "crm", "purchase", "p2p", "store", "hr", "design", "electrical", "manufacturing"}
 
 
 class User(Base, TimestampMixin):
@@ -27,6 +27,14 @@ class User(Base, TimestampMixin):
     designation: Mapped[str | None] = mapped_column(nullable=True)
     department: Mapped[str | None] = mapped_column(nullable=True)
     phone: Mapped[str | None] = mapped_column(nullable=True)
+    # Azure AD "Office Location" (Graph `officeLocation`) — free-text per
+    # tenant convention (e.g. a building/floor label), synced read-only from
+    # Azure. Auto-matched/created as an Organization > Branch on every sync
+    # (see app/modules/organization/services/provisioning.py); `branch_id`
+    # below is the resulting managed link, this field stays as the raw
+    # Azure value for reference/re-matching.
+    office_location: Mapped[str | None] = mapped_column(nullable=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
     assigned_apps: Mapped[list[str]] = mapped_column(JSON, default=list)
     erp_permissions: Mapped[list[str]] = mapped_column(JSON, default=list)
     is_azure_admin: Mapped[bool] = mapped_column(default=False)

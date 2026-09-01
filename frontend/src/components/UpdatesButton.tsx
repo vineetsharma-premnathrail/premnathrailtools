@@ -63,6 +63,7 @@ export default function UpdatesButton({ variant = 'icon' }: { variant?: 'icon' |
         <button
           ref={btnRef}
           onClick={toggleOpen}
+          className="sidebar-flat-btn"
           style={{
             width: '100%',
             display: 'flex',

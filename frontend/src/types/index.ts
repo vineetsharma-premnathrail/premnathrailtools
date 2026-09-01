@@ -1,4 +1,4 @@
-export type AppModule = 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p' | 'store' | 'hr' | 'design' | 'electrical'
+export type AppModule = 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p' | 'store' | 'hr' | 'design' | 'electrical' | 'manufacturing'
 
 export interface User {
   id: number
@@ -10,6 +10,9 @@ export interface User {
   designation?: string
   department?: string
   phone?: string
+  office_location?: string
+  branch_id?: number
+  branch_name?: string
   avatar_url?: string
   assigned_apps: AppModule[]
   /** Granular ERP sub-permissions (e.g. "project_delete", "sr_view") — only meaningful when "erp" is in assigned_apps. */
@@ -952,6 +955,128 @@ export interface ModuleMeta {
   description?: string
   is_active: boolean
   sort_order: number
+}
+
+export interface Company {
+  id: number
+  name: string
+  code: string
+  gst_number?: string | null
+  pan_number?: string | null
+  address?: string | null
+  phone?: string | null
+  email?: string | null
+  logo_url?: string | null
+  letterhead_html?: string | null
+  is_active: boolean
+  default_currency?: string | null
+  country?: string | null
+  tax_id?: string | null
+  domain?: string | null
+  date_of_establishment?: string | null
+  gst_category?: string | null
+  reporting_currency?: string | null
+  registration_details?: string | null
+}
+
+export interface Branch {
+  id: number
+  company_id: number
+  name: string
+  code: string
+  address?: string | null
+  city?: string | null
+  state?: string | null
+  company_name?: string | null
+}
+
+export interface Department {
+  id: number
+  company_id: number
+  branch_id?: number | null
+  name: string
+  code: string
+  head_user_id?: number | null
+  secondary_head_user_id?: number | null
+  company_name?: string | null
+  branch_name?: string | null
+  /** "Name A / Name B" when the department has two conflicting heads. */
+  head_user_name?: string | null
+}
+
+export interface DepartmentMember {
+  id: number
+  name: string
+  email: string
+  designation?: string | null
+  is_head: boolean
+}
+
+export interface Material {
+  id: number
+  code: string
+  name: string
+  unit?: string | null
+  category?: string | null
+  remarks?: string | null
+  is_active: boolean
+}
+
+export interface BOMItem {
+  id: number
+  material_id: number
+  quantity: number
+  material_name?: string | null
+  material_code?: string | null
+}
+
+export interface BOMItemInput {
+  material_id: number
+  quantity: number
+}
+
+export interface BOM {
+  id: number
+  code: string
+  name: string
+  output_material_id: number
+  output_quantity: number
+  is_active: boolean
+  output_material_name?: string | null
+  items: BOMItem[]
+}
+
+export interface WorkOrder {
+  id: number
+  wo_number: string
+  bom_id: number
+  quantity: number
+  status: 'planned' | 'in_progress' | 'completed' | 'cancelled'
+  remarks?: string | null
+  bom_name?: string | null
+  created_by_name?: string | null
+}
+
+export interface StockEntry {
+  id: number
+  material_id: number
+  work_order_id?: number | null
+  type: 'receipt' | 'issue' | 'adjustment'
+  quantity: number
+  remarks?: string | null
+  material_name?: string | null
+  material_code?: string | null
+  wo_number?: string | null
+  created_by_name?: string | null
+}
+
+export interface ManufacturingDashboard {
+  material_count: number
+  bom_count: number
+  work_orders_planned: number
+  work_orders_in_progress: number
+  work_orders_completed: number
+  stock_entries_count: number
 }
 
 export interface StoreLocation {

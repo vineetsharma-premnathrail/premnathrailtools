@@ -160,10 +160,10 @@ export default function UsersRolesPage() {
 
       {/* Table */}
       <div style={{ borderRadius: 18, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['User', 'Email', 'Designation', 'Department', 'Role', 'Apps', 'Status', 'Actions'].map((h) => (
+              {['User', 'Email', 'Designation', 'Department', 'Office Location', 'Role', 'Apps', 'Status', 'Actions'].map((h) => (
                 <th
                   key={h}
                   style={{
@@ -189,14 +189,14 @@ export default function UsersRolesPage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>
+                <td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>
                   Loading users…
                 </td>
               </tr>
             )}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>
+                <td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>
                   No users match your filters.
                 </td>
               </tr>
@@ -242,6 +242,7 @@ export default function UsersRolesPage() {
                       <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#047857', textTransform: 'uppercase' }}>Plant Head</span>
                     )}
                   </td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{u.office_location || '—'}</td>
                   <td style={{ padding: '12px 16px' }}>
                     <span
                       style={{
@@ -465,6 +466,9 @@ function EditUserModal({
             <Field label="Email" value={user.email} />
             <Field label="Designation" value={user.designation || '—'} />
             <Field label="Department" value={user.department || '—'} />
+            <Field label="Office Location" value={user.office_location || '—'} />
+            <Field label="Branch" value={user.branch_name || '—'} />
+            <Field label="Reporting Manager" value={user.reporting_manager_name || '—'} />
             <Field label="Phone" value={user.phone || '—'} />
             <Field label="Role" value={user.role.replace('_', ' ')} capitalize />
           </div>

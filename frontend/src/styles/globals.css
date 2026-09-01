@@ -500,6 +500,16 @@ img, svg { max-width: 100%; height: auto; }
   }
 }
 
+/* Same clipped-glass-container issue as .sidebar-nav-link above, but for the
+   Feedback / What's New row buttons: the generic button:hover box-shadow
+   ring got cut off by the sidebar's overflow:hidden. Suppress the ring and
+   use a plain background tint instead. */
+.sidebar-flat-btn:not(:disabled):hover {
+  box-shadow: none;
+  background: rgba(255, 122, 69, 0.1);
+  color: #57534e;
+}
+
 /* ===================== Generic responsive grid helpers =====================
    Use these className hooks (alongside/instead of an inline style object) on
    any multi-column layout so it collapses gracefully on small screens. */
