@@ -24,23 +24,27 @@ body {
   max-width: 100%;
 }
 
-/* Default look for any plain <button> that doesn't set its own background —
-   most buttons in this app set an inline background per-action (primary/
-   danger/etc.), which always wins over this (inline beats a bare element
-   selector), so this only affects genuinely unstyled buttons. Colors use the
-   brand orange family instead of the literal blue from the source snippet,
-   to stay consistent with the rest of the palette. */
+/* Default look for any plain <button> that doesn't set its own background/
+   border/shadow — most buttons in this app set an inline background per-
+   action (primary/danger/etc.) and often their own border, which always
+   wins over these (inline beats a bare element selector), so this only
+   affects genuinely unstyled buttons — and fills in a visible outline +
+   resting shadow for buttons that otherwise render flat/borderless. Colors
+   use the brand orange family instead of the literal blue from the source
+   snippet, to stay consistent with the rest of the palette. */
 button {
   background-color: #fff2eb;
   color: #ff7a45;
-  border: none;
+  border: 1px solid rgba(15, 23, 42, 0.16);
   cursor: pointer;
   border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
   transition: 0.3s;
 }
 @media (hover: hover) and (pointer: fine) {
   button:not(:disabled):hover {
     background-color: #ff7a45;
+    border-color: #ff7a45;
     box-shadow: 0 0 0 5px rgba(255, 122, 69, 0.37);
     color: #fff;
   }
@@ -150,8 +154,8 @@ table { max-width: 100%; }
 .animated-gradient-bg {
   /* Pearlescent multi-stop instead of a flat two-tone fade — a warm ivory
      midpoint (not plain gray) reads as premium rather than "washed out". */
-  background: linear-gradient(var(--grad-angle), #c50a0a05 0%, #faf6f0 30%, #fdfcfa 60%, rgb(255 255 255) 100%);
-  animation: gradientAngleLoop 14s ease-in-out infinite;
+  background: linear-gradient(287deg, #c50a0a05 0%, #faf6f0 30%, #fdfcfa 60%, rgb(255 255 255) 100%);
+  animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .animated-gradient-bg { animation: none; }
@@ -168,13 +172,8 @@ table { max-width: 100%; }
   100% { transform: translate(0, 0) scale(1); }
 }
 .bg-blob {
-  animation: bgBlobDrift 9s ease-in-out infinite;
+  animation: none;
 }
-.bg-blob:nth-child(2) { animation-duration: 11s; animation-delay: -3s; }
-.bg-blob:nth-child(3) { animation-duration: 7.5s; animation-delay: -1.5s; }
-.bg-blob:nth-child(4) { animation-duration: 10s; animation-delay: -5s; }
-.bg-blob:nth-child(5) { animation-duration: 8s; animation-delay: -2.5s; }
-.bg-blob:nth-child(6) { animation-duration: 12s; animation-delay: -6.5s; }
 @media (prefers-reduced-motion: reduce) {
   .bg-blob { animation: none; }
 }
@@ -204,7 +203,8 @@ table { max-width: 100%; }
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), inset 0 0 20px rgba(255,255,255,0.12), 0 0 12px rgba(255,196,148,0.10);
-  animation: waterRippleExpand 3s cubic-bezier(0.22,1,0.36,1) infinite;
+  animation: none;
+  opacity: 0;
 }
 @media (prefers-reduced-motion: reduce) {
   .water-ripple-ring { animation: none; opacity: 0; }
@@ -370,6 +370,12 @@ input[type='number'] {
   -moz-appearance: textfield;
 }
 
+.org-detail-tab,
+.org-detail-tab:focus,
+.org-detail-tab:focus-visible {
+  outline: none;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
@@ -484,6 +490,16 @@ img, svg { max-width: 100%; height: auto; }
    backdrop-filter stacking. drop-shadow on the icon alone avoids it. */
 .sidebar-nav-link {
   transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s ease-out;
+}
+.sidebar-nav-list::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-nav-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-nav-list::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.15);
+  border-radius: 4px;
 }
 .sidebar-nav-link .sidebar-nav-icon {
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.25s ease-out;

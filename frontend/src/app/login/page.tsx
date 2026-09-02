@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
@@ -27,14 +27,6 @@ function LoginPageInner() {
   const [busy, setBusy] = useState(false)
   const [inTeams, setInTeams] = useState(false)
   const [teamsMessage, setTeamsMessage] = useState('')
-  const dropRef = useRef<HTMLDivElement>(null)
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = dropRef.current
-    if (!el) return
-    el.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0)`
-  }
-
   const errorParam = searchParams.get('error')
   const errorMessage = errorParam ? ERROR_MESSAGES[errorParam] || 'Sign-in failed. Please try again.' : null
 
@@ -137,21 +129,15 @@ function LoginPageInner() {
         padding: 24,
         overflow: 'hidden',
       }}
-      onMouseMove={handleMouseMove}
     >
-      {/* Decorative color blobs + water-ripple cursor follower, same as the dashboard background */}
+      {/* Decorative color blobs, same as the dashboard background */}
       <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
-        <div className="bg-blob" style={{ position: 'absolute', top: '-10%', left: '15%', width: 460, height: 460, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,69,0.48), transparent 70%)', filter: 'blur(10px)' }} />
-        <div className="bg-blob" style={{ position: 'absolute', bottom: '-15%', left: '35%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,90,31,0.34), transparent 70%)', filter: 'blur(10px)' }} />
-        <div className="bg-blob" style={{ position: 'absolute', top: '20%', right: '5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.28), transparent 70%)', filter: 'blur(10px)' }} />
-        <div className="bg-blob" style={{ position: 'absolute', top: '55%', left: '5%', width: 360, height: 360, borderRadius: '50%', background: 'radial-gradient(circle, rgba(16,185,129,0.30), transparent 70%)', filter: 'blur(10px)' }} />
-        <div className="bg-blob" style={{ position: 'absolute', top: '5%', right: '25%', width: 320, height: 320, borderRadius: '50%', background: 'radial-gradient(circle, rgba(236,72,153,0.26), transparent 70%)', filter: 'blur(10px)' }} />
-        <div className="bg-blob" style={{ position: 'absolute', bottom: '5%', right: '30%', width: 380, height: 380, borderRadius: '50%', background: 'radial-gradient(circle, rgba(234,179,8,0.28), transparent 70%)', filter: 'blur(10px)' }} />
-        <div ref={dropRef} style={{ position: 'fixed', top: 0, left: 0, pointerEvents: 'none' }}>
-          <div className="water-ripple-ring" style={{ animationDelay: '0s' }} />
-          <div className="water-ripple-ring" style={{ animationDelay: '0.8s' }} />
-          <div className="water-ripple-ring" style={{ animationDelay: '1.6s' }} />
-        </div>
+        <div style={{ position: 'absolute', top: '-10%', left: '15%', width: 460, height: 460, borderRadius: '50%', background: 'radial-gradient(circle, rgba(255,122,69,0.48), transparent 70%)', filter: 'blur(10px)' }} />
+        <div style={{ position: 'absolute', bottom: '-15%', left: '35%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(232,90,31,0.34), transparent 70%)', filter: 'blur(10px)' }} />
+        <div style={{ position: 'absolute', top: '20%', right: '5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(99,102,241,0.28), transparent 70%)', filter: 'blur(10px)' }} />
+        <div style={{ position: 'absolute', top: '55%', left: '5%', width: 360, height: 360, borderRadius: '50%', background: 'radial-gradient(circle, rgba(16,185,129,0.30), transparent 70%)', filter: 'blur(10px)' }} />
+        <div style={{ position: 'absolute', top: '5%', right: '25%', width: 320, height: 320, borderRadius: '50%', background: 'radial-gradient(circle, rgba(236,72,153,0.26), transparent 70%)', filter: 'blur(10px)' }} />
+        <div style={{ position: 'absolute', bottom: '5%', right: '30%', width: 380, height: 380, borderRadius: '50%', background: 'radial-gradient(circle, rgba(234,179,8,0.28), transparent 70%)', filter: 'blur(10px)' }} />
       </div>
 
       {/* paper grain texture overlay */}

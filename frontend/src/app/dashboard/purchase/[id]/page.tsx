@@ -146,8 +146,6 @@ export default function PurchaseRequisitionDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.push('/dashboard/purchase')} style={{ ...linkBtnStyle, marginBottom: 12 }}>← Back to Purchase Requisitions</button>
-
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
@@ -168,6 +166,9 @@ export default function PurchaseRequisitionDetailPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button onClick={() => router.push('/dashboard/purchase')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
           <select
             disabled={busy}
             value={pr.status}

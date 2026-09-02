@@ -60,9 +60,9 @@ export const GLASS = {
   highlight: 'rgba(255,255,255,.45)',
   shadow: 'rgba(0,0,0,.18)',
   innerHighlight: 'inset 0 1px 0 rgba(255,255,255,.35)',
-  blur: 'blur(28px)',
-  blurStrong: 'blur(36px)',
-  blurLight: 'blur(20px)',
+  blur: 'blur(12px)',
+  blurStrong: 'blur(16px)',
+  blurLight: 'blur(8px)',
 } as const
 
 export const SHADOWS = {
@@ -116,7 +116,7 @@ export const COLORS = {
 export const RADII = {
   sm: 8,
   md: 12,
-  lg: 16,
+  lg: 10,
   xl: 18,
   '2xl': 20,
   '3xl': 22,

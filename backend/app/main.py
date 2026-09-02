@@ -36,6 +36,7 @@ from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.vendor.models.vendor import Vendor
+from app.modules.item.models.item import Item
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_item import StockItem
 from app.modules.store.models.stock_balance import StockBalance
@@ -69,6 +70,7 @@ from app.modules.p2p.routes import p2p_requests as p2p_requests_routes
 from app.modules.p2p.routes import purchase_orders as p2p_purchase_orders_routes
 from app.modules.p2p.routes import rfq as p2p_rfq_routes
 from app.modules.vendor.routes import vendors as vendors_routes
+from app.modules.item.routes import items as items_routes
 from app.modules.store.routes import locations as store_locations_routes
 from app.modules.store.routes import stock_items as store_stock_items_routes
 from app.modules.store.routes import stock_transactions as store_stock_transactions_routes
@@ -149,6 +151,7 @@ app.include_router(p2p_requests_routes.router, prefix="/api/v1")
 app.include_router(p2p_purchase_orders_routes.router, prefix="/api/v1")
 app.include_router(p2p_rfq_routes.router, prefix="/api/v1")
 app.include_router(vendors_routes.router, prefix="/api/v1")
+app.include_router(items_routes.router, prefix="/api/v1")
 app.include_router(store_locations_routes.router, prefix="/api/v1")
 app.include_router(store_stock_items_routes.router, prefix="/api/v1")
 app.include_router(store_stock_transactions_routes.router, prefix="/api/v1")

@@ -1,18 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { vendorsApi } from '@/lib/api'
 import { Vendor } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import P2PNav, { SUPPLIER_SECTIONS } from '@/components/p2p/P2PNav'
+import P2PNav from '@/components/p2p/P2PNav'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 
 const STATUS_HEX: Record<string, string> = {
   active: '#22c55e', blacklisted: '#dc2626', under_review: '#f59e0b',
-}
-const QUAL_HEX: Record<string, string> = {
-  qualified: '#22c55e', pending: '#f59e0b', disqualified: '#dc2626',
 }
 
 const inputStyle: React.CSSProperties = {
@@ -26,14 +24,14 @@ const sectionStyle: React.CSSProperties = {
 }
 const searchInputStyle: React.CSSProperties = { flex: 1, minWidth: 240, maxWidth: 360, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 13.5, outline: 'none' }
 const createButtonStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 12, border: 'none', cursor: 'pointer',
+  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
   background: GRADIENTS.primary, color: '#fff', fontSize: 13.5, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
 }
 const tableWrapStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden',
 }
-const thStyle: React.CSSProperties = { padding: '12px 16px', color: TEXT.muted, fontWeight: 600, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase' }
+const thStyle: React.CSSProperties = { padding: '12px 16px', color: TEXT.muted, fontWeight: 600, fontSize: 11.5, letterSpacing: '.04em', textTransform: 'uppercase', background: '#fdf1e6' }
 
 function PencilIcon() {
   return (
@@ -66,12 +64,14 @@ const emptySupplierForm = {
   state: '',
   country: '',
   gstin: '',
+  pan: '',
   category: 'materials',
   payment_terms: '',
   bank_details: '',
 }
 
 function SupplierSection() {
+  const router = useRouter()
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -139,6 +139,7 @@ function SupplierSection() {
         state: form.state || undefined,
         country: form.country || undefined,
         gstin: form.gstin || undefined,
+        pan: form.pan || undefined,
         category: form.category,
         payment_terms: form.payment_terms || undefined,
         bank_details: form.bank_details || undefined,
@@ -157,7 +158,12 @@ function SupplierSection() {
   if (showForm) {
     return (
       <div>
-        <h2 style={{ fontSize: 17, fontWeight: 700, color: TEXT.heading, margin: '0 0 16px' }}>New Supplier</h2>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <h2 style={{ fontSize: 17, fontWeight: 700, color: TEXT.heading, margin: '0 0 16px' }}>New Supplier</h2>
+          <button onClick={resetForm} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
+        </div>
 
         {formError && (
           <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -248,7 +254,7 @@ function SupplierSection() {
           <button
             onClick={() => setShowMoreDetails(true)}
             type="button"
-            style={{ padding: '10px 18px', borderRadius: 12, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', marginBottom: 20 }}
+            style={{ padding: '10px 18px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', marginBottom: 20 }}
           >
             + More Details
           </button>
@@ -259,6 +265,10 @@ function SupplierSection() {
               <div>
                 <label style={labelStyle}>GSTIN</label>
                 <input style={inputStyle} value={form.gstin} onChange={setField('gstin')} />
+              </div>
+              <div>
+                <label style={labelStyle}>PAN</label>
+                <input style={inputStyle} value={form.pan} onChange={setField('pan')} placeholder="ABCDE1234F" maxLength={10} />
               </div>
               <div>
                 <label style={labelStyle}>Category</label>
@@ -281,13 +291,13 @@ function SupplierSection() {
         )}
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-          <button onClick={resetForm} disabled={submitting} type="button" style={{ padding: '12px 22px', borderRadius: 12, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+          <button onClick={resetForm} disabled={submitting} type="button" style={{ padding: '12px 22px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
             Cancel
           </button>
-          <button onClick={() => handleSubmit(true)} disabled={submitting} type="button" style={{ padding: '12px 22px', borderRadius: 12, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 14, fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer' }}>
+          <button onClick={() => handleSubmit(true)} disabled={submitting} type="button" style={{ padding: '12px 22px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 14, fontWeight: 600, cursor: submitting ? 'not-allowed' : 'pointer' }}>
             Save as Draft
           </button>
-          <button onClick={() => handleSubmit(false)} disabled={submitting} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: submitting ? 0.6 : 1 }}>
+          <button onClick={() => handleSubmit(false)} disabled={submitting} type="button" style={{ padding: '12px 26px', borderRadius: 10, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: submitting ? 0.6 : 1 }}>
             {submitting ? 'Saving…' : 'Save'}
           </button>
         </div>
@@ -319,27 +329,30 @@ function SupplierSection() {
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
           <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+            <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(0,0,0,0.08)', background: '#fdf1e6' }}>
               <th style={thStyle}>Supplier Name</th>
               <th style={thStyle}>Supplier Type</th>
               <th style={thStyle}>Contact</th>
               <th style={thStyle}>Category</th>
               <th style={thStyle}>Status</th>
-              <th style={thStyle}>Qualification</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} style={{ padding: '20px 16px', textAlign: 'center', color: TEXT.muted }}>Loading…</td>
+                <td colSpan={5} style={{ padding: '20px 16px', textAlign: 'center', color: TEXT.muted }}>Loading…</td>
               </tr>
             ) : vendors.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ padding: '20px 16px', textAlign: 'center', color: TEXT.muted }}>No suppliers found.</td>
+                <td colSpan={5} style={{ padding: '20px 16px', textAlign: 'center', color: TEXT.muted }}>No suppliers found.</td>
               </tr>
             ) : (
               vendors.map((v) => (
-                <tr key={v.id} style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+                <tr
+                  key={v.id}
+                  onClick={() => router.push(`/dashboard/p2p/supplier/${v.id}`)}
+                  style={{ borderBottom: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
+                >
                   <td style={{ padding: '12px 16px', fontWeight: 600, color: TEXT.heading }}>
                     {v.name}
                     {v.is_draft && (
@@ -359,11 +372,6 @@ function SupplierSection() {
                       {v.status.replace('_', ' ')}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 9999, fontSize: 11.5, fontWeight: 600, color: QUAL_HEX[v.qualification_status], background: `${QUAL_HEX[v.qualification_status]}18`, textTransform: 'capitalize' }}>
-                      {v.qualification_status}
-                    </span>
-                  </td>
                 </tr>
               ))
             )}
@@ -376,8 +384,6 @@ function SupplierSection() {
 
 export default function P2PSupplierPage() {
   const { isAuthorized, isLoading } = useRequireApp('p2p')
-  const searchParams = useSearchParams()
-  const section = searchParams.get('section') || 'supplier'
 
   if (isLoading || !isAuthorized) return null
 
@@ -387,19 +393,11 @@ export default function P2PSupplierPage() {
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
-            {SUPPLIER_SECTIONS.find((s) => s.value === section)?.label || 'Suppliers'}
-          </h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Suppliers</h1>
         </div>
       </div>
 
-      {section === 'supplier' ? (
-        <SupplierSection />
-      ) : (
-        <p style={{ color: TEXT.muted, fontSize: 13.5 }}>
-          {SUPPLIER_SECTIONS.find((s) => s.value === section)?.label} is coming soon.
-        </p>
-      )}
+      <SupplierSection />
     </div>
   )
 }

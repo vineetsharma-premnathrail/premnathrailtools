@@ -7,6 +7,7 @@ import { crmApi } from '@/lib/api'
 import CrmNav from '@/components/crm/CrmNav'
 import InquiryForm from '@/components/crm/InquiryForm'
 import TenderForm from '@/components/crm/TenderForm'
+import { secondaryBtnStyle } from '@/components/crm/ui'
 
 type Kind = 'inquiry' | 'tender'
 
@@ -22,10 +23,17 @@ export default function NewInquiryOrTenderPage() {
     <div>
       <CrmNav />
       <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 6px' }}>
-          <span onClick={() => router.push('/dashboard/crm/inquiries')} style={{ cursor: 'pointer' }}>Inquiries &amp; Tenders</span> › New
-        </p>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: '0 0 16px' }}>New Record</h1>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 6px' }}>
+              <span onClick={() => router.push('/dashboard/crm/inquiries')} style={{ cursor: 'pointer' }}>Inquiries &amp; Tenders</span> › New
+            </p>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: '0 0 16px' }}>New Record</h1>
+          </div>
+          <button type="button" onClick={() => router.push('/dashboard/crm/inquiries')} style={secondaryBtnStyle}>
+            ← Back
+          </button>
+        </div>
 
         <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)' }}>
           {(['inquiry', 'tender'] as Kind[]).map((k) => (

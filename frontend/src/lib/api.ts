@@ -1009,6 +1009,33 @@ export const vendorsApi = {
   },
 }
 
+export const itemsApi = {
+  list: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/items', { params })
+    return data
+  },
+
+  get: async (id: number) => {
+    const { data } = await apiClient.get(`/items/${id}`)
+    return data
+  },
+
+  create: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/items', payload)
+    return data
+  },
+
+  update: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.put(`/items/${id}`, payload)
+    return data
+  },
+
+  bulkCreate: async (items: Record<string, unknown>[]) => {
+    const { data } = await apiClient.post('/items/bulk', { items })
+    return data
+  },
+}
+
 export const purchaseOrdersApi = {
   list: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/p2p/purchase-orders', { params })

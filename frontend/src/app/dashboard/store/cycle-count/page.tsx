@@ -78,12 +78,12 @@ export default function CycleCountPage() {
 
   return (
     <div>
+      <StoreNav />
+
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
         Store Module
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>Cycle Count</h1>
-
-      <StoreNav />
 
       <div style={{ maxWidth: 360, marginBottom: 16 }}>
         <SearchableSelect

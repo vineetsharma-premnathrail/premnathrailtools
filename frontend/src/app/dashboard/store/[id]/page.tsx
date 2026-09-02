@@ -98,10 +98,6 @@ export default function StockItemDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.push('/dashboard/store')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to Stock Items
-      </button>
-
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
@@ -113,6 +109,9 @@ export default function StockItemDetailPage() {
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{item.part_code} · {item.category || 'Uncategorized'}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => router.push('/dashboard/store')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
           <button disabled={busy} onClick={() => setActivePanel(activePanel === 'in' ? '' : 'in')} style={ghostBtn}>Stock In</button>
           <button disabled={busy} onClick={() => setActivePanel(activePanel === 'issue' ? '' : 'issue')} style={ghostBtn}>Issue</button>
           <button disabled={busy} onClick={() => setActivePanel(activePanel === 'transfer' ? '' : 'transfer')} style={ghostBtn}>Transfer</button>

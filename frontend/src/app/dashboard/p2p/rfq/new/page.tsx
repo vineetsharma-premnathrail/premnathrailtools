@@ -7,6 +7,8 @@ import { p2pApi, rfqApi } from '@/lib/api'
 import { P2PRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import { secondaryBtnStyle } from '@/components/shared/ui'
+import P2PNav from '@/components/p2p/P2PNav'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -100,13 +102,19 @@ export default function NewRfqPage() {
 
   return (
     <div>
-      <button onClick={() => router.push('/dashboard/p2p/rfq')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to R.F.Q
-      </button>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Raise RFQ</h1>
-      <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 20px' }}>
-        Once saved, this RFQ is locked and cannot be edited.
-      </p>
+      <P2PNav />
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Raise RFQ</h1>
+          <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 20px' }}>
+            Once saved, this RFQ is locked and cannot be edited.
+          </p>
+        </div>
+        <button onClick={() => router.push('/dashboard/p2p/rfq')} type="button" style={secondaryBtnStyle}>
+          ← Back
+        </button>
+      </div>
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

@@ -6,6 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { vendorsApi } from '@/lib/api'
 import { Vendor } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -41,7 +42,7 @@ export default function VendorDetailPage() {
       setVendor(data)
       setForm({
         name: data.name || '', contact_person: data.contact_person || '', phone: data.phone || '',
-        email: data.email || '', address: data.address || '', gstin: data.gstin || '',
+        email: data.email || '', address: data.address || '', gstin: data.gstin || '', pan: data.pan || '',
         category: data.category, payment_terms: data.payment_terms || '', bank_details: data.bank_details || '',
         status: data.status, qualification_status: data.qualification_status,
       })
@@ -81,10 +82,6 @@ export default function VendorDetailPage() {
 
   return (
     <div style={{ width: '100%', maxWidth: 780 }}>
-      <button onClick={() => router.push('/dashboard/purchase/vendors')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to Vendors
-      </button>
-
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
@@ -98,9 +95,14 @@ export default function VendorDetailPage() {
           </div>
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{vendor.category}</p>
         </div>
-        <button onClick={() => setEditing((v) => !v)} style={{ padding: '10px 20px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          {editing ? 'Cancel Edit' : 'Edit Vendor'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => router.push('/dashboard/purchase/vendors')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
+          <button onClick={() => setEditing((v) => !v)} style={{ padding: '10px 20px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            {editing ? 'Cancel Edit' : 'Edit Vendor'}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -117,6 +119,7 @@ export default function VendorDetailPage() {
             <InfoRow label="Phone" value={vendor.phone || '—'} />
             <InfoRow label="Email" value={vendor.email || '—'} />
             <InfoRow label="GSTIN" value={vendor.gstin || '—'} />
+            <InfoRow label="PAN" value={vendor.pan || '—'} />
             <InfoRow label="Payment Terms" value={vendor.payment_terms || '—'} />
             <InfoRow label="Bank Details" value={vendor.bank_details || '—'} />
             <div style={{ gridColumn: '1 / -1' }}><InfoRow label="Address" value={vendor.address || '—'} /></div>
@@ -154,6 +157,10 @@ export default function VendorDetailPage() {
             <div>
               <label style={labelStyle}>GSTIN</label>
               <input style={inputStyle} value={form.gstin} onChange={(e) => set('gstin', e.target.value)} />
+            </div>
+            <div>
+              <label style={labelStyle}>PAN</label>
+              <input style={inputStyle} value={form.pan} onChange={(e) => set('pan', e.target.value)} placeholder="ABCDE1234F" maxLength={10} />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
               <label style={labelStyle}>Address</label>

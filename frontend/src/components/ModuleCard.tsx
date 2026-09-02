@@ -67,7 +67,7 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
           <p className="module-card-desc">{description}</p>
 
           <span className="module-card-arrow">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="5" y1="12" x2="19" y2="12" />
               <polyline points="12 5 19 12 12 19" />
             </svg>
@@ -80,8 +80,8 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
           position: relative;
           isolation: isolate;
           height: 100%;
-          min-height: 220px;
-          border-radius: 22px;
+          min-height: 122px;
+          border-radius: 15px;
           overflow: hidden;
           background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 10%, #fff) 0%, #fff 45%);
           border: 1px solid rgba(15, 23, 42, 0.08);
@@ -104,6 +104,11 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
           inset: 0;
           filter: url(#module-card-goo) blur(8px);
           pointer-events: none;
+          /* Chromium bug: a filtered child can paint outside its ancestor's
+             overflow:hidden clip once that ancestor gets promoted to its own
+             compositing layer (e.g. by the hover transform) — an explicit
+             clip-path forces the clip to actually apply. */
+          clip-path: inset(0 round 15px);
         }
         .module-card-glob,
         .module-card-blob::before,
@@ -147,19 +152,19 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
           height: 100%;
           display: flex;
           flex-direction: column;
-          padding: 24px;
+          padding: 12px;
         }
 
         .module-card-icon {
-          width: 44px;
-          height: 44px;
-          border-radius: 12px;
+          width: 28px;
+          height: 28px;
+          border-radius: 8px;
           display: flex;
           align-items: center;
           justify-content: center;
           background: var(--accent-bg);
           color: var(--accent);
-          margin-bottom: 18px;
+          margin-bottom: 8px;
           box-shadow: -1px 1px 0px color-mix(in srgb, var(--accent) 35%, transparent),
             -3px 4px 3px color-mix(in srgb, var(--accent) 30%, transparent),
             -8px 11px 10px -3px color-mix(in srgb, var(--accent) 50%, transparent);
@@ -171,25 +176,25 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
 
         .module-card-title {
           position: relative;
-          font-size: 17px;
+          font-size: 13.5px;
           font-weight: 700;
           color: #000;
-          margin: 0 0 8px;
+          margin: 0 0 3px;
         }
 
         .module-card-desc {
           position: relative;
-          font-size: 13px;
+          font-size: 11px;
           color: ${TEXT.muted};
-          margin: 0 0 18px;
-          line-height: 1.5;
+          margin: 0 0 6px;
+          line-height: 1.4;
         }
 
         .module-card-arrow {
           margin-top: auto;
           align-self: flex-end;
-          width: 30px;
-          height: 30px;
+          width: 22px;
+          height: 22px;
           border-radius: 50%;
           display: flex;
           align-items: center;

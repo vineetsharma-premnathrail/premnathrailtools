@@ -8,6 +8,8 @@ import { PRCategoryMeta, P2PRequestLineItemInput, DirectoryUser } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
+import { secondaryBtnStyle } from '@/components/shared/ui'
+import P2PNav from '@/components/p2p/P2PNav'
 
 const PRIORITIES = ['low', 'medium', 'high']
 
@@ -153,13 +155,19 @@ export default function NewP2PRequestPage() {
 
   return (
     <div style={{ width: '100%' }}>
-      <button onClick={() => router.back()} type="button" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back
-      </button>
-      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-        Procure-to-Pay Module
-      </p>
-      <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New Purchase Requisition</h1>
+      <P2PNav />
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
+            Procure-to-Pay Module
+          </p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New Purchase Requisition</h1>
+        </div>
+        <button onClick={() => router.back()} type="button" style={secondaryBtnStyle}>
+          ← Back
+        </button>
+      </div>
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

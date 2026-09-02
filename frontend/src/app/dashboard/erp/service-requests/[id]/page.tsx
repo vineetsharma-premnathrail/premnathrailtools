@@ -106,21 +106,22 @@ export default function ServiceRequestDetailPage() {
           <p style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45', margin: '0 0 4px' }}>{sr.request_number}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{sr.issue_title}</h1>
         </div>
-        {(canEdit || canDelete) && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            {canEdit && (
-              <Link
-                href={`/dashboard/erp/service-requests/${sr.id}/edit`}
-                style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', textDecoration: 'none', whiteSpace: 'nowrap' }}
-              >
-                Edit
-              </Link>
-            )}
-            {canDelete && (
-              <button onClick={() => setShowDeleteConfirm(true)} style={{ ...dangerBtnStyle }}>Delete</button>
-            )}
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button onClick={() => router.push('/dashboard/erp/service-requests')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
+          {canEdit && (
+            <Link
+              href={`/dashboard/erp/service-requests/${sr.id}/edit`}
+              style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', textDecoration: 'none', whiteSpace: 'nowrap' }}
+            >
+              Edit
+            </Link>
+          )}
+          {canDelete && (
+            <button onClick={() => setShowDeleteConfirm(true)} style={{ ...dangerBtnStyle }}>Delete</button>
+          )}
+        </div>
       </div>
 
       {error && (

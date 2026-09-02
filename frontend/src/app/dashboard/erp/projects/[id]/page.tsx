@@ -10,7 +10,7 @@ import { AuditEntry, Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadPreview from '@/components/FileUploadPreview'
-import { Card, InfoRow } from '@/components/shared/ui'
+import { Card, InfoRow, secondaryBtnStyle } from '@/components/shared/ui'
 
 const TABS = ['Overview', 'Technical Specs', 'Maintenance History', 'Documents', 'Audit Trail'] as const
 
@@ -87,7 +87,10 @@ export default function ProjectDetailPage() {
           </div>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{project.model_name || 'Not provided'} {project.client_company ? `· ${project.client_company}` : ''}</p>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button onClick={() => router.push('/dashboard/erp/projects')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
           {canCreateSr && (
             <Link
               href={{ pathname: '/dashboard/erp/service-requests/new' }}

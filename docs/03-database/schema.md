@@ -109,7 +109,7 @@ This supports the application's Recycle Bin behavior without physically deleting
 
 The current schema contains:
 
-**55 tables across 10 modules.**
+**56 tables across 11 modules.**
 
 Modules containing database tables:
 
@@ -123,6 +123,7 @@ Modules containing database tables:
 8. Electrical
 9. Store
 10. Vendor
+11. Item
 
 Two additional module directories currently do not define their own database models:
 
@@ -145,6 +146,7 @@ Two additional module directories currently do not define their own database mod
 | Electrical |      1 | Electrical work orders                                            |
 | Store      |      4 | Stock items, locations, balances and transactions                 |
 | Vendor     |      1 | Vendor master                                                     |
+| Item       |      1 | Central item master (code, name, group, HSN/SAC, UOM)             |
 
 ---
 
@@ -1027,6 +1029,20 @@ stock_transactions
 
 ---
 
+# 30.1 Item Master
+
+## `items`
+
+**Location:**
+
+```text
+backend/app/modules/item/models/
+```
+
+Central, cross-module item catalog (item code, name, item type, item group, description, stock/purchase UOM, item specification, manufacturer/part number, make-or-buy, default warehouse, minimum/maximum stock, HSN/SAC, GST/tax, quality-inspection-required flag, batch/serial tracking, and item status). Independent of `stock_items` (Store's own item master, below) — the two are not currently reconciled into a single table.
+
+---
+
 # 31. Store Item Master
 
 ## `stock_items`
@@ -1036,6 +1052,8 @@ Central item master for Store.
 Used to identify inventory items consistently.
 
 P2P request items may reference this table.
+
+Beyond the base code/description/UOM/category fields, `stock_items` also carries fuller catalog details: item type, purchase UOM, item specification, manufacturer/part number, make-or-buy, default warehouse (FK to `store_locations`), minimum/maximum stock, HSN/SAC, GST/tax rate, quality-inspection-required flag, and batch/serial tracking mode. The separate `items` table (Section 30.1, Item Master) carries an equivalent, independently-maintained field set for the Item Master screen.
 
 ---
 
@@ -1094,6 +1112,7 @@ Typical information:
 * Vendor name
 * Contact details
 * Category
+* GSTIN and PAN
 
 The Vendor table exists as the central vendor master, while some existing Purchase/P2P vendor fields remain free-text.
 

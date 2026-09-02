@@ -41,6 +41,23 @@ Changes should be classified as:
 
 # 3. User-Facing Changes
 
+## 2026-09-02 — Item Master Expansion, Back-Button & Layout Consistency, Vendor PAN
+
+* Expanded Item Master with a full create/edit form: Item Type, Description, Stock/Purchase UOM, Item Specification, Manufacturer/Part Number, Make or Buy, Default Warehouse, Minimum/Maximum Stock, GST/Tax, Quality Inspection Required, Batch/Serial Tracking, and Item Status, alongside the existing Item Code/Name/Group/HSN.
+* Added an Item Master Edit page and a dropdown filter on the Item Group column.
+* Added a full-width inline "New Stock Item" form on the Stock Items page (replacing the separate `/store/new` route).
+* Added a PAN field to the Supplier (P2P) and Vendor (Purchase) create/edit forms and detail views.
+* Standardized every "Back" button app-wide to the same pill style and position (top-right of the page header), and added missing Back buttons and module navigation bars that were absent on several ERP, CRM, and P2P detail pages.
+* Standardized the corner radius on buttons across the application.
+* Fixed sidebar, dashboard module cards, and CRM detail-tab visual glitches (color bleed on hover, scrollbar overflow, hover-ring clipping).
+* Renamed "Locations" to "Storage Locations" in the Store module.
+
+## 2026-09-01 — P2P Supplier Detail Page & Item Master
+
+* Added a Supplier detail page under P2P Supplier.
+* Simplified the P2P navigation bar.
+* Fixed invisible input borders across the application.
+
 ## 2026-08-05 — CRM Activities: Photos & Fixes
 
 * Added Activity photos through camera capture or drag-and-drop.
@@ -89,6 +106,20 @@ Changes should be classified as:
 ---
 
 # 4. Technical and Internal Changes
+
+## 2026-09-02
+
+* Expanded the `items` table with `item_type`, `description`, `purchase_uom`, `item_specification`, `manufacturer_part_number`, `make_or_buy`, `default_warehouse_id` (FK to `store_locations`), `minimum_stock`, `maximum_stock`, `gst_tax`, `quality_inspection_required`, `batch_serial_tracking`, and `item_status`, with a GET/PUT-by-id route pair added to the `item` module.
+* Expanded the `stock_items` table with the same catalog-detail columns (`item_type`, `purchase_uom`, `item_specification`, `manufacturer_part_number`, `make_or_buy`, `default_warehouse_id`, `minimum_stock`, `maximum_stock`, `hsn_sac`, `gst_tax`, `quality_inspection_required`, `batch_serial_tracking`).
+* Added a `pan` column to the `vendors` table plus schema/route support.
+* Removed the standalone `/dashboard/store/new` route in favor of an inline create form on the Stock Items list page.
+
+## 2026-09-01
+
+* Added the `item` module (central item master: code, name, group, HSN/SAC, unit of measure) with list, create, and bulk-create endpoints.
+* Added the `items` table via Alembic migration.
+* Added `itemsApi` to the frontend API client.
+* Added a Supplier detail route (`p2p/supplier/[id]`).
 
 ## 2026-08-06
 

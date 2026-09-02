@@ -175,7 +175,7 @@ const modules = [
     description: 'Stock ledger — items, locations, receipts, issues, and stock transactions.',
     icon: WarehouseIcon,
     href: '/dashboard/store',
-    features: ['Stock Items', 'Locations', 'Transactions'],
+    features: ['Stock Items', 'Storage Locations', 'Transactions'],
     barColor: 'linear-gradient(90deg,#14b8a6,#2dd4bf)',
     iconBg: 'rgba(20,184,166,0.12)',
     iconColor: '#0d9488',
@@ -282,7 +282,7 @@ export default function DashboardPage() {
           here since all cards reference the same filter id. */}
       <svg width="0" height="0" style={{ position: 'absolute' }}>
         <defs>
-          <filter id="module-card-goo">
+          <filter id="module-card-goo" x="-20%" y="-20%" width="140%" height="140%" filterUnits="objectBoundingBox">
             <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur" />
             <feColorMatrix in="blur" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 19 -9" result="goo" />
             <feComposite in="SourceGraphic" in2="goo" operator="atop" />
@@ -290,7 +290,7 @@ export default function DashboardPage() {
         </defs>
       </svg>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
         {visibleModules.map((module, index) => (
           <ModuleCard key={module.title} {...module} index={index} />
         ))}

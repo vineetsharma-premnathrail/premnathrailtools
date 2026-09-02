@@ -49,6 +49,8 @@ export default function OrganizationUsersPage() {
 
   return (
     <div>
+      <OrganizationNav />
+
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
         Organization
       </p>
@@ -56,8 +58,6 @@ export default function OrganizationUsersPage() {
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 20px' }}>
         View-only — module access and approval roles are granted from Organization &gt; Role &amp; Permissions.
       </p>
-
-      <OrganizationNav />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

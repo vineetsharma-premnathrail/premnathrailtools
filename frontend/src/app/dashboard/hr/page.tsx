@@ -81,13 +81,13 @@ export default function HrDirectoryPage() {
 
   return (
     <div>
+      <HrNav />
+
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
         HR Module
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Employee Directory</h1>
       <p style={{ fontSize: 13.5, color: TEXT.muted, margin: '0 0 20px' }}>{employees.length} active employee(s)</p>
-
-      <HrNav />
 
       <input
         value={search}

@@ -7,6 +7,7 @@ import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { designApi } from '@/lib/api'
 import { EngineeringDocument } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 
 const STATUS_HEX: Record<string, string> = {
   draft: '#94a3b8', under_review: '#f59e0b', approved: '#3b82f6', released: '#22c55e', superseded: '#78716c',
@@ -82,10 +83,6 @@ export default function DesignDocumentDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.push('/dashboard/design')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to Documents
-      </button>
-
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
@@ -97,6 +94,9 @@ export default function DesignDocumentDetailPage() {
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{current.project_label || 'No project'} · v{current.version} · {current.discipline}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => router.push('/dashboard/design')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
           {(NEXT_STATUS[current.status] || []).map((s) => (
             <button key={s} disabled={busy} onClick={() => setStatus(s)} style={ghostBtn}>
               Mark {s.replace('_', ' ')}

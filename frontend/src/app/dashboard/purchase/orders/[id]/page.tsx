@@ -6,6 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { purchaseOrdersApi } from '@/lib/api'
 import { P2PPurchaseOrder } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Draft', issued: 'Issued', acknowledged: 'Acknowledged',
@@ -86,10 +87,6 @@ export default function PurchaseOrderDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.push('/dashboard/purchase/orders')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to Purchase Orders
-      </button>
-
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
@@ -101,6 +98,9 @@ export default function PurchaseOrderDetailPage() {
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{po.vendor_name || 'No vendor specified'}{po.p2p_request_number ? ` · from ${po.p2p_request_number}` : ''}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => router.push('/dashboard/purchase/orders')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
           {(NEXT_STATUS[po.status] || []).map((s) => (
             <button key={s} disabled={busy} onClick={() => setStatus(s)} style={ghostBtn}>
               Mark {STATUS_LABELS[s] || s}

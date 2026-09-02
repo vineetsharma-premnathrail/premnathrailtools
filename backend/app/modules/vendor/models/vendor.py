@@ -28,6 +28,7 @@ class Vendor(Base, TimestampMixin):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     gstin: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    pan: Mapped[str | None] = mapped_column(String(10), nullable=True)
     category: Mapped[str] = mapped_column(String(20), default="materials", nullable=False)
     payment_terms: Mapped[str | None] = mapped_column(String(150), nullable=True)
     bank_details: Mapped[str | None] = mapped_column(Text, nullable=True)

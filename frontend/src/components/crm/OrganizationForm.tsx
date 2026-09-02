@@ -201,9 +201,14 @@ export default function OrganizationForm({
 
   return (
     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div>
-        <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 6px' }}>{breadcrumb}</p>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: 0 }}>{title}</h1>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 6px' }}>{breadcrumb}</p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: 0 }}>{title}</h1>
+        </div>
+        <button type="button" onClick={onCancel} style={secondaryBtnStyle}>
+          ← Back
+        </button>
       </div>
 
       {error && (

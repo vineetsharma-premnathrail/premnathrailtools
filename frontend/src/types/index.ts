@@ -900,6 +900,7 @@ export interface Vendor {
   email?: string
   address?: string
   gstin?: string
+  pan?: string
   category: 'materials' | 'services' | 'both'
   payment_terms?: string
   bank_details?: string
@@ -934,6 +935,7 @@ export interface VendorInput {
   email?: string
   address?: string
   gstin?: string
+  pan?: string
   category: string
   payment_terms?: string
   bank_details?: string
@@ -951,6 +953,31 @@ export interface VendorInput {
   state?: string
   country?: string
   is_draft?: boolean
+}
+
+export interface Item {
+  id: number
+  item_code: string
+  item_name: string
+  item_type?: string
+  item_group?: string
+  description?: string
+  unit_of_measure?: string
+  purchase_uom?: string
+  item_specification?: string
+  manufacturer_part_number?: string
+  make_or_buy?: string
+  default_warehouse_id?: number
+  default_warehouse_name?: string
+  minimum_stock?: number
+  maximum_stock?: number
+  hsn_sac?: string
+  gst_tax?: string
+  quality_inspection_required?: boolean
+  batch_serial_tracking?: string
+  item_status?: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface P2PPurchaseOrderItem {

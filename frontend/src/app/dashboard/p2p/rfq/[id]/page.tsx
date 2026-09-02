@@ -7,6 +7,8 @@ import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { rfqApi, purchaseOrdersApi } from '@/lib/api'
 import { RFQ, VendorQuotation, P2PPurchaseOrder } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER } from '@/lib/theme'
+import { secondaryBtnStyle } from '@/components/shared/ui'
+import P2PNav from '@/components/p2p/P2PNav'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -202,9 +204,7 @@ export default function RfqDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.push('/dashboard/p2p/rfq')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to R.F.Q
-      </button>
+      <P2PNav />
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -216,9 +216,14 @@ export default function RfqDetailPage() {
           </div>
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>Purchase Requisition {rfq.p2p_number || rfq.p2p_request_id}</p>
         </div>
-        {rfq.status === 'locked' && isAdmin && (
-          <button disabled={busy} onClick={() => setEditing((e) => !e)} style={ghostBtn}>{editing ? 'Close Edit' : 'Admin Edit'}</button>
-        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => router.push('/dashboard/p2p/rfq')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
+          {rfq.status === 'locked' && isAdmin && (
+            <button disabled={busy} onClick={() => setEditing((e) => !e)} style={ghostBtn}>{editing ? 'Close Edit' : 'Admin Edit'}</button>
+          )}
+        </div>
       </div>
 
       {error && (

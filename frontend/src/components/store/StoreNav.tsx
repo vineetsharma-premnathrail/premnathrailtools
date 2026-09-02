@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation'
 
 const TABS = [
   { href: '/dashboard/store', label: 'Stock Items', icon: 'box' },
-  { href: '/dashboard/store/locations', label: 'Locations', icon: 'map' },
+  { href: '/dashboard/store/item-master', label: 'Item Master', icon: 'tag' },
+  { href: '/dashboard/store/locations', label: 'Storage Locations', icon: 'map' },
   { href: '/dashboard/store/transactions', label: 'Transactions', icon: 'list' },
   { href: '/dashboard/store/cycle-count', label: 'Cycle Count', icon: 'check' },
 ] as const
@@ -21,6 +22,8 @@ function TabIcon({ name }: { name: string }) {
       return <svg {...common}><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
     case 'check':
       return <svg {...common}><path d="M22 11.08V12a10 10 0 11-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
+    case 'tag':
+      return <svg {...common}><path d="M20.59 13.41L11 3.83A2 2 0 009.59 3.2H4a2 2 0 00-2 2v5.59a2 2 0 00.59 1.41l9.58 9.58a2 2 0 002.82 0l6.6-6.6a2 2 0 000-2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
     default:
       return null
   }

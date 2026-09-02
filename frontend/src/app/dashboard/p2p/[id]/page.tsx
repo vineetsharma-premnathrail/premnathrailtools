@@ -10,6 +10,8 @@ import { P2PRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import PromptDialog from '@/components/erp/PromptDialog'
+import { secondaryBtnStyle } from '@/components/shared/ui'
+import P2PNav from '@/components/p2p/P2PNav'
 
 const STATUS_LABELS: Record<string, string> = {
   submitted: 'Submitted', approved: 'Approved', po_raised: 'PO Raised', po_approved: 'PO Approved',
@@ -176,9 +178,7 @@ export default function MyP2PRequestDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.push('/dashboard/p2p')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to My Requisitions
-      </button>
+      <P2PNav />
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
@@ -191,6 +191,9 @@ export default function MyP2PRequestDetailPage() {
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{pr.category_label || pr.category_code} · {pr.project_label || 'No project specified'}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => router.push('/dashboard/p2p')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
           {canApproveReject && (
             <button disabled={busy} onClick={approve} style={primaryBtn}>Approve</button>
           )}

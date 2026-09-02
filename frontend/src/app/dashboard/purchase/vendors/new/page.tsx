@@ -26,6 +26,7 @@ export default function NewVendorPage() {
   const [email, setEmail] = useState('')
   const [address, setAddress] = useState('')
   const [gstin, setGstin] = useState('')
+  const [pan, setPan] = useState('')
   const [category, setCategory] = useState('materials')
   const [paymentTerms, setPaymentTerms] = useState('')
   const [bankDetails, setBankDetails] = useState('')
@@ -45,6 +46,7 @@ export default function NewVendorPage() {
         email: email || undefined,
         address: address || undefined,
         gstin: gstin || undefined,
+        pan: pan || undefined,
         category,
         payment_terms: paymentTerms || undefined,
         bank_details: bankDetails || undefined,
@@ -103,6 +105,10 @@ export default function NewVendorPage() {
           <div>
             <label style={labelStyle}>GSTIN</label>
             <input style={inputStyle} value={gstin} onChange={(e) => setGstin(e.target.value)} />
+          </div>
+          <div>
+            <label style={labelStyle}>PAN</label>
+            <input style={inputStyle} value={pan} onChange={(e) => setPan(e.target.value)} placeholder="ABCDE1234F" maxLength={10} />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={labelStyle}>Address</label>

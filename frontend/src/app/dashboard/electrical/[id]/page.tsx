@@ -7,6 +7,7 @@ import { electricalApi, usersApi } from '@/lib/api'
 import { ElectricalWorkOrder, DirectoryUser } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 
 const STATUS_LABELS: Record<string, string> = {
   open: 'Open', assigned: 'Assigned', in_progress: 'In Progress', testing: 'Testing', resolved: 'Resolved', closed: 'Closed',
@@ -114,10 +115,6 @@ export default function ElectricalWorkOrderDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.push('/dashboard/electrical')} style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary, background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-        ← Back to Work Orders
-      </button>
-
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
@@ -129,6 +126,9 @@ export default function ElectricalWorkOrderDetailPage() {
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{wo.project_label || 'No project'} · {wo.equipment_tag || 'No equipment tag'}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={() => router.push('/dashboard/electrical')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
           <button disabled={busy} onClick={() => setShowAssign((v) => !v)} style={ghostBtn}>Assign</button>
           {(NEXT_STATUS[wo.status] || []).map((s) => (
             <button key={s} disabled={busy} onClick={() => doStatus(s)} style={ghostBtn}>Mark {STATUS_LABELS[s]}</button>

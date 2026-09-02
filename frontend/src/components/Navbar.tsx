@@ -44,7 +44,7 @@ export default function Navbar({ user }: { user: User | null }) {
         >
           <UpdatesButton />
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 14, cursor: 'pointer', border: '1px solid rgba(15,23,42,0.08)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 14, cursor: 'pointer', border: 'none' }}>
             <div
               style={{
                 width: 36,

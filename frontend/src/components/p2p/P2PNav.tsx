@@ -1,27 +1,18 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import NotificationBell from '@/components/erp/NotificationBell'
 
 const TABS = [
-  { href: '/dashboard/p2p', label: 'P.R', icon: 'file' },
+  { href: '/dashboard/p2p', label: 'Purchase Requisitions', icon: 'file' },
   { href: '/dashboard/p2p/approval', label: 'Approval', icon: 'check' },
   { href: '/dashboard/p2p/rfq', label: 'R.F.Q', icon: 'send' },
   { href: '/dashboard/p2p/po-approval', label: 'P.O Approval', icon: 'clipboard' },
   { href: '/dashboard/p2p/grn', label: 'G.R.N', icon: 'truck' },
   { href: '/dashboard/p2p/payment', label: 'Payment', icon: 'card' },
+  { href: '/dashboard/p2p/supplier', label: 'Supplier', icon: 'users' },
 ] as const
-
-export const SUPPLIER_SECTIONS = [
-  { value: 'supplier', label: 'Supplier', enabled: true },
-  { value: 'item', label: 'Item', enabled: false },
-  { value: 'price_list', label: 'Price List', enabled: false },
-  { value: 'address', label: 'Address', enabled: false },
-  { value: 'contacts', label: 'Contacts', enabled: false },
-  { value: 'scorecard', label: 'Supplier Scorecard', enabled: false },
-]
 
 function TabIcon({ name }: { name: string }) {
   const common = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -47,27 +38,6 @@ function TabIcon({ name }: { name: string }) {
 
 export default function P2PNav() {
   const pathname = usePathname()
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  const isSupplierRoute = pathname.startsWith('/dashboard/p2p/supplier')
-  const activeSection = searchParams.get('section') || 'supplier'
-  const activeSectionLabel = SUPPLIER_SECTIONS.find((s) => s.value === activeSection)?.label || 'Supplier'
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  const selectSection = (value: string) => {
-    setOpen(false)
-    router.push(value === 'supplier' ? '/dashboard/p2p/supplier' : `/dashboard/p2p/supplier?section=${value}`)
-  }
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
@@ -100,69 +70,6 @@ export default function P2PNav() {
             </Link>
           )
         })}
-
-        <div ref={ref} style={{ position: 'relative' }}>
-          <button
-            onClick={() => setOpen((v) => !v)}
-            className="nav-tab-link"
-            type="button"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '10px 14px',
-              marginBottom: -1,
-              fontSize: 12.5,
-              fontWeight: 600,
-              letterSpacing: '.02em',
-              textTransform: 'uppercase',
-              color: isSupplierRoute ? '#FF6A2A' : '#78716c',
-              borderBottom: isSupplierRoute ? '2px solid #FF6A2A' : '2px solid transparent',
-              background: 'none',
-              border: 'none',
-              borderBottomWidth: 2,
-              borderBottomStyle: 'solid',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              fontFamily: 'inherit',
-            }}
-          >
-            <TabIcon name="users" />
-            <span className="nav-tab-label">{isSupplierRoute ? activeSectionLabel : 'Supplier'}</span>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
-
-          {open && (
-            <div
-              style={{
-                position: 'absolute', top: '100%', left: 0, marginTop: 4, minWidth: 190, zIndex: 30,
-                background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,0.1)',
-                boxShadow: '0 12px 28px rgba(0,0,0,0.14)', overflow: 'hidden', padding: 4,
-              }}
-            >
-              {SUPPLIER_SECTIONS.map((s) => (
-                <button
-                  key={s.value}
-                  type="button"
-                  disabled={!s.enabled}
-                  onClick={() => s.enabled && selectSection(s.value)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                    padding: '9px 12px', borderRadius: 8, border: 'none', background: 'none',
-                    fontSize: 13, fontWeight: 600, textAlign: 'left', fontFamily: 'inherit',
-                    color: s.enabled ? (activeSection === s.value && isSupplierRoute ? '#FF6A2A' : '#44403c') : '#a8a29e',
-                    cursor: s.enabled ? 'pointer' : 'not-allowed',
-                  }}
-                >
-                  {s.label}
-                  {!s.enabled && <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e' }}>Soon</span>}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
       <div style={{ paddingBottom: 8, flex: 'none' }}>
         <NotificationBell />

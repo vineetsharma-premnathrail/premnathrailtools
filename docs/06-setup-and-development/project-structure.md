@@ -77,6 +77,7 @@ backend/
 │   │   ├── electrical/
 │   │   ├── erp/
 │   │   ├── hr/
+│   │   ├── item/
 │   │   ├── main/
 │   │   ├── p2p/
 │   │   ├── purchase/
@@ -223,6 +224,7 @@ Current modules:
 | `electrical` | Electrical department                |
 | `erp`        | Projects and service requests        |
 | `hr`         | Human resources                      |
+| `item`       | Central item master                  |
 | `main`       | Platform-level functionality         |
 | `p2p`        | Standalone purchase-request workflow |
 | `purchase`   | Purchase requisitions                |
@@ -368,6 +370,7 @@ The repository also contains:
 design/
 electrical/
 hr/
+item/
 store/
 vendor/
 ```

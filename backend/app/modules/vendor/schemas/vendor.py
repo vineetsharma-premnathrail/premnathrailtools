@@ -9,6 +9,7 @@ class VendorCreate(BaseModel):
     email: str | None = None
     address: str | None = None
     gstin: str | None = None
+    pan: str | None = None
     category: str = "materials"
     payment_terms: str | None = None
     bank_details: str | None = None
@@ -35,6 +36,7 @@ class VendorUpdate(BaseModel):
     email: str | None = None
     address: str | None = None
     gstin: str | None = None
+    pan: str | None = None
     category: str | None = None
     payment_terms: str | None = None
     bank_details: str | None = None
@@ -70,6 +72,7 @@ class VendorResponse(BaseModel):
     email: str | None = None
     address: str | None = None
     gstin: str | None = None
+    pan: str | None = None
     category: str
     payment_terms: str | None = None
     bank_details: str | None = None

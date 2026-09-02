@@ -130,6 +130,9 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         {!editing && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, width: '100%', maxWidth: '100%' }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', width: '100%' }}>
+              <button onClick={() => router.push('/dashboard/crm/inquiries')} type="button" style={secondaryBtnStyle}>
+                ← Back
+              </button>
               <button
                 onClick={() => setShowTorPicker(true)}
                 disabled={!torActive || sendingTOR}
@@ -165,7 +168,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
 
       <StageProgress stage={inquiry.current_stage} canModify={canModify} onRequestChange={setPendingStage} />
 
-      <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
+      <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, padding: '6px 6px 8px', borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.map((t) => (
           <div key={t} style={{ display: 'inline-flex', alignItems: 'center', marginRight: 16 }}>
             <button

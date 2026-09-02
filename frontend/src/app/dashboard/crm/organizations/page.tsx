@@ -337,15 +337,6 @@ export default function OrganizationsPage() {
   return (
     <div>
       <CrmNav />
-      <button
-        onClick={() => router.push('/dashboard/crm/organizations')}
-        style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 14px', fontSize: 13, fontWeight: 600, color: '#78716c' }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
-        Back to list
-      </button>
       <OrganizationDetailPanel key={selectedId} orgId={selectedId} onDeleted={() => router.push('/dashboard/crm/organizations')} />
     </div>
   )

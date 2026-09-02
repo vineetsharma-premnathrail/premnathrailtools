@@ -60,26 +60,29 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
           <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 4px' }}>{org.org_type || 'Organization'}{org.org_code ? ` · ${org.org_code}` : ''}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org.name}</h1>
         </div>
-        {(canModify || isAdmin) && (
-          <div style={{ display: 'flex', gap: 10 }}>
-            {canModify && showEditLink && <Link href={`/dashboard/crm/organizations/${org.id}/edit`} style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-block' }}>Edit</Link>}
-            {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button onClick={() => router.push('/dashboard/crm/organizations')} type="button" style={secondaryBtnStyle}>
+            ← Back
+          </button>
+          {canModify && showEditLink && <Link href={`/dashboard/crm/organizations/${org.id}/edit`} style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-block' }}>Edit</Link>}
+          {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
+        </div>
       </div>
 
-      <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto' }}>
+      <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, padding: '6px 6px 8px', borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.map((t) => {
           const count = t === 'Inquiries' ? org.inquiry_count : t === 'Tenders' ? org.tender_count : t === 'Contacts' ? org.contacts.length : null
           return (
             <button
               key={t}
               onClick={() => setTab(t)}
+              className="org-detail-tab"
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '10px 6px', marginRight: 16, border: 'none', background: 'transparent', whiteSpace: 'nowrap',
                 borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
                 color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+                borderRadius: 6,
               }}
             >
               {t}

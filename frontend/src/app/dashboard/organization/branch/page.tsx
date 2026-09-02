@@ -38,6 +38,8 @@ export default function OrganizationBranchPage() {
 
   return (
     <div>
+      <OrganizationNav />
+
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
         Organization
       </p>
@@ -45,8 +47,6 @@ export default function OrganizationBranchPage() {
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 20px' }}>
         Auto-populated from Azure AD on sign-in and admin Azure sync — see Organization &gt; Users &gt; Sync Azure Users.
       </p>
-
-      <OrganizationNav />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
