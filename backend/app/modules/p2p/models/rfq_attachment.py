@@ -19,6 +19,10 @@ class RFQAttachment(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     rfq_id: Mapped[int] = mapped_column(Integer, ForeignKey("rfqs.id"), nullable=False)
     vendor_tier: Mapped[str] = mapped_column(String(2), nullable=False)
+    # Vendor details entered alongside the quotation upload for this tier —
+    # every tier (Vendor 1-4) can carry its own vendor identity, not just L1.
+    vendor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    vendor_contact: Mapped[str | None] = mapped_column(String(50), nullable=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     size: Mapped[int | None] = mapped_column(Integer, nullable=True)

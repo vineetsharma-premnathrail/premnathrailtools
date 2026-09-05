@@ -205,7 +205,8 @@ export default function OrganizationsPage() {
 
   const fullTable = (
     <>
-      <div style={{ ...panelOuterStyle, overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
+      <div style={panelOuterStyle}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
@@ -291,6 +292,7 @@ export default function OrganizationsPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       {!loading && sortedOrgs.length > 0 && (

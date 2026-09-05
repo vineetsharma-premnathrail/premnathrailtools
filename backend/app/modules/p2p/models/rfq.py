@@ -45,7 +45,7 @@ class RFQ(Base, TimestampMixin):
 
     payment_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
     delivery_lead_time: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    ld_clause: Mapped[str | None] = mapped_column(Text, nullable=True)
+    late_delivery_clause: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     locked_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)

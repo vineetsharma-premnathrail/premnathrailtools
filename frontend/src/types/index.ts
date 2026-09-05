@@ -1,4 +1,4 @@
-export type AppModule = 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p' | 'store' | 'hr' | 'design' | 'electrical' | 'manufacturing'
+export type AppModule = 'erp' | 'rnd' | 'crm' | 'p2p' | 'store' | 'purchase'
 
 export interface User {
   id: number
@@ -259,75 +259,6 @@ export interface Feedback {
   message: string
   is_read: boolean
   created_at: string
-}
-
-// ── Purchase ─────────────────────────────────────────────────────────────
-
-export type PRStatus =
-  | 'submitted'
-  | 'approved'
-  | 'po_raised'
-  | 'partially_received'
-  | 'received'
-  | 'closed'
-  | 'rejected'
-  | 'cancelled'
-
-export interface PurchaseRequisitionItemAttachment {
-  id: number
-  service_material_id: number
-  filename: string
-  content_type?: string
-  size?: number
-  created_at?: string
-}
-
-export interface PurchaseRequisitionLineItem {
-  id: number
-  service_material_id: number
-  material_name: string
-  part_number?: string
-  unit: string
-  quantity_requested: number
-  quantity_received: number
-  item_status: 'pending' | 'partial' | 'received'
-  remarks?: string
-  attachments: PurchaseRequisitionItemAttachment[]
-}
-
-export interface PurchaseRequisition {
-  id: number
-  pr_number: string
-  project_id: number
-  service_request_id: number
-  status: PRStatus
-  raised_by_id?: number
-  priority: 'low' | 'medium' | 'high'
-  required_by_date?: string
-  purchase_reason?: string
-  category_code?: string
-  category_label?: string
-  requirement_type?: string
-  approver_id?: number
-  approver_name?: string
-  vendor?: string
-  po_number?: string
-  po_date?: string
-  expected_delivery_date?: string
-  notes?: string
-  approved_by_id?: number
-  approved_at?: string
-  closed_by_id?: number
-  closed_at?: string
-  created_at?: string
-  updated_at?: string
-  items: PurchaseRequisitionLineItem[]
-  project_label?: string
-  client_company?: string
-  site_name?: string
-  sr_request_number?: string
-  raised_by_name?: string
-  department?: string
 }
 
 // ── CRM ──────────────────────────────────────────────────────────────────
@@ -717,6 +648,7 @@ export interface P2PRequestLineItem {
   category?: string
   ship_to?: string
   stock_item_id?: number
+  item_id?: number | null
   attachments: P2PRequestAttachment[]
 }
 
@@ -729,6 +661,7 @@ export interface P2PRequestLineItemInput {
   project_inhouse?: string
   category?: string
   ship_to?: string
+  item_id?: number | null
 }
 
 export interface P2PRequest {
@@ -816,6 +749,8 @@ export interface RFQAttachment {
   id: number
   rfq_id: number
   vendor_tier: 'L1' | 'L2' | 'L3' | 'L4'
+  vendor_name?: string
+  vendor_contact?: string
   filename: string
   content_type?: string
   size?: number
@@ -878,7 +813,7 @@ export interface RFQ {
 
   payment_terms?: string
   delivery_lead_time?: string
-  ld_clause?: string
+  late_delivery_clause?: string
 
   created_by_id?: number
   created_by_name?: string
@@ -890,69 +825,6 @@ export interface RFQ {
 
   attachments: RFQAttachment[]
   vendor_quotations: VendorQuotation[]
-}
-
-export interface Vendor {
-  id: number
-  name: string
-  contact_person?: string
-  phone?: string
-  email?: string
-  address?: string
-  gstin?: string
-  pan?: string
-  category: 'materials' | 'services' | 'both'
-  payment_terms?: string
-  bank_details?: string
-  status: 'active' | 'blacklisted' | 'under_review'
-  qualification_status: 'pending' | 'qualified' | 'disqualified'
-  is_avl: boolean
-  last_audit_date?: string
-  last_audit_score?: number
-  remarks?: string
-  supplier_type?: string
-  supplier_group?: string
-  gst_category?: string
-  contact_first_name?: string
-  contact_last_name?: string
-  contact_email?: string
-  contact_mobile?: string
-  address_line1?: string
-  address_line2?: string
-  city?: string
-  postal_code?: string
-  state?: string
-  country?: string
-  is_draft: boolean
-  created_at?: string
-  updated_at?: string
-}
-
-export interface VendorInput {
-  name: string
-  contact_person?: string
-  phone?: string
-  email?: string
-  address?: string
-  gstin?: string
-  pan?: string
-  category: string
-  payment_terms?: string
-  bank_details?: string
-  supplier_type?: string
-  supplier_group?: string
-  gst_category?: string
-  contact_first_name?: string
-  contact_last_name?: string
-  contact_email?: string
-  contact_mobile?: string
-  address_line1?: string
-  address_line2?: string
-  city?: string
-  postal_code?: string
-  state?: string
-  country?: string
-  is_draft?: boolean
 }
 
 export interface Item {
@@ -990,6 +862,7 @@ export interface P2PPurchaseOrderItem {
   unit_price?: number
   tax_rate?: number
   line_total?: number
+  item_id?: number | null
 }
 
 export interface P2PPurchaseOrderItemInput {
@@ -1000,6 +873,7 @@ export interface P2PPurchaseOrderItemInput {
   quantity: number
   unit_price?: number
   tax_rate?: number
+  item_id?: number | null
 }
 
 export interface ModuleMeta {
@@ -1012,48 +886,22 @@ export interface ModuleMeta {
   sort_order: number
 }
 
-export interface Company {
-  id: number
-  name: string
-  code: string
-  gst_number?: string | null
-  pan_number?: string | null
-  address?: string | null
-  phone?: string | null
-  email?: string | null
-  logo_url?: string | null
-  letterhead_html?: string | null
-  is_active: boolean
-  default_currency?: string | null
-  country?: string | null
-  tax_id?: string | null
-  domain?: string | null
-  date_of_establishment?: string | null
-  gst_category?: string | null
-  reporting_currency?: string | null
-  registration_details?: string | null
-}
-
 export interface Branch {
   id: number
-  company_id: number
   name: string
   code: string
   address?: string | null
   city?: string | null
   state?: string | null
-  company_name?: string | null
 }
 
 export interface Department {
   id: number
-  company_id: number
   branch_id?: number | null
   name: string
   code: string
   head_user_id?: number | null
   secondary_head_user_id?: number | null
-  company_name?: string | null
   branch_name?: string | null
   /** "Name A / Name B" when the department has two conflicting heads. */
   head_user_name?: string | null
@@ -1065,73 +913,6 @@ export interface DepartmentMember {
   email: string
   designation?: string | null
   is_head: boolean
-}
-
-export interface Material {
-  id: number
-  code: string
-  name: string
-  unit?: string | null
-  category?: string | null
-  remarks?: string | null
-  is_active: boolean
-}
-
-export interface BOMItem {
-  id: number
-  material_id: number
-  quantity: number
-  material_name?: string | null
-  material_code?: string | null
-}
-
-export interface BOMItemInput {
-  material_id: number
-  quantity: number
-}
-
-export interface BOM {
-  id: number
-  code: string
-  name: string
-  output_material_id: number
-  output_quantity: number
-  is_active: boolean
-  output_material_name?: string | null
-  items: BOMItem[]
-}
-
-export interface WorkOrder {
-  id: number
-  wo_number: string
-  bom_id: number
-  quantity: number
-  status: 'planned' | 'in_progress' | 'completed' | 'cancelled'
-  remarks?: string | null
-  bom_name?: string | null
-  created_by_name?: string | null
-}
-
-export interface StockEntry {
-  id: number
-  material_id: number
-  work_order_id?: number | null
-  type: 'receipt' | 'issue' | 'adjustment'
-  quantity: number
-  remarks?: string | null
-  material_name?: string | null
-  material_code?: string | null
-  wo_number?: string | null
-  created_by_name?: string | null
-}
-
-export interface ManufacturingDashboard {
-  material_count: number
-  bom_count: number
-  work_orders_planned: number
-  work_orders_in_progress: number
-  work_orders_completed: number
-  stock_entries_count: number
 }
 
 export interface StoreLocation {
@@ -1155,47 +936,6 @@ export interface StockItem {
   status: 'active' | 'obsolete'
   remarks?: string
   quantity_on_hand: number
-}
-
-export interface EngineeringDocument {
-  id: number
-  project_id: number
-  project_label?: string
-  discipline: 'mechanical' | 'electrical' | 'fluids' | 'rnd'
-  document_type: string
-  title: string
-  version: number
-  status: 'draft' | 'under_review' | 'approved' | 'released' | 'superseded'
-  superseded_by_id?: number
-  filename: string
-  content_type?: string
-  size?: number
-  uploaded_by_id?: number
-  uploaded_by_name?: string
-  created_at?: string
-}
-
-export interface ElectricalWorkOrder {
-  id: number
-  work_order_number: string
-  project_id: number
-  project_label?: string
-  equipment_tag?: string
-  voltage_system?: string
-  fault_type?: string
-  description?: string
-  source_service_request_id?: number
-  status: 'open' | 'assigned' | 'in_progress' | 'testing' | 'resolved' | 'closed'
-  priority: 'low' | 'medium' | 'high' | 'critical'
-  assigned_to_id?: number
-  assigned_to_name?: string
-  raised_by_id?: number
-  raised_by_name?: string
-  expected_completion_date?: string
-  resolved_at?: string
-  closed_at?: string
-  resolution_notes?: string
-  created_at?: string
 }
 
 export interface StockBalanceRow {
@@ -1240,3 +980,4 @@ export interface P2PPurchaseOrder {
   updated_at?: string
   items: P2PPurchaseOrderItem[]
 }
+

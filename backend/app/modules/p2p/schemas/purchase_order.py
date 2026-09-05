@@ -10,6 +10,7 @@ class P2PPurchaseOrderItemPayload(BaseModel):
     quantity: float = 1
     unit_price: float | None = None
     tax_rate: float | None = None
+    item_id: int | None = None
 
 
 class P2PPurchaseOrderItemResponse(BaseModel):
@@ -24,6 +25,7 @@ class P2PPurchaseOrderItemResponse(BaseModel):
     unit_price: float | None = None
     tax_rate: float | None = None
     line_total: float | None = None
+    item_id: int | None = None
 
 
 class P2PPurchaseOrderCreate(BaseModel):

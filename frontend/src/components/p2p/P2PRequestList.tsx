@@ -73,7 +73,8 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
           {error}
         </div>
       )}
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
@@ -111,6 +112,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

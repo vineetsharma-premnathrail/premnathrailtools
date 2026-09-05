@@ -313,8 +313,9 @@ export default function MyP2PRequestDetailPage() {
         </div>
       </div>
 
-      <div style={{ ...sectionStyle, overflow: 'auto' }}>
+      <div style={{ ...sectionStyle, overflow: 'hidden' }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Item Details</h2>
+        <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr>
@@ -353,6 +354,7 @@ export default function MyP2PRequestDetailPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
 

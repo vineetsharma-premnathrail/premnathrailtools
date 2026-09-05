@@ -49,7 +49,7 @@ Authentication proves *who* a user is; authorization — which the Platform modu
 Every user carries three layers of access information:
 
 1. **Role** — either `admin` or `user`. An admin bypasses every module- and permission-level check across the entire application.
-2. **Module access** (`assigned_apps`) — the list of business modules (ERP, CRM, Purchase, P2P, R&D, Design, Electrical, HR, Store, Vendor) a user has been granted entry to. A user with no access to a module cannot open its pages or call its API routes at all.
+2. **Module access** (`assigned_apps`) — the list of business modules (ERP, CRM, Purchase, P2P, R&D, HR, Store, Vendor) a user has been granted entry to. A user with no access to a module cannot open its pages or call its API routes at all.
 3. **Granular permissions** — within a module a user does have access to, finer-grained permission strings (for example `project_edit`, `sr_delete`) control whether they can create, edit, or delete specific kinds of records, as opposed to only viewing them.
 
 This access is managed centrally through the Users & Roles administration page, which only an admin can reach, and is enforced on the backend by two shared functions every module route calls: one that checks module access, and one that checks a specific granular permission. No module is expected to invent its own authorization logic.

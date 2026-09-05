@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
-from jose import JWTError, jwt
+
 from app.core.config import settings
+from jose import JWTError, jwt
 
 
 def create_access_token(data: dict) -> str:
@@ -21,14 +22,20 @@ def verify_access_token(token: str) -> dict | None:
         return None
 
 
-def create_document_share_token(doc_type: str, doc_id: int, expires_hours: int = 168) -> str:
+def create_document_share_token(
+    doc_type: str, doc_id: int, expires_hours: int = 168
+) -> str:
     """Signs a link to one specific document that needs no portal login and no
     SharePoint access of its own — used for documents emailed to recipients
     who may have neither (e.g. external vendors on a Technical Offer
     Request). The token only ever proves "the holder was handed a link to
     this exact document before it expired"; it grants nothing else."""
     expire = datetime.utcnow() + timedelta(hours=expires_hours)
-    return jwt.encode({"purpose": "doc_share", "doc_type": doc_type, "doc_id": doc_id, "exp": expire}, settings.SECRET_KEY, algorithm="HS256")
+    return jwt.encode(
+        {"purpose": "doc_share", "doc_type": doc_type, "doc_id": doc_id, "exp": expire},
+        settings.SECRET_KEY,
+        algorithm="HS256",
+    )
 
 
 def verify_document_share_token(token: str, doc_type: str, doc_id: int) -> bool:
@@ -36,4 +43,8 @@ def verify_document_share_token(token: str, doc_type: str, doc_id: int) -> bool:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
     except JWTError:
         return False
-    return payload.get("purpose") == "doc_share" and payload.get("doc_type") == doc_type and payload.get("doc_id") == doc_id
+    return (
+        payload.get("purpose") == "doc_share"
+        and payload.get("doc_type") == doc_type
+        and payload.get("doc_id") == doc_id
+    )

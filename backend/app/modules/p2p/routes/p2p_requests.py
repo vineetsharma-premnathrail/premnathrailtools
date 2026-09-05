@@ -16,7 +16,6 @@ from app.modules.p2p.models.p2p_request import (
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment, P2P_ATTACHMENT_DOC_TYPES
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
-from app.modules.vendor.models.vendor import Vendor
 from app.modules.store.models.stock_item import StockItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.service import record_stock_receipt
@@ -260,6 +259,7 @@ async def create_p2p_request(
             project_inhouse=item.project_inhouse,
             category=item.category,
             ship_to=item.ship_to,
+            item_id=item.item_id,
         ))
 
     _write_audit(db, pr.id, "created", user, summary=f"{user.name or user.email} raised P2P request {pr.p2p_number}.", new_status="submitted")
@@ -627,10 +627,6 @@ async def create_po(
     if db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.po_number == payload.po_number).first():
         raise HTTPException(status_code=409, detail=f"PO number '{payload.po_number}' already exists")
 
-    vendor_row = None
-    if pr.selected_vendor:
-        vendor_row = db.query(Vendor).filter(Vendor.name == pr.selected_vendor).first()
-
     old_status = pr.status
     pr.po_number = payload.po_number
     pr.po_date = payload.po_date or date.today()
@@ -645,7 +641,6 @@ async def create_po(
     po = P2PPurchaseOrder(
         po_number=payload.po_number,
         p2p_request_id=pr.id,
-        vendor_id=vendor_row.id if vendor_row else None,
         vendor_name=pr.selected_vendor,
         status="issued",
         po_date=pr.po_date,
@@ -663,6 +658,7 @@ async def create_po(
             part_code=item.part_code,
             unit=item.unit,
             quantity=item.quantity,
+            item_id=item.item_id,
         ))
 
     _write_audit(db, pr.id, "po_raised", user,

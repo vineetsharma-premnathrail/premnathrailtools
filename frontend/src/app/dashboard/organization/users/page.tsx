@@ -72,7 +72,8 @@ export default function OrganizationUsersPage() {
         style={{ width: '100%', maxWidth: 320, padding: '10px 14px', marginBottom: 16, borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 13.5, outline: 'none' }}
       />
 
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 340px)' }}>
+      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 340px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
@@ -138,6 +139,7 @@ export default function OrganizationUsersPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

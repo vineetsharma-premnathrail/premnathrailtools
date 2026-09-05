@@ -1,7 +1,8 @@
 import asyncio
+
 import httpx
-from msal import ConfidentialClientApplication
 from app.core.config import settings
+from msal import ConfidentialClientApplication
 
 
 def get_msal_app() -> ConfidentialClientApplication:
@@ -44,7 +45,9 @@ async def get_microsoft_user_profile(access_token: str) -> dict:
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             "https://graph.microsoft.com/v1.0/me",
-            params={"$select": "id,displayName,mail,userPrincipalName,jobTitle,department,mobilePhone,officeLocation"},
+            params={
+                "$select": "id,displayName,mail,userPrincipalName,jobTitle,department,mobilePhone,officeLocation"
+            },
             headers={"Authorization": f"Bearer {access_token}"},
         )
         resp.raise_for_status()
@@ -70,10 +73,14 @@ async def get_app_graph_token() -> str:
     """Get an app-only Graph token via client credentials (no signed-in user needed).
     Requires the Azure app registration to have admin-consented User.Read.All / Directory.Read.All."""
     app = get_msal_app()
-    result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+    result = app.acquire_token_for_client(
+        scopes=["https://graph.microsoft.com/.default"]
+    )
     token = result.get("access_token")
     if not token:
-        raise ValueError(f"Unable to acquire Graph token: {result.get('error_description', result.get('error'))}")
+        raise ValueError(
+            f"Unable to acquire Graph token: {result.get('error_description', result.get('error'))}"
+        )
     return token
 
 
@@ -89,12 +96,15 @@ async def list_azure_org_users() -> list[dict]:
     }
     async with httpx.AsyncClient() as client:
         while url:
-            resp = await client.get(url, headers={"Authorization": f"Bearer {token}"}, params=params)
+            resp = await client.get(
+                url, headers={"Authorization": f"Bearer {token}"}, params=params
+            )
             resp.raise_for_status()
             data = resp.json()
             users.extend(data.get("value", []))
             url = data.get("@odata.nextLink")
             params = {}
+
         async def fetch_manager(user: dict) -> None:
             user_id = user.get("id")
             if not user_id:

@@ -10,9 +10,10 @@ if TYPE_CHECKING:
     from app.modules.p2p.models.p2p_request_item import P2PRequestItem
     from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
 
-# Lifecycle of a standalone P2P Request raised directly by any
-# department (distinct from app.modules.purchase, which only handles PRs
-# raised out of a Service Request's Materials tab).
+# Lifecycle of a standalone P2P Request raised directly by any department —
+# including PRs raised out of an ERP Service Request's Materials tab, which
+# used to be handled by a separate app.modules.purchase module (removed;
+# all PRs are now P2PRequest rows).
 #
 #   submitted -> approved -> vendor_quotations -> [technical_evaluation] ->
 #   commercial_evaluation -> vendor_selected -> po_drafted -> po_raised ->
@@ -68,9 +69,8 @@ P2P_REQUIREMENT_TYPES = ("Material", "Service", "Material + Service", "Capital E
 
 class P2PRequest(Base, TimestampMixin):
     """A standalone P2P request raised by any department, tracked and
-    processed end-to-end by the Purchase team. Fully independent of the
-    `purchase` module's `PurchaseRequisition` (which is scoped to Service
-    Request materials only)."""
+    processed end-to-end by the Purchase team — including PRs raised out of
+    an ERP Service Request's Materials tab (see erp/routes/service_requests.py)."""
 
     __tablename__ = "p2p_requests"
 

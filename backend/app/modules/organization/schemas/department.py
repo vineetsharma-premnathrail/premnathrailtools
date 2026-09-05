@@ -12,7 +12,6 @@ class DepartmentMemberResponse(BaseModel):
 
 
 class DepartmentCreate(BaseModel):
-    company_id: int
     branch_id: int | None = None
     name: str
     head_user_id: int | None = None
@@ -29,13 +28,11 @@ class DepartmentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    company_id: int
     branch_id: int | None = None
     name: str
     code: str
     head_user_id: int | None = None
     secondary_head_user_id: int | None = None
-    company_name: str | None = None
     branch_name: str | None = None
     # "Name A / Name B" when secondary_head_user_id is also set — see
     # Department.secondary_head_user_id docstring.

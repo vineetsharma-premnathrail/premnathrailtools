@@ -304,7 +304,7 @@ export default function OrganizationForm({
                 )}
               </Field>
             </div>
-            <div style={{ flex: '1 1 200px', minWidth: 180 }}>
+            <div style={{ flex: '1 1 260px', minWidth: 220 }}>
               <Field label="GST Number">
                 <input
                   value={form.gst_number}

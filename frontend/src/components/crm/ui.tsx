@@ -108,7 +108,8 @@ export function RevisionSelector({ revisions, selectedId, onSelect }: { revision
       {open && pos && createPortal(
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 999998 }} />
-          <div style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 999999, minWidth: 220, maxHeight: 300, overflowY: 'auto', borderRadius: 12, background: 'rgba(255,255,255,.98)', backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 6 }}>
+          <div style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 999999, minWidth: 220, borderRadius: 12, background: 'rgba(255,255,255,.98)', backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
+          <div style={{ maxHeight: 300, overflowY: 'auto', padding: 6 }}>
             <div
               onClick={() => { onSelect(null); setOpen(false) }}
               style={{ padding: '8px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: !selected ? 700 : 500, color: !selected ? BRAND.primary : COLORS.ink, background: !selected ? 'rgba(255,122,69,0.08)' : 'transparent' }}
@@ -125,6 +126,7 @@ export function RevisionSelector({ revisions, selectedId, onSelect }: { revision
                 <div style={{ fontSize: 10.5, color: COLORS.textFaint2 }}>{r.performed_by}{r.performed_at ? ` · ${new Date(r.performed_at).toLocaleString()}` : ''}</div>
               </div>
             ))}
+          </div>
           </div>
         </>,
         document.body
@@ -214,7 +216,8 @@ export function ComboBox({
       {open && pos && createPortal(
         <>
           <div onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 999998 }} />
-          <div style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 999999, maxHeight: 260, overflowY: 'auto', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 16px 36px rgba(0,0,0,0.14)' }}>
+          <div style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 999999, borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 16px 36px rgba(0,0,0,0.14)', overflow: 'hidden' }}>
+          <div style={{ maxHeight: 260, overflowY: 'auto' }}>
             {filtered.length === 0 && (
               <p style={{ fontSize: 12.5, color: COLORS.textFaint2, padding: '10px 14px', margin: 0 }}>No matches.</p>
             )}
@@ -242,6 +245,7 @@ export function ComboBox({
                 + {createLabel}{value.trim() ? `: "${value.trim()}"` : ''}
               </div>
             )}
+          </div>
           </div>
         </>,
         document.body

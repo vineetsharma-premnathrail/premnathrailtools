@@ -8,7 +8,6 @@ from app.db.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.modules.p2p.models.rfq import RFQ
-    from app.modules.vendor.models.vendor import Vendor
 
 # pending: not yet evaluated. qualified/disqualified: technical reviewer's
 # call (only meaningful when the parent RFQ has requires_technical_evaluation).
@@ -34,7 +33,7 @@ class VendorQuotation(Base, TimestampMixin):
     rfq_id: Mapped[int] = mapped_column(Integer, ForeignKey("rfqs.id"), nullable=False)
     p2p_request_id: Mapped[int] = mapped_column(Integer, ForeignKey("p2p_requests.id"), nullable=False)
 
-    vendor_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("vendors.id"), nullable=True)
+    vendor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     vendor_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     quoted_price: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -58,4 +57,3 @@ class VendorQuotation(Base, TimestampMixin):
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
     rfq: Mapped["RFQ"] = relationship("RFQ", back_populates="vendor_quotations")
-    vendor: Mapped["Vendor | None"] = relationship("Vendor")

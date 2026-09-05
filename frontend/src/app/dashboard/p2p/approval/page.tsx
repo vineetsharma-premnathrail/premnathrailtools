@@ -15,7 +15,7 @@ export default function P2PApprovalPage() {
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
         Procure-to-Pay Module
       </p>
-      <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>Approval</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>P.R Approval</h1>
       <P2PRequestList statuses={['submitted', 'approved']} emptyLabel="No requests pending approval." context="approval" />
     </div>
   )

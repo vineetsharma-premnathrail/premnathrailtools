@@ -67,79 +67,6 @@ export const authApi = {
   },
 }
 
-export const hrApi = {
-  directory: async () => {
-    const { data } = await apiClient.get('/hr/directory')
-    return data
-  },
-
-  updateProfile: async (userId: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/hr/employees/${userId}`, payload)
-    return data
-  },
-}
-
-export const designApi = {
-  listDocuments: async (params: Record<string, unknown> = {}) => {
-    const { data } = await apiClient.get('/design/documents', { params })
-    return data
-  },
-
-  revisionHistory: async (documentId: number) => {
-    const { data } = await apiClient.get(`/design/documents/${documentId}/revisions`)
-    return data
-  },
-
-  upload: async (form: FormData) => {
-    const { data } = await apiClient.post('/design/documents', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return data
-  },
-
-  updateStatus: async (documentId: number, status: string) => {
-    const { data } = await apiClient.patch(`/design/documents/${documentId}/status`, { status })
-    return data
-  },
-
-  getDocumentBlob: async (documentId: number): Promise<Blob> => {
-    const { data } = await apiClient.get(`/design/documents/${documentId}/content`, { responseType: 'blob' })
-    return data
-  },
-}
-
-export const electricalApi = {
-  list: async (params: Record<string, unknown> = {}) => {
-    const { data } = await apiClient.get('/electrical/work-orders', { params })
-    return data
-  },
-
-  get: async (id: number) => {
-    const { data } = await apiClient.get(`/electrical/work-orders/${id}`)
-    return data
-  },
-
-  create: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/electrical/work-orders', payload)
-    return data
-  },
-
-  update: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/electrical/work-orders/${id}`, payload)
-    return data
-  },
-
-  assign: async (id: number, assignedToId: number) => {
-    const { data } = await apiClient.post(`/electrical/work-orders/${id}/assign`, { assigned_to_id: assignedToId })
-    return data
-  },
-
-  changeStatus: async (id: number, status: string, resolutionNotes?: string) => {
-    const { data } = await apiClient.post(`/electrical/work-orders/${id}/status`, { status, resolution_notes: resolutionNotes })
-    return data
-  },
-}
-
 export const modulesApi = {
   list: async () => {
     const { data } = await apiClient.get('/modules')
@@ -715,56 +642,9 @@ export const erpApi = {
 
 }
 
-export const purchaseApi = {
-  list: async (params: { status?: string; project_id?: number; service_request_id?: number; search?: string; limit?: number } = {}) => {
-    const { data } = await apiClient.get('/purchase/requisitions', { params })
-    return data
-  },
-
-  get: async (id: number) => {
-    const { data } = await apiClient.get(`/purchase/requisitions/${id}`)
-    return data
-  },
-
-  update: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/purchase/requisitions/${id}`, payload)
-    return data
-  },
-
-  approve: async (id: number) => {
-    const { data } = await apiClient.post(`/purchase/requisitions/${id}/approve`)
-    return data
-  },
-
-  reject: async (id: number, reason?: string) => {
-    const { data } = await apiClient.post(`/purchase/requisitions/${id}/reject`, { reason })
-    return data
-  },
-
-  cancel: async (id: number, reason?: string) => {
-    const { data } = await apiClient.post(`/purchase/requisitions/${id}/cancel`, { reason })
-    return data
-  },
-
-  close: async (id: number) => {
-    const { data } = await apiClient.post(`/purchase/requisitions/${id}/close`)
-    return data
-  },
-
-  getAuditTrail: async (id: number) => {
-    const { data } = await apiClient.get(`/purchase/requisitions/${id}/audit`)
-    return data
-  },
-
-  updateItem: async (prId: number, itemId: number, payload: { remarks?: string }) => {
-    const { data } = await apiClient.patch(`/purchase/requisitions/${prId}/items/${itemId}`, payload)
-    return data
-  },
-}
-
-// Standalone Purchase Requisition module (distinct from purchaseApi above —
-// this one is for PRs raised directly by any department, not out of a
-// Service Request's Materials tab).
+// Standalone Purchase Requisition module — PRs raised directly by any
+// department, not out of a Service Request's Materials tab (which now go
+// straight to p2pApi via erpApi.raisePurchaseRequisition).
 export const p2pApi = {
   listProjects: async (search?: string) => {
     const { data } = await apiClient.get('/p2p/requests/projects', { params: { search } })
@@ -899,13 +779,20 @@ export const rfqApi = {
     return data
   },
 
-  uploadAttachments: async (id: number, files: File[], vendorTier: string) => {
+  uploadAttachments: async (id: number, files: File[], vendorTier: string, vendorName?: string, vendorContact?: string) => {
     const formData = new FormData()
     files.forEach((f) => formData.append('files', f))
     formData.append('vendor_tier', vendorTier)
+    if (vendorName) formData.append('vendor_name', vendorName)
+    if (vendorContact) formData.append('vendor_contact', vendorContact)
     const { data } = await apiClient.post(`/p2p/rfqs/${id}/attachments`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
+    return data
+  },
+
+  updateAttachment: async (id: number, attachmentId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/p2p/rfqs/${id}/attachments/${attachmentId}`, payload)
     return data
   },
 
@@ -978,33 +865,6 @@ export const rfqApi = {
 
   submitPoDraft: async (rfqId: number, poId: number) => {
     const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/po-draft/${poId}/submit`)
-    return data
-  },
-}
-
-export const vendorsApi = {
-  getMeta: async () => {
-    const { data } = await apiClient.get('/vendors/meta')
-    return data
-  },
-
-  list: async (params: Record<string, unknown> = {}) => {
-    const { data } = await apiClient.get('/vendors', { params })
-    return data
-  },
-
-  get: async (id: number) => {
-    const { data } = await apiClient.get(`/vendors/${id}`)
-    return data
-  },
-
-  create: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/vendors', payload)
-    return data
-  },
-
-  update: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/vendors/${id}`, payload)
     return data
   },
 }
@@ -1121,22 +981,6 @@ export const storeApi = {
 }
 
 export const organizationApi = {
-  listCompanies: async () => {
-    const { data } = await apiClient.get('/organization/companies')
-    return data
-  },
-  createCompany: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/organization/companies', payload)
-    return data
-  },
-  updateCompany: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/organization/companies/${id}`, payload)
-    return data
-  },
-  deleteCompany: async (id: number) => {
-    await apiClient.delete(`/organization/companies/${id}`)
-  },
-
   listBranches: async () => {
     const { data } = await apiClient.get('/organization/branches')
     return data
@@ -1170,61 +1014,6 @@ export const organizationApi = {
   },
   getDepartmentMembers: async (id: number) => {
     const { data } = await apiClient.get(`/organization/departments/${id}/members`)
-    return data
-  },
-}
-
-export const manufacturingApi = {
-  getDashboard: async () => {
-    const { data } = await apiClient.get('/manufacturing/dashboard')
-    return data
-  },
-
-  listMaterials: async () => {
-    const { data } = await apiClient.get('/manufacturing/materials')
-    return data
-  },
-  createMaterial: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/manufacturing/materials', payload)
-    return data
-  },
-  updateMaterial: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/manufacturing/materials/${id}`, payload)
-    return data
-  },
-
-  listBOMs: async () => {
-    const { data } = await apiClient.get('/manufacturing/boms')
-    return data
-  },
-  createBOM: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/manufacturing/boms', payload)
-    return data
-  },
-  updateBOM: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/manufacturing/boms/${id}`, payload)
-    return data
-  },
-
-  listWorkOrders: async () => {
-    const { data } = await apiClient.get('/manufacturing/work-orders')
-    return data
-  },
-  createWorkOrder: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/manufacturing/work-orders', payload)
-    return data
-  },
-  updateWorkOrder: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/manufacturing/work-orders/${id}`, payload)
-    return data
-  },
-
-  listStockEntries: async () => {
-    const { data } = await apiClient.get('/manufacturing/stock-entries')
-    return data
-  },
-  createStockEntry: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/manufacturing/stock-entries', payload)
     return data
   },
 }
@@ -1391,3 +1180,4 @@ export const feedbackApi = {
     return data
   },
 }
+

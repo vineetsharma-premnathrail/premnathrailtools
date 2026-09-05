@@ -24,6 +24,7 @@ class P2PRequestItemPayload(BaseModel):
     project_inhouse: str | None = None
     category: str | None = None
     ship_to: str | None = None
+    item_id: int | None = None
 
 
 class P2PRequestItemResponse(BaseModel):
@@ -39,6 +40,7 @@ class P2PRequestItemResponse(BaseModel):
     category: str | None = None
     ship_to: str | None = None
     stock_item_id: int | None = None
+    item_id: int | None = None
     attachments: list[P2PRequestAttachmentResponse] = Field(default_factory=list)
 
 
@@ -69,7 +71,7 @@ class P2PRequestCreate(BaseModel):
 
 class P2PRequestUpdate(BaseModel):
     """Purchase-team-only free-edit of header fields, and/or a manual status
-    override — mirrors app.modules.purchase's PurchaseRequisitionUpdate."""
+    override."""
 
     project_label: str | None = None
     required_date: date | None = None

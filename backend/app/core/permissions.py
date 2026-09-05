@@ -10,7 +10,9 @@ def require_app_access(app_name: str):
 
     def _dependency(user: User = Depends(get_current_user)) -> User:
         if app_name not in user.get_apps():
-            raise HTTPException(status_code=403, detail=f"Access to '{app_name}' module required")
+            raise HTTPException(
+                status_code=403, detail=f"Access to '{app_name}' module required"
+            )
         return user
 
     return _dependency
@@ -22,7 +24,9 @@ def require_any_app_access(*app_names: str):
 
     def _dependency(user: User = Depends(get_current_user)) -> User:
         if not any(app_name in user.get_apps() for app_name in app_names):
-            raise HTTPException(status_code=403, detail=f"Access to one of {list(app_names)} required")
+            raise HTTPException(
+                status_code=403, detail=f"Access to one of {list(app_names)} required"
+            )
         return user
 
     return _dependency

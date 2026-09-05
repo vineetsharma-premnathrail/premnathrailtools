@@ -7,7 +7,7 @@ export default function OrganizationPage() {
   const router = useRouter()
 
   useEffect(() => {
-    router.replace('/dashboard/organization/company')
+    router.replace('/dashboard/organization/department')
   }, [router])
 
   return null

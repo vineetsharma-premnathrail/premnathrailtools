@@ -333,7 +333,8 @@ function InquiriesTab({ orgId, canModify }: { orgId: number; canModify: boolean 
       {inquiries.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No inquiries for this organization.</p>
       ) : (
-        <div style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+        <div style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#fffaf5' }}>
@@ -354,6 +355,7 @@ function InquiriesTab({ orgId, canModify }: { orgId: number; canModify: boolean 
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       )}
     </div>
@@ -395,7 +397,8 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
       {tenders.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No tenders for this organization.</p>
       ) : (
-        <div style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+        <div style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#fffaf5' }}>
@@ -422,6 +425,7 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       )}
     </div>

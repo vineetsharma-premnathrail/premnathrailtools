@@ -8,10 +8,17 @@ class RFQAttachmentResponse(BaseModel):
     id: int
     rfq_id: int
     vendor_tier: str
+    vendor_name: str | None = None
+    vendor_contact: str | None = None
     filename: str
     content_type: str | None = None
     size: int | None = None
     created_at: datetime | None = None
+
+
+class RFQAttachmentVendorUpdate(BaseModel):
+    vendor_name: str | None = None
+    vendor_contact: str | None = None
 
 
 class RFQCreate(BaseModel):
@@ -27,7 +34,7 @@ class RFQUpdate(BaseModel):
     comments: str | None = None
     payment_terms: str | None = None
     delivery_lead_time: str | None = None
-    ld_clause: str | None = None
+    late_delivery_clause: str | None = None
     requires_technical_evaluation: bool | None = None
 
 
@@ -104,7 +111,7 @@ class RFQResponse(BaseModel):
 
     payment_terms: str | None = None
     delivery_lead_time: str | None = None
-    ld_clause: str | None = None
+    late_delivery_clause: str | None = None
 
     created_by_id: int | None = None
     locked_by_id: int | None = None

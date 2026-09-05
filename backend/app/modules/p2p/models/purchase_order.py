@@ -8,7 +8,6 @@ from app.db.mixins import TimestampMixin
 
 if TYPE_CHECKING:
     from app.modules.p2p.models.p2p_request import P2PRequest
-    from app.modules.vendor.models.vendor import Vendor
 
 # draft -> issued -> acknowledged -> partially_fulfilled -> fulfilled
 #      \-> cancelled (from any state before fulfilled)
@@ -26,7 +25,7 @@ class P2PPurchaseOrder(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     po_number: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     p2p_request_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("p2p_requests.id"), nullable=True)
-    vendor_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("vendors.id"), nullable=True)
+    vendor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     vendor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     status: Mapped[str] = mapped_column(String(30), default="draft", nullable=False)
@@ -38,7 +37,6 @@ class P2PPurchaseOrder(Base, TimestampMixin):
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
     p2p_request: Mapped["P2PRequest | None"] = relationship("P2PRequest")
-    vendor: Mapped["Vendor | None"] = relationship("Vendor")
     items: Mapped[list["P2PPurchaseOrderItem"]] = relationship(
         "P2PPurchaseOrderItem", back_populates="purchase_order", cascade="all, delete-orphan"
     )
@@ -49,6 +47,11 @@ class P2PPurchaseOrderItem(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     purchase_order_id: Mapped[int] = mapped_column(Integer, ForeignKey("p2p_purchase_orders.id"), nullable=False)
+
+    # Nullable, non-blocking mapping to the shared Item master — carried over
+    # from the source P2PRequestItem.item_id when a PO is auto-generated, or
+    # set directly on an ad-hoc PO.
+    item_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("items.id"), nullable=True)
 
     item_name: Mapped[str] = mapped_column(String(255), nullable=False)
     make: Mapped[str | None] = mapped_column(String(100), nullable=True)

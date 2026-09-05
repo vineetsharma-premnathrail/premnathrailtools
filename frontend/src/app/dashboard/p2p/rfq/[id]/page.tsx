@@ -86,7 +86,7 @@ export default function RfqDetailPage() {
 
   const [paymentTerms, setPaymentTerms] = useState('')
   const [deliveryLeadTime, setDeliveryLeadTime] = useState('')
-  const [ldClause, setLdClause] = useState('')
+  const [lateDeliveryClause, setLateDeliveryClause] = useState('')
   const [singleQuotationReason, setSingleQuotationReason] = useState('')
   const [comments, setComments] = useState('')
 
@@ -120,7 +120,7 @@ export default function RfqDetailPage() {
       setRfq(data)
       setPaymentTerms(data.payment_terms || '')
       setDeliveryLeadTime(data.delivery_lead_time || '')
-      setLdClause(data.ld_clause || '')
+      setLateDeliveryClause(data.late_delivery_clause || '')
       setSingleQuotationReason(data.single_quotation_reason || '')
       setComments(data.comments || '')
       await loadPoDraft(data)
@@ -148,7 +148,7 @@ export default function RfqDetailPage() {
       await rfqApi.update(rfq.id, {
         payment_terms: paymentTerms.trim() || undefined,
         delivery_lead_time: deliveryLeadTime.trim() || undefined,
-        ld_clause: ldClause.trim() || undefined,
+        late_delivery_clause: lateDeliveryClause.trim() || undefined,
         single_quotation_reason: singleQuotationReason.trim() || undefined,
         comments: comments.trim() || undefined,
       })
@@ -233,24 +233,23 @@ export default function RfqDetailPage() {
       )}
 
       <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Vendor Quotation Attachments</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-          {(['L1', 'L2', 'L3', 'L4'] as const).map((tier) => {
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Supplier / Vendor Quotations</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+          {(['L1', 'L2', 'L3', 'L4'] as const).map((tier, i) => {
             const attachment = rfq.attachments.find((a) => a.vendor_tier === tier)
+            if (!attachment) return null
             return (
-              <div key={tier}>
-                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{tier}</p>
-                {attachment ? (
-                  <a
-                    href="#"
-                    onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getAttachmentBlob(rfq.id, attachment.id)) }}
-                    style={{ fontSize: 13, color: TEXT.heading, textDecoration: 'none' }}
-                  >
-                    {attachment.filename}
-                  </a>
-                ) : (
-                  <span style={{ fontSize: 13, color: TEXT.muted }}>—</span>
-                )}
+              <div key={tier} style={{ borderRadius: 12, border: `1px solid ${BORDER.normal}`, padding: 12 }}>
+                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>Vendor {i + 1}</p>
+                <p style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 2px' }}>{attachment.vendor_name || '—'}</p>
+                <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 8px' }}>{attachment.vendor_contact || '—'}</p>
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getAttachmentBlob(rfq.id, attachment.id)) }}
+                  style={{ fontSize: 12.5, color: '#2563eb', textDecoration: 'none' }}
+                >
+                  {attachment.filename}
+                </a>
               </div>
             )
           })}
@@ -270,8 +269,8 @@ export default function RfqDetailPage() {
               <input style={inputStyle} value={deliveryLeadTime} onChange={(e) => setDeliveryLeadTime(e.target.value)} />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
-              <label style={labelStyle}>Liquidated Damages Clause</label>
-              <textarea style={{ ...inputStyle, minHeight: 60 }} value={ldClause} onChange={(e) => setLdClause(e.target.value)} />
+              <label style={labelStyle}>Late Delivery Clause</label>
+              <textarea style={{ ...inputStyle, minHeight: 60 }} value={lateDeliveryClause} onChange={(e) => setLateDeliveryClause(e.target.value)} />
             </div>
             {rfq.is_single_quotation && (
               <>
@@ -308,7 +307,7 @@ export default function RfqDetailPage() {
               <InfoRow label="Payment Terms" value={rfq.payment_terms || '—'} />
               <InfoRow label="Delivery Lead Time" value={rfq.delivery_lead_time || '—'} />
               <div style={{ gridColumn: '1 / -1' }}>
-                <InfoRow label="Liquidated Damages Clause" value={rfq.ld_clause || '—'} />
+                <InfoRow label="Late Delivery Clause" value={rfq.late_delivery_clause || '—'} />
               </div>
             </div>
           </div>

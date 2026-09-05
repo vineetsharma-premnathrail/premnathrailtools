@@ -104,15 +104,15 @@ export default function FeedbackBell() {
             right: 0,
             top: 44,
             width: 360,
-            maxHeight: 440,
-            overflowY: 'auto',
             background: '#fff',
             borderRadius: 14,
             border: '1px solid rgba(0,0,0,0.08)',
             boxShadow: '0 12px 32px rgba(0,0,0,0.12)',
             zIndex: 60,
+            overflow: 'hidden',
           }}
         >
+        <div style={{ maxHeight: 440, overflowY: 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: '#1f1108' }}>User Feedback</span>
             <button
@@ -153,6 +153,7 @@ export default function FeedbackBell() {
               </div>
             ))
           )}
+        </div>
         </div>
       )}
     </div>

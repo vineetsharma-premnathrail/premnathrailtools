@@ -4,11 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const TABS = [
-  { href: '/dashboard/store', label: 'Stock Items', icon: 'box' },
-  { href: '/dashboard/store/item-master', label: 'Item Master', icon: 'tag' },
-  { href: '/dashboard/store/locations', label: 'Storage Locations', icon: 'map' },
-  { href: '/dashboard/store/transactions', label: 'Transactions', icon: 'list' },
-  { href: '/dashboard/store/cycle-count', label: 'Cycle Count', icon: 'check' },
+  { href: '/dashboard/store/grn', label: 'GRN', icon: 'inbox' },
 ] as const
 
 function TabIcon({ name }: { name: string }) {
@@ -16,14 +12,8 @@ function TabIcon({ name }: { name: string }) {
   switch (name) {
     case 'box':
       return <svg {...common}><path d="M21 8L12 3 3 8v8l9 5 9-5V8z" /><path d="M3 8l9 5 9-5" /><line x1="12" y1="13" x2="12" y2="21" /></svg>
-    case 'map':
-      return <svg {...common}><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" /><line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" /></svg>
-    case 'list':
-      return <svg {...common}><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
-    case 'check':
-      return <svg {...common}><path d="M22 11.08V12a10 10 0 11-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
-    case 'tag':
-      return <svg {...common}><path d="M20.59 13.41L11 3.83A2 2 0 009.59 3.2H4a2 2 0 00-2 2v5.59a2 2 0 00.59 1.41l9.58 9.58a2 2 0 002.82 0l6.6-6.6a2 2 0 000-2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+    case 'inbox':
+      return <svg {...common}><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" /></svg>
     default:
       return null
   }
@@ -35,7 +25,7 @@ export default function StoreNav() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
       {TABS.map((tab) => {
-        const isActive = tab.href === '/dashboard/store' ? pathname === tab.href : pathname.startsWith(tab.href)
+        const isActive = pathname.startsWith(tab.href)
         return (
           <Link
             key={tab.href}

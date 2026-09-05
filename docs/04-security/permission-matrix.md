@@ -122,8 +122,6 @@ purchase
 p2p
 store
 hr
-design
-electrical
 ```
 
 Therefore:
@@ -219,8 +217,6 @@ Fine-grained permissions are implemented separately only for ERP.
 | R&D        | Entire Calculations router                                                                        |
 | Store      | Locations, Stock Items and Stock Transactions                                                     |
 | HR         | HR routes                                                                                         |
-| Design     | Engineering document operations                                                                   |
-| Electrical | Work Order operations                                                                             |
 
 ---
 
@@ -384,36 +380,7 @@ The current implementation contains two HR routes.
 
 ---
 
-# 18. Design Backend Access
-
-Design routes require:
-
-```text
-require_app_access("design")
-```
-
-Protected functionality includes:
-
-* Engineering document upload
-* Document listing
-* Download
-* Delete
-
----
-
-# 19. Electrical Backend Access
-
-Electrical routes require:
-
-```text
-require_app_access("electrical")
-```
-
-Protected functionality includes Work Order CRUD.
-
----
-
-# 20. ERP Fine-Grained Permissions
+# 18. ERP Fine-Grained Permissions
 
 ERP is currently the only module with an additional action-level permission layer.
 
@@ -441,7 +408,7 @@ as a JSON list.
 
 ---
 
-# 21. ERP Permission Evaluation
+# 19. ERP Permission Evaluation
 
 The backend evaluates ERP permissions using:
 
@@ -459,7 +426,7 @@ erp_permissions
 
 ---
 
-# 22. ERP Permission Matrix
+# 20. ERP Permission Matrix
 
 | Permission       | Backend Enforcement    | Current Status                      |
 | ---------------- | ---------------------- | ----------------------------------- |
@@ -474,7 +441,7 @@ erp_permissions
 
 ---
 
-# 23. Project Permissions
+# 21. Project Permissions
 
 ## Create
 
@@ -502,7 +469,7 @@ is checked when deleting a Project.
 
 ---
 
-# 24. Service Request Permissions
+# 22. Service Request Permissions
 
 ## Create
 
@@ -530,7 +497,7 @@ is checked when deleting a Service Request.
 
 ---
 
-# 25. Service Request Ownership Rule
+# 23. Service Request Ownership Rule
 
 The `sr_edit` and `sr_delete` checks are combined with ownership.
 
@@ -550,7 +517,7 @@ The current implementation permits editing/deleting the user's own applicable Se
 
 ---
 
-# 26. ERP View Permission Gap
+# 24. ERP View Permission Gap
 
 The following permissions are defined:
 
@@ -577,7 +544,7 @@ Therefore these permissions currently do not provide an independent backend auth
 
 ---
 
-# 27. Frontend Authorization
+# 25. Frontend Authorization
 
 Frontend authorization uses:
 
@@ -603,7 +570,7 @@ They are **not the security boundary**.
 
 ---
 
-# 28. Backend vs Frontend Security
+# 26. Backend vs Frontend Security
 
 The authorization model should be understood as:
 
@@ -621,7 +588,7 @@ A user bypassing frontend navigation controls must still be rejected by backend 
 
 ---
 
-# 29. Frontend Application Guards
+# 27. Frontend Application Guards
 
 Current frontend application guards include:
 
@@ -635,7 +602,7 @@ Current frontend application guards include:
 
 ---
 
-# 30. Frontend ERP Permission Guards
+# 28. Frontend ERP Permission Guards
 
 Currently identified granular frontend permission guards include:
 
@@ -653,7 +620,7 @@ The default fallback is:
 
 ---
 
-# 31. Purchase/P2P Frontend Boundary
+# 29. Purchase/P2P Frontend Boundary
 
 There are currently two P2P page areas:
 
@@ -685,7 +652,7 @@ The Purchase/P2P split should therefore be explicitly reviewed.
 
 ---
 
-# 32. Administrator Authorization
+# 30. Administrator Authorization
 
 Administrator-only backend operations use:
 
@@ -709,7 +676,7 @@ There is no `"admin"` application in `AVAILABLE_APPS`.
 
 ---
 
-# 33. Admin Capabilities
+# 31. Admin Capabilities
 
 Administrator-protected functionality includes:
 
@@ -733,7 +700,7 @@ Permissions
 
 ---
 
-# 34. API-Key Authorization
+# 32. API-Key Authorization
 
 API-key authentication creates a synthetic user:
 
@@ -763,7 +730,7 @@ Application
 
 ---
 
-# 35. API-Key ERP Permissions
+# 33. API-Key ERP Permissions
 
 API-key-authenticated users also pass through the same:
 
@@ -777,7 +744,7 @@ Therefore API access does not bypass the standard authorization architecture.
 
 ---
 
-# 36. API-Key Security Testing
+# 34. API-Key Security Testing
 
 The existing security test suite verifies:
 
@@ -791,7 +758,7 @@ Whether external integrations currently use this mechanism is separate from whet
 
 ---
 
-# 37. Service Permissions
+# 35. Service Permissions
 
 The User model contains:
 
@@ -815,7 +782,7 @@ It should not be treated as an effective security control until an enforcement p
 
 ---
 
-# 38. Current Permission Architecture
+# 36. Current Permission Architecture
 
 The current system can be summarized as:
 
@@ -849,7 +816,7 @@ The current system can be summarized as:
 
 ---
 
-# 39. Current Authorization Gaps
+# 37. Current Authorization Gaps
 
 The following items require review:
 
@@ -871,7 +838,7 @@ The permission matrix describes access control; user-reference integrity is cove
 
 ---
 
-# 40. Permission Change Process
+# 38. Permission Change Process
 
 Permission changes should be made through controlled changes to:
 
@@ -885,7 +852,7 @@ A permission change affecting security should be tested at the backend level.
 
 ---
 
-# 41. Permission Testing
+# 39. Permission Testing
 
 Security testing should verify:
 
@@ -917,7 +884,7 @@ For sensitive operations, both positive and negative authorization tests are req
 
 ---
 
-# 42. Source of Truth
+# 40. Source of Truth
 
 For actual authorization behavior, the following are authoritative:
 
@@ -935,7 +902,7 @@ Documentation should not be treated as evidence that a permission is enforced un
 
 ---
 
-# 43. Document Update Rules
+# 41. Document Update Rules
 
 Update this Permission Matrix when:
 
@@ -951,7 +918,7 @@ Update this Permission Matrix when:
 
 ---
 
-# 44. Version Control
+# 42. Version Control
 
 ```text
 v1.0
@@ -971,7 +938,7 @@ Previous approved versions should be retained.
 
 ---
 
-# 45. Related Documents
+# 43. Related Documents
 
 * Project Charter
 * BRD
@@ -989,7 +956,7 @@ Previous approved versions should be retained.
 
 ---
 
-# 46. Approval
+# 44. Approval
 
 | Name             | Role                                     | Signature  | Date       |
 | ---------------- | ---------------------------------------- | ---------- | ---------- |
@@ -998,7 +965,7 @@ Previous approved versions should be retained.
 
 ---
 
-# 47. Document Information
+# 45. Document Information
 
 **Document:** Permission Matrix
 **Project:** ERP-PremnathRail

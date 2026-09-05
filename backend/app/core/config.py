@@ -1,4 +1,5 @@
 """Application-wide configuration, loaded from environment variables."""
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,7 +13,9 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Comma-separated lists; production deploys must override these via env.
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000"
+    ALLOWED_ORIGINS: str = (
+        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000"
+    )
     ALLOWED_HOSTS: str = "localhost,127.0.0.1,testserver"
 
     # IPs of reverse proxies (e.g. Coolify/Traefik) allowed to set X-Forwarded-For.
@@ -61,15 +64,22 @@ class Settings(BaseSettings):
     RND_EMAIL: str = ""
     APP_BASE_URL: str = "http://localhost:8000"
 
+    # GSTIN lookup (gstinapi.in) — used to auto-fill Vendor/Organization forms
+    GSTINAPI_KEY: str = ""
+    GSTINAPI_BASE_URL: str = "https://www.gstinapi.in"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @model_validator(mode="after")
     def _reject_placeholder_secret_in_production(self) -> "Settings":
-        if self.environment == "production" and (not self.SECRET_KEY or self.SECRET_KEY == "..." or len(self.SECRET_KEY) < 32):
+        if self.environment == "production" and (
+            not self.SECRET_KEY or self.SECRET_KEY == "..." or len(self.SECRET_KEY) < 32
+        ):
             raise ValueError(
                 "SECRET_KEY must be set to a strong, unique value (32+ chars) when environment=production. "
                 "Refusing to start with a placeholder/weak key, since it would let anyone forge session tokens."
             )
         return self
+
 
 settings = Settings()

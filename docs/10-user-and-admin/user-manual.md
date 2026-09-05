@@ -95,49 +95,65 @@ Attachments are accessed through the backend, so authorization is checked before
 
 **Nav path:** CRM Module → `/dashboard/crm`
 
-CRM manages organizations, contacts, inquiries, tenders, activities, quotations, and technical offers.
+CRM covers the business-development pipeline: organizations and contacts, inquiries and tenders, the quotations sent against them, and the day-to-day activities (calls, meetings, site visits) a BD user logs while chasing that work. Anyone with CRM access can create and view records; editing and deleting a record is limited to its creator or an admin.
+
+The module has three top-level tabs: **Dashboard**, **Organizations**, and **Inquiries & Tenders**. There is no separate Tenders tab — tenders live inside the combined Inquiries & Tenders list and open the same detail view as an inquiry.
+
+### Dashboard
+
+`/dashboard/crm` shows stat cards for total Organizations, Inquiries, Tenders, Open Follow-ups, Overdue Follow-ups, Today's Follow-ups, and Pending Tenders (click a card to jump to the matching filtered list), three "Recent" panels (Organizations, Inquiries, Tenders) with a **View all →** link into each list, and a Recent Follow Ups panel. It's a read-only summary — records are created from the Organizations or Inquiries & Tenders tabs, not from here.
 
 ### Organizations & Contacts
 
-Organizations can be added or edited from the Organizations page and from other CRM pages.
+The Organizations list shows **+ Add Organization**, a single search box (name, type, zone, city, state), and a sortable/filterable table (Name, Type, Railway Zone, City, State, Created Date, Created By). Click a row to open its detail panel.
+
+Creating an organization (`+ Add Organization`) captures name, type (Railway/Government/PSU/Private, or a custom "Other" type — picking a railway/government type also asks for Railway Zone and Division/Workshop), address and location fields, official phone/email, website, and GST number. Entering a GST number and clicking **Auto-fill** looks up the GSTIN and fills in the registered name, address, city, state, PIN, and country automatically. Contact Persons can be added as repeatable rows (Name, Designation, Department, Mobile, Email) directly on this form, or later from the detail panel.
+
+The detail panel has tabs:
+
+* **Overview** — organization, location, and registration details.
+* **Contacts** — add contacts inline; each contact card shows the Inquiries/Tenders it's linked to.
+* **Inquiries** — add an inquiry for this organization inline and see all of its inquiries with status, priority, and follow-up date.
+* **Tenders** — add a tender for this organization inline and see all of its tenders with status and submission date.
+* **Audit Trail** — a chronological log of changes to the record.
+
+**Edit** is available to the creator or an admin; **Delete** (admin only) asks for confirmation and also removes the organization's inquiries and tenders.
 
 ### Inquiries & Tenders
 
-Both provide Activities functionality for recording calls, meetings, notes, and related information.
+This single list (with **+ New Record**) covers both record types, distinguished by a Type column (filterable to Inquiry or Tender), alongside ID, Organization, Stage, Status, Value/Priority, Created Date, and Created By — all searchable and most columns filterable or sortable. A new tender is normally created from an organization's Tenders tab rather than this list's own "+ New Record" button, which creates an inquiry.
 
-### Activities
+Opening a record shows its universal ID (`INQ-YYYYMMDD-####` or `TND-YYYYMMDD-####`), status, priority, and a clickable **stage progress bar** — click any stage to jump the record to it (with confirmation), which logs a timeline entry and, for inquiries, sends a notification. From here you can also **Edit**, **Delete** (admin), and **Send Technical Offer Request to R&D** (see below).
 
-Open an Inquiry, Tender, or Organization → **Activities → New Activity**.
+Tabs on an inquiry:
 
-Activities support:
+* **Info** — organization, lead info, and product requirement (with a revision selector if the requirement has been changed since creation).
+* **Quotations** — create and revise quotations (see below).
+* **Documents** — Client Documents and Internal Documents folders, each with a category and multi-file upload.
+* **Follow Ups** — add and manage Activities (see below) and export Minutes of Meeting.
+* **Timeline** — a merged feed of audit, stage-change, revision, follow-up, and quotation history.
 
-* Searchable Inquiry/Tender selection
-* Photo attachments
-* Camera capture
-* Drag-and-drop uploads
-* Minutes of Meeting items
-* Contact linking
-
-### Minutes of Meeting
-
-From an Inquiry's Activities tab, use **Export MOM** to generate:
-
-* Word (`.docx`)
-* PDF
-
-The Responsibility field displays the BD Owner.
+Tabs on a tender are similar, with **Dates** (publication, document download, pre-bid meeting, query submission, submission, technical/financial opening, expected award) replacing Quotations, and a Result section (Awarded To, LOI Number, Contract Value, or Loss Reason) once the tender is marked Won or Lost. A tender's Follow Ups tab is currently view-only.
 
 ### Quotations
 
-Quotations automatically calculate line-item subtotals, taxable values, GST, and totals.
+From an inquiry's Quotations tab, **+ Create Quote** builds a commercial offer: quotation type (Domestic/Export), GST type, client details, and repeatable line items — pick an existing Product or type a new one to create it on the fly. Quantity, price, and GST% auto-calculate each line's subtotal and the grand total; discounts, delivery time, quote validity, quote conditions, and payment terms (again pick-or-create) round out the offer. Saved quotes can be downloaded as a PDF (with customer/GST details, letterhead, signature, and linked Technical Offer information) or **Revised** — a revision only changes price, payment terms, delivery time, or validity, and is tracked as its own version. Each quote also carries a Customer Response status you can update as the customer replies.
 
-The generated PDF includes customer information, GST information, letterhead, signature details, and applicable Technical Offer information.
+### Activities and Follow-Ups
 
-### Technical Offers
+From an Inquiry, Tender, or Organization's Follow Ups/Activities area, **+ Add Follow Up** (or **New Activity**) records a call, meeting, or site visit. Activities support a searchable Inquiry/Tender link, photo attachments (camera capture or drag-and-drop upload), and a follow-up date. Set a follow-up date and leave the activity Open, and the system will notify the owner one day before and on the day itself.
 
-Technical Offer Requests can be generated as Word or PDF documents.
+### Minutes of Meeting
 
-External recipients can receive a signed, time-limited document link without receiving a direct SharePoint URL.
+From an Inquiry's Follow Ups tab, use **Export MoM** on an activity to generate a Minutes-of-Meeting document as Word (`.docx`) or PDF, with the Responsibility field showing the BD Owner.
+
+### Technical Offer Requests
+
+From an Inquiry or Tender's header, **Send Technical Offer Request to R&D** opens a dialog to optionally attach uploaded Client Documents and emails the request to R&D. The button greys out after sending until the record is edited again. Recipients — including external vendors with no portal account — get a link to a standalone Technical Offer Request page with an embedded PDF viewer and a Download option; the link is signed and time-limited rather than a raw SharePoint URL, so it can be shared safely with people outside the organization.
+
+### Payment Terms and Products
+
+`/dashboard/crm/payment-terms` and `/dashboard/crm/products` are simple reference lists (**+ Add Payment Term** / **+ Add Product**, with Edit/Delete per row) that back the pick-or-create fields on the Quotation form — the same lists can also be extended directly while building a quote.
 
 ---
 
@@ -293,62 +309,7 @@ View reporting relationships at:
 
 ---
 
-# 11. Design
-
-**Nav path:** Design → `/dashboard/design`
-
-The Design module manages engineering documents and drawings associated with projects.
-
-### Document List
-
-Documents can be filtered by:
-
-* Project
-* Engineering discipline
-* Document type
-* Latest version
-
-### Upload
-
-Documents are uploaded, versioned, tagged, and stored through SharePoint integration.
-
-### Document Detail
-
-Open `/dashboard/design/[id]` to view document information and update its status.
-
----
-
-# 12. Electrical
-
-**Nav path:** Electrical → `/dashboard/electrical`
-
-The Electrical module manages project-related electrical work orders.
-
-### Work Orders
-
-The main page lists work orders with status and priority.
-
-### Create Work Order
-
-Open:
-
-`/dashboard/electrical/new`
-
-Create a work order against a project. Work orders are automatically numbered, for example:
-
-`EWO-2026-0001`
-
-### Work Order Detail
-
-Open:
-
-`/dashboard/electrical/[id]`
-
-From there, users can assign the work order and update its status and priority.
-
----
-
-# 13. Vendors
+# 11. Vendors
 
 Vendor records are managed through the **Purchase** module rather than a separately assignable Vendor module.
 
@@ -360,7 +321,7 @@ Purchase module access is required.
 
 ---
 
-# 14. Users & Roles
+# 12. Users & Roles
 
 **Admin only**
 
@@ -372,7 +333,7 @@ Administrator account management, module assignment, and permission management a
 
 ---
 
-# 15. Getting Help
+# 13. Getting Help
 
 For access-related questions, see `faq.md`.
 

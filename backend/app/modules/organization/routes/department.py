@@ -5,7 +5,6 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.users import require_admin
 from app.modules.organization.models.branch import Branch
-from app.modules.organization.models.company import Company
 from app.modules.organization.models.department import Department
 from app.modules.organization.schemas.department import DepartmentCreate, DepartmentUpdate, DepartmentResponse, DepartmentMemberResponse
 from app.modules.organization.services.provisioning import unique_code
@@ -14,14 +13,12 @@ router = APIRouter(prefix="/organization/departments", tags=["Organization"])
 
 
 def _to_response(dept: Department, db: Session) -> DepartmentResponse:
-    company = db.query(Company).filter(Company.id == dept.company_id).first()
     branch = db.query(Branch).filter(Branch.id == dept.branch_id).first() if dept.branch_id else None
     head = db.query(User).filter(User.id == dept.head_user_id).first() if dept.head_user_id else None
     secondary_head = db.query(User).filter(User.id == dept.secondary_head_user_id).first() if dept.secondary_head_user_id else None
     head_names = [h.name for h in (head, secondary_head) if h]
     return DepartmentResponse.model_validate(dept).model_copy(
         update={
-            "company_name": company.name if company else None,
             "branch_name": branch.name if branch else None,
             "head_user_name": " / ".join(head_names) if head_names else None,
         }
@@ -43,8 +40,6 @@ async def create_department(
     db: Session = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
-    if not db.query(Company).filter(Company.id == payload.company_id).first():
-        raise HTTPException(status_code=404, detail="Company not found")
     # Department code is just its full name — not a separate abbreviation —
     # deduplicated with a numeric suffix since `code` is globally unique but
     # the same department name can legitimately repeat across branches.

@@ -234,9 +234,10 @@ async def send_team_sr_notification(db: Session, sr, project, actor_id: int, act
 
 
 async def send_purchase_requisition_email(db: Session, pr, sr, project, materials, recipient_emails: list[str]) -> bool:
-    """Best-effort notification to the Purchase department when a PR is raised
-    from a Service Request's Materials tab. Failure is logged and recorded in
-    the SR's audit trail but never raised — the PR itself is already saved by
+    """Best-effort notification to the Purchase department when a P2P request is
+    raised from a Service Request's Materials tab. `pr` is a P2PRequest (uses
+    `.p2p_number`/`.requested_by_id`). Failure is logged and recorded in
+    the SR's audit trail but never raised — the request itself is already saved by
     the time this runs (called from a BackgroundTask).
 
     Styled to match `send_team_sr_notification`'s internal-notification look
@@ -247,7 +248,7 @@ async def send_purchase_requisition_email(db: Session, pr, sr, project, material
         return False
 
     from app.modules.main.models.user import User
-    raised_by = db.query(User).filter(User.id == pr.raised_by_id).first() if pr.raised_by_id else None
+    raised_by = db.query(User).filter(User.id == pr.requested_by_id).first() if pr.requested_by_id else None
     raised_by_name = (raised_by.name or raised_by.email) if raised_by else "—"
     raised_date = pr.created_at.strftime("%d %b %Y") if pr.created_at else _dt.date.today().strftime("%d %b %Y")
 
@@ -261,12 +262,12 @@ async def send_purchase_requisition_email(db: Session, pr, sr, project, material
         for m in materials
     ) if materials else '<p style="margin:0;font-size:13.5px;color:#94a3b8">No materials listed.</p>'
 
-    subject = f"New Purchase Requisition — {pr.pr_number} (SR {sr.request_number})"
+    subject = f"New Purchase Requisition — {pr.p2p_number} (SR {sr.request_number})"
     body_content = f"""
     <p style="margin:0 0 4px;font-size:14px;color:#1e293b;font-weight:700">Dear Purchase Team,</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.7">A new purchase requisition has been raised from a Service Request's Materials list and is awaiting your review.</p>
     <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
-      {_sr_email_table_row("Purchase Requisition", pr.pr_number, True)}
+      {_sr_email_table_row("Purchase Requisition", pr.p2p_number, True)}
       {_sr_email_table_row("Service Request", sr.request_number, False)}
       {_sr_email_table_row("Client", client_name, True)}
       {_sr_email_table_row("Machine / Asset", proj_name, False)}
@@ -288,7 +289,7 @@ async def send_purchase_requisition_email(db: Session, pr, sr, project, material
   <div style="background:#0f172a;padding:18px 28px;display:flex;align-items:center;justify-content:space-between">
     <div>
       <p style="color:#94a3b8;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:1px">New Purchase Requisition Raised</p>
-      <h2 style="color:#fff;margin:0;font-size:20px;font-weight:700">{pr.pr_number}</h2>
+      <h2 style="color:#fff;margin:0;font-size:20px;font-weight:700">{pr.p2p_number}</h2>
     </div>
     <span style="background:#3b82f6;color:#fff;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;text-transform:uppercase">Submitted</span>
   </div>
@@ -309,10 +310,10 @@ async def send_purchase_requisition_email(db: Session, pr, sr, project, material
             errors.append(f"{email}: {error}")
 
     if any_success:
-        _write_audit(db, sr.id, "email_sent", None, f"Purchase requisition email ({pr.pr_number}) sent to {', '.join(recipient_emails)}.")
+        _write_audit(db, sr.id, "email_sent", None, f"Purchase requisition email ({pr.p2p_number}) sent to {', '.join(recipient_emails)}.")
     else:
         logger.warning("Purchase requisition email failed: %s", "; ".join(errors))
-        _write_audit(db, sr.id, "email_failed", None, f"Purchase requisition email ({pr.pr_number}) failed. {'; '.join(errors)}")
+        _write_audit(db, sr.id, "email_failed", None, f"Purchase requisition email ({pr.p2p_number}) failed. {'; '.join(errors)}")
     return any_success
 
 

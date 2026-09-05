@@ -11,7 +11,6 @@ from app.modules.p2p.schemas.purchase_order import (
     P2PPurchaseOrderCreate, P2PPurchaseOrderUpdate, P2PPurchaseOrderResponse,
 )
 from app.modules.p2p.service import generate_po_number, compute_line_total
-from app.modules.vendor.models.vendor import Vendor
 
 router = APIRouter(prefix="/p2p/purchase-orders", tags=["P2P Purchase Orders"])
 
@@ -51,20 +50,11 @@ async def create_purchase_order(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
-    vendor_name = payload.vendor_name
-    if payload.vendor_id:
-        vendor = db.query(Vendor).filter(Vendor.id == payload.vendor_id).first()
-        if not vendor:
-            raise HTTPException(status_code=404, detail="Vendor not found")
-        if vendor.qualification_status != "qualified":
-            raise HTTPException(status_code=409, detail=f"Vendor '{vendor.name}' is not qualified ({vendor.qualification_status}) — a PO cannot be issued to it yet")
-        vendor_name = vendor.name
-
     po = P2PPurchaseOrder(
         po_number=generate_po_number(db),
         p2p_request_id=payload.p2p_request_id,
         vendor_id=payload.vendor_id,
-        vendor_name=vendor_name,
+        vendor_name=payload.vendor_name,
         status="draft",
         po_date=payload.po_date or date.today(),
         expected_delivery=payload.expected_delivery,
@@ -91,6 +81,7 @@ async def create_purchase_order(
             unit_price=item.unit_price,
             tax_rate=item.tax_rate,
             line_total=line_total,
+            item_id=item.item_id,
         ))
     po.total_value = round(total, 2) if has_pricing else None
 

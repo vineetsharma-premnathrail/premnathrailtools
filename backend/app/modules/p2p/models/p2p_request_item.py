@@ -32,6 +32,11 @@ class P2PRequestItem(Base, TimestampMixin):
     # items with this set get a stock-in transaction posted on receipt.
     stock_item_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("stock_items.id"), nullable=True)
 
+    # Nullable, non-blocking mapping to the shared Item master — set by the
+    # requester at creation time when they pick a catalog item instead of
+    # typing one in free text. Independent of stock_item_id above.
+    item_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("items.id"), nullable=True)
+
     p2p_request: Mapped["P2PRequest"] = relationship("P2PRequest", back_populates="items")
     attachments: Mapped[list["P2PRequestAttachment"]] = relationship(
         "P2PRequestAttachment", back_populates="item", cascade="all, delete-orphan"

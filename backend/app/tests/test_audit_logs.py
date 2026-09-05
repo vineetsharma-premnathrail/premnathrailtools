@@ -30,7 +30,10 @@ def auth_header(user):
 
 
 def test_organization_lifecycle_writes_audit_trail_in_order(client, db):
-    user = make_user(db, "org-audit@premnathrail.com")
+    # Deleting an organization is admin-only (app.modules.crm.routes.organizations.delete_organization);
+    # CRM has no restore endpoint (unlike ERP's Project recycle-bin) so the
+    # lifecycle here stops at delete.
+    user = make_user(db, "org-audit@premnathrail.com", role="admin")
 
     create = client.post(
         "/api/v1/crm/organizations",
@@ -45,11 +48,10 @@ def test_organization_lifecycle_writes_audit_trail_in_order(client, db):
         headers=auth_header(user),
     )
     client.delete(f"/api/v1/crm/organizations/{org_id}", headers=auth_header(user))
-    client.post(f"/api/v1/crm/organizations/{org_id}/restore", headers=auth_header(user))
 
     logs = client.get(f"/api/v1/crm/organizations/{org_id}/audit", headers=auth_header(user)).json()
     actions = [log["action"] for log in logs]
-    assert actions == ["created", "updated", "deleted", "restored"]
+    assert actions == ["created", "updated", "deleted"]
     assert all(log["performed_by"] == user.name for log in logs)
     assert all(log["performed_at"] for log in logs)
 

@@ -31,7 +31,7 @@ async def list_items(
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=1000),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_any_app_access("purchase", "store")),
+    _user: User = Depends(require_any_app_access("purchase", "store", "p2p")),
 ):
     query = db.query(Item)
     if search:
@@ -46,7 +46,7 @@ async def list_items(
 async def get_item(
     item_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_any_app_access("purchase", "store")),
+    _user: User = Depends(require_any_app_access("purchase", "store", "p2p")),
 ):
     item = db.query(Item).filter(Item.id == item_id).first()
     if not item:
@@ -59,7 +59,7 @@ async def get_item(
 async def create_item(
     payload: ItemCreate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_any_app_access("purchase", "store")),
+    _user: User = Depends(require_any_app_access("purchase", "store", "p2p")),
 ):
     item = Item(**payload.model_dump())
     db.add(item)
@@ -78,7 +78,7 @@ async def update_item(
     item_id: int,
     payload: ItemUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_any_app_access("purchase", "store")),
+    _user: User = Depends(require_any_app_access("purchase", "store", "p2p")),
 ):
     item = db.query(Item).filter(Item.id == item_id).first()
     if not item:
@@ -99,7 +99,7 @@ async def update_item(
 async def bulk_create_items(
     payload: ItemBulkCreate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_any_app_access("purchase", "store")),
+    _user: User = Depends(require_any_app_access("purchase", "store", "p2p")),
 ):
     if not payload.items:
         raise HTTPException(status_code=400, detail="No items provided")

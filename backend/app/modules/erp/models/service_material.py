@@ -30,12 +30,12 @@ class ServiceMaterial(Base, TimestampMixin, SoftDeleteMixin):
     status: Mapped[str | None] = mapped_column(String(50), default="pending", nullable=True)
 
     # Purchase Requisition linkage. `pr_id` is the only hard foreign key into
-    # the `purchase` module; `pr_number`/`pr_status` are a denormalized mirror
-    # of the PurchaseRequisition so this row can display PR state without a
-    # cross-module join. Written by app/modules/purchase/routes/purchase_requisitions.py
-    # whenever the PR's status changes — this is the exact seam that would
-    # become a webhook call if Purchase were ever split into its own service.
-    pr_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("purchase_requisitions.id"), nullable=True)
+    # the `p2p` module; `pr_number`/`pr_status` are a denormalized mirror of
+    # the P2PRequest so this row can display PR state without a cross-module
+    # join. `pr_status` is a read-only mirror of P2PRequest.status, refreshed
+    # whenever a material is marked received (see receive_material in
+    # erp/routes/service_requests.py) — ERP never writes back to P2P itself.
+    pr_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("p2p_requests.id"), nullable=True)
     pr_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     pr_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
 

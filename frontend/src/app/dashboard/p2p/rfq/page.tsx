@@ -10,8 +10,9 @@ import P2PNav from '@/components/p2p/P2PNav'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', marginBottom: 20,
+  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden', marginBottom: 20,
 }
+const sectionScrollStyle: React.CSSProperties = { overflow: 'auto' }
 const thStyle: React.CSSProperties = {
   textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em',
   textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1,
@@ -74,6 +75,7 @@ export default function P2PRfqPage() {
 
       <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>Purchase Requests Awaiting RFQ</h2>
       <div style={sectionStyle}>
+       <div style={sectionScrollStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
@@ -106,10 +108,12 @@ export default function P2PRfqPage() {
             ))}
           </tbody>
         </table>
+       </div>
       </div>
 
       <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>RFQs</h2>
       <div style={sectionStyle}>
+       <div style={sectionScrollStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
@@ -139,6 +143,7 @@ export default function P2PRfqPage() {
             ))}
           </tbody>
         </table>
+       </div>
       </div>
     </div>
   )

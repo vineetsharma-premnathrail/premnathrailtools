@@ -25,9 +25,13 @@ from app.modules.erp.schemas.service_request import (
     ServiceMaterialAttachmentResponse,
     MaterialReceivePayload,
 )
-from app.modules.purchase.models.purchase_requisition import PurchaseRequisition, PR_PRIORITIES, PR_CATEGORIES, PR_REQUIREMENT_TYPES
-from app.modules.purchase.schemas.purchase_requisition import PurchaseRequisitionResponse, PurchaseRequisitionRaisePayload
-from app.modules.purchase.service import raise_requisition, mark_material_received
+from app.modules.p2p.models.p2p_request import (
+    P2PRequest, P2P_CATEGORY_AUTO_BUYERS, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2P_REQUEST_PRIORITIES,
+)
+from app.modules.p2p.models.p2p_request_item import P2PRequestItem
+from app.modules.p2p.schemas.p2p_request import P2PRequestResponse
+from app.modules.p2p.service import generate_p2p_number
+from pydantic import BaseModel
 from fastapi.responses import Response
 from app.utils.sharepoint import (
     upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint,
@@ -38,6 +42,19 @@ from app.utils.notifications import broadcast_notification, notify_user
 from app.auth.microsoft import get_app_graph_token
 
 router = APIRouter(prefix="/erp/service-requests", tags=["ERP - Service Requests"])
+
+
+class RaisePurchaseRequestPayload(BaseModel):
+    """Payload for raising a P2P request out of this SR's Materials tab. Field
+    shape kept identical to the old (now-deleted) purchase module's
+    PurchaseRequisitionRaisePayload so the frontend call site is unaffected."""
+    priority: str = "medium"
+    required_by_date: date | None = None
+    reason: str | None = None
+    category_code: str | None = None
+    requirement_type: str | None = None
+    approver_id: int | None = None
+    approver_name: str | None = None
 
 # Fields tracked in the audit log on PATCH, with a human-readable label
 _TRACKED_FIELDS = {
@@ -138,7 +155,7 @@ async def _send_purchase_requisition_email_background(pr_id: int, sr_id: int):
     try:
         if not settings.PURCHASE_EMAIL:
             return
-        pr = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == pr_id).first()
+        pr = db.query(P2PRequest).filter(P2PRequest.id == pr_id).first()
         sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id).first()
         if not pr or not sr:
             return
@@ -846,26 +863,84 @@ async def delete_material_attachment(
     return {"message": "Photo deleted"}
 
 
-@router.post("/{sr_id}/raise-pr", response_model=PurchaseRequisitionResponse, status_code=201)
+def _create_p2p_request_for_sr(
+    db: Session,
+    sr: "ServiceRequest",
+    materials: list[ServiceMaterial],
+    project_label: str,
+    user: User,
+    payload: "RaisePurchaseRequestPayload",
+) -> P2PRequest:
+    """Create a standalone P2PRequest directly from this ERP-raised SR's
+    unlinked materials, so Purchase's P2P team sees it in their own queue.
+    This is now the sole creation path for a PR raised out of an SR's
+    Materials tab — there is no separate `purchase_requisitions` row."""
+    category_code = payload.category_code or "OTH"
+    auto_buyer_id = P2P_CATEGORY_AUTO_BUYERS.get(category_code)
+
+    request = P2PRequest(
+        p2p_number=generate_p2p_number(db, category_code),
+        category_code=category_code,
+        project_label=project_label,
+        required_date=payload.required_by_date,
+        requirement_type=payload.requirement_type,
+        request_date=date.today(),
+        department=user.department,
+        requested_by_id=user.id,
+        priority=payload.priority,
+        approver_id=payload.approver_id,
+        approver_name=payload.approver_name,
+        assigned_buyer_id=auto_buyer_id,
+        assignment_date=date.today() if auto_buyer_id else None,
+        remarks=f"Raised from ERP Service Request {sr.request_number}."
+        + (f" Reason: {payload.reason}" if payload.reason else ""),
+        status="submitted",
+    )
+    db.add(request)
+    db.flush()
+
+    for mat in materials:
+        db.add(P2PRequestItem(
+            p2p_request_id=request.id,
+            item_name=mat.material_name,
+            part_code=mat.part_number,
+            unit=mat.unit,
+            quantity=mat.quantity,
+        ))
+        mat.pr_id = request.id
+        mat.pr_number = request.p2p_number
+        mat.pr_status = request.status
+
+    if auto_buyer_id:
+        notify_user(
+            db, user_id=auto_buyer_id,
+            title="New P2P Request for Review",
+            message=f"P2P request '{request.p2p_number}' was raised from ERP SR '{sr.request_number}' ({project_label}).",
+            notification_type="p2p_request_submitted", entity_type="p2p_request", entity_id=request.id,
+        )
+    return request
+
+
+@router.post("/{sr_id}/raise-pr", response_model=P2PRequestResponse, status_code=201)
 async def raise_purchase_requisition(
     sr_id: int,
-    payload: PurchaseRequisitionRaisePayload,
+    payload: RaisePurchaseRequestPayload,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("erp")),
 ):
-    """Raise a Purchase Requisition from this SR's materials that aren't
-    already linked to one, notifying the Purchase department (in-app +
-    email) that a PR is waiting on them for this project/SR.
+    """Raise a P2P request from this SR's materials that aren't already linked
+    to one, notifying the Purchase department (in-app + email) that a request
+    is waiting on them for this project/SR.
 
     Requester and department are always taken from the logged-in user;
     priority/required-by/reason are supplied by the caller and, once set,
     are not editable afterwards."""
-    if payload.priority not in PR_PRIORITIES:
-        raise HTTPException(status_code=400, detail=f"Invalid priority '{payload.priority}' — must be one of {', '.join(PR_PRIORITIES)}")
-    if payload.category_code and payload.category_code not in PR_CATEGORIES:
+    if payload.priority not in P2P_REQUEST_PRIORITIES:
+        raise HTTPException(status_code=400, detail=f"Invalid priority '{payload.priority}' — must be one of {', '.join(P2P_REQUEST_PRIORITIES)}")
+    if payload.category_code and payload.category_code not in P2P_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category_code '{payload.category_code}'")
-    if payload.requirement_type and payload.requirement_type not in PR_REQUIREMENT_TYPES:
+    if payload.requirement_type and payload.requirement_type not in P2P_REQUIREMENT_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid requirement_type '{payload.requirement_type}'")
 
     sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id, ServiceRequest.is_deleted == False).first()  # noqa: E712
@@ -886,12 +961,10 @@ async def raise_purchase_requisition(
         )
 
     project = db.query(Project).filter(Project.id == sr.project_id).first()
-    pr = raise_requisition(
-        db, project_id=sr.project_id, service_request_id=sr.id, materials=materials, raised_by_id=user.id,
-        priority=payload.priority, required_by_date=payload.required_by_date, reason=payload.reason,
-        category_code=payload.category_code, requirement_type=payload.requirement_type,
-        approver_id=payload.approver_id, approver_name=payload.approver_name,
-    )
+    proj_name = f"{project.serial_number} — {project.model_name}" if project and project.model_name else (project.serial_number if project else f"Project #{sr.project_id}")
+
+    pr = _create_p2p_request_for_sr(db, sr, materials, proj_name, user, payload)
+
     detail_notes = [f"Priority: {payload.priority.title()}."]
     if payload.required_by_date:
         detail_notes.append(f"Required by: {payload.required_by_date.isoformat()}.")
@@ -899,34 +972,27 @@ async def raise_purchase_requisition(
         detail_notes.append(f"Reason: {payload.reason}")
     _write_audit(
         db, sr.id, "pr_raised", user,
-        summary=f"{user.name or user.email} raised purchase requisition {pr.pr_number} with {len(materials)} material(s). " + " ".join(detail_notes),
+        summary=f"{user.name or user.email} raised purchase requisition {pr.p2p_number} with {len(materials)} material(s). " + " ".join(detail_notes),
     )
 
-    proj_name = f"{project.serial_number} — {project.model_name}" if project and project.model_name else (project.serial_number if project else f"Project #{sr.project_id}")
     broadcast_notification(
         db,
         title="New Purchase Requisition",
-        message=f"PR '{pr.pr_number}' raised for SR '{sr.request_number}' ({proj_name}).",
+        message=f"PR '{pr.p2p_number}' raised for SR '{sr.request_number}' ({proj_name}).",
         notification_type="pr_raised",
-        entity_type="purchase_requisition",
+        entity_type="p2p_request",
         entity_id=pr.id,
-        app_name="purchase",
+        app_name="p2p",
     )
 
     db.commit()
     db.refresh(pr)
     background_tasks.add_task(_send_purchase_requisition_email_background, pr.id, sr.id)
 
-    resp = PurchaseRequisitionResponse.model_validate(pr)
+    resp = P2PRequestResponse.model_validate(pr)
     if pr.category_code:
-        resp.category_label = PR_CATEGORIES.get(pr.category_code, pr.category_code)
-    resp.project_label = proj_name
-    if project:
-        resp.client_company = project.client_company
-        resp.site_name = project.site_name
-    resp.sr_request_number = sr.request_number
-    resp.raised_by_name = user.name or user.email
-    resp.department = user.department
+        resp.category_label = P2P_CATEGORIES.get(pr.category_code, pr.category_code)
+    resp.requested_by_name = user.name or user.email
     return resp
 
 
@@ -939,9 +1005,12 @@ async def receive_material(
     user: User = Depends(require_app_access("erp")),
 ):
     """Mark a (possibly partial) physical receipt of a material at the service
-    site. If the material is linked to a PR, this also syncs the PR item's
-    received quantity and — once every item on the PR is fully received —
-    advances the PR to "received" so Purchase knows it's ready to close."""
+    site. The material's own received_quantity/receiving_status/status fields
+    are updated locally exactly as before. If the material is linked to a
+    P2P request, `mat.pr_status` is mirrored (read-only) from that request's
+    current status for display — the actual "received"/"closed" status
+    transition is now entirely owned by P2P's own GRN/receiving flow
+    (see p2p/routes/p2p_requests.py), not by ERP."""
     mat = db.query(ServiceMaterial).filter(
         ServiceMaterial.id == mat_id, ServiceMaterial.service_request_id == sr_id, ServiceMaterial.is_deleted == False  # noqa: E712
     ).first()
@@ -953,21 +1022,40 @@ async def receive_material(
     if payload.received_quantity < 0:
         raise HTTPException(status_code=400, detail="received_quantity cannot be negative")
 
-    pr = mark_material_received(db, mat, payload.received_quantity)
+    received_quantity = max(0.0, min(payload.received_quantity, mat.quantity))
+    mat.received_quantity = received_quantity
+    if received_quantity <= 0:
+        mat.receiving_status = "pending"
+    elif received_quantity < mat.quantity:
+        mat.receiving_status = "partial"
+    else:
+        mat.receiving_status = "received"
+        # Fully received means the part is now physically at the service site and
+        # available for use, so the issue-status badge shouldn't stay "pending".
+        mat.status = "issued"
+
+    pr = None
+    if mat.pr_id:
+        pr = db.query(P2PRequest).filter(P2PRequest.id == mat.pr_id).first()
+        if pr:
+            mat.pr_status = pr.status
+
     _write_audit(
         db, sr_id, "material_received", user,
         summary=f"{user.name or user.email} marked {mat.received_quantity}/{mat.quantity} {mat.unit} of '{mat.material_name}' as received.",
     )
 
+    # This will rarely fire now — P2P's own GRN flow drives the "received"
+    # transition, not this endpoint (see the P2PRequest status mirror above).
     if pr and pr.status == "received" and sr:
         broadcast_notification(
             db,
             title="Purchase Requisition Fully Received",
-            message=f"All items for PR '{pr.pr_number}' (SR '{sr.request_number}') have been received and it's ready to close.",
+            message=f"All items for PR '{pr.p2p_number}' (SR '{sr.request_number}') have been received and it's ready to close.",
             notification_type="pr_received",
-            entity_type="purchase_requisition",
+            entity_type="p2p_request",
             entity_id=pr.id,
-            app_name="purchase",
+            app_name="p2p",
         )
 
     db.commit()

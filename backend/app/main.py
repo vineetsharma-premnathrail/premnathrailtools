@@ -13,21 +13,14 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.api_key import APIKey
 from app.modules.main.models.module import Module
-from app.modules.organization.models.company import Company
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.department import Department
-from app.modules.manufacturing.models.material import Material as MfgMaterial
-from app.modules.manufacturing.models.bom import BOM, BOMItem
-from app.modules.manufacturing.models.work_order import WorkOrder as MfgWorkOrder
-from app.modules.manufacturing.models.stock_entry import StockEntry as MfgStockEntry
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.project_attachment import ProjectAttachment
 from app.modules.erp.models.service_request import ServiceRequest
 from app.modules.erp.models.service_material import ServiceMaterial
 from app.modules.erp.models.service_request_attachment import ServiceRequestAttachment
 from app.modules.erp.models.service_material_attachment import ServiceMaterialAttachment
-from app.modules.purchase.models.purchase_requisition import PurchaseRequisition
-from app.modules.purchase.models.purchase_requisition_item import PurchaseRequisitionItem
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
@@ -35,14 +28,11 @@ from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseO
 from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
-from app.modules.vendor.models.vendor import Vendor
 from app.modules.item.models.item import Item
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_item import StockItem
 from app.modules.store.models.stock_balance import StockBalance
 from app.modules.store.models.stock_transaction import StockTransaction
-from app.modules.design.models.engineering_document import EngineeringDocument
-from app.modules.electrical.models.work_order import ElectricalWorkOrder
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem,
     Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity,
@@ -59,17 +49,12 @@ from app.modules.main.routes import notifications as notifications_routes
 from app.modules.main.routes import feedback as feedback_routes
 from app.modules.main.routes import api_keys as api_keys_routes
 from app.modules.main.routes import modules as modules_routes
-from app.modules.hr.routes import hr as hr_routes
-from app.modules.design.routes import engineering_documents as design_documents_routes
-from app.modules.electrical.routes import work_orders as electrical_work_orders_routes
 from app.modules.main.routes import presence as presence_routes
 from app.modules.erp.routes import projects as erp_projects_routes
 from app.modules.erp.routes import service_requests as erp_sr_routes
-from app.modules.purchase.routes import purchase_requisitions as purchase_requisitions_routes
 from app.modules.p2p.routes import p2p_requests as p2p_requests_routes
 from app.modules.p2p.routes import purchase_orders as p2p_purchase_orders_routes
 from app.modules.p2p.routes import rfq as p2p_rfq_routes
-from app.modules.vendor.routes import vendors as vendors_routes
 from app.modules.item.routes import items as items_routes
 from app.modules.store.routes import locations as store_locations_routes
 from app.modules.store.routes import stock_items as store_stock_items_routes
@@ -85,14 +70,8 @@ from app.modules.crm.routes import products as crm_products_routes
 from app.modules.crm.routes import payment_terms as crm_payment_terms_routes
 from app.modules.rnd.routes import calculations as rnd_calculations_routes
 from app.modules.rnd.routes import history as rnd_history_routes
-from app.modules.organization.routes import company as organization_company_routes
 from app.modules.organization.routes import branch as organization_branch_routes
 from app.modules.organization.routes import department as organization_department_routes
-from app.modules.manufacturing.routes import materials as manufacturing_materials_routes
-from app.modules.manufacturing.routes import boms as manufacturing_boms_routes
-from app.modules.manufacturing.routes import work_orders as manufacturing_work_orders_routes
-from app.modules.manufacturing.routes import stock_entries as manufacturing_stock_entries_routes
-from app.modules.manufacturing.routes import dashboard as manufacturing_dashboard_routes
 from app.middleware.error_handler import setup_error_handlers, LoggingMiddleware
 from app.middleware.owasp import OWASPMiddleware
 
@@ -146,11 +125,9 @@ app.include_router(auth_routes.router, prefix="/api/v1")
 app.include_router(users_routes.router, prefix="/api/v1")
 app.include_router(erp_projects_routes.router, prefix="/api/v1")
 app.include_router(erp_sr_routes.router, prefix="/api/v1")
-app.include_router(purchase_requisitions_routes.router, prefix="/api/v1")
 app.include_router(p2p_requests_routes.router, prefix="/api/v1")
 app.include_router(p2p_purchase_orders_routes.router, prefix="/api/v1")
 app.include_router(p2p_rfq_routes.router, prefix="/api/v1")
-app.include_router(vendors_routes.router, prefix="/api/v1")
 app.include_router(items_routes.router, prefix="/api/v1")
 app.include_router(store_locations_routes.router, prefix="/api/v1")
 app.include_router(store_stock_items_routes.router, prefix="/api/v1")
@@ -168,20 +145,11 @@ app.include_router(notifications_routes.router, prefix="/api/v1")
 app.include_router(feedback_routes.router, prefix="/api/v1")
 app.include_router(api_keys_routes.router, prefix="/api/v1")
 app.include_router(modules_routes.router, prefix="/api/v1")
-app.include_router(hr_routes.router, prefix="/api/v1")
-app.include_router(design_documents_routes.router, prefix="/api/v1")
-app.include_router(electrical_work_orders_routes.router, prefix="/api/v1")
 app.include_router(presence_routes.router, prefix="/api/v1")
 app.include_router(rnd_calculations_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_history_routes.router, prefix="/api/v1/rnd")
-app.include_router(organization_company_routes.router, prefix="/api/v1")
 app.include_router(organization_branch_routes.router, prefix="/api/v1")
 app.include_router(organization_department_routes.router, prefix="/api/v1")
-app.include_router(manufacturing_materials_routes.router, prefix="/api/v1")
-app.include_router(manufacturing_boms_routes.router, prefix="/api/v1")
-app.include_router(manufacturing_work_orders_routes.router, prefix="/api/v1")
-app.include_router(manufacturing_stock_entries_routes.router, prefix="/api/v1")
-app.include_router(manufacturing_dashboard_routes.router, prefix="/api/v1")
 
 
 @app.get("/health")

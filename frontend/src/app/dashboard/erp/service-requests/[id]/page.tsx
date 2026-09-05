@@ -198,7 +198,8 @@ function WorkflowSteps({ status, canModify, onRequestChange }: { status: string;
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', padding: '18px 20px', marginBottom: 20, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflowX: 'auto' }}>
+    <div style={{ marginBottom: 20, borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', alignItems: 'center', padding: '18px 20px', overflowX: 'auto' }}>
       {WORKFLOW_STEPS.map((step, i) => {
         const done = i < activeIdx
         const active = i === activeIdx
@@ -242,6 +243,7 @@ function WorkflowSteps({ status, canModify, onRequestChange }: { status: string;
           </div>
         )
       })}
+    </div>
     </div>
   )
 }
@@ -467,7 +469,7 @@ function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boo
     setPrMessage('')
     try {
       const pr = await erpApi.raisePurchaseRequisition(srId, { priority: 'medium' })
-      setPrMessage(`Purchase requisition ${pr.pr_number} raised — the Purchase department has been notified.`)
+      setPrMessage(`Purchase requisition ${pr.p2p_number} raised — the Purchase department has been notified.`)
     } catch (err: any) {
       // The request can fail on the client (network drop, dev-server reload,
       // timeout) even after the server already committed the PR — re-fetch
@@ -524,7 +526,8 @@ function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boo
         </form>
       )}
 
-      <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+      <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
@@ -567,7 +570,7 @@ function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boo
                 </td>
                 <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
                   {prBadge ? (
-                    <Link href={`/dashboard/purchase`} style={{ textDecoration: 'none' }}>
+                    <Link href={`/dashboard/p2p/${m.pr_id}`} style={{ textDecoration: 'none' }}>
                       <span title={m.pr_number} style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 5, background: prBadge.bg, color: prBadge.fg }}>
                         {m.pr_number} · {prBadge.label}
                       </span>
@@ -621,6 +624,7 @@ function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boo
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

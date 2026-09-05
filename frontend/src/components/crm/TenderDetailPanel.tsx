@@ -255,7 +255,8 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
       </div>
 
       {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, zIndex: 20, maxHeight: 340, overflowY: 'auto', borderRadius: 14, background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.4)', boxShadow: '0 16px 40px rgba(15,23,42,0.22), 0 4px 10px rgba(15,23,42,.1)', padding: 6 }}>
+        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, zIndex: 20, borderRadius: 14, background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.4)', boxShadow: '0 16px 40px rgba(15,23,42,0.22), 0 4px 10px rgba(15,23,42,.1)', overflow: 'hidden' }}>
+        <div style={{ maxHeight: 340, overflowY: 'auto', padding: 6 }}>
           {TND_STAGES.map((s, i) => {
             const done = i < activeIdx
             const active = i === activeIdx
@@ -278,6 +279,7 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
               </div>
             )
           })}
+        </div>
         </div>
       )}
     </div>

@@ -14,7 +14,6 @@ class Department(Base, TimestampMixin):
     __tablename__ = "departments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     code: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)

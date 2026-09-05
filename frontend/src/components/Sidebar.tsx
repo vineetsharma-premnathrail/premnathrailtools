@@ -58,13 +58,6 @@ const icons: Record<string, ReactNode> = {
         c0,0-38.016,0.424-38.016,35.472c0,34.832,0,33.088,0,33.088H405.904z"  stroke="#1A1A1A" strokeWidth="4" />
     </svg>
   ),
-  purchase: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="9" cy="21" r="1" />
-      <circle cx="20" cy="21" r="1" />
-      <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6" />
-    </svg>
-  ),
   p2p: (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
@@ -86,26 +79,6 @@ const icons: Record<string, ReactNode> = {
       <path d="M9 21V13h6v8" />
     </svg>
   ),
-  hr: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-      <circle cx="12" cy="7" r="4" />
-      <path d="M22 11h-6" /><path d="M19 8v6" />
-    </svg>
-  ),
-  design: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 19l7-7 3 3-7 7-3-3z" />
-      <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-      <path d="M2 2l7.586 7.586" />
-      <circle cx="11" cy="11" r="2" />
-    </svg>
-  ),
-  electrical: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-    </svg>
-  ),
   organization: (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="4" y="2" width="16" height="20" />
@@ -114,11 +87,6 @@ const icons: Record<string, ReactNode> = {
       <line x1="9" y1="12" x2="9" y2="12.01" />
       <line x1="15" y1="12" x2="15" y2="12.01" />
       <line x1="9" y1="17" x2="15" y2="17" />
-    </svg>
-  ),
-  manufacturing: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14.7 6.3a4 4 0 00-5.6 5.6L2 19l3 3 7.1-7.1a4 4 0 005.6-5.6l-2.8 2.8-2-2z" />
     </svg>
   ),
 }
@@ -172,14 +140,8 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     { href: '/dashboard/erp', label: 'Service Module', icon: 'erp', visible: !!user?.apps?.includes('erp') },
     { href: '/dashboard/rnd', label: 'R&D Tools', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
     { href: '/dashboard/crm', label: 'CRM Module', icon: 'crm', visible: !!user?.apps?.includes('crm') },
-    { href: '/dashboard/purchase', label: 'Purchase', icon: 'purchase', visible: !!user?.apps?.includes('purchase') },
     { href: '/dashboard/p2p', label: 'Procure-to-Pay', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
     { href: '/dashboard/store', label: 'Store', icon: 'store', visible: !!user?.apps?.includes('store') },
-    { href: '/dashboard/hr', label: 'HR', icon: 'hr', visible: !!user?.apps?.includes('hr') },
-    { href: '/dashboard/design', label: 'Design', icon: 'design', visible: !!user?.apps?.includes('design') },
-    { href: '/dashboard/electrical', label: 'Electrical', icon: 'electrical', visible: !!user?.apps?.includes('electrical') },
-    { href: '/dashboard/manufacturing', label: 'Manufacturing', icon: 'manufacturing', visible: !!user?.apps?.includes('manufacturing') },
-    { href: '/dashboard/users', label: 'Users & Roles', icon: 'users', visible: isAdmin },
     { href: '/dashboard/organization', label: 'Organization', icon: 'organization', visible: isAdmin },
   ].filter((link) => link.visible)
 

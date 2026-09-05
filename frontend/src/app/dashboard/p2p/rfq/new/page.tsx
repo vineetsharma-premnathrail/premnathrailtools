@@ -8,6 +8,7 @@ import { P2PRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { secondaryBtnStyle } from '@/components/shared/ui'
+import FileUploadField from '@/components/shared/FileUploadField'
 import P2PNav from '@/components/p2p/P2PNav'
 
 const sectionStyle: React.CSSProperties = {
@@ -27,8 +28,27 @@ const ghostBtn: React.CSSProperties = {
   padding: '10px 20px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, cursor: 'pointer',
   background: 'transparent', color: TEXT.secondary, fontSize: 13, fontWeight: 600,
 }
+const stepHeaderStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 14px',
+}
+const stepNumberStyle = (active: boolean): React.CSSProperties => ({
+  width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  fontSize: 11.5, fontWeight: 700, flex: 'none',
+  background: active ? BRAND.primary : 'rgba(0,0,0,0.08)', color: active ? '#fff' : TEXT.muted,
+})
 
-const TIERS = ['L1', 'L2', 'L3', 'L4'] as const
+const VENDOR_SLOTS = [
+  { tier: 'L1', label: 'Vendor 1', required: true },
+  { tier: 'L2', label: 'Vendor 2', required: false },
+  { tier: 'L3', label: 'Vendor 3', required: false },
+  { tier: 'L4', label: 'Vendor 4', required: false },
+] as const
+
+interface VendorSlotState {
+  file: File | null
+  vendorName: string
+  vendorContact: string
+}
 
 export default function NewRfqPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('p2p')
@@ -40,14 +60,20 @@ export default function NewRfqPage() {
 
   const [prs, setPrs] = useState<P2PRequest[]>([])
   const [prId, setPrId] = useState(initialPrId || '')
-  const [files, setFiles] = useState<Record<string, File | null>>({ L1: null, L2: null, L3: null, L4: null })
+
+  const [vendors, setVendors] = useState<Record<string, VendorSlotState>>({
+    L1: { file: null, vendorName: '', vendorContact: '' },
+    L2: { file: null, vendorName: '', vendorContact: '' },
+    L3: { file: null, vendorName: '', vendorContact: '' },
+    L4: { file: null, vendorName: '', vendorContact: '' },
+  })
 
   const [singleQuotationReason, setSingleQuotationReason] = useState('')
   const [comments, setComments] = useState('')
   const [paymentTerms, setPaymentTerms] = useState('')
   const [deliveryLeadTime, setDeliveryLeadTime] = useState('')
-  const [ldClause, setLdClause] = useState('')
-  const [requiresTechnicalEvaluation, setRequiresTechnicalEvaluation] = useState(false)
+  const [lateDeliveryClause, setLateDeliveryClause] = useState('')
+  const [requiresTechnicalEvaluation] = useState(false)
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -61,34 +87,51 @@ export default function NewRfqPage() {
   if (!isPurchaseTeam) return <p style={{ fontSize: 13, color: '#b91c1c' }}>Only the Purchase team can raise an RFQ.</p>
 
   const selectedPr = prs.find((pr) => String(pr.id) === prId)
-  const onlyL1 = !!files.L1 && !files.L2 && !files.L3 && !files.L4
-  const noAttachments = !files.L1 && !files.L2 && !files.L3 && !files.L4
+  const usedTiers = VENDOR_SLOTS.filter((s) => vendors[s.tier].file)
+  const onlyL1 = usedTiers.length === 1 && !!vendors.L1.file
+  const noAttachments = usedTiers.length === 0
+
+  const updateVendor = (tier: string, patch: Partial<VendorSlotState>) => {
+    setVendors((v) => ({ ...v, [tier]: { ...v[tier], ...patch } }))
+  }
+
+  const validate = (): string | null => {
+    if (!prId) return 'Select a purchase request.'
+    if (!vendors.L1.file) return 'The Vendor 1 quotation attachment is required.'
+    if (!vendors.L1.vendorName.trim()) return 'Vendor 1 name is required.'
+    if (!vendors.L1.vendorContact.trim()) return 'Vendor 1 contact number is required.'
+    for (const slot of VENDOR_SLOTS) {
+      const v = vendors[slot.tier]
+      if (v.file && !v.vendorName.trim()) return `${slot.label} name is required since a quotation is attached.`
+    }
+    if (onlyL1) {
+      if (!singleQuotationReason.trim()) return 'Reason for single quotation is required when only Vendor 1 is attached.'
+      if (!comments.trim()) return 'Comments are required when only Vendor 1 is attached.'
+    }
+    if (!paymentTerms.trim()) return 'Payment terms are required.'
+    if (!deliveryLeadTime.trim()) return 'Delivery lead time is required.'
+    if (!lateDeliveryClause.trim()) return 'Late delivery clause is required.'
+    return null
+  }
 
   const save = async () => {
     setError('')
-    if (!prId) { setError('Select a purchase request.'); return }
-    if (!files.L1) { setError('The L1 quotation attachment is required.'); return }
-    if (onlyL1) {
-      if (!singleQuotationReason.trim()) { setError('Reason for single quotation is required when only L1 is attached.'); return }
-      if (!comments.trim()) { setError('Comments are required when only L1 is attached.'); return }
-    }
-    if (!paymentTerms.trim()) { setError('Payment terms are required.'); return }
-    if (!deliveryLeadTime.trim()) { setError('Delivery lead time is required.'); return }
-    if (!ldClause.trim()) { setError('LD clause is required.'); return }
+    const validationError = validate()
+    if (validationError) { setError(validationError); return }
 
     setBusy(true)
     try {
       const rfq = await rfqApi.create(Number(prId), requiresTechnicalEvaluation)
-      for (const tier of TIERS) {
-        const file = files[tier]
-        if (file) await rfqApi.uploadAttachments(rfq.id, [file], tier)
+      for (const slot of VENDOR_SLOTS) {
+        const v = vendors[slot.tier]
+        if (v.file) await rfqApi.uploadAttachments(rfq.id, [v.file], slot.tier, v.vendorName.trim(), v.vendorContact.trim() || undefined)
       }
       await rfqApi.update(rfq.id, {
         single_quotation_reason: onlyL1 ? singleQuotationReason.trim() : undefined,
         comments: onlyL1 ? comments.trim() : undefined,
         payment_terms: paymentTerms.trim(),
         delivery_lead_time: deliveryLeadTime.trim(),
-        ld_clause: ldClause.trim(),
+        late_delivery_clause: lateDeliveryClause.trim(),
       })
       await rfqApi.submit(rfq.id)
       router.push(`/dashboard/p2p/rfq/${rfq.id}`)
@@ -104,12 +147,12 @@ export default function NewRfqPage() {
     <div>
       <P2PNav />
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Raise RFQ</h1>
-          <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 20px' }}>
-            Once saved, this RFQ is locked and cannot be edited.
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
+            Procure-to-Pay Module
           </p>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Raise RFQ</h1>
         </div>
         <button onClick={() => router.push('/dashboard/p2p/rfq')} type="button" style={secondaryBtnStyle}>
           ← Back
@@ -122,46 +165,74 @@ export default function NewRfqPage() {
         </div>
       )}
 
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Requisition</h2>
-        <label style={labelStyle}>Select Purchase Requisition *</label>
-        <SearchableSelect
-          value={prId}
-          onChange={setPrId}
-          options={prs.map((pr) => ({ value: String(pr.id), label: `${pr.p2p_number} — ${pr.category_label || pr.category_code}` }))}
-          placeholder="Search approved Purchase Requisition…"
-        />
-        {selectedPr && (
-          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '8px 0 0' }}>
-            {selectedPr.project_label || 'No project specified'} · {selectedPr.items.length} item(s)
-          </p>
-        )}
+      {/* Step 1 — Purchase Requisition (compact) */}
+      <div style={{ ...sectionStyle, padding: 16 }}>
+        <div style={stepHeaderStyle}>
+          <span style={stepNumberStyle(true)}>1</span>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Purchase Requisition</h2>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 320px', minWidth: 260 }}>
+            <SearchableSelect
+              value={prId}
+              onChange={setPrId}
+              options={prs.map((pr) => ({ value: String(pr.id), label: `${pr.p2p_number} — ${pr.category_label || pr.category_code}` }))}
+              placeholder="Search approved Purchase Requisition…"
+            />
+          </div>
+          {selectedPr && (
+            <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
+              {selectedPr.project_label || 'No project specified'} · {selectedPr.items.length} item(s)
+            </p>
+          )}
+        </div>
       </div>
 
+      {/* Step 2 — Supplier / Vendor Quotations */}
       <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Vendor Quotation Attachments</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
-          {TIERS.map((tier) => (
-            <div key={tier}>
-              <label style={labelStyle}>{tier} Quotation{tier === 'L1' ? ' *' : ''}</label>
-              <input
-                type="file"
-                style={inputStyle}
-                onChange={(e) => setFiles((f) => ({ ...f, [tier]: e.target.files?.[0] || null }))}
-              />
-              {files[tier] && <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '6px 0 0' }}>{files[tier]?.name}</p>}
-            </div>
-          ))}
+        <div style={stepHeaderStyle}>
+          <span style={stepNumberStyle(true)}>2</span>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Supplier / Vendor Quotations</h2>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {VENDOR_SLOTS.map((slot) => {
+            const v = vendors[slot.tier]
+            return (
+              <div key={slot.tier} style={{ borderRadius: 12, border: `1px solid ${BORDER.normal}`, padding: 14, background: 'rgba(255,255,255,.4)' }}>
+                <p style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>
+                  {slot.label}{slot.required ? ' *' : ' (optional)'}
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                  <div>
+                    <label style={labelStyle}>Vendor Name{v.file ? ' *' : ''}</label>
+                    <input style={inputStyle} value={v.vendorName} onChange={(e) => updateVendor(slot.tier, { vendorName: e.target.value })} placeholder="Vendor name" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Contact Number</label>
+                    <input style={inputStyle} value={v.vendorContact} onChange={(e) => updateVendor(slot.tier, { vendorContact: e.target.value })} placeholder="Phone number" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Quotation{slot.required ? ' *' : ''}</label>
+                    <FileUploadField
+                      file={v.file}
+                      onChange={(f) => updateVendor(slot.tier, { file: f })}
+                      onRemove={v.file ? () => updateVendor(slot.tier, { file: null }) : undefined}
+                    />
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
         {noAttachments && (
-          <p style={{ fontSize: 11.5, color: '#b45309', margin: '10px 0 0' }}>At least the L1 quotation must be attached.</p>
+          <p style={{ fontSize: 11.5, color: '#b45309', margin: '12px 0 0' }}>At least the Vendor 1 quotation must be attached.</p>
         )}
       </div>
 
       {onlyL1 && (
         <div style={sectionStyle}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Single Quotation</h2>
-          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 14px' }}>Only L1 was attached — a reason and comments are required.</p>
+          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 14px' }}>Only Vendor 1 was attached — a reason and comments are required.</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
             <div>
               <label style={labelStyle}>Reason for Single Quotation *</label>
@@ -175,9 +246,13 @@ export default function NewRfqPage() {
         </div>
       )}
 
+      {/* Step 3 — Vendor 1 Commercial Terms */}
       <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Commercial Terms</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+        <div style={stepHeaderStyle}>
+          <span style={stepNumberStyle(true)}>3</span>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Vendor 1 Commercial Terms</h2>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 16 }}>
           <div>
             <label style={labelStyle}>Payment Terms *</label>
             <input style={inputStyle} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. 50% advance, 50% on delivery" />
@@ -187,26 +262,22 @@ export default function NewRfqPage() {
             <input style={inputStyle} value={deliveryLeadTime} onChange={(e) => setDeliveryLeadTime(e.target.value)} placeholder="e.g. 4 weeks" />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Liquidated Damages Clause *</label>
-            <textarea style={{ ...inputStyle, minHeight: 60 }} value={ldClause} onChange={(e) => setLdClause(e.target.value)} placeholder="Liquidated Damages clause" />
-          </div>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input
-              type="checkbox"
-              id="requiresTechnicalEvaluation"
-              checked={requiresTechnicalEvaluation}
-              onChange={(e) => setRequiresTechnicalEvaluation(e.target.checked)}
-            />
-            <label htmlFor="requiresTechnicalEvaluation" style={{ fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
-              This RFQ requires a Technical Evaluation stage before Commercial Evaluation
-            </label>
+            <label style={labelStyle}>Late Delivery Clause *</label>
+            <textarea style={{ ...inputStyle, minHeight: 60 }} value={lateDeliveryClause} onChange={(e) => setLateDeliveryClause(e.target.value)} placeholder="Late delivery clause" />
           </div>
         </div>
-      </div>
 
-      <div style={{ display: 'flex', gap: 10 }}>
-        <button disabled={busy} onClick={save} style={primaryBtn}>{busy ? 'Saving…' : 'Save RFQ'}</button>
-        <button disabled={busy} onClick={() => router.push('/dashboard/p2p/rfq')} style={ghostBtn}>Cancel</button>
+        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.25)', color: '#92400e', fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', marginTop: 1 }}>
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span><strong>Once saved, this RFQ is locked</strong> and cannot be edited.</span>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button disabled={busy} onClick={save} style={primaryBtn}>{busy ? 'Saving…' : 'Save RFQ'}</button>
+          <button disabled={busy} onClick={() => router.push('/dashboard/p2p/rfq')} style={ghostBtn}>Cancel</button>
+        </div>
       </div>
     </div>
   )

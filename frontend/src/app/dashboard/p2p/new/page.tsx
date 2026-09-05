@@ -96,7 +96,7 @@ export default function NewP2PRequestPage() {
   const projectHeads = directoryUsers
   const plantHeads = directoryUsers
 
-  const updateItem = (idx: number, field: keyof P2PRequestLineItemInput, value: string | number) => {
+  const updateItem = (idx: number, field: keyof P2PRequestLineItemInput, value: string | number | null) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)))
   }
   const addItem = () => {
@@ -214,7 +214,7 @@ export default function NewP2PRequestPage() {
           </button>
         </div>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1180 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1360 }}>
             <thead>
               <tr>
                 {['SL', 'Item Description *', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', ''].map((h) => (

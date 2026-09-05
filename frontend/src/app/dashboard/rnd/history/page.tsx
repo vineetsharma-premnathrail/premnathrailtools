@@ -163,7 +163,8 @@ export default function RndHistoryPage() {
         />
       </div>
 
-      <div style={{ borderRadius: 12, background: '#fff', border: '1px solid #e2e8f0', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+      <div style={{ borderRadius: 12, background: '#fff', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
@@ -217,6 +218,7 @@ export default function RndHistoryPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

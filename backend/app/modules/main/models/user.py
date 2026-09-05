@@ -7,7 +7,7 @@ from app.db.mixins import TimestampMixin
 # Modules a user's `assigned_apps` list may contain. The admin role
 # bypasses this entirely and gets access to every module regardless
 # of what's in the list (see get_user_apps() usage in routes).
-AVAILABLE_APPS = {"erp", "rnd", "crm", "purchase", "p2p", "store", "hr", "design", "electrical", "manufacturing"}
+AVAILABLE_APPS = {"erp", "rnd", "crm", "p2p", "store", "purchase"}
 
 
 class User(Base, TimestampMixin):

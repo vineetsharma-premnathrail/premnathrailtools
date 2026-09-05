@@ -45,7 +45,7 @@ export default function OrganizationBranchPage() {
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Branch</h1>
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 20px' }}>
-        Auto-populated from Azure AD on sign-in and admin Azure sync — see Organization &gt; Users &gt; Sync Azure Users.
+        Auto-populated from Azure AD on sign-in and admin Azure sync — see Organization &gt; Role &amp; Permissions &gt; Sync Azure Users.
       </p>
 
       {error && (
@@ -54,7 +54,8 @@ export default function OrganizationBranchPage() {
         </div>
       )}
 
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto' }}>
+      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
+       <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
           <thead>
             <tr style={{ background: `${BRAND.primary}0d` }}>
@@ -122,6 +123,7 @@ export default function OrganizationBranchPage() {
             })}
           </tbody>
         </table>
+       </div>
       </div>
     </div>
   )

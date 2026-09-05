@@ -46,25 +46,6 @@ const UsersIcon = (
       c0,0-38.016,0.424-38.016,35.472c0,34.832,0,33.088,0,33.088H405.904z"  stroke="#1A1A1A" strokeWidth="4" />
   </svg>
 )
-const BoltIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-  </svg>
-)
-const DraftingIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 19l7-7 3 3-7 7-3-3z" />
-    <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-    <circle cx="11" cy="11" r="2" />
-  </svg>
-)
-const UserGroupIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-    <path d="M22 11h-6" /><path d="M19 8v6" />
-  </svg>
-)
 const CartIcon = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="9" cy="21" r="1" />
@@ -97,12 +78,6 @@ const OrganizationIcon = (
     <line x1="9" y1="17" x2="15" y2="17" />
   </svg>
 )
-const ManufacturingIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14.7 6.3a4 4 0 00-5.6 5.6L2 19l3 3 7.1-7.1a4 4 0 005.6-5.6l-2.8 2.8-2-2z" />
-  </svg>
-)
-
 const modules = [
   {
     title: 'Service Module',
@@ -144,19 +119,6 @@ const modules = [
     tagColor: '#047857',
   },
   {
-    title: 'Purchase',
-    app: 'purchase' as const,
-    description: 'Purchase requisitions raised from service materials — approvals, PO tracking, and receiving.',
-    icon: CartIcon,
-    href: '/dashboard/purchase',
-    features: ['Requisitions', 'Approvals', 'PO Tracking'],
-    barColor: 'linear-gradient(90deg,#a855f7,#c084fc)',
-    iconBg: 'rgba(168,85,247,0.12)',
-    iconColor: '#7e22ce',
-    tagBg: 'rgba(168,85,247,0.12)',
-    tagColor: '#6b21a8',
-  },
-  {
     title: 'Procure-to-Pay',
     app: 'p2p' as const,
     description: 'Standalone purchase requisitions — raise, approve, and track requests.',
@@ -182,68 +144,16 @@ const modules = [
     tagBg: 'rgba(20,184,166,0.12)',
     tagColor: '#0f766e',
   },
-  {
-    title: 'HR',
-    app: 'hr' as const,
-    description: 'Employee directory and org chart.',
-    icon: UserGroupIcon,
-    href: '/dashboard/hr',
-    features: ['Directory', 'Org Chart'],
-    barColor: 'linear-gradient(90deg,#ec4899,#f472b6)',
-    iconBg: 'rgba(236,72,153,0.12)',
-    iconColor: '#db2777',
-    tagBg: 'rgba(236,72,153,0.12)',
-    tagColor: '#be185d',
-  },
-  {
-    title: 'Design',
-    app: 'design' as const,
-    description: 'Engineering drawings, BOM, and document revisions — shared across Mechanical, Electrical, Fluids, and R&D.',
-    icon: DraftingIcon,
-    href: '/dashboard/design',
-    features: ['Drawings', 'BOM', 'Revisions'],
-    barColor: 'linear-gradient(90deg,#6366f1,#818cf8)',
-    iconBg: 'rgba(99,102,241,0.12)',
-    iconColor: '#4f46e5',
-    tagBg: 'rgba(99,102,241,0.12)',
-    tagColor: '#4338ca',
-  },
-  {
-    title: 'Electrical',
-    app: 'electrical' as const,
-    description: 'Electrical work orders, fault tracking, and assignment.',
-    icon: BoltIcon,
-    href: '/dashboard/electrical',
-    features: ['Work Orders', 'Fault Tracking'],
-    barColor: 'linear-gradient(90deg,#eab308,#facc15)',
-    iconBg: 'rgba(234,179,8,0.12)',
-    iconColor: '#a16207',
-    tagBg: 'rgba(234,179,8,0.12)',
-    tagColor: '#854d0e',
-  },
-  {
-    title: 'Manufacturing',
-    app: 'manufacturing' as const,
-    description: 'Bill of materials, work orders, stock entries, and materials for production.',
-    icon: ManufacturingIcon,
-    href: '/dashboard/manufacturing',
-    features: ['BOM', 'Work Orders', 'Stock Entry', 'Material'],
-    barColor: 'linear-gradient(90deg,#0891b2,#22d3ee)',
-    iconBg: 'rgba(8,145,178,0.12)',
-    iconColor: '#0e7490',
-    tagBg: 'rgba(8,145,178,0.12)',
-    tagColor: '#155e75',
-  },
 ]
 
 // Admin-only — shown regardless of `assigned_apps` (like the sidebar's
 // "Organization" link), not filtered through the modules[] app-access check.
 const adminModule = {
   title: 'Organization',
-  description: 'Company, branch, and department masters, plus user roles and permissions.',
+  description: 'Branch and department masters, plus user roles and permissions.',
   icon: OrganizationIcon,
   href: '/dashboard/organization',
-  features: ['Company', 'Branch', 'Department', 'Users & Roles'],
+  features: ['Branch', 'Department', 'Users & Roles'],
   barColor: 'linear-gradient(90deg,#64748b,#94a3b8)',
   iconBg: 'rgba(100,116,139,0.12)',
   iconColor: '#475569',

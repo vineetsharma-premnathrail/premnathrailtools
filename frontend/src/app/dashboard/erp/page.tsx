@@ -143,7 +143,8 @@ export default function ErpDashboardPage() {
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Recent Service Tickets</h2>
           <Link href="/dashboard/erp/service-requests" style={{ fontSize: 12, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
-        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
             <thead>
               <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
@@ -188,6 +189,7 @@ export default function ErpDashboardPage() {
             </tbody>
           </table>
         </div>
+        </div>
       </div>
 
       <div>
@@ -195,7 +197,8 @@ export default function ErpDashboardPage() {
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Machine Assets</h2>
           <Link href="/dashboard/erp/projects" style={{ fontSize: 12, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
-        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+        <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
+        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
             <thead>
               <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
@@ -236,6 +239,7 @@ export default function ErpDashboardPage() {
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       </div>
     </div>

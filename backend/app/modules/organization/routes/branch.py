@@ -5,17 +5,13 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.users import require_admin
 from app.modules.organization.models.branch import Branch
-from app.modules.organization.models.company import Company
 from app.modules.organization.schemas.branch import BranchCreate, BranchUpdate, BranchResponse
 
 router = APIRouter(prefix="/organization/branches", tags=["Organization"])
 
 
 def _to_response(branch: Branch, db: Session) -> BranchResponse:
-    company = db.query(Company).filter(Company.id == branch.company_id).first()
-    return BranchResponse.model_validate(branch).model_copy(
-        update={"company_name": company.name if company else None}
-    )
+    return BranchResponse.model_validate(branch)
 
 
 @router.get("", response_model=list[BranchResponse])
@@ -33,8 +29,6 @@ async def create_branch(
     db: Session = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
-    if not db.query(Company).filter(Company.id == payload.company_id).first():
-        raise HTTPException(status_code=404, detail="Company not found")
     if db.query(Branch).filter(Branch.code == payload.code).first():
         raise HTTPException(status_code=409, detail=f"Branch code '{payload.code}' already exists")
     branch = Branch(**payload.model_dump())

@@ -16,9 +16,8 @@ from app.modules.p2p.models.vendor_quotation import (
     VendorQuotation, VENDOR_QUOTATION_TECHNICAL_STATUSES, VENDOR_QUOTATION_COMMERCIAL_STATUSES,
 )
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
-from app.modules.vendor.models.vendor import Vendor
 from app.modules.p2p.schemas.rfq import (
-    RFQCreate, RFQUpdate, RFQResponse, RFQAttachmentResponse,
+    RFQCreate, RFQUpdate, RFQResponse, RFQAttachmentResponse, RFQAttachmentVendorUpdate,
     VendorQuotationCreate, VendorQuotationUpdate, VendorQuotationEvaluatePayload,
     VendorQuotationSelectPayload, VendorQuotationResponse,
 )
@@ -175,6 +174,8 @@ async def update_rfq(
 async def upload_rfq_attachments(
     rfq_id: int,
     vendor_tier: str = Form(...),
+    vendor_name: str | None = Form(None),
+    vendor_contact: str | None = Form(None),
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
@@ -194,6 +195,8 @@ async def upload_rfq_attachments(
         attachment = RFQAttachment(
             rfq_id=rfq.id,
             vendor_tier=vendor_tier,
+            vendor_name=vendor_name,
+            vendor_contact=vendor_contact,
             filename=result["name"],
             content_type=f.content_type,
             size=result["size"],
@@ -212,6 +215,44 @@ async def upload_rfq_attachments(
             db.refresh(a)
     db.commit()
     return saved
+
+
+@router.patch("/{rfq_id}/attachments/{attachment_id}", response_model=RFQAttachmentResponse)
+async def update_rfq_attachment_vendor(
+    rfq_id: int,
+    attachment_id: int,
+    payload: RFQAttachmentVendorUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("purchase")),
+):
+    rfq = _get_rfq_or_404(db, rfq_id)
+    _assert_editable(rfq, user)
+    attachment = db.query(RFQAttachment).filter(RFQAttachment.id == attachment_id, RFQAttachment.rfq_id == rfq_id).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    updates = payload.model_dump(exclude_unset=True)
+    for field, val in updates.items():
+        setattr(attachment, field, val)
+    db.commit()
+    db.refresh(attachment)
+    return attachment
+
+
+@router.delete("/{rfq_id}/attachments/{attachment_id}")
+async def delete_rfq_attachment(
+    rfq_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("purchase")),
+):
+    rfq = _get_rfq_or_404(db, rfq_id)
+    _assert_editable(rfq, user)
+    attachment = db.query(RFQAttachment).filter(RFQAttachment.id == attachment_id, RFQAttachment.rfq_id == rfq_id).first()
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    db.delete(attachment)
+    db.commit()
+    return {"detail": "Attachment deleted"}
 
 
 @router.get("/{rfq_id}/attachments/{attachment_id}/content")
@@ -289,8 +330,8 @@ async def submit_rfq(
         raise HTTPException(status_code=400, detail="Payment terms are required")
     if not rfq.delivery_lead_time:
         raise HTTPException(status_code=400, detail="Delivery lead time is required")
-    if not rfq.ld_clause:
-        raise HTTPException(status_code=400, detail="LD clause is required")
+    if not rfq.late_delivery_clause:
+        raise HTTPException(status_code=400, detail="Late delivery clause is required")
 
     pr = db.query(P2PRequest).filter(P2PRequest.id == rfq.p2p_request_id).first()
     if not pr:
@@ -330,11 +371,6 @@ async def add_vendor_quotation(
     pr = _get_pr_for_rfq(db, rfq)
     if pr.status != "vendor_quotations":
         raise HTTPException(status_code=409, detail=f"Vendor quotations can only be recorded while the PR is at 'vendor_quotations' (current status: {pr.status})")
-
-    if payload.vendor_id:
-        vendor = db.query(Vendor).filter(Vendor.id == payload.vendor_id).first()
-        if not vendor:
-            raise HTTPException(status_code=404, detail="Vendor not found")
 
     vq = VendorQuotation(
         rfq_id=rfq.id,

@@ -1,8 +1,9 @@
 """Tests for the standalone Purchase Requisition module (app.modules.p2p).
 
-Distinct from test_purchase_requisitions.py, which covers app.modules.purchase
-(PRs raised from a Service Request's materials list). This module is a fully
-independent, self-service PR pipeline any department can use directly.
+The now-deleted app.modules.purchase used to handle PRs raised from a Service
+Request's materials list separately — those are now created directly as
+P2PRequest rows too (see erp/routes/service_requests.py), so this module
+covers both the self-service PR pipeline and ERP-raised PRs.
 """
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
@@ -36,7 +37,7 @@ def _purchaser(db, email="buyer1@premnathrail.com"):
 
 def _create_payload(**overrides):
     payload = {
-        "category_code": "HYD",
+        "category_code": "RAW",
         "project_label": "Project Alpha",
         "priority": "medium",
         "items": [{"item_name": "Hydraulic Cylinder", "quantity": 2, "unit": "pcs"}],
@@ -72,12 +73,12 @@ def test_create_rejects_no_items(client, db):
 def test_create_success_auto_fills_and_generates_p2p_number(client, db):
     requester = _requester(db, "req2@premnathrail.com", department="R&D")
     pr = _create_pr(client, requester)
-    assert pr["p2p_number"].startswith("P2P-HYD-")
+    assert pr["p2p_number"].startswith("P2P-RAW-")
     assert pr["status"] == "submitted"
     assert pr["department"] == "R&D"
     assert pr["requested_by_id"] == requester.id
     assert pr["requested_by_name"] == requester.name
-    assert pr["category_label"] == "Hydraulic"
+    assert pr["category_label"] == "Raw Material"
     assert len(pr["items"]) == 1
     assert pr["items"][0]["item_name"] == "Hydraulic Cylinder"
     assert pr["items"][0]["quantity"] == 2
@@ -85,16 +86,16 @@ def test_create_success_auto_fills_and_generates_p2p_number(client, db):
 
 def test_p2p_number_sequence_is_scoped_per_category_and_year(client, db):
     requester = _requester(db, "req3@premnathrail.com")
-    hyd1 = _create_pr(client, requester, category_code="HYD")
-    hyd2 = _create_pr(client, requester, category_code="HYD")
-    mec1 = _create_pr(client, requester, category_code="MEC")
+    hyd1 = _create_pr(client, requester, category_code="RAW")
+    hyd2 = _create_pr(client, requester, category_code="RAW")
+    mec1 = _create_pr(client, requester, category_code="ELE")
 
     hyd1_num = int(hyd1["p2p_number"].rsplit("-", 1)[-1])
     hyd2_num = int(hyd2["p2p_number"].rsplit("-", 1)[-1])
     mec1_num = int(mec1["p2p_number"].rsplit("-", 1)[-1])
     assert hyd2_num == hyd1_num + 1
     assert mec1_num == 1  # independent sequence for a different category
-    assert mec1["p2p_number"].startswith("P2P-MEC-")
+    assert mec1["p2p_number"].startswith("P2P-ELE-")
 
 
 # ── Meta ─────────────────────────────────────────────────────────────────────
@@ -110,7 +111,7 @@ def test_meta_returns_categories_and_statuses(client, db):
     response = client.get(f"{BASE}/meta", headers=auth_header(requester))
     assert response.status_code == 200
     body = response.json()
-    assert any(c["code"] == "HYD" for c in body["categories"])
+    assert any(c["code"] == "RAW" for c in body["categories"])
     assert "submitted" in body["statuses"]
 
 
@@ -144,13 +145,13 @@ def test_purchase_team_sees_all_prs_in_list(client, db):
 
 def test_list_filters_by_status_and_category(client, db):
     requester = _requester(db, "reqe@premnathrail.com")
-    _create_pr(client, requester, category_code="HYD")
-    _create_pr(client, requester, category_code="MEC")
+    _create_pr(client, requester, category_code="RAW")
+    _create_pr(client, requester, category_code="ELE")
     buyer = _purchaser(db, "buyere@premnathrail.com")
 
-    response = client.get(BASE, params={"category_code": "MEC"}, headers=auth_header(buyer))
+    response = client.get(BASE, params={"category_code": "ELE"}, headers=auth_header(buyer))
     assert response.status_code == 200
-    assert all(p["category_code"] == "MEC" for p in response.json())
+    assert all(p["category_code"] == "ELE" for p in response.json())
 
 
 def test_requester_cannot_view_others_pr_detail(client, db):
@@ -394,12 +395,24 @@ def test_create_po_respects_explicit_ordered_quantity(client, db):
 
 # ── Receiving ────────────────────────────────────────────────────────────────
 
-def _approve_and_raise_po(client, pr_id, buyer, ordered_quantity=None):
+def _approve_and_raise_po(client, db, pr_id, buyer, ordered_quantity=None):
+    """Approve the PR, raise a PO, then clear all three PO-approval roles
+    (purchase_head, director, md — all required, see P2PRequest.pending_po_approval_roles)
+    so the PR reaches 'po_approved' and receiving can proceed."""
     client.post(f"{BASE}/{pr_id}/approve", headers=auth_header(buyer))
     payload = {"po_number": "PO-REC"}
     if ordered_quantity is not None:
         payload["ordered_quantity"] = ordered_quantity
-    return client.post(f"{BASE}/{pr_id}/create-po", json=payload, headers=auth_header(buyer)).json()
+    client.post(f"{BASE}/{pr_id}/create-po", json=payload, headers=auth_header(buyer))
+
+    resp = None
+    for role_flag in ("is_purchase_head", "is_director", "is_md"):
+        approver = make_user(db, f"{role_flag}.{pr_id}@premnathrail.com", assigned_apps=("purchase",))
+        setattr(approver, role_flag, True)
+        db.commit()
+        resp = client.post(f"{BASE}/{pr_id}/approve-po", headers=auth_header(approver))
+        assert resp.status_code == 200, resp.text
+    return resp.json()
 
 
 def test_update_receipt_requires_po_raised_or_partial(client, db):
@@ -415,7 +428,7 @@ def test_partial_receipt_moves_to_partially_received(client, db):
     requester = _requester(db, "reqad@premnathrail.com")
     pr = _create_pr(client, requester, items=[{"item_name": "Cable", "quantity": 10, "unit": "mtr"}])
     buyer = _purchaser(db, "buyerad@premnathrail.com")
-    _approve_and_raise_po(client, pr["id"], buyer)
+    _approve_and_raise_po(client, db, pr["id"], buyer)
 
     response = client.post(f"{BASE}/{pr['id']}/update-receipt", json={"received_quantity": 4}, headers=auth_header(buyer))
     assert response.status_code == 200
@@ -430,7 +443,7 @@ def test_full_receipt_moves_to_received(client, db):
     requester = _requester(db, "reqae@premnathrail.com")
     pr = _create_pr(client, requester, items=[{"item_name": "Cable", "quantity": 10, "unit": "mtr"}])
     buyer = _purchaser(db, "buyerae@premnathrail.com")
-    _approve_and_raise_po(client, pr["id"], buyer)
+    _approve_and_raise_po(client, db, pr["id"], buyer)
 
     response = client.post(
         f"{BASE}/{pr['id']}/update-receipt",
@@ -449,7 +462,7 @@ def test_receipt_quantity_clamped_to_ordered_quantity(client, db):
     requester = _requester(db, "reqaf@premnathrail.com")
     pr = _create_pr(client, requester, items=[{"item_name": "Cable", "quantity": 5, "unit": "mtr"}])
     buyer = _purchaser(db, "buyeraf@premnathrail.com")
-    _approve_and_raise_po(client, pr["id"], buyer)
+    _approve_and_raise_po(client, db, pr["id"], buyer)
 
     response = client.post(f"{BASE}/{pr['id']}/update-receipt", json={"received_quantity": 999}, headers=auth_header(buyer))
     assert response.status_code == 200
@@ -461,7 +474,7 @@ def test_second_partial_receipt_can_complete_the_order(client, db):
     requester = _requester(db, "reqag@premnathrail.com")
     pr = _create_pr(client, requester, items=[{"item_name": "Cable", "quantity": 10, "unit": "mtr"}])
     buyer = _purchaser(db, "buyerag@premnathrail.com")
-    _approve_and_raise_po(client, pr["id"], buyer)
+    _approve_and_raise_po(client, db, pr["id"], buyer)
 
     client.post(f"{BASE}/{pr['id']}/update-receipt", json={"received_quantity": 6}, headers=auth_header(buyer))
     response = client.post(f"{BASE}/{pr['id']}/update-receipt", json={"received_quantity": 10}, headers=auth_header(buyer))
@@ -483,7 +496,7 @@ def test_close_success(client, db):
     requester = _requester(db, "reqai@premnathrail.com")
     pr = _create_pr(client, requester, items=[{"item_name": "Cable", "quantity": 3, "unit": "mtr"}])
     buyer = _purchaser(db, "buyerai@premnathrail.com")
-    _approve_and_raise_po(client, pr["id"], buyer)
+    _approve_and_raise_po(client, db, pr["id"], buyer)
     client.post(f"{BASE}/{pr['id']}/update-receipt", json={"received_quantity": 3}, headers=auth_header(buyer))
 
     response = client.post(f"{BASE}/{pr['id']}/close", headers=auth_header(buyer))
@@ -497,7 +510,7 @@ def test_close_requires_purchase_app(client, db):
     requester = _requester(db, "reqaj@premnathrail.com")
     pr = _create_pr(client, requester, items=[{"item_name": "Cable", "quantity": 1, "unit": "mtr"}])
     buyer = _purchaser(db, "buyeraj@premnathrail.com")
-    _approve_and_raise_po(client, pr["id"], buyer)
+    _approve_and_raise_po(client, db, pr["id"], buyer)
     client.post(f"{BASE}/{pr['id']}/update-receipt", json={"received_quantity": 1}, headers=auth_header(buyer))
 
     response = client.post(f"{BASE}/{pr['id']}/close", headers=auth_header(requester))
