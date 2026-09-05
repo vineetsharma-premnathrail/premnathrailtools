@@ -46,6 +46,11 @@ def upgrade() -> None:
         _repoint_service_material_fk(bind, inspector)
         return
 
+    # Drop the old FK before touching any data — it still points at
+    # purchase_requisitions, and the UPDATE below sets pr_id to a
+    # p2p_requests id, which would violate that constraint if left in place.
+    _drop_old_service_material_fk(bind, inspector)
+
     prs = bind.execute(sa.text("""
         SELECT pr.id, pr.pr_number, pr.project_id, pr.service_request_id, pr.status,
                pr.raised_by_id, pr.priority, pr.required_by_date, pr.purchase_reason,
@@ -129,30 +134,47 @@ def upgrade() -> None:
             WHERE pr_id = :old_pr_id
         """), {"new_id": new_id, "p2p_number": p2p_number, "old_pr_id": pr["id"]})
 
-    _repoint_service_material_fk(bind, inspector)
+    _add_new_service_material_fk(bind, inspector)
 
-    op.drop_table("purchase_requisition_items")
-    op.drop_table("purchase_requisitions")
+    # CASCADE here only drops FK constraints from other, already-orphaned
+    # legacy tables (purchase_order_items, purchase_goods_receipt_items —
+    # dead schema debt with no corresponding models anywhere in the codebase,
+    # predating the current p2p_* tables) that happen to reference
+    # purchase_requisition_items. It does not drop those tables themselves.
+    bind.execute(sa.text("DROP TABLE purchase_requisition_items CASCADE"))
+    bind.execute(sa.text("DROP TABLE purchase_requisitions CASCADE"))
 
 
-def _repoint_service_material_fk(bind, inspector) -> None:
-    """Drop the old erp_service_materials.pr_id -> purchase_requisitions.id FK
-    (if present) and add erp_service_materials.pr_id -> p2p_requests.id."""
-    inspector = sa.inspect(bind)  # re-inspect in case tables were just modified
+def _drop_old_service_material_fk(bind, inspector) -> None:
+    """Drop the erp_service_materials.pr_id -> purchase_requisitions.id FK
+    (if present), before any data touches pr_id or the old table is dropped."""
+    inspector = sa.inspect(bind)  # re-inspect for a fresh read
     fks = inspector.get_foreign_keys("erp_service_materials")
     old_fk_name = None
     for fk in fks:
         if fk["constrained_columns"] == ["pr_id"] and fk.get("referred_table") == "purchase_requisitions":
             old_fk_name = fk["name"]
             break
-
-    with op.batch_alter_table("erp_service_materials") as batch_op:
-        if old_fk_name:
+    if old_fk_name:
+        with op.batch_alter_table("erp_service_materials") as batch_op:
             batch_op.drop_constraint(old_fk_name, type_="foreignkey")
+
+
+def _add_new_service_material_fk(bind, inspector) -> None:
+    """Add erp_service_materials.pr_id -> p2p_requests.id (old FK already
+    dropped by _drop_old_service_material_fk before any data was touched)."""
+    with op.batch_alter_table("erp_service_materials") as batch_op:
         batch_op.create_foreign_key(
             "fk_erp_service_materials_pr_id_p2p_requests",
             "p2p_requests", ["pr_id"], ["id"],
         )
+
+
+def _repoint_service_material_fk(bind, inspector) -> None:
+    """Used only in the empty-DB fast path (no purchase_requisitions table
+    at all) where the old FK, if any, still needs dropping first."""
+    _drop_old_service_material_fk(bind, inspector)
+    _add_new_service_material_fk(bind, sa.inspect(bind))
 
 
 def downgrade() -> None:

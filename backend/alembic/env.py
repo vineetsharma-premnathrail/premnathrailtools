@@ -25,8 +25,6 @@ from app.modules.erp.models.service_request import ServiceRequest
 from app.modules.erp.models.service_material import ServiceMaterial
 from app.modules.erp.models.service_request_attachment import ServiceRequestAttachment
 from app.modules.erp.models.service_material_attachment import ServiceMaterialAttachment
-from app.modules.purchase.models.purchase_requisition import PurchaseRequisition
-from app.modules.purchase.models.purchase_requisition_item import PurchaseRequisitionItem
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
