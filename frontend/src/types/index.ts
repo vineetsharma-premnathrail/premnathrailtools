@@ -326,7 +326,6 @@ export interface Inquiry {
   required_delivery_date?: string
   delivery_location?: string
   requirement_desc?: string
-  detailed_requirement?: string
   project_details?: string | null
   inspection_req?: string
   warranty_req?: string

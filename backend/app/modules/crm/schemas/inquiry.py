@@ -20,7 +20,6 @@ class InquiryCreate(BaseModel):
     required_delivery_date: date | None = None
     delivery_location: str | None = None
     requirement_desc: str | None = None
-    detailed_requirement: str | None = None
     project_details: str | None = None
     inspection_req: str | None = None
     warranty_req: str | None = None
@@ -53,7 +52,6 @@ class InquiryUpdate(BaseModel):
     required_delivery_date: date | None = None
     delivery_location: str | None = None
     requirement_desc: str | None = None
-    detailed_requirement: str | None = None
     project_details: str | None = None
     inspection_req: str | None = None
     warranty_req: str | None = None
@@ -90,7 +88,6 @@ class InquiryResponse(BaseModel):
     required_delivery_date: date | None = None
     delivery_location: str | None = None
     requirement_desc: str | None = None
-    detailed_requirement: str | None = None
     project_details: str | None = None
     inspection_req: str | None = None
     warranty_req: str | None = None

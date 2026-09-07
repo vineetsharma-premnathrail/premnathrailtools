@@ -148,6 +148,18 @@ export default function TenderForm({
       setError('Please select an organization.')
       return
     }
+    if (!form.tender_number.trim()) {
+      setError('Please enter the tender number.')
+      return
+    }
+    if (!form.tender_name.trim()) {
+      setError('Please enter the tender name.')
+      return
+    }
+    if (!form.submission_date) {
+      setError('Please select the submission date.')
+      return
+    }
     if (form.org_contact_id === '__new__' && !newContact.name.trim()) {
       setError('Please enter a name for the new contact, or select an existing one.')
       return
@@ -246,7 +258,7 @@ export default function TenderForm({
               />
             </Field>
             <Field label="Contact Person">
-              <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} style={inputStyle}>
+              <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
                 <option value="">-- Select Contact --</option>
                 {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 <option value="__new__">+ Add New Contact</option>
@@ -271,10 +283,10 @@ export default function TenderForm({
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
-              <Field label="Tender Number"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></Field>
+              <Field label="Tender Number *"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></Field>
             </div>
             <div style={{ flex: '1 1 180px', minWidth: 160, maxWidth: 260 }}>
-              <Field label="Tender Name"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></Field>
+              <Field label="Tender Name *"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></Field>
             </div>
             <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
               <Field label="Tender Authority"><input value={form.tender_authority} onChange={(e) => set('tender_authority', e.target.value)} style={inputStyle} /></Field>
@@ -336,7 +348,7 @@ export default function TenderForm({
               <Field label="Query Submission Date"><DateField value={form.query_submission_date} onChange={(v) => set('query_submission_date', v)} /></Field>
             </div>
             <div style={{ flex: '0 1 155px', minWidth: 140 }}>
-              <Field label="Submission Date"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></Field>
+              <Field label="Submission Date *"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></Field>
             </div>
             <div style={{ flex: '0 1 175px', minWidth: 160 }}>
               <Field label="Technical Opening Date"><DateField value={form.opening_date} onChange={(v) => set('opening_date', v)} /></Field>

@@ -28,15 +28,10 @@ type FormState = {
   required_delivery_date: string
   delivery_location: string
   requirement_desc: string
-  detailed_requirement: string
   project_details: string
   inspection_req: string
   warranty_req: string
   priority: string
-  next_followup_date: string
-  followup_priority: string
-  followup_assigned_to: string
-  followup_remarks: string
 }
 
 function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
@@ -56,15 +51,10 @@ function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
     required_delivery_date: initial?.required_delivery_date || '',
     delivery_location: initial?.delivery_location || '',
     requirement_desc: initial?.requirement_desc || '',
-    detailed_requirement: initial?.detailed_requirement || '',
     project_details: initial?.project_details || '',
     inspection_req: initial?.inspection_req || '',
     warranty_req: initial?.warranty_req || '',
     priority: initial?.priority || 'Medium',
-    next_followup_date: initial?.next_followup_date || '',
-    followup_priority: initial?.followup_priority || '',
-    followup_assigned_to: initial?.followup_assigned_to || '',
-    followup_remarks: initial?.followup_remarks || '',
   }
 }
 
@@ -84,10 +74,7 @@ export default function InquiryForm({
   const { user } = useAuth()
   const bdOwnerName = initial?.bd_owner || user?.name || ''
   const orgLocked = !!defaultOrgId
-  const [form, setForm] = useState<FormState>(() => ({
-    ...toFormState(initial, defaultOrgId),
-    followup_assigned_to: initial?.followup_assigned_to || user?.name || '',
-  }))
+  const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
   const [railwayZoneCustom, setRailwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )
@@ -160,6 +147,18 @@ export default function InquiryForm({
     e.preventDefault()
     if (!form.org_id) {
       setError('Please select an organization.')
+      return
+    }
+    if (!form.product_category) {
+      setError('Please select a product category.')
+      return
+    }
+    if (!form.product.trim()) {
+      setError('Please enter the product.')
+      return
+    }
+    if (!form.quantity) {
+      setError('Please enter the quantity.')
       return
     }
     if (form.org_contact_id === '__new__' && !newContact.name.trim()) {
@@ -282,7 +281,7 @@ export default function InquiryForm({
             />
           </Field>
           <Field label="Contact Person">
-            <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} style={inputStyle}>
+            <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
               <option value="">-- Select Contact --</option>
               {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               <option value="__new__">+ Add New Contact</option>
@@ -348,7 +347,6 @@ export default function InquiryForm({
         </div>
         <Field label="Product Specification"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
         <Field label="Requirement Description"><textarea value={form.requirement_desc} onChange={(e) => set('requirement_desc', e.target.value)} rows={2} placeholder="Brief summary of the requirement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-        <Field label="Detailed Requirement"><textarea value={form.detailed_requirement} onChange={(e) => set('detailed_requirement', e.target.value)} rows={3} placeholder="Detailed technical specs, standards, testing requirements..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
         <Field label="Project Details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
       </Section>
 

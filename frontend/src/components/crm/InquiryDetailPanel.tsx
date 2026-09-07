@@ -12,7 +12,7 @@ import ActivityForm from '@/components/crm/ActivityForm'
 import { RichText } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
-import { INQ_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES, QUOTE_CONDITIONS } from '@/components/crm/constants'
+import { INQ_STAGES, INQUIRY_STATUSES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES, QUOTE_CONDITIONS } from '@/components/crm/constants'
 import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab } from '@/components/crm/ui'
 
 const TABS = ['Info', 'Quotations', 'Documents', 'Follow Ups', 'Timeline'] as const
@@ -76,6 +76,20 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     }
   }
 
+  // Status/Priority are quick lead-info toggles, not a requirement change — keep
+  // updated_at as it was so they don't re-arm the "Send Technical Offer Request"
+  // button (that button only cares about the requirement details changing).
+  const patchLeadInfo = async (payload: Record<string, unknown>) => {
+    if (!inquiry) return
+    try {
+      const prevUpdatedAt = inquiry.updated_at
+      const updated = await crmApi.updateInquiry(inquiry.id, payload)
+      setInquiry({ ...updated, updated_at: prevUpdatedAt })
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Update failed.')
+    }
+  }
+
   const handleDelete = async () => {
     if (!inquiry) return
     await crmApi.deleteInquiry(inquiry.id)
@@ -91,8 +105,24 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     (!!inquiry.updated_at && new Date(inquiry.updated_at) > new Date(inquiry.technical_offer_sent_at))
   )
 
+  // The PDF has no requirement details to print until these are filled — block
+  // sending an effectively-empty document to R&D rather than emailing a blank one.
+  const missingRequirementDetails = !!inquiry && (
+    !inquiry.product || !inquiry.product_category || inquiry.quantity == null ||
+    !(inquiry.product_spec || inquiry.requirement_desc)
+  )
+
+  const openTorPicker = () => {
+    if (missingRequirementDetails) {
+      setTorError('Please fill Product, Category, Quantity, and at least one of Specification/Requirement Description before sending the Technical Offer Request — otherwise R&D gets a document with no requirement details.')
+      return
+    }
+    setTorError('')
+    setShowTorPicker(true)
+  }
+
   const sendTechnicalOfferRequest = async (documentIds: number[]) => {
-    if (!inquiry || !torActive) return
+    if (!inquiry || !torActive || missingRequirementDetails) return
     setSendingTOR(true)
     setTorError('')
     try {
@@ -127,6 +157,14 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
           </div>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org?.name || 'Inquiry'}</h1>
         </div>
+        {editing && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 999, background: 'rgba(255,122,69,0.12)', color: '#FF7A45' }}>
+              ✎ Editing Inquiry
+            </span>
+            <button onClick={() => setEditing(false)} type="button" style={secondaryBtnStyle}>Cancel</button>
+          </div>
+        )}
         {!editing && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, width: '100%', maxWidth: '100%' }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', width: '100%' }}>
@@ -134,9 +172,15 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
                 ← Back
               </button>
               <button
-                onClick={() => setShowTorPicker(true)}
+                onClick={openTorPicker}
                 disabled={!torActive || sendingTOR}
-                title={!torActive ? `Already sent as ${inquiry.technical_offer_number} — edit the inquiry to send again.` : 'Emails R&D the Organization, Project, and Product Requirement details as a PDF.'}
+                title={
+                  !torActive
+                    ? `Already sent as ${inquiry.technical_offer_number} — edit the inquiry to send again.`
+                    : missingRequirementDetails
+                    ? 'Fill Product, Category, Quantity, and a Specification/Requirement before sending — the PDF would otherwise be empty.'
+                    : 'Emails R&D the Organization, Project, and Product Requirement details as a PDF.'
+                }
                 style={{ ...secondaryBtnStyle, opacity: !torActive || sendingTOR ? 0.5 : 1, cursor: !torActive || sendingTOR ? 'not-allowed' : 'pointer' }}
               >
                 {sendingTOR ? 'Sending…' : 'Send Technical Offer Request to R&D'}
@@ -205,7 +249,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
           }}
         />
       )}
-      {tab === 'Info' && !editing && <InfoTab inquiry={inquiry} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} />}
+      {tab === 'Info' && !editing && <InfoTab inquiry={inquiry} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canModify} onChangeLeadInfo={patchLeadInfo} />}
       {tab === 'Quotations' && <QuotationsTab inquiryId={inquiry.id} canModify={canModify} org={org} contact={contact} inquiry={inquiry} />}
       {tab === 'Documents' && <DocumentsTab inquiry={inquiry} canModify={canModify} isAdmin={isAdmin} />}
       {tab === 'Follow Ups' && <ActivitiesTab inquiry={inquiry} org={org} />}
@@ -306,7 +350,7 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
   )
 }
 
-function InfoTab({ inquiry, org, contact, revisions, selectedRevId }: { inquiry: Inquiry; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null }) {
+function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, onChangeLeadInfo }: { inquiry: Inquiry; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null; canModify: boolean; onChangeLeadInfo: (payload: Record<string, unknown>) => void }) {
   const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
   const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
 
@@ -331,14 +375,29 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId }: { inquiry:
           </div>
         </Card>
         <Card title="Lead Info">
+          <InfoRow
+            label="Status"
+            value={
+              canModify ? (
+                <select value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
+                  {INQUIRY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              ) : (inquiry.status || 'Not provided')
+            }
+          />
+          <InfoRow
+            label="Priority"
+            value={
+              canModify ? (
+                <select value={inquiry.priority} onChange={(e) => onChangeLeadInfo({ priority: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
+                  {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              ) : (inquiry.priority || 'Not provided')
+            }
+          />
           <InfoRow label="Lead Source" value={inquiry.lead_source || 'Not provided'} />
           <InfoRow label="BD Owner" value={inquiry.bd_owner || 'Not provided'} />
-          <InfoRow label="Sales Engineer" value={inquiry.sales_engineer || 'Not provided'} />
           <InfoRow label="Created On" value={inquiry.created_at ? new Date(inquiry.created_at).toLocaleDateString() : 'Not provided'} />
-          <InfoRow label="Follow-up Date" value={inquiry.next_followup_date || 'Not provided'} />
-          <InfoRow label="Follow-up Priority" value={inquiry.followup_priority || 'Not provided'} />
-          <InfoRow label="Assigned To" value={inquiry.followup_assigned_to || 'Not provided'} />
-          <InfoRow label="Follow-up Remarks" value={inquiry.followup_remarks || 'Not provided'} />
         </Card>
       </div>
       <Card title="Product Requirement">
@@ -348,15 +407,11 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId }: { inquiry:
           <SpecInfoRow label="Quantity / Unit" value={inquiry.quantity != null ? `${inquiry.quantity} ${inquiry.unit || ''}` : 'Not provided'} change={changeFor('quantity') || changeFor('unit')} />
           <SpecInfoRow label="Required Delivery" value={inquiry.required_delivery_date || 'Not provided'} change={changeFor('required_delivery_date')} />
           <SpecInfoRow label="Delivery Location" value={inquiry.delivery_location || 'Not provided'} change={changeFor('delivery_location')} />
-          <InfoRow label="Expected Value" value={inquiry.expected_value != null ? `₹${inquiry.expected_value.toLocaleString()}` : 'Not provided'} />
-          <InfoRow label="Budget" value={inquiry.budget != null ? `₹${inquiry.budget.toLocaleString()}` : 'Not provided'} />
-          <InfoRow label="Expected Order Date" value={inquiry.expected_order_date || 'Not provided'} />
           <SpecInfoRow label="Inspection Req." value={inquiry.inspection_req || 'Not provided'} change={changeFor('inspection_req')} />
           <SpecInfoRow label="Warranty Req." value={inquiry.warranty_req || 'Not provided'} change={changeFor('warranty_req')} />
         </div>
         <SpecInfoRow label="Specification" value={inquiry.product_spec || 'Not provided'} change={changeFor('product_spec')} />
         <SpecInfoRow label="Requirement Summary" value={inquiry.requirement_desc || 'Not provided'} change={changeFor('requirement_desc')} />
-        <SpecInfoRow label="Detailed Requirement" value={inquiry.detailed_requirement || 'Not provided'} change={changeFor('detailed_requirement')} />
         <InfoRow label="Project Details" value={inquiry.project_details || 'Not provided'} />
       </Card>
     </div>
@@ -1416,7 +1471,7 @@ const AUDIT_FIELD_LABELS: Record<string, string> = {
   product_category: 'Category', product: 'Product', quantity: 'Quantity', unit: 'Unit',
   required_delivery_date: 'Required Delivery Date', delivery_location: 'Delivery Location',
   inspection_req: 'Inspection Requirement', warranty_req: 'Warranty Requirement', product_spec: 'Specification',
-  requirement_desc: 'Requirement Summary', detailed_requirement: 'Detailed Requirement', project_details: 'Project Details',
+  requirement_desc: 'Requirement Summary', project_details: 'Project Details',
   railway_zone: 'Railway Zone', division: 'Division', lead_source: 'Lead Source', bd_owner: 'BD Owner',
   sales_engineer: 'Sales Engineer', status: 'Status', current_stage: 'Stage', budget: 'Budget',
   expected_value: 'Expected Value', probability: 'Probability', expected_order_date: 'Expected Order Date',

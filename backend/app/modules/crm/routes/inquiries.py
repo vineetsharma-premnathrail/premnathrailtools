@@ -90,7 +90,7 @@ async def list_inquiries(
             | (Inquiry.sales_engineer.ilike(like)) | (Inquiry.railway_zone.ilike(like)) | (Inquiry.division.ilike(like))
             | (Inquiry.lead_source.ilike(like)) | (Inquiry.status.ilike(like)) | (Inquiry.current_stage.ilike(like))
             | (Inquiry.product_category.ilike(like)) | (Inquiry.delivery_location.ilike(like))
-            | (Inquiry.requirement_desc.ilike(like)) | (Inquiry.detailed_requirement.ilike(like))
+            | (Inquiry.requirement_desc.ilike(like))
             | (Inquiry.followup_assigned_to.ilike(like)) | (Inquiry.priority.ilike(like))
         )
     inquiries = query.order_by(Inquiry.id.desc()).offset(skip).limit(limit).all()
@@ -296,7 +296,7 @@ async def create_technical_offer_request(
         "product_category": inquiry.product_category, "product": inquiry.product,
         "quantity_display": f"{inquiry.quantity:g} {inquiry.unit or ''}".strip() if inquiry.quantity is not None else None,
         "inspection_req": inquiry.inspection_req, "product_spec": inquiry.product_spec,
-        "requirement_desc": inquiry.requirement_desc, "detailed_requirement": inquiry.detailed_requirement,
+        "requirement_desc": inquiry.requirement_desc,
         "project_details": inquiry.project_details, "raised_by": raised_by,
         "raised_at": now.strftime("%d %b %Y, %I:%M %p"),
     }
@@ -347,6 +347,7 @@ async def create_technical_offer_request(
         universal_id=inquiry.universal_id, org_name=org.name if org else "", project_name=inquiry.product or "",
         documents_link=tor_doc_link, actor_id=user.id, actor_name=raised_by,
         reference_documents=reference_documents, actor_email=user.email,
+        attachment_bytes=offer_bytes, attachment_filename=offer_filename,
     )
     if not success:
         db.commit()

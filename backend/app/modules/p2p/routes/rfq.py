@@ -677,6 +677,79 @@ async def update_po_draft(
     return resp
 
 
+@router.post("/{rfq_id}/po-draft/{po_id}/document", response_model=P2PPurchaseOrderResponse)
+async def upload_po_document(
+    rfq_id: int,
+    po_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("purchase")),
+):
+    """One-time upload of the signed PO document. Only allowed while the PO
+    is still an editable draft, and only once — after upload (and at every
+    later stage, including PO approval) the document is permanently locked;
+    there is no replace/delete route by design."""
+    rfq = _get_rfq_or_404(db, rfq_id)
+    pr = _get_pr_for_rfq(db, rfq)
+    po = db.query(P2PPurchaseOrder).filter(
+        P2PPurchaseOrder.id == po_id, P2PPurchaseOrder.p2p_request_id == pr.id
+    ).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Draft PO not found")
+    if pr.status != "po_drafted" or po.status != "draft":
+        raise HTTPException(status_code=409, detail="The PO document can only be uploaded while the PO is still a draft.")
+    if po.document_filename:
+        raise HTTPException(status_code=409, detail="A PO document has already been uploaded and cannot be changed.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    folder_path = build_sharepoint_folder_path(user.name or user.email or "", "po", po.po_number)
+    result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, file)
+
+    po.document_filename = result["name"]
+    po.document_content_type = file.content_type
+    po.document_size = result["size"]
+    po.document_sharepoint_path = result["path"]
+    po.document_sharepoint_url = result.get("webUrl")
+    po.document_uploaded_by_id = user.id
+    po.document_uploaded_at = datetime.now(timezone.utc)
+
+    _write_audit(db, pr.id, "po_document_uploaded", user,
+                 summary=f"{user.name or user.email} uploaded the PO document for '{po.po_number}'.")
+
+    db.commit()
+    db.refresh(po)
+    resp = P2PPurchaseOrderResponse.model_validate(po)
+    resp.p2p_request_number = pr.p2p_number
+    resp.document_uploaded_by_name = user.name or user.email
+    return resp
+
+
+@router.get("/{rfq_id}/po-draft/{po_id}/document/content")
+async def get_po_document_content(
+    rfq_id: int,
+    po_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("purchase")),
+):
+    rfq = _get_rfq_or_404(db, rfq_id)
+    pr = _get_pr_for_rfq(db, rfq)
+    po = db.query(P2PPurchaseOrder).filter(
+        P2PPurchaseOrder.id == po_id, P2PPurchaseOrder.p2p_request_id == pr.id
+    ).first()
+    if not po or not po.document_sharepoint_path:
+        raise HTTPException(status_code=404, detail="PO document not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, po.document_sharepoint_path)
+    return Response(
+        content=content,
+        media_type=po.document_content_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{po.document_filename}"'},
+    )
+
+
 @router.post("/{rfq_id}/po-draft/{po_id}/submit", response_model=P2PPurchaseOrderResponse)
 async def submit_po_draft(
     rfq_id: int,

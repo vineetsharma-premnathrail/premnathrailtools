@@ -192,7 +192,7 @@ def build_technical_offer_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
     org_city, org_state, contact_name, contact_designation, contact_department, contact_mobile,
     contact_email, product_category, product, quantity_display, required_delivery_date,
     delivery_location, inspection_req, warranty_req, product_spec, requirement_desc,
-    detailed_requirement, project_details, documents_link, raised_by, raised_at. All are
+    project_details, documents_link, raised_by, raised_at. All are
     optional except offer_number/universal_id — every section degrades gracefully to a
     placeholder ("Not specified."/"Not provided.") rather than a fabricated value when its
     underlying field is empty on the record.
@@ -278,7 +278,7 @@ def build_technical_offer_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
     _heading(doc, 3, "Technical Requirement Summary")
     req_rows = []
     for label, key in (
-        ("Category", "product_category"), ("Product", "product"), ("Quantity", "quantity_display"),
+        ("Category", "product_category"), ("Product", "product"),
         ("Required Delivery Date", "required_delivery_date"), ("Delivery Location", "delivery_location"),
         ("Inspection", "inspection_req"), ("Warranty", "warranty_req"),
     ):
@@ -295,11 +295,11 @@ def build_technical_offer_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
 
     # 5. Requirement Summary
     _heading(doc, 5, "Requirement Summary")
-    _paragraph(doc, ctx.get("requirement_desc") or ctx.get("detailed_requirement") or "Not provided.")
+    _paragraph(doc, ctx.get("requirement_desc") or "Not provided.")
 
     # 6. Project Background
     _heading(doc, 6, "Project Background")
-    _paragraph(doc, ctx.get("project_details") or ctx.get("detailed_requirement") or "Not provided.")
+    _paragraph(doc, ctx.get("project_details") or "Not provided.")
 
     # 7. Inspection, Delivery and Warranty Requirements
     _heading(doc, 7, "Inspection, Delivery and Warranty Requirements")

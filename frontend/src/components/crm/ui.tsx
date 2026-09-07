@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { ReactNode, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { COLORS, RADII, BORDERS, GLASS, SHADOWS, TEXT, BRAND } from '@/lib/theme'
 import { CrmActivityAttachment } from '@/types'
@@ -350,7 +350,7 @@ export function Card({ title, actions, children }: { title: string; actions?: Re
   )
 }
 
-export function InfoRow({ label, value }: { label: string; value: string }) {
+export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <p className="info-row-label" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: COLORS.textFaint2, margin: '0 0 2px' }}>{label}</p>

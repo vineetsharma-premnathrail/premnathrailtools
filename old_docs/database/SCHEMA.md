@@ -302,7 +302,7 @@ Mixins: TimestampMixin, SoftDeleteMixin.
 | quantity | Float | yes | — | — |
 | unit | String(50) | yes | — | — |
 | required_delivery_date | Date | yes | — | — |
-| delivery_location / requirement_desc / detailed_requirement / inspection_req / warranty_req | mixed | yes | — | — |
+| delivery_location / requirement_desc / inspection_req / warranty_req | mixed | yes | — | — |
 | budget / expected_value | Float | yes | — | — |
 | probability | Integer | yes | — | — |
 | expected_order_date | Date | yes | — | — |

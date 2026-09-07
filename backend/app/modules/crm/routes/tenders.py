@@ -303,7 +303,7 @@ async def create_technical_offer_request(
         "product_category": tender.tender_category, "product": tender.tender_name,
         "quantity_display": f"{tender.currency} {tender.tender_value:,.2f}" if tender.tender_value is not None else None,
         "inspection_req": None,
-        "product_spec": None, "requirement_desc": tender.reason_no_participate, "detailed_requirement": None,
+        "product_spec": None, "requirement_desc": tender.reason_no_participate,
         "raised_by": raised_by,
         "raised_at": now.strftime("%d %b %Y, %I:%M %p"),
     }
@@ -350,6 +350,7 @@ async def create_technical_offer_request(
         universal_id=tender.universal_id, org_name=org.name if org else "", project_name=tender.tender_name or "",
         documents_link=tor_doc_link, actor_id=user.id, actor_name=raised_by,
         reference_documents=reference_documents, actor_email=user.email,
+        attachment_bytes=offer_bytes, attachment_filename=offer_filename,
     )
     if not success:
         db.commit()

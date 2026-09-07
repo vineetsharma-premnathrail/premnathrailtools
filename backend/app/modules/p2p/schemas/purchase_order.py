@@ -10,7 +10,6 @@ class P2PPurchaseOrderItemPayload(BaseModel):
     quantity: float = 1
     unit_price: float | None = None
     tax_rate: float | None = None
-    item_id: int | None = None
 
 
 class P2PPurchaseOrderItemResponse(BaseModel):
@@ -25,7 +24,6 @@ class P2PPurchaseOrderItemResponse(BaseModel):
     unit_price: float | None = None
     tax_rate: float | None = None
     line_total: float | None = None
-    item_id: int | None = None
 
 
 class P2PPurchaseOrderCreate(BaseModel):
@@ -62,6 +60,12 @@ class P2PPurchaseOrderResponse(BaseModel):
     updated_at: datetime | None = None
     items: list[P2PPurchaseOrderItemResponse] = Field(default_factory=list)
 
+    document_filename: str | None = None
+    document_content_type: str | None = None
+    document_size: int | None = None
+    document_uploaded_at: datetime | None = None
+
     # Denormalized display fields, filled in by the route.
     p2p_request_number: str | None = None
     created_by_name: str | None = None
+    document_uploaded_by_name: str | None = None

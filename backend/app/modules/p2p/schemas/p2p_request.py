@@ -24,7 +24,6 @@ class P2PRequestItemPayload(BaseModel):
     project_inhouse: str | None = None
     category: str | None = None
     ship_to: str | None = None
-    item_id: int | None = None
 
 
 class P2PRequestItemResponse(BaseModel):
@@ -39,13 +38,7 @@ class P2PRequestItemResponse(BaseModel):
     project_inhouse: str | None = None
     category: str | None = None
     ship_to: str | None = None
-    stock_item_id: int | None = None
-    item_id: int | None = None
     attachments: list[P2PRequestAttachmentResponse] = Field(default_factory=list)
-
-
-class P2PRequestItemStockLinkPayload(BaseModel):
-    stock_item_id: int | None = None
 
 
 class P2PRequestCreate(BaseModel):
@@ -125,9 +118,6 @@ class P2PRequestReceivePayload(BaseModel):
     grn_number: str | None = None
     receipt_date: date | None = None
     receiving_remarks: str | None = None
-    # Where the received stock physically lands — required only if at least
-    # one item on the PR has a stock_item_id mapped (see PURCHASE_STORE_INTEGRATION.md).
-    store_location_id: int | None = None
 
 
 class P2PRequestResponse(BaseModel):

@@ -4,8 +4,8 @@ opening it in Word can freely rewrite), and reuses quotation_pdf.py's
 proven canvas-drawn letterhead instead of python-docx's floating-picture
 anchors, which were bleeding into the body text at page breaks.
 
-Numbered-section layout: Customer/Organization, Contact Person, Technical
-Requirement Summary, Technical Specification, Requirement Summary, Project
+Numbered-section layout: Customer/Organization, Contact Person, Requirement
+Overview, Technical Specification, Requirement Description, Project
 Background, Technical Compliance Statement, Document Control — auto-numbered
 so removing an empty section never leaves a gap.
 """
@@ -59,7 +59,7 @@ def build_technical_offer_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     Expected keys: offer_number, universal_id, org_name, org_type, org_address, org_gst_number,
     org_city, org_state, contact_name, contact_designation, contact_department, contact_mobile,
     contact_email, product_category, product, quantity_display, product_spec, requirement_desc,
-    detailed_requirement, project_details, raised_by, raised_at. All optional except
+    project_details, raised_by, raised_at. All optional except
     offer_number/universal_id — every section prints a placeholder rather than a fabricated
     value when its underlying field is empty on the record.
     """
@@ -112,14 +112,14 @@ def build_technical_offer_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
         story.append(_field_table(contact_rows))
         story.append(Spacer(1, 14))
 
-    # Technical Requirement Summary — Category / Product / Quantity / Inspection only
+    # Requirement Overview — Category / Product / Inspection only
     n += 1
-    story.append(_section_heading(n, "Technical Requirement Summary"))
+    story.append(_section_heading(n, "Requirement Overview"))
     story.append(Spacer(1, 6))
     req_rows = [
         (label, str(ctx[key])) for label, key in (
             ("Category", "product_category"), ("Product", "product"),
-            ("Quantity", "quantity_display"), ("Inspection", "inspection_req"),
+            ("Inspection", "inspection_req"),
         ) if ctx.get(key)
     ]
     if req_rows:
@@ -135,18 +135,18 @@ def build_technical_offer_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     story.append(_p(ctx.get("product_spec") or "Not specified."))
     story.append(Spacer(1, 14))
 
-    # Requirement Summary
+    # Requirement Description
     n += 1
-    story.append(_section_heading(n, "Requirement Summary"))
+    story.append(_section_heading(n, "Requirement Description"))
     story.append(Spacer(1, 6))
-    story.append(_p(ctx.get("requirement_desc") or ctx.get("detailed_requirement") or "Not provided."))
+    story.append(_p(ctx.get("requirement_desc") or "Not provided."))
     story.append(Spacer(1, 14))
 
     # Project Background
     n += 1
     story.append(_section_heading(n, "Project Background"))
     story.append(Spacer(1, 6))
-    story.append(_p(ctx.get("project_details") or ctx.get("detailed_requirement") or "Not provided."))
+    story.append(_p(ctx.get("project_details") or "Not provided."))
     story.append(Spacer(1, 14))
 
     # Technical Compliance Statement

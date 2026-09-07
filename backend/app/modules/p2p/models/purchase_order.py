@@ -36,6 +36,17 @@ class P2PPurchaseOrder(Base, TimestampMixin):
     total_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
+    # The signed PO document — uploaded once while the PO is still a draft
+    # and then permanently locked (no re-upload/replace at any later stage,
+    # including during the Purchase Head -> Director -> MD approval chain).
+    document_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    document_content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    document_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    document_sharepoint_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    document_sharepoint_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    document_uploaded_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    document_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     p2p_request: Mapped["P2PRequest | None"] = relationship("P2PRequest")
     items: Mapped[list["P2PPurchaseOrderItem"]] = relationship(
         "P2PPurchaseOrderItem", back_populates="purchase_order", cascade="all, delete-orphan"
@@ -47,11 +58,6 @@ class P2PPurchaseOrderItem(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     purchase_order_id: Mapped[int] = mapped_column(Integer, ForeignKey("p2p_purchase_orders.id"), nullable=False)
-
-    # Nullable, non-blocking mapping to the shared Item master — carried over
-    # from the source P2PRequestItem.item_id when a PO is auto-generated, or
-    # set directly on an ad-hoc PO.
-    item_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("items.id"), nullable=True)
 
     item_name: Mapped[str] = mapped_column(String(255), nullable=False)
     make: Mapped[str | None] = mapped_column(String(100), nullable=True)

@@ -81,7 +81,6 @@ async def create_purchase_order(
             unit_price=item.unit_price,
             tax_rate=item.tax_rate,
             line_total=line_total,
-            item_id=item.item_id,
         ))
     po.total_value = round(total, 2) if has_pricing else None
 

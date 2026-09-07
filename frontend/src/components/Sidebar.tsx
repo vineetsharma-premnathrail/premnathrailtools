@@ -190,7 +190,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
       {/* Glass edge highlight — a faint top sheen so the panel reads as
           "glass" even when the blurred backdrop alone isn't obvious. */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg,transparent,${GLASS.highlight},transparent)`, pointerEvents: 'none' }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 6px', marginBottom: 22, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 10, padding: '0 6px', marginBottom: 22, overflow: 'hidden' }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.png"

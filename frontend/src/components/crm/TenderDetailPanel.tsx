@@ -107,6 +107,14 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
           </div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{tender.tender_name || org?.name || 'Tender'}</h1>
         </div>
+        {editing && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 999, background: 'rgba(255,122,69,0.12)', color: '#FF7A45' }}>
+              ✎ Editing Tender
+            </span>
+            <button onClick={() => setEditing(false)} type="button" style={secondaryBtnStyle}>Cancel</button>
+          </div>
+        )}
         {!editing && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, width: '100%', maxWidth: '100%' }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', width: '100%' }}>
@@ -287,7 +295,6 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
 }
 
 function InfoTab({ tender, org, revisions, selectedRevId }: { tender: Tender; org: Organization | null; revisions: SpecRevision[]; selectedRevId: number | null }) {
-  const showResult = tender.status === 'Won' || tender.status === 'Lost' || tender.awarded_to || tender.loss_reason
   const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
   const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
 
@@ -308,25 +315,8 @@ function InfoTab({ tender, org, revisions, selectedRevId }: { tender: Tender; or
           <InfoRow label="Name" value={org?.name || '—'} />
           <SpecInfoRow label="Railway Zone" value={tender.railway_zone || '—'} change={changeFor('railway_zone')} />
           <SpecInfoRow label="Division" value={tender.division || '—'} change={changeFor('division')} />
-          <SpecInfoRow label="Workshop" value={tender.workshop || '—'} change={changeFor('workshop')} />
-          <div style={{ paddingTop: 10, marginTop: 4, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-            <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#1f1108', margin: '0 0 10px' }}>Participation</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <InfoRow label="Participate" value={tender.participate == null ? '—' : tender.participate ? 'Yes' : 'No'} />
-              <InfoRow label="Decision By" value={tender.decision_by || '—'} />
-              <InfoRow label="Reason (if No)" value={tender.reason_no_participate || '—'} />
-            </div>
-          </div>
         </Card>
       </div>
-      {showResult && (
-        <Card title="Result">
-          <InfoRow label="Awarded To" value={tender.awarded_to || '—'} />
-          <InfoRow label="LOI Number" value={tender.loi_number || '—'} />
-          <InfoRow label="Contract Value" value={tender.contract_value != null ? `${tender.currency} ${tender.contract_value.toLocaleString()}` : '—'} />
-          <InfoRow label="Loss Reason" value={tender.loss_reason || '—'} />
-        </Card>
-      )}
     </div>
   )
 }

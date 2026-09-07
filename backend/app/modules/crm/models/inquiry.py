@@ -36,7 +36,6 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     required_delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     delivery_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     requirement_desc: Mapped[str | None] = mapped_column(Text, nullable=True)
-    detailed_requirement: Mapped[str | None] = mapped_column(Text, nullable=True)
     project_details: Mapped[str | None] = mapped_column(Text, nullable=True)
     inspection_req: Mapped[str | None] = mapped_column(String(255), nullable=True)
     warranty_req: Mapped[str | None] = mapped_column(String(255), nullable=True)

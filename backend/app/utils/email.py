@@ -323,12 +323,15 @@ async def send_technical_offer_request_email(
     actor_id: int | None, actor_name: str,
     reference_documents: list[dict] | None = None,
     actor_email: str | None = None,
+    attachment_bytes: bytes | None = None,
+    attachment_filename: str | None = None,
 ) -> tuple[bool, str]:
-    """Emails R&D a link to the Technical Offer Request .docx (already uploaded to
-    SharePoint by the caller — see technical_offer_docx.py / upload_file_to_sharepoint),
-    with the offer number they must reference in their reply. Writes an AuditLog row
-    either way (entity_type is "inquiry" or "tender"), which the Timeline tab picks up
-    to show exactly when the request was sent.
+    """Emails R&D the Technical Offer Request PDF as a direct attachment (also
+    already uploaded to SharePoint by the caller — see technical_offer_pdf.py /
+    upload_bytes_to_sharepoint), with the offer number they must reference in
+    their reply. Writes an AuditLog row either way (entity_type is "inquiry" or
+    "tender"), which the Timeline tab picks up to show exactly when the request
+    was sent.
 
     Sent "from" the acting user's own mailbox (actor_email) rather than the fixed
     SENDER_EMAIL, so R&D sees it came from whoever actually clicked Send — falls back
@@ -353,7 +356,7 @@ async def send_technical_offer_request_email(
     <p style="margin:0 0 16px;font-size:14px;color:#1e293b;font-weight:700">Dear R&amp;D Team,</p>
     <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.7">
       A Technical Offer Request has been raised for the requirement below. The full details
-      (Organization, Project, and Product Requirement) are in the document linked below.
+      (Organization, Project, and Product Requirement) are in the attached PDF.
     </p>
     <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
       {_sr_email_table_row("Technical Offer No.", offer_number, True)}
@@ -363,7 +366,6 @@ async def send_technical_offer_request_email(
       {_sr_email_table_row("Raised By", actor_name, True)}
     </table>
     <p style="margin:0 0 8px;font-size:13.5px;color:#1e293b;font-weight:700">Please quote <span style="color:#f97316">{offer_number}</span> in your technical offer.</p>
-    <p style="margin:0 0 20px;font-size:13.5px;color:#475569">Technical Offer Request document: <a href="{documents_link}" style="color:#2563eb">{documents_link}</a></p>
     {ref_docs_html}
     <p style="margin:0;font-size:14px;color:#1e293b">Regards,<br><strong>{actor_name}</strong></p>"""
     html = f"""<!DOCTYPE html>
@@ -382,8 +384,16 @@ async def send_technical_offer_request_email(
 </div>
 </body></html>"""
 
+    extra_attachments = None
+    if attachment_bytes and attachment_filename:
+        extra_attachments = [{
+            "name": attachment_filename,
+            "content_type": "application/pdf",
+            "content_bytes": attachment_bytes,
+        }]
     success, error = await _send_graph_mail(
         sender_email, subject, html, rnd_email, "R&D Team",
+        extra_attachments=extra_attachments,
         sender_name=actor_name if actor_email else "Premnathrail Service Team",
     )
     summary = (
