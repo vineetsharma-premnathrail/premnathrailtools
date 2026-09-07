@@ -24,7 +24,6 @@ type FormState = {
   product_category: string
   product_spec: string
   quantity: string
-  unit: string
   required_delivery_date: string
   delivery_location: string
   requirement_desc: string
@@ -47,7 +46,6 @@ function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
     product_category: initial?.product_category && !PRODUCT_CATEGORIES.includes(initial.product_category) ? 'Other' : initial?.product_category || '',
     product_spec: initial?.product_spec || '',
     quantity: initial?.quantity != null ? String(initial.quantity) : '',
-    unit: initial?.unit || '',
     required_delivery_date: initial?.required_delivery_date || '',
     delivery_location: initial?.delivery_location || '',
     requirement_desc: initial?.requirement_desc || '',
@@ -328,9 +326,6 @@ export default function InquiryForm({
           </div>
           <div style={{ flex: '0 1 90px', minWidth: 80 }}>
             <Field label="Quantity *"><input type="number" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></Field>
-          </div>
-          <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-            <Field label="Unit"><input value={form.unit} onChange={(e) => set('unit', e.target.value)} style={inputStyle} /></Field>
           </div>
           <div style={{ flex: '0 1 175px', minWidth: 175 }}>
             <Field label="Required Delivery Date"><DateField value={form.required_delivery_date} onChange={(v) => set('required_delivery_date', v)} /></Field>

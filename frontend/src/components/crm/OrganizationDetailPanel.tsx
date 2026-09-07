@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
@@ -153,6 +153,8 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
+  const submittingRef = useRef(false)
+  const [dupeConfirm, setDupeConfirm] = useState(false)
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
   const [tenders, setTenders] = useState<Tender[]>([])
 
@@ -173,9 +175,17 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
     setShowForm(false)
   }
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.name.trim()) return
+  const isDuplicate = () => {
+    const nameLower = form.name.trim().toLowerCase()
+    const mobile = form.mobile.trim()
+    return org.contacts.some((c) => {
+      if (editingId && c.id === editingId) return false
+      return c.name.trim().toLowerCase() === nameLower && (!mobile || (c.mobile || '').trim() === mobile)
+    })
+  }
+
+  const doSave = async () => {
+    submittingRef.current = true
     setSaving(true)
     try {
       if (editingId) await crmApi.updateOrgContact(org.id, editingId, form)
@@ -183,8 +193,19 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
       cancelForm()
       onRefresh()
     } finally {
+      submittingRef.current = false
       setSaving(false)
     }
+  }
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!form.name.trim() || submittingRef.current) return
+    if (isDuplicate()) {
+      setDupeConfirm(true)
+      return
+    }
+    await doSave()
   }
 
   return (
@@ -286,6 +307,14 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={dupeConfirm}
+        title="Possible duplicate contact"
+        message={`A contact named "${form.name.trim()}"${form.mobile.trim() ? ` with mobile ${form.mobile.trim()}` : ''} already exists for this organization. Save anyway?`}
+        onConfirm={() => { setDupeConfirm(false); doSave() }}
+        onCancel={() => setDupeConfirm(false)}
+      />
     </div>
   )
 }

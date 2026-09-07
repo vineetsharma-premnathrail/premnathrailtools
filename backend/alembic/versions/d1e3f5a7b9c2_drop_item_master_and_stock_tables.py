@@ -35,7 +35,7 @@ def upgrade() -> None:
         # Orphaned tables from the already-removed Manufacturing module — no
         # code references them, but they still hold FKs into `items` that
         # block dropping it.
-        "manufacturing_bom_items", "manufacturing_work_orders", "manufacturing_boms", "manufacturing_stock_entries",
+        "manufacturing_bom_items", "manufacturing_stock_entries", "manufacturing_work_orders", "manufacturing_boms",
         "items",
     ):
         if table in existing_tables:

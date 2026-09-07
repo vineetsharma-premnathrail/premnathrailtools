@@ -322,7 +322,6 @@ export interface Inquiry {
   product_category?: string
   product_spec?: string
   quantity?: number
-  unit?: string
   required_delivery_date?: string
   delivery_location?: string
   requirement_desc?: string

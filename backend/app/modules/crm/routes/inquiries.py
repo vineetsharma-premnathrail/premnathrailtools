@@ -294,7 +294,7 @@ async def create_technical_offer_request(
         "contact_department": contact.department if contact else None, "contact_mobile": contact.mobile if contact else None,
         "contact_email": contact.email if contact else None,
         "product_category": inquiry.product_category, "product": inquiry.product,
-        "quantity_display": f"{inquiry.quantity:g} {inquiry.unit or ''}".strip() if inquiry.quantity is not None else None,
+        "quantity_display": f"{inquiry.quantity:g}" if inquiry.quantity is not None else None,
         "inspection_req": inquiry.inspection_req, "product_spec": inquiry.product_spec,
         "requirement_desc": inquiry.requirement_desc,
         "project_details": inquiry.project_details, "raised_by": raised_by,

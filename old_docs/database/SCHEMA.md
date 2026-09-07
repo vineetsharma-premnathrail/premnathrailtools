@@ -300,7 +300,6 @@ Mixins: TimestampMixin, SoftDeleteMixin.
 | current_stage | String(50) | no | `"Customer Requirement"` | — |
 | product / product_category / product_spec | mixed | yes | — | — |
 | quantity | Float | yes | — | — |
-| unit | String(50) | yes | — | — |
 | required_delivery_date | Date | yes | — | — |
 | delivery_location / requirement_desc / inspection_req / warranty_req | mixed | yes | — | — |
 | budget / expected_value | Float | yes | — | — |

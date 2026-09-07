@@ -16,7 +16,6 @@ class InquiryCreate(BaseModel):
     product_category: str | None = None
     product_spec: str | None = None
     quantity: float | None = None
-    unit: str | None = None
     required_delivery_date: date | None = None
     delivery_location: str | None = None
     requirement_desc: str | None = None
@@ -48,7 +47,6 @@ class InquiryUpdate(BaseModel):
     product_category: str | None = None
     product_spec: str | None = None
     quantity: float | None = None
-    unit: str | None = None
     required_delivery_date: date | None = None
     delivery_location: str | None = None
     requirement_desc: str | None = None
@@ -84,7 +82,6 @@ class InquiryResponse(BaseModel):
     product_category: str | None = None
     product_spec: str | None = None
     quantity: float | None = None
-    unit: str | None = None
     required_delivery_date: date | None = None
     delivery_location: str | None = None
     requirement_desc: str | None = None

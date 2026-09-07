@@ -32,7 +32,6 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     product_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     product_spec: Mapped[str | None] = mapped_column(Text, nullable=True)
     quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
-    unit: Mapped[str | None] = mapped_column(String(50), nullable=True)
     required_delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     delivery_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     requirement_desc: Mapped[str | None] = mapped_column(Text, nullable=True)

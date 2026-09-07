@@ -404,7 +404,7 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
           <SpecInfoRow label="Product" value={inquiry.product || 'Not provided'} change={changeFor('product')} />
           <SpecInfoRow label="Category" value={inquiry.product_category || 'Not provided'} change={changeFor('product_category')} />
-          <SpecInfoRow label="Quantity / Unit" value={inquiry.quantity != null ? `${inquiry.quantity} ${inquiry.unit || ''}` : 'Not provided'} change={changeFor('quantity') || changeFor('unit')} />
+          <SpecInfoRow label="Quantity" value={inquiry.quantity != null ? String(inquiry.quantity) : 'Not provided'} change={changeFor('quantity')} />
           <SpecInfoRow label="Required Delivery" value={inquiry.required_delivery_date || 'Not provided'} change={changeFor('required_delivery_date')} />
           <SpecInfoRow label="Delivery Location" value={inquiry.delivery_location || 'Not provided'} change={changeFor('delivery_location')} />
           <SpecInfoRow label="Inspection Req." value={inquiry.inspection_req || 'Not provided'} change={changeFor('inspection_req')} />
@@ -1468,7 +1468,7 @@ function specRevisionDetailHtml(changes: { field: string; old: unknown; new: unk
 }
 
 const AUDIT_FIELD_LABELS: Record<string, string> = {
-  product_category: 'Category', product: 'Product', quantity: 'Quantity', unit: 'Unit',
+  product_category: 'Category', product: 'Product', quantity: 'Quantity',
   required_delivery_date: 'Required Delivery Date', delivery_location: 'Delivery Location',
   inspection_req: 'Inspection Requirement', warranty_req: 'Warranty Requirement', product_spec: 'Specification',
   requirement_desc: 'Requirement Summary', project_details: 'Project Details',
