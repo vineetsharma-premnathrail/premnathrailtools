@@ -129,6 +129,7 @@ PUBLIC_PATHS = {
     "/api/v1/auth/microsoft-login",
     "/api/v1/auth/callback",
     "/api/v1/auth/logout",
+    "/api/v1/auth/refresh",
     "/api/v1/auth/teams-token",
     "/api/v1/auth/teams-exchange",
 }

@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.schemas.auth import TokenResponse, CurrentUserResponse
-from app.auth.jwt_handler import create_access_token, verify_access_token
+from app.auth.jwt_handler import create_access_token, verify_access_token, create_refresh_token, hash_refresh_token
+from app.modules.main.models.user_session import UserSession
+from datetime import datetime, timedelta, timezone
 from app.auth.microsoft import get_auth_url, exchange_code_for_token, get_microsoft_user_profile, get_microsoft_manager_profile
 from app.modules.organization.services.provisioning import sync_user_org_links
 from app.core.config import settings
@@ -83,18 +85,42 @@ def _check_replay(token_id: str, expiry: float) -> bool:
     return False
 
 
-def _set_auth_cookies(response, session_token: str, ms_access_token: str = "") -> None:
+def _set_auth_cookies(response, session_token: str, ms_access_token: str = "", refresh_token: str = "") -> None:
     secure = settings.SECURE_COOKIES
     samesite = "none" if secure else "lax"
     response.set_cookie(
         "session_token", session_token, httponly=True, secure=secure,
-        max_age=86400, samesite=samesite,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, samesite=samesite,
     )
     if ms_access_token:
         response.set_cookie(
             "ms_access_token", ms_access_token, httponly=True, secure=secure,
             max_age=3600, samesite=samesite,
         )
+    if refresh_token:
+        # Scoped to /auth so it's never sent to (or leaked by) unrelated
+        # routes — the refresh token only ever needs to reach /auth/refresh
+        # and /auth/logout.
+        response.set_cookie(
+            "refresh_token", refresh_token, httponly=True, secure=secure,
+            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400, samesite=samesite,
+            path="/api/v1/auth",
+        )
+
+
+def _issue_refresh_session(db: Session, user: User, user_agent: str = "") -> str:
+    """Creates a `user_sessions` row and returns the raw refresh token for
+    the cookie. Only the hash is persisted."""
+    raw, token_hash = create_refresh_token()
+    session = UserSession(
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        user_agent=user_agent[:255] if user_agent else None,
+    )
+    db.add(session)
+    db.commit()
+    return raw
 
 
 def _make_api_key_user(api_key) -> User:
@@ -114,7 +140,13 @@ def _make_api_key_user(api_key) -> User:
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     """Dependency: authenticate via API key first (external integrations),
     then the session_token httponly cookie, then a JWT Bearer header
-    (kept for API clients / tooling that can't rely on cookies)."""
+    (kept for API clients / tooling that can't rely on cookies).
+
+    The access token is deliberately short-lived (15 min) and this
+    dependency does NOT renew it — keeping a daily-active user signed in is
+    the job of POST /auth/refresh (called by the frontend on a 401), backed
+    by a revocable `user_sessions` row. See that route's docstring for why
+    silently re-minting the JWT here instead would be the wrong fix."""
     api_key = get_api_key_record(request, db)
     if api_key is not None:
         return _make_api_key_user(api_key)
@@ -236,6 +268,7 @@ async def oauth_callback(code: str, state: str, db: Session = Depends(get_db)):
             return RedirectResponse(url=f"{frontend_url}/login?error=inactive", status_code=302)
 
         session_token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
+        refresh_token = _issue_refresh_session(db, user, request.headers.get("user-agent", ""))
 
         redirect_to = state_data["next_path"]
         if redirect_to == "/auth/teams-success":
@@ -246,12 +279,13 @@ async def oauth_callback(code: str, state: str, db: Session = Depends(get_db)):
             _teams_exchange_codes[auth_code] = {
                 "session_token": session_token,
                 "ms_access_token": ms_access_token,
+                "refresh_token": refresh_token,
                 "expiry": time.time() + _TEAMS_CODE_TTL_SECONDS,
             }
             return RedirectResponse(url=f"{frontend_url}/auth/teams-success?code={auth_code}", status_code=302)
 
         response = RedirectResponse(url=f"{frontend_url}{redirect_to}", status_code=302)
-        _set_auth_cookies(response, session_token, ms_access_token)
+        _set_auth_cookies(response, session_token, ms_access_token, refresh_token)
         return response
 
     except ValueError as e:
@@ -375,8 +409,9 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
     except Exception:
         pass
 
+    refresh_token = _issue_refresh_session(db, user, request.headers.get("user-agent", ""))
     response = JSONResponse({"ok": True})
-    _set_auth_cookies(response, session_token, ms_access_token)
+    _set_auth_cookies(response, session_token, ms_access_token, refresh_token)
     return response
 
 
@@ -392,7 +427,7 @@ async def teams_exchange(request: Request):
         raise HTTPException(status_code=400, detail="Invalid or expired Teams auth code")
 
     response = JSONResponse({"ok": True})
-    _set_auth_cookies(response, code_data["session_token"], code_data["ms_access_token"])
+    _set_auth_cookies(response, code_data["session_token"], code_data["ms_access_token"], code_data.get("refresh_token", ""))
     return response
 
 
@@ -414,11 +449,62 @@ async def get_current_user_info(user: User = Depends(get_current_user)):
     )
 
 
+@router.post("/refresh")
+async def refresh_session(request: Request, db: Session = Depends(get_db)):
+    """Mints a fresh short-lived access token from the long-lived refresh
+    token cookie. This — not a long-lived access token, and not silently
+    re-minting the access token on every request — is what keeps a
+    daily-active user signed in: the frontend calls this once when an API
+    call comes back 401, then retries.
+
+    The refresh token itself is rotated on every use (old row revoked, new
+    one issued) so a stolen-and-replayed refresh token is detectable and a
+    compromised session can be cut off server-side — properties a bare JWT
+    (however long-lived) cannot offer, since a JWT can't be un-issued before
+    its `exp`."""
+    raw = request.cookies.get("refresh_token")
+    if not raw:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
+
+    token_hash = hash_refresh_token(raw)
+    session = db.query(UserSession).filter(UserSession.token_hash == token_hash).first()
+    now = datetime.now(timezone.utc)
+    if not session or session.revoked_at is not None or session.expires_at < now:
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+
+    user = db.query(User).filter(User.id == session.user_id).first()
+    if not user or not user.is_active:
+        session.revoked_at = now
+        db.commit()
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    # Rotate: revoke this refresh token and issue a new one, so each cookie
+    # value is single-use — replay of an intercepted old cookie fails outright.
+    session.revoked_at = now
+    session.last_used_at = now
+    db.commit()
+    new_refresh_token = _issue_refresh_session(db, user, request.headers.get("user-agent", ""))
+
+    session_token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
+    response = JSONResponse({"ok": True})
+    _set_auth_cookies(response, session_token, refresh_token=new_refresh_token)
+    return response
+
+
 @router.post("/logout")
-async def logout(user: User = Depends(get_current_user)):
-    """Logout: clear the session cookies (frontend Bearer-token clients clear
-    their own storage on their side)."""
+async def logout(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Logout: revoke the refresh session server-side (so the refresh cookie
+    can't be used to silently sign back in) and clear all auth cookies."""
+    raw = request.cookies.get("refresh_token")
+    if raw:
+        token_hash = hash_refresh_token(raw)
+        session = db.query(UserSession).filter(UserSession.token_hash == token_hash).first()
+        if session and session.revoked_at is None:
+            session.revoked_at = datetime.now(timezone.utc)
+            db.commit()
+
     response = JSONResponse({"message": "Logged out successfully", "status": "ok"})
     response.delete_cookie("session_token")
     response.delete_cookie("ms_access_token")
+    response.delete_cookie("refresh_token", path="/api/v1/auth")
     return response

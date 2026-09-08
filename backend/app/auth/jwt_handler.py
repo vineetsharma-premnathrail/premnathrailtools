@@ -1,7 +1,22 @@
+import hashlib
+import secrets
 from datetime import datetime, timedelta
 
 from app.core.config import settings
 from jose import JWTError, jwt
+
+
+def create_refresh_token() -> tuple[str, str]:
+    """Returns (raw_token, hash). The raw value goes in the cookie and is
+    never stored; the hash goes in `user_sessions.token_hash` so a stolen DB
+    row can't be replayed as a cookie, and lookups still work without ever
+    holding the plaintext token server-side."""
+    raw = secrets.token_urlsafe(48)
+    return raw, hash_refresh_token(raw)
+
+
+def hash_refresh_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def create_access_token(data: dict) -> str:

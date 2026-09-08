@@ -12,6 +12,7 @@ from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.api_key import APIKey
+from app.modules.main.models.user_session import UserSession
 from app.modules.main.models.module import Module
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.department import Department

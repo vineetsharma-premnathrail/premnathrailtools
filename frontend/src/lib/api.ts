@@ -23,13 +23,45 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
+// The access token (session_token) is short-lived by design (15 min) — see
+// backend/app/modules/main/routes/auth.py's /auth/refresh docstring for why.
+// A 401 here usually just means that token expired, not that the user's
+// actual (refresh-token-backed) session is over, so try one silent refresh
+// before treating it as a real sign-out. Concurrent 401s share a single
+// in-flight refresh instead of each firing their own.
+let refreshInFlight: Promise<boolean> | null = null
+
+function refreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = apiClient
+      .post('/auth/refresh')
+      .then(() => true)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null
+      })
+  }
+  return refreshInFlight
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
-    // Skip the /auth/logout request itself — otherwise an already-expired
-    // token makes that call 401 too, which would re-enter this same branch
-    // and recurse forever instead of just letting the request fail quietly.
-    if (error.response?.status === 401 && !error.config?.url?.includes('/auth/logout')) {
+  async (error: AxiosError) => {
+    const url = error.config?.url || ''
+    // Never try to refresh around these — /auth/logout is an intentional
+    // sign-out, and /auth/refresh failing IS the "really signed out" signal,
+    // not something to retry.
+    const skipRefresh = url.includes('/auth/logout') || url.includes('/auth/refresh')
+
+    if (error.response?.status === 401 && !skipRefresh && error.config && !(error.config as { _retried?: boolean })._retried) {
+      const refreshed = await refreshSession()
+      if (refreshed) {
+        (error.config as { _retried?: boolean })._retried = true
+        return apiClient.request(error.config)
+      }
+    }
+
+    if (error.response?.status === 401 && !url.includes('/auth/logout')) {
       useAuthStore.getState().clearSession()
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
         window.location.href = '/login'

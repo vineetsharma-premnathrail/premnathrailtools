@@ -51,7 +51,17 @@ class Settings(BaseSettings):
     # JWT
     SECRET_KEY: str = "..."
 
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    # Short-lived: minimizes the damage window if a session_token is ever
+    # leaked (XSS, logs, a stolen device snapshot). Session length for an
+    # active user comes from REFRESH_TOKEN_EXPIRE_DAYS instead — see
+    # /auth/refresh, which is what actually keeps daily-active users signed
+    # in without re-prompting for Microsoft login.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+
+    # Refresh tokens are opaque (not JWTs) and stored hashed in `user_sessions`,
+    # so — unlike a bare JWT — they can be revoked server-side (logout,
+    # deactivation, password/security incident) before they naturally expire.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # SharePoint (ERP attachment storage)
     SHAREPOINT_SITE_ID: str = ""

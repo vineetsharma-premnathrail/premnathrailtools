@@ -19,6 +19,7 @@ from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.api_key import APIKey
+from app.modules.main.models.user_session import UserSession
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.project_attachment import ProjectAttachment
 from app.modules.erp.models.service_request import ServiceRequest
