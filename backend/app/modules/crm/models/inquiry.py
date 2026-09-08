@@ -17,6 +17,8 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     universal_id: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
 
     org_id: Mapped[int] = mapped_column(Integer, ForeignKey("crm_organizations.id"), nullable=False, index=True)
+    # Nullable at the DB level only for one pre-existing legacy record — new
+    # inquiries always require a contact (see InquiryCreate.org_contact_id).
     org_contact_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_org_contacts.id"), nullable=True)
 
     railway_zone: Mapped[str | None] = mapped_column(String(100), nullable=True)

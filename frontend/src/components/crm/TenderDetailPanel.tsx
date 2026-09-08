@@ -403,7 +403,7 @@ function TasksTab({ tenderId, canModify }: { tenderId: number; canModify: boolea
                   {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
               </Field>
-              <Field label="Task Title"><input value={form.task_title} onChange={(e) => setForm((f) => ({ ...f, task_title: e.target.value }))} placeholder="Task description" style={inputStyle} /></Field>
+              <Field label="Task Title *"><input value={form.task_title} onChange={(e) => setForm((f) => ({ ...f, task_title: e.target.value }))} placeholder="Task description" style={inputStyle} /></Field>
               <Field label="Assigned To"><input value={form.assigned_user_name} onChange={(e) => setForm((f) => ({ ...f, assigned_user_name: e.target.value }))} style={inputStyle} /></Field>
               <Field label="Due Date"><DateField value={form.due_date} onChange={(v) => setForm((f) => ({ ...f, due_date: v }))} /></Field>
               <Field label="Priority">
@@ -480,7 +480,7 @@ function CompetitorsTab({ tenderId, canModify }: { tenderId: number; canModify: 
           <button onClick={() => setShowForm((v) => !v)} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Competitor'}</button>
           {showForm && (
             <form onSubmit={create} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="Competitor Name"><input value={form.competitor_name} onChange={(e) => setForm((f) => ({ ...f, competitor_name: e.target.value }))} style={inputStyle} /></Field>
+              <Field label="Competitor Name *"><input value={form.competitor_name} onChange={(e) => setForm((f) => ({ ...f, competitor_name: e.target.value }))} style={inputStyle} /></Field>
               <Field label="Expected Price (₹)"><input type="number" value={form.expected_price} onChange={(e) => setForm((f) => ({ ...f, expected_price: e.target.value }))} style={inputStyle} /></Field>
               <div style={{ gridColumn: '1 / -1' }}>
                 <Field label="Remarks"><textarea value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>

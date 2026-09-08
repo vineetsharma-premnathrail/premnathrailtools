@@ -159,6 +159,10 @@ export default function InquiryForm({
       setError('Please enter the quantity.')
       return
     }
+    if (!form.org_contact_id) {
+      setError('Please select a contact person.')
+      return
+    }
     if (form.org_contact_id === '__new__' && !newContact.name.trim()) {
       setError('Please enter a name for the new contact, or select an existing one.')
       return
@@ -278,7 +282,7 @@ export default function InquiryForm({
               disabled={orgLocked}
             />
           </Field>
-          <Field label="Contact Person">
+          <Field label="Contact Person *">
             <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
               <option value="">-- Select Contact --</option>
               {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}

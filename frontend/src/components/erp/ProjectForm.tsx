@@ -296,8 +296,8 @@ export default function ProjectForm({
           <Section title="Machine Asset Identity">
             <Grid3>
               <Field label="Serial Number *"><input value={form.serial_number} onChange={(e) => set('serial_number', e.target.value)} placeholder="e.g. PNR-RR-2026-88" style={inputStyle} /></Field>
-              <Field label="Model Name *"><input value={form.model_name} onChange={(e) => set('model_name', e.target.value)} placeholder="e.g. Catenary Track Car Pro" style={inputStyle} /></Field>
-              <Field label="Machine Classification *">
+              <Field label="Model Name"><input value={form.model_name} onChange={(e) => set('model_name', e.target.value)} placeholder="e.g. Catenary Track Car Pro" style={inputStyle} /></Field>
+              <Field label="Machine Classification">
                 <select value={form.machine_type} onChange={(e) => set('machine_type', e.target.value)} style={inputStyle}>
                   <option value="">-- Select Machine Type --</option>
                   {MACHINE_TYPES.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -313,7 +313,7 @@ export default function ProjectForm({
               <Field label="Chassis Number"><input value={form.chassis_number} onChange={(e) => set('chassis_number', e.target.value)} placeholder="Optional Chassis ID" style={inputStyle} /></Field>
 
               <Field label="Year of Manufacture"><YearField value={form.year_of_manufacture} onChange={(v) => set('year_of_manufacture', v)} style={inputStyle} /></Field>
-              <Field label="Operational Status *">
+              <Field label="Operational Status">
                 <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
                   {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>

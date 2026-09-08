@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 class InquiryCreate(BaseModel):
     org_id: int
-    org_contact_id: int | None = None
+    org_contact_id: int
     railway_zone: str | None = None
     division: str | None = None
     lead_source: str | None = None

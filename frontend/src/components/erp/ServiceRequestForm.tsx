@@ -209,7 +209,7 @@ export default function ServiceRequestForm({
                   />
                 )}
               </Field>
-              <Field label="Request Date *">
+              <Field label="Request Date">
                 <DateField value={requestDate} onChange={() => {}} />
               </Field>
             </Row>
