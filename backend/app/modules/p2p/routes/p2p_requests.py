@@ -26,7 +26,6 @@ from app.modules.p2p.schemas.p2p_request import (
     P2PRequestQuotationPayload,
     P2PRequestSelectVendorPayload,
     P2PRequestCreatePOPayload,
-    P2PRequestReceivePayload,
     P2PRequestAttachmentResponse,
 )
 from app.modules.p2p.service import generate_p2p_number
@@ -672,42 +671,13 @@ async def create_po(
     return _to_response(db, pr)
 
 
-@router.post("/{pr_id}/update-receipt", response_model=P2PRequestResponse)
-async def update_receipt(
-    pr_id: int,
-    payload: P2PRequestReceivePayload,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
-):
-    pr = _get_pr_or_404(db, pr_id)
-    if pr.status not in ("po_approved", "partially_received"):
-        raise HTTPException(status_code=409, detail=f"Receipts can only be recorded once a PO is raised (current status: {pr.status})")
-
-    old_status = pr.status
-    ordered = pr.ordered_quantity if pr.ordered_quantity is not None else sum(i.quantity for i in pr.items)
-    received = max(0.0, min(payload.received_quantity, ordered)) if ordered else payload.received_quantity
-    pr.ordered_quantity = ordered
-    pr.received_quantity = received
-    pr.grn_number = payload.grn_number or pr.grn_number
-    pr.receipt_date = payload.receipt_date or date.today()
-    pr.receiving_remarks = payload.receiving_remarks or pr.receiving_remarks
-
-    if received <= 0:
-        pr.receipt_status = "pending"
-    elif ordered and received < ordered:
-        pr.receipt_status = "partial"
-        pr.status = "partially_received"
-    else:
-        pr.receipt_status = "received"
-        pr.status = "received"
-
-    _write_audit(db, pr.id, "receipt_updated", user,
-                 summary=f"{user.name or user.email} recorded receipt of {received}/{ordered} for {pr.p2p_number}.",
-                 old_status=old_status, new_status=pr.status)
-
-    db.commit()
-    db.refresh(pr)
-    return _to_response(db, pr)
+# Receiving used to be a single flat "update-receipt" call directly on the
+# PR (no line items, no quality inspection). Replaced by the proper
+# per-PO, per-line-item Goods Receipt flow — see
+# app/modules/p2p/routes/goods_receipts.py — which writes back onto this
+# PR's ordered_quantity/received_quantity/receipt_status/grn_number fields
+# once a receipt is quality-inspected, so /close's status gate below still
+# works unchanged.
 
 
 @router.post("/{pr_id}/close", response_model=P2PRequestResponse)

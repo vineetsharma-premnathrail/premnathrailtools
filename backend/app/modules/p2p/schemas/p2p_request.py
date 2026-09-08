@@ -113,13 +113,6 @@ class P2PRequestCreatePOPayload(BaseModel):
     ordered_quantity: float | None = None
 
 
-class P2PRequestReceivePayload(BaseModel):
-    received_quantity: float
-    grn_number: str | None = None
-    receipt_date: date | None = None
-    receiving_remarks: str | None = None
-
-
 class P2PRequestResponse(BaseModel):
     model_config = {"from_attributes": True}
 

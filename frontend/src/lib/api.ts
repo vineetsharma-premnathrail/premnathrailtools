@@ -753,11 +753,6 @@ export const p2pApi = {
     return data
   },
 
-  updateReceipt: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post(`/p2p/requests/${id}/update-receipt`, payload)
-    return data
-  },
-
   linkItemToStock: async (id: number, itemId: number, stockItemId: number | null) => {
     const { data } = await apiClient.patch(`/p2p/requests/${id}/items/${itemId}/stock-link`, { stock_item_id: stockItemId })
     return data
@@ -946,6 +941,33 @@ export const purchaseOrdersApi = {
 
   update: async (id: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch(`/p2p/purchase-orders/${id}`, payload)
+    return data
+  },
+}
+
+export const goodsReceiptsApi = {
+  list: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/p2p/goods-receipts', { params })
+    return data
+  },
+
+  get: async (id: number) => {
+    const { data } = await apiClient.get(`/p2p/goods-receipts/${id}`)
+    return data
+  },
+
+  listPendingPurchaseOrders: async () => {
+    const { data } = await apiClient.get('/p2p/goods-receipts/pending-purchase-orders')
+    return data
+  },
+
+  create: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/p2p/goods-receipts', payload)
+    return data
+  },
+
+  inspect: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/p2p/goods-receipts/${id}/inspect`, payload)
     return data
   },
 }

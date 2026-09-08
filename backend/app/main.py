@@ -29,6 +29,7 @@ from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseO
 from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
+from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem,
@@ -52,6 +53,7 @@ from app.modules.erp.routes import service_requests as erp_sr_routes
 from app.modules.p2p.routes import p2p_requests as p2p_requests_routes
 from app.modules.p2p.routes import purchase_orders as p2p_purchase_orders_routes
 from app.modules.p2p.routes import rfq as p2p_rfq_routes
+from app.modules.p2p.routes import goods_receipts as p2p_goods_receipts_routes
 from app.modules.store.routes import locations as store_locations_routes
 from app.modules.crm.routes import organizations as crm_organizations_routes
 from app.modules.crm.routes import inquiries as crm_inquiries_routes
@@ -122,6 +124,7 @@ app.include_router(erp_sr_routes.router, prefix="/api/v1")
 app.include_router(p2p_requests_routes.router, prefix="/api/v1")
 app.include_router(p2p_purchase_orders_routes.router, prefix="/api/v1")
 app.include_router(p2p_rfq_routes.router, prefix="/api/v1")
+app.include_router(p2p_goods_receipts_routes.router, prefix="/api/v1")
 app.include_router(store_locations_routes.router, prefix="/api/v1")
 app.include_router(crm_organizations_routes.router, prefix="/api/v1")
 app.include_router(crm_inquiries_routes.router, prefix="/api/v1")

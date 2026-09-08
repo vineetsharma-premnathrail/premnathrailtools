@@ -29,6 +29,7 @@ from app.modules.erp.models.service_material_attachment import ServiceMaterialAt
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
+from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem,
     Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity,

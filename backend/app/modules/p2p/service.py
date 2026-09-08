@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 from app.modules.p2p.models.rfq import RFQ
+from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt
 
 
 def generate_p2p_number(db: Session, category_code: str) -> str:
@@ -41,6 +42,19 @@ def generate_rfq_number(db: Session) -> str:
     prefix = f"RFQ-{year}-"
     last = db.query(func.max(RFQ.rfq_number)).filter(
         RFQ.rfq_number.like(f"{prefix}%")
+    ).scalar()
+    if last:
+        last_num = int(last.rsplit("-", 1)[-1])
+        return f"{prefix}{last_num + 1:04d}"
+    return f"{prefix}0001"
+
+
+def generate_grn_number(db: Session) -> str:
+    """GRN-[YEAR]-[NUMBER], sequence scoped per year."""
+    year = date.today().year
+    prefix = f"GRN-{year}-"
+    last = db.query(func.max(P2PGoodsReceipt.grn_number)).filter(
+        P2PGoodsReceipt.grn_number.like(f"{prefix}%")
     ).scalar()
     if last:
         last_num = int(last.rsplit("-", 1)[-1])

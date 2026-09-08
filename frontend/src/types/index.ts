@@ -979,3 +979,53 @@ export interface P2PPurchaseOrder {
   items: P2PPurchaseOrderItem[]
 }
 
+export interface P2PGoodsReceiptItem {
+  id: number
+  po_item_id: number
+  item_name: string
+  unit?: string
+  ordered_quantity: number
+  received_quantity: number
+  accepted_quantity?: number
+  rejected_quantity?: number
+  quality_status: 'pending' | 'passed' | 'failed' | 'partial'
+  rejection_reason?: string
+  remarks?: string
+}
+
+export interface P2PGoodsReceiptItemInput {
+  po_item_id: number
+  received_quantity: number
+}
+
+export interface P2PGoodsReceipt {
+  id: number
+  grn_number: string
+  purchase_order_id: number
+  po_number?: string
+  p2p_request_id?: number
+  p2p_number?: string
+  vendor_name?: string
+  store_location_id?: number
+  store_location_name?: string
+  status: 'draft' | 'completed'
+  received_date: string
+  received_by_id?: number
+  received_by_name?: string
+  remarks?: string
+  inspected_by_id?: number
+  inspected_by_name?: string
+  inspected_at?: string
+  created_at?: string
+  items: P2PGoodsReceiptItem[]
+}
+
+export interface P2PReceivablePurchaseOrder {
+  id: number
+  po_number: string
+  vendor_name?: string
+  p2p_number?: string
+  status: string
+  items: { id: number; item_name: string; unit?: string; quantity: number }[]
+}
+
