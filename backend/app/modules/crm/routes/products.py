@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -36,9 +37,21 @@ async def create_product(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("crm")),
 ):
+    clash = db.query(Product).filter(
+        Product.is_deleted == False,  # noqa: E712
+        Product.name.ilike(payload.name),
+        Product.model_number.ilike(payload.model_number) if payload.model_number else Product.model_number.is_(None),
+    ).first()
+    if clash:
+        raise HTTPException(status_code=409, detail="A product with this name and model number already exists")
+
     product = Product(**payload.model_dump(), created_by_id=user.id, created_at=datetime.now(timezone.utc))
     db.add(product)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="A product with this name and model number already exists")
     db.refresh(product)
     return product
 

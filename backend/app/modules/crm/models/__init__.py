@@ -1,5 +1,5 @@
 from app.modules.crm.models.organization import Organization, OrgContact
-from app.modules.crm.models.inquiry import Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem
+from app.modules.crm.models.inquiry import Inquiry, InquiryTask, InquiryApproval, InquiryLineItem, Quotation, QuotationLineItem
 from app.modules.crm.models.tender import Tender, TenderTask, TenderCompetitor
 from app.modules.crm.models.purchase_order import PurchaseOrder
 from app.modules.crm.models.activity import Activity
@@ -16,6 +16,7 @@ __all__ = [
     "Inquiry",
     "InquiryTask",
     "InquiryApproval",
+    "InquiryLineItem",
     "Quotation",
     "QuotationLineItem",
     "Tender",

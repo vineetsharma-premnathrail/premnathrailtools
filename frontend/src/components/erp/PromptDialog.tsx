@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useEscapeKey } from '@/hooks/useEscapeKey'
 
 export default function PromptDialog({
   open,
@@ -28,6 +29,7 @@ export default function PromptDialog({
   useEffect(() => {
     if (open) setValue('')
   }, [open])
+  useEscapeKey(open, onCancel)
 
   if (!open) return null
 

@@ -8,6 +8,8 @@ import { P2PGoodsReceipt } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, SUCCESS, DANGER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -47,7 +49,7 @@ export default function GoodsReceiptDetailPage() {
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState<Record<number, InspectionRow>>({})
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   const load = () => {
     goodsReceiptsApi.get(grnId).then((g: P2PGoodsReceipt) => {
@@ -94,9 +96,8 @@ export default function GoodsReceiptDetailPage() {
       })
       await goodsReceiptsApi.inspect(grn.id, { items })
       load()
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } }
-      setError(err.response?.data?.detail || 'Failed to complete quality inspection.')
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Failed to complete quality inspection.'))
     } finally {
       setBusy(false)
     }
@@ -118,11 +119,7 @@ export default function GoodsReceiptDetailPage() {
         <button onClick={() => router.push('/dashboard/p2p/grn')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Complete Inspection" message={error} onClose={() => setError('')} />
 
       <div style={sectionStyle}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, fontSize: 13 }}>
@@ -203,7 +200,7 @@ export default function GoodsReceiptDetailPage() {
 
         {isDraft && (
           <div style={{ marginTop: 16 }}>
-            <button disabled={busy} onClick={complete} style={primaryBtn}>{busy ? 'Completing…' : 'Complete Inspection'}</button>
+            <button disabled={busy} onClick={complete} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Completing…' : 'Complete Inspection'}</button>
           </div>
         )}
       </div>

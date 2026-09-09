@@ -6,10 +6,13 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 
 import { p2pApi } from '@/lib/api'
+import { formatDate } from '@/lib/format'
 import { P2PRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import PromptDialog from '@/components/erp/PromptDialog'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 
@@ -68,7 +71,7 @@ export default function MyP2PRequestDetailPage() {
 
   const [pr, setPr] = useState<P2PRequest | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
 
   const [activePanel, setActivePanel] = useState<'' | 'edit'>('')
@@ -117,9 +120,8 @@ export default function MyP2PRequestDetailPage() {
       await fn()
       setActivePanel('')
       await load()
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } }
-      setError(err.response?.data?.detail || 'Action failed.')
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Action failed.'))
     } finally {
       setBusy(false)
     }
@@ -206,11 +208,7 @@ export default function MyP2PRequestDetailPage() {
         </div>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Complete Action" message={error} onClose={() => setError('')} />
 
       {pr.status === 'rejected' && pr.rejected_reason && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -252,7 +250,7 @@ export default function MyP2PRequestDetailPage() {
               <textarea style={{ ...inputStyle, minHeight: 60 }} value={editRemarks} onChange={(e) => setEditRemarks(e.target.value)} />
             </div>
           </div>
-          <button disabled={busy} onClick={saveEdit} style={primaryBtn}>Save Changes</button>
+          <button disabled={busy} onClick={saveEdit} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>Save Changes</button>
         </div>
       )}
 
@@ -261,8 +259,8 @@ export default function MyP2PRequestDetailPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
           <InfoRow label="Department" value={pr.department || '—'} />
           <InfoRow label="Requested By" value={pr.requested_by_name || '—'} />
-          <InfoRow label="Request Date" value={new Date(pr.request_date).toLocaleDateString()} />
-          <InfoRow label="Required Date" value={pr.required_date ? new Date(pr.required_date).toLocaleDateString() : '—'} />
+          <InfoRow label="Request Date" value={formatDate(pr.request_date)} />
+          <InfoRow label="Required Date" value={formatDate(pr.required_date)} />
           <InfoRow label="Requirement Type" value={pr.requirement_type || '—'} />
           <InfoRow label="Priority" value={pr.priority} />
           <InfoRow label="Buyer" value={pr.assigned_buyer_name || '—'} />

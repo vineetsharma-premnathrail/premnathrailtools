@@ -5,10 +5,12 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
+import { formatDate } from '@/lib/format'
 import { Project, ServiceRequest, SRStatus } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import { inputStyle, pageBtnStyle } from '@/components/shared/ui'
 import Checkbox from '@/components/Checkbox'
+import MessageDialog from '@/components/erp/MessageDialog'
 
 const STATUS_LABELS: Record<SRStatus, string> = {
   open: 'Open / Reported',
@@ -74,7 +76,7 @@ export default function ServiceRequestsPage() {
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -170,11 +172,15 @@ export default function ServiceRequestsPage() {
         )}
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog
+        open={!!error}
+        variant="error"
+        title="Failed to Load Service Requests"
+        message={error}
+        onClose={() => setError('')}
+        actionLabel="Reload"
+        onAction={() => window.location.reload()}
+      />
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
         <input
@@ -254,10 +260,10 @@ export default function ServiceRequestsPage() {
                     </span>
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>
-                    {sr.opened_at ? new Date(sr.opened_at).toLocaleDateString() : '—'}
+                    {formatDate(sr.opened_at)}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>
-                    {sr.closed_at ? new Date(sr.closed_at).toLocaleDateString() : 'Open'}
+                    {sr.closed_at ? formatDate(sr.closed_at) : 'Open'}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{age !== null ? `${age}d` : '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>

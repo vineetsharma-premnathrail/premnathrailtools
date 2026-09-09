@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { notificationsApi } from '@/lib/api'
 import { Notification } from '@/types'
+import { useAuth } from '@/hooks/useAuth'
 
 const ENTITY_LINK: Record<string, (id: number) => string> = {
   service_request: (id) => `/dashboard/erp/service-requests/${id}`,
@@ -24,6 +25,7 @@ const DELETED_TYPE_LINK: Record<string, string> = {
 }
 
 export default function NotificationBell() {
+  const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -34,11 +36,17 @@ export default function NotificationBell() {
     notificationsApi.getUnreadCount().then((r) => setUnreadCount(r.count)).catch(() => {})
   }
 
+  // Only poll while actually signed in — otherwise this fires every 30s
+  // against a protected endpoint with no session, and enough stacked 401s
+  // (e.g. right after a refresh, before /auth/me settles, or while genuinely
+  // signed out) can trip the backend's anti-abuse IP ban and lock the user
+  // out of logging back in.
   useEffect(() => {
+    if (!user) return
     refreshCount()
     const interval = setInterval(refreshCount, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [user])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

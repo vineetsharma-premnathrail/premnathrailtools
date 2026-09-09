@@ -10,6 +10,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import FileUploadField from '@/components/shared/FileUploadField'
 import P2PNav from '@/components/p2p/P2PNav'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -76,7 +78,7 @@ export default function NewRfqPage() {
   const [requiresTechnicalEvaluation] = useState(false)
 
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -135,9 +137,8 @@ export default function NewRfqPage() {
       })
       await rfqApi.submit(rfq.id)
       router.push(`/dashboard/p2p/rfq/${rfq.id}`)
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } }
-      setError(err.response?.data?.detail || 'Failed to save RFQ.')
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Failed to save RFQ.'))
     } finally {
       setBusy(false)
     }
@@ -159,11 +160,7 @@ export default function NewRfqPage() {
         </button>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Save RFQ" message={error} onClose={() => setError('')} />
 
       {/* Step 1 — Purchase Requisition (compact) */}
       <div style={{ ...sectionStyle, padding: 16 }}>
@@ -275,7 +272,7 @@ export default function NewRfqPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <button disabled={busy} onClick={save} style={primaryBtn}>{busy ? 'Saving…' : 'Save RFQ'}</button>
+          <button disabled={busy} onClick={save} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Save RFQ'}</button>
           <button disabled={busy} onClick={() => router.push('/dashboard/p2p/rfq')} style={ghostBtn}>Cancel</button>
         </div>
       </div>

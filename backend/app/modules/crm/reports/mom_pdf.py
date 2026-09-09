@@ -22,6 +22,8 @@ try:
 except ImportError:
     SimpleDocTemplate = None
 
+from app.modules.crm.reports.quotation_pdf import _sentence_case
+
 LOGO_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "utils", "templates", "premnath_logo_mark.png")
 FONT_NAME = "Helvetica"
 FONT_NAME_BOLD = "Helvetica-Bold"
@@ -143,7 +145,7 @@ def build_mom_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
 
     # Subject / date.
     subject_date = Table(
-        [[bold(f"SUBJECT : {ctx.get('subject') or '-'}", size=13), bold(f"DATE: {ctx.get('meeting_date') or '-'}", size=12)]],
+        [[bold(f"SUBJECT : {_sentence_case(ctx.get('subject')) or '-'}", size=13), bold(f"DATE: {ctx.get('meeting_date') or '-'}", size=12)]],
         colWidths=[(COL_WIDTHS_IN[0] + COL_WIDTHS_IN[1]) * inch, (COL_WIDTHS_IN[2] + COL_WIDTHS_IN[3] + COL_WIDTHS_IN[4]) * inch],
         rowHeights=0.32 * inch,
     )
@@ -175,8 +177,8 @@ def build_mom_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     for i, activity in enumerate(activities):
         table_data.append([
             center(str(i + 1)),
-            plain(activity.get("observation") or "-"),
-            plain(activity.get("action_plan") or "-"),
+            plain(_sentence_case(activity.get("observation")) or "-"),
+            plain(_sentence_case(activity.get("action_plan")) or "-"),
             center(activity.get("responsibility") or "-"),
             center(activity.get("target") or "-"),
         ])

@@ -5,10 +5,13 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { rfqApi, purchaseOrdersApi } from '@/lib/api'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { RFQ, VendorQuotation, P2PPurchaseOrder } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -80,7 +83,7 @@ export default function RfqDetailPage() {
 
   const [rfq, setRfq] = useState<RFQ | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
 
@@ -92,7 +95,7 @@ export default function RfqDetailPage() {
 
   // Vendor Quotations -> Comparison -> Technical/Commercial Evaluation ->
   // Vendor Selection -> PO Draft.
-  const [pipelineError, setPipelineError] = useState('')
+  const [pipelineError, setPipelineError] = useState<string | string[]>('')
   const [pipelineBusy, setPipelineBusy] = useState(false)
   const [newVendorName, setNewVendorName] = useState('')
   const [newQuotedPrice, setNewQuotedPrice] = useState('')
@@ -154,9 +157,8 @@ export default function RfqDetailPage() {
       })
       setEditing(false)
       await load()
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } }
-      setError(err.response?.data?.detail || 'Failed to update RFQ.')
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Failed to update RFQ.'))
     } finally {
       setBusy(false)
     }
@@ -172,9 +174,8 @@ export default function RfqDetailPage() {
     try {
       await action()
       await load()
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } }
-      setPipelineError(err.response?.data?.detail || 'Action failed.')
+    } catch (err: any) {
+      setPipelineError(extractErrorMessages(err, 'Action failed.'))
     } finally {
       setPipelineBusy(false)
     }
@@ -226,11 +227,7 @@ export default function RfqDetailPage() {
         </div>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Update RFQ" message={error} onClose={() => setError('')} />
 
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Supplier / Vendor Quotations</h2>
@@ -285,7 +282,7 @@ export default function RfqDetailPage() {
               </>
             )}
             <div style={{ gridColumn: '1 / -1' }}>
-              <button disabled={busy} onClick={saveAdminEdit} style={primaryBtn}>Save Changes</button>
+              <button disabled={busy} onClick={saveAdminEdit} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>Save Changes</button>
             </div>
           </div>
         </div>
@@ -321,11 +318,7 @@ export default function RfqDetailPage() {
             <Pill label={PIPELINE_STATUS_LABELS[pipelineStatus] || pipelineStatus} color={PIPELINE_STATUS_HEX[pipelineStatus] || '#64748b'} />
           </div>
 
-          {pipelineError && (
-            <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-              {pipelineError}
-            </div>
-          )}
+          <MessageDialog open={!!pipelineError} variant="error" title="Cannot Complete Action" message={pipelineError} onClose={() => setPipelineError('')} />
 
           {/* Vendor Quotations entry */}
           {pipelineStatus === 'vendor_quotations' && (
@@ -349,7 +342,7 @@ export default function RfqDetailPage() {
                   <input style={inputStyle} value={newPaymentTerms} onChange={(e) => setNewPaymentTerms(e.target.value)} />
                 </div>
               </div>
-              <button disabled={pipelineBusy} onClick={addVendorQuotation} style={primaryBtn}>Add Quotation</button>
+              <button disabled={pipelineBusy} onClick={addVendorQuotation} style={{ ...primaryBtn, opacity: pipelineBusy ? 0.7 : 1 }}>Add Quotation</button>
             </div>
           )}
 
@@ -371,7 +364,7 @@ export default function RfqDetailPage() {
                       <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
                         {vq.vendor_name}{vq.is_selected && <span style={{ marginLeft: 6 }}><Pill label="Selected" color="#22c55e" /></span>}
                       </td>
-                      <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{vq.quoted_price != null ? vq.quoted_price.toLocaleString() : '—'}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{vq.quoted_price != null ? `₹${vq.quoted_price.toLocaleString()}` : '—'}</td>
                       <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{vq.delivery_time || '—'}</td>
                       <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{vq.payment_terms || '—'}</td>
                       <td style={{ padding: '8px 10px' }}><Pill label={TECHNICAL_STATUS_LABELS[vq.technical_status]} color={TECHNICAL_STATUS_HEX[vq.technical_status]} /></td>
@@ -434,8 +427,8 @@ export default function RfqDetailPage() {
               <h3 style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>P.O Draft — {poDraft.po_number}</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
                 <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
-                <InfoRow label="P.O Date" value={poDraft.po_date ? new Date(poDraft.po_date).toLocaleDateString() : '—'} />
-                <InfoRow label="Total Value" value={poDraft.total_value != null ? poDraft.total_value.toLocaleString() : '—'} />
+                <InfoRow label="P.O Date" value={formatDate(poDraft.po_date)} />
+                <InfoRow label="Total Value" value={poDraft.total_value != null ? `₹${poDraft.total_value.toLocaleString()}` : '—'} />
               </div>
               <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>
                 Line items and delivery terms can still be edited before submitting for approval.
@@ -450,8 +443,8 @@ export default function RfqDetailPage() {
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Details</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14 }}>
           <InfoRow label="Created By" value={rfq.created_by_name || '—'} />
-          <InfoRow label="Created At" value={rfq.created_at ? new Date(rfq.created_at).toLocaleString() : '—'} />
-          <InfoRow label="Locked At" value={rfq.locked_at ? new Date(rfq.locked_at).toLocaleString() : '—'} />
+          <InfoRow label="Created At" value={formatDateTime(rfq.created_at)} />
+          <InfoRow label="Locked At" value={formatDateTime(rfq.locked_at)} />
         </div>
       </div>
     </div>

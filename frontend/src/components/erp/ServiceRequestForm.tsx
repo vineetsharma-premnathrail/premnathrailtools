@@ -10,6 +10,8 @@ import PhoneField, { isPhoneValid } from './PhoneField'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
 import { inputStyle, Field, Section, Row, Row3 } from '@/components/shared/ui'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const PRIORITIES = [
   { value: 'critical', label: 'Critical', sub: 'Immediate response required', color: '#dc2626', bg: 'rgba(220,38,38,0.1)', icon: 'warning' },
@@ -113,7 +115,7 @@ export default function ServiceRequestForm({
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const submittingRef = useRef(false)
 
   // Legacy behavior: the assignee is always auto-filled with the creator's name — there's
@@ -173,7 +175,7 @@ export default function ServiceRequestForm({
       })
       await onSubmit(payload, queuedFiles)
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to save service request.')
+      setError(extractErrorMessages(err, 'Failed to save service request.'))
       submittingRef.current = false
     } finally {
       setSaving(false)
@@ -182,11 +184,7 @@ export default function ServiceRequestForm({
 
   return (
     <div>
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Save Service Request" message={error} onClose={() => setError('')} />
 
       <form onSubmit={handleSubmit} className="sr-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>

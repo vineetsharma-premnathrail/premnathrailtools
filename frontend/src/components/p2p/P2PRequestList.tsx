@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import { p2pApi } from '@/lib/api'
 import { P2PRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
+import { formatDate } from '@/lib/format'
 
 const STATUS_LABELS: Record<string, string> = {
   submitted: 'Submitted',
@@ -48,7 +51,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
   const router = useRouter()
   const [prs, setPrs] = useState<P2PRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const detailHref = (id: number) => (context ? `/dashboard/p2p/${id}?from=${context}` : `/dashboard/p2p/${id}`)
 
   useEffect(() => {
@@ -58,8 +61,8 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
       try {
         const data = await p2pApi.list({ limit: 500 })
         setPrs(statuses ? data.filter((pr: P2PRequest) => statuses.includes(pr.status)) : data)
-      } catch {
-        setError('Failed to load your Procure-to-Pay requests.')
+      } catch (err: any) {
+        setError(extractErrorMessages(err, 'Failed to load your Procure-to-Pay requests.'))
       } finally {
         setLoading(false)
       }
@@ -68,11 +71,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
 
   return (
     <div>
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Load Requests" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
       <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
@@ -97,7 +96,7 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{pr.p2p_number}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.category_label || pr.category_code}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{pr.project_label || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{pr.required_date ? new Date(pr.required_date).toLocaleDateString() : '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{formatDate(pr.required_date)}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, textTransform: 'capitalize' }}>{pr.priority}</td>
                 <td style={{ padding: '12px 16px' }}>
                   <span style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${status.hex}1a`, color: status.hex, whiteSpace: 'nowrap' }}>

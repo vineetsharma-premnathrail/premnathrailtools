@@ -8,6 +8,8 @@ import { TEXT, GLASS, SHADOWS, BORDER, SUCCESS } from '@/lib/theme'
 import StoreNav from '@/components/store/StoreNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { Field, Row, Section, inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 export default function StoreGrnPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -23,7 +25,7 @@ export default function StoreGrnPage() {
   const [quantity, setQuantity] = useState('')
   const [remarks, setRemarks] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [formError, setFormError] = useState('')
+  const [formError, setFormError] = useState<string | string[]>('')
 
   const load = async () => {
     setLoading(true)
@@ -65,9 +67,8 @@ export default function StoreGrnPage() {
       })
       resetForm()
       await load()
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } }
-      setFormError(err.response?.data?.detail || 'Failed to post GRN entry.')
+    } catch (err: any) {
+      setFormError(extractErrorMessages(err, 'Failed to post GRN entry.'))
     } finally {
       setSubmitting(false)
     }
@@ -101,11 +102,22 @@ export default function StoreGrnPage() {
         )}
       </div>
 
-      {(error || formError) && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error || formError}
-        </div>
-      )}
+      <MessageDialog
+        open={!!error}
+        variant="error"
+        title="Failed to Load GRN Entries"
+        message={error}
+        onClose={() => setError('')}
+        actionLabel="Reload"
+        onAction={() => window.location.reload()}
+      />
+      <MessageDialog
+        open={Array.isArray(formError) ? formError.length > 0 : !!formError}
+        variant="error"
+        title="Cannot Post GRN Entry"
+        message={formError}
+        onClose={() => setFormError('')}
+      />
 
       {showForm ? (
         <div style={{ width: '100%' }}>

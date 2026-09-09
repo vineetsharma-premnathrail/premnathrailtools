@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { erpApi } from '@/lib/api'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { AuditEntry, Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -12,6 +13,8 @@ import FileUploadPreview from '@/components/FileUploadPreview'
 import CameraCapture from '@/components/CameraCapture'
 import Link from 'next/link'
 import { inputStyle, Field, Card, InfoRow } from '@/components/shared/ui'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 // Every non-terminal-branch SRStatus, in the order they normally happen —
 // must stay in sync with the full SRStatus union (types/index.ts) and the
@@ -42,7 +45,7 @@ export default function ServiceRequestDetailPage() {
   const [sr, setSr] = useState<ServiceRequest | null>(null)
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const [tab, setTab] = useState<typeof TABS[number]>('Overview')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pendingStatus, setPendingStatus] = useState<string | null>(null)
@@ -78,7 +81,7 @@ export default function ServiceRequestDetailPage() {
       const updated = await erpApi.updateServiceRequest(sr.id, payload)
       setSr(updated)
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Update failed.')
+      setError(extractErrorMessages(err, 'Update failed.'))
     }
   }
 
@@ -88,14 +91,14 @@ export default function ServiceRequestDetailPage() {
       await erpApi.deleteServiceRequest(sr.id)
       router.push('/dashboard/erp/service-requests')
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to delete service request.')
+      setError(extractErrorMessages(err, 'Failed to delete service request.'))
       setShowDeleteConfirm(false)
     }
   }
 
   if (isLoading || !isAuthorized) return null
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
-  if (error && !sr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
+  if (error && !sr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{Array.isArray(error) ? error.join(' ') : error}</p>
   if (!sr) return null
 
   return (
@@ -124,11 +127,7 @@ export default function ServiceRequestDetailPage() {
         </div>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Action Failed" message={error} onClose={() => setError('')} />
 
       <WorkflowSteps status={sr.status} canModify={canEdit && !sr.is_locked} onRequestChange={setPendingStatus} />
 
@@ -298,7 +297,7 @@ function OverviewTab({ sr, project, canModify, onPatch }: { sr: ServiceRequest; 
         <Card title="Asset Context">
           <InfoRow label="Machine" value={project ? `${project.serial_number}${project.model_name ? ` — ${project.model_name}` : ''}` : 'Not provided'} />
           <InfoRow label="Site / Location" value={project?.site_name || 'Not provided'} />
-          <InfoRow label="Request Date" value={sr.created_at ? new Date(sr.created_at).toLocaleDateString() : 'Not provided'} />
+          <InfoRow label="Request Date" value={sr.created_at ? formatDate(sr.created_at) : 'Not provided'} />
         </Card>
 
         <Card title="Assignment">
@@ -310,10 +309,10 @@ function OverviewTab({ sr, project, canModify, onPatch }: { sr: ServiceRequest; 
               <span style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108' }}>{sr.assigned_to_name}</span>
             </div>
           )}
-          <InfoRow label="Opened" value={sr.opened_at ? new Date(sr.opened_at).toLocaleDateString() : 'Not provided'} />
+          <InfoRow label="Opened" value={sr.opened_at ? formatDate(sr.opened_at) : 'Not provided'} />
           <InfoRow label="Expected Attend" value={sr.expected_date_to_attend || 'Not provided'} />
           <InfoRow label="Expected Close" value={sr.expected_completion_date || 'Not provided'} />
-          <InfoRow label="Closed" value={sr.closed_at ? new Date(sr.closed_at).toLocaleDateString() : 'Not provided'} />
+          <InfoRow label="Closed" value={sr.closed_at ? formatDate(sr.closed_at) : 'Not provided'} />
         </Card>
 
         <Card title="Service Notes">
@@ -895,7 +894,7 @@ function AuditTab({ srId }: { srId: number }) {
         <div key={e.id} style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
             <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108' }}>{e.performed_by}</span>
-            <span style={{ fontSize: 11.5, color: '#a8a29e' }}>{e.performed_at ? new Date(e.performed_at).toLocaleString() : ''}</span>
+            <span style={{ fontSize: 11.5, color: '#a8a29e' }}>{e.performed_at ? formatDateTime(e.performed_at) : ''}</span>
           </div>
           <p style={{ fontSize: 13, color: '#57534e', margin: 0 }}>{e.summary || e.action}</p>
         </div>

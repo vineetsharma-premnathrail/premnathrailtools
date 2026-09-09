@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { crmApi } from '@/lib/api'
 import { Organization } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
 import OrganizationDetailPanel from '@/components/crm/OrganizationDetailPanel'
+import ErrorRecoveryDialog from '@/components/erp/ErrorRecoveryDialog'
 import { secondaryBtnStyle, pageBtnStyle } from '@/components/crm/ui'
 import { BRAND, TEXT } from '@/lib/theme'
+import { formatDate } from '@/lib/format'
 
 const PAGE_SIZE = 16
 const PINNED_ORGS_KEY = 'crm_pinned_org_ids'
@@ -24,14 +27,32 @@ const panelOuterStyle: React.CSSProperties = {
   overflow: 'hidden',
 }
 
+type DuplicateOrgRow = {
+  id: number
+  org_code: string | null
+  gst_number: string | null
+  city: string | null
+  state: string | null
+  created_at: string | null
+  inquiry_count: number
+  tender_count: number
+}
+type DuplicateOrgGroup = { name: string; organizations: DuplicateOrgRow[] }
+
 export default function OrganizationsPage() {
-  const { isAuthorized, isLoading } = useRequireApp('crm')
+  const { user, isAuthorized, isLoading } = useRequireApp('crm')
   const router = useRouter()
   const searchParams = useSearchParams()
   const [orgs, setOrgs] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
+
+  const isAdmin = user?.role === 'admin'
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateOrgGroup[]>([])
+  const [showDuplicates, setShowDuplicates] = useState(false)
+  useEscapeKey(showDuplicates, () => setShowDuplicates(false))
 
   const [search, setSearch] = useState('')
   const [pinnedIds, setPinnedIds] = useState<number[]>([])
@@ -66,9 +87,10 @@ export default function OrganizationsPage() {
       setOrgs(data)
       setPage(1)
     } catch {
-      setError('Failed to load organizations.')
+      setError('Failed to load organizations. The server did not respond, or your connection was interrupted.')
     } finally {
       setLoading(false)
+      setHasLoadedOnce(true)
     }
   }
 
@@ -76,6 +98,14 @@ export default function OrganizationsPage() {
     if (isAuthorized) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
+
+  useEffect(() => {
+    if (!isAuthorized || !isAdmin) return
+    crmApi.getDuplicateOrganizations()
+      .then((data) => setDuplicateGroups(data.groups || []))
+      .catch(() => setDuplicateGroups([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthorized, isAdmin])
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -181,13 +211,66 @@ export default function OrganizationsPage() {
           </Link>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{sortedOrgs.length} Organizations Found</p>
         </div>
+        {isAdmin && duplicateGroups.length > 0 && (
+          <button
+            onClick={() => setShowDuplicates(true)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
+              padding: '8px 14px', borderRadius: 9, border: '1px solid #fecaca', background: '#fef2f2',
+              color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            ⚠ {duplicateGroups.length} duplicate organization {duplicateGroups.length === 1 ? 'name' : 'names'} found — review
+          </button>
+        )}
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
+      {showDuplicates && (
+        <div
+          onClick={() => setShowDuplicates(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 14, maxWidth: 720, width: '100%', maxHeight: '80vh', overflow: 'auto', padding: 22 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: TEXT.heading }}>Duplicate Organizations</h2>
+              <button onClick={() => setShowDuplicates(false)} aria-label="Close" style={{ border: 'none', background: 'transparent', fontSize: 18, cursor: 'pointer', color: '#a8a29e', lineHeight: 1 }}>✕</button>
+            </div>
+            <p style={{ fontSize: 12.5, color: '#78716c', marginTop: 0 }}>
+              These organizations share the same name. Nothing has been changed automatically — review each group and merge/delete manually via each organization&apos;s detail page once you&apos;ve confirmed which one to keep.
+            </p>
+            {duplicateGroups.map((group) => (
+              <div key={group.name} style={{ border: '1px solid #f0e4d8', borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: '#FF7A45', marginBottom: 8 }}>{group.name}</div>
+                {group.organizations.map((o) => (
+                  <div
+                    key={o.id}
+                    onClick={() => { setShowDuplicates(false); openOrg(o.id) }}
+                    style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, padding: '6px 0', borderTop: '1px solid #f5f5f4', cursor: 'pointer' }}
+                  >
+                    <span style={{ color: '#57534e' }}>
+                      #{o.id} · {o.org_code || 'no code'} · {o.city || '—'}, {o.state || '—'}
+                      {o.gst_number ? ` · GST ${o.gst_number}` : ''}
+                    </span>
+                    <span style={{ color: '#78716c', whiteSpace: 'nowrap' }}>
+                      {o.inquiry_count} inquiries · {o.tender_count} tenders
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
+
+      <ErrorRecoveryDialog
+        open={!!error}
+        title="Failed to Load Organizations"
+        message={`${error} Please refresh the page. If the issue persists, reload the application and try again.`}
+        onClose={() => setError('')}
+      />
     </>
   )
 
@@ -257,10 +340,10 @@ export default function OrganizationsPage() {
               )}
             </tr>
           </thead>
-          <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+          <tbody style={{ opacity: loading && hasLoadedOnce ? 0.5 : 1, transition: 'opacity .15s' }}>
+            {loading && !hasLoadedOnce && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
             {!loading && paged.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No organizations found.</td></tr>}
-            {paged.map((o) => {
+            {(!loading || hasLoadedOnce) && paged.map((o) => {
               const pinned = pinnedIds.includes(o.id)
               return (
               <tr key={o.id} onClick={() => openOrg(o.id)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
@@ -269,7 +352,7 @@ export default function OrganizationsPage() {
                     <button
                       onClick={(e) => togglePin(o.id, e)}
                       title={pinned ? 'Unpin organization' : 'Pin organization to top'}
-                      style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+                      style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 8, margin: -8, display: 'flex', alignItems: 'center', borderRadius: 6 }}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? '#FF7A45' : 'none'} stroke={pinned ? '#FF7A45' : '#a8a29e'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z" />
@@ -277,16 +360,16 @@ export default function OrganizationsPage() {
                     </button>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>{o.name}</span>
-                      <span style={{ fontSize: 11, color: '#a8a29e' }}>{o.org_code || 'Not provided'}</span>
+                      <span style={{ fontSize: 11, color: '#a8a29e' }}>{o.org_code || '—'}</span>
                     </div>
                   </div>
                 </td>
-                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.org_type || 'Not provided'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.railway_zone || 'Not provided'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.city || 'Not provided'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{o.state || 'Not provided'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : 'Not provided'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.created_by_name || 'Not provided'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.org_type || undefined}>{o.org_type || '—'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.railway_zone || undefined}>{o.railway_zone || '—'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.city || undefined}>{o.city || '—'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.state || undefined}>{o.state || '—'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{formatDate(o.created_at)}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.created_by_name || '—'}</td>
               </tr>
               )
             })}
@@ -339,7 +422,7 @@ export default function OrganizationsPage() {
   return (
     <div>
       <CrmNav />
-      <OrganizationDetailPanel key={selectedId} orgId={selectedId} onDeleted={() => router.push('/dashboard/crm/organizations')} />
+      <OrganizationDetailPanel key={selectedId} orgId={selectedId} onDeleted={() => { load(); router.push('/dashboard/crm/organizations') }} />
     </div>
   )
 }

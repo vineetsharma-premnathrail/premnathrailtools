@@ -12,6 +12,8 @@ import TenderDetailPanel from '@/components/crm/TenderDetailPanel'
 import { secondaryBtnStyle, pageBtnStyle } from '@/components/crm/ui'
 import { inquiryStatusColor } from '@/components/crm/constants'
 import { BRAND, TEXT } from '@/lib/theme'
+import { formatDate } from '@/lib/format'
+import MessageDialog from '@/components/erp/MessageDialog'
 
 const PAGE_SIZE = 16
 const PINNED_KEY = 'crm_pinned_inquiry_tender_keys'
@@ -247,11 +249,15 @@ export default function InquiriesPage() {
         </div>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog
+        open={!!error}
+        variant="error"
+        title="Failed to Load Inquiries & Tenders"
+        message={error}
+        onClose={() => setError('')}
+        actionLabel="Reload"
+        onAction={() => window.location.reload()}
+      />
     </>
   )
 
@@ -378,7 +384,7 @@ export default function InquiriesPage() {
                   )}
                 </td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.secondary}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : new Date(r.created_at).toLocaleDateString()}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : formatDate(r.created_at)}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_by_name}</td>
               </tr>
               )
@@ -432,9 +438,9 @@ export default function InquiriesPage() {
     <div>
       <CrmNav />
       {selectedType === 'tender' ? (
-        <TenderDetailPanel key={`tender-${selectedId}`} tenderId={selectedId} onDeleted={() => router.push('/dashboard/crm/inquiries')} />
+        <TenderDetailPanel key={`tender-${selectedId}`} tenderId={selectedId} onDeleted={() => { load(); router.push('/dashboard/crm/inquiries') }} />
       ) : (
-        <InquiryDetailPanel key={`inquiry-${selectedId}`} inquiryId={selectedId} onDeleted={() => router.push('/dashboard/crm/inquiries')} />
+        <InquiryDetailPanel key={`inquiry-${selectedId}`} inquiryId={selectedId} onDeleted={() => { load(); router.push('/dashboard/crm/inquiries') }} />
       )}
     </div>
   )

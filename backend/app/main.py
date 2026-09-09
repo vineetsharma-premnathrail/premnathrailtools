@@ -32,7 +32,7 @@ from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.crm.models import (
-    Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem,
+    Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, InquiryLineItem, Quotation, QuotationLineItem,
     Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity,
     CrmDocument, CrmDiscussion, CrmStageLog, Product, PaymentTerm,
 )
@@ -64,6 +64,7 @@ from app.modules.crm.routes import workflow as crm_workflow_routes
 from app.modules.crm.routes import dashboard as crm_dashboard_routes
 from app.modules.crm.routes import products as crm_products_routes
 from app.modules.crm.routes import payment_terms as crm_payment_terms_routes
+from app.modules.crm.routes import product_categories as crm_product_categories_routes
 from app.modules.rnd.routes import calculations as rnd_calculations_routes
 from app.modules.rnd.routes import history as rnd_history_routes
 from app.modules.organization.routes import branch as organization_branch_routes
@@ -135,6 +136,7 @@ app.include_router(crm_workflow_routes.router, prefix="/api/v1")
 app.include_router(crm_dashboard_routes.router, prefix="/api/v1")
 app.include_router(crm_products_routes.router, prefix="/api/v1")
 app.include_router(crm_payment_terms_routes.router, prefix="/api/v1")
+app.include_router(crm_product_categories_routes.router, prefix="/api/v1")
 app.include_router(notifications_routes.router, prefix="/api/v1")
 app.include_router(feedback_routes.router, prefix="/api/v1")
 app.include_router(api_keys_routes.router, prefix="/api/v1")

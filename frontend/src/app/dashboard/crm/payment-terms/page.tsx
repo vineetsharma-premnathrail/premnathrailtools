@@ -6,6 +6,8 @@ import { crmApi } from '@/lib/api'
 import CrmNav from '@/components/crm/CrmNav'
 import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, inputStyle } from '@/components/crm/ui'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 interface PaymentTerm {
   id: number
@@ -19,14 +21,16 @@ export default function PaymentTermsPage() {
   const { isAuthorized, isLoading } = useRequireApp('crm')
   const [terms, setTerms] = useState<PaymentTerm[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
+  const [errorTitle, setErrorTitle] = useState('Cannot Save Payment Term')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyForm)
+  const [saving, setSaving] = useState(false)
 
   const load = () => {
     setLoading(true)
-    crmApi.listPaymentTerms().then(setTerms).catch(() => setError('Failed to load payment terms.')).finally(() => setLoading(false))
+    crmApi.listPaymentTerms().then(setTerms).catch(() => { setErrorTitle('Failed to Load Payment Terms'); setError('Failed to load payment terms.') }).finally(() => setLoading(false))
   }
 
   useEffect(() => { if (isAuthorized) load() }, [isAuthorized])
@@ -44,18 +48,28 @@ export default function PaymentTermsPage() {
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setSaving(true)
     try {
       if (editingId) await crmApi.updatePaymentTerm(editingId, form)
       else await crmApi.createPaymentTerm(form)
       cancelForm()
       load()
-    } catch {
-      setError('Failed to save payment term.')
+    } catch (err: any) {
+      setErrorTitle('Cannot Save Payment Term')
+      setError(extractErrorMessages(err, 'Failed to save payment term.'))
+    } finally {
+      setSaving(false)
     }
   }
 
   const remove = async (id: number) => {
-    try { await crmApi.deletePaymentTerm(id); load() } catch { setError('Failed to delete payment term.') }
+    try {
+      await crmApi.deletePaymentTerm(id)
+      load()
+    } catch (err: any) {
+      setErrorTitle('Cannot Delete Payment Term')
+      setError(extractErrorMessages(err, 'Failed to delete payment term.'))
+    }
   }
 
   return (
@@ -71,11 +85,13 @@ export default function PaymentTermsPage() {
         </button>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog
+        open={Array.isArray(error) ? error.length > 0 : !!error}
+        variant="error"
+        title={errorTitle}
+        message={error}
+        onClose={() => setError('')}
+      />
 
       {showForm && (
         <form onSubmit={save} style={{ marginBottom: 20, padding: 16, borderRadius: 14, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -87,7 +103,7 @@ export default function PaymentTermsPage() {
             <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Description / Terms Text</label>
             <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
           </div>
-          <div><button type="submit" style={primaryBtnStyle}>{editingId ? 'Save Changes' : 'Save Payment Term'}</button></div>
+          <div><button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Payment Term'}</button></div>
         </form>
       )}
 

@@ -1,5 +1,7 @@
 'use client'
 
+import { useEscapeKey } from '@/hooks/useEscapeKey'
+
 export default function ConfirmDialog({
   open,
   title,
@@ -19,6 +21,7 @@ export default function ConfirmDialog({
   onConfirm: () => void
   onCancel: () => void
 }) {
+  useEscapeKey(open, onCancel)
   if (!open) return null
 
   return (

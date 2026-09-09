@@ -6,6 +6,7 @@ import { usersApi, modulesApi } from '@/lib/api'
 import { User, ModuleMeta } from '@/types'
 import FeedbackBell from '@/components/FeedbackBell'
 import Checkbox from '@/components/Checkbox'
+import MessageDialog from '@/components/erp/MessageDialog'
 
 export default function UsersRolesPage() {
   const { user: currentUser, isAuthorized, isLoading } = useRequireAdmin()
@@ -16,6 +17,7 @@ export default function UsersRolesPage() {
   const [APPS, setAPPS] = useState<{ id: string; label: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [errorTitle, setErrorTitle] = useState('')
 
   const [search, setSearch] = useState('')
   const [editingUser, setEditingUser] = useState<User | null>(null)
@@ -24,10 +26,12 @@ export default function UsersRolesPage() {
   const load = async () => {
     setLoading(true)
     setError('')
+    setErrorTitle('')
     try {
       const data = await usersApi.list()
       setUsers(data)
     } catch {
+      setErrorTitle('Failed to Load Users')
       setError('Failed to load users.')
     } finally {
       setLoading(false)
@@ -85,10 +89,12 @@ export default function UsersRolesPage() {
   const handleSyncAzure = async () => {
     setSyncing(true)
     setError('')
+    setErrorTitle('')
     try {
       const data = await usersApi.syncAzure()
       setUsers(data)
     } catch {
+      setErrorTitle('Azure Sync Failed')
       setError('Azure sync failed. Check that the app has directory-read permission in Azure AD.')
     } finally {
       setSyncing(false)
@@ -109,11 +115,13 @@ export default function UsersRolesPage() {
         <FeedbackBell />
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog
+        open={!!error}
+        variant="error"
+        title={errorTitle || 'Failed to Load Users'}
+        message={error}
+        onClose={() => setError('')}
+      />
 
       {/* Stat cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>

@@ -7,6 +7,7 @@ import { organizationApi } from '@/lib/api'
 import { Branch, Department, DepartmentMember } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
+import MessageDialog from '@/components/erp/MessageDialog'
 
 export default function OrganizationDepartmentPage() {
   const { isAuthorized, isLoading } = useRequireAdmin()
@@ -102,11 +103,15 @@ export default function OrganizationDepartmentPage() {
         Auto-populated from Azure AD on sign-in and admin Azure sync — see Organization &gt; Role &amp; Permissions &gt; Sync Azure Users.
       </p>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog
+        open={!!error}
+        variant="error"
+        title="Failed to Load Departments"
+        message={error}
+        onClose={() => setError('')}
+        actionLabel="Reload"
+        onAction={() => window.location.reload()}
+      />
 
       <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
        <div style={{ overflow: 'auto' }}>

@@ -270,6 +270,8 @@ export interface OrgContact {
   designation?: string
   mobile?: string
   email?: string
+  additional_mobiles?: string[]
+  additional_emails?: string[]
   department?: string
   created_by_id?: number
   created_at?: string
@@ -291,6 +293,8 @@ export interface Organization {
   gst_number?: string
   official_phone?: string
   official_email?: string
+  additional_phones?: string[]
+  additional_emails?: string[]
   website?: string
   created_by_id?: number
   created_by_name?: string
@@ -304,6 +308,21 @@ export interface OrganizationDetail extends Organization {
   contacts: OrgContact[]
   inquiry_count: number
   tender_count: number
+}
+
+export interface InquiryLineItem {
+  id: number
+  product?: string
+  product_category?: string
+  product_spec?: string
+  quantity?: number
+}
+
+export interface InquiryLineItemInput {
+  product?: string
+  product_category?: string
+  product_spec?: string
+  quantity?: number
 }
 
 export interface Inquiry {
@@ -322,6 +341,7 @@ export interface Inquiry {
   product_category?: string
   product_spec?: string
   quantity?: number
+  additional_items?: InquiryLineItem[]
   required_delivery_date?: string
   delivery_location?: string
   requirement_desc?: string
@@ -361,6 +381,9 @@ export interface Tender {
   currency: string
   status: string
   current_stage: string
+  lead_source?: string
+  priority?: string
+  bd_owner?: string
   railway_zone?: string
   division?: string
   workshop?: string

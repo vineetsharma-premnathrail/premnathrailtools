@@ -6,6 +6,8 @@ import { crmApi } from '@/lib/api'
 import CrmNav from '@/components/crm/CrmNav'
 import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, inputStyle } from '@/components/crm/ui'
 import { BRAND, TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 interface Product {
   id: number
@@ -23,14 +25,16 @@ export default function ProductsPage() {
   const { isAuthorized, isLoading } = useRequireApp('crm')
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyForm)
+  const [saving, setSaving] = useState(false)
+  const [errorTitle, setErrorTitle] = useState('Cannot Save Product')
 
   const load = () => {
     setLoading(true)
-    crmApi.listProducts().then(setProducts).catch(() => setError('Failed to load products.')).finally(() => setLoading(false))
+    crmApi.listProducts().then(setProducts).catch(() => { setErrorTitle('Failed to Load Products'); setError('Failed to load products.') }).finally(() => setLoading(false))
   }
 
   useEffect(() => { if (isAuthorized) load() }, [isAuthorized])
@@ -52,18 +56,28 @@ export default function ProductsPage() {
     e.preventDefault()
     setError('')
     const payload = { ...form, default_price: form.default_price ? Number(form.default_price) : undefined }
+    setSaving(true)
     try {
       if (editingId) await crmApi.updateProduct(editingId, payload)
       else await crmApi.createProduct(payload)
       cancelForm()
       load()
-    } catch {
-      setError('Failed to save product.')
+    } catch (err: any) {
+      setErrorTitle('Cannot Save Product')
+      setError(extractErrorMessages(err, 'Failed to save product.'))
+    } finally {
+      setSaving(false)
     }
   }
 
   const remove = async (id: number) => {
-    try { await crmApi.deleteProduct(id); load() } catch { setError('Failed to delete product.') }
+    try {
+      await crmApi.deleteProduct(id)
+      load()
+    } catch (err: any) {
+      setErrorTitle('Cannot Delete Product')
+      setError(extractErrorMessages(err, 'Failed to delete product.'))
+    }
   }
 
   return (
@@ -79,11 +93,13 @@ export default function ProductsPage() {
         </button>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog
+        open={Array.isArray(error) ? error.length > 0 : !!error}
+        variant="error"
+        title={errorTitle}
+        message={error}
+        onClose={() => setError('')}
+      />
 
       {showForm && (
         <form onSubmit={save} style={{ marginBottom: 20, padding: 16, borderRadius: 14, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -112,7 +128,7 @@ export default function ProductsPage() {
             <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
           </div>
           <div style={{ flex: '1 1 100%' }}>
-            <button type="submit" style={primaryBtnStyle}>{editingId ? 'Save Changes' : 'Save Product'}</button>
+            <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Product'}</button>
           </div>
         </form>
       )}

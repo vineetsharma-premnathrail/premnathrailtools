@@ -13,6 +13,8 @@ import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
 import { TND_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, DOC_CATEGORIES, tenderStatusColor } from '@/components/crm/constants'
 import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, handleEnterAsTab } from '@/components/crm/ui'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const TABS = ['Info', 'Dates', 'Documents', 'Follow Ups', 'Timeline'] as const
 
@@ -23,7 +25,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   const [tender, setTender] = useState<Tender | null>(null)
   const [org, setOrg] = useState<Organization | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const [tab, setTab] = useState<typeof TABS[number]>('Info')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pendingStage, setPendingStage] = useState<string | null>(null)
@@ -31,7 +33,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   const [revisions, setRevisions] = useState<SpecRevision[]>([])
   const [selectedRevId, setSelectedRevId] = useState<number | null>(null)
   const [sendingTOR, setSendingTOR] = useState(false)
-  const [torError, setTorError] = useState('')
+  const [torError, setTorError] = useState<string | string[]>('')
   const [showTorPicker, setShowTorPicker] = useState(false)
 
   const load = async () => {
@@ -63,7 +65,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       setTender(await crmApi.updateTender(tender.id, payload))
       crmApi.getTenderSpecRevisions(tender.id).then(setRevisions).catch(() => {})
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Update failed.')
+      setError(extractErrorMessages(err, 'Update failed.'))
     }
   }
 
@@ -87,7 +89,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       setTender(await crmApi.createTenderTechnicalOfferRequest(tender.id, documentIds))
       setShowTorPicker(false)
     } catch (err: any) {
-      setTorError(err?.response?.data?.detail || 'Failed to send Technical Offer Request.')
+      setTorError(extractErrorMessages(err, 'Failed to send Technical Offer Request.'))
     } finally {
       setSendingTOR(false)
     }
@@ -142,17 +144,8 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         )}
       </div>
 
-      {torError && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {torError}
-        </div>
-      )}
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!torError} variant="error" title="Technical Offer Request Failed" message={torError} onClose={() => setTorError('')} />
+      <MessageDialog open={!!error} variant="error" title="Something Went Wrong" message={error} onClose={() => setError('')} />
 
       <StageProgress stage={tender.current_stage} canModify={canModify} onRequestChange={setPendingStage} />
 
@@ -590,7 +583,7 @@ function PurchaseOrdersTab({ tenderId, orgId, canModify }: { tenderId: number; o
 
 function DocumentsTab({ tender, canModify, isAdmin }: { tender: Tender; canModify: boolean; isAdmin: boolean }) {
   const [documents, setDocuments] = useState<CrmDocument[]>([])
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   const load = () => crmApi.listDocuments({ related_module: 'tender', related_id: tender.id }).then(setDocuments)
   useEffect(() => { load() }, [tender.id])
@@ -605,6 +598,7 @@ function DocumentsTab({ tender, canModify, isAdmin }: { tender: Tender; canModif
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+      <MessageDialog open={!!error} variant="error" title="Upload Failed" message={error} onClose={() => setError('')} />
       <TenderDocumentFolderPanel title="Client Documents" folderType="client" docs={clientDocs} tender={tender} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
       <TenderDocumentFolderPanel title="Internal Documents" folderType="internal" docs={internalDocs} tender={tender} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
     </div>
@@ -620,8 +614,8 @@ function TenderDocumentFolderPanel({ title, folderType, docs, tender, canModify,
   canDelete: boolean
   onUploaded: () => void
   onRemove: (id: number) => void
-  error: string
-  setError: (v: string) => void
+  error: string | string[]
+  setError: (v: string | string[]) => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [docCategory, setDocCategory] = useState(DOC_CATEGORIES[DOC_CATEGORIES.length - 1])
@@ -638,7 +632,7 @@ function TenderDocumentFolderPanel({ title, folderType, docs, tender, canModify,
       )
       onUploaded()
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Upload failed.')
+      setError(extractErrorMessages(err, 'Upload failed.'))
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''

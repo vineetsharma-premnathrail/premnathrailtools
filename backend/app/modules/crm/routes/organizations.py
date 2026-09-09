@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import cast, String as SAString
+from sqlalchemy import cast, func, String as SAString
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.session import get_db
@@ -26,6 +27,23 @@ def _write_audit(db: Session, org_id: int, action: str, user: User, summary: str
 
 def _can_modify(record, user: User) -> bool:
     return user.role == "admin" or record.created_by_id == user.id
+
+
+def _check_contact_duplicates(
+    db: Session, org_id: int, mobile: str | None, email: str | None, exclude_contact_id: int | None = None
+) -> None:
+    """Reject a contact whose mobile or email matches another contact already
+    on the same organization, so the same person can't be added twice."""
+    if not mobile and not email:
+        return
+    query = db.query(OrgContact).filter(OrgContact.org_id == org_id)
+    if exclude_contact_id:
+        query = query.filter(OrgContact.id != exclude_contact_id)
+    for existing in query.all():
+        if mobile and existing.mobile and existing.mobile.strip() == mobile.strip():
+            raise HTTPException(status_code=409, detail="Contact Person Mobile is duplicated")
+        if email and existing.email and existing.email.strip().lower() == email.strip().lower():
+            raise HTTPException(status_code=409, detail="Contact Person Email is duplicated")
 
 
 @router.get("", response_model=list[OrganizationResponse])
@@ -68,6 +86,52 @@ async def list_organizations(
     return results
 
 
+@router.get("/duplicates")
+async def list_duplicate_organizations(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    """Read-only report of organizations that share the same name (case-insensitive)
+    among non-deleted rows — surfaces existing duplicates for manual review/merge
+    without deleting or modifying anything."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can view the duplicates report.")
+
+    orgs = db.query(Organization).filter(Organization.is_deleted == False).order_by(Organization.id).all()  # noqa: E712
+    groups: dict[str, list[Organization]] = {}
+    for o in orgs:
+        groups.setdefault(o.name.strip().lower(), []).append(o)
+
+    dupes = []
+    for key, group in groups.items():
+        if len(group) < 2:
+            continue
+        org_ids = [o.id for o in group]
+        inquiry_counts = dict(
+            db.query(Inquiry.org_id, func.count(Inquiry.id))
+            .filter(Inquiry.org_id.in_(org_ids), Inquiry.is_deleted == False)  # noqa: E712
+            .group_by(Inquiry.org_id).all()
+        )
+        tender_counts = dict(
+            db.query(Tender.org_id, func.count(Tender.id))
+            .filter(Tender.org_id.in_(org_ids), Tender.is_deleted == False)  # noqa: E712
+            .group_by(Tender.org_id).all()
+        )
+        dupes.append({
+            "name": group[0].name,
+            "organizations": [
+                {
+                    "id": o.id, "org_code": o.org_code, "gst_number": o.gst_number,
+                    "city": o.city, "state": o.state, "created_at": o.created_at,
+                    "inquiry_count": inquiry_counts.get(o.id, 0),
+                    "tender_count": tender_counts.get(o.id, 0),
+                }
+                for o in group
+            ],
+        })
+    return {"duplicate_count": len(dupes), "groups": dupes}
+
+
 @router.get("/search-name")
 async def search_organization_name(
     q: str,
@@ -97,10 +161,20 @@ async def create_organization(
         ).first()
         if gst_clash:
             raise HTTPException(status_code=409, detail="An organization with this GST number already exists")
+    if payload.official_email:
+        email_clash = db.query(Organization).filter(
+            Organization.is_deleted == False, Organization.official_email.ilike(payload.official_email)  # noqa: E712
+        ).first()
+        if email_clash:
+            raise HTTPException(status_code=409, detail="Official Email is already used by another organization")
 
     org = Organization(**payload.model_dump(), org_code=generate_org_code(db), created_by_id=user.id)
     db.add(org)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="An organization with this name already exists")
     _write_audit(db, org.id, "created", user, summary=f"Organization {org.name} created by {user.name or user.email}.")
     broadcast_notification(
         db, title="New Organization Added",
@@ -162,6 +236,21 @@ async def update_organization(
         raise HTTPException(status_code=404, detail="Organization not found")
     if not _can_modify(org, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this organization.")
+
+    if payload.gst_number:
+        gst_clash = db.query(Organization).filter(
+            Organization.is_deleted == False, Organization.gst_number == payload.gst_number,  # noqa: E712
+            Organization.id != org_id,
+        ).first()
+        if gst_clash:
+            raise HTTPException(status_code=409, detail="An organization with this GST number already exists")
+    if payload.official_email:
+        email_clash = db.query(Organization).filter(
+            Organization.is_deleted == False, Organization.official_email.ilike(payload.official_email),  # noqa: E712
+            Organization.id != org_id,
+        ).first()
+        if email_clash:
+            raise HTTPException(status_code=409, detail="Official Email is already used by another organization")
 
     updates = payload.model_dump(exclude_unset=True)
     changed = [f for f, v in updates.items() if str(getattr(org, f, None)) != str(v)]
@@ -268,6 +357,7 @@ async def create_org_contact(
     org = db.query(Organization).filter(Organization.id == org_id, Organization.is_deleted == False).first()  # noqa: E712
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
+    _check_contact_duplicates(db, org_id, payload.mobile, payload.email)
     contact = OrgContact(**payload.model_dump(), org_id=org_id, created_by_id=user.id, created_at=datetime.now(timezone.utc))
     db.add(contact)
     db.commit()
@@ -288,6 +378,7 @@ async def update_org_contact(
         raise HTTPException(status_code=404, detail="Contact not found")
     if not _can_modify(contact, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this contact.")
+    _check_contact_duplicates(db, org_id, payload.mobile, payload.email, exclude_contact_id=contact_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(contact, field, value)
     db.commit()

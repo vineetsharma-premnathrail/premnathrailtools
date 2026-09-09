@@ -41,3 +41,31 @@ export const VALIDATION_MESSAGES = {
   website: 'Enter a valid website URL (e.g. https://company.com).',
   pin: 'Enter a valid 6-digit PIN code.',
 }
+
+// Turns whatever shape a FastAPI error response comes in — a plain string
+// detail (HTTPException), a Pydantic 422 validation-error array, or a
+// completely unrecognized error — into one or more field-specific,
+// human-readable lines, instead of a single generic "Failed to save".
+export function extractErrorMessages(err: any, fallback = 'Something went wrong. Please try again.'): string[] {
+  // No `err.response` means the request never got a reply from the server at
+  // all (offline, server down, CORS, or a timeout) — as opposed to the server
+  // replying with an error. Say so plainly, and tell the user whether their
+  // change is safe or not, instead of surfacing axios's raw "Network Error".
+  if (!err?.response) {
+    if (err?.code === 'ECONNABORTED' || /timeout/i.test(err?.message || '')) {
+      return ['The request timed out — the server took too long to respond. It may or may not have saved. Refresh the page to check before trying again.']
+    }
+    return ["Couldn't reach the server. Nothing was saved — check your internet connection and try again."]
+  }
+  const detail = err.response.data?.detail
+  if (!detail) return [err?.message || fallback]
+  if (typeof detail === 'string') return [detail]
+  if (Array.isArray(detail)) {
+    return detail.map((d: any) => {
+      const field = Array.isArray(d?.loc) ? d.loc[d.loc.length - 1] : d?.loc
+      const label = typeof field === 'string' ? field.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : null
+      return label ? `${label}: ${d.msg}` : (d?.msg || fallback)
+    })
+  }
+  return [fallback]
+}

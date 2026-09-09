@@ -165,6 +165,8 @@ export function ComboBox({
   const filtered = value.trim()
     ? options.filter((o) => o.label.toLowerCase().includes(value.toLowerCase()))
     : options
+  // An exact match already exists — offer it for picking, don't invite creating a duplicate.
+  const hasExactMatch = options.some((o) => o.label.toLowerCase() === value.trim().toLowerCase())
 
   const openDropdown = () => {
     const rect = wrapperRef.current?.getBoundingClientRect()
@@ -221,6 +223,11 @@ export function ComboBox({
             {filtered.length === 0 && (
               <p style={{ fontSize: 12.5, color: COLORS.textFaint2, padding: '10px 14px', margin: 0 }}>No matches.</p>
             )}
+            {filtered.length > 0 && onCreateNew && (
+              <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: COLORS.textFaint2, margin: 0, padding: '8px 14px 2px' }}>
+                Existing
+              </p>
+            )}
             {filtered.map((o) => (
               <div
                 key={o.key}
@@ -234,7 +241,7 @@ export function ComboBox({
                 {o.sublabel && <div style={{ fontSize: 11, color: COLORS.textFaint2 }}>{o.sublabel}</div>}
               </div>
             ))}
-            {onCreateNew && (
+            {onCreateNew && !hasExactMatch && (
               <div
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => { onCreateNew(value); setOpen(false) }}

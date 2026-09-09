@@ -10,6 +10,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const PRIORITIES = ['low', 'medium', 'high']
 
@@ -53,7 +55,7 @@ export default function NewP2PRequestPage() {
   const [specFiles, setSpecFiles] = useState<File[]>([])
 
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   // Pre-fill from Store's "Raise P2P Request" low-stock action — see
   // docs/product/PURCHASE_STORE_INTEGRATION.md integration point 2. Pure
@@ -85,8 +87,8 @@ export default function NewP2PRequestPage() {
         setRequirementTypes(meta.requirement_types)
         setProjects(projectList)
         setDirectoryUsers(directory)
-      } catch {
-        setError('Failed to load form options.')
+      } catch (err: any) {
+        setError(extractErrorMessages(err, 'Failed to load form options.'))
       }
     })()
   }, [isAuthorized])
@@ -143,9 +145,8 @@ export default function NewP2PRequestPage() {
       }
 
       router.push(`/dashboard/p2p/${pr.id}`)
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } }
-      setError(err.response?.data?.detail || 'Failed to submit Purchase Requisition.')
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Failed to submit Purchase Requisition.'))
     } finally {
       setSubmitting(false)
     }
@@ -169,11 +170,7 @@ export default function NewP2PRequestPage() {
         </button>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Save Request" message={error} onClose={() => setError('')} />
 
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Request Details</h2>

@@ -132,6 +132,11 @@ PUBLIC_PATHS = {
     "/api/v1/auth/refresh",
     "/api/v1/auth/teams-token",
     "/api/v1/auth/teams-exchange",
+    # A logged-out user's browser calls this on every protected-page mount just to
+    # check session status — that's expected traffic, not an attack, so it shouldn't
+    # count toward the IP ban. The route's own get_current_user dependency still
+    # returns a real 401 when there's no valid session.
+    "/api/v1/auth/me",
 }
 PUBLIC_PREFIXES = ("/static/",)
 
@@ -264,7 +269,12 @@ class OWASPMiddleware(BaseHTTPMiddleware):
                         "[A01] Unauthenticated API access | ip=%s path=%s rid=%s",
                         ip, path, request_id,
                     )
-                    _record_violation(ip)
+                    # Not counted as a violation: the session_token cookie expires
+                    # every 15 min by design, and the frontend's background polling
+                    # (notifications, dashboard widgets, etc.) legitimately fires
+                    # several calls in that same window before the silent refresh
+                    # completes. Counting every one of those as an attack signal
+                    # bans the user's own IP off normal traffic, not abuse.
                     return JSONResponse(status_code=401, content={"detail": "Not authenticated. Missing or invalid token."})
 
         # ── A04: HTTP method allowlist ────────────────────────────────────

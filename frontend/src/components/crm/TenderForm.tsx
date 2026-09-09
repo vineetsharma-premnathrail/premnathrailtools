@@ -1,15 +1,18 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useAuth } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
+import { formatDate } from '@/lib/format'
 import { Tender, Organization, OrgContact } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
-import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES } from './constants'
+import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES, LEAD_SOURCES, PRIORITIES } from './constants'
 import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle, handleEnterAsTab } from './ui'
 import ValidatedInput from '@/components/ValidatedInput'
-import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
+import { isValidEmail, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
+import MessageDialog from '@/components/erp/MessageDialog'
 
 const TABS = ['Tender Information'] as const
 
@@ -25,6 +28,8 @@ type FormState = {
   tender_value: string
   currency: string
   status: string
+  lead_source: string
+  priority: string
   railway_zone: string
   division: string
   workshop: string
@@ -59,6 +64,8 @@ function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
     tender_value: initial?.tender_value != null ? String(initial.tender_value) : '',
     currency: initial?.currency || 'INR',
     status: initial?.status || 'Active',
+    lead_source: initial?.lead_source || '',
+    priority: initial?.priority || 'Medium',
     railway_zone: initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? 'Other' : initial?.railway_zone || '',
     division: initial?.division || '',
     workshop: initial?.workshop || '',
@@ -94,6 +101,8 @@ export default function TenderForm({
   onCancel: () => void
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
 }) {
+  const { user } = useAuth()
+  const bdOwnerName = initial?.bd_owner || user?.name || ''
   const [tab, setTab] = useState<typeof TABS[number]>('Tender Information')
   const orgLocked = !!defaultOrgId
   const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
@@ -107,7 +116,7 @@ export default function TenderForm({
   const [contacts, setContacts] = useState<OrgContact[]>([])
   const [newContact, setNewContact] = useState({ name: '', designation: '', mobile: '', email: '' })
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const [previewNumber, setPreviewNumber] = useState('')
 
   useEffect(() => { crmApi.listOrganizations().then(setOrganizations) }, [])
@@ -131,12 +140,16 @@ export default function TenderForm({
     }
     const orgId = Number(form.org_id)
     crmApi.listOrgContacts(orgId).then(setContacts)
-    if (!initial) {
-      crmApi.getOrganization(orgId).then((org: Organization) => {
+    // Fetched regardless of `initial` (not just on create) so a locked/pre-selected
+    // organization (defaultOrgId) always resolves to its name in the SearchableSelect,
+    // even before the full organizations list has finished loading.
+    crmApi.getOrganization(orgId).then((org: Organization) => {
+      setOrganizations((list) => (list.some((o) => o.id === org.id) ? list : [org, ...list]))
+      if (!initial) {
         if (org.railway_zone) set('railway_zone', org.railway_zone)
         if (org.division_workshop) set('division', org.division_workshop)
-      }).catch(() => {})
-    }
+      }
+    }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.org_id])
 
@@ -158,6 +171,14 @@ export default function TenderForm({
     }
     if (!form.submission_date) {
       setError('Please select the submission date.')
+      return
+    }
+    if (!form.lead_source) {
+      setError('Please select a lead source.')
+      return
+    }
+    if (!form.priority) {
+      setError('Please select a priority.')
       return
     }
     if (form.org_contact_id === '__new__' && !newContact.name.trim()) {
@@ -188,6 +209,7 @@ export default function TenderForm({
         ...form,
         org_id: Number(form.org_id),
         org_contact_id: orgContactId,
+        bd_owner: bdOwnerName,
         tender_value: form.tender_value ? Number(form.tender_value) : undefined,
         railway_zone: form.railway_zone === 'Other' ? railwayZoneCustom : form.railway_zone,
         tender_portal: form.tender_portal === 'Other' ? tenderPortalCustom : form.tender_portal,
@@ -199,7 +221,7 @@ export default function TenderForm({
       })
       await onSubmit(payload)
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to save tender.')
+      setError(extractErrorMessages(err, 'Failed to save tender.'))
     } finally {
       setSaving(false)
     }
@@ -207,11 +229,7 @@ export default function TenderForm({
 
   return (
     <form onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {error && (
-        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Save" message={error} onClose={() => setError('')} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -223,8 +241,31 @@ export default function TenderForm({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Internal Tender Creation Date</span>
           <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, background: '#f5f5f4', color: '#78716c' }}>
-            {initial?.created_at ? new Date(initial.created_at).toLocaleDateString() : new Date().toLocaleDateString()}
+            {initial?.created_at ? formatDate(initial.created_at) : formatDate(new Date())}
           </span>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ flex: '1 1 160px', minWidth: 140 }}>
+          <Field label="Lead Source *">
+            <select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
+              <option value="">-- Select Source --</option>
+              {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div style={{ flex: '1 1 120px', minWidth: 100 }}>
+          <Field label="Priority *">
+            <select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
+              {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div style={{ flex: '1 1 160px', minWidth: 140 }}>
+          <Field label="BD Owner">
+            <input value={bdOwnerName} disabled style={{ ...inputStyle, background: '#f5f5f4', color: '#78716c' }} />
+          </Field>
         </div>
       </div>
 

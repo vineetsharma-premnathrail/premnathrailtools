@@ -7,7 +7,8 @@ import DateField from './DateField'
 import PhoneField, { isPhoneValid } from './PhoneField'
 import YearField, { isFinancialYearValid } from './YearField'
 import ValidatedInput from '@/components/ValidatedInput'
-import { isValidEmail, isValidGST, VALIDATION_MESSAGES } from '@/lib/validation'
+import { isValidEmail, isValidGST, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
+import MessageDialog from '@/components/erp/MessageDialog'
 import { inputStyle, Field, Section, Row } from '@/components/shared/ui'
 import SharePicker, { useShareSelection } from './SharePicker'
 import Checkbox from '@/components/Checkbox'
@@ -170,7 +171,7 @@ export default function ProjectForm({
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const [directory, setDirectory] = useState<DirectoryUser[]>([])
   const share = useShareSelection()
 
@@ -250,7 +251,7 @@ export default function ProjectForm({
         sharedDesignations: share.designations,
       })
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to save project.')
+      setError(extractErrorMessages(err, 'Failed to save project.'))
     } finally {
       setSaving(false)
     }
@@ -285,11 +286,7 @@ export default function ProjectForm({
         ))}
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Save Machine/Project" message={error} onClose={() => setError('')} />
 
       <form onSubmit={handleSubmit}>
         {tabIndex === 0 && (

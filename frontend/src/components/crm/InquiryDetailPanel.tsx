@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { Inquiry, Organization, OrgContact, InquiryTask, InquiryApprovalItem, QuotationItem, QuotationLineItem, PurchaseOrderItem, CrmDiscussionItem, CrmActivity, CrmDocument, CrmStageLogEntry } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
@@ -14,6 +15,8 @@ import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
 import { INQ_STAGES, INQUIRY_STATUSES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES, QUOTE_CONDITIONS } from '@/components/crm/constants'
 import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab } from '@/components/crm/ui'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const TABS = ['Info', 'Quotations', 'Documents', 'Follow Ups', 'Timeline'] as const
 
@@ -25,7 +28,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   const [org, setOrg] = useState<Organization | null>(null)
   const [contact, setContact] = useState<OrgContact | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const [tab, setTab] = useState<typeof TABS[number]>('Info')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pendingStage, setPendingStage] = useState<string | null>(null)
@@ -33,7 +36,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   const [revisions, setRevisions] = useState<SpecRevision[]>([])
   const [selectedRevId, setSelectedRevId] = useState<number | null>(null)
   const [sendingTOR, setSendingTOR] = useState(false)
-  const [torError, setTorError] = useState('')
+  const [torError, setTorError] = useState<string | string[]>('')
   const [showTorPicker, setShowTorPicker] = useState(false)
 
   const load = async () => {
@@ -72,7 +75,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       setInquiry(await crmApi.updateInquiry(inquiry.id, payload))
       crmApi.getInquirySpecRevisions(inquiry.id).then(setRevisions).catch(() => {})
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Update failed.')
+      setError(extractErrorMessages(err, 'Update failed.'))
     }
   }
 
@@ -86,7 +89,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       const updated = await crmApi.updateInquiry(inquiry.id, payload)
       setInquiry({ ...updated, updated_at: prevUpdatedAt })
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Update failed.')
+      setError(extractErrorMessages(err, 'Update failed.'))
     }
   }
 
@@ -129,7 +132,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       setInquiry(await crmApi.createInquiryTechnicalOfferRequest(inquiry.id, documentIds))
       setShowTorPicker(false)
     } catch (err: any) {
-      setTorError(err?.response?.data?.detail || 'Failed to send Technical Offer Request.')
+      setTorError(extractErrorMessages(err, 'Failed to send Technical Offer Request.'))
     } finally {
       setSendingTOR(false)
     }
@@ -191,24 +194,15 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
             {inquiry.technical_offer_number && (
               <span style={{ fontSize: 11, color: '#78716c' }}>
                 {torActive ? 'Previously sent as ' : 'Sent as '}<strong>{inquiry.technical_offer_number}</strong>
-                {inquiry.technical_offer_sent_at && ` on ${new Date(inquiry.technical_offer_sent_at).toLocaleString()}`}
+                {inquiry.technical_offer_sent_at && ` on ${formatDateTime(inquiry.technical_offer_sent_at)}`}
               </span>
             )}
           </div>
         )}
       </div>
 
-      {torError && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {torError}
-        </div>
-      )}
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!torError} variant="error" title="Technical Offer Request Failed" message={torError} onClose={() => setTorError('')} />
+      <MessageDialog open={!!error} variant="error" title="Something Went Wrong" message={error} onClose={() => setError('')} />
 
       <StageProgress stage={inquiry.current_stage} canModify={canModify} onRequestChange={setPendingStage} />
 
@@ -353,9 +347,31 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
 function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, onChangeLeadInfo }: { inquiry: Inquiry; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null; canModify: boolean; onChangeLeadInfo: (payload: Record<string, unknown>) => void }) {
   const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
   const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
+  const shownFields = new Set(['product', 'product_category', 'quantity', 'required_delivery_date', 'delivery_location', 'inspection_req', 'warranty_req', 'product_spec', 'requirement_desc'])
+  const changesNotShownAbove = selectedRev?.changes.filter((c) => !shownFields.has(c.field)) || []
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {selectedRev && (
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(244,113,59,0.06)', border: '1px solid rgba(244,113,59,0.18)' }}>
+          <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', color: '#FF7A45', margin: '0 0 6px' }}>
+            What changed in this revision
+          </p>
+          {selectedRev.changes.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: '#78716c', margin: 0 }}>No changes recorded for this revision.</p>
+          ) : (
+            <div
+              style={{ fontSize: 12.5, color: '#57534e', display: 'flex', flexDirection: 'column', gap: 3 }}
+              dangerouslySetInnerHTML={{ __html: specRevisionDetailHtml(selectedRev.changes) }}
+            />
+          )}
+          {changesNotShownAbove.length > 0 && (
+            <p style={{ fontSize: 11, color: '#a8a29e', margin: '6px 0 0' }}>
+              Some of these fields (e.g. Status, Priority, Organization/Contact) aren't highlighted inline below — see this summary or the Timeline tab for full detail.
+            </p>
+          )}
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
         <Card title="Organization">
           <InfoRow label="Name" value={org?.name || 'Not provided'} />
@@ -397,7 +413,7 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
           />
           <InfoRow label="Lead Source" value={inquiry.lead_source || 'Not provided'} />
           <InfoRow label="BD Owner" value={inquiry.bd_owner || 'Not provided'} />
-          <InfoRow label="Created On" value={inquiry.created_at ? new Date(inquiry.created_at).toLocaleDateString() : 'Not provided'} />
+          <InfoRow label="Created On" value={inquiry.created_at ? formatDate(inquiry.created_at) : 'Not provided'} />
         </Card>
       </div>
       <Card title="Product Requirement">
@@ -411,6 +427,19 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
           <SpecInfoRow label="Warranty Req." value={inquiry.warranty_req || 'Not provided'} change={changeFor('warranty_req')} />
         </div>
         <SpecInfoRow label="Specification" value={inquiry.product_spec || 'Not provided'} change={changeFor('product_spec')} />
+        {(inquiry.additional_items || []).length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: 0 }}>Additional Products</p>
+            {inquiry.additional_items!.map((it) => (
+              <div key={it.id} style={{ padding: '8px 12px', borderRadius: 10, background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.06)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+                <InfoRow label="Product" value={it.product || 'Not provided'} />
+                <InfoRow label="Category" value={it.product_category || 'Not provided'} />
+                <InfoRow label="Quantity" value={it.quantity != null ? String(it.quantity) : 'Not provided'} />
+                {it.product_spec && <InfoRow label="Specification" value={it.product_spec} />}
+              </div>
+            ))}
+          </div>
+        )}
         <SpecInfoRow label="Requirement Summary" value={inquiry.requirement_desc || 'Not provided'} change={changeFor('requirement_desc')} />
         <InfoRow label="Project Details" value={inquiry.project_details || 'Not provided'} />
       </Card>
@@ -517,6 +546,26 @@ function TasksTab({ inquiryId, canModify }: { inquiryId: number; canModify: bool
 
 const emptyLineItem = { description: '', model_number: '', quantity: '', unit_price: '', gst_percent: '', subtotal: '', total: '' }
 
+// A valid Delivery Time must carry a unit, not just a bare number — "7" is ambiguous,
+// "7 days" isn't. Accepts day/week/month/hour in singular or plural, any case.
+const DELIVERY_TIME_PATTERN = /\d+\s*-?\s*\d*\s*(day|days|week|weeks|month|months|hour|hours|hrs?)\b/i
+
+type QuotationItemErrors = { description?: string; quantity?: string; unit_price?: string; gst_percent?: string }
+type QuotationFormErrors = {
+  client_name?: string
+  quotation_type?: string
+  quote_date?: string
+  items?: string
+  itemErrors?: Record<number, QuotationItemErrors>
+  delivery_time?: string
+  valid_until?: string
+  quote_conditions?: string
+  payment_terms?: string
+}
+
+const fieldErrorTextStyle: React.CSSProperties = { fontSize: 11, color: '#ef4444', fontWeight: 600, margin: '4px 0 0' }
+const errInputStyle = (hasError: boolean): React.CSSProperties => (hasError ? { borderColor: '#f87171' } : {})
+
 function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquiryId: number; canModify: boolean; org: Organization | null; contact: OrgContact | null; inquiry: Inquiry }) {
   const [quotations, setQuotations] = useState<QuotationItem[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -533,9 +582,14 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState([{ ...emptyLineItem }])
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
-  const [pdfError, setPdfError] = useState('')
-  const [formError, setFormError] = useState('')
-  const [products, setProducts] = useState<{ id: number; name: string; model_number?: string | null; unit_price?: number | null; default_price?: number | null }[]>([])
+  const [pdfError, setPdfError] = useState<string | string[]>('')
+  const [formError, setFormError] = useState<string | string[]>('')
+  const [fieldErrors, setFieldErrors] = useState<QuotationFormErrors>({})
+  const [attemptedSave, setAttemptedSave] = useState(false)
+  const [productError, setProductError] = useState('')
+  const [productNotice, setProductNotice] = useState('')
+  const [dupItemError, setDupItemError] = useState('')
+  const [products, setProducts] = useState<{ id: number; name: string; category?: string | null; model_number?: string | null; unit_price?: number | null; default_price?: number | null }[]>([])
   const [paymentTerms, setPaymentTerms] = useState<{ id: number; label: string; description?: string | null }[]>([])
   const [quotRevisions, setQuotRevisions] = useState<Record<number, SpecRevision[]>>({})
   const [selectedQuotRev, setSelectedQuotRev] = useState<Record<number, number | null>>({})
@@ -560,6 +614,15 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
   }, [])
 
   const applyProductToRow = (idx: number, product: { name: string; model_number?: string | null; default_price?: number | null }) => {
+    const nameKey = product.name.trim().toLowerCase()
+    const modelKey = (product.model_number || '').trim().toLowerCase()
+    const dupExists = items.some((row, i) =>
+      i !== idx && row.description.trim().toLowerCase() === nameKey && (row.model_number || '').trim().toLowerCase() === modelKey
+    )
+    if (dupExists) {
+      setDupItemError('This item with the same model number is already added.')
+      return
+    }
     setItems((rows) => rows.map((row, i) => i === idx ? {
       ...row,
       description: product.name,
@@ -570,6 +633,7 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
 
   // Saves whatever the user already typed into that row's Description/Model No. fields as a
   // new Product — no separate popup, since the row's own inputs already hold the values.
+  // Model No. is optional; when left blank the product just won't have one until edited later.
   const createProductFromRow = async (idx: number, typedName: string) => {
     const row = items[idx]
     const name = typedName.trim()
@@ -581,6 +645,9 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
     })
     setProducts((p) => [...p, created])
     updateItemRow(idx, 'description', created.name)
+    setProductNotice(created.model_number
+      ? `New product "${created.name}" (Model No. ${created.model_number}) added to the product list.`
+      : `New product "${created.name}" added to the product list.`)
   }
 
   // Saves whatever the user already typed into the Payment Terms field as a new Payment Term —
@@ -627,6 +694,8 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
     setForm(emptyForm)
     setItems([{ ...emptyLineItem }])
     setFormError('')
+    setFieldErrors({})
+    setAttemptedSave(false)
     setShowForm(false)
   }
 
@@ -661,18 +730,63 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.quotation_type])
 
+  // Only rows the user actually touched are validated/sent — a blank extra row from
+  // "+ Add Line Item" that was never filled in is silently dropped, not an error.
+  const isItemRowEmpty = (it: typeof emptyLineItem) =>
+    !it.description.trim() && !it.model_number.trim() && !it.quantity && !it.unit_price && !it.gst_percent
+
+  const validate = (): QuotationFormErrors => {
+    const errs: QuotationFormErrors = {}
+    if (!form.client_name.trim()) errs.client_name = 'Customer/Client is required.'
+    if (!form.quotation_type) errs.quotation_type = 'Quotation Type is required.'
+    if (!form.quote_date) errs.quote_date = 'Date of Quote is required.'
+
+    const itemErrors: Record<number, QuotationItemErrors> = {}
+    let anyFilledItem = false
+    items.forEach((it, idx) => {
+      if (isItemRowEmpty(it)) return
+      anyFilledItem = true
+      const rowErrs: QuotationItemErrors = {}
+      if (!it.description.trim()) rowErrs.description = 'Item Name is required.'
+      if (!it.quantity || Number(it.quantity) <= 0) rowErrs.quantity = 'Quantity is required.'
+      if (!it.unit_price || Number(it.unit_price) <= 0) rowErrs.unit_price = 'Price/Unit is required.'
+      if (!isExport && !it.gst_percent) rowErrs.gst_percent = 'GST/Tax is required.'
+      if (Object.keys(rowErrs).length) itemErrors[idx] = rowErrs
+    })
+    if (!anyFilledItem) errs.items = 'Add at least one line item.'
+    else if (Object.keys(itemErrors).length) errs.itemErrors = itemErrors
+
+    if (!form.delivery_time.trim()) errs.delivery_time = 'Delivery Time is required.'
+    else if (!DELIVERY_TIME_PATTERN.test(form.delivery_time.trim())) errs.delivery_time = 'Include a unit, e.g. "7 days" or "2 weeks".'
+
+    if (!form.valid_until) errs.valid_until = 'Quote Validity Date is required.'
+
+    const conditionsValue = form.quote_conditions === 'Other/Custom' ? form.quote_conditions_custom : form.quote_conditions
+    if (!conditionsValue.trim()) errs.quote_conditions = 'Quote Conditions is required.'
+
+    if (!form.payment_terms.trim()) errs.payment_terms = 'Payment Terms is required.'
+
+    return errs
+  }
+
+  // Once the user has tried to save once, keep re-validating live so field errors
+  // clear themselves as soon as the user fixes them, instead of only at next submit.
+  useEffect(() => {
+    if (attemptedSave) setFieldErrors(validate())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, items, attemptedSave])
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
     setFormError('')
-    if (!form.client_name.trim()) {
-      setFormError('Client Name is required.')
+    setAttemptedSave(true)
+    const errs = validate()
+    setFieldErrors(errs)
+    if (Object.keys(errs).length > 0) {
+      setFormError('Please fix the highlighted fields before saving the quotation.')
       return
     }
-    const validItems = items.filter((it) => it.description || it.model_number || it.quantity || it.unit_price)
-    if (validItems.length === 0) {
-      setFormError('Add at least one line item.')
-      return
-    }
+    const validItems = items.filter((it) => !isItemRowEmpty(it))
     const { quote_conditions_custom, ...rest } = form
     const payload: Record<string, unknown> = {
       ...rest,
@@ -698,7 +812,7 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
     try {
       await crmApi.createQuotation(inquiryId, payload)
     } catch (err: any) {
-      setFormError(err?.response?.data?.detail || 'Failed to save quotation.')
+      setFormError(extractErrorMessages(err, 'Failed to save quotation.'))
       return
     }
     cancelForm()
@@ -719,17 +833,17 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
               onKeyDown={handleEnterAsTab}
               style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'flex', flexDirection: 'column', gap: 14 }}
             >
-              {formError && (
-                <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-                  {formError}
-                </div>
-              )}
+              <MessageDialog open={!!formError} variant="error" title="Cannot Save Quotation" message={formError} onClose={() => setFormError('')} />
+              <MessageDialog open={!!productError} variant="error" title="Cannot Add Product" message={productError} onClose={() => setProductError('')} />
+              <MessageDialog open={!!productNotice} variant="success" title="Product Added" message={productNotice} onClose={() => setProductNotice('')} />
+              <MessageDialog open={!!dupItemError} variant="error" title="Duplicate Line Item" message={dupItemError} onClose={() => setDupItemError('')} />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <Field label="Quotation Type">
-                  <select value={form.quotation_type} onChange={(e) => setForm((f) => ({ ...f, quotation_type: e.target.value }))} style={inputStyle}>
+                <Field label="Quotation Type *">
+                  <select value={form.quotation_type} onChange={(e) => setForm((f) => ({ ...f, quotation_type: e.target.value }))} style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.quotation_type) }}>
                     <option value="Domestic">Domestic (INR)</option>
                     <option value="Export">Export (USD)</option>
                   </select>
+                  {fieldErrors.quotation_type && <p style={fieldErrorTextStyle}>{fieldErrors.quotation_type}</p>}
                 </Field>
                 {!isExport && (
                   <Field label="GST Type">
@@ -739,52 +853,75 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                     </select>
                   </Field>
                 )}
-                <Field label="Date of Quote"><DateField value={form.quote_date} onChange={(v) => setForm((f) => ({ ...f, quote_date: v }))} /></Field>
-                <Field label="Technical Offer Number"><input value={form.technical_offer_number} onChange={(e) => setForm((f) => ({ ...f, technical_offer_number: e.target.value }))} style={inputStyle} /></Field>
+                <Field label="Date of Quote *">
+                  <DateField value={form.quote_date} onChange={(v) => setForm((f) => ({ ...f, quote_date: v }))} style={errInputStyle(!!fieldErrors.quote_date)} />
+                  {fieldErrors.quote_date && <p style={fieldErrorTextStyle}>{fieldErrors.quote_date}</p>}
+                </Field>
+                <Field label="Technical Offer Number"><input value={form.technical_offer_number} onChange={(e) => setForm((f) => ({ ...f, technical_offer_number: e.target.value }))} placeholder="e.g. TOR-2026-0042" style={inputStyle} /></Field>
                 <Field label="Technical Offer Date"><DateField value={form.technical_offer_date} onChange={(v) => setForm((f) => ({ ...f, technical_offer_date: v }))} /></Field>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <Field label="Client Name *"><input value={form.client_name} onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))} style={inputStyle} /></Field>
-                <Field label="Contact Person Name"><input value={form.client_contact_name} onChange={(e) => setForm((f) => ({ ...f, client_contact_name: e.target.value }))} style={inputStyle} /></Field>
-                <Field label="Contact Email"><input type="email" value={form.client_contact_email} onChange={(e) => setForm((f) => ({ ...f, client_contact_email: e.target.value }))} style={inputStyle} /></Field>
-                <Field label="Contact Phone"><input value={form.client_contact_phone} onChange={(e) => setForm((f) => ({ ...f, client_contact_phone: e.target.value }))} style={inputStyle} /></Field>
+                <Field label="Customer/Client *">
+                  <input value={form.client_name} onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))} placeholder="e.g. Northern Railway HQ" style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.client_name) }} />
+                  {fieldErrors.client_name && <p style={fieldErrorTextStyle}>{fieldErrors.client_name}</p>}
+                </Field>
+                <Field label="Contact Person Name"><input value={form.client_contact_name} onChange={(e) => setForm((f) => ({ ...f, client_contact_name: e.target.value }))} placeholder="e.g. Rajesh Kumar" style={inputStyle} /></Field>
+                <Field label="Contact Email"><input type="email" value={form.client_contact_email} onChange={(e) => setForm((f) => ({ ...f, client_contact_email: e.target.value }))} placeholder="e.g. name@company.com" style={inputStyle} /></Field>
+                <Field label="Contact Phone"><input value={form.client_contact_phone} onChange={(e) => setForm((f) => ({ ...f, client_contact_phone: e.target.value }))} placeholder="e.g. +91 98765 43210" style={inputStyle} /></Field>
               </div>
 
               <div>
                 <label style={{ fontSize: 12, fontWeight: 700, color: '#57534e', marginBottom: 6, display: 'block' }}>Line Items *</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {items.map((row, idx) => (
-                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: isExport ? '2fr 1.2fr 0.7fr 0.9fr 0.9fr auto' : '2fr 1.2fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
-                      <ComboBox
-                        value={row.description}
-                        onChange={(v) => updateItemRow(idx, 'description', v)}
-                        onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) applyProductToRow(idx, p) }}
-                        onCreateNew={(query) => createProductFromRow(idx, query)}
-                        createLabel="New Product"
-                        options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.model_number || undefined }))}
-                        placeholder="Description — type or pick a product"
-                      />
-                      <input value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No." style={inputStyle} />
-                      <input type="number" value={row.quantity} onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} placeholder="Qty" style={inputStyle} />
-                      <input type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol})`} style={inputStyle} />
-                      {!isExport && <input type="number" value={row.gst_percent} onChange={(e) => updateItemRow(idx, 'gst_percent', e.target.value)} placeholder="GST %" style={inputStyle} />}
-                      <input type="number" value={row.subtotal} readOnly placeholder="Subtotal" style={{ ...inputStyle, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
-                      <button type="button" onClick={() => removeItemRow(idx)} style={{ ...secondaryBtnStyle, padding: '6px 10px', fontSize: 11 }}>✕</button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: items.length > 4 ? 340 : undefined, overflowY: items.length > 4 ? 'auto' : undefined, paddingRight: items.length > 4 ? 6 : undefined }}>
+                  {items.map((row, idx) => {
+                    const rowErr = fieldErrors.itemErrors?.[idx]
+                    return (
+                    <div key={idx}>
+                      <div style={{ display: 'grid', gridTemplateColumns: isExport ? '2fr 1.2fr 0.7fr 0.9fr 0.9fr auto' : '2fr 1.2fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
+                        <ComboBox
+                          value={row.description}
+                          onChange={(v) => updateItemRow(idx, 'description', v)}
+                          onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) applyProductToRow(idx, p) }}
+                          onCreateNew={(query) => createProductFromRow(idx, query)}
+                          createLabel="New Product"
+                          options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.model_number || undefined }))}
+                          placeholder="Item Name — type or pick a product"
+                        />
+                        <input value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No. (if applicable)" style={inputStyle} />
+                        <input type="number" value={row.quantity} onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} placeholder="Qty *" style={{ ...inputStyle, ...errInputStyle(!!rowErr?.quantity) }} />
+                        <input type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol}) *`} style={{ ...inputStyle, ...errInputStyle(!!rowErr?.unit_price) }} />
+                        {!isExport && <input type="number" value={row.gst_percent} onChange={(e) => updateItemRow(idx, 'gst_percent', e.target.value)} placeholder="GST % *" style={{ ...inputStyle, ...errInputStyle(!!rowErr?.gst_percent) }} />}
+                        <input type="number" value={row.subtotal} readOnly placeholder="Subtotal" style={{ ...inputStyle, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
+                        <button type="button" onClick={() => removeItemRow(idx)} style={{ ...secondaryBtnStyle, padding: '6px 10px', fontSize: 11 }}>✕</button>
+                      </div>
+                      {rowErr && (
+                        <p style={fieldErrorTextStyle}>
+                          {[rowErr.description, rowErr.quantity, rowErr.unit_price, rowErr.gst_percent].filter(Boolean).join(' ')}
+                        </p>
+                      )}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
                   <button type="button" onClick={addItemRow} style={{ ...secondaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>+ Add Line Item</button>
                 </div>
+                {fieldErrors.items && <p style={fieldErrorTextStyle}>{fieldErrors.items}</p>}
                 <p style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: '#1f1108', textAlign: 'right' }}>
                   Grand Total: {currencySymbol}{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <Field label="Delivery Time"><input value={form.delivery_time} onChange={(e) => setForm((f) => ({ ...f, delivery_time: e.target.value }))} placeholder="e.g. 12 weeks" style={inputStyle} /></Field>
-                <Field label="Quote Validity Date"><DateField value={form.valid_until} onChange={(v) => setForm((f) => ({ ...f, valid_until: v }))} /></Field>
+                <Field label="Delivery Time *">
+                  <input value={form.delivery_time} onChange={(e) => setForm((f) => ({ ...f, delivery_time: e.target.value }))} placeholder="e.g. 7 days or 2 weeks" style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.delivery_time) }} />
+                  {fieldErrors.delivery_time && <p style={fieldErrorTextStyle}>{fieldErrors.delivery_time}</p>}
+                </Field>
+                <Field label="Quote Validity Date *">
+                  <DateField value={form.valid_until} onChange={(v) => setForm((f) => ({ ...f, valid_until: v }))} style={errInputStyle(!!fieldErrors.valid_until)} />
+                  {fieldErrors.valid_until && <p style={fieldErrorTextStyle}>{fieldErrors.valid_until}</p>}
+                </Field>
                 <Field label="Discount">
                   <div style={{ display: 'flex', gap: 6 }}>
                     <input type="number" value={form.discount} onChange={(e) => setForm((f) => ({ ...f, discount: e.target.value }))} placeholder="0" style={inputStyle} />
@@ -794,19 +931,20 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                     </select>
                   </div>
                 </Field>
-                <Field label="Quote Conditions">
-                  <select value={form.quote_conditions} onChange={(e) => setForm((f) => ({ ...f, quote_conditions: e.target.value }))} style={inputStyle}>
+                <Field label="Quote Conditions *">
+                  <select value={form.quote_conditions} onChange={(e) => setForm((f) => ({ ...f, quote_conditions: e.target.value }))} style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.quote_conditions) }}>
                     <option value="">— Select —</option>
                     {QUOTE_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
+                  {fieldErrors.quote_conditions && <p style={fieldErrorTextStyle}>{fieldErrors.quote_conditions}</p>}
                 </Field>
               </div>
               {form.quote_conditions === 'Other/Custom' && (
                 <Field label="Custom Quote Conditions">
-                  <textarea value={form.quote_conditions_custom} onChange={(e) => setForm((f) => ({ ...f, quote_conditions_custom: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
+                  <textarea value={form.quote_conditions_custom} onChange={(e) => setForm((f) => ({ ...f, quote_conditions_custom: e.target.value }))} rows={2} placeholder="e.g. Prices are ex-works; freight and insurance extra." style={{ ...inputStyle, resize: 'vertical', ...errInputStyle(!!fieldErrors.quote_conditions) }} />
                 </Field>
               )}
-              <Field label="Payment Terms">
+              <Field label="Payment Terms *">
                 <ComboBox
                   value={form.payment_terms}
                   onChange={(v) => setForm((f) => ({ ...f, payment_terms: v }))}
@@ -816,8 +954,9 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                   options={paymentTerms.map((t) => ({ key: String(t.id), label: t.label, sublabel: t.description || undefined }))}
                   placeholder="Select from Payment Terms list or type your own"
                 />
+                {fieldErrors.payment_terms && <p style={fieldErrorTextStyle}>{fieldErrors.payment_terms}</p>}
               </Field>
-              <Field label="Notes"><textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+              <Field label="Notes"><textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any additional remarks for this quotation (optional)" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
               <div>
                 <button type="submit" style={primaryBtnStyle}>Save Quotation</button>
               </div>
@@ -944,7 +1083,7 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
           </div>
         ))
       )}
-      {pdfError && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{pdfError}</p>}
+      <MessageDialog open={!!pdfError} variant="error" title="Download Failed" message={pdfError} onClose={() => setPdfError('')} />
     </div>
   )
 }
@@ -972,7 +1111,7 @@ function ReviseQuotationForm({
     Object.fromEntries(quotation.items.map((it) => [it.id, it.unit_price != null ? String(it.unit_price) : '']))
   )
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   const save = async () => {
     setSaving(true)
@@ -989,7 +1128,7 @@ function ReviseQuotationForm({
       await crmApi.updateQuotation(inquiryId, quotation.id, payload)
       onSaved()
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to save revision.')
+      setError(extractErrorMessages(err, 'Failed to save revision.'))
     } finally {
       setSaving(false)
     }
@@ -997,7 +1136,7 @@ function ReviseQuotationForm({
 
   return (
     <div style={{ marginTop: 10, padding: 12, borderRadius: 10, background: 'rgba(255,122,69,0.05)', border: '1px dashed rgba(255,122,69,0.3)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {error && <p style={{ fontSize: 12, color: '#b91c1c', margin: 0 }}>{error}</p>}
+      <MessageDialog open={!!error} variant="error" title="Cannot Revise Quotation" message={error} onClose={() => setError('')} />
       <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: '#c2410c', margin: 0 }}>
         Revise Quotation — price, payment terms, validity, delivery time only
       </p>
@@ -1014,6 +1153,7 @@ function ReviseQuotationForm({
                     type="number"
                     value={itemPrices[it.id] ?? ''}
                     onChange={(e) => setItemPrices((p) => ({ ...p, [it.id]: e.target.value }))}
+                    placeholder="e.g. 12500"
                     style={inputStyle}
                   />
                 </div>
@@ -1035,7 +1175,7 @@ function ReviseQuotationForm({
           />
         </Field>
         <Field label="Quote Validity Date"><DateField value={validUntil} onChange={setValidUntil} /></Field>
-        <Field label="Delivery Time"><input value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} placeholder="e.g. 12 weeks" style={inputStyle} /></Field>
+        <Field label="Delivery Time"><input value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} placeholder="e.g. 7 days or 2 weeks" style={inputStyle} /></Field>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button type="button" onClick={save} disabled={saving} style={{ ...primaryBtnStyle, padding: '6px 14px', fontSize: 12, opacity: saving ? 0.7 : 1 }}>
@@ -1136,7 +1276,7 @@ function PurchaseOrdersTab({ inquiryId, orgId, canModify }: { inquiryId: number;
 
 function DocumentsTab({ inquiry, canModify, isAdmin }: { inquiry: Inquiry; canModify: boolean; isAdmin: boolean }) {
   const [documents, setDocuments] = useState<CrmDocument[]>([])
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   const load = () => crmApi.listDocuments({ related_module: 'inquiry', related_id: inquiry.id }).then(setDocuments)
   useEffect(() => { load() }, [inquiry.id])
@@ -1151,6 +1291,7 @@ function DocumentsTab({ inquiry, canModify, isAdmin }: { inquiry: Inquiry; canMo
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+      <MessageDialog open={!!error} variant="error" title="Upload Failed" message={error} onClose={() => setError('')} />
       <DocumentFolderPanel title="Client Documents" folderType="client" docs={clientDocs} inquiry={inquiry} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
       <DocumentFolderPanel title="Internal Documents" folderType="internal" docs={internalDocs} inquiry={inquiry} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
     </div>
@@ -1166,8 +1307,8 @@ function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, canD
   canDelete: boolean
   onUploaded: () => void
   onRemove: (id: number) => void
-  error: string
-  setError: (v: string) => void
+  error: string | string[]
+  setError: (v: string | string[]) => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [docCategory, setDocCategory] = useState(DOC_CATEGORIES[DOC_CATEGORIES.length - 1])
@@ -1184,7 +1325,7 @@ function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, canD
       )
       onUploaded()
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Upload failed.')
+      setError(extractErrorMessages(err, 'Upload failed.'))
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -1237,7 +1378,6 @@ function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, canD
           <input ref={fileRef} type="file" multiple onChange={(e) => handleUpload(e.target.files)} disabled={uploading} style={inputStyle} />
         </div>
       )}
-      {error && <p style={{ fontSize: 12.5, color: '#b91c1c' }}>{error}</p>}
     </div>
   )
 }
@@ -1309,7 +1449,7 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
   const [editingActivity, setEditingActivity] = useState<CrmActivity | null>(null)
   const [viewingActivity, setViewingActivity] = useState<CrmActivity | null>(null)
   const [exportingMomId, setExportingMomId] = useState<number | null>(null)
-  const [momError, setMomError] = useState('')
+  const [momError, setMomError] = useState<string | string[]>('')
 
   const load = () => crmApi.listActivities({ related_module: 'inquiry', related_id: inquiry.id }).then(setActivities)
   useEffect(() => { load() }, [inquiry.id])
@@ -1349,9 +1489,7 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <button onClick={() => { if (showForm) cancelForm(); else { setEditingActivity(null); setShowForm(true) } }} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Follow Up'}</button>
       </div>
-      {momError && (
-        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{momError}</div>
-      )}
+      <MessageDialog open={!!momError} variant="error" title="Cannot Save Follow Up" message={momError} onClose={() => setMomError('')} />
       {showForm && (
         <ActivityForm
           initial={editingActivity || { org_id: inquiry.org_id, related_module: 'inquiry', related_id: inquiry.id, universal_id: inquiry.universal_id }}
@@ -1527,14 +1665,19 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
           by: r.performed_by,
           date: r.performed_at,
         })),
-        ...stages.map((s: CrmStageLogEntry) => ({
-          key: `stage-${s.id}`,
-          kind: 'stage' as const,
-          title: `Moved to stage: ${s.stage}`,
-          detail: s.notes,
-          by: s.entered_by_name,
-          date: s.created_at || null,
-        })),
+        // "Inquiry created" is a pseudo-stage written at creation time, not a real
+        // INQ_STAGES workflow stage — the audit "created" entry above already covers
+        // that event, so showing it again here as a stage move is just a duplicate.
+        ...stages
+          .filter((s: CrmStageLogEntry) => s.stage !== 'Inquiry created')
+          .map((s: CrmStageLogEntry) => ({
+            key: `stage-${s.id}`,
+            kind: 'stage' as const,
+            title: `Moved to stage: ${s.stage}`,
+            detail: s.notes,
+            by: s.entered_by_name,
+            date: s.created_at || null,
+          })),
         ...activities.map((a: CrmActivity) => ({
           key: `followup-${a.id}`,
           kind: 'followup' as const,
@@ -1571,7 +1714,7 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
               <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0 }}>{e.title}</p>
             </div>
             <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>
-              {e.by || 'System'} · {e.date ? new Date(e.date).toLocaleString() : '—'}
+              {e.by || 'System'} · {formatDateTime(e.date)}
             </p>
           </div>
           {e.detail && <RichText html={e.detail} style={{ fontSize: 12, color: '#57534e', margin: '2px 0' }} />}

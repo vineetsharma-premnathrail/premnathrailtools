@@ -69,6 +69,25 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     quotations: Mapped[list["Quotation"]] = relationship(
         "Quotation", back_populates="inquiry", cascade="all, delete-orphan"
     )
+    # Extra products beyond the primary product/product_category/quantity/product_spec
+    # fields above — an inquiry raised for several different products at once.
+    additional_items: Mapped[list["InquiryLineItem"]] = relationship(
+        "InquiryLineItem", back_populates="inquiry", cascade="all, delete-orphan", order_by="InquiryLineItem.sort_order"
+    )
+
+
+class InquiryLineItem(Base):
+    __tablename__ = "crm_inquiry_line_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    inquiry_id: Mapped[int] = mapped_column(Integer, ForeignKey("crm_inquiries.id"), nullable=False, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    product: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    product_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    product_spec: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    inquiry: Mapped["Inquiry"] = relationship("Inquiry", back_populates="additional_items")
 
 
 class InquiryTask(Base, TimestampMixin, SoftDeleteMixin):

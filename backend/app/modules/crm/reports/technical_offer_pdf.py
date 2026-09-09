@@ -21,7 +21,7 @@ from reportlab.lib.colors import HexColor
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer
 
 from app.modules.crm.reports.quotation_pdf import (
-    _draw_letterhead, _p, FONT_NAME, FONT_NAME_BOLD, BODY_SIZE, HEADER_SIZE,
+    _draw_letterhead, _p, _sentence_case, FONT_NAME, FONT_NAME_BOLD, BODY_SIZE, HEADER_SIZE,
     PAGE_WIDTH, MARGIN, USABLE_WIDTH, ACCENT, MUTED, HEADER_HEIGHT, FOOTER_HEIGHT,
 )
 
@@ -94,7 +94,7 @@ def build_technical_offer_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     if city_state:
         org_rows.append(("City / State", city_state))
     if ctx.get("org_address"):
-        org_rows.append(("Address", ctx["org_address"]))
+        org_rows.append(("Address", _sentence_case(ctx["org_address"])))
     story.append(_field_table(org_rows))
     story.append(Spacer(1, 14))
 
@@ -132,21 +132,21 @@ def build_technical_offer_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     n += 1
     story.append(_section_heading(n, "Technical Specification"))
     story.append(Spacer(1, 6))
-    story.append(_p(ctx.get("product_spec") or "Not specified."))
+    story.append(_p(_sentence_case(ctx.get("product_spec")) or "Not specified."))
     story.append(Spacer(1, 14))
 
     # Requirement Description
     n += 1
     story.append(_section_heading(n, "Requirement Description"))
     story.append(Spacer(1, 6))
-    story.append(_p(ctx.get("requirement_desc") or "Not provided."))
+    story.append(_p(_sentence_case(ctx.get("requirement_desc")) or "Not provided."))
     story.append(Spacer(1, 14))
 
     # Project Background
     n += 1
     story.append(_section_heading(n, "Project Background"))
     story.append(Spacer(1, 6))
-    story.append(_p(ctx.get("project_details") or "Not provided."))
+    story.append(_p(_sentence_case(ctx.get("project_details")) or "Not provided."))
     story.append(Spacer(1, 14))
 
     # Technical Compliance Statement

@@ -10,6 +10,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -41,12 +43,12 @@ export default function NewGoodsReceiptPage() {
   const [remarks, setRemarks] = useState('')
   const [receivedQty, setReceivedQty] = useState<Record<number, string>>({})
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   useEffect(() => {
     if (!isAuthorized) return
-    goodsReceiptsApi.listPendingPurchaseOrders().then(setPos).catch(() => {})
-    storeApi.listLocations().then(setLocations).catch(() => {})
+    goodsReceiptsApi.listPendingPurchaseOrders().then(setPos).catch(() => setError('Failed to load purchase orders. Please refresh the page.'))
+    storeApi.listLocations().then(setLocations).catch(() => setError('Failed to load store locations. Please refresh the page.'))
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
@@ -72,9 +74,8 @@ export default function NewGoodsReceiptPage() {
         items,
       })
       router.push(`/dashboard/p2p/grn/${grn.id}`)
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } }
-      setError(err.response?.data?.detail || 'Failed to record goods receipt.')
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Failed to record goods receipt.'))
     } finally {
       setBusy(false)
     }
@@ -94,11 +95,7 @@ export default function NewGoodsReceiptPage() {
         <button onClick={() => router.push('/dashboard/p2p/grn')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Save Goods Receipt" message={error} onClose={() => setError('')} />
 
       <div style={sectionStyle}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
@@ -170,8 +167,8 @@ export default function NewGoodsReceiptPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10 }}>
-        <button disabled={busy || !selectedPo} onClick={save} style={primaryBtn}>{busy ? 'Saving…' : 'Save Goods Receipt'}</button>
-        <button disabled={busy} onClick={() => router.push('/dashboard/p2p/grn')} style={secondaryBtnStyle}>Cancel</button>
+        <button disabled={busy || !selectedPo} onClick={save} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Save Goods Receipt'}</button>
+        <button disabled={busy} onClick={() => router.push('/dashboard/p2p/grn')} style={{ ...secondaryBtnStyle, opacity: busy ? 0.6 : 1, cursor: busy ? 'default' : 'pointer' }}>Cancel</button>
       </div>
     </div>
   )

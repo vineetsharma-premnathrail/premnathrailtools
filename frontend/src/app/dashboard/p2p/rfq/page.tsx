@@ -7,6 +7,9 @@ import { p2pApi, rfqApi } from '@/lib/api'
 import { P2PRequest, RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import P2PNav from '@/components/p2p/P2PNav'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
+import { formatDate } from '@/lib/format'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -30,7 +33,7 @@ export default function P2PRfqPage() {
   const [prs, setPrs] = useState<P2PRequest[]>([])
   const [rfqs, setRfqs] = useState<RFQ[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   const load = async () => {
     setLoading(true)
@@ -42,8 +45,8 @@ export default function P2PRfqPage() {
       ])
       setPrs(prData)
       setRfqs(rfqData)
-    } catch {
-      setError('Failed to load RFQ data.')
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Failed to load RFQ data.'))
     } finally {
       setLoading(false)
     }
@@ -67,11 +70,7 @@ export default function P2PRfqPage() {
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>R.F.Q</h1>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Load RFQ Data" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 
       <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>Purchase Requests Awaiting RFQ</h2>
       <div style={sectionStyle}>
@@ -96,7 +95,7 @@ export default function P2PRfqPage() {
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{pr.p2p_number}</td>
                 <td style={tdStyle}>{pr.category_label || pr.category_code}</td>
                 <td style={tdStyle}>{pr.project_label || '—'}</td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{pr.required_date ? new Date(pr.required_date).toLocaleDateString() : '—'}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(pr.required_date)}</td>
                 <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                   {isPurchaseTeam && (
                     <span onClick={() => router.push(`/dashboard/p2p/rfq/new?pr_id=${pr.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>
@@ -135,7 +134,7 @@ export default function P2PRfqPage() {
                   </span>
                 </td>
                 <td style={tdStyle}>{rfq.is_single_quotation ? 'Yes' : 'No'}</td>
-                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{rfq.created_at ? new Date(rfq.created_at).toLocaleDateString() : '—'}</td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(rfq.created_at)}</td>
                 <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                   <span onClick={() => router.push(`/dashboard/p2p/rfq/${rfq.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
                 </td>

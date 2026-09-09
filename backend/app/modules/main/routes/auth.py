@@ -194,7 +194,7 @@ async def microsoft_login(request: Request):
 
 
 @router.get("/callback")
-async def oauth_callback(code: str, state: str, db: Session = Depends(get_db)):
+async def oauth_callback(request: Request, code: str, state: str, db: Session = Depends(get_db)):
     """Handle Microsoft OAuth callback."""
     _purge_expired_states()
     state_data = _oauth_states.pop(state, None)

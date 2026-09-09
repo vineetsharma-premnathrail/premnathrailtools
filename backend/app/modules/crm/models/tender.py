@@ -31,6 +31,10 @@ class Tender(Base, TimestampMixin, SoftDeleteMixin):
     status: Mapped[str] = mapped_column(String(50), default="Active", nullable=False)
     current_stage: Mapped[str] = mapped_column(String(50), default="Tender Published", nullable=False)
 
+    lead_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    priority: Mapped[str] = mapped_column(String(20), default="Medium", nullable=False)
+    bd_owner: Mapped[str | None] = mapped_column(String(150), nullable=True)
+
     railway_zone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     division: Mapped[str | None] = mapped_column(String(150), nullable=True)
     workshop: Mapped[str | None] = mapped_column(String(150), nullable=True)

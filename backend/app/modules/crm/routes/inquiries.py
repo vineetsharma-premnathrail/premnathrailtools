@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.core.permissions import require_app_access
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
-from app.modules.crm.models.inquiry import Inquiry
+from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.models.stage_log import CrmStageLog
 from app.modules.crm.models.organization import Organization, OrgContact
@@ -121,11 +121,12 @@ async def create_inquiry(
         if not contact:
             raise HTTPException(status_code=422, detail="org_contact_id does not belong to the specified organization")
 
+    data = payload.model_dump(exclude={"additional_items"})
     inquiry = None
     for attempt in range(5):
         try:
             universal_id = _generate_universal_id(db)
-            inquiry = Inquiry(**payload.model_dump(), universal_id=universal_id, created_by_id=user.id)
+            inquiry = Inquiry(**data, universal_id=universal_id, created_by_id=user.id)
             db.add(inquiry)
             db.flush()
             break
@@ -133,6 +134,11 @@ async def create_inquiry(
             db.rollback()
             if attempt == 4:
                 raise HTTPException(status_code=500, detail="Could not allocate an inquiry ID, please retry")
+
+    if payload.additional_items:
+        inquiry.additional_items = [
+            InquiryLineItem(**item.model_dump(), sort_order=i) for i, item in enumerate(payload.additional_items)
+        ]
 
     _log_stage(db, inquiry.id, universal_id, "Inquiry created", user)
     if inquiry.next_followup_date:
@@ -181,7 +187,7 @@ async def update_inquiry(
     if not _can_modify(inquiry, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this inquiry.")
 
-    updates = payload.model_dump(exclude_unset=True)
+    updates = payload.model_dump(exclude_unset=True, exclude={"additional_items"})
     stage_changed = "current_stage" in updates and updates["current_stage"] != inquiry.current_stage
     changed = [f for f, v in updates.items() if str(getattr(inquiry, f, None)) != str(v)]
     # Stage changes get their own timeline entry (_log_stage below) — everything else
@@ -192,6 +198,13 @@ async def update_inquiry(
     info_new = {f: updates[f] for f in info_changed}
     for field, value in updates.items():
         setattr(inquiry, field, value)
+
+    # additional_items is a full-replace: whatever the form last submitted becomes
+    # the complete list, same as how a quotation's line items are handled on save.
+    if payload.additional_items is not None:
+        inquiry.additional_items = [
+            InquiryLineItem(**item.model_dump(), sort_order=i) for i, item in enumerate(payload.additional_items)
+        ]
 
     if info_changed:
         _write_spec_revision(db, inquiry.id, user, info_old, info_new)
@@ -228,6 +241,16 @@ async def delete_inquiry(
 
     inquiry.is_deleted = True
     inquiry.deleted_at = datetime.now(timezone.utc)
+    # Activities/documents only carry a bare related_id (no FK) — if left behind, an
+    # orphaned row can resurface under a future inquiry that lands on the same id.
+    for act in db.query(Activity).filter(
+        Activity.related_module == "inquiry", Activity.related_id == inquiry_id, Activity.is_deleted == False,  # noqa: E712
+    ).all():
+        act.is_deleted = True
+    for doc in db.query(CrmDocument).filter(
+        CrmDocument.related_module == "inquiry", CrmDocument.related_id == inquiry_id, CrmDocument.is_deleted == False,  # noqa: E712
+    ).all():
+        doc.is_deleted = True
     _write_audit(db, inquiry.id, "deleted", user, summary=f"Inquiry {inquiry.universal_id} deleted by {user.name or user.email}.")
     broadcast_notification(
         db, title="Inquiry Deleted", message=f"Inquiry '{inquiry.universal_id}' was deleted by {user.name or user.email}.",

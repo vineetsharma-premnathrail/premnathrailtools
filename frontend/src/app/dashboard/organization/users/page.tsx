@@ -6,6 +6,7 @@ import { usersApi, modulesApi } from '@/lib/api'
 import { User, ModuleMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
+import MessageDialog from '@/components/erp/MessageDialog'
 
 const APPROVAL_ROLE_FLAGS: { key: keyof User; label: string }[] = [
   { key: 'is_department_head', label: 'Dept Head' },
@@ -59,11 +60,15 @@ export default function OrganizationUsersPage() {
         View-only — module access and approval roles are granted from Organization &gt; Role &amp; Permissions.
       </p>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog
+        open={!!error}
+        variant="error"
+        title="Failed to Load Users"
+        message={error}
+        onClose={() => setError('')}
+        actionLabel="Reload"
+        onAction={() => window.location.reload()}
+      />
 
       <input
         value={search}

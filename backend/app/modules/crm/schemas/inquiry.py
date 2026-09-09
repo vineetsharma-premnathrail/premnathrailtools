@@ -2,12 +2,25 @@ from datetime import date, datetime
 from pydantic import BaseModel
 
 
+class InquiryLineItemPayload(BaseModel):
+    product: str | None = None
+    product_category: str | None = None
+    product_spec: str | None = None
+    quantity: float | None = None
+
+
+class InquiryLineItemResponse(InquiryLineItemPayload):
+    model_config = {"from_attributes": True}
+
+    id: int
+
+
 class InquiryCreate(BaseModel):
     org_id: int
     org_contact_id: int
     railway_zone: str | None = None
     division: str | None = None
-    lead_source: str | None = None
+    lead_source: str
     bd_owner: str | None = None
     sales_engineer: str | None = None
     status: str = "Requirement Received"
@@ -16,6 +29,7 @@ class InquiryCreate(BaseModel):
     product_category: str | None = None
     product_spec: str | None = None
     quantity: float | None = None
+    additional_items: list[InquiryLineItemPayload] | None = None
     required_delivery_date: date | None = None
     delivery_location: str | None = None
     requirement_desc: str | None = None
@@ -47,6 +61,7 @@ class InquiryUpdate(BaseModel):
     product_category: str | None = None
     product_spec: str | None = None
     quantity: float | None = None
+    additional_items: list[InquiryLineItemPayload] | None = None
     required_delivery_date: date | None = None
     delivery_location: str | None = None
     requirement_desc: str | None = None
@@ -82,6 +97,7 @@ class InquiryResponse(BaseModel):
     product_category: str | None = None
     product_spec: str | None = None
     quantity: float | None = None
+    additional_items: list[InquiryLineItemResponse] = []
     required_delivery_date: date | None = None
     delivery_location: str | None = None
     requirement_desc: str | None = None

@@ -8,6 +8,7 @@ import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import { inputStyle, Field, pageBtnStyle } from '@/components/shared/ui'
+import MessageDialog from '@/components/erp/MessageDialog'
 
 interface FilterOptions {
   statuses: string[]
@@ -49,7 +50,7 @@ export default function ProjectsRegistryPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const [page, setPage] = useState(1)
 
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ statuses: [], application_types: [], client_companies: [] })
@@ -156,11 +157,15 @@ export default function ProjectsRegistryPage() {
         )}
       </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog
+        open={!!error}
+        variant="error"
+        title="Failed to Load Asset Register"
+        message={error}
+        onClose={() => setError('')}
+        actionLabel="Reload"
+        onAction={() => window.location.reload()}
+      />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 16 }}>
         <StatCard label="Total Machines" value={projects.length} color="#3b82f6" />

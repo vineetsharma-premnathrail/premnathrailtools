@@ -184,6 +184,10 @@ export const crmApi = {
     const { data } = await apiClient.get('/crm/organizations/search-name', { params: { q } })
     return data
   },
+  getDuplicateOrganizations: async () => {
+    const { data } = await apiClient.get('/crm/organizations/duplicates')
+    return data
+  },
   createOrganization: async (payload: Record<string, unknown>) => {
     const { data } = await apiClient.post('/crm/organizations', payload)
     return data
@@ -409,6 +413,9 @@ export const crmApi = {
   createProduct: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/products', payload)).data,
   updateProduct: async (id: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/products/${id}`, payload)).data,
   deleteProduct: async (id: number) => (await apiClient.delete(`/crm/products/${id}`)).data,
+
+  listProductCategories: async () => (await apiClient.get('/crm/product-categories')).data,
+  createProductCategory: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/product-categories', payload)).data,
 
   listPaymentTerms: async () => (await apiClient.get('/crm/payment-terms')).data,
   createPaymentTerm: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/payment-terms', payload)).data,

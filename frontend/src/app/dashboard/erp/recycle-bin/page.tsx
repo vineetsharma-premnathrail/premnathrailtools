@@ -5,6 +5,9 @@ import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import ErpNav from '@/components/erp/ErpNav'
 import { Section } from '@/components/shared/ui'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
+import { formatDate } from '@/lib/format'
 
 interface DeletedProject {
   id: number
@@ -31,7 +34,7 @@ export default function RecycleBinPage() {
   const [projects, setProjects] = useState<DeletedProject[]>([])
   const [srs, setSrs] = useState<DeletedSR[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   const load = async () => {
     setLoading(true)
@@ -57,7 +60,7 @@ export default function RecycleBinPage() {
       await erpApi.restoreProject(id)
       load()
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to restore machine.')
+      setError(extractErrorMessages(err, 'Failed to restore machine.'))
     }
   }
 
@@ -66,7 +69,7 @@ export default function RecycleBinPage() {
       await erpApi.restoreServiceRequest(id)
       load()
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to restore service request.')
+      setError(extractErrorMessages(err, 'Failed to restore service request.'))
     }
   }
 
@@ -78,11 +81,7 @@ export default function RecycleBinPage() {
       <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Recycle Bin</h1>
       <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>Deleted items are auto-purged after 10 days</p>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Restore Failed" message={error} onClose={() => setError('')} />
 
       {loading ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>Loading…</p>
@@ -131,7 +130,7 @@ function RecycleRow({ primary, secondary, deletedAt, onRestore }: { primary: str
       <div>
         <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{primary}</p>
         <p style={{ fontSize: 12, color: '#78716c', margin: 0 }}>
-          {secondary} {deletedAt ? `· Deleted ${new Date(deletedAt).toLocaleDateString()}` : ''}
+          {secondary} {deletedAt ? `· Deleted ${formatDate(deletedAt)}` : ''}
         </p>
       </div>
       {onRestore && (

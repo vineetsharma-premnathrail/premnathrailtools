@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { erpApi } from '@/lib/api'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { AuditEntry, Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -271,7 +272,7 @@ function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
               <td style={{ padding: '10px 14px', fontSize: 13 }}>{sr.issue_title}</td>
               <td style={{ padding: '10px 14px', fontSize: 12.5, textTransform: 'capitalize' }}>{sr.priority}</td>
               <td style={{ padding: '10px 14px', fontSize: 12.5, textTransform: 'capitalize' }}>{sr.status.replace('_', ' ')}</td>
-              <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#78716c' }}>{sr.created_at ? new Date(sr.created_at).toLocaleDateString() : '—'}</td>
+              <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#78716c' }}>{formatDate(sr.created_at)}</td>
             </tr>
           ))}
         </tbody>
@@ -437,7 +438,7 @@ function AuditTab({ projectId }: { projectId: number }) {
         <div key={e.id} style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
             <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108' }}>{e.performed_by}</span>
-            <span style={{ fontSize: 11.5, color: '#a8a29e' }}>{e.performed_at ? new Date(e.performed_at).toLocaleString() : ''}</span>
+            <span style={{ fontSize: 11.5, color: '#a8a29e' }}>{e.performed_at ? formatDateTime(e.performed_at) : ''}</span>
           </div>
           <p style={{ fontSize: 13, color: '#57534e', margin: 0 }}>{e.summary || e.action}</p>
         </div>

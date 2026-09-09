@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { feedbackApi } from '@/lib/api'
 import { Feedback } from '@/types'
+import { useAuth } from '@/hooks/useAuth'
 
 export default function FeedbackBell() {
+  const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [entries, setEntries] = useState<Feedback[]>([])
@@ -15,11 +17,15 @@ export default function FeedbackBell() {
     feedbackApi.getUnreadCount().then((r) => setUnreadCount(r.count)).catch(() => {})
   }
 
+  // Only poll while actually signed in — see NotificationBell for why this
+  // guard exists (repeated 401s from an unauthenticated poll can trip the
+  // backend's IP ban and lock the user out of signing back in).
   useEffect(() => {
+    if (!user) return
     refreshCount()
     const interval = setInterval(refreshCount, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [user])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {

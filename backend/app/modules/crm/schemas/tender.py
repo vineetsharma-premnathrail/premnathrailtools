@@ -15,6 +15,9 @@ class TenderCreate(BaseModel):
     currency: str = "INR"
     status: str = "Active"
     current_stage: str = "Tender Published"
+    lead_source: str
+    priority: str = "Medium"
+    bd_owner: str | None = None
     railway_zone: str | None = None
     division: str | None = None
     workshop: str | None = None
@@ -49,6 +52,9 @@ class TenderUpdate(BaseModel):
     currency: str | None = None
     status: str | None = None
     current_stage: str | None = None
+    lead_source: str | None = None
+    priority: str | None = None
+    bd_owner: str | None = None
     railway_zone: str | None = None
     division: str | None = None
     workshop: str | None = None
@@ -87,6 +93,9 @@ class TenderResponse(BaseModel):
     currency: str
     status: str
     current_stage: str
+    lead_source: str | None = None
+    priority: str
+    bd_owner: str | None = None
     railway_zone: str | None = None
     division: str | None = None
     workshop: str | None = None

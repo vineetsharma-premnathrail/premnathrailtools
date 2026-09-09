@@ -8,9 +8,11 @@ import { CrmActivity, OrgContact } from '@/types'
 import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
 import ValidatedInput from '@/components/ValidatedInput'
-import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
+import { isValidEmail, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
 import { ACTIVITY_TYPES } from './constants'
 import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle } from './ui'
+import MessageDialog from '@/components/erp/MessageDialog'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import CameraCapture from '@/components/CameraCapture'
 import RichTextEditor from '@/components/RichTextEditor'
 import Checkbox from '@/components/Checkbox'
@@ -73,7 +75,7 @@ export default function ActivityForm({
   const [newContact, setNewContact] = useState({ name: '', designation: '', department: '', mobile: '', email: '' })
   const [savingContact, setSavingContact] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
 
   const saveNewContact = async () => {
     if (!orgId) {
@@ -105,7 +107,7 @@ export default function ActivityForm({
       setNewContact({ name: '', designation: '', department: '', mobile: '', email: '' })
       setAddingContact(false)
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to save contact.')
+      setError(extractErrorMessages(err, 'Failed to save contact.'))
     } finally {
       setSavingContact(false)
     }
@@ -191,7 +193,7 @@ export default function ActivityForm({
       await onSubmit(payload, stagedPhotos)
       setStagedPhotos([])
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Failed to save activity.')
+      setError(extractErrorMessages(err, 'Failed to save activity.'))
     } finally {
       setSaving(false)
     }
@@ -202,9 +204,10 @@ export default function ActivityForm({
     setStagedPhotos((prev) => [...prev, ...Array.from(files)])
   }
 
+  const [confirmDeletePhotoId, setConfirmDeletePhotoId] = useState<number | null>(null)
+
   const deleteExistingPhoto = async (attachmentId: number) => {
     if (!initial?.id) return
-    if (!window.confirm('Delete this photo?')) return
     setDeletingAttachmentId(attachmentId)
     try {
       const updated = await crmApi.deleteActivityAttachment(initial.id, attachmentId)
@@ -216,11 +219,7 @@ export default function ActivityForm({
 
   return (
     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {error && (
-        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error}
-        </div>
-      )}
+      <MessageDialog open={!!error} variant="error" title="Cannot Save" message={error} onClose={() => setError('')} />
 
       <Section title="Follow Up Details">
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -366,11 +365,19 @@ export default function ActivityForm({
               stagedPhotos={stagedPhotos}
               onRemoveStaged={(i) => setStagedPhotos((prev) => prev.filter((_, idx) => idx !== i))}
               existingAttachments={existingAttachments}
-              onDeleteExisting={deleteExistingPhoto}
+              onDeleteExisting={(id) => setConfirmDeletePhotoId(id)}
               deletingAttachmentId={deletingAttachmentId}
             />
           </Field>
         )}
+        <ConfirmDialog
+          open={confirmDeletePhotoId != null}
+          title="Delete Photo"
+          message="Delete this photo? This cannot be undone."
+          confirmLabel="Delete"
+          onConfirm={() => { const id = confirmDeletePhotoId; setConfirmDeletePhotoId(null); if (id != null) deleteExistingPhoto(id) }}
+          onCancel={() => setConfirmDeletePhotoId(null)}
+        />
       </Section>
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>

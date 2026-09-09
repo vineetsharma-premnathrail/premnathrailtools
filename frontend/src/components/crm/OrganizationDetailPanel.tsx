@@ -7,6 +7,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
 import { OrganizationDetail, Inquiry, Tender, OrgContact } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages, isValidEmail } from '@/lib/validation'
 import InquiryForm from '@/components/crm/InquiryForm'
 import TenderForm from '@/components/crm/TenderForm'
 import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab } from '@/components/crm/ui'
@@ -138,8 +140,8 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
       </Card>
       <Card title="Contact & Registration">
         <InfoRow label="GST Number" value={org.gst_number || 'Not provided'} />
-        <InfoRow label="Official Phone" value={org.official_phone || 'Not provided'} />
-        <InfoRow label="Official Email" value={org.official_email || 'Not provided'} />
+        <InfoRow label="Official Phone" value={[org.official_phone, ...(org.additional_phones || [])].filter(Boolean).join(', ') || 'Not provided'} />
+        <InfoRow label="Official Email" value={[org.official_email, ...(org.additional_emails || [])].filter(Boolean).join(', ') || 'Not provided'} />
         <InfoRow label="Website" value={org.website || 'Not provided'} />
       </Card>
     </div>
@@ -155,6 +157,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
   const [saving, setSaving] = useState(false)
   const submittingRef = useRef(false)
   const [dupeConfirm, setDupeConfirm] = useState(false)
+  const [errorDialog, setErrorDialog] = useState<string[] | null>(null)
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
   const [tenders, setTenders] = useState<Tender[]>([])
 
@@ -175,14 +178,16 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
     setShowForm(false)
   }
 
-  const isDuplicate = () => {
-    const nameLower = form.name.trim().toLowerCase()
-    const mobile = form.mobile.trim()
-    return org.contacts.some((c) => {
-      if (editingId && c.id === editingId) return false
-      return c.name.trim().toLowerCase() === nameLower && (!mobile || (c.mobile || '').trim() === mobile)
-    })
-  }
+  const otherContacts = org.contacts.filter((c) => !(editingId && c.id === editingId))
+  const mobileTrim = form.mobile.trim()
+  const emailLower = form.email.trim().toLowerCase()
+  // Live, as-you-type duplicate flags against every other contact on this
+  // organization — surfaced inline instead of only at save time.
+  const dupMobile = !!mobileTrim && otherContacts.some((c) => (c.mobile || '').trim() === mobileTrim)
+  const dupEmail = !!emailLower && otherContacts.some((c) => (c.email || '').trim().toLowerCase() === emailLower)
+  const dupName = !!form.name.trim() && otherContacts.some((c) => c.name.trim().toLowerCase() === form.name.trim().toLowerCase())
+
+  const isDuplicate = () => dupName || dupMobile || dupEmail
 
   const doSave = async () => {
     submittingRef.current = true
@@ -192,6 +197,8 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
       else await crmApi.createOrgContact(org.id, form)
       cancelForm()
       onRefresh()
+    } catch (err: any) {
+      setErrorDialog(extractErrorMessages(err, 'Failed to save contact.'))
     } finally {
       submittingRef.current = false
       setSaving(false)
@@ -201,7 +208,20 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.name.trim() || submittingRef.current) return
-    if (isDuplicate()) {
+    if (form.email && !isValidEmail(form.email)) {
+      setErrorDialog(['Enter a valid email address for this contact.'])
+      return
+    }
+    // Mobile/email matching another contact on the same org is a hard stop —
+    // only a same-name-but-different-details match gets a soft "save anyway?".
+    if (dupMobile || dupEmail) {
+      const parts: string[] = []
+      if (dupMobile) parts.push('This mobile number is already used by another contact on this organization.')
+      if (dupEmail) parts.push('This email address is already used by another contact on this organization.')
+      setErrorDialog(parts)
+      return
+    }
+    if (dupName) {
       setDupeConfirm(true)
       return
     }
@@ -218,10 +238,24 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
               <Field label="Name *"><input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
               <Field label="Designation"><input value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} style={inputStyle} /></Field>
               <Field label="Department"><input value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} style={inputStyle} /></Field>
-              <Field label="Mobile"><input value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} style={inputStyle} /></Field>
-              <Field label="Email"><input value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} style={inputStyle} /></Field>
+              <Field label="Mobile">
+                <input
+                  value={form.mobile}
+                  onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
+                  style={{ ...inputStyle, ...(dupMobile ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }}
+                />
+                {dupMobile && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Already used by another contact on this organization.</p>}
+              </Field>
+              <Field label="Email">
+                <input
+                  value={form.email}
+                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  style={{ ...inputStyle, ...(dupEmail ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }}
+                />
+                {dupEmail && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Already used by another contact on this organization.</p>}
+              </Field>
               <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, width: '100%' }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Contact'}</button>
+                <button type="submit" disabled={saving || dupMobile || dupEmail} style={{ ...primaryBtnStyle, width: '100%', opacity: saving || dupMobile || dupEmail ? 0.6 : 1 }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Contact'}</button>
               </div>
             </form>
           )}
@@ -311,9 +345,16 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
       <ConfirmDialog
         open={dupeConfirm}
         title="Possible duplicate contact"
-        message={`A contact named "${form.name.trim()}"${form.mobile.trim() ? ` with mobile ${form.mobile.trim()}` : ''} already exists for this organization. Save anyway?`}
+        message={`A contact with the same name, mobile, or email already exists for this organization. Save anyway?`}
         onConfirm={() => { setDupeConfirm(false); doSave() }}
         onCancel={() => setDupeConfirm(false)}
+      />
+      <MessageDialog
+        open={!!errorDialog}
+        variant="error"
+        title="Failed to Save Contact"
+        message={errorDialog || ''}
+        onClose={() => setErrorDialog(null)}
       />
     </div>
   )
