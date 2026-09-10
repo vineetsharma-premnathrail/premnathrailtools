@@ -297,10 +297,7 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     is_export = (ctx.get("quotation_type") or "Domestic") == "Export"
 
     # ── Header band: company name/type on the left, big "QUOTATION" title on the right ──
-    # Only actual revisions (revision_number > 0, set by the explicit "Revise" workflow
-    # action) get the "REVISED" marker — a fresh/original quotation must never show it.
-    is_revised = bool(ctx.get("revision_number"))
-    story.append(_p("REVISED QUOTATION" if is_revised else "QUOTATION", size=HEADER_SIZE + 12, bold=True, align="right", color=ACCENT))
+    story.append(_p("QUOTATION", size=HEADER_SIZE + 12, bold=True, align="right", color=ACCENT))
     story.append(Spacer(1, 2))
     story.append(_p(f"Quotation type: {ctx.get('quotation_type') or 'Domestic'}", size=BODY_SIZE, align="right", color=MUTED))
     story.append(Spacer(1, 14))
@@ -433,7 +430,7 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     story.append(KeepTogether([
         summary_table,
         Spacer(1, 14),
-        _p(f"<b>Amount in words:</b> {_amount_in_words(grand_total, is_export)}", size=BODY_SIZE, escape=False),
+        _p(f"<b>Amount in words: {_amount_in_words(grand_total, is_export)}</b>", size=BODY_SIZE, escape=False),
     ]))
     story.append(Spacer(1, 20))
 
