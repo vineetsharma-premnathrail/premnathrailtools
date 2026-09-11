@@ -50,6 +50,17 @@ const config: TourConfig = {
       purpose: 'When you plan to follow up again — this is what drives the "Open/Overdue/Today\'s Follow-ups" counts on the CRM Dashboard.',
     },
     {
+      target: 'activity-status',
+      title: 'Status',
+      required: false,
+      options: [
+        { value: 'Open', meaning: 'Still needs action — the default for a new follow-up.' },
+        { value: 'Closed', meaning: 'Done with, nothing further planned.' },
+        { value: 'Hold', meaning: 'Paused for now, not currently active.' },
+      ],
+      why: 'Only a follow-up left as "Open" counts toward the "Open Follow-ups" and "Overdue Follow-ups" figures on the CRM Dashboard, and toward the Follow-ups page\'s "Open" bucket.',
+    },
+    {
       target: 'activity-attachment',
       title: 'Attachment',
       required: false,

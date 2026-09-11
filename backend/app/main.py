@@ -34,7 +34,7 @@ from app.modules.store.models.location import StoreLocation
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, InquiryLineItem, Quotation, QuotationLineItem,
     Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity,
-    CrmDocument, CrmDiscussion, CrmStageLog, Product, PaymentTerm,
+    CrmDocument, CrmStageLog, Product, PaymentTerm,
 )
 from app.modules.rnd.models.calculation_history import CalculationHistory
 from app.modules.rnd.models.tool_calculations import (

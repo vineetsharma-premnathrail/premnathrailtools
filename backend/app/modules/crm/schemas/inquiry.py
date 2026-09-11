@@ -24,7 +24,7 @@ class InquiryCreate(BaseModel):
     bd_owner: str | None = None
     sales_engineer: str | None = None
     status: str = "Requirement Received"
-    current_stage: str = "Customer Requirement"
+    current_stage: str = "Requirement Received"
     product: str | None = None
     product_category: str | None = None
     product_spec: str | None = None

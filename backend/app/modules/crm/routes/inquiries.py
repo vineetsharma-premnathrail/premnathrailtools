@@ -236,8 +236,8 @@ async def delete_inquiry(
     inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only an admin can delete this inquiry.")
+    if not _can_modify(inquiry, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this inquiry.")
 
     inquiry.is_deleted = True
     inquiry.deleted_at = datetime.now(timezone.utc)

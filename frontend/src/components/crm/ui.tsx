@@ -1,8 +1,8 @@
 'use client'
 
-import { ReactNode, useMemo, useRef, useState } from 'react'
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { COLORS, RADII, BORDERS, GLASS, SHADOWS, TEXT, BRAND } from '@/lib/theme'
+import { COLORS, RADII, BORDERS, GLASS, SHADOWS, TEXT, BRAND, SUCCESS } from '@/lib/theme'
 import { CrmActivityAttachment } from '@/types'
 import { crmApi } from '@/lib/api'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
@@ -143,6 +143,95 @@ export function RevisionSelector({ revisions, selectedId, onSelect, tourId }: { 
           </div>
         </>,
         document.body
+      )}
+    </div>
+  )
+}
+
+/**
+ * Click-to-expand workflow stage indicator — a ring-progress badge (current
+ * stage number over a conic-gradient ring showing overall % complete) plus
+ * the stage name, a % pill, and a dropdown of every stage so an authorized
+ * user can jump straight to one. Shared by Inquiry and Tender detail pages
+ * (only the `stages` list and current value differ between them).
+ */
+export function StageProgress({ stage, stages, canModify, onRequestChange, tourId, style }: {
+  stage: string
+  stages: string[]
+  canModify: boolean
+  onRequestChange: (s: string) => void
+  tourId?: string
+  /** Merged onto the outer wrapper — use to drop the default marginBottom
+   * and/or flex-size this alongside other elements (e.g. the header's
+   * action buttons) in the same row. */
+  style?: React.CSSProperties
+}) {
+  const activeIdx = stages.indexOf(stage)
+  const pct = stages.length ? ((activeIdx + 1) / stages.length) * 100 : 0
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative', marginBottom: 20, ...style }}>
+      <div
+        onClick={() => setOpen((v) => !v)}
+        {...(tourId ? { 'data-tour': tourId } : {})}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: '6px 14px', borderRadius: 999,
+          background: GLASS.card, backdropFilter: GLASS.blurStrong, WebkitBackdropFilter: GLASS.blurStrong,
+          border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(open), cursor: 'pointer', userSelect: 'none',
+          transition: 'box-shadow .15s',
+        }}
+      >
+        <div style={{ position: 'relative', width: 24, height: 24, borderRadius: '50%', background: `conic-gradient(${BRAND.primary} ${pct}%, rgba(15,23,42,0.10) 0)`, flexShrink: 0 }}>
+          <div style={{ position: 'absolute', inset: 2.5, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800, color: BRAND.primary }}>
+            {activeIdx + 1}
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+          <span style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: COLORS.textFaint2 }}>Stage {activeIdx + 1} of {stages.length}</span>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: COLORS.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stage}</span>
+        </div>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: BRAND.primary, background: BRAND.primarySoft, padding: '2px 7px', borderRadius: 999 }}>{Math.round(pct)}%</span>
+          <span style={{ fontSize: 12, color: COLORS.textFaint2, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
+        </div>
+      </div>
+
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, zIndex: 20, borderRadius: 14, background: 'rgba(255,255,255,.96)', backdropFilter: GLASS.blurStrong, WebkitBackdropFilter: GLASS.blurStrong, border: '1px solid rgba(255,255,255,.4)', boxShadow: SHADOWS.glass(true), overflow: 'hidden' }}>
+        <div style={{ maxHeight: 340, overflowY: 'auto', padding: 6 }}>
+          {stages.map((s, i) => {
+            const done = i < activeIdx
+            const active = i === activeIdx
+            const clickable = canModify && !active
+            const circleBg = done ? SUCCESS.primary : active ? BRAND.primary : '#fff'
+            const circleColor = done || active ? '#fff' : COLORS.textFaint2
+            const circleBorder = done ? SUCCESS.primary : active ? BRAND.primary : 'rgba(0,0,0,0.15)'
+            return (
+              <div
+                key={s}
+                onClick={clickable ? () => { onRequestChange(s); setOpen(false) } : undefined}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: clickable ? 'pointer' : 'default', background: active ? BRAND.primarySoft : 'transparent' }}
+                onMouseEnter={(e) => { if (clickable) e.currentTarget.style.background = 'rgba(0,0,0,0.04)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = active ? BRAND.primarySoft : 'transparent' }}
+              >
+                <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: circleBg, color: circleColor, border: `2px solid ${circleBorder}`, fontSize: 9.5, fontWeight: 700, flexShrink: 0 }}>
+                  {done ? '✓' : i + 1}
+                </div>
+                <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 500, color: active ? BRAND.primary : done ? SUCCESS.text : '#57534e' }}>{s}</span>
+              </div>
+            )
+          })}
+        </div>
+        </div>
       )}
     </div>
   )

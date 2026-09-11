@@ -33,7 +33,7 @@ from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceip
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem,
     Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity,
-    CrmDocument, CrmDiscussion, CrmStageLog,
+    CrmDocument, CrmStageLog,
 )
 from app.modules.rnd.models.calculation_history import CalculationHistory
 from app.modules.rnd.models.tool_calculations import (

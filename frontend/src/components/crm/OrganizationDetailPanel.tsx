@@ -43,7 +43,6 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
   }, [orgId])
 
   const canModify = !!org && !!user && (user.role === 'admin' || org.created_by_id === user.id)
-  const isAdmin = user?.role === 'admin'
 
   const handleDelete = async () => {
     await crmApi.deleteOrganization(orgId)
@@ -67,11 +66,11 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
             ← Back
           </button>
           {canModify && showEditLink && <Link href={`/dashboard/crm/organizations/${org.id}/edit`} data-tour="orgdetail-edit-link" style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-block' }}>Edit</Link>}
-          {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} data-tour="orgdetail-delete-btn" style={dangerBtnStyle}>Delete</button>}
+          {canModify && <button onClick={() => setShowDeleteConfirm(true)} data-tour="orgdetail-delete-btn" style={dangerBtnStyle}>Delete</button>}
         </div>
       </div>
 
-      <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, padding: '6px 6px 8px', borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto', overflowY: 'visible' }}>
+      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.map((t) => {
           const count = t === 'Inquiries' ? org.inquiry_count : t === 'Tenders' ? org.tender_count : t === 'Contacts' ? org.contacts.length : null
           return (
@@ -81,11 +80,12 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
               data-tour={`orgdetail-tab-${t}`}
               className="org-detail-tab"
               style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '10px 6px', marginRight: 16, border: 'none', background: 'transparent', whiteSpace: 'nowrap',
-                borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
+                display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                padding: '9px 16px', border: 'none', borderRadius: 999, whiteSpace: 'nowrap',
+                background: tab === t ? '#fff' : 'transparent',
+                boxShadow: tab === t ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
                 color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                borderRadius: 6,
+                transition: 'background .15s, box-shadow .15s, color .15s',
               }}
             >
               {t}
@@ -93,7 +93,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
                 <span
                   style={{
                     fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 9999,
-                    background: tab === t ? 'rgba(250,155,155,0.15)' : 'rgba(0,0,0,0.06)',
+                    background: tab === t ? 'rgba(255,122,69,0.15)' : 'rgba(0,0,0,0.06)',
                     color: tab === t ? '#FF7A45' : '#78716c',
                   }}
                 >

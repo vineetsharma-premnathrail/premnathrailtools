@@ -288,8 +288,8 @@ async def delete_activity(
     activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only an admin can delete this activity.")
+    if not _can_modify(activity, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this activity.")
     activity.is_deleted = True
     activity.deleted_at = datetime.now(timezone.utc)
     db.commit()

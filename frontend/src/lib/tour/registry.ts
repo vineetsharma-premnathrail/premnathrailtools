@@ -76,6 +76,10 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/crmPaymentTerms'),
   },
   {
+    pattern: /^\/dashboard\/crm\/product-categories$/,
+    load: () => import('./configs/crmProductCategories'),
+  },
+  {
     pattern: /^\/dashboard\/crm\/products$/,
     load: () => import('./configs/crmProducts'),
   },

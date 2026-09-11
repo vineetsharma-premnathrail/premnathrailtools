@@ -63,7 +63,7 @@ function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
     tender_category: initial?.tender_category || '',
     tender_value: initial?.tender_value != null ? String(initial.tender_value) : '',
     currency: initial?.currency || 'INR',
-    status: initial?.status || 'Active',
+    status: initial?.status || 'Requirement Received',
     lead_source: initial?.lead_source || '',
     priority: initial?.priority || 'Medium',
     railway_zone: initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? 'Other' : initial?.railway_zone || '',

@@ -254,27 +254,6 @@ class TenderCompetitorResponse(BaseModel):
     created_at: datetime | None = None
 
 
-# ---------- Discussions ----------
-
-class DiscussionCreate(BaseModel):
-    message: str
-    department: str | None = None
-
-
-class DiscussionResponse(BaseModel):
-    model_config = {"from_attributes": True}
-
-    id: int
-    related_module: str
-    related_id: int
-    universal_id: str | None = None
-    message: str
-    department: str | None = None
-    sent_by_id: int
-    sent_by_name: str | None = None
-    created_at: datetime | None = None
-
-
 # ---------- Stage Logs ----------
 
 class StageLogResponse(BaseModel):

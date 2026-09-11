@@ -17,13 +17,17 @@ from app.modules.crm.schemas.tender import TenderCreate, TenderUpdate, TenderRes
 from app.modules.crm.schemas.inquiry import StageLogEntry
 from app.modules.crm.schemas.workflow import StageLogResponse
 from app.modules.crm.schemas.document import TechnicalOfferRequestBody
+from app.modules.crm.schemas.activity import MomExportRequest
 from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.reports.technical_offer_pdf import build_technical_offer_pdf
+from app.modules.crm.reports.mom_docx import build_mom_docx, mom_rows_from_activity
+from app.modules.crm.reports.mom_pdf import build_mom_pdf
 from app.utils.notifications import broadcast_notification, notify_user
 from app.utils.email import send_technical_offer_request_email
 from app.utils.sharepoint import upload_bytes_to_sharepoint, build_sharepoint_folder_path
 from app.auth.jwt_handler import create_document_share_token
 from app.core.config import settings
+from fastapi.responses import Response
 
 router = APIRouter(prefix="/crm/tenders", tags=["CRM - Tenders"])
 
@@ -229,8 +233,8 @@ async def delete_tender(
     tender = db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == False).first()  # noqa: E712
     if not tender:
         raise HTTPException(status_code=404, detail="Tender not found")
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only an admin can delete this tender.")
+    if not _can_modify(tender, user):
+        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this tender.")
 
     tender.is_deleted = True
     tender.deleted_at = datetime.now(timezone.utc)
@@ -430,3 +434,93 @@ async def add_tender_stage(
     db.commit()
     db.refresh(entry)
     return entry
+
+
+def _build_mom_ctx(tender_id: int, payload: MomExportRequest, db: Session) -> tuple[dict, "Organization | None"]:
+    tender = db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == False).first()  # noqa: E712
+    if not tender:
+        raise HTTPException(status_code=404, detail="Tender not found")
+
+    org = db.query(Organization).filter(Organization.id == tender.org_id).first()
+
+    activities_query = db.query(Activity).filter(
+        Activity.related_module == "tender", Activity.related_id == tender_id, Activity.is_deleted == False,  # noqa: E712
+    )
+    if payload.activity_ids:
+        activities_query = activities_query.filter(Activity.id.in_(payload.activity_ids))
+    activities = activities_query.order_by(Activity.id.asc()).all()
+
+    pew_members = (
+        db.query(User).filter(User.id.in_(payload.pew_member_ids)).all() if payload.pew_member_ids else []
+    )
+    client_contacts = (
+        db.query(OrgContact).filter(OrgContact.id.in_(payload.client_contact_ids)).all()
+        if payload.client_contact_ids else []
+    )
+
+    rows = []
+    for a in activities:
+        if a.mom_items:
+            for item in a.mom_items:
+                rows.append({
+                    "observation": item.get("observation"),
+                    "action_plan": item.get("action_plan"),
+                    "responsibility": item.get("responsibility") or tender.bd_owner,
+                    "target": item.get("target_date"),
+                })
+        else:
+            target = a.next_followup.strftime("%d.%m.%Y") if a.next_followup else None
+            rows.extend(mom_rows_from_activity(a.remarks, a.action_plan, tender.bd_owner, target))
+
+    ctx = {
+        "org_name": org.name if org else None,
+        "subject": payload.subject,
+        "meeting_date": payload.meeting_date.strftime("%d.%m.%Y"),
+        "pew_members": [{"name": u.name, "designation": u.designation} for u in pew_members],
+        "client_members": [{"name": c.name, "designation": c.designation} for c in client_contacts],
+        "activities": rows,
+    }
+    return ctx, org
+
+
+@router.post("/{tender_id}/mom-docx")
+async def export_tender_mom(
+    tender_id: int,
+    payload: MomExportRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """Export this tender's logged activities as a Minutes-of-Meeting .docx.
+    See the matching inquiries.py endpoint — same context-building and
+    template, just scoped to a tender's activities instead of an inquiry's."""
+    ctx, org = _build_mom_ctx(tender_id, payload, db)
+    buf = build_mom_docx(ctx)
+
+    org_slug = (org.name if org else "Tender").replace(" ", "_").replace("/", "-")
+    filename = f"MOM_{org_slug}_{payload.meeting_date.strftime('%Y%m%d')}.docx"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/{tender_id}/mom-pdf")
+async def export_tender_mom_pdf(
+    tender_id: int,
+    payload: MomExportRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """Export this tender's logged activities as a Minutes-of-Meeting .pdf,
+    built directly with reportlab (no DOCX-to-PDF conversion step)."""
+    ctx, org = _build_mom_ctx(tender_id, payload, db)
+    buf = build_mom_pdf(ctx)
+
+    org_slug = (org.name if org else "Tender").replace(" ", "_").replace("/", "-")
+    filename = f"MOM_{org_slug}_{payload.meeting_date.strftime('%Y%m%d')}.pdf"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

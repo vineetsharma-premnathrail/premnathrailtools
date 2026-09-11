@@ -28,7 +28,7 @@ class Tender(Base, TimestampMixin, SoftDeleteMixin):
     tender_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     currency: Mapped[str] = mapped_column(String(10), default="INR")
 
-    status: Mapped[str] = mapped_column(String(50), default="Active", nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
     current_stage: Mapped[str] = mapped_column(String(50), default="Tender Published", nullable=False)
 
     lead_source: Mapped[str | None] = mapped_column(String(100), nullable=True)

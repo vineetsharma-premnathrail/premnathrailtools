@@ -65,6 +65,12 @@ const steps: TourStep[] = [
     purpose: 'Click "View" on any entry to see its full remarks and details in a popup.',
   },
   {
+    target: 'tender-followup-change-status-btn',
+    title: 'Change Status',
+    purpose: 'Set this follow-up\'s own status — Open, Closed, or Hold — directly from the list, without opening Edit.',
+    why: 'Only a follow-up left as "Open" counts toward the "Open/Overdue Follow-ups" figures on the CRM Dashboard and the Follow-ups page\'s "Open" bucket.',
+  },
+  {
     target: 'tender-tab-Timeline',
     title: 'Timeline',
     purpose: 'A merged, chronological history of everything that happened to this tender — creation, field edits, stage changes, follow-ups, and Technical Offer emails — all in one feed.',

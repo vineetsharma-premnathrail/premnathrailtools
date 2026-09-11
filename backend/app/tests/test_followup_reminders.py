@@ -8,6 +8,7 @@ from app.tasks.followup_reminders import (
     _send_activity_followup_reminders,
     DUE_TODAY,
     DUE_TOMORROW,
+    OVERDUE,
 )
 
 
@@ -128,6 +129,42 @@ def test_notification_mentions_organization_name(db):
 
     note = db.query(Notification).filter(Notification.user_id == creator.id).first()
     assert "Dalmia Cement" in note.message
+
+
+def test_notifies_assigned_user_on_overdue(db):
+    org = make_org(db)
+    assignee = make_user(db, "assignee10@premnathrail.com", "Overdue Owner")
+    creator = make_user(db, "creator10@premnathrail.com", "Someone Else")
+    make_activity(db, org, assigned_to="Overdue Owner", created_by_id=creator.id, next_followup=date.today() - timedelta(days=3))
+
+    _send_activity_followup_reminders(db)
+
+    notes = db.query(Notification).filter(Notification.user_id == assignee.id).all()
+    assert len(notes) == 1
+    assert notes[0].notification_type == OVERDUE
+    assert "overdue" in notes[0].title.lower()
+    assert "3 days overdue" in notes[0].message
+
+
+def test_overdue_notification_resends_daily(db):
+    org = make_org(db)
+    creator = make_user(db, "creator11@premnathrail.com", "Repeat Overdue")
+    make_activity(db, org, created_by_id=creator.id, next_followup=date.today() - timedelta(days=1))
+
+    _send_activity_followup_reminders(db)
+    _send_activity_followup_reminders(db)
+
+    assert db.query(Notification).filter(Notification.user_id == creator.id).count() == 1
+
+
+def test_no_notification_for_non_open_overdue_activity(db):
+    org = make_org(db)
+    creator = make_user(db, "creator12@premnathrail.com", "Closed Overdue")
+    make_activity(db, org, created_by_id=creator.id, next_followup=date.today() - timedelta(days=2), status="Done")
+
+    _send_activity_followup_reminders(db)
+
+    assert db.query(Notification).count() == 0
 
 
 def test_assigned_to_match_is_case_insensitive(db):

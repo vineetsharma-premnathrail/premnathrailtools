@@ -320,6 +320,14 @@ export const crmApi = {
     const { data } = await apiClient.post(`/crm/tenders/${id}/stages`, payload)
     return data
   },
+  exportTenderMom: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/crm/tenders/${id}/mom-docx`, payload, { responseType: 'blob' })
+    return data as Blob
+  },
+  exportTenderMomPdf: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/crm/tenders/${id}/mom-pdf`, payload, { responseType: 'blob' })
+    return data as Blob
+  },
 
   // Activities
   listActivities: async (params: { search?: string; status?: string; org_id?: number; related_module?: string; related_id?: number; overdue?: boolean; due_today?: boolean } = {}) => {
@@ -416,6 +424,8 @@ export const crmApi = {
 
   listProductCategories: async () => (await apiClient.get('/crm/product-categories')).data,
   createProductCategory: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/product-categories', payload)).data,
+  updateProductCategory: async (id: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/product-categories/${id}`, payload)).data,
+  deleteProductCategory: async (id: number) => (await apiClient.delete(`/crm/product-categories/${id}`)).data,
 
   listPaymentTerms: async () => (await apiClient.get('/crm/payment-terms')).data,
   createPaymentTerm: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/payment-terms', payload)).data,
@@ -439,12 +449,6 @@ export const crmApi = {
   createTenderCompetitor: async (tenderId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/tenders/${tenderId}/competitors`, payload)).data,
   updateTenderCompetitor: async (tenderId: number, compId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/tenders/${tenderId}/competitors/${compId}`, payload)).data,
   deleteTenderCompetitor: async (tenderId: number, compId: number) => (await apiClient.delete(`/crm/tenders/${tenderId}/competitors/${compId}`)).data,
-
-  // Discussions
-  listInquiryDiscussions: async (inquiryId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/discussions`)).data,
-  createInquiryDiscussion: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/discussions`, payload)).data,
-  listTenderDiscussions: async (tenderId: number) => (await apiClient.get(`/crm/tenders/${tenderId}/discussions`)).data,
-  createTenderDiscussion: async (tenderId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/tenders/${tenderId}/discussions`, payload)).data,
 }
 
 export const erpApi = {

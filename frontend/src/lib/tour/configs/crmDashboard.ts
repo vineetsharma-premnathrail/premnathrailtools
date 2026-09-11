@@ -62,8 +62,8 @@ const config: TourConfig = {
     {
       target: 'dash-stat-pending-tenders',
       title: 'Pending Tenders',
-      purpose: 'Tenders still Active — not yet marked Won, Lost, or Cancelled.',
-      after: 'Click to jump straight to the Tenders list filtered to Active status.',
+      purpose: 'Tenders not yet in a closed or cancelled status — i.e. anything other than "Closed – Ordered", "Closed – Not Ordered", or "Tender Cancelled".',
+      after: 'Click to jump to the Tenders list.',
     },
     {
       target: 'dash-recent-organizations',

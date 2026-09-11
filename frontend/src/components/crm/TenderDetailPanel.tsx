@@ -4,16 +4,17 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
-import { Tender, Organization, OrgContact, TenderTaskItem, TenderCompetitorItem, PurchaseOrderItem, CrmDiscussionItem, CrmActivity, CrmDocument, CrmStageLogEntry } from '@/types'
+import { Tender, Organization, OrgContact, TenderTaskItem, TenderCompetitorItem, PurchaseOrderItem, CrmActivity, CrmDocument, CrmStageLogEntry } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
 import TenderForm from '@/components/crm/TenderForm'
 import { RichText } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import ActivityForm from '@/components/crm/ActivityForm'
+import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
-import { TND_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, DOC_CATEGORIES, tenderStatusColor } from '@/components/crm/constants'
-import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, handleEnterAsTab } from '@/components/crm/ui'
+import { TND_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, DOC_CATEGORIES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
+import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, handleEnterAsTab, StageProgress } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -110,7 +111,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45' }}>{tender.universal_id}</span>
@@ -126,9 +127,26 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
             <button onClick={() => setEditing(false)} type="button" style={secondaryBtnStyle}>Cancel</button>
           </div>
         )}
-        {!editing && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, width: '100%', maxWidth: '100%' }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', width: '100%' }}>
+      </div>
+
+      <MessageDialog open={!!torError} variant="error" title="Technical Offer Request Failed" message={torError} onClose={() => setTorError('')} />
+      <MessageDialog open={!!error} variant="error" title="Something Went Wrong" message={error} onClose={() => setError('')} />
+
+      {editing && (
+        <StageProgress stage={tender.current_stage} stages={TND_STAGES} canModify={canModify} onRequestChange={setPendingStage} tourId="tender-stage-progress" />
+      )}
+      {!editing && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+          <StageProgress
+            stage={tender.current_stage}
+            stages={TND_STAGES}
+            canModify={canModify}
+            onRequestChange={setPendingStage}
+            tourId="tender-stage-progress"
+            style={{ marginBottom: 0, flex: '1 1 280px', minWidth: 240 }}
+          />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <button onClick={() => router.push('/dashboard/crm/inquiries')} type="button" style={secondaryBtnStyle}>
                 ← Back
               </button>
@@ -142,7 +160,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
                 {sendingTOR ? 'Sending…' : 'Send Technical Offer Request to R&D'}
               </button>
               {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} data-tour="tender-edit-btn" style={secondaryBtnStyle}>Edit</button>}
-              {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} data-tour="tender-delete-btn" style={dangerBtnStyle}>Delete</button>}
+              {canModify && <button onClick={() => setShowDeleteConfirm(true)} data-tour="tender-delete-btn" style={dangerBtnStyle}>Delete</button>}
             </div>
             {tender.technical_offer_number && (
               <span style={{ fontSize: 11, color: '#78716c' }}>
@@ -151,25 +169,21 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
               </span>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <MessageDialog open={!!torError} variant="error" title="Technical Offer Request Failed" message={torError} onClose={() => setTorError('')} />
-      <MessageDialog open={!!error} variant="error" title="Something Went Wrong" message={error} onClose={() => setError('')} />
-
-      <StageProgress stage={tender.current_stage} canModify={canModify} onRequestChange={setPendingStage} />
-
-      <div className="hide-scrollbar" style={{ display: 'flex', gap: 8, marginBottom: 20, padding: '6px 6px 8px', borderBottom: '1px solid rgba(0,0,0,0.08)', overflowX: 'auto', overflowY: 'visible' }}>
+      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', overflowY: 'visible' }}>
         {TABS.map((t) => (
-          <div key={t} style={{ display: 'inline-flex', alignItems: 'center', marginRight: 16 }}>
+          <div key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <button
               onClick={() => setTab(t)}
               data-tour={`tender-tab-${t}`}
               style={{
-                padding: '10px 6px', border: 'none', background: 'transparent', whiteSpace: 'nowrap',
-                borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
+                padding: '9px 16px', border: 'none', borderRadius: 999, whiteSpace: 'nowrap',
+                background: tab === t ? '#fff' : 'transparent',
+                boxShadow: tab === t ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
                 color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', gap: 6,
+                display: 'inline-flex', alignItems: 'center', gap: 6, transition: 'background .15s, box-shadow .15s, color .15s',
               }}
             >
               {t}
@@ -229,72 +243,6 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         onConfirm={() => { const s = pendingStage; setPendingStage(null); if (s) patch({ current_stage: s }) }}
         onCancel={() => setPendingStage(null)}
       />
-    </div>
-  )
-}
-
-function StageProgress({ stage, canModify, onRequestChange }: { stage: string; canModify: boolean; onRequestChange: (s: string) => void }) {
-  const activeIdx = TND_STAGES.indexOf(stage)
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', onClick)
-    return () => document.removeEventListener('mousedown', onClick)
-  }, [open])
-
-  return (
-    <div ref={ref} style={{ position: 'relative', marginBottom: 20 }}>
-      <div
-        onClick={() => setOpen((v) => !v)}
-        data-tour="tender-stage-progress"
-        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', cursor: 'pointer', userSelect: 'none' }}
-      >
-        <div style={{ width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FF7A45', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-          {activeIdx + 1}
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e' }}>Stage {activeIdx + 1} of {TND_STAGES.length}</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#1f1108' }}>{stage}</span>
-        </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 100, height: 6, borderRadius: 999, background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-            <div style={{ width: `${((activeIdx + 1) / TND_STAGES.length) * 100}%`, height: '100%', background: '#22c55e' }} />
-          </div>
-          <span style={{ fontSize: 14, color: '#a8a29e', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>▾</span>
-        </div>
-      </div>
-
-      {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, right: 0, zIndex: 20, borderRadius: 14, background: 'rgba(255,255,255,.92)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.4)', boxShadow: '0 16px 40px rgba(15,23,42,0.22), 0 4px 10px rgba(15,23,42,.1)', overflow: 'hidden' }}>
-        <div style={{ maxHeight: 340, overflowY: 'auto', padding: 6 }}>
-          {TND_STAGES.map((s, i) => {
-            const done = i < activeIdx
-            const active = i === activeIdx
-            const clickable = canModify && !active
-            const circleBg = done ? '#22c55e' : active ? '#FF7A45' : '#fff'
-            const circleColor = done || active ? '#fff' : '#a8a29e'
-            const circleBorder = done ? '#22c55e' : active ? '#FF7A45' : 'rgba(0,0,0,0.15)'
-            return (
-              <div
-                key={s}
-                onClick={clickable ? () => { onRequestChange(s); setOpen(false) } : undefined}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: clickable ? 'pointer' : 'default', background: active ? 'rgba(255,122,69,0.1)' : 'transparent' }}
-                onMouseEnter={(e) => { if (clickable) e.currentTarget.style.background = 'rgba(0,0,0,0.04)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = active ? 'rgba(255,122,69,0.1)' : 'transparent' }}
-              >
-                <div style={{ width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: circleBg, color: circleColor, border: `2px solid ${circleBorder}`, fontSize: 9.5, fontWeight: 700, flexShrink: 0 }}>
-                  {done ? '✓' : i + 1}
-                </div>
-                <span style={{ fontSize: 12.5, fontWeight: active ? 700 : 500, color: active ? '#FF7A45' : done ? '#16a34a' : '#57534e' }}>{s}</span>
-              </div>
-            )
-          })}
-        </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -709,66 +657,16 @@ function TenderDocumentFolderPanel({ tourId, title, folderType, docs, tender, ca
   )
 }
 
-function DiscussionTab({ tenderId }: { tenderId: number }) {
-  const { user } = useAuth()
-  const [messages, setMessages] = useState<CrmDiscussionItem[]>([])
-  const [deptFilter, setDeptFilter] = useState('')
-  const [text, setText] = useState('')
-  const load = () => crmApi.listTenderDiscussions(tenderId).then(setMessages)
-  useEffect(() => { load() }, [tenderId])
-
-  const send = async () => {
-    if (!text.trim()) return
-    await crmApi.createTenderDiscussion(tenderId, { message: text, department: deptFilter || undefined })
-    setText('')
-    load()
-  }
-
-  const visible = deptFilter ? messages.filter((m) => m.department === deptFilter) : messages
-
-  return (
-    <div style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: 0 }}>Internal Discussion</p>
-        <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} style={{ ...inputStyle, width: 200 }}>
-          <option value="">All Departments</option>
-          {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
-      </div>
-      <div style={{ padding: 16, minHeight: 200, maxHeight: 384, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {visible.length === 0 ? (
-          <p style={{ fontSize: 13, color: '#a8a29e', fontStyle: 'italic' }}>No messages yet. Start the discussion!</p>
-        ) : (
-          visible.map((m) => (
-            <div key={m.id} style={{ padding: '10px 14px', borderRadius: 10, background: m.sent_by_id === user?.id ? 'rgba(244,113,59,0.06)' : '#fffaf5', border: '1px solid rgba(0,0,0,0.06)' }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{m.sent_by_name || 'Unknown'} {m.department && <span style={{ fontWeight: 500, color: '#a8a29e' }}>· {m.department}</span>}</p>
-              <p style={{ fontSize: 13, color: '#57534e', margin: 0, whiteSpace: 'pre-wrap' }}>{m.message}</p>
-            </div>
-          ))
-        )}
-      </div>
-      <div style={{ padding: 12, borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-          placeholder="Type your message and press Send…"
-          rows={2}
-          style={{ ...inputStyle, flex: 1, resize: 'none' }}
-        />
-        <button onClick={send} style={primaryBtnStyle}>Send</button>
-      </div>
-    </div>
-  )
-}
-
 function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | null }) {
+  const { user } = useAuth()
   const [activities, setActivities] = useState<CrmActivity[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editingActivity, setEditingActivity] = useState<CrmActivity | null>(null)
   const [viewingActivity, setViewingActivity] = useState<CrmActivity | null>(null)
+  const [deletingActivity, setDeletingActivity] = useState<CrmActivity | null>(null)
   const [exportingMomId, setExportingMomId] = useState<number | null>(null)
   const [momError, setMomError] = useState<string | string[]>('')
+  const [showMomExport, setShowMomExport] = useState(false)
 
   const load = () => crmApi.listActivities({ related_module: 'tender', related_id: tender.id }).then(setActivities)
   useEffect(() => { load() }, [tender.id])
@@ -803,12 +701,31 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
     setShowForm(false)
   }
 
+  const changeStatus = (a: CrmActivity, status: string) => crmApi.updateActivity(a.id, { status }).then(load)
+
+  const handleDelete = async () => {
+    if (!deletingActivity) return
+    await crmApi.deleteActivity(deletingActivity.id)
+    setDeletingActivity(null)
+    load()
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <button onClick={() => { if (showForm) cancelForm(); else { setEditingActivity(null); setShowForm(true) } }} data-tour="activity-add-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Follow Up'}</button>
+        <button onClick={() => setShowMomExport(true)} data-tour="activity-export-meeting-mom-btn" style={secondaryBtnStyle}>Export Meeting MOM</button>
       </div>
       <MessageDialog open={!!momError} variant="error" title="Cannot Export MoM" message={momError} onClose={() => setMomError('')} />
+      <MomExportDialog
+        open={showMomExport}
+        onClose={() => setShowMomExport(false)}
+        orgId={tender.org_id}
+        orgName={org?.name}
+        activities={activities}
+        onExportDocx={(payload) => crmApi.exportTenderMom(tender.id, payload)}
+        onExportPdf={(payload) => crmApi.exportTenderMomPdf(tender.id, payload)}
+      />
       {showForm && (
         <ActivityForm
           initial={editingActivity || { org_id: tender.org_id, related_module: 'tender', related_id: tender.id, universal_id: tender.universal_id }}
@@ -841,15 +758,63 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <button onClick={() => setViewingActivity(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>View</button>
               <button onClick={() => startEdit(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>
+              <ChangeStatusButton currentStatus={a.status || FOLLOW_UP_STATUSES[0]} statuses={FOLLOW_UP_STATUSES} onSelect={(s) => changeStatus(a, s)} tourId={idx === 0 ? 'tender-followup-change-status-btn' : undefined} />
               <button disabled={exportingMomId === a.id} onClick={() => exportMom(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: exportingMomId === a.id ? 0.7 : 1 }}>
                 {exportingMomId === a.id ? 'Exporting…' : 'Export MoM'}
               </button>
+              {(user?.role === 'admin' || a.created_by_id === user?.id) && (
+                <button onClick={() => setDeletingActivity(a)} style={{ ...dangerBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Delete</button>
+              )}
             </div>
           </div>
         ))
       ))}
 
       <ActivityViewDialog activity={viewingActivity} onClose={() => setViewingActivity(null)} />
+
+      <ConfirmDialog
+        open={!!deletingActivity}
+        title="Delete this follow-up?"
+        message="Delete this follow-up entry? This action cannot be undone."
+        onConfirm={handleDelete}
+        onCancel={() => setDeletingActivity(null)}
+      />
+    </div>
+  )
+}
+
+function ChangeStatusButton({ currentStatus, statuses, onSelect, tourId }: { currentStatus: string; statuses: string[]; onSelect: (s: string) => void; tourId?: string }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [open])
+
+  return (
+    <div ref={ref} data-tour={tourId} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Change Status</button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 30, minWidth: 200, maxHeight: 260, overflowY: 'auto', borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 16px 36px rgba(0,0,0,0.16)', padding: 6 }}>
+          {statuses.map((s) => {
+            const active = s === currentStatus
+            return (
+              <div
+                key={s}
+                onClick={active ? undefined : () => { onSelect(s); setOpen(false) }}
+                style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: active ? 700 : 500, color: active ? '#FF7A45' : '#1f1108', cursor: active ? 'default' : 'pointer', background: active ? 'rgba(255,122,69,0.1)' : 'transparent' }}
+                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'rgba(0,0,0,0.04)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = active ? 'rgba(255,122,69,0.1)' : 'transparent' }}
+              >
+                {s}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

@@ -6,6 +6,10 @@ class ProductCategoryCreate(BaseModel):
     name: str
 
 
+class ProductCategoryUpdate(BaseModel):
+    name: str | None = None
+
+
 class ProductCategoryResponse(BaseModel):
     model_config = {"from_attributes": True}
 

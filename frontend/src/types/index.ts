@@ -604,18 +604,6 @@ export interface TenderCompetitorItem {
   created_at?: string
 }
 
-export interface CrmDiscussionItem {
-  id: number
-  related_module: string
-  related_id: number
-  universal_id?: string
-  message: string
-  department?: string
-  sent_by_id: number
-  sent_by_name?: string
-  created_at?: string
-}
-
 export interface CrmDashboard {
   total_organizations: number
   total_inquiries: number

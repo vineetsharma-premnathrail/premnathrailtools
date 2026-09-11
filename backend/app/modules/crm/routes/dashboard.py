@@ -34,7 +34,8 @@ async def get_crm_dashboard(
     ).count()
 
     pending_tenders = db.query(Tender).filter(
-        Tender.is_deleted == False, Tender.status.in_(["Active", "Submitted"])  # noqa: E712
+        Tender.is_deleted == False,
+        Tender.status.notin_(["Closed – Ordered", "Closed – Not Ordered", "Tender Cancelled"]),  # noqa: E712
     ).count()
 
     recent_organizations = db.query(Organization).filter(Organization.is_deleted == False).order_by(Organization.created_at.desc()).limit(5).all()  # noqa: E712

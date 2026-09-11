@@ -11,14 +11,12 @@ from app.modules.crm.models.inquiry import Inquiry, InquiryTask, InquiryApproval
 from app.modules.crm.models.organization import Organization as OrgModel
 from app.modules.crm.models.tender import Tender, TenderTask, TenderCompetitor
 from app.modules.crm.models.purchase_order import PurchaseOrder
-from app.modules.crm.models.discussion import CrmDiscussion
 from app.modules.crm.schemas.workflow import (
     TaskCreate, TaskUpdate, InquiryTaskResponse, TenderTaskResponse,
     ApprovalCreate, ApprovalUpdate, InquiryApprovalResponse,
     QuotationCreate, QuotationUpdate, QuotationResponse,
     PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderResponse,
     CompetitorCreate, CompetitorUpdate, TenderCompetitorResponse,
-    DiscussionCreate, DiscussionResponse,
 )
 from app.modules.crm.reports.quotation_pdf import build_quotation_pdf
 
@@ -455,49 +453,3 @@ async def delete_tender_competitor(tender_id: int, comp_id: int, db: Session = D
     comp.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "Competitor deleted"}
-
-
-# ── Discussions (inquiry & tender) ───────────────────────────────────────
-
-@router.get("/inquiries/{inquiry_id}/discussions", response_model=list[DiscussionResponse])
-async def list_inquiry_discussions(inquiry_id: int, db: Session = Depends(get_db), _user: User = Depends(require_app_access("crm"))):
-    return db.query(CrmDiscussion).filter(
-        CrmDiscussion.related_module == "inquiry", CrmDiscussion.related_id == inquiry_id
-    ).order_by(CrmDiscussion.created_at.asc()).all()
-
-
-@router.post("/inquiries/{inquiry_id}/discussions", response_model=DiscussionResponse, status_code=201)
-async def create_inquiry_discussion(inquiry_id: int, payload: DiscussionCreate, db: Session = Depends(get_db), user: User = Depends(require_app_access("crm"))):
-    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
-    if not inquiry:
-        raise HTTPException(status_code=404, detail="Inquiry not found")
-    msg = CrmDiscussion(
-        **payload.model_dump(), related_module="inquiry", related_id=inquiry_id, universal_id=inquiry.universal_id,
-        sent_by_id=user.id, sent_by_name=user.name or user.email, created_at=datetime.now(timezone.utc),
-    )
-    db.add(msg)
-    db.commit()
-    db.refresh(msg)
-    return msg
-
-
-@router.get("/tenders/{tender_id}/discussions", response_model=list[DiscussionResponse])
-async def list_tender_discussions(tender_id: int, db: Session = Depends(get_db), _user: User = Depends(require_app_access("crm"))):
-    return db.query(CrmDiscussion).filter(
-        CrmDiscussion.related_module == "tender", CrmDiscussion.related_id == tender_id
-    ).order_by(CrmDiscussion.created_at.asc()).all()
-
-
-@router.post("/tenders/{tender_id}/discussions", response_model=DiscussionResponse, status_code=201)
-async def create_tender_discussion(tender_id: int, payload: DiscussionCreate, db: Session = Depends(get_db), user: User = Depends(require_app_access("crm"))):
-    tender = db.query(Tender).filter(Tender.id == tender_id, Tender.is_deleted == False).first()  # noqa: E712
-    if not tender:
-        raise HTTPException(status_code=404, detail="Tender not found")
-    msg = CrmDiscussion(
-        **payload.model_dump(), related_module="tender", related_id=tender_id, universal_id=tender.universal_id,
-        sent_by_id=user.id, sent_by_name=user.name or user.email, created_at=datetime.now(timezone.utc),
-    )
-    db.add(msg)
-    db.commit()
-    db.refresh(msg)
-    return msg

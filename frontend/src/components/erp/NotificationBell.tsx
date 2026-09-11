@@ -12,6 +12,7 @@ const ENTITY_LINK: Record<string, (id: number) => string> = {
   organization: (id) => `/dashboard/crm/organizations/${id}`,
   inquiry: (id) => `/dashboard/crm/inquiries/${id}`,
   tender: (id) => `/dashboard/crm/tenders/${id}`,
+  activity: () => `/dashboard/crm/followups`,
 }
 
 // Deleted entities 404 on their normal detail route (soft-deleted rows are excluded

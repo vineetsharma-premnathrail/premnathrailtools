@@ -28,7 +28,7 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     sales_engineer: Mapped[str | None] = mapped_column(String(150), nullable=True)
 
     status: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
-    current_stage: Mapped[str] = mapped_column(String(50), default="Customer Requirement", nullable=False)
+    current_stage: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
 
     product: Mapped[str | None] = mapped_column(String(255), nullable=True)
     product_category: Mapped[str | None] = mapped_column(String(100), nullable=True)

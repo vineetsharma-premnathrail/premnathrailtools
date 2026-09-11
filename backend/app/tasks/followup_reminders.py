@@ -2,9 +2,9 @@
 
 Runs once a day (wired up in app/main.py) and notifies the assigned user —
 falling back to the activity's creator if `assigned_to` (free text) doesn't
-match any known user by name — one day before `next_followup` and again on
-the day itself. Only "Open" activities are considered; a Done/Cancelled one
-doesn't need a nudge.
+match any known user by name — one day before `next_followup`, again on the
+day itself, and every day it remains open and past due. Only "Open"
+activities are considered; a Done/Cancelled one doesn't need a nudge.
 """
 import logging
 from datetime import date, timedelta
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 DUE_TODAY = "activity_followup_due_today"
 DUE_TOMORROW = "activity_followup_due_tomorrow"
+OVERDUE = "activity_followup_overdue"
 
 
 def _resolve_target_user_id(db, activity: Activity) -> int | None:
@@ -54,7 +55,7 @@ def _send_activity_followup_reminders(db: Session) -> None:
     activities = db.query(Activity).filter(
         Activity.is_deleted == False,  # noqa: E712
         Activity.status == "Open",
-        Activity.next_followup.in_([today, tomorrow]),
+        Activity.next_followup <= tomorrow,
     ).all()
 
     for activity in activities:
@@ -62,8 +63,12 @@ def _send_activity_followup_reminders(db: Session) -> None:
         if not user_id:
             continue
 
-        due_today = activity.next_followup == today
-        notification_type = DUE_TODAY if due_today else DUE_TOMORROW
+        if activity.next_followup < today:
+            notification_type = OVERDUE
+        elif activity.next_followup == today:
+            notification_type = DUE_TODAY
+        else:
+            notification_type = DUE_TOMORROW
         if _already_sent_today(db, user_id, activity.id, notification_type):
             continue
 
@@ -74,16 +79,29 @@ def _send_activity_followup_reminders(db: Session) -> None:
 
         subject = activity.activity_type or "Activity"
         where = f" with {org_name}" if org_name else ""
-        when = "today" if due_today else "tomorrow"
-        notify_user(
-            db,
-            user_id=user_id,
-            title=f"Follow-up due {when}",
-            message=f"{subject}{where} is due for follow-up {when} ({activity.next_followup.isoformat()}).",
-            notification_type=notification_type,
-            entity_type="activity",
-            entity_id=activity.id,
-        )
+        if notification_type == OVERDUE:
+            days_overdue = (today - activity.next_followup).days
+            day_word = "day" if days_overdue == 1 else "days"
+            notify_user(
+                db,
+                user_id=user_id,
+                title="Follow-up overdue",
+                message=f"{subject}{where} was due for follow-up on {activity.next_followup.isoformat()} — {days_overdue} {day_word} overdue.",
+                notification_type=notification_type,
+                entity_type="activity",
+                entity_id=activity.id,
+            )
+        else:
+            when = "today" if notification_type == DUE_TODAY else "tomorrow"
+            notify_user(
+                db,
+                user_id=user_id,
+                title=f"Follow-up due {when}",
+                message=f"{subject}{where} is due for follow-up {when} ({activity.next_followup.isoformat()}).",
+                notification_type=notification_type,
+                entity_type="activity",
+                entity_id=activity.id,
+            )
 
     db.commit()
 

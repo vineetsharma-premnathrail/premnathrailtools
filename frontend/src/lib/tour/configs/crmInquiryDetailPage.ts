@@ -63,6 +63,12 @@ const steps: TourStep[] = [
   },
   ...activityConfig.steps,
   {
+    target: 'inq-followup-change-status-btn',
+    title: 'Change Status',
+    purpose: 'Set this follow-up\'s own status — Open, Closed, or Hold — directly from the list, without opening Edit.',
+    why: 'Only a follow-up left as "Open" counts toward the "Open/Overdue Follow-ups" figures on the CRM Dashboard and the Follow-ups page\'s "Open" bucket.',
+  },
+  {
     target: 'inquiry-tab-Timeline',
     title: 'Timeline',
     purpose: 'A merged, chronological history of everything that happened to this inquiry — creation, field edits, stage changes, follow-ups, quotations, and Technical Offer emails — all in one feed.',

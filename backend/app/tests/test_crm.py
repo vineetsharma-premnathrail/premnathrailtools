@@ -59,7 +59,7 @@ def test_create_inquiry_generates_universal_id_and_stage_log(client, db):
     assert response.status_code == 201
     inquiry = response.json()
     assert inquiry["universal_id"].startswith("INQ-")
-    assert inquiry["current_stage"] == "Customer Requirement"
+    assert inquiry["current_stage"] == "Requirement Received"
 
     stages = client.get(f"/api/v1/crm/inquiries/{inquiry['id']}/stages", headers=auth_header(user)).json()
     assert any(s["stage"] == "Inquiry created" for s in stages)
@@ -71,10 +71,10 @@ def test_inquiry_stage_change_logs_and_updates_current_stage(client, db):
     inquiry = client.post("/api/v1/crm/inquiries", json={"org_id": org["id"]}, headers=auth_header(user)).json()
 
     response = client.patch(
-        f"/api/v1/crm/inquiries/{inquiry['id']}", json={"current_stage": "Design"}, headers=auth_header(user)
+        f"/api/v1/crm/inquiries/{inquiry['id']}", json={"current_stage": "Negotiation"}, headers=auth_header(user)
     )
     assert response.status_code == 200
-    assert response.json()["current_stage"] == "Design"
+    assert response.json()["current_stage"] == "Negotiation"
 
     stages = client.get(f"/api/v1/crm/inquiries/{inquiry['id']}/stages", headers=auth_header(user)).json()
     assert any(s["stage"] == "Stage updated" for s in stages)

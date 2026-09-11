@@ -9,7 +9,7 @@ import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
-import { ACTIVITY_TYPES } from './constants'
+import { ACTIVITY_TYPES, FOLLOW_UP_STATUSES } from './constants'
 import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle, XIcon } from './ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -23,6 +23,7 @@ type FormState = {
   activity_date: string
   next_followup: string
   assigned_to: string
+  status: string
   remarks: string
   action_plan: string
 }
@@ -34,6 +35,7 @@ function toFormState(initial?: Partial<CrmActivity>, defaultAssignedTo?: string)
     activity_date: initial?.activity_date || new Date().toISOString().slice(0, 10),
     next_followup: initial?.next_followup || '',
     assigned_to: initial?.assigned_to || defaultAssignedTo || '',
+    status: initial?.status || FOLLOW_UP_STATUSES[0],
     remarks: initial?.remarks || '',
     action_plan: initial?.action_plan || '',
   }
@@ -322,6 +324,13 @@ export default function ActivityForm({
             </div>
             <div style={{ flex: '1 1 150px', minWidth: 140 }}>
               <Field label="Next Follow-up Date" tourId="activity-next-followup"><DateField value={form.next_followup} onChange={(v) => set('next_followup', v)} /></Field>
+            </div>
+            <div style={{ flex: '1 1 120px', minWidth: 120 }}>
+              <Field label="Status" tourId="activity-status">
+                <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
+                  {FOLLOW_UP_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </Field>
             </div>
           </div>
 
