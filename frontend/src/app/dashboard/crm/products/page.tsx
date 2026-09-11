@@ -87,6 +87,7 @@ export default function ProductsPage() {
         <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Product List</h1>
         <button
           onClick={() => (showForm ? cancelForm() : setShowForm(true))}
+          data-tour="prod-add-btn"
           style={{ ...primaryBtnStyle, alignSelf: 'flex-start', fontWeight: 700, fontSize: 14.5, padding: '12px 24px' }}
         >
           {showForm ? 'Cancel' : '+ Add Product'}
@@ -103,37 +104,37 @@ export default function ProductsPage() {
 
       {showForm && (
         <form onSubmit={save} style={{ marginBottom: 20, padding: 16, borderRadius: 14, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 220px', minWidth: 180 }}>
+          <div data-tour="prod-name" style={{ flex: '1 1 220px', minWidth: 180 }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Name</label>
             <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} required style={inputStyle} />
           </div>
-          <div style={{ flex: '0 1 160px', minWidth: 140 }}>
+          <div data-tour="prod-model" style={{ flex: '0 1 160px', minWidth: 140 }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Model Number</label>
             <input value={form.model_number} onChange={(e) => setForm((f) => ({ ...f, model_number: e.target.value }))} style={inputStyle} />
           </div>
-          <div style={{ flex: '0 1 160px', minWidth: 140 }}>
+          <div data-tour="prod-category" style={{ flex: '0 1 160px', minWidth: 140 }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Category</label>
             <input value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} style={inputStyle} />
           </div>
-          <div style={{ flex: '0 1 100px', minWidth: 90 }}>
+          <div data-tour="prod-unit" style={{ flex: '0 1 100px', minWidth: 90 }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Unit</label>
             <input value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} style={inputStyle} />
           </div>
-          <div style={{ flex: '0 1 140px', minWidth: 120 }}>
+          <div data-tour="prod-price" style={{ flex: '0 1 140px', minWidth: 120 }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Default Price</label>
             <input type="number" value={form.default_price} onChange={(e) => setForm((f) => ({ ...f, default_price: e.target.value }))} style={inputStyle} />
           </div>
-          <div style={{ flex: '1 1 100%' }}>
+          <div data-tour="prod-description" style={{ flex: '1 1 100%' }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Description</label>
             <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
           </div>
           <div style={{ flex: '1 1 100%' }}>
-            <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Product'}</button>
+            <button type="submit" data-tour="prod-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Product'}</button>
           </div>
         </form>
       )}
 
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
+      <div data-tour="prod-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead>

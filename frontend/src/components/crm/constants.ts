@@ -42,7 +42,7 @@ export const INDIA_STATES = [
   'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
 ]
 
-export const LEAD_SOURCES = ['Email / Direct', 'Reference', 'Tender Portal', 'Cold Call', 'Exhibition', 'Website']
+export const LEAD_SOURCES = ['Email / Direct', 'Reference', 'Tender Portal', 'Cold Call', 'Exhibition', 'Website', 'Visit']
 
 export const PRODUCT_CATEGORIES = ['Road Rail Vehicle', 'Rail Vehicle', 'Hydraulic System', 'Braking System', 'Spare Parts', 'Other']
 

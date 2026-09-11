@@ -40,6 +40,7 @@ export default function NewInquiryOrTenderPage() {
             <button
               key={k}
               onClick={() => setType(k)}
+              data-tour={`new-record-tab-${k}`}
               style={{
                 padding: '8px 20px',
                 borderRadius: 9,

@@ -48,6 +48,23 @@ button {
     box-shadow: 0 0 0 5px rgba(255, 122, 69, 0.37);
     color: #fff;
   }
+  /* The tour's plain-text "Skip" link isn't a pill button like the rest of
+     the app — it shouldn't turn into one on hover. */
+  button.tour-skip-link:hover {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    color: #44403c;
+  }
+  /* Same for the tour's small round icon buttons (the ✕ close button, the
+     collapsed-sidebar Tour icon) — a subtle tint instead of the app-wide
+     glowing-pill hover, which would swallow a 24-36px circle. */
+  button.tour-icon-btn:hover {
+    background-color: rgba(0, 0, 0, 0.06);
+    border-color: rgba(0, 0, 0, 0.1);
+    box-shadow: none;
+    color: var(--tour-icon-color, currentColor);
+  }
 }
 
 /* iOS-style checkbox (Checkbox.tsx). Colors use the brand orange family
@@ -529,6 +546,48 @@ img, svg { max-width: 100%; height: auto; }
   box-shadow: none;
   background: rgba(255, 122, 69, 0.1);
   color: #57534e;
+}
+
+/* Tour button glow — draws the eye to "Take a Tour" whenever the current
+   page has tour content, so users notice it instead of it blending in. */
+@keyframes tourGlowPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 122, 69, 0.55);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(255, 122, 69, 0);
+    transform: scale(1.05);
+  }
+}
+.tour-glow {
+  animation: tourGlowPulse 1.6s ease-in-out infinite;
+}
+
+/* Applied directly to the real field the tour is pointing at, so it can
+   never drift out of sync with a separately-positioned overlay box. Outline
+   only — no position/z-index override — since forcing those glitched
+   visually on elements sitting inside a backdrop-filter glass card. */
+@keyframes tourTargetPulse {
+  0%, 100% { outline-color: rgba(255, 122, 69, 0.9); }
+  50% { outline-color: rgba(255, 122, 69, 0.35); }
+}
+.tour-target-highlight {
+  /* !important: some controls we highlight directly (e.g. a borderless
+     <select> used as a column filter) set outline: none inline, which
+     otherwise wins over this class for the same property. */
+  outline: 2px solid #FF7A45 !important;
+  /* Negative offset draws the ring just inside the element's own box instead
+     of protruding outward — an outward offset gets clipped on a sticky
+     table header (no room above it inside the scrolling container). */
+  outline-offset: -2px !important;
+  border-radius: 8px;
+  animation: tourTargetPulse 1.4s ease-in-out infinite;
+  /* A brand-orange outline disappears against a button that's already
+     brand-orange itself (Save/Create/+Add buttons) — this white ring gives
+     it contrast there while staying negligible against the app's light
+     backgrounds elsewhere. */
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.95) !important;
 }
 
 /* ===================== Generic responsive grid helpers =====================

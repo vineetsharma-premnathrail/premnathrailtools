@@ -6,6 +6,8 @@ import { useAuth } from '@/hooks/useAuth'
 import Sidebar from '@/components/Sidebar'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import ScrollRevealObserver from '@/components/ScrollRevealObserver'
+import { TourProvider } from '@/components/tour/TourContext'
+import TourOverlay from '@/components/tour/TourOverlay'
 import { GLASS } from '@/lib/theme'
 
 export default function DashboardLayout({
@@ -30,6 +32,7 @@ export default function DashboardLayout({
   }
 
   return (
+    <TourProvider>
     <div
       className="app-shell animated-gradient-bg"
       style={{
@@ -86,6 +89,8 @@ export default function DashboardLayout({
         {children}
       </main>
       <ScrollRevealObserver containerRef={mainRef} />
+      <TourOverlay />
     </div>
+    </TourProvider>
   )
 }

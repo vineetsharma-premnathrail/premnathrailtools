@@ -14,7 +14,7 @@ import { RichText } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
 import { INQ_STAGES, INQUIRY_STATUSES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES, QUOTE_CONDITIONS } from '@/components/crm/constants'
-import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab } from '@/components/crm/ui'
+import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab, XIcon } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -177,6 +177,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
               <button
                 onClick={openTorPicker}
                 disabled={!torActive || sendingTOR}
+                data-tour="inq-tor-btn"
                 title={
                   !torActive
                     ? `Already sent as ${inquiry.technical_offer_number} — edit the inquiry to send again.`
@@ -188,8 +189,8 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
               >
                 {sendingTOR ? 'Sending…' : 'Send Technical Offer Request to R&D'}
               </button>
-              {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} style={secondaryBtnStyle}>Edit</button>}
-              {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
+              {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} data-tour="inq-edit-btn" style={secondaryBtnStyle}>Edit</button>}
+              {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} data-tour="inq-delete-btn" style={dangerBtnStyle}>Delete</button>}
             </div>
             {inquiry.technical_offer_number && (
               <span style={{ fontSize: 11, color: '#78716c' }}>
@@ -211,6 +212,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
           <div key={t} style={{ display: 'inline-flex', alignItems: 'center', marginRight: 16 }}>
             <button
               onClick={() => setTab(t)}
+              data-tour={`inquiry-tab-${t}`}
               style={{
                 padding: '10px 6px', border: 'none', background: 'transparent', whiteSpace: 'nowrap',
                 borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
@@ -226,7 +228,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
               )}
             </button>
             {t === 'Info' && tab === t && !editing && revisions.length > 0 && (
-              <RevisionSelector revisions={revisions} selectedId={selectedRevId} onSelect={setSelectedRevId} />
+              <RevisionSelector revisions={revisions} selectedId={selectedRevId} onSelect={setSelectedRevId} tourId="inq-revision-selector" />
             )}
           </div>
         ))}
@@ -295,6 +297,7 @@ function StageProgress({ stage, canModify, onRequestChange }: { stage: string; c
     <div ref={ref} style={{ position: 'relative', marginBottom: 20 }}>
       <div
         onClick={() => setOpen((v) => !v)}
+        data-tour="inq-stage-progress"
         style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', cursor: 'pointer', userSelect: 'none' }}
       >
         <div style={{ width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FF7A45', color: '#fff', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
@@ -351,7 +354,7 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
   const changesNotShownAbove = selectedRev?.changes.filter((c) => !shownFields.has(c.field)) || []
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div data-tour="inq-info-view" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {selectedRev && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(244,113,59,0.06)', border: '1px solid rgba(244,113,59,0.18)' }}>
           <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', color: '#FF7A45', margin: '0 0 6px' }}>
@@ -395,7 +398,7 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
             label="Status"
             value={
               canModify ? (
-                <select value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
+                <select data-tour="inq-info-status" value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
                   {INQUIRY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               ) : (inquiry.status || 'Not provided')
@@ -405,7 +408,7 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
             label="Priority"
             value={
               canModify ? (
-                <select value={inquiry.priority} onChange={(e) => onChangeLeadInfo({ priority: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
+                <select data-tour="inq-info-priority" value={inquiry.priority} onChange={(e) => onChangeLeadInfo({ priority: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
                   {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               ) : (inquiry.priority || 'Not provided')
@@ -826,7 +829,7 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {canModify && (
         <div>
-          <button onClick={() => (showForm ? cancelForm() : (setFormError(''), setShowForm(true)))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Create Quote'}</button>
+          <button onClick={() => (showForm ? cancelForm() : (setFormError(''), setShowForm(true)))} data-tour="quotation-create-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Create Quote'}</button>
           {showForm && (
             <form
               onSubmit={save}
@@ -838,7 +841,7 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
               <MessageDialog open={!!productNotice} variant="success" title="Product Added" message={productNotice} onClose={() => setProductNotice('')} />
               <MessageDialog open={!!dupItemError} variant="error" title="Duplicate Line Item" message={dupItemError} onClose={() => setDupItemError('')} />
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <Field label="Quotation Type *">
+                <Field label="Quotation Type *" tourId="quot-type">
                   <select value={form.quotation_type} onChange={(e) => setForm((f) => ({ ...f, quotation_type: e.target.value }))} style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.quotation_type) }}>
                     <option value="Domestic">Domestic (INR)</option>
                     <option value="Export">Export (USD)</option>
@@ -846,32 +849,32 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                   {fieldErrors.quotation_type && <p style={fieldErrorTextStyle}>{fieldErrors.quotation_type}</p>}
                 </Field>
                 {!isExport && (
-                  <Field label="GST Type">
+                  <Field label="GST Type" tourId="quot-gst-type">
                     <select value={form.gst_type} onChange={(e) => setForm((f) => ({ ...f, gst_type: e.target.value }))} style={inputStyle}>
                       <option value="CGST_SGST">CGST + SGST (Intra-state)</option>
                       <option value="IGST">IGST (Inter-state)</option>
                     </select>
                   </Field>
                 )}
-                <Field label="Date of Quote *">
+                <Field label="Date of Quote *" tourId="quot-date">
                   <DateField value={form.quote_date} onChange={(v) => setForm((f) => ({ ...f, quote_date: v }))} style={errInputStyle(!!fieldErrors.quote_date)} />
                   {fieldErrors.quote_date && <p style={fieldErrorTextStyle}>{fieldErrors.quote_date}</p>}
                 </Field>
-                <Field label="Technical Offer Number"><input value={form.technical_offer_number} onChange={(e) => setForm((f) => ({ ...f, technical_offer_number: e.target.value }))} placeholder="e.g. TOR-2026-0042" style={inputStyle} /></Field>
-                <Field label="Technical Offer Date"><DateField value={form.technical_offer_date} onChange={(v) => setForm((f) => ({ ...f, technical_offer_date: v }))} /></Field>
+                <Field label="Technical Offer Number" tourId="quot-tor-number"><input value={form.technical_offer_number} onChange={(e) => setForm((f) => ({ ...f, technical_offer_number: e.target.value }))} placeholder="e.g. TOR-2026-0042" style={inputStyle} /></Field>
+                <Field label="Technical Offer Date" tourId="quot-tor-date"><DateField value={form.technical_offer_date} onChange={(v) => setForm((f) => ({ ...f, technical_offer_date: v }))} /></Field>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <Field label="Customer/Client *">
+                <Field label="Customer/Client *" tourId="quot-client-name">
                   <input value={form.client_name} onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))} placeholder="e.g. Northern Railway HQ" style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.client_name) }} />
                   {fieldErrors.client_name && <p style={fieldErrorTextStyle}>{fieldErrors.client_name}</p>}
                 </Field>
-                <Field label="Contact Person Name"><input value={form.client_contact_name} onChange={(e) => setForm((f) => ({ ...f, client_contact_name: e.target.value }))} placeholder="e.g. Rajesh Kumar" style={inputStyle} /></Field>
-                <Field label="Contact Email"><input type="email" value={form.client_contact_email} onChange={(e) => setForm((f) => ({ ...f, client_contact_email: e.target.value }))} placeholder="e.g. name@company.com" style={inputStyle} /></Field>
-                <Field label="Contact Phone"><input value={form.client_contact_phone} onChange={(e) => setForm((f) => ({ ...f, client_contact_phone: e.target.value }))} placeholder="e.g. +91 98765 43210" style={inputStyle} /></Field>
+                <Field label="Contact Person Name" tourId="quot-contact-name"><input value={form.client_contact_name} onChange={(e) => setForm((f) => ({ ...f, client_contact_name: e.target.value }))} placeholder="e.g. Rajesh Kumar" style={inputStyle} /></Field>
+                <Field label="Contact Email" tourId="quot-contact-email"><input type="email" value={form.client_contact_email} onChange={(e) => setForm((f) => ({ ...f, client_contact_email: e.target.value }))} placeholder="e.g. name@company.com" style={inputStyle} /></Field>
+                <Field label="Contact Phone" tourId="quot-contact-phone"><input value={form.client_contact_phone} onChange={(e) => setForm((f) => ({ ...f, client_contact_phone: e.target.value }))} placeholder="e.g. +91 98765 43210" style={inputStyle} /></Field>
               </div>
 
-              <div>
+              <div data-tour="quot-line-items">
                 <label style={{ fontSize: 12, fontWeight: 700, color: '#57534e', marginBottom: 6, display: 'block' }}>Line Items *</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: items.length > 4 ? 340 : undefined, overflowY: items.length > 4 ? 'auto' : undefined, paddingRight: items.length > 4 ? 6 : undefined }}>
                   {items.map((row, idx) => {
@@ -879,21 +882,23 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                     return (
                     <div key={idx}>
                       <div style={{ display: 'grid', gridTemplateColumns: isExport ? '2fr 1.2fr 0.7fr 0.9fr 0.9fr auto' : '2fr 1.2fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
-                        <ComboBox
-                          value={row.description}
-                          onChange={(v) => updateItemRow(idx, 'description', v)}
-                          onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) applyProductToRow(idx, p) }}
-                          onCreateNew={(query) => createProductFromRow(idx, query)}
-                          createLabel="New Product"
-                          options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.model_number || undefined }))}
-                          placeholder="Item Name — type or pick a product"
-                        />
-                        <input value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No. (if applicable)" style={inputStyle} />
-                        <input type="number" value={row.quantity} onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} placeholder="Qty *" style={{ ...inputStyle, ...errInputStyle(!!rowErr?.quantity) }} />
-                        <input type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol}) *`} style={{ ...inputStyle, ...errInputStyle(!!rowErr?.unit_price) }} />
-                        {!isExport && <input type="number" value={row.gst_percent} onChange={(e) => updateItemRow(idx, 'gst_percent', e.target.value)} placeholder="GST % *" style={{ ...inputStyle, ...errInputStyle(!!rowErr?.gst_percent) }} />}
-                        <input type="number" value={row.subtotal} readOnly placeholder="Subtotal" style={{ ...inputStyle, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
-                        <button type="button" onClick={() => removeItemRow(idx)} style={{ ...secondaryBtnStyle, padding: '6px 10px', fontSize: 11 }}>✕</button>
+                        <div {...(idx === 0 ? { 'data-tour': 'quot-item-name' } : {})}>
+                          <ComboBox
+                            value={row.description}
+                            onChange={(v) => updateItemRow(idx, 'description', v)}
+                            onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) applyProductToRow(idx, p) }}
+                            onCreateNew={(query) => createProductFromRow(idx, query)}
+                            createLabel="New Product"
+                            options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.model_number || undefined }))}
+                            placeholder="Item Name — type or pick a product"
+                          />
+                        </div>
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-model' } : {})} value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No. (if applicable)" style={inputStyle} />
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-qty' } : {})} type="number" value={row.quantity} onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} placeholder="Qty *" style={{ ...inputStyle, ...errInputStyle(!!rowErr?.quantity) }} />
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-price' } : {})} type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol}) *`} style={{ ...inputStyle, ...errInputStyle(!!rowErr?.unit_price) }} />
+                        {!isExport && <input {...(idx === 0 ? { 'data-tour': 'quot-item-gst' } : {})} type="number" value={row.gst_percent} onChange={(e) => updateItemRow(idx, 'gst_percent', e.target.value)} placeholder="GST % *" style={{ ...inputStyle, ...errInputStyle(!!rowErr?.gst_percent) }} />}
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-subtotal' } : {})} type="number" value={row.subtotal} readOnly placeholder="Subtotal" style={{ ...inputStyle, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
+                        <button type="button" onClick={() => removeItemRow(idx)} style={{ ...secondaryBtnStyle, padding: '6px 10px', fontSize: 11 }}><XIcon /></button>
                       </div>
                       {rowErr && (
                         <p style={fieldErrorTextStyle}>
@@ -914,15 +919,15 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <Field label="Delivery Time *">
+                <Field label="Delivery Time *" tourId="quot-delivery-time">
                   <input value={form.delivery_time} onChange={(e) => setForm((f) => ({ ...f, delivery_time: e.target.value }))} placeholder="e.g. 7 days or 2 weeks" style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.delivery_time) }} />
                   {fieldErrors.delivery_time && <p style={fieldErrorTextStyle}>{fieldErrors.delivery_time}</p>}
                 </Field>
-                <Field label="Quote Validity Date *">
+                <Field label="Quote Validity Date *" tourId="quot-valid-until">
                   <DateField value={form.valid_until} onChange={(v) => setForm((f) => ({ ...f, valid_until: v }))} style={errInputStyle(!!fieldErrors.valid_until)} />
                   {fieldErrors.valid_until && <p style={fieldErrorTextStyle}>{fieldErrors.valid_until}</p>}
                 </Field>
-                <Field label="Discount">
+                <Field label="Discount" tourId="quot-discount">
                   <div style={{ display: 'flex', gap: 6 }}>
                     <input type="number" value={form.discount} onChange={(e) => setForm((f) => ({ ...f, discount: e.target.value }))} placeholder="0" style={inputStyle} />
                     <select value={form.discount_type} onChange={(e) => setForm((f) => ({ ...f, discount_type: e.target.value }))} style={{ ...inputStyle, width: 90, flex: '0 0 90px' }}>
@@ -931,7 +936,7 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                     </select>
                   </div>
                 </Field>
-                <Field label="Quote Conditions *">
+                <Field label="Quote Conditions *" tourId="quot-conditions">
                   <select value={form.quote_conditions} onChange={(e) => setForm((f) => ({ ...f, quote_conditions: e.target.value }))} style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.quote_conditions) }}>
                     <option value="">— Select —</option>
                     {QUOTE_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -944,7 +949,7 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                   <textarea value={form.quote_conditions_custom} onChange={(e) => setForm((f) => ({ ...f, quote_conditions_custom: e.target.value }))} rows={2} placeholder="e.g. Prices are ex-works; freight and insurance extra." style={{ ...inputStyle, resize: 'vertical', ...errInputStyle(!!fieldErrors.quote_conditions) }} />
                 </Field>
               )}
-              <Field label="Payment Terms *">
+              <Field label="Payment Terms *" tourId="quot-payment-terms">
                 <ComboBox
                   value={form.payment_terms}
                   onChange={(v) => setForm((f) => ({ ...f, payment_terms: v }))}
@@ -956,9 +961,9 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                 />
                 {fieldErrors.payment_terms && <p style={fieldErrorTextStyle}>{fieldErrors.payment_terms}</p>}
               </Field>
-              <Field label="Notes"><textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any additional remarks for this quotation (optional)" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+              <Field label="Notes" tourId="quot-notes"><textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any additional remarks for this quotation (optional)" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
               <div>
-                <button type="submit" style={primaryBtnStyle}>Save Quotation</button>
+                <button type="submit" data-tour="quot-save" style={primaryBtnStyle}>Save Quotation</button>
               </div>
             </form>
           )}
@@ -1292,13 +1297,14 @@ function DocumentsTab({ inquiry, canModify, isAdmin }: { inquiry: Inquiry; canMo
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
       <MessageDialog open={!!error} variant="error" title="Upload Failed" message={error} onClose={() => setError('')} />
-      <DocumentFolderPanel title="Client Documents" folderType="client" docs={clientDocs} inquiry={inquiry} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
-      <DocumentFolderPanel title="Internal Documents" folderType="internal" docs={internalDocs} inquiry={inquiry} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
+      <DocumentFolderPanel tourId="inq-docs-client" title="Client Documents" folderType="client" docs={clientDocs} inquiry={inquiry} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
+      <DocumentFolderPanel tourId="inq-docs-internal" title="Internal Documents" folderType="internal" docs={internalDocs} inquiry={inquiry} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
     </div>
   )
 }
 
-function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, canDelete, onUploaded, onRemove, error, setError }: {
+function DocumentFolderPanel({ tourId, title, folderType, docs, inquiry, canModify, canDelete, onUploaded, onRemove, error, setError }: {
+  tourId?: string
   title: string
   folderType: 'client' | 'internal'
   docs: CrmDocument[]
@@ -1333,7 +1339,7 @@ function DocumentFolderPanel({ title, folderType, docs, inquiry, canModify, canD
   }
 
   return (
-    <div style={{ position: 'relative', padding: 16, borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div data-tour={tourId} style={{ position: 'relative', padding: 16, borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
       {uploading && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 2, borderRadius: 14, background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(2px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <div style={{ width: 26, height: 26, borderRadius: '50%', border: '3px solid rgba(255,122,69,0.2)', borderTopColor: '#FF7A45', animation: 'crm-spin 0.8s linear infinite' }} />
@@ -1487,7 +1493,7 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <button onClick={() => { if (showForm) cancelForm(); else { setEditingActivity(null); setShowForm(true) } }} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Follow Up'}</button>
+        <button onClick={() => { if (showForm) cancelForm(); else { setEditingActivity(null); setShowForm(true) } }} data-tour="activity-add-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Follow Up'}</button>
       </div>
       <MessageDialog open={!!momError} variant="error" title="Cannot Save Follow Up" message={momError} onClose={() => setMomError('')} />
       {showForm && (
@@ -1704,8 +1710,8 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {entries.map((e) => (
-        <div key={e.key} style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
+      {entries.map((e, idx) => (
+        <div key={e.key} data-tour={idx === 0 ? 'inq-timeline-list' : undefined} style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: TIMELINE_KIND_STYLE[e.kind].bg, color: TIMELINE_KIND_STYLE[e.kind].text }}>

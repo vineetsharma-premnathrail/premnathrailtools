@@ -66,8 +66,8 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
           <button onClick={() => router.push('/dashboard/crm/organizations')} type="button" style={secondaryBtnStyle}>
             ← Back
           </button>
-          {canModify && showEditLink && <Link href={`/dashboard/crm/organizations/${org.id}/edit`} style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-block' }}>Edit</Link>}
-          {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>}
+          {canModify && showEditLink && <Link href={`/dashboard/crm/organizations/${org.id}/edit`} data-tour="orgdetail-edit-link" style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-block' }}>Edit</Link>}
+          {isAdmin && <button onClick={() => setShowDeleteConfirm(true)} data-tour="orgdetail-delete-btn" style={dangerBtnStyle}>Delete</button>}
         </div>
       </div>
 
@@ -78,6 +78,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
             <button
               key={t}
               onClick={() => setTab(t)}
+              data-tour={`orgdetail-tab-${t}`}
               className="org-detail-tab"
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
@@ -123,7 +124,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
 
 function OverviewTab({ org }: { org: OrganizationDetail }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+    <div data-tour="orgdetail-overview" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
       <Card title="Organization Details">
         <InfoRow label="Organization Code" value={org.org_code || 'Not provided'} />
         <InfoRow label="Type" value={org.org_type || 'Not provided'} />
@@ -232,7 +233,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {canModify && (
         <div>
-          <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Contact'}</button>
+          <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} data-tour="orgdetail-add-contact-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Contact'}</button>
           {showForm && (
             <form onSubmit={submit} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
               <Field label="Name *"><input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
@@ -382,7 +383,7 @@ function InquiriesTab({ orgId, canModify }: { orgId: number; canModify: boolean 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {canModify && (
         <div>
-          <button onClick={() => setShowForm((v) => !v)} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Inquiry'}</button>
+          <button onClick={() => setShowForm((v) => !v)} data-tour="orgdetail-add-inquiry-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Inquiry'}</button>
           {showForm && (
             <div style={{ marginTop: 12 }}>
               <InquiryForm
@@ -403,7 +404,7 @@ function InquiriesTab({ orgId, canModify }: { orgId: number; canModify: boolean 
       {inquiries.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No inquiries for this organization.</p>
       ) : (
-        <div style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+        <div data-tour="orgdetail-inquiries-table" style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
             <thead>
@@ -446,7 +447,7 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {canModify && (
         <div>
-          <button onClick={() => setShowForm((v) => !v)} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Tender'}</button>
+          <button onClick={() => setShowForm((v) => !v)} data-tour="orgdetail-add-tender-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Tender'}</button>
           {showForm && (
             <div style={{ marginTop: 12 }}>
               <TenderForm
@@ -467,7 +468,7 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
       {tenders.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No tenders for this organization.</p>
       ) : (
-        <div style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+        <div data-tour="orgdetail-tenders-table" style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
             <thead>
@@ -512,8 +513,8 @@ function AuditTab({ orgId }: { orgId: number }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {entries.map((e) => (
-        <div key={e.id} style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
+      {entries.map((e, idx) => (
+        <div key={e.id} data-tour={idx === 0 ? 'orgdetail-audit-list' : undefined} style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
             <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108' }}>{e.performed_by}</span>
             <span style={{ fontSize: 11.5, color: '#a8a29e' }}>{e.performed_at ? new Date(e.performed_at).toLocaleString() : ''}</span>

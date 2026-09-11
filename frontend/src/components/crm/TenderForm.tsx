@@ -248,7 +248,7 @@ export default function TenderForm({
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
         <div style={{ flex: '1 1 160px', minWidth: 140 }}>
-          <Field label="Lead Source *">
+          <Field label="Lead Source *" tourId="tnd-lead-source">
             <select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
               <option value="">-- Select Source --</option>
               {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -256,14 +256,14 @@ export default function TenderForm({
           </Field>
         </div>
         <div style={{ flex: '1 1 120px', minWidth: 100 }}>
-          <Field label="Priority *">
+          <Field label="Priority *" tourId="tnd-priority">
             <select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
               {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </Field>
         </div>
         <div style={{ flex: '1 1 160px', minWidth: 140 }}>
-          <Field label="BD Owner">
+          <Field label="BD Owner" tourId="tnd-bd-owner">
             <input value={bdOwnerName} disabled style={{ ...inputStyle, background: '#f5f5f4', color: '#78716c' }} />
           </Field>
         </div>
@@ -289,7 +289,7 @@ export default function TenderForm({
       {tab === 'Tender Information' && (
         <Section title="Tender Information">
           <Row>
-            <Field label="Organization *">
+            <Field label="Organization *" tourId="tnd-org">
               <SearchableSelect
                 value={form.org_id}
                 onChange={(v) => set('org_id', v)}
@@ -298,7 +298,7 @@ export default function TenderForm({
                 disabled={orgLocked}
               />
             </Field>
-            <Field label="Contact Person">
+            <Field label="Contact Person" tourId="tnd-contact">
               <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
                 <option value="">-- Select Contact --</option>
                 {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -324,16 +324,16 @@ export default function TenderForm({
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
-              <Field label="Tender Number *"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></Field>
+              <Field label="Tender Number *" tourId="tnd-number"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></Field>
             </div>
             <div style={{ flex: '1 1 180px', minWidth: 160, maxWidth: 260 }}>
-              <Field label="Tender Name *"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></Field>
+              <Field label="Tender Name *" tourId="tnd-name"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></Field>
             </div>
             <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
-              <Field label="Tender Authority"><input value={form.tender_authority} onChange={(e) => set('tender_authority', e.target.value)} style={inputStyle} /></Field>
+              <Field label="Tender Authority" tourId="tnd-authority"><input value={form.tender_authority} onChange={(e) => set('tender_authority', e.target.value)} style={inputStyle} /></Field>
             </div>
             <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-              <Field label="Tender Portal">
+              <Field label="Tender Portal" tourId="tnd-portal">
                 <select value={form.tender_portal} onChange={(e) => set('tender_portal', e.target.value)} style={inputStyle}>
                   <option value="">-- Select Portal --</option>
                   {TENDER_PORTALS.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -344,7 +344,7 @@ export default function TenderForm({
               </Field>
             </div>
             <div style={{ flex: '0 1 140px', minWidth: 120 }}>
-              <Field label="Tender Type">
+              <Field label="Tender Type" tourId="tnd-type">
                 <select value={form.tender_type} onChange={(e) => set('tender_type', e.target.value)} style={inputStyle}>
                   <option value="">-- Select Type --</option>
                   {TENDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -352,20 +352,20 @@ export default function TenderForm({
               </Field>
             </div>
             <div style={{ flex: '0 1 130px', minWidth: 110 }}>
-              <Field label="Category"><input value={form.tender_category} onChange={(e) => set('tender_category', e.target.value)} style={inputStyle} /></Field>
+              <Field label="Category" tourId="tnd-category"><input value={form.tender_category} onChange={(e) => set('tender_category', e.target.value)} style={inputStyle} /></Field>
             </div>
             <div style={{ flex: '0 1 120px', minWidth: 100 }}>
-              <Field label="Tender Value"><input type="number" value={form.tender_value} onChange={(e) => set('tender_value', e.target.value)} style={inputStyle} /></Field>
+              <Field label="Tender Value" tourId="tnd-value"><input type="number" value={form.tender_value} onChange={(e) => set('tender_value', e.target.value)} style={inputStyle} /></Field>
             </div>
             <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-              <Field label="Currency">
+              <Field label="Currency" tourId="tnd-currency">
                 <select value={form.currency} onChange={(e) => set('currency', e.target.value)} style={inputStyle}>
                   {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Field>
             </div>
             <div style={{ flex: '0 1 120px', minWidth: 110 }}>
-              <Field label="Status">
+              <Field label="Status" tourId="tnd-status">
                 <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
                   {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
@@ -377,28 +377,28 @@ export default function TenderForm({
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '0 1 150px', minWidth: 135 }}>
-              <Field label="Publish Date"><DateField value={form.publish_date} onChange={(v) => set('publish_date', v)} /></Field>
+              <Field label="Publish Date" tourId="tnd-publish-date"><DateField value={form.publish_date} onChange={(v) => set('publish_date', v)} /></Field>
             </div>
             <div style={{ flex: '0 1 175px', minWidth: 160 }}>
-              <Field label="Document Download Date"><DateField value={form.doc_download_date} onChange={(v) => set('doc_download_date', v)} /></Field>
+              <Field label="Document Download Date" tourId="tnd-doc-download-date"><DateField value={form.doc_download_date} onChange={(v) => set('doc_download_date', v)} /></Field>
             </div>
             <div style={{ flex: '0 1 170px', minWidth: 155 }}>
-              <Field label="Pre-Bid Meeting Date"><DateField value={form.pre_bid_meeting_date} onChange={(v) => set('pre_bid_meeting_date', v)} /></Field>
+              <Field label="Pre-Bid Meeting Date" tourId="tnd-prebid-date"><DateField value={form.pre_bid_meeting_date} onChange={(v) => set('pre_bid_meeting_date', v)} /></Field>
             </div>
             <div style={{ flex: '0 1 175px', minWidth: 160 }}>
-              <Field label="Query Submission Date"><DateField value={form.query_submission_date} onChange={(v) => set('query_submission_date', v)} /></Field>
+              <Field label="Query Submission Date" tourId="tnd-query-date"><DateField value={form.query_submission_date} onChange={(v) => set('query_submission_date', v)} /></Field>
             </div>
             <div style={{ flex: '0 1 155px', minWidth: 140 }}>
-              <Field label="Submission Date *"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></Field>
+              <Field label="Submission Date *" tourId="tnd-submission-date"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></Field>
             </div>
             <div style={{ flex: '0 1 175px', minWidth: 160 }}>
-              <Field label="Technical Opening Date"><DateField value={form.opening_date} onChange={(v) => set('opening_date', v)} /></Field>
+              <Field label="Technical Opening Date" tourId="tnd-tech-opening-date"><DateField value={form.opening_date} onChange={(v) => set('opening_date', v)} /></Field>
             </div>
             <div style={{ flex: '0 1 175px', minWidth: 160 }}>
-              <Field label="Financial Opening Date"><DateField value={form.financial_opening_date} onChange={(v) => set('financial_opening_date', v)} /></Field>
+              <Field label="Financial Opening Date" tourId="tnd-fin-opening-date"><DateField value={form.financial_opening_date} onChange={(v) => set('financial_opening_date', v)} /></Field>
             </div>
             <div style={{ flex: '0 1 170px', minWidth: 155 }}>
-              <Field label="Expected Award Date"><DateField value={form.expected_award_date} onChange={(v) => set('expected_award_date', v)} /></Field>
+              <Field label="Expected Award Date" tourId="tnd-award-date"><DateField value={form.expected_award_date} onChange={(v) => set('expected_award_date', v)} /></Field>
             </div>
           </div>
         </Section>
@@ -406,7 +406,7 @@ export default function TenderForm({
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between' }}>
         <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-        <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
+        <button type="submit" data-tour="tnd-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
           {saving ? 'Saving…' : submitLabel}
         </button>
       </div>

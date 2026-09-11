@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import NotificationBell from '@/components/erp/NotificationBell'
+import TourButton from '@/components/tour/TourButton'
 import { BRAND } from '@/lib/theme'
 
 const TABS = [
@@ -39,6 +40,7 @@ export default function CrmNav() {
             <Link
               key={tab.href}
               href={tab.href}
+              data-tour={`crm-nav-${tab.icon}`}
               className="nav-tab-link"
               style={{
                 display: 'flex',
@@ -62,8 +64,11 @@ export default function CrmNav() {
           )
         })}
       </div>
-      <div style={{ paddingBottom: 8, flex: 'none' }}>
-        <NotificationBell />
+      <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <TourButton variant="icon" />
+        <div data-tour="crm-nav-bell">
+          <NotificationBell />
+        </div>
       </div>
     </div>
   )

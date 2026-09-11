@@ -322,7 +322,7 @@ export const crmApi = {
   },
 
   // Activities
-  listActivities: async (params: { search?: string; status?: string; org_id?: number; related_module?: string; related_id?: number } = {}) => {
+  listActivities: async (params: { search?: string; status?: string; org_id?: number; related_module?: string; related_id?: number; overdue?: boolean; due_today?: boolean } = {}) => {
     const { data } = await apiClient.get('/crm/activities', { params })
     return data
   },

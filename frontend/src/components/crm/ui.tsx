@@ -7,6 +7,18 @@ import { CrmActivityAttachment } from '@/types'
 import { crmApi } from '@/lib/api'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 
+// A plain "×" character renders as a colored circular emoji glyph on some
+// systems/fonts instead of a typographic X — this SVG is the drop-in
+// replacement used everywhere a remove/close "✕" button is needed.
+export function XIcon({ size = 11 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  )
+}
+
 export interface SpecRevisionChange {
   field: string
   old: unknown
@@ -80,7 +92,7 @@ export function handleEnterAsTab(e: React.KeyboardEvent<HTMLFormElement>) {
 }
 
 /** Compact "REV-N" dropdown — pick a revision to see its changes highlighted in place, or "Current" for live values. */
-export function RevisionSelector({ revisions, selectedId, onSelect }: { revisions: SpecRevision[]; selectedId: number | null; onSelect: (id: number | null) => void }) {
+export function RevisionSelector({ revisions, selectedId, onSelect, tourId }: { revisions: SpecRevision[]; selectedId: number | null; onSelect: (id: number | null) => void; tourId?: string }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const triggerRef = useRef<HTMLDivElement>(null)
@@ -100,6 +112,7 @@ export function RevisionSelector({ revisions, selectedId, onSelect }: { revision
       <div
         ref={triggerRef}
         onClick={toggle}
+        {...(tourId ? { 'data-tour': tourId } : {})}
         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999, background: selected ? 'rgba(255,122,69,0.12)' : 'rgba(0,0,0,0.05)', color: selected ? BRAND.primary : COLORS.textFaint2, fontSize: 11, fontWeight: 700, cursor: 'pointer', userSelect: 'none' }}
       >
         {selected ? selected.revision_id : 'Current'}
@@ -207,6 +220,12 @@ export function ComboBox({
         onClick={openDropdown}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
+        // The guided tour auto-focuses whatever field a step points at — but
+        // this one's onFocus pops open a tall suggestions list of its own,
+        // unprompted, right as the step arrives. This tells the tour to
+        // leave focus alone here so that only happens once the user
+        // actually clicks in.
+        data-tour-no-autofocus="true"
         style={{ ...inputStyle, paddingRight: 30 }}
       />
       <svg
@@ -316,9 +335,9 @@ export const dangerBtnStyle: React.CSSProperties = {
   cursor: 'pointer',
 }
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+export function Field({ label, children, tourId }: { label: string; children: React.ReactNode; tourId?: string }) {
   return (
-    <div>
+    <div {...(tourId ? { 'data-tour': tourId } : {})}>
       <label className="field-label" style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: COLORS.textFaint2, marginBottom: 6 }}>{label}</label>
       {children}
     </div>

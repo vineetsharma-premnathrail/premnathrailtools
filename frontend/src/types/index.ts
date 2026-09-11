@@ -443,6 +443,7 @@ export interface CrmActivity {
   contact_names?: string[]
   related_label?: string
   created_by_name?: string
+  org_name?: string
   attachments?: CrmActivityAttachment[]
 }
 

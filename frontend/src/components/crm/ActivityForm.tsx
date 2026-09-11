@@ -10,7 +10,7 @@ import PhoneField from '@/components/erp/PhoneField'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
 import { ACTIVITY_TYPES } from './constants'
-import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle } from './ui'
+import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle, XIcon } from './ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import CameraCapture from '@/components/CameraCapture'
@@ -225,12 +225,12 @@ export default function ActivityForm({
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', flex: '1 1 480px' }}>
             <div style={{ flex: '2 1 200px', minWidth: 180 }}>
-              <Field label="Subject">
+              <Field label="Subject" tourId="activity-subject">
                 <input value={form.subject} onChange={(e) => set('subject', e.target.value)} placeholder="Brief subject of this activity" style={inputStyle} />
               </Field>
             </div>
             <div style={{ flex: '2 1 240px', minWidth: 220 }} ref={contactsRef}>
-              <Field label="Contact Person(s)">
+              <Field label="Contact Person(s)" tourId="activity-contacts">
                 <div style={{ position: 'relative' }}>
                   <div
                     onClick={() => setContactsOpen((v) => !v)}
@@ -314,19 +314,19 @@ export default function ActivityForm({
             </div>
 
             <div style={{ flex: '1 1 150px', minWidth: 140 }}>
-              <Field label="Activity Type">
+              <Field label="Activity Type" tourId="activity-type">
                 <select value={form.activity_type} onChange={(e) => set('activity_type', e.target.value)} style={inputStyle}>
                   {activityTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </Field>
             </div>
             <div style={{ flex: '1 1 150px', minWidth: 140 }}>
-              <Field label="Next Follow-up Date"><DateField value={form.next_followup} onChange={(v) => set('next_followup', v)} /></Field>
+              <Field label="Next Follow-up Date" tourId="activity-next-followup"><DateField value={form.next_followup} onChange={(v) => set('next_followup', v)} /></Field>
             </div>
           </div>
 
           <div style={{ flex: 'none' }}>
-            <Field label="Attachment">
+            <Field label="Attachment" tourId="activity-attachment">
               <div style={{ display: 'flex', gap: 8 }}>
                 {showCamera && <CameraCapture onCapture={(file) => stagePhotos([file])} onClose={() => setShowCamera(false)} />}
                 <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { stagePhotos(e.target.files); e.target.value = '' }} />
@@ -351,11 +351,11 @@ export default function ActivityForm({
           </div>
         </div>
 
-        <Field label="Observation / Remarks">
-          <RichTextEditor value={form.remarks} onChange={(v) => set('remarks', v)} placeholder="What was discussed or observed" />
+        <Field label="Observation / Remarks" tourId="activity-remarks">
+          <RichTextEditor value={form.remarks} onChange={(v) => set('remarks', v)} placeholder="What was discussed or observed" tourId="activity-remarks" />
         </Field>
-        <Field label="Action Plan">
-          <RichTextEditor value={form.action_plan} onChange={(v) => set('action_plan', v)} placeholder="What needs to be done next" />
+        <Field label="Action Plan" tourId="activity-action-plan">
+          <RichTextEditor value={form.action_plan} onChange={(v) => set('action_plan', v)} placeholder="What needs to be done next" tourId="activity-action-plan" />
         </Field>
 
         {(!!existingAttachments?.length || stagedPhotos.length > 0) && (
@@ -382,7 +382,7 @@ export default function ActivityForm({
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
         <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-        <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
+        <button type="submit" data-tour="activity-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
           {saving ? 'Saving…' : submitLabel}
         </button>
       </div>
@@ -420,8 +420,8 @@ function PhotoThumbnails({
                 onClick={() => onDeleteExisting(a.id)}
                 disabled={deletingAttachmentId === a.id}
                 aria-label={`Delete ${a.filename}`}
-                style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#dc2626', color: '#fff', fontSize: 11, lineHeight: '18px', cursor: 'pointer', padding: 0 }}
-              >✕</button>
+                style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#dc2626', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+              ><XIcon size={9} /></button>
             </div>
           ))}
         </div>
@@ -437,8 +437,8 @@ function PhotoThumbnails({
                 type="button"
                 onClick={() => onRemoveStaged(i)}
                 aria-label={`Remove ${f.name}`}
-                style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#dc2626', color: '#fff', fontSize: 11, lineHeight: '18px', cursor: 'pointer', padding: 0 }}
-              >✕</button>
+                style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#dc2626', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0 }}
+              ><XIcon size={9} /></button>
             </div>
           ))}
         </div>

@@ -59,7 +59,7 @@ export default function TechnicalOfferPickerDialog({
         ) : clientDocs.length === 0 ? (
           <p style={{ fontSize: 13, color: '#a8a29e', fontStyle: 'italic' }}>No client documents uploaded yet.</p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto', marginBottom: 16 }}>
+          <div data-tour="tor-doc-picker" style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto', marginBottom: 16 }}>
             {clientDocs.map((d) => (
               <div key={d.id} onClick={() => toggle(d.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.08)', cursor: 'pointer', fontSize: 13 }}>
                 <span onClick={(e) => e.stopPropagation()}>
@@ -75,6 +75,7 @@ export default function TechnicalOfferPickerDialog({
           <button
             onClick={onCancel}
             disabled={sending}
+            data-tour="tor-cancel-btn"
             style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: '#fff', color: '#57534e', cursor: sending ? 'not-allowed' : 'pointer' }}
           >
             Cancel
@@ -82,6 +83,7 @@ export default function TechnicalOfferPickerDialog({
           <button
             onClick={() => onSend(selected)}
             disabled={sending}
+            data-tour="tor-send-btn"
             style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.7 : 1 }}
           >
             {sending ? 'Sending…' : 'Send'}

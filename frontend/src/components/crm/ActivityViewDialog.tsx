@@ -2,7 +2,7 @@
 
 import { CrmActivity } from '@/types'
 import { RichText } from '@/components/RichTextEditor'
-import { InfoRow, ActivityPhotos } from '@/components/crm/ui'
+import { InfoRow, ActivityPhotos, XIcon } from '@/components/crm/ui'
 
 export default function ActivityViewDialog({ activity, onClose }: { activity: CrmActivity | null; onClose: () => void }) {
   if (!activity) return null
@@ -12,7 +12,7 @@ export default function ActivityViewDialog({ activity, onClose }: { activity: Cr
         <div style={{ maxHeight: '85vh', overflowY: 'auto', padding: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
             <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: 0 }}>{activity.activity_type || 'Follow Up'}</p>
-            <button onClick={onClose} aria-label="Close" style={{ border: 'none', background: 'transparent', fontSize: 18, cursor: 'pointer', color: '#a8a29e', lineHeight: 1 }}>✕</button>
+            <button onClick={onClose} aria-label="Close" style={{ border: 'none', background: 'transparent', display: 'flex', cursor: 'pointer', color: '#a8a29e', padding: 4 }}><XIcon size={16} /></button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {activity.created_at && <InfoRow label="Created" value={new Date(activity.created_at).toLocaleString('en-GB')} />}

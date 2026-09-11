@@ -79,6 +79,7 @@ export default function PaymentTermsPage() {
         <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Payment Terms List</h1>
         <button
           onClick={() => (showForm ? cancelForm() : setShowForm(true))}
+          data-tour="pt-add-btn"
           style={{ ...primaryBtnStyle, alignSelf: 'flex-start', fontWeight: 700, fontSize: 14.5, padding: '12px 24px' }}
         >
           {showForm ? 'Cancel' : '+ Add Payment Term'}
@@ -95,19 +96,19 @@ export default function PaymentTermsPage() {
 
       {showForm && (
         <form onSubmit={save} style={{ marginBottom: 20, padding: 16, borderRadius: 14, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div>
+          <div data-tour="pt-label">
             <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Label</label>
             <input value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} required style={inputStyle} />
           </div>
-          <div>
+          <div data-tour="pt-description">
             <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Description / Terms Text</label>
             <textarea value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} />
           </div>
-          <div><button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Payment Term'}</button></div>
+          <div><button type="submit" data-tour="pt-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Payment Term'}</button></div>
         </form>
       )}
 
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
+      <div data-tour="pt-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
           <thead>

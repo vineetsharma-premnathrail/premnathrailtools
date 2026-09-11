@@ -8,7 +8,7 @@ import { isValidEmail, isValidGST, isValidWebsite } from './validators'
 import { extractErrorMessages } from '@/lib/validation'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { ORG_TYPES, ORG_TYPE_LABELS, RAILWAY_ZONES, COUNTRIES } from './constants'
-import { Field, Section, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from './ui'
+import { Field, Section, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, XIcon } from './ui'
 
 type FormState = {
   name: string
@@ -333,12 +333,12 @@ export default function OrganizationForm({
         <Section title="Organization Details">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '2 1 260px', minWidth: 220 }}>
-              <Field label="Organization Name *">
+              <Field label="Organization Name *" tourId="org-name">
                 <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Northern Railway HQ" style={inputStyle} />
               </Field>
             </div>
             <div style={{ flex: '1 1 190px', minWidth: 170 }}>
-              <Field label="Organization Type *">
+              <Field label="Organization Type *" tourId="org-type">
                 <select value={form.org_type} onChange={(e) => setOrgType(e.target.value)} style={inputStyle}>
                   <option value="">-- Select Type --</option>
                   {ORG_TYPES.map((o) => <option key={o} value={o}>{ORG_TYPE_LABELS[o] || o}</option>)}
@@ -349,7 +349,7 @@ export default function OrganizationForm({
               </Field>
             </div>
             <div style={{ flex: '2 1 220px', minWidth: 200 }}>
-              <Field label="Parent Organization"><input value={form.parent_org} onChange={(e) => set('parent_org', e.target.value)} placeholder="Optional parent org" style={inputStyle} /></Field>
+              <Field label="Parent Organization" tourId="org-parent"><input value={form.parent_org} onChange={(e) => set('parent_org', e.target.value)} placeholder="Optional parent org" style={inputStyle} /></Field>
             </div>
           </div>
 
@@ -358,7 +358,7 @@ export default function OrganizationForm({
           {showRailwayFields && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '0 1 200px', minWidth: 170 }}>
-                <Field label="Railway Zone">
+                <Field label="Railway Zone" tourId="org-railway-zone">
                   <select value={form.railway_zone} onChange={(e) => set('railway_zone', e.target.value)} style={inputStyle}>
                     <option value="">-- Select Zone --</option>
                     {RAILWAY_ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
@@ -369,14 +369,14 @@ export default function OrganizationForm({
                 </Field>
               </div>
               <div style={{ flex: '1 1 200px', minWidth: 180 }}>
-                <Field label="Division / Workshop"><input value={form.division_workshop} onChange={(e) => set('division_workshop', e.target.value)} placeholder="e.g. Agra Division" style={inputStyle} /></Field>
+                <Field label="Division / Workshop" tourId="org-division"><input value={form.division_workshop} onChange={(e) => set('division_workshop', e.target.value)} placeholder="e.g. Agra Division" style={inputStyle} /></Field>
               </div>
             </div>
           )}
-          <Field label="Address"><textarea value={form.address} onChange={(e) => set('address', e.target.value)} rows={2} placeholder="Street / locality" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+          <Field label="Address" tourId="org-address"><textarea value={form.address} onChange={(e) => set('address', e.target.value)} rows={2} placeholder="Street / locality" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 160px', minWidth: 140 }}>
-              <Field label="Country">
+              <Field label="Country" tourId="org-country">
                 <select value={form.country} onChange={(e) => set('country', e.target.value)} style={inputStyle}>
                   {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -386,13 +386,13 @@ export default function OrganizationForm({
               </Field>
             </div>
             <div style={{ flex: '1 1 180px', minWidth: 160 }}>
-              <Field label="State / UT"><input value={form.state} onChange={(e) => set('state', e.target.value)} placeholder="e.g. Delhi" style={inputStyle} /></Field>
+              <Field label="State / UT" tourId="org-state"><input value={form.state} onChange={(e) => set('state', e.target.value)} placeholder="e.g. Delhi" style={inputStyle} /></Field>
             </div>
             <div style={{ flex: '1 1 180px', minWidth: 160 }}>
-              <Field label="City"><input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="e.g. New Delhi" style={inputStyle} /></Field>
+              <Field label="City" tourId="org-city"><input value={form.city} onChange={(e) => set('city', e.target.value)} placeholder="e.g. New Delhi" style={inputStyle} /></Field>
             </div>
             <div style={{ flex: '1 1 120px', minWidth: 110 }}>
-              <Field label="PIN Code"><input value={form.pin_code} onChange={(e) => set('pin_code', e.target.value)} maxLength={6} placeholder="110001" style={inputStyle} /></Field>
+              <Field label="PIN Code" tourId="org-pin"><input value={form.pin_code} onChange={(e) => set('pin_code', e.target.value)} maxLength={6} placeholder="110001" style={inputStyle} /></Field>
             </div>
           </div>
 
@@ -400,7 +400,7 @@ export default function OrganizationForm({
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ flex: '1 1 200px', minWidth: 180 }}>
-              <Field label="Official Phone">
+              <Field label="Official Phone" tourId="org-phone">
                 <PhoneField value={form.official_phone} onChange={(v) => set('official_phone', v)} placeholder="+91 XXXXX XXXXX" style={{ ...inputStyle, ...dupFieldStyle(dupOrgPhones.has(normPhone(form.official_phone))) }} />
               </Field>
               {dupOrgPhones.has(normPhone(form.official_phone)) && (
@@ -412,7 +412,7 @@ export default function OrganizationForm({
                   <div key={i} style={{ marginTop: 6 }}>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <PhoneField value={p} onChange={(v) => setExtraPhone(i, v)} placeholder="+91 XXXXX XXXXX" style={{ ...inputStyle, ...(p && !isPhoneValid(p) ? { borderColor: '#f87171' } : {}), ...dupFieldStyle(isDup) }} />
-                      <button type="button" onClick={() => removeExtraPhone(i)} style={{ ...dangerBtnStyle, padding: '5px 10px', fontSize: 11.5 }}>✕</button>
+                      <button type="button" onClick={() => removeExtraPhone(i)} style={{ ...dangerBtnStyle, padding: '5px 10px', fontSize: 11.5 }}><XIcon /></button>
                     </div>
                     {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Duplicate phone number.</p>}
                   </div>
@@ -421,7 +421,7 @@ export default function OrganizationForm({
               <button type="button" onClick={addExtraPhone} style={{ ...secondaryBtnStyle, marginTop: 6, padding: '4px 10px', fontSize: 11.5 }}>+ Add phone</button>
             </div>
             <div style={{ flex: '1 1 220px', minWidth: 180 }}>
-              <Field label="Official Email">
+              <Field label="Official Email" tourId="org-email">
                 <input
                   type="email"
                   value={form.official_email}
@@ -448,7 +448,7 @@ export default function OrganizationForm({
                         placeholder="another@org.gov.in"
                         style={{ ...inputStyle, ...(e && !isValidEmail(e) ? { borderColor: '#f87171' } : {}), ...dupFieldStyle(isDup) }}
                       />
-                      <button type="button" onClick={() => removeExtraEmail(i)} style={{ ...dangerBtnStyle, padding: '5px 10px', fontSize: 11.5 }}>✕</button>
+                      <button type="button" onClick={() => removeExtraEmail(i)} style={{ ...dangerBtnStyle, padding: '5px 10px', fontSize: 11.5 }}><XIcon /></button>
                     </div>
                     {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Duplicate email address.</p>}
                   </div>
@@ -457,7 +457,7 @@ export default function OrganizationForm({
               <button type="button" onClick={addExtraEmail} style={{ ...secondaryBtnStyle, marginTop: 6, padding: '4px 10px', fontSize: 11.5 }}>+ Add email</button>
             </div>
             <div style={{ flex: '1 1 260px', minWidth: 220 }}>
-              <Field label="GST Number">
+              <Field label="GST Number" tourId="org-gst">
                 <input
                   value={form.gst_number}
                   onChange={(e) => set('gst_number', e.target.value.toUpperCase())}
@@ -471,7 +471,7 @@ export default function OrganizationForm({
               </Field>
             </div>
             <div style={{ flex: '1 1 220px', minWidth: 180 }}>
-              <Field label="Website">
+              <Field label="Website" tourId="org-website">
                 <input
                   value={form.website}
                   onChange={(e) => set('website', e.target.value)}
@@ -487,7 +487,7 @@ export default function OrganizationForm({
 
           <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', margin: '4px 0' }} />
 
-          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: 0 }}>Contact Persons</p>
+          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: 0, width: 'fit-content' }}>Contact Persons</p>
           {contactsLoading ? (
             <p style={{ fontSize: 13, color: '#a8a29e', margin: 0 }}>Loading contacts…</p>
           ) : (
@@ -497,16 +497,16 @@ export default function OrganizationForm({
                   <div key={i} style={{ padding: 12, borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                       <div style={{ flex: '1 1 150px', minWidth: 130 }}>
-                        <Field label="Name *"><input value={row.name} onChange={(e) => setContact(i, 'name', e.target.value)} placeholder="Contact name" style={contactInputStyle} /></Field>
+                        <Field label="Name *" tourId={i === 0 ? 'contact-name' : undefined}><input value={row.name} onChange={(e) => setContact(i, 'name', e.target.value)} placeholder="Contact name" style={contactInputStyle} /></Field>
                       </div>
                       <div style={{ flex: '1 1 120px', minWidth: 100 }}>
-                        <Field label="Designation"><input value={row.designation} onChange={(e) => setContact(i, 'designation', e.target.value)} placeholder="e.g. DEN" style={contactInputStyle} /></Field>
+                        <Field label="Designation" tourId={i === 0 ? 'contact-designation' : undefined}><input value={row.designation} onChange={(e) => setContact(i, 'designation', e.target.value)} placeholder="e.g. DEN" style={contactInputStyle} /></Field>
                       </div>
                       <div style={{ flex: '1 1 100px', minWidth: 90 }}>
-                        <Field label="Department"><input value={row.department} onChange={(e) => setContact(i, 'department', e.target.value)} placeholder="Dept." style={contactInputStyle} /></Field>
+                        <Field label="Department" tourId={i === 0 ? 'contact-department' : undefined}><input value={row.department} onChange={(e) => setContact(i, 'department', e.target.value)} placeholder="Dept." style={contactInputStyle} /></Field>
                       </div>
                       <div style={{ flex: '1 1 140px', minWidth: 120 }}>
-                        <Field label="Mobile">
+                        <Field label="Mobile" tourId={i === 0 ? 'contact-mobile' : undefined}>
                           <PhoneField value={row.mobile} onChange={(v) => setContact(i, 'mobile', v)} placeholder="+91..." style={{ ...contactInputStyle, ...dupFieldStyle(dupContactMobiles.has(normPhone(row.mobile))) }} />
                         </Field>
                         {dupContactMobiles.has(normPhone(row.mobile)) && (
@@ -518,7 +518,7 @@ export default function OrganizationForm({
                             <div key={j} style={{ marginTop: 6 }}>
                               <div style={{ display: 'flex', gap: 6 }}>
                                 <PhoneField value={m} onChange={(v) => setContactMobile(i, j, v)} placeholder="+91..." style={{ ...contactInputStyle, ...(m && !isPhoneValid(m) ? { borderColor: '#f87171' } : {}), ...dupFieldStyle(isDup) }} />
-                                <button type="button" onClick={() => removeContactMobile(i, j)} style={{ ...dangerBtnStyle, padding: '5px 8px', fontSize: 11 }}>✕</button>
+                                <button type="button" onClick={() => removeContactMobile(i, j)} style={{ ...dangerBtnStyle, padding: '5px 8px', fontSize: 11 }}><XIcon /></button>
                               </div>
                               {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Duplicate mobile number.</p>}
                             </div>
@@ -527,7 +527,7 @@ export default function OrganizationForm({
                         <button type="button" onClick={() => addContactMobile(i)} style={{ ...secondaryBtnStyle, marginTop: 6, padding: '3px 8px', fontSize: 11 }}>+ Add phone</button>
                       </div>
                       <div style={{ flex: '1 1 160px', minWidth: 140 }}>
-                        <Field label="Email">
+                        <Field label="Email" tourId={i === 0 ? 'contact-email' : undefined}>
                           <input
                             type="email"
                             value={row.email}
@@ -554,7 +554,7 @@ export default function OrganizationForm({
                                   placeholder="email"
                                   style={{ ...contactInputStyle, ...(em && !isValidEmail(em) ? { borderColor: '#f87171' } : {}), ...dupFieldStyle(isDup) }}
                                 />
-                                <button type="button" onClick={() => removeContactEmail(i, j)} style={{ ...dangerBtnStyle, padding: '5px 8px', fontSize: 11 }}>✕</button>
+                                <button type="button" onClick={() => removeContactEmail(i, j)} style={{ ...dangerBtnStyle, padding: '5px 8px', fontSize: 11 }}><XIcon /></button>
                               </div>
                               {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Duplicate email address.</p>}
                             </div>
@@ -570,7 +570,7 @@ export default function OrganizationForm({
                 ))}
               </div>
               <div>
-                <button type="button" onClick={addContact} style={{ ...secondaryBtnStyle, alignSelf: 'flex-start' }}>+ Add Contact</button>
+                <button type="button" onClick={addContact} data-tour="org-add-contact" style={{ ...secondaryBtnStyle, alignSelf: 'flex-start' }}>+ Add Contact</button>
                 <p style={{ fontSize: 12, color: '#a8a29e', margin: '8px 0 0' }}>Add key contacts for this organization</p>
               </div>
             </>
@@ -580,7 +580,7 @@ export default function OrganizationForm({
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
         <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-        <button type="submit" disabled={saving || contactsLoading} style={{ ...primaryBtnStyle, opacity: saving || contactsLoading ? 0.7 : 1 }}>
+        <button type="submit" data-tour="org-save" disabled={saving || contactsLoading} style={{ ...primaryBtnStyle, opacity: saving || contactsLoading ? 0.7 : 1 }}>
           {saving ? 'Saving…' : submitLabel}
         </button>
       </div>

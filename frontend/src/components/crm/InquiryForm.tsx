@@ -9,7 +9,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField, { isPhoneValid } from '@/components/erp/PhoneField'
 import { RAILWAY_ZONES, LEAD_SOURCES, PRIORITIES, INQUIRY_STATUSES } from './constants'
-import { Field, Section, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ComboBox, handleEnterAsTab, InfoRow } from './ui'
+import { Field, Section, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ComboBox, handleEnterAsTab, InfoRow, XIcon } from './ui'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -274,16 +274,8 @@ export default function InquiryForm({
       setError('Please select a status.')
       return
     }
-    if (!form.product_category) {
-      setError('Please select a product category.')
-      return
-    }
     if (!form.product.trim()) {
       setError('Please enter the product.')
-      return
-    }
-    if (!form.quantity) {
-      setError('Please enter the quantity.')
       return
     }
     if (!form.org_contact_id || form.org_contact_id === '__new__') {
@@ -291,8 +283,8 @@ export default function InquiryForm({
       return
     }
     const filledExtraProducts = extraProducts.filter((r) => r.product_category.trim() || r.product.trim() || r.quantity || r.product_spec.trim())
-    if (filledExtraProducts.some((r) => !r.product_category.trim() || !r.product.trim() || !r.quantity)) {
-      setError('Please enter Category, Product and Quantity for every additional product, or remove the empty row.')
+    if (filledExtraProducts.some((r) => !r.product.trim())) {
+      setError('Please enter a Product for every additional product row, or remove the empty row.')
       return
     }
     if (duplicateProductCombos.size > 0) {
@@ -311,10 +303,10 @@ export default function InquiryForm({
         bd_owner: bdOwnerName,
         quantity: form.quantity ? Number(form.quantity) : undefined,
         additional_items: filledExtraProducts.map((r) => ({
-          product_category: r.product_category,
+          product_category: r.product_category || undefined,
           product: r.product,
           product_spec: r.product_spec || undefined,
-          quantity: Number(r.quantity),
+          quantity: r.quantity ? Number(r.quantity) : undefined,
         })),
       }
       Object.keys(payload).forEach((k) => {
@@ -341,7 +333,7 @@ export default function InquiryForm({
       <Section title="Basic Information" style={{ display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, flex: 1 }}>
           <div style={{ flex: '1 1 130px', minWidth: 130 }}>
-            <Field label="Inquiry Number">
+            <Field label="Inquiry Number" tourId="inq-number">
               <input
                 value={initial?.universal_id || previewNumber || 'Auto-generated on save'}
                 disabled
@@ -359,7 +351,7 @@ export default function InquiryForm({
             </Field>
           </div>
           <div style={{ flex: '1 1 130px', minWidth: 130 }}>
-            <Field label="Lead Source *">
+            <Field label="Lead Source *" tourId="inq-lead-source">
               <select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={{ ...inputStyle, padding: '8px 10px', fontSize: 12 }}>
                 <option value="">-- Select Source --</option>
                 {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -367,21 +359,21 @@ export default function InquiryForm({
             </Field>
           </div>
           <div style={{ flex: '1 1 95px', minWidth: 95 }}>
-            <Field label="Priority *">
+            <Field label="Priority *" tourId="inq-priority">
               <select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={{ ...inputStyle, padding: '8px 10px', fontSize: 12 }}>
                 {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
             </Field>
           </div>
           <div style={{ flex: '1 1 130px', minWidth: 130 }}>
-            <Field label="Status *">
+            <Field label="Status *" tourId="inq-status">
               <select value={form.status} onChange={(e) => set('status', e.target.value)} style={{ ...inputStyle, padding: '8px 10px', fontSize: 12 }}>
                 {INQUIRY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </Field>
           </div>
           <div style={{ flex: '1 1 110px', minWidth: 110 }}>
-            <Field label="BD Owner">
+            <Field label="BD Owner" tourId="inq-bd-owner">
               <input value={bdOwnerName} disabled style={{ ...inputStyle, padding: '8px 10px', fontSize: 12, background: '#f5f5f4', color: '#78716c' }} />
             </Field>
           </div>
@@ -390,7 +382,7 @@ export default function InquiryForm({
 
       <Section title="Company Information">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Client Company *">
+          <Field label="Client Company *" tourId="inq-org">
             <SearchableSelect
               value={form.org_id}
               onChange={(v) => set('org_id', v)}
@@ -399,7 +391,7 @@ export default function InquiryForm({
               disabled={orgLocked}
             />
           </Field>
-          <Field label="Contact Person *">
+          <Field label="Contact Person *" tourId="inq-contact">
             <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
               <option value="">-- Select Contact --</option>
               {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -428,7 +420,7 @@ export default function InquiryForm({
                 {newContact.additionalMobiles.map((m, i) => (
                   <div key={i} style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                     <PhoneField value={m} onChange={(v) => setNewContactMobile(i, v)} style={inputStyle} />
-                    <button type="button" onClick={() => removeNewContactMobile(i)} style={{ ...dangerBtnStyle, padding: '5px 8px', fontSize: 11 }}>✕</button>
+                    <button type="button" onClick={() => removeNewContactMobile(i)} style={{ ...dangerBtnStyle, padding: '5px 8px', fontSize: 11 }}><XIcon /></button>
                   </div>
                 ))}
                 <button type="button" onClick={addNewContactMobile} style={{ ...secondaryBtnStyle, marginTop: 6, padding: '3px 8px', fontSize: 11 }}>+ Add Mobile</button>
@@ -438,7 +430,7 @@ export default function InquiryForm({
                 {newContact.additionalEmails.map((em, i) => (
                   <div key={i} style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                     <input type="email" value={em} onChange={(e) => setNewContactEmail(i, e.target.value)} placeholder="email@company.com" style={inputStyle} />
-                    <button type="button" onClick={() => removeNewContactEmail(i)} style={{ ...dangerBtnStyle, padding: '5px 8px', fontSize: 11 }}>✕</button>
+                    <button type="button" onClick={() => removeNewContactEmail(i)} style={{ ...dangerBtnStyle, padding: '5px 8px', fontSize: 11 }}><XIcon /></button>
                   </div>
                 ))}
                 <button type="button" onClick={addNewContactEmail} style={{ ...secondaryBtnStyle, marginTop: 6, padding: '3px 8px', fontSize: 11 }}>+ Add Email</button>
@@ -472,7 +464,7 @@ export default function InquiryForm({
       <Section title="Product Requirement">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ flex: '0 1 200px', minWidth: 170 }}>
-            <Field label="Category *">
+            <Field label="Category" tourId="inq-product-category">
               <ComboBox
                 value={form.product_category}
                 onChange={(v) => set('product_category', v)}
@@ -485,7 +477,7 @@ export default function InquiryForm({
             </Field>
           </div>
           <div style={{ flex: '1 1 180px', minWidth: 160 }}>
-            <Field label="Product *">
+            <Field label="Product *" tourId="inq-product">
               <ComboBox
                 value={form.product}
                 onChange={(v) => set('product', v)}
@@ -501,22 +493,22 @@ export default function InquiryForm({
             </Field>
           </div>
           <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-            <Field label="Quantity *"><input type="number" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></Field>
+            <Field label="Quantity" tourId="inq-quantity"><input type="number" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></Field>
           </div>
           <div style={{ flex: '0 1 175px', minWidth: 175 }}>
-            <Field label="Required Delivery Date"><DateField value={form.required_delivery_date} onChange={(v) => set('required_delivery_date', v)} /></Field>
+            <Field label="Required Delivery Date" tourId="inq-delivery-date"><DateField value={form.required_delivery_date} onChange={(v) => set('required_delivery_date', v)} /></Field>
           </div>
           <div style={{ flex: '1 1 170px', minWidth: 150 }}>
-            <Field label="Delivery Location"><input value={form.delivery_location} onChange={(e) => set('delivery_location', e.target.value)} placeholder="e.g. Allahabad, UP" style={inputStyle} /></Field>
+            <Field label="Delivery Location" tourId="inq-delivery-location"><input value={form.delivery_location} onChange={(e) => set('delivery_location', e.target.value)} placeholder="e.g. Allahabad, UP" style={inputStyle} /></Field>
           </div>
           <div style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <Field label="Inspection Requirement"><input value={form.inspection_req} onChange={(e) => set('inspection_req', e.target.value)} placeholder="e.g. RDSO inspection, third party QA" style={inputStyle} /></Field>
+            <Field label="Inspection Requirement" tourId="inq-inspection"><input value={form.inspection_req} onChange={(e) => set('inspection_req', e.target.value)} placeholder="e.g. RDSO inspection, third party QA" style={inputStyle} /></Field>
           </div>
           <div style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <Field label="Warranty Requirement"><input value={form.warranty_req} onChange={(e) => set('warranty_req', e.target.value)} placeholder="e.g. 12 months from commissioning" style={inputStyle} /></Field>
+            <Field label="Warranty Requirement" tourId="inq-warranty"><input value={form.warranty_req} onChange={(e) => set('warranty_req', e.target.value)} placeholder="e.g. 12 months from commissioning" style={inputStyle} /></Field>
           </div>
         </div>
-        <Field label="Product Specification"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        <Field label="Product Specification" tourId="inq-product-spec"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
 
         {extraProducts.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -554,7 +546,7 @@ export default function InquiryForm({
                     <div style={{ flex: '0 1 90px', minWidth: 80 }}>
                       <Field label="Quantity"><input type="number" value={row.quantity} onChange={(e) => setExtraProduct(i, 'quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></Field>
                     </div>
-                    <button type="button" onClick={() => removeExtraProduct(i)} style={{ ...dangerBtnStyle, padding: '6px 10px', fontSize: 11, marginTop: 20 }}>✕</button>
+                    <button type="button" onClick={() => removeExtraProduct(i)} style={{ ...dangerBtnStyle, padding: '6px 10px', fontSize: 11, marginTop: 20 }}><XIcon /></button>
                   </div>
                   <Field label="Product Specification"><textarea value={row.product_spec} onChange={(e) => setExtraProduct(i, 'product_spec', e.target.value)} rows={2} placeholder="Optional spec for this product" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
                   {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: 0 }}>⚠ This product/category is already added elsewhere in this inquiry.</p>}
@@ -564,13 +556,13 @@ export default function InquiryForm({
           </div>
         )}
 
-        <Field label="Requirement Description"><textarea value={form.requirement_desc} onChange={(e) => set('requirement_desc', e.target.value)} rows={2} placeholder="Brief summary of the requirement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-        <Field label="Project Details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        <Field label="Requirement Description" tourId="inq-requirement-desc"><textarea value={form.requirement_desc} onChange={(e) => set('requirement_desc', e.target.value)} rows={2} placeholder="Brief summary of the requirement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
+        <Field label="Project Details" tourId="inq-project-details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
       </Section>
 
       <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between' }}>
         <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-        <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
+        <button type="submit" data-tour="inq-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
           {saving ? 'Saving…' : submitLabel}
         </button>
       </div>

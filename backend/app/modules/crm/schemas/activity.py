@@ -83,6 +83,7 @@ class ActivityResponse(BaseModel):
     contact_names: list[str] = []
     related_label: str | None = None
     created_by_name: str | None = None
+    org_name: str | None = None
     attachments: list[ActivityAttachmentResponse] = []
 
 

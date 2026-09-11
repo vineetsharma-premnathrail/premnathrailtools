@@ -241,6 +241,7 @@ export default function InquiriesPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <Link
             href="/dashboard/crm/inquiries/new"
+            data-tour="iq-add-btn"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14.5, fontWeight: 700, padding: '12px 24px', borderRadius: 10, background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: TEXT.white, textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
           >
             <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> New Record
@@ -264,12 +265,13 @@ export default function InquiriesPage() {
   const searchBar = (
     <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 6, marginBottom: 10 }}>
       <input
+        data-tour="iq-search"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search ID, product, owner, zone, status, stage..."
         style={{ flex: '1 1 auto', minWidth: 0, padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 12.5, outline: 'none' }}
       />
-      <button onClick={clearFilters} style={{ ...secondaryBtnStyle, flex: '0 0 auto', padding: '8px 10px', fontSize: 11.5 }}>Clear</button>
+      <button onClick={clearFilters} data-tour="iq-clear-btn" style={{ ...secondaryBtnStyle, flex: '0 0 auto', padding: '8px 10px', fontSize: 11.5 }}>Clear</button>
     </div>
   )
 
@@ -292,7 +294,7 @@ export default function InquiriesPage() {
               {columns.map((col) => {
                 if (col.key === 'kind') {
                   return (
-                    <th key={col.key} style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: typeFilter !== 'all' ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                    <th key={col.key} data-tour="iq-col-type" style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: typeFilter !== 'all' ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                       <select
                         value={typeFilter}
                         onChange={(e) => setTypeFilter(e.target.value as 'all' | Kind)}
@@ -308,7 +310,7 @@ export default function InquiriesPage() {
                 if (col.type === 'filter') {
                   const key = col.key as ColFilterKey
                   return (
-                    <th key={col.key} style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: colFilters[key] ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                    <th key={col.key} data-tour={`iq-col-${key}`} style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: colFilters[key] ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                       <select
                         value={colFilters[key]}
                         onChange={(e) => setColFilter(key, e.target.value)}
@@ -333,6 +335,7 @@ export default function InquiriesPage() {
                   <th
                     key={col.key}
                     onClick={() => toggleSort(col.key as SortKey)}
+                    data-tour={`iq-col-${col.key}`}
                     style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: sortKey === col.key ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, cursor: 'pointer', userSelect: 'none' }}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -352,10 +355,10 @@ export default function InquiriesPage() {
               })}
             </tr>
           </thead>
-          <tbody>
+          <tbody data-tour="iq-table-rows">
             {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
             {!loading && paged.length === 0 && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
-            {paged.map((r) => {
+            {paged.map((r, idx) => {
               const pinned = pinnedKeys.includes(r.key)
               return (
               <tr key={r.key} onClick={() => openRow(r)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
@@ -364,6 +367,7 @@ export default function InquiriesPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button
                       onClick={(e) => togglePin(r.key, e)}
+                      data-tour={idx === 0 ? 'iq-pin-btn' : undefined}
                       title={pinned ? 'Unpin' : 'Pin to top'}
                       style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
                     >
@@ -394,7 +398,7 @@ export default function InquiriesPage() {
       </div>
 
       {!loading && sortedRows.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 10 }}>
+        <div data-tour="iq-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 10 }}>
           <span style={{ fontSize: 12.5, color: '#78716c' }}>
             {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sortedRows.length)} of {sortedRows.length}
           </span>

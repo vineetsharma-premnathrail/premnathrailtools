@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy import and_, or_
@@ -57,6 +57,9 @@ def _enrich(db: Session, activities: list[Activity]) -> list[ActivityResponse]:
     inquiry_labels = {i.id: i.universal_id for i in db.query(Inquiry).filter(Inquiry.id.in_(inquiry_ids)).all()} if inquiry_ids else {}
     tender_labels = {t.id: t.universal_id for t in db.query(Tender).filter(Tender.id.in_(tender_ids)).all()} if tender_ids else {}
 
+    org_ids = {a.org_id for a in activities if a.org_id}
+    orgs_by_id = {o.id: o.name for o in db.query(Organization).filter(Organization.id.in_(org_ids)).all()} if org_ids else {}
+
     creator_ids = {a.created_by_id for a in activities if a.created_by_id}
     creators_by_id: dict[int, str] = {}
     if creator_ids:
@@ -81,6 +84,7 @@ def _enrich(db: Session, activities: list[Activity]) -> list[ActivityResponse]:
             resp.related_label = tender_labels.get(a.related_id)
         resp.attachments = [ActivityAttachmentResponse.model_validate(att) for att in attachments_by_activity.get(a.id, [])]
         resp.created_by_name = creators_by_id.get(a.created_by_id)
+        resp.org_name = orgs_by_id.get(a.org_id)
         results.append(resp)
     return results
 
@@ -92,6 +96,8 @@ async def list_activities(
     org_id: int | None = None,
     related_module: str | None = None,
     related_id: int | None = None,
+    overdue: bool = False,
+    due_today: bool = False,
     skip: int = 0,
     limit: int = 200,
     db: Session = Depends(get_db),
@@ -100,6 +106,10 @@ async def list_activities(
     query = db.query(Activity).filter(Activity.is_deleted == False)  # noqa: E712
     if status:
         query = query.filter(Activity.status == status)
+    if overdue:
+        query = query.filter(Activity.status == "Open", Activity.next_followup < date.today())
+    if due_today:
+        query = query.filter(Activity.next_followup == date.today())
     if org_id:
         # Activity.org_id is stamped at creation time and can drift from the
         # truth if the parent Inquiry/Tender's org is edited afterwards — so

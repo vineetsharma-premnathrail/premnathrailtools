@@ -307,7 +307,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
       <div
         style={{
           opacity: collapsed ? 0 : 1,
-          maxHeight: collapsed ? 0 : 120,
+          maxHeight: collapsed ? 0 : 168,
           overflow: 'hidden',
           transition: 'opacity .18s, max-height .28s',
           marginTop: 10,

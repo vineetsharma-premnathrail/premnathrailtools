@@ -79,11 +79,16 @@ export default function RichTextEditor({
   onChange,
   placeholder,
   minHeight = 100,
+  tourId,
 }: {
   value: string
   onChange: (html: string) => void
   placeholder?: string
   minHeight?: number
+  /** Base id for the guided tour to stamp each toolbar control with (e.g.
+   * `${tourId}-bold`) — two RichTextEditor instances on the same page (e.g.
+   * Remarks and Action Plan) need their own distinct targets. */
+  tourId?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [focused, setFocused] = useState(false)
@@ -139,6 +144,7 @@ export default function RichTextEditor({
           value=""
           onChange={(e) => { if (e.target.value) setFontSize(e.target.value); e.target.value = '' }}
           title="Font size"
+          {...(tourId ? { 'data-tour': `${tourId}-fontsize` } : {})}
           style={{ height: 28, borderRadius: 6, border: '1px solid rgba(0,0,0,0.08)', background: '#fff', color: '#57534e', fontSize: 12, fontWeight: 600, padding: '0 4px', cursor: 'pointer' }}
         >
           <option value="" disabled>Font Size</option>
@@ -147,15 +153,15 @@ export default function RichTextEditor({
           <option value="11px">Small</option>
         </select>
         <div style={{ width: 1, alignSelf: 'stretch', margin: '0 4px', background: 'rgba(0,0,0,0.08)' }} />
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('insertUnorderedList')} title="Bullet list" style={{ ...TOOLBAR_BTN_STYLE, ...activeBtnStyle(activeStates.ul) }}>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('insertUnorderedList')} title="Bullet list" {...(tourId ? { 'data-tour': `${tourId}-bullet` } : {})} style={{ ...TOOLBAR_BTN_STYLE, ...activeBtnStyle(activeStates.ul) }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="9" y1="6" x2="20" y2="6" /><line x1="9" y1="12" x2="20" y2="12" /><line x1="9" y1="18" x2="20" y2="18" /><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" /><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" /><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" /></svg>
         </button>
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('insertOrderedList')} title="Numbered list" style={{ ...TOOLBAR_BTN_STYLE, ...activeBtnStyle(activeStates.ol) }}>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('insertOrderedList')} title="Numbered list" {...(tourId ? { 'data-tour': `${tourId}-numbered` } : {})} style={{ ...TOOLBAR_BTN_STYLE, ...activeBtnStyle(activeStates.ol) }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="10" y1="6" x2="21" y2="6" /><line x1="10" y1="12" x2="21" y2="12" /><line x1="10" y1="18" x2="21" y2="18" /><text x="1" y="8.5" fontSize="7" fill="currentColor" stroke="none">1</text><text x="1" y="14.5" fontSize="7" fill="currentColor" stroke="none">2</text><text x="1" y="20.5" fontSize="7" fill="currentColor" stroke="none">3</text></svg>
         </button>
         <div style={{ width: 1, alignSelf: 'stretch', margin: '0 4px', background: 'rgba(0,0,0,0.08)' }} />
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('bold')} title="Bold" style={{ ...TOOLBAR_BTN_STYLE, fontStyle: 'normal', ...activeBtnStyle(activeStates.bold) }}>B</button>
-        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('italic')} title="Italic" style={{ ...TOOLBAR_BTN_STYLE, fontStyle: 'italic', ...activeBtnStyle(activeStates.italic) }}>I</button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('bold')} title="Bold" {...(tourId ? { 'data-tour': `${tourId}-bold` } : {})} style={{ ...TOOLBAR_BTN_STYLE, fontStyle: 'normal', ...activeBtnStyle(activeStates.bold) }}>B</button>
+        <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('italic')} title="Italic" {...(tourId ? { 'data-tour': `${tourId}-italic` } : {})} style={{ ...TOOLBAR_BTN_STYLE, fontStyle: 'italic', ...activeBtnStyle(activeStates.italic) }}>I</button>
       </div>
       <div style={{ position: 'relative' }}>
         <RteStyles />

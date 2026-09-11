@@ -37,17 +37,18 @@ export default function CrmDashboardPage() {
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14, marginBottom: 20 }}>
-            <StatCard label="Organizations" value={data.total_organizations} color="#3b82f6" href="/dashboard/crm/organizations" />
-            <StatCard label="Inquiries" value={data.total_inquiries} color="#FF7A45" href="/dashboard/crm/inquiries" />
-            <StatCard label="Tenders" value={data.total_tenders} color="#8b5cf6" href="/dashboard/crm/tenders" />
-            <StatCard label="Open Follow-ups" value={data.open_followups} color="#10b981" />
-            <StatCard label="Overdue Follow-ups" value={data.overdue_followups} color="#dc2626" />
-            <StatCard label="Today's Follow-ups" value={data.today_activities} color="#06b6d4" />
-            <StatCard label="Pending Tenders" value={data.pending_tenders} color="#eab308" href="/dashboard/crm/tenders?status=Active" />
+            <StatCard tourId="dash-stat-organizations" label="Organizations" value={data.total_organizations} color="#3b82f6" href="/dashboard/crm/organizations" />
+            <StatCard tourId="dash-stat-inquiries" label="Inquiries" value={data.total_inquiries} color="#FF7A45" href="/dashboard/crm/inquiries" />
+            <StatCard tourId="dash-stat-tenders" label="Tenders" value={data.total_tenders} color="#8b5cf6" href="/dashboard/crm/tenders" />
+            <StatCard tourId="dash-stat-open-followups" label="Open Follow-ups" value={data.open_followups} color="#10b981" href="/dashboard/crm/followups?bucket=open" />
+            <StatCard tourId="dash-stat-overdue-followups" label="Overdue Follow-ups" value={data.overdue_followups} color="#dc2626" href="/dashboard/crm/followups?bucket=overdue" />
+            <StatCard tourId="dash-stat-today-followups" label="Today's Follow-ups" value={data.today_activities} color="#06b6d4" href="/dashboard/crm/followups?bucket=today" />
+            <StatCard tourId="dash-stat-pending-tenders" label="Pending Tenders" value={data.pending_tenders} color="#eab308" href="/dashboard/crm/tenders?status=Active" />
           </div>
 
           <div className="grid-3" style={{ gap: 20, marginBottom: 20 }}>
             <RecentList
+              tourId="dash-recent-organizations"
               title="Recent Organizations"
               viewAllHref="/dashboard/crm/organizations"
               items={data.recent_organizations}
@@ -59,6 +60,7 @@ export default function CrmDashboardPage() {
               )}
             />
             <RecentList
+              tourId="dash-recent-inquiries"
               title="Recent Inquiries"
               viewAllHref="/dashboard/crm/inquiries"
               items={data.recent_inquiries}
@@ -70,6 +72,7 @@ export default function CrmDashboardPage() {
               )}
             />
             <RecentList
+              tourId="dash-recent-tenders"
               title="Recent Tenders"
               viewAllHref="/dashboard/crm/tenders"
               items={data.recent_tenders}
@@ -84,6 +87,7 @@ export default function CrmDashboardPage() {
 
           <div className="grid-2" style={{ gap: 20 }}>
             <RecentList
+              tourId="dash-recent-followups"
               title="Recent Follow Ups"
               items={data.recent_activities}
               renderItem={(a) => {
@@ -111,7 +115,7 @@ const rowStyle: React.CSSProperties = { padding: '10px 14px', borderRadius: 10, 
 const rowTitle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }
 const rowSub: React.CSSProperties = { fontSize: 11.5, color: '#78716c', margin: 0 }
 
-function StatCard({ label, value, color, href }: { label: string; value: number; color: string; href?: string }) {
+function StatCard({ label, value, color, href, tourId }: { label: string; value: number; color: string; href?: string; tourId?: string }) {
   const content = (
     <>
       <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 6px' }}>{label}</p>
@@ -120,11 +124,12 @@ function StatCard({ label, value, color, href }: { label: string; value: number;
   )
   const style: React.CSSProperties = { display: 'block', padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', textDecoration: 'none', cursor: href ? 'pointer' : 'default', transition: 'transform .15s ease, box-shadow .15s ease' }
 
-  if (!href) return <div style={style}>{content}</div>
+  if (!href) return <div data-tour={tourId} style={style}>{content}</div>
 
   return (
     <Link
       href={href}
+      data-tour={tourId}
       style={style}
       onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 16px 36px rgba(15,23,42,0.22), 0 2px 6px rgba(15,23,42,.1), inset 0 1px 0 rgba(255,255,255,.35)' }}
       onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = style.boxShadow as string }}
@@ -134,9 +139,9 @@ function StatCard({ label, value, color, href }: { label: string; value: number;
   )
 }
 
-function RecentList<T>({ title, titleColor, viewAllHref, items, renderItem }: { title: string; titleColor?: string; viewAllHref?: string; items: T[]; renderItem: (item: T) => React.ReactNode }) {
+function RecentList<T>({ title, titleColor, viewAllHref, items, renderItem, tourId }: { title: string; titleColor?: string; viewAllHref?: string; items: T[]; renderItem: (item: T) => React.ReactNode; tourId?: string }) {
   return (
-    <div style={{ height: '100%', boxSizing: 'border-box', borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 16 }}>
+    <div data-tour={tourId} style={{ height: '100%', boxSizing: 'border-box', borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ fontSize: 13.5, fontWeight: 600, color: titleColor || '#1f1108', margin: 0 }}>{title}</h2>
         {viewAllHref && <Link href={viewAllHref} style={{ fontSize: 11.5, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>}

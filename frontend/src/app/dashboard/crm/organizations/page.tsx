@@ -10,7 +10,7 @@ import { Organization } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
 import OrganizationDetailPanel from '@/components/crm/OrganizationDetailPanel'
 import ErrorRecoveryDialog from '@/components/erp/ErrorRecoveryDialog'
-import { secondaryBtnStyle, pageBtnStyle } from '@/components/crm/ui'
+import { secondaryBtnStyle, pageBtnStyle, XIcon } from '@/components/crm/ui'
 import { BRAND, TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 
@@ -205,6 +205,7 @@ export default function OrganizationsPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <Link
             href="/dashboard/crm/organizations/new"
+            data-tour="orgs-add-btn"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14.5, fontWeight: 700, padding: '12px 24px', borderRadius: 10, background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: TEXT.white, textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
           >
             <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add Organization
@@ -214,6 +215,7 @@ export default function OrganizationsPage() {
         {isAdmin && duplicateGroups.length > 0 && (
           <button
             onClick={() => setShowDuplicates(true)}
+            data-tour="orgs-duplicate-btn"
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
               padding: '8px 14px', borderRadius: 9, border: '1px solid #fecaca', background: '#fef2f2',
@@ -236,7 +238,7 @@ export default function OrganizationsPage() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: TEXT.heading }}>Duplicate Organizations</h2>
-              <button onClick={() => setShowDuplicates(false)} aria-label="Close" style={{ border: 'none', background: 'transparent', fontSize: 18, cursor: 'pointer', color: '#a8a29e', lineHeight: 1 }}>✕</button>
+              <button onClick={() => setShowDuplicates(false)} aria-label="Close" style={{ border: 'none', background: 'transparent', display: 'flex', cursor: 'pointer', color: '#a8a29e', padding: 4 }}><XIcon size={16} /></button>
             </div>
             <p style={{ fontSize: 12.5, color: '#78716c', marginTop: 0 }}>
               These organizations share the same name. Nothing has been changed automatically — review each group and merge/delete manually via each organization&apos;s detail page once you&apos;ve confirmed which one to keep.
@@ -277,12 +279,13 @@ export default function OrganizationsPage() {
   const searchBar = (
     <div style={{ display: 'flex', justifyContent: 'center', gap: 10, alignItems: 'center', marginBottom: 10 }}>
       <input
+        data-tour="orgs-search"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search name, type, zone, city, state..."
         style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 13.5, outline: 'none' }}
       />
-      <button onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>
+      <button onClick={clearFilters} data-tour="orgs-clear-btn" style={secondaryBtnStyle}>Clear</button>
     </div>
   )
 
@@ -297,6 +300,7 @@ export default function OrganizationsPage() {
                 col.type === 'filter' ? (
                   <th
                     key={col.key}
+                    data-tour={`orgs-col-${col.key}`}
                     style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: filters[col.key as FilterKey] ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}
                   >
                     <select
@@ -321,6 +325,7 @@ export default function OrganizationsPage() {
                   <th
                     key={col.key}
                     onClick={() => toggleSort(col.key as SortKey)}
+                    data-tour={`orgs-col-${col.key}`}
                     style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: sortKey === col.key ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, cursor: 'pointer', userSelect: 'none' }}
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -340,10 +345,10 @@ export default function OrganizationsPage() {
               )}
             </tr>
           </thead>
-          <tbody style={{ opacity: loading && hasLoadedOnce ? 0.5 : 1, transition: 'opacity .15s' }}>
+          <tbody data-tour="orgs-table-rows" style={{ opacity: loading && hasLoadedOnce ? 0.5 : 1, transition: 'opacity .15s' }}>
             {loading && !hasLoadedOnce && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
             {!loading && paged.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No organizations found.</td></tr>}
-            {(!loading || hasLoadedOnce) && paged.map((o) => {
+            {(!loading || hasLoadedOnce) && paged.map((o, idx) => {
               const pinned = pinnedIds.includes(o.id)
               return (
               <tr key={o.id} onClick={() => openOrg(o.id)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
@@ -351,6 +356,7 @@ export default function OrganizationsPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button
                       onClick={(e) => togglePin(o.id, e)}
+                      data-tour={idx === 0 ? 'orgs-pin-btn' : undefined}
                       title={pinned ? 'Unpin organization' : 'Pin organization to top'}
                       style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 8, margin: -8, display: 'flex', alignItems: 'center', borderRadius: 6 }}
                     >
@@ -379,7 +385,7 @@ export default function OrganizationsPage() {
       </div>
 
       {!loading && sortedOrgs.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 10 }}>
+        <div data-tour="orgs-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 10 }}>
           <span style={{ fontSize: 12.5, color: '#78716c' }}>
             {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sortedOrgs.length)} of {sortedOrgs.length}
           </span>
