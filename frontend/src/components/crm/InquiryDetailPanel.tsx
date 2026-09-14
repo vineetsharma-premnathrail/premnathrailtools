@@ -1484,7 +1484,7 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
               ) : (
                 <>
                   {a.remarks ? <RichText html={a.remarks} style={{ fontSize: 12, color: '#57534e' }} /> : <p style={{ fontSize: 12, color: '#57534e', margin: 0 }}>—</p>}
-                  {a.next_followup && <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '2px 0 0' }}>Due: {a.next_followup}</p>}
+                  <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '2px 0 0' }}>Due: {a.next_followup || 'To Be Decided'}</p>
                   {a.action_plan && (
                     <div style={{ marginTop: 2 }}>
                       <span style={{ fontSize: 12, color: '#78716c', fontWeight: 600 }}>Action Plan: </span>

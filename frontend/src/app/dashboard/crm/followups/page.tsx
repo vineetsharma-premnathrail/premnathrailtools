@@ -126,7 +126,7 @@ export default function FollowUpsPage() {
                   <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{a.activity_type || 'Follow Up'}</td>
                   <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: clickable ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap' }}>{a.related_label || '—'}</td>
                   <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>{a.org_name || '—'}</td>
-                  <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{a.next_followup ? formatDate(a.next_followup) : '—'}</td>
+                  <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{a.next_followup ? formatDate(a.next_followup) : 'To Be Decided'}</td>
                   <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{a.assigned_to || '—'}</td>
                   <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#57534e', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a.remarks ? stripHtml(a.remarks) : ''}>
                     {a.remarks ? stripHtml(a.remarks) : '—'}

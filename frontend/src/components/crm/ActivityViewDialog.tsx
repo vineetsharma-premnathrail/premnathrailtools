@@ -18,7 +18,7 @@ export default function ActivityViewDialog({ activity, onClose }: { activity: Cr
             {activity.created_at && <InfoRow label="Created" value={new Date(activity.created_at).toLocaleString('en-GB')} />}
             <InfoRow label="Subject" value={activity.subject || 'Not provided'} />
             {!!activity.contact_names?.length && <InfoRow label="Contact Person(s)" value={activity.contact_names.join(', ')} />}
-            <InfoRow label="Next Follow-up Date" value={activity.next_followup || 'Not provided'} />
+            <InfoRow label="Next Follow-up Date" value={activity.next_followup || 'To Be Decided'} />
             <InfoRow label="Status" value={activity.status || 'Open'} />
             <div>
               <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }}>Observation / Remarks</p>

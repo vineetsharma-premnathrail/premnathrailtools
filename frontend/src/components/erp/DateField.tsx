@@ -14,6 +14,7 @@ export default function DateField({ value, onChange, style }: { value: string; o
   const [coords, setCoords] = useState({ top: 0, left: 0 })
   const wrapperRef = useRef<HTMLDivElement>(null)
   const calendarRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const selected = value ? new Date(value + 'T00:00:00') : null
   const [viewYear, setViewYear] = useState(selected ? selected.getFullYear() : new Date().getFullYear())
@@ -85,13 +86,34 @@ export default function DateField({ value, onChange, style }: { value: string; o
 
   // Strips everything but digits and re-inserts the DD-MM-YYYY dashes as the
   // user types, so backspace/paste/typing all "just work" without the user
-  // having to type the dashes themselves.
+  // having to type the dashes themselves. Existing dash-separated segments
+  // (day/month/year) are kept intact and edited independently — flattening
+  // the whole string into one digit stream and re-chunking it by position
+  // (the old approach) reflows every digit after the edit into the wrong
+  // segment as soon as one is inserted/deleted anywhere but the very end,
+  // scrambling the date (e.g. fixing "14" to "21" in "14-09-2026" produced
+  // "40-92-0262") and silently dropping the edit since the scrambled text
+  // never matches a valid date. Digits that overflow a segment's max length
+  // (typing past day/month/year, same as continuous forward typing from
+  // empty) carry over to start the next segment, same as before.
+  const SEGMENT_MAX = [2, 2, 4]
   const formatDigits = (raw: string) => {
-    const digits = raw.replace(/\D/g, '').slice(0, 8)
-    let out = digits.slice(0, 2)
-    if (digits.length > 2) out += '-' + digits.slice(2, 4)
-    if (digits.length > 4) out += '-' + digits.slice(4, 8)
-    return out
+    const parts = raw.split('-')
+    const segments: string[] = []
+    let carry = ''
+    for (const part of parts) {
+      if (segments.length >= 3) break
+      const digits = carry + part.replace(/\D/g, '')
+      const max = SEGMENT_MAX[segments.length]
+      segments.push(digits.slice(0, max))
+      carry = digits.length > max ? digits.slice(max) : ''
+    }
+    while (carry && segments.length < 3) {
+      const max = SEGMENT_MAX[segments.length]
+      segments.push(carry.slice(0, max))
+      carry = carry.length > max ? carry.slice(max) : ''
+    }
+    return segments.join('-')
   }
 
   // Only commits (and only calls onChange) once the text is a complete,
@@ -111,10 +133,29 @@ export default function DateField({ value, onChange, style }: { value: string; o
     return true
   }
 
+  // Editing a digit in the middle (not just typing left-to-right) needs the
+  // caret restored after the dashes are re-inserted — otherwise the browser
+  // resets a controlled input's caret to the end on every value change.
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formatted = formatDigits(e.target.value)
+    const raw = e.target.value
+    const caret = e.target.selectionStart ?? raw.length
+    const digitsBeforeCaret = raw.slice(0, caret).replace(/\D/g, '').length
+    const formatted = formatDigits(raw)
     setDraft(formatted)
     if (commitIfValid(formatted)) setOpen(false)
+
+    // Walk the reformatted segments consuming the same number of digits the
+    // caret used to sit after, so it lands in the right spot even when a
+    // segment's length changed (e.g. day shrank from "14" to "4").
+    const segments = formatted.split('-')
+    let remaining = digitsBeforeCaret
+    let newCaret = 0
+    for (const seg of segments) {
+      if (remaining <= seg.length) { newCaret += remaining; break }
+      remaining -= seg.length
+      newCaret += seg.length + 1
+    }
+    requestAnimationFrame(() => inputRef.current?.setSelectionRange(newCaret, newCaret))
   }
 
   const handleBlur = () => {
@@ -147,6 +188,7 @@ export default function DateField({ value, onChange, style }: { value: string; o
   return (
     <div ref={wrapperRef} style={{ position: 'relative' }}>
       <input
+        ref={inputRef}
         value={draft}
         onChange={handleTextChange}
         onFocus={openCalendar}
