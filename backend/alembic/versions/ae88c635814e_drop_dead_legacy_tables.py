@@ -28,6 +28,7 @@ empty (or, for `vendors`, hold no data used by any live code path):
   crm_activity_attachments.
 """
 from alembic import op
+import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
@@ -38,39 +39,53 @@ depends_on = None
 
 
 def upgrade() -> None:
+    inspector = sa.inspect(op.get_bind())
+    existing_tables = set(inspector.get_table_names())
+
+    def drop_fk_if_exists(table: str, constraint: str) -> None:
+        if table not in existing_tables:
+            return
+        fk_names = {fk["name"] for fk in inspector.get_foreign_keys(table)}
+        if constraint in fk_names:
+            op.drop_constraint(constraint, table, type_="foreignkey")
+
+    def drop_table_if_exists(table: str) -> None:
+        if table in existing_tables:
+            op.drop_table(table)
+
     # Vestigial FKs pointing at `vendors` — not reflected in either model.
-    op.drop_constraint("p2p_purchase_orders_vendor_id_fkey", "p2p_purchase_orders", type_="foreignkey")
-    op.drop_constraint("p2p_vendor_quotations_vendor_id_fkey", "p2p_vendor_quotations", type_="foreignkey")
+    drop_fk_if_exists("p2p_purchase_orders", "p2p_purchase_orders_vendor_id_fkey")
+    drop_fk_if_exists("p2p_vendor_quotations", "p2p_vendor_quotations_vendor_id_fkey")
 
     # Asset Management module (never built).
-    op.drop_table("asset_events")
-    op.drop_table("assets")
-    op.drop_table("asset_categories")
-    op.drop_table("asset_locations")
+    drop_table_if_exists("asset_events")
+    drop_table_if_exists("assets")
+    drop_table_if_exists("asset_categories")
+    drop_table_if_exists("asset_locations")
 
     # Standalone, never-wired-up tables.
-    op.drop_table("electrical_work_orders")
-    op.drop_table("engineering_documents")
+    drop_table_if_exists("electrical_work_orders")
+    drop_table_if_exists("engineering_documents")
 
     # Pre-P2P-rewrite "purchase_*" prototype schema.
-    op.drop_table("purchase_invoices")
-    op.drop_table("purchase_goods_receipt_items")
-    op.drop_table("purchase_goods_receipts")
-    op.drop_table("purchase_order_items")
-    op.drop_table("purchase_quotations")
-    op.drop_table("purchase_rfq_vendors")
-    op.drop_table("purchase_orders")
-    op.drop_table("purchase_rfqs")
-    op.drop_table("purchase_documents")
-    op.drop_table("purchase_vendors")
-    op.drop_table("vendors")
+    drop_table_if_exists("purchase_invoices")
+    drop_table_if_exists("purchase_goods_receipt_items")
+    drop_table_if_exists("purchase_goods_receipts")
+    drop_table_if_exists("purchase_order_items")
+    drop_table_if_exists("purchase_quotations")
+    drop_table_if_exists("purchase_rfq_vendors")
+    drop_table_if_exists("purchase_orders")
+    drop_table_if_exists("purchase_rfqs")
+    drop_table_if_exists("purchase_documents")
+    drop_table_if_exists("purchase_vendors")
+    drop_table_if_exists("vendors")
 
     # Pre-rewrite CRM schema.
-    op.drop_table("crm_activity_client_contacts")
-    op.drop_table("crm_activity_observations")
-    op.drop_table("crm_activity_pew_members")
-    op.drop_table("crm_notes")
-    op.drop_table("crm_discussions")
+    drop_table_if_exists("crm_activity_client_contacts")
+    drop_table_if_exists("crm_activity_observations")
+    drop_table_if_exists("crm_activity_pew_members")
+    drop_table_if_exists("crm_notes")
+    drop_table_if_exists("crm_discussions")
 
 
 def downgrade() -> None:
