@@ -10,8 +10,6 @@ from app.modules.main.models.user import User
 from app.auth.jwt_handler import verify_document_share_token
 from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.models.organization import Organization
-from app.modules.crm.models.inquiry import Inquiry
-from app.modules.crm.models.tender import Tender
 from app.modules.crm.schemas.document import CrmDocumentResponse
 from app.utils.sharepoint import (
     upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint,
@@ -148,31 +146,21 @@ async def get_document_content(
     to anyone who has or guesses the link.
 
     Access check: normal CRM documents still require the 'crm' module grant.
-    Two exceptions, both because these get emailed cross-department to R&D
-    (who may not have 'crm' access at all) — any logged-in portal user can
-    fetch these *by their specific id*, which is narrower than opening
-    module access wide (you still need the id from a real email, the doc
-    list/other CRM data stays behind the normal 'crm' gate):
-    - Technical Offer Request PDFs (doc_category == "technical_offer_request").
-    - Reference documents attached to an inquiry/tender that has actually had
-      a Technical Offer Request sent — these are the docs the sender chose to
-      share alongside it (see inquiries.py/tenders.py technical-offer-request)."""
+    One exception, because these get emailed cross-department to R&D (who
+    may not have 'crm' access at all) — any logged-in portal user can fetch
+    a document *by its specific id* when it was actually shared as part of a
+    Technical Offer Request (the generated TOR PDF itself, or one of the
+    reference documents the sender explicitly picked via body.document_ids —
+    see inquiries.py/tenders.py technical-offer-request, which set
+    shared_via_tor on exactly those rows). This is narrower than opening
+    module access wide: you still need the id from a real email, only the
+    docs actually attached to that email qualify, and the doc list/other CRM
+    data stays behind the normal 'crm' gate."""
     doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    if doc.doc_category != "technical_offer_request" and user.role != "admin" and "crm" not in user.get_apps():
-        shared_via_tor = False
-        if doc.related_id:
-            if doc.related_module == "inquiry":
-                shared_via_tor = db.query(Inquiry).filter(
-                    Inquiry.id == doc.related_id, Inquiry.technical_offer_sent_at.isnot(None)
-                ).first() is not None
-            elif doc.related_module == "tender":
-                shared_via_tor = db.query(Tender).filter(
-                    Tender.id == doc.related_id, Tender.technical_offer_sent_at.isnot(None)
-                ).first() is not None
-        if not shared_via_tor:
-            raise HTTPException(status_code=403, detail="Access to 'crm' module required")
+    if not doc.shared_via_tor and user.role != "admin" and "crm" not in user.get_apps():
+        raise HTTPException(status_code=403, detail="Access to 'crm' module required")
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 

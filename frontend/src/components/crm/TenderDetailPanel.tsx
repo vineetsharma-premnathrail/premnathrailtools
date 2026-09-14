@@ -81,9 +81,13 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
 
   const handleDelete = async () => {
     if (!tender) return
-    await crmApi.deleteTender(tender.id)
-    if (onDeleted) onDeleted()
-    else router.push('/dashboard/crm/tenders')
+    try {
+      await crmApi.deleteTender(tender.id)
+      if (onDeleted) onDeleted()
+      else router.push('/dashboard/crm/tenders')
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Failed to delete tender.'))
+    }
   }
 
   const torActive = !!tender && (

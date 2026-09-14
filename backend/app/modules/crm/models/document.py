@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sqlalchemy import String, Integer, Text, ForeignKey
+from sqlalchemy import String, Integer, Text, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, SoftDeleteMixin
@@ -29,3 +29,9 @@ class CrmDocument(Base, TimestampMixin, SoftDeleteMixin):
     uploaded_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     org_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_organizations.id"), nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # True only for the generated Technical Offer Request PDF itself and the
+    # specific reference documents the sender picked (body.document_ids) when
+    # sending it — NOT every document under the same inquiry/tender. Lets
+    # get_document_content() grant cross-department access to exactly the
+    # docs that were actually shared, instead of the whole related_id.
+    shared_via_tor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")

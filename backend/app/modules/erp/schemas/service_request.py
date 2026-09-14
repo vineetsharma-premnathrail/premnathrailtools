@@ -122,6 +122,11 @@ class ServiceRequestUpdate(BaseModel):
     actual_completion_date: date | None = None
     service_cost: float | None = None
     transport_cost: float | None = None
+    accommodation_cost: float | None = None
+    miscellaneous_cost: float | None = None
+    tax_percentage: float | None = None
+    payment_status: str | None = None
+    invoice_number: str | None = None
     reported_by_name: str | None = None
     reported_by_phone: str | None = None
     reported_by_email: str | None = None

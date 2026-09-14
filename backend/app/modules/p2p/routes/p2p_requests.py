@@ -94,20 +94,26 @@ def _check_view_access(pr: P2PRequest, user: User) -> None:
         raise HTTPException(status_code=403, detail="You may only view your own P2P requests")
 
 
-def _check_approve_access(pr: P2PRequest, user: User) -> str | None:
-    """Which approval slot `user` is acting as (None means either an admin
+def _check_approve_access(pr: P2PRequest, user: User) -> list[str] | None:
+    """Every approval slot `user` is acting as (None means either an admin
     override or the legacy no-heads-assigned purchase-team-wide path — the
-    caller distinguishes those by role/assigned_approver_ids)."""
+    caller distinguishes those by role/assigned_approver_ids). Returns all
+    still-pending roles assigned to this user, not just the first one, so a
+    user holding multiple approver roles on the same PR clears every one of
+    their slots in a single click."""
     assigned = pr.assigned_approver_ids
     if not assigned:
         if user.role != "admin" and not _is_purchase_team(user):
             raise HTTPException(status_code=403, detail="Purchase module access required to approve or reject this PR.")
         return None
 
-    # Check if user is an assigned approver in one of the three roles.
-    for role, assigned_id in assigned.items():
-        if assigned_id == user.id and getattr(pr, f"{role}_approved_at") is None:
-            return role
+    # Collect every role this user is assigned to that is still pending.
+    roles = [
+        role for role, assigned_id in assigned.items()
+        if assigned_id == user.id and getattr(pr, f"{role}_approved_at") is None
+    ]
+    if roles:
+        return roles
 
     # If user is not an assigned approver but is admin, they can do an override.
     if user.role == "admin":
@@ -410,16 +416,18 @@ async def approve_p2p_request(
     if pr.status != "submitted":
         raise HTTPException(status_code=409, detail=f"Only a submitted PR can be approved (current status: {pr.status})")
 
-    role = _check_approve_access(pr, user)
+    roles = _check_approve_access(pr, user)
     now = datetime.now(timezone.utc)
     comment_note = f" Comment: {payload.comment}" if payload.comment else ""
 
-    if role is not None:
-        setattr(pr, f"{role}_approved_at", now)
-        if payload.comment:
-            setattr(pr, f"{role}_comment", payload.comment)
+    if roles is not None:
+        for role in roles:
+            setattr(pr, f"{role}_approved_at", now)
+            if payload.comment:
+                setattr(pr, f"{role}_comment", payload.comment)
+        role_labels = " & ".join(_ROLE_LABELS[role] for role in roles)
         _write_audit(db, pr.id, "approved", user,
-                     summary=f"{user.name or user.email} approved P2P request {pr.p2p_number} as {_ROLE_LABELS[role]}.{comment_note}")
+                     summary=f"{user.name or user.email} approved P2P request {pr.p2p_number} as {role_labels}.{comment_note}")
     elif user.role == "admin" and pr.pending_approval_roles:
         # Admin override: signs off every still-pending slot at once.
         for pending_role in pr.pending_approval_roles:

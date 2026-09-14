@@ -30,7 +30,7 @@ from app.modules.p2p.models.p2p_request import (
 )
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.schemas.p2p_request import P2PRequestResponse
-from app.modules.p2p.service import generate_p2p_number
+from app.modules.p2p.service import generate_p2p_number, _lock_number_series
 from pydantic import BaseModel
 from fastapi.responses import Response
 from app.utils.sharepoint import (
@@ -99,6 +99,34 @@ def _write_audit(
     )
 
 
+def _recompute_billing(db: Session, sr: ServiceRequest) -> None:
+    """Roll up this SR's billing fields from its real cost inputs — mirrors the
+    subtotal/tax/grand-total pattern used elsewhere (see crm/routes/workflow.py
+    and p2p/routes/rfq.py: subtotal = sum of line amounts, tax_amt = subtotal *
+    pct/100, total = subtotal + tax_amt).
+
+    `total_material_cost` is rolled up here from the SR's active materials
+    (each material's `estimated_budget` is its own line total, there being no
+    separate per-unit price field). `service_cost`/`transport_cost`/
+    `accommodation_cost`/`miscellaneous_cost`/`tax_percentage` are plain
+    manually-entered fields on the SR itself (settable via PATCH). Call this
+    any time either of those input sets changes, before commit."""
+    material_total = db.query(func.coalesce(func.sum(ServiceMaterial.estimated_budget), 0.0)).filter(
+        ServiceMaterial.service_request_id == sr.id, ServiceMaterial.is_deleted == False  # noqa: E712
+    ).scalar() or 0.0
+    sr.total_material_cost = float(material_total)
+
+    subtotal = (
+        (sr.service_cost or 0)
+        + (sr.transport_cost or 0)
+        + (sr.accommodation_cost or 0)
+        + (sr.miscellaneous_cost or 0)
+        + sr.total_material_cost
+    )
+    sr.tax_amount = subtotal * (sr.tax_percentage or 0) / 100
+    sr.total_bill = subtotal + sr.tax_amount
+
+
 def _current_financial_year() -> str:
     today = date.today()
     fy_start = today.year if today.month >= 4 else today.year - 1
@@ -107,6 +135,7 @@ def _current_financial_year() -> str:
 
 def _generate_sr_number(db: Session) -> str:
     prefix = f"SR-{_current_financial_year()}-"
+    _lock_number_series(db, prefix)
     last = db.query(func.max(ServiceRequest.request_number)).filter(ServiceRequest.request_number.like(f"{prefix}%")).scalar()
     if last:
         last_num = int(last.rsplit("-", 1)[-1])
@@ -204,11 +233,13 @@ async def list_service_requests(
 
     if search:
         like = f"%{search}%"
-        query = query.filter(
+        query = query.outerjoin(Project, ServiceRequest.project_id == Project.id).filter(
             ServiceRequest.request_number.ilike(like)
             | ServiceRequest.issue_title.ilike(like)
             | ServiceRequest.issue_description.ilike(like)
             | ServiceRequest.issue_category.ilike(like)
+            | Project.serial_number.ilike(like)
+            | Project.client_name.ilike(like)
         )
     if status:
         query = query.filter(ServiceRequest.status == status)
@@ -358,6 +389,10 @@ async def update_service_request(
                 sr.closed_at = None
             changed_labels.append(label)
         setattr(sr, field, new_val)
+
+    _BILLING_FIELDS = {"service_cost", "transport_cost", "accommodation_cost", "miscellaneous_cost", "tax_percentage"}
+    if _BILLING_FIELDS & changes.keys():
+        _recompute_billing(db, sr)
 
     if status_changed_to_closed:
         broadcast_notification(
@@ -565,8 +600,11 @@ async def get_service_request_attachment_content(
 ):
     """Raw bytes for in-app preview (img/pdf/video tags on our own origin),
     fetched via the app-only Graph token — never the raw SharePoint webUrl."""
-    attachment = db.query(ServiceRequestAttachment).filter(
-        ServiceRequestAttachment.id == attachment_id, ServiceRequestAttachment.service_request_id == sr_id
+    attachment = db.query(ServiceRequestAttachment).join(
+        ServiceRequest, ServiceRequest.id == ServiceRequestAttachment.service_request_id
+    ).filter(
+        ServiceRequestAttachment.id == attachment_id, ServiceRequestAttachment.service_request_id == sr_id,
+        ServiceRequest.is_deleted == False,  # noqa: E712
     ).first()
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
@@ -590,8 +628,11 @@ async def preview_service_request_attachment(
 ):
     """Fallback for formats the browser can't render natively (Office docs) —
     a short-lived Microsoft-viewer link, minted via the app-only token."""
-    attachment = db.query(ServiceRequestAttachment).filter(
-        ServiceRequestAttachment.id == attachment_id, ServiceRequestAttachment.service_request_id == sr_id
+    attachment = db.query(ServiceRequestAttachment).join(
+        ServiceRequest, ServiceRequest.id == ServiceRequestAttachment.service_request_id
+    ).filter(
+        ServiceRequestAttachment.id == attachment_id, ServiceRequestAttachment.service_request_id == sr_id,
+        ServiceRequest.is_deleted == False,  # noqa: E712
     ).first()
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
@@ -669,6 +710,8 @@ async def add_material(
         status=payload.status or "pending",
     )
     db.add(mat)
+    db.flush()
+    _recompute_billing(db, sr)
     _write_audit(db, sr_id, "material_added", user, summary=f"Material added: {mat.material_name} (qty: {mat.quantity} {mat.unit}).")
     db.commit()
     db.refresh(mat)
@@ -690,8 +733,12 @@ async def update_material(
     if sr and not _can_edit(sr, user):
         raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can update materials on this service request.")
 
-    for field, val in payload.model_dump(exclude_unset=True).items():
+    changed_fields = payload.model_dump(exclude_unset=True)
+    for field, val in changed_fields.items():
         setattr(mat, field, val)
+    if sr and "estimated_budget" in changed_fields:
+        db.flush()
+        _recompute_billing(db, sr)
     _write_audit(db, sr_id, "material_updated", user, summary=f"Material updated: {mat.material_name}.")
     db.commit()
     db.refresh(mat)
@@ -714,6 +761,9 @@ async def delete_material(
 
     mat_name = mat.material_name
     mat.is_deleted = True
+    if sr:
+        db.flush()
+        _recompute_billing(db, sr)
     _write_audit(db, sr_id, "material_deleted", user, summary=f"Material deleted: {mat_name}.")
     db.commit()
     return {"message": "Material deleted"}

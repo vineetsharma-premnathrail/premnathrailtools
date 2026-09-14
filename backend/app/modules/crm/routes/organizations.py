@@ -151,7 +151,7 @@ async def create_organization(
     user: User = Depends(require_app_access("crm")),
 ):
     name_clash = db.query(Organization).filter(
-        Organization.is_deleted == False, Organization.name.ilike(payload.name)  # noqa: E712
+        Organization.is_deleted == False, func.lower(Organization.name) == payload.name.strip().lower()  # noqa: E712
     ).first()
     if name_clash:
         raise HTTPException(status_code=409, detail="An organization with this name already exists")
@@ -163,7 +163,7 @@ async def create_organization(
             raise HTTPException(status_code=409, detail="An organization with this GST number already exists")
     if payload.official_email:
         email_clash = db.query(Organization).filter(
-            Organization.is_deleted == False, Organization.official_email.ilike(payload.official_email)  # noqa: E712
+            Organization.is_deleted == False, func.lower(Organization.official_email) == payload.official_email.strip().lower()  # noqa: E712
         ).first()
         if email_clash:
             raise HTTPException(status_code=409, detail="Official Email is already used by another organization")
@@ -246,7 +246,7 @@ async def update_organization(
             raise HTTPException(status_code=409, detail="An organization with this GST number already exists")
     if payload.official_email:
         email_clash = db.query(Organization).filter(
-            Organization.is_deleted == False, Organization.official_email.ilike(payload.official_email),  # noqa: E712
+            Organization.is_deleted == False, func.lower(Organization.official_email) == payload.official_email.strip().lower(),  # noqa: E712
             Organization.id != org_id,
         ).first()
         if email_clash:

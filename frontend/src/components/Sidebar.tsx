@@ -141,7 +141,6 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     { href: '/dashboard/rnd', label: 'R&D Tools', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
     { href: '/dashboard/crm', label: 'CRM Module', icon: 'crm', visible: !!user?.apps?.includes('crm') },
     { href: '/dashboard/p2p', label: 'Procure-to-Pay', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
-    { href: '/dashboard/store', label: 'Store', icon: 'store', visible: !!user?.apps?.includes('store') },
     { href: '/dashboard/organization', label: 'Organization', icon: 'organization', visible: isAdmin },
   ].filter((link) => link.visible)
 

@@ -210,7 +210,15 @@ async def create_quotation(inquiry_id: int, payload: QuotationCreate, db: Sessio
         **data, inquiry_id=inquiry_id, quot_number=quot_number, quot_number_base=quot_number, revision_number=0,
         created_by_id=user.id, created_at=datetime.now(timezone.utc),
     )
-    quot.items = [QuotationLineItem(**item.model_dump(), sort_order=i) for i, item in enumerate(payload.items)]
+    # subtotal/total are server-computed, never trusted from the client — this quote is a
+    # legally-facing document, so its totals can't be tampered with via the create payload.
+    items = []
+    for i, item in enumerate(payload.items):
+        item_data = item.model_dump(exclude={"subtotal", "total"})
+        subtotal = (item_data.get("quantity") or 0) * (item_data.get("unit_price") or 0)
+        total = subtotal if data.get("quotation_type") == "Export" else subtotal * (1 + (item_data.get("gst_percent") or 0) / 100)
+        items.append(QuotationLineItem(**item_data, subtotal=subtotal, total=total, sort_order=i))
+    quot.items = items
     db.add(quot)
     db.commit()
     db.refresh(quot)

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
 
 const TOOL_ROUTES: Record<string, string> = {
   braking: 'braking', hydraulic: 'hydraulic', qmax: 'qmax', load_distribution: 'load-distribution',
@@ -52,6 +53,7 @@ export default function RndHistoryPage() {
   const [search, setSearch] = useState('')
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [deleteId, setDeleteId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -84,7 +86,7 @@ export default function RndHistoryPage() {
 
   const startRename = (r: HistoryRecord) => { setRenamingId(r.id); setRenameValue(r.calculation_name || '') }
   const confirmRename = async (id: number) => { await rndApi.renameHistory(id, renameValue); setRenamingId(null); load() }
-  const remove = async (id: number) => { if (!confirm('Delete this saved calculation?')) return; await rndApi.deleteHistory(id); load() }
+  const remove = async (id: number) => { await rndApi.deleteHistory(id); load() }
   const openInTool = (r: HistoryRecord) => {
     const route = TOOL_ROUTES[r.tool_name]
     if (route) router.push(`/dashboard/rnd/${route}?load=${r.id}`)
@@ -209,7 +211,7 @@ export default function RndHistoryPage() {
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button onClick={() => openInTool(r)} title="Open in tool &amp; recalculate" style={iconBtnStyle('#2563eb')}><EyeIcon /></button>
                         <button onClick={() => startRename(r)} title="Rename" style={iconBtnStyle('#7c3aed')}><PencilIcon /></button>
-                        <button onClick={() => remove(r.id)} title="Delete" style={iconBtnStyle('#dc2626')}><TrashIcon /></button>
+                        <button onClick={() => setDeleteId(r.id)} title="Delete" style={iconBtnStyle('#dc2626')}><TrashIcon /></button>
                       </div>
                     )}
                   </td>
@@ -220,6 +222,14 @@ export default function RndHistoryPage() {
         </table>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={deleteId !== null}
+        title="Delete calculation"
+        message="Delete this saved calculation? This cannot be undone."
+        onConfirm={async () => { if (deleteId !== null) { await remove(deleteId); setDeleteId(null) } }}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   )
 }

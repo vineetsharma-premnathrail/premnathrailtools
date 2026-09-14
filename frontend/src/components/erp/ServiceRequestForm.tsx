@@ -170,9 +170,14 @@ export default function ServiceRequestForm({
         project_id: Number(form.project_id),
         assigned_to_name: assignedToName,
       }
-      Object.keys(payload).forEach((k) => {
-        if (payload[k] === '') delete payload[k]
-      })
+      // On create, drop untouched-empty optional fields entirely. On edit, keep them —
+      // an intentionally-cleared field must reach the backend as "" so PATCH's
+      // exclude_unset=True actually clears it instead of silently no-op'ing.
+      if (!initial) {
+        Object.keys(payload).forEach((k) => {
+          if (payload[k] === '') delete payload[k]
+        })
+      }
       await onSubmit(payload, queuedFiles)
     } catch (err: any) {
       setError(extractErrorMessages(err, 'Failed to save service request.'))

@@ -112,5 +112,14 @@ async def delete_department(
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=404, detail="Department not found")
+    head_ids = {department.head_user_id, department.secondary_head_user_id} - {None}
+    member_count = db.query(User).filter(
+        User.branch_id == department.branch_id, User.department.ilike(department.name)
+    ).count()
+    if member_count or head_ids:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete department — {member_count} member(s) or head(s) are still assigned to it.",
+        )
     db.delete(department)
     db.commit()

@@ -14,12 +14,29 @@ export default function EditOrganizationPage() {
   const router = useRouter()
   const orgId = Number(params.id)
   const [org, setOrg] = useState<Organization | null>(null)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    if (isAuthorized && orgId) crmApi.getOrganization(orgId).then(setOrg)
+    if (isAuthorized && orgId) {
+      setError('')
+      crmApi.getOrganization(orgId).then(setOrg).catch(() => setError('Failed to load organization.'))
+    }
   }, [isAuthorized, orgId])
 
-  if (isLoading || !isAuthorized || !org) return null
+  if (isLoading || !isAuthorized) return null
+
+  if (error) {
+    return (
+      <div>
+        <CrmNav />
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+          {error}
+        </div>
+      </div>
+    )
+  }
+
+  if (!org) return null
 
   return (
     <div>

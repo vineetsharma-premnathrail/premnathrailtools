@@ -96,9 +96,13 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
 
   const handleDelete = async () => {
     if (!inquiry) return
-    await crmApi.deleteInquiry(inquiry.id)
-    if (onDeleted) onDeleted()
-    else router.push('/dashboard/crm/inquiries')
+    try {
+      await crmApi.deleteInquiry(inquiry.id)
+      if (onDeleted) onDeleted()
+      else router.push('/dashboard/crm/inquiries')
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Failed to delete inquiry.'))
+    }
   }
 
   // Enabled the first time, and again any time the inquiry is edited after the last
@@ -673,7 +677,11 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
       }
       return updated
     }))
-  const grandTotal = items.reduce((sum, it) => sum + (Number(it.total) || 0), 0)
+  const itemsTotal = items.reduce((sum, it) => sum + (Number(it.total) || 0), 0)
+  const discountAmount = form.discount
+    ? (form.discount_type === 'percent' ? itemsTotal * (Number(form.discount) / 100) : Number(form.discount))
+    : 0
+  const grandTotal = itemsTotal - discountAmount
 
   useEffect(() => {
     setItems((rows) => rows.map((row) => {
@@ -867,7 +875,12 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                   <button type="button" onClick={addItemRow} style={{ ...secondaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>+ Add Line Item</button>
                 </div>
                 {fieldErrors.items && <p style={fieldErrorTextStyle}>{fieldErrors.items}</p>}
-                <p style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: '#1f1108', textAlign: 'right' }}>
+                {discountAmount > 0 && (
+                  <p style={{ marginTop: 10, fontSize: 12.5, color: '#57534e', textAlign: 'right' }}>
+                    Discount ({form.discount_type === 'percent' ? `${form.discount}%` : `${currencySymbol}${form.discount}`}): -{currencySymbol}{discountAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                )}
+                <p style={{ marginTop: discountAmount > 0 ? 2 : 10, fontSize: 13.5, fontWeight: 700, color: '#1f1108', textAlign: 'right' }}>
                   Grand Total: {currencySymbol}{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>

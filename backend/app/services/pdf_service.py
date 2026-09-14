@@ -96,9 +96,3 @@ def generate_pdf_report(data: Dict[str, Any], template_name: str) -> io.BytesIO:
             except Exception:
                 pass
         raise Exception('LaTeX compilation failed; no PDF produced.\n' + '\n'.join(diag))
-
-
-def merge_pdfs(pdf_buffers: list[io.BytesIO]) -> io.BytesIO:
-    """Merge multiple PDF buffers into one"""
-    buffer = io.BytesIO()
-    return buffer

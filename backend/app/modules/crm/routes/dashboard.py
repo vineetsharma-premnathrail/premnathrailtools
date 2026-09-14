@@ -30,7 +30,7 @@ async def get_crm_dashboard(
         Activity.is_deleted == False, Activity.status == "Open", Activity.next_followup < today  # noqa: E712
     ).count()
     today_activities = db.query(Activity).filter(
-        Activity.is_deleted == False, Activity.next_followup == today  # noqa: E712
+        Activity.is_deleted == False, Activity.status == "Open", Activity.next_followup == today  # noqa: E712
     ).count()
 
     pending_tenders = db.query(Tender).filter(

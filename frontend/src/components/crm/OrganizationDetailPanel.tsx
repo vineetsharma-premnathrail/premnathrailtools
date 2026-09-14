@@ -45,9 +45,13 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
   const canModify = !!org && !!user && (user.role === 'admin' || org.created_by_id === user.id)
 
   const handleDelete = async () => {
-    await crmApi.deleteOrganization(orgId)
-    if (onDeleted) onDeleted()
-    else router.push('/dashboard/crm/organizations')
+    try {
+      await crmApi.deleteOrganization(orgId)
+      if (onDeleted) onDeleted()
+      else router.push('/dashboard/crm/organizations')
+    } catch (err: any) {
+      setErrorDialog(extractErrorMessages(err, 'Failed to delete organization.'))
+    }
   }
 
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
@@ -353,7 +357,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
       <MessageDialog
         open={!!errorDialog}
         variant="error"
-        title="Failed to Save Contact"
+        title="Error"
         message={errorDialog || ''}
         onClose={() => setErrorDialog(null)}
       />

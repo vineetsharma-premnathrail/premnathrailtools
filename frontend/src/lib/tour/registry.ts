@@ -72,6 +72,10 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => loadTenderDetailOrEdit(),
   },
   {
+    pattern: /^\/dashboard\/crm\/followups$/,
+    load: () => import('./configs/crmFollowUps'),
+  },
+  {
     pattern: /^\/dashboard\/crm\/payment-terms$/,
     load: () => import('./configs/crmPaymentTerms'),
   },

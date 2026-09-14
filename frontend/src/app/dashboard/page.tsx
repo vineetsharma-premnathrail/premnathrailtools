@@ -53,13 +53,6 @@ const CartIcon = (
     <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6" />
   </svg>
 )
-const WarehouseIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 9l1-5h16l1 5" />
-    <path d="M4 9v10a1 1 0 001 1h14a1 1 0 001-1V9" />
-    <path d="M9 21V13h6v8" />
-  </svg>
-)
 const FileTextIcon = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
@@ -130,19 +123,6 @@ const modules = [
     iconColor: '#0284c7',
     tagBg: 'rgba(14,165,233,0.12)',
     tagColor: '#0369a1',
-  },
-  {
-    title: 'Store',
-    app: 'store' as const,
-    description: 'Stock ledger — items, locations, receipts, issues, and stock transactions.',
-    icon: WarehouseIcon,
-    href: '/dashboard/store',
-    features: ['Stock Items', 'Storage Locations', 'Transactions'],
-    barColor: 'linear-gradient(90deg,#14b8a6,#2dd4bf)',
-    iconBg: 'rgba(20,184,166,0.12)',
-    iconColor: '#0d9488',
-    tagBg: 'rgba(20,184,166,0.12)',
-    tagColor: '#0f766e',
   },
 ]
 

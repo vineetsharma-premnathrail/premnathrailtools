@@ -933,45 +933,6 @@ export interface StoreLocation {
   is_active: boolean
 }
 
-export interface StockItem {
-  id: number
-  part_code: string
-  description: string
-  make?: string
-  unit?: string
-  category?: string
-  reorder_point: number
-  reorder_quantity: number
-  standard_cost?: number
-  status: 'active' | 'obsolete'
-  remarks?: string
-  quantity_on_hand: number
-}
-
-export interface StockBalanceRow {
-  stock_item_id: number
-  part_code: string
-  description: string
-  unit?: string
-  quantity_on_hand: number
-}
-
-export interface StockTransaction {
-  id: number
-  stock_item_id: number
-  location_id: number
-  type: 'receipt' | 'issue' | 'transfer_in' | 'transfer_out' | 'adjustment' | 'return'
-  quantity: number
-  reference_type?: string
-  reference_id?: number
-  performed_by_id?: number
-  remarks?: string
-  created_at?: string
-  stock_item_description?: string
-  location_name?: string
-  performed_by_name?: string
-}
-
 export interface P2PPurchaseOrder {
   id: number
   po_number: string

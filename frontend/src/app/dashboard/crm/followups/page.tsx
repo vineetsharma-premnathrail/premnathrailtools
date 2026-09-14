@@ -73,13 +73,14 @@ export default function FollowUpsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Follow-ups</h1>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{rows.length} record{rows.length === 1 ? '' : 's'} found</p>
         </div>
-        <button type="button" onClick={() => router.push('/dashboard/crm')} style={secondaryBtnStyle}>← Back</button>
+        <button type="button" data-tour="followups-back-btn" onClick={() => router.push('/dashboard/crm')} style={secondaryBtnStyle}>← Back</button>
       </div>
 
       <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)', marginBottom: 16 }}>
         {BUCKETS.map((b) => (
           <button
             key={b.key}
+            data-tour={`followups-tab-${b.key}`}
             onClick={() => router.push(`/dashboard/crm/followups?bucket=${b.key}`)}
             style={{
               padding: '8px 16px',
@@ -104,7 +105,7 @@ export default function FollowUpsPage() {
         </div>
       )}
 
-      <div style={{ ...panelStyle, overflowX: 'auto' }}>
+      <div data-tour="followups-table" style={{ ...panelStyle, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>

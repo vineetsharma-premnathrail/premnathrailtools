@@ -327,7 +327,7 @@ async def create_technical_offer_request(
         file_name=offer_filename, file_path=upload_result["path"], sharepoint_path=upload_result["path"],
         sharepoint_url=upload_result.get("webUrl"), file_size=upload_result.get("size"),
         mime_type="application/pdf", uploaded_by_name=raised_by, org_id=org.id if org else None,
-        created_by_id=user.id,
+        created_by_id=user.id, shared_via_tor=True,
     )
     db.add(tor_doc)
     db.flush()
@@ -344,6 +344,8 @@ async def create_technical_offer_request(
             CrmDocument.related_module == "tender", CrmDocument.related_id == tender.id,
             CrmDocument.is_deleted == False,  # noqa: E712
         ).all()
+        for d in selected_docs:
+            d.shared_via_tor = True
         reference_documents = [
             {"name": d.file_name, "url": f"{settings.APP_BASE_URL}/api/v1/crm/documents/{d.id}/shared-content?token={create_document_share_token('crm_document', d.id)}"}
             for d in selected_docs

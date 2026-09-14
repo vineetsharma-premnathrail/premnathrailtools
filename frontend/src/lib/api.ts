@@ -993,56 +993,6 @@ export const storeApi = {
     const { data } = await apiClient.post('/store/locations', payload)
     return data
   },
-
-  listItems: async (params: Record<string, unknown> = {}) => {
-    const { data } = await apiClient.get('/store/items', { params })
-    return data
-  },
-
-  createItem: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/store/items', payload)
-    return data
-  },
-
-  getItem: async (id: number) => {
-    const { data } = await apiClient.get(`/store/items/${id}`)
-    return data
-  },
-
-  updateItem: async (id: number, payload: Record<string, unknown>) => {
-    const { data } = await apiClient.patch(`/store/items/${id}`, payload)
-    return data
-  },
-
-  listTransactions: async (params: Record<string, unknown> = {}) => {
-    const { data } = await apiClient.get('/store/transactions', { params })
-    return data
-  },
-
-  stockIn: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/store/transactions/stock-in', payload)
-    return data
-  },
-
-  issue: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/store/transactions/issue', payload)
-    return data
-  },
-
-  transfer: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/store/transactions/transfer', payload)
-    return data
-  },
-
-  listBalances: async (locationId: number) => {
-    const { data } = await apiClient.get('/store/transactions/balances', { params: { location_id: locationId } })
-    return data
-  },
-
-  adjust: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/store/transactions/adjust', payload)
-    return data
-  },
 }
 
 export const organizationApi = {

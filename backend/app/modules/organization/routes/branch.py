@@ -5,6 +5,7 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.users import require_admin
 from app.modules.organization.models.branch import Branch
+from app.modules.organization.models.department import Department
 from app.modules.organization.schemas.branch import BranchCreate, BranchUpdate, BranchResponse
 
 router = APIRouter(prefix="/organization/branches", tags=["Organization"])
@@ -64,5 +65,14 @@ async def delete_branch(
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
     if not branch:
         raise HTTPException(status_code=404, detail="Branch not found")
+    user_count = db.query(User).filter(User.branch_id == branch_id).count()
+    dept_count = db.query(Department).filter(Department.branch_id == branch_id).count()
+    if user_count or dept_count:
+        parts = []
+        if user_count:
+            parts.append(f"{user_count} user(s)")
+        if dept_count:
+            parts.append(f"{dept_count} department(s)")
+        raise HTTPException(status_code=409, detail=f"Cannot delete branch — {' and '.join(parts)} still assigned to it.")
     db.delete(branch)
     db.commit()

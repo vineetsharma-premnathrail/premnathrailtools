@@ -281,27 +281,6 @@ async def get_rfq_attachment_content(
     )
 
 
-@router.delete("/{rfq_id}/attachments/{attachment_id}")
-async def delete_rfq_attachment(
-    rfq_id: int,
-    attachment_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
-):
-    rfq = _get_rfq_or_404(db, rfq_id)
-    _assert_editable(rfq, user)
-
-    attachment = db.query(RFQAttachment).filter(
-        RFQAttachment.id == attachment_id, RFQAttachment.rfq_id == rfq_id
-    ).first()
-    if not attachment:
-        raise HTTPException(status_code=404, detail="Attachment not found")
-
-    db.delete(attachment)
-    db.commit()
-    return {"message": "Attachment deleted"}
-
-
 @router.post("/{rfq_id}/submit", response_model=RFQResponse)
 async def submit_rfq(
     rfq_id: int,

@@ -24,6 +24,13 @@ router = APIRouter(prefix="/p2p/goods-receipts", tags=["P2P"])
 # not draft (nothing to receive), not cancelled.
 _RECEIVABLE_PO_STATUSES = ("issued", "acknowledged", "partially_fulfilled")
 
+# A PO's status alone reaches "issued" as soon as it's raised, before the
+# Purchase Head -> Director -> MD PO approval chain (see p2p_requests.py
+# approve-po) has completed. Receiving must also gate on the parent PR
+# having cleared that chain, or a PO could be received against before it's
+# financially approved.
+_PO_APPROVED_PR_STATUSES = ("po_approved", "partially_received")
+
 
 def _get_grn_or_404(db: Session, grn_id: int) -> P2PGoodsReceipt:
     grn = db.query(P2PGoodsReceipt).options(
@@ -153,6 +160,8 @@ async def list_pending_purchase_orders(
     result = []
     for po in pos:
         pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first() if po.p2p_request_id else None
+        if pr and pr.status not in _PO_APPROVED_PR_STATUSES:
+            continue
         result.append({
             "id": po.id,
             "po_number": po.po_number,
@@ -189,20 +198,32 @@ async def create_goods_receipt(
         raise HTTPException(status_code=404, detail="Purchase order not found")
     if po.status not in _RECEIVABLE_PO_STATUSES:
         raise HTTPException(status_code=409, detail=f"Cannot record a receipt against a PO with status '{po.status}'")
+    if po.p2p_request_id:
+        pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first()
+        if pr and pr.status not in _PO_APPROVED_PR_STATUSES:
+            raise HTTPException(
+                status_code=409,
+                detail=f"PO '{po.po_number}' has not completed its Purchase Head / Director / MD approval chain yet (request status: {pr.status})",
+            )
     if not payload.items:
         raise HTTPException(status_code=422, detail="At least one item is required")
 
     po_items_by_id = {i.id: i for i in po.items}
 
-    # Already-received (draft or completed) quantity per PO item, so a new
-    # GRN can't push the total past what was actually ordered.
+    # Already-received quantity per PO item, so a new GRN can't push the
+    # total past what was actually ordered. A completed GRN's rejected
+    # quantity doesn't count — it never fulfilled the order and the vendor
+    # still owes a replacement delivery for it, so only its accepted
+    # quantity stays "used up". A draft GRN hasn't been inspected yet, so
+    # its full received_quantity counts until that's resolved.
     already_received: dict[int, float] = {}
     existing_grns = db.query(P2PGoodsReceipt).filter(P2PGoodsReceipt.purchase_order_id == po.id).options(
         selectinload(P2PGoodsReceipt.items)
     ).all()
     for g in existing_grns:
         for it in g.items:
-            already_received[it.po_item_id] = already_received.get(it.po_item_id, 0) + it.received_quantity
+            qty = it.accepted_quantity if g.status == "completed" else it.received_quantity
+            already_received[it.po_item_id] = already_received.get(it.po_item_id, 0) + (qty or 0)
 
     for item_payload in payload.items:
         po_item = po_items_by_id.get(item_payload.po_item_id)
