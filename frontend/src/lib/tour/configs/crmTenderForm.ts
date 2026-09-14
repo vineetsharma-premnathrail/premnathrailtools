@@ -142,6 +142,13 @@ const config: TourConfig = {
       why: 'This drives the "Pending Tenders" count on the CRM Dashboard, which counts every tender not yet closed or cancelled.',
     },
     {
+      target: 'tnd-current-status-note',
+      title: 'Current Status',
+      purpose: 'A free-text running note on where things stand right now — separate from the fixed Status dropdown above. Can also be updated later from the tender\'s detail page.',
+      required: false,
+      why: 'Every change to this note is recorded on the Timeline, just like any other field edit.',
+    },
+    {
       target: 'tnd-publish-date',
       title: 'Publish Date',
       required: false,

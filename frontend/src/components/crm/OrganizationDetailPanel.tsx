@@ -21,7 +21,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
 
   const [org, setOrg] = useState<OrganizationDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<string | string[]>('')
   const [tab, setTab] = useState<typeof TABS[number]>('Overview')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
@@ -50,7 +50,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
       if (onDeleted) onDeleted()
       else router.push('/dashboard/crm/organizations')
     } catch (err: any) {
-      setErrorDialog(extractErrorMessages(err, 'Failed to delete organization.'))
+      setError(extractErrorMessages(err, 'Failed to delete organization.'))
     }
   }
 
@@ -122,6 +122,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
         onConfirm={() => { setShowDeleteConfirm(false); handleDelete() }}
         onCancel={() => setShowDeleteConfirm(false)}
       />
+      <MessageDialog open={!!error} variant="error" title="Something Went Wrong" message={error} onClose={() => setError('')} />
     </div>
   )
 }

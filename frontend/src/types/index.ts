@@ -337,6 +337,7 @@ export interface Inquiry {
   sales_engineer?: string
   status: string
   current_stage: string
+  current_status_note?: string
   product?: string
   product_category?: string
   product_spec?: string
@@ -381,6 +382,7 @@ export interface Tender {
   currency: string
   status: string
   current_stage: string
+  current_status_note?: string
   lead_source?: string
   priority?: string
   bd_owner?: string

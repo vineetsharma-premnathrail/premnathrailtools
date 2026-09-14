@@ -63,6 +63,13 @@ const config: TourConfig = {
       required: false,
     },
     {
+      target: 'inq-current-status-note',
+      title: 'Current Status',
+      purpose: 'A free-text running note on where things stand right now — separate from the fixed Status dropdown above. Can also be updated later from the inquiry\'s detail page.',
+      required: false,
+      why: 'Every change to this note is recorded on the Timeline, just like any other field edit.',
+    },
+    {
       target: 'inq-org',
       title: 'Client Company',
       purpose: 'The organization raising this requirement. Search and select an existing organization — new ones are created from the Organizations page, not from here.',

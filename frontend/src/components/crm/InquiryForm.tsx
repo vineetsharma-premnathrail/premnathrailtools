@@ -22,6 +22,7 @@ type FormState = {
   lead_source: string
   bd_owner: string
   status: string
+  current_status_note: string
   product: string
   product_category: string
   product_spec: string
@@ -44,6 +45,7 @@ function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
     lead_source: initial?.lead_source || '',
     bd_owner: initial?.bd_owner || '',
     status: initial?.status || 'Requirement Received',
+    current_status_note: initial?.current_status_note || '',
     product: initial?.product || '',
     product_category: initial?.product_category || '',
     product_spec: initial?.product_spec || '',
@@ -378,6 +380,9 @@ export default function InquiryForm({
             </Field>
           </div>
         </div>
+        <Field label="Current Status" tourId="inq-current-status-note">
+          <textarea value={form.current_status_note} onChange={(e) => set('current_status_note', e.target.value)} rows={2} placeholder="e.g. Waiting for client confirmation" style={{ ...inputStyle, resize: 'vertical', fontSize: 12 }} />
+        </Field>
       </Section>
 
       <Section title="Company Information">

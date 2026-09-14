@@ -29,6 +29,10 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
 
     status: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
     current_stage: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
+    # Free-text running note on where things stand right now — distinct from the
+    # fixed `status`/`current_stage` values, edited independently and logged like
+    # any other info field (see _write_spec_revision in routes/inquiries.py).
+    current_status_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     product: Mapped[str | None] = mapped_column(String(255), nullable=True)
     product_category: Mapped[str | None] = mapped_column(String(100), nullable=True)

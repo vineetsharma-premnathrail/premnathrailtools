@@ -299,6 +299,31 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   )
 }
 
+function CurrentStatusNoteField({ tourId, value, canModify, onSave }: { tourId: string; value?: string; canModify: boolean; onSave: (v: string) => void }) {
+  const [draft, setDraft] = useState(value || '')
+  useEffect(() => setDraft(value || ''), [value])
+  if (!canModify) return <p style={{ fontSize: 13, color: '#1f1108', margin: 0, whiteSpace: 'pre-wrap' }}>{value || 'Not provided'}</p>
+  const dirty = draft !== (value || '')
+  return (
+    <div>
+      <textarea
+        data-tour={tourId}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={2}
+        placeholder="e.g. Waiting for client confirmation"
+        style={{ ...inputStyle, resize: 'vertical', fontSize: 13 }}
+      />
+      {dirty && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button type="button" onClick={() => onSave(draft)} style={{ ...primaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>Save</button>
+          <button type="button" onClick={() => setDraft(value || '')} style={{ ...secondaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, onChangeLeadInfo }: { inquiry: Inquiry; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null; canModify: boolean; onChangeLeadInfo: (payload: Record<string, unknown>) => void }) {
   const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
   const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
@@ -327,6 +352,9 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
           )}
         </div>
       )}
+      <Card title="Current Status">
+        <CurrentStatusNoteField tourId="inq-info-current-status" value={inquiry.current_status_note} canModify={canModify} onSave={(v) => onChangeLeadInfo({ current_status_note: v })} />
+      </Card>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 300px', minWidth: 280 }}>
           <Card title="Organization">
@@ -1601,7 +1629,7 @@ const AUDIT_FIELD_LABELS: Record<string, string> = {
   inspection_req: 'Inspection Requirement', warranty_req: 'Warranty Requirement', product_spec: 'Specification',
   requirement_desc: 'Requirement Summary', project_details: 'Project Details',
   railway_zone: 'Railway Zone', division: 'Division', lead_source: 'Lead Source', bd_owner: 'BD Owner',
-  sales_engineer: 'Sales Engineer', status: 'Status', current_stage: 'Stage', budget: 'Budget',
+  sales_engineer: 'Sales Engineer', status: 'Status', current_stage: 'Stage', current_status_note: 'Current Status', budget: 'Budget',
   expected_value: 'Expected Value', probability: 'Probability', expected_order_date: 'Expected Order Date',
   priority: 'Priority', next_followup_date: 'Follow-up Date', followup_priority: 'Follow-up Priority',
   followup_assigned_to: 'Follow-up Assigned To', followup_remarks: 'Follow-up Remarks',

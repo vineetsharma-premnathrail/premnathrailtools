@@ -25,6 +25,18 @@ const steps: TourStep[] = [
     purpose: 'Every core field entered when this tender was created/edited, laid out for quick reference.',
   },
   {
+    target: 'tnd-info-current-status',
+    title: 'Current Status',
+    purpose: 'A free-text running note on where things stand right now — separate from the fixed Status value below. Type anything and click away to save.',
+    why: 'Every change here is recorded on the Timeline, just like any other field edit.',
+  },
+  {
+    target: 'tnd-info-status',
+    title: 'Status (quick edit)',
+    purpose: 'Change the tender\'s status directly from here without opening the full Edit form.',
+    why: 'This is a quick lead-info toggle — changing it does not count as editing the requirement, so it won\'t re-arm the "Send Technical Offer Request" button. Every status change is recorded on the Timeline.',
+  },
+  {
     target: 'tender-tab-Dates',
     title: 'Dates',
     purpose: 'Every milestone date for this tender — publish, document download, pre-bid meeting, submission, technical/financial opening, expected award — in one table.',

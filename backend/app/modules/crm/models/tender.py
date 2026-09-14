@@ -30,6 +30,10 @@ class Tender(Base, TimestampMixin, SoftDeleteMixin):
 
     status: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
     current_stage: Mapped[str] = mapped_column(String(50), default="Tender Published", nullable=False)
+    # Free-text running note on where things stand right now — distinct from the
+    # fixed `status`/`current_stage` values, edited independently and logged like
+    # any other info field (see _write_spec_revision in routes/tenders.py).
+    current_status_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     lead_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
     priority: Mapped[str] = mapped_column(String(20), default="Medium", nullable=False)

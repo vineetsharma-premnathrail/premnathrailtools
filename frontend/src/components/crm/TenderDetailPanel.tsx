@@ -13,7 +13,7 @@ import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import ActivityForm from '@/components/crm/ActivityForm'
 import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
-import { TND_STAGES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, DOC_CATEGORIES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
+import { TND_STAGES, TENDER_STATUSES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, DOC_CATEGORIES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
 import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, handleEnterAsTab, StageProgress } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
@@ -74,6 +74,20 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
     try {
       setTender(await crmApi.updateTender(tender.id, payload))
       crmApi.getTenderSpecRevisions(tender.id).then(setRevisions).catch(() => {})
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Update failed.'))
+    }
+  }
+
+  // Status is a quick lead-info toggle, not a requirement change — keep
+  // updated_at as it was so it doesn't re-arm the "Send Technical Offer Request"
+  // button (that button only cares about the requirement details changing).
+  const patchLeadInfo = async (payload: Record<string, unknown>) => {
+    if (!tender) return
+    try {
+      const prevUpdatedAt = tender.updated_at
+      const updated = await crmApi.updateTender(tender.id, payload)
+      setTender({ ...updated, updated_at: prevUpdatedAt })
     } catch (err: any) {
       setError(extractErrorMessages(err, 'Update failed.'))
     }
@@ -215,7 +229,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
           }}
         />
       )}
-      {tab === 'Info' && !editing && <InfoTab tender={tender} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} />}
+      {tab === 'Info' && !editing && <InfoTab tender={tender} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canModify} onChangeLeadInfo={patchLeadInfo} />}
       {tab === 'Dates' && <DatesTab tender={tender} />}
       {tab === 'Documents' && <DocumentsTab tender={tender} canModify={canModify} isAdmin={isAdmin} />}
       {tab === 'Follow Ups' && <ActivitiesTab tender={tender} org={org} />}
@@ -251,14 +265,52 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   )
 }
 
-function InfoTab({ tender, org, contact, revisions, selectedRevId }: { tender: Tender; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null }) {
+function CurrentStatusNoteField({ tourId, value, canModify, onSave }: { tourId: string; value?: string; canModify: boolean; onSave: (v: string) => void }) {
+  const [draft, setDraft] = useState(value || '')
+  useEffect(() => setDraft(value || ''), [value])
+  if (!canModify) return <p style={{ fontSize: 13, color: '#1f1108', margin: 0, whiteSpace: 'pre-wrap' }}>{value || 'Not provided'}</p>
+  const dirty = draft !== (value || '')
+  return (
+    <div>
+      <textarea
+        data-tour={tourId}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={2}
+        placeholder="e.g. Waiting for client confirmation"
+        style={{ ...inputStyle, resize: 'vertical', fontSize: 13 }}
+      />
+      {dirty && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button type="button" onClick={() => onSave(draft)} style={{ ...primaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>Save</button>
+          <button type="button" onClick={() => setDraft(value || '')} style={{ ...secondaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, onChangeLeadInfo }: { tender: Tender; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null; canModify: boolean; onChangeLeadInfo: (payload: Record<string, unknown>) => void }) {
   const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
   const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
 
   return (
     <div data-tour="tender-info-view" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Card title="Current Status">
+        <CurrentStatusNoteField tourId="tnd-info-current-status" value={tender.current_status_note} canModify={canModify} onSave={(v) => onChangeLeadInfo({ current_status_note: v })} />
+      </Card>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
         <Card title="Tender Details">
+          <InfoRow
+            label="Status"
+            value={
+              canModify ? (
+                <select data-tour="tnd-info-status" value={tender.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
+                  {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              ) : (tender.status || 'Not provided')
+            }
+          />
           <SpecInfoRow label="Tender No." value={tender.tender_number || '—'} change={changeFor('tender_number')} />
           <SpecInfoRow label="Authority" value={tender.tender_authority || '—'} change={changeFor('tender_authority')} />
           <SpecInfoRow label="Portal" value={tender.tender_portal || '—'} change={changeFor('tender_portal')} />
@@ -854,7 +906,7 @@ function auditActionKind(action: string): TenderTimelineEntry['kind'] {
 const TENDER_AUDIT_FIELD_LABELS: Record<string, string> = {
   tender_number: 'Tender No.', tender_name: 'Tender Name', tender_authority: 'Tender Authority',
   tender_portal: 'Portal', tender_type: 'Type', tender_category: 'Category', tender_value: 'Value',
-  currency: 'Currency', status: 'Status', current_stage: 'Stage', railway_zone: 'Railway Zone',
+  currency: 'Currency', status: 'Status', current_stage: 'Stage', current_status_note: 'Current Status', railway_zone: 'Railway Zone',
   division: 'Division', workshop: 'Workshop', org_id: 'Organization', org_contact_id: 'Contact',
 }
 

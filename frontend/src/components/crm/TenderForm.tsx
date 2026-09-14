@@ -28,6 +28,7 @@ type FormState = {
   tender_value: string
   currency: string
   status: string
+  current_status_note: string
   lead_source: string
   priority: string
   railway_zone: string
@@ -64,6 +65,7 @@ function toFormState(initial?: Tender, defaultOrgId?: number): FormState {
     tender_value: initial?.tender_value != null ? String(initial.tender_value) : '',
     currency: initial?.currency || 'INR',
     status: initial?.status || 'Requirement Received',
+    current_status_note: initial?.current_status_note || '',
     lead_source: initial?.lead_source || '',
     priority: initial?.priority || 'Medium',
     railway_zone: initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? 'Other' : initial?.railway_zone || '',
@@ -372,6 +374,10 @@ export default function TenderForm({
               </Field>
             </div>
           </div>
+
+          <Field label="Current Status" tourId="tnd-current-status-note">
+            <textarea value={form.current_status_note} onChange={(e) => set('current_status_note', e.target.value)} rows={2} placeholder="e.g. Waiting for client confirmation" style={{ ...inputStyle, resize: 'vertical' }} />
+          </Field>
 
           <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', margin: '4px 0' }} />
 

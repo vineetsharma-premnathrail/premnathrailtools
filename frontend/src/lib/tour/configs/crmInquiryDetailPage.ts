@@ -32,6 +32,12 @@ const steps: TourStep[] = [
     purpose: 'Every field entered when this inquiry was created/edited, laid out for quick reference. If a spec revision is selected (via the badge next to the Info tab), a "What changed" summary appears at the top.',
   },
   {
+    target: 'inq-info-current-status',
+    title: 'Current Status',
+    purpose: 'A free-text running note on where things stand right now — separate from the fixed Status/Priority values below. Type anything and click away to save.',
+    why: 'Every change here is recorded on the Timeline, just like any other field edit.',
+  },
+  {
     target: 'inq-info-status',
     title: 'Status (quick edit)',
     purpose: 'Change the inquiry\'s status directly from here without opening the full Edit form.',

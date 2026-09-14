@@ -25,6 +25,7 @@ class InquiryCreate(BaseModel):
     sales_engineer: str | None = None
     status: str = "Requirement Received"
     current_stage: str = "Requirement Received"
+    current_status_note: str | None = None
     product: str | None = None
     product_category: str | None = None
     product_spec: str | None = None
@@ -57,6 +58,7 @@ class InquiryUpdate(BaseModel):
     sales_engineer: str | None = None
     status: str | None = None
     current_stage: str | None = None
+    current_status_note: str | None = None
     product: str | None = None
     product_category: str | None = None
     product_spec: str | None = None
@@ -93,6 +95,7 @@ class InquiryResponse(BaseModel):
     sales_engineer: str | None = None
     status: str
     current_stage: str
+    current_status_note: str | None = None
     product: str | None = None
     product_category: str | None = None
     product_spec: str | None = None
