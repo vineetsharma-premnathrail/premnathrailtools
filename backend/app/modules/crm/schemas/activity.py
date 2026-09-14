@@ -15,6 +15,13 @@ class ActivityAttachmentResponse(BaseModel):
     created_at: datetime | None = None
 
 
+class ActivityContactDetail(BaseModel):
+    name: str
+    designation: str | None = None
+    mobile: str | None = None
+    email: str | None = None
+
+
 class MomItem(BaseModel):
     observation: str | None = None
     action_plan: str | None = None
@@ -81,6 +88,7 @@ class ActivityResponse(BaseModel):
     # Display-only, filled in by the route (not stored on the Activity row
     # itself) — see `_enrich()` in routes/activities.py.
     contact_names: list[str] = []
+    contact_details: list[ActivityContactDetail] = []
     related_label: str | None = None
     created_by_name: str | None = None
     org_name: str | None = None

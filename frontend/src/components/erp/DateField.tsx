@@ -114,7 +114,7 @@ export default function DateField({ value, onChange, style }: { value: string; o
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatDigits(e.target.value)
     setDraft(formatted)
-    commitIfValid(formatted)
+    if (commitIfValid(formatted)) setOpen(false)
   }
 
   const handleBlur = () => {

@@ -443,10 +443,18 @@ export interface CrmActivity {
   // Display-only, filled in by the backend route — see _enrich() in
   // backend/app/modules/crm/routes/activities.py.
   contact_names?: string[]
+  contact_details?: CrmActivityContactDetail[]
   related_label?: string
   created_by_name?: string
   org_name?: string
   attachments?: CrmActivityAttachment[]
+}
+
+export interface CrmActivityContactDetail {
+  name: string
+  designation?: string
+  mobile?: string
+  email?: string
 }
 
 export interface CrmActivityAttachment {

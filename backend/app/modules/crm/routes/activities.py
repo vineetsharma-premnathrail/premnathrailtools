@@ -13,7 +13,7 @@ from app.modules.crm.models.activity_attachment import ActivityAttachment
 from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.models.organization import Organization, OrgContact
-from app.modules.crm.schemas.activity import ActivityCreate, ActivityUpdate, ActivityResponse, ActivityAttachmentResponse
+from app.modules.crm.schemas.activity import ActivityCreate, ActivityUpdate, ActivityResponse, ActivityAttachmentResponse, ActivityContactDetail
 from app.modules.crm.reports.mom_docx import build_mom_docx, mom_rows_from_activity
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint, download_file_content
 
@@ -48,9 +48,10 @@ def _enrich(db: Session, activities: list[Activity]) -> list[ActivityResponse]:
     contact_ids = {a.org_contact_id for a in activities if a.org_contact_id}
     for a in activities:
         contact_ids.update(a.contact_ids or [])
-    contacts_by_id = {}
+    contact_objs_by_id: dict[int, OrgContact] = {}
     if contact_ids:
-        contacts_by_id = {c.id: c.name for c in db.query(OrgContact).filter(OrgContact.id.in_(contact_ids)).all()}
+        contact_objs_by_id = {c.id: c for c in db.query(OrgContact).filter(OrgContact.id.in_(contact_ids)).all()}
+    contacts_by_id = {cid: c.name for cid, c in contact_objs_by_id.items()}
 
     inquiry_ids = {a.related_id for a in activities if a.related_module == "inquiry" and a.related_id}
     tender_ids = {a.related_id for a in activities if a.related_module == "tender" and a.related_id}
@@ -78,6 +79,15 @@ def _enrich(db: Session, activities: list[Activity]) -> list[ActivityResponse]:
         if a.org_contact_id and a.org_contact_id in contacts_by_id and contacts_by_id[a.org_contact_id] not in names:
             names.insert(0, contacts_by_id[a.org_contact_id])
         resp.contact_names = names
+
+        detail_ids = list(a.contact_ids or [])
+        if a.org_contact_id and a.org_contact_id not in detail_ids:
+            detail_ids.insert(0, a.org_contact_id)
+        resp.contact_details = [
+            ActivityContactDetail(name=c.name, designation=c.designation, mobile=c.mobile, email=c.email)
+            for cid in detail_ids
+            if (c := contact_objs_by_id.get(cid))
+        ]
         if a.related_module == "inquiry":
             resp.related_label = inquiry_labels.get(a.related_id)
         elif a.related_module == "tender":

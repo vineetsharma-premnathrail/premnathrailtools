@@ -783,6 +783,16 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
                 {a.assigned_to && <span title={`Contact Person: ${a.assigned_to}`} style={{ fontWeight: 500, color: '#78716c' }}> · {a.assigned_to}</span>}
                 {a.created_at && <span title={`Created: ${new Date(a.created_at).toLocaleString('en-GB')}`} style={{ fontWeight: 500, color: '#a8a29e' }}> · {new Date(a.created_at).toLocaleString('en-GB')}</span>}
               </p>
+              {(a.contact_details || []).length > 0 && (
+                <p style={{ fontSize: 11, color: '#78716c', margin: '0 0 4px' }}>
+                  {a.contact_details!.map((c, i) => (
+                    <span key={i}>
+                      {i > 0 && ' · '}
+                      {c.name}{c.designation && ` (${c.designation})`}{c.mobile && ` · ${c.mobile}`}{c.email && ` · ${c.email}`}
+                    </span>
+                  ))}
+                </p>
+              )}
               {a.remarks ? <RichText html={a.remarks} style={{ fontSize: 12, color: '#57534e' }} /> : <p style={{ fontSize: 12, color: '#57534e', margin: 0 }}>—</p>}
               {a.next_followup && <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '2px 0 0' }}>Due: {a.next_followup}</p>}
             </div>
