@@ -265,31 +265,6 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   )
 }
 
-function CurrentStatusNoteField({ tourId, value, canModify, onSave }: { tourId: string; value?: string; canModify: boolean; onSave: (v: string) => void }) {
-  const [draft, setDraft] = useState(value || '')
-  useEffect(() => setDraft(value || ''), [value])
-  if (!canModify) return <p style={{ fontSize: 13, color: '#1f1108', margin: 0, whiteSpace: 'pre-wrap' }}>{value || 'Not provided'}</p>
-  const dirty = draft !== (value || '')
-  return (
-    <div>
-      <textarea
-        data-tour={tourId}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        rows={2}
-        placeholder="e.g. Waiting for client confirmation"
-        style={{ ...inputStyle, resize: 'vertical', fontSize: 13 }}
-      />
-      {dirty && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button type="button" onClick={() => onSave(draft)} style={{ ...primaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>Save</button>
-          <button type="button" onClick={() => setDraft(value || '')} style={{ ...secondaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>Cancel</button>
-        </div>
-      )}
-    </div>
-  )
-}
-
 function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, onChangeLeadInfo }: { tender: Tender; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null; canModify: boolean; onChangeLeadInfo: (payload: Record<string, unknown>) => void }) {
   const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
   const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
@@ -297,7 +272,7 @@ function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, on
   return (
     <div data-tour="tender-info-view" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Card title="Current Status">
-        <CurrentStatusNoteField tourId="tnd-info-current-status" value={tender.current_status_note} canModify={canModify} onSave={(v) => onChangeLeadInfo({ current_status_note: v })} />
+        <p data-tour="tnd-info-current-status" style={{ fontSize: 13, color: '#1f1108', margin: 0, whiteSpace: 'pre-wrap' }}>{tender.current_status_note || 'Not provided'}</p>
       </Card>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
         <Card title="Tender Details">

@@ -27,8 +27,8 @@ const steps: TourStep[] = [
   {
     target: 'tnd-info-current-status',
     title: 'Current Status',
-    purpose: 'A free-text running note on where things stand right now — separate from the fixed Status value below. Type anything and click away to save.',
-    why: 'Every change here is recorded on the Timeline, just like any other field edit.',
+    purpose: 'A free-text running note on where things stand right now — separate from the fixed Status value below.',
+    after: 'Edit it from the Edit form (top right) or the New Tender form — every change is recorded on the Timeline.',
   },
   {
     target: 'tnd-info-status',
