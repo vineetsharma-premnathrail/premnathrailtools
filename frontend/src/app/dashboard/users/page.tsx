@@ -462,15 +462,19 @@ function EditUserModal({
       onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, background: '#fff', borderRadius: 20, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+      {/* Capped to the viewport (less the backdrop's own 20px padding) with
+          only the body scrolling — this panel grows tall enough to overflow
+          once a user has several modules ticked, and without the cap it was
+          simply clipped by `overflow: hidden` with no way to reach the rest. */}
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 20, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
+        <div style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
           <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1f1108', margin: 0 }}>Module Access — {user.name}</h2>
           <button onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#a8a29e', fontSize: 18 }}>
             ✕
           </button>
         </div>
 
-        <div style={{ padding: '20px 24px' }}>
+        <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, padding: 16, borderRadius: 14, background: '#faf9f7', marginBottom: 20 }}>
             <Field label="Full Name" value={user.name} />
             <Field label="Email" value={user.email} />
@@ -640,7 +644,7 @@ function EditUserModal({
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 24px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+        <div style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 24px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
           <button
             onClick={() => onToggleActive(user)}
             disabled={isSelf}
