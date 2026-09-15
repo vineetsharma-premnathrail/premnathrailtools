@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.modules.main.models.user import User, AVAILABLE_APPS
+from app.modules.main.models.module import Module
 from app.modules.main.schemas.user import UserResponse, UserUpdate
 from app.modules.main.routes.auth import get_current_user
 from app.auth.microsoft import list_azure_org_users, get_azure_admin_ids
@@ -40,6 +41,33 @@ VALID_ERP_PERMISSIONS = {
     "project_view", "project_create", "project_edit", "project_delete",
     "sr_view", "sr_create", "sr_edit", "sr_delete",
 }
+
+# The modal's "Procure-to-Pay Permissions" section writes into that same
+# erp_permissions list, so these have to pass the check below too. Nothing
+# reads them yet — P2P still gates on the `p2p`/`purchase` module toggles and
+# the approval-role flags — but they're stored so enforcement can be wired up
+# without admins having to re-tick every user.
+VALID_P2P_PERMISSIONS = {
+    "pr_create",
+    "approval_view", "approval_action",
+    "rfq_view", "rfq_action",
+    "grn_view", "grn_action",
+}
+
+VALID_GRANULAR_PERMISSIONS = VALID_ERP_PERMISSIONS | VALID_P2P_PERMISSIONS
+
+
+def _assignable_app_keys(db: Session) -> set[str]:
+    """Module keys an admin may assign: everything in the `modules` registry,
+    plus AVAILABLE_APPS as a floor.
+
+    The hardcoded set alone had drifted behind the registry, so ticking one of
+    the newer modules (hr, design, electrical, manufacturing) failed with a
+    400. Inactive rows count too — the registry endpoint deliberately shows
+    admins every row, active or not, and `purchase` is currently inactive yet
+    still drives P2P's purchase-team checks, so filtering on is_active here
+    would reject exactly the module the checklist is offering."""
+    return {k for (k,) in db.query(Module.key).all()} | set(AVAILABLE_APPS)
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
@@ -114,13 +142,13 @@ async def update_user(
         target.role = payload.role
 
     if payload.assigned_apps is not None:
-        invalid = set(payload.assigned_apps) - AVAILABLE_APPS
+        invalid = set(payload.assigned_apps) - _assignable_app_keys(db)
         if invalid:
             raise HTTPException(status_code=400, detail=f"Invalid app(s): {', '.join(sorted(invalid))}")
         target.assigned_apps = payload.assigned_apps
 
     if payload.erp_permissions is not None:
-        invalid = set(payload.erp_permissions) - VALID_ERP_PERMISSIONS
+        invalid = set(payload.erp_permissions) - VALID_GRANULAR_PERMISSIONS
         if invalid:
             raise HTTPException(status_code=400, detail=f"Invalid permission(s): {', '.join(sorted(invalid))}")
         target.erp_permissions = payload.erp_permissions

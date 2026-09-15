@@ -7,6 +7,7 @@ import { User, ModuleMeta } from '@/types'
 import FeedbackBell from '@/components/FeedbackBell'
 import Checkbox from '@/components/Checkbox'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 export default function UsersRolesPage() {
   const { user: currentUser, isAuthorized, isLoading } = useRequireAdmin()
@@ -76,9 +77,16 @@ export default function UsersRolesPage() {
     isDirector: boolean,
     isMd: boolean
   ) => {
-    const updated = await usersApi.updateModuleAccess(userId, apps, erpPermissions, isDepartmentHead, isProjectHead, isPlantHead, isPurchaseHead, isDirector, isMd)
-    setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)))
-    setEditingUser(null)
+    try {
+      const updated = await usersApi.updateModuleAccess(userId, apps, erpPermissions, isDepartmentHead, isProjectHead, isPlantHead, isPurchaseHead, isDirector, isMd)
+      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)))
+      setEditingUser(null)
+    } catch (err) {
+      // Keep the modal open on failure so the admin's unsaved ticks survive
+      // and can be corrected — closing it would discard them silently.
+      setErrorTitle('Cannot Save Module Access')
+      setError(extractErrorMessages(err, 'Failed to save module access.').join(' '))
+    }
   }
 
   const handleToggleActive = async (u: User) => {
