@@ -5,9 +5,9 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 
-import { p2pApi } from '@/lib/api'
+import { p2pApi, rfqApi, purchaseOrdersApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
-import { P2PRequest } from '@/types'
+import { P2PRequest, RFQ, P2PPurchaseOrder } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import PromptDialog from '@/components/erp/PromptDialog'
@@ -83,8 +83,8 @@ export default function MyP2PRequestDetailPage() {
   const [editPriority, setEditPriority] = useState('medium')
   const [editRemarks, setEditRemarks] = useState('')
 
-
-
+  const [rfq, setRfq] = useState<RFQ | null>(null)
+  const [po, setPo] = useState<P2PPurchaseOrder | null>(null)
 
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
 
@@ -99,6 +99,13 @@ export default function MyP2PRequestDetailPage() {
       setEditRequirementType(data.requirement_type || '')
       setEditPriority(data.priority || 'medium')
       setEditRemarks(data.remarks || '')
+
+      const [rfqList, poList] = await Promise.all([
+        rfqApi.list({ p2p_request_id: data.id }).catch(() => []),
+        purchaseOrdersApi.list({ p2p_request_id: data.id }).catch(() => []),
+      ])
+      setRfq(rfqList[0] || null)
+      setPo(poList[0] || null)
     } catch {
       setError('Purchase requisition not found, or you do not have access to it.')
     } finally {
@@ -165,10 +172,34 @@ export default function MyP2PRequestDetailPage() {
     { role: 'plant_head', label: 'Plant Head', id: pr.plant_head_id, name: pr.plant_head_name, approvedAt: pr.plant_head_approved_at, comment: pr.plant_head_comment },
   ]
   const poApprovalRoles = [
-    { role: 'purchase_head', label: 'Purchase Head', approvedAt: pr.purchase_head_approved_at, comment: pr.purchase_head_comment },
-    { role: 'director', label: 'Director', approvedAt: pr.director_approved_at, comment: pr.director_comment },
-    { role: 'md', label: 'MD', approvedAt: pr.md_approved_at, comment: pr.md_comment },
+    { role: 'purchase_head', label: 'Purchase Head', name: pr.purchase_head_approved_by_name, approvedAt: pr.purchase_head_approved_at, comment: pr.purchase_head_comment },
+    { role: 'director', label: 'Director', name: pr.director_approved_by_name, approvedAt: pr.director_approved_at, comment: pr.director_comment },
+    { role: 'md', label: 'MD', name: pr.md_approved_by_name, approvedAt: pr.md_approved_at, comment: pr.md_comment },
   ]
+  // The PO Approval chain (Purchase Head → Director → MD) is always shown, so
+  // the full six-step chain is visible in one place from the start — its rows
+  // just read "PO not raised yet" until a PO actually exists. Hiding the whole
+  // panel until then made those three roles look like they'd gone missing.
+  const poRaised = pr.status === 'po_raised' || pr.status === 'po_approved' || !!pr.po_number
+  // A rejection is shown on the rejecting role's own row — same shape as an
+  // approval (pill + quoted note) — rather than as a separate banner.
+  const rejectedByRole = pr.status === 'rejected' ? pr.rejected_by_role : null
+  const rowPill = (role: string, approvedAt?: string | null) =>
+    rejectedByRole === role
+      ? { text: 'Rejected', bg: 'rgba(220,38,38,0.1)', color: '#dc2626' }
+      : approvedAt
+      ? { text: 'Approved', bg: 'rgba(34,197,94,0.12)', color: '#16a34a' }
+      : { text: 'Pending', bg: 'rgba(148,163,184,0.15)', color: '#64748b' }
+  // Rejections by an admin or the purchase team at large belong to no role
+  // row above, and a cancellation records no role at all — both get their own
+  // cell at the end of the Approval grid instead, in that same shape.
+  const roleRows = ['department_head', 'project_head', 'plant_head', 'purchase_head', 'director', 'md']
+  const terminalNote = pr.status === 'cancelled'
+    ? { label: 'Cancelled', bg: 'rgba(148,163,184,0.15)', color: '#64748b', reason: pr.cancelled_reason, name: undefined }
+    : pr.status === 'rejected' && !roleRows.includes(rejectedByRole || '')
+    ? { label: 'Rejected', bg: 'rgba(220,38,38,0.1)', color: '#dc2626', reason: pr.rejected_reason, name: pr.rejected_by_name }
+    : null
+
   const hasAssignedHeads = approvalRoles.some((r) => r.id != null)
   const myPendingRole = approvalRoles.find((r) => r.id != null && r.id === user?.id && !r.approvedAt)
   const canApproveOrReject = pr.status === 'submitted' && (hasAssignedHeads ? (!!myPendingRole || isAdmin) : isPurchaseTeam)
@@ -177,6 +208,7 @@ export default function MyP2PRequestDetailPage() {
   const canRejectStill = fromApproval && canRejectAccess
   const poRole = user?.is_purchase_head ? 'purchase_head' : user?.is_director ? 'director' : user?.is_md ? 'md' : null
   const canApprovePo = fromPoApproval && pr.status === 'po_raised' && poRole != null && (pr.pending_po_approval_roles || []).includes(poRole)
+  const canRejectPo = fromPoApproval && pr.status === 'po_raised' && (poRole != null || isAdmin)
 
   return (
     <div>
@@ -193,33 +225,22 @@ export default function MyP2PRequestDetailPage() {
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{pr.category_label || pr.category_code} · {pr.project_label || 'No project specified'}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button onClick={() => router.push('/dashboard/p2p')} type="button" style={secondaryBtnStyle}>
+          <button data-tour="pr-detail-back" onClick={() => router.push('/dashboard/p2p')} type="button" style={secondaryBtnStyle}>
             ← Back
           </button>
           {canApproveReject && (
-            <button disabled={busy} onClick={approve} style={primaryBtn}>Approve</button>
+            <button data-tour="pr-detail-approve" disabled={busy} onClick={approve} style={primaryBtn}>Approve</button>
           )}
           {canApprovePo && (
-            <button disabled={busy} onClick={() => setPromptAction('approve-po')} style={primaryBtn}>Approve PO</button>
+            <button data-tour="pr-detail-approve-po" disabled={busy} onClick={() => setPromptAction('approve-po')} style={primaryBtn}>Approve PO</button>
           )}
-          {canRejectStill && (
-            <button disabled={busy} onClick={reject} style={dangerBtn}>Reject</button>
+          {(canRejectStill || canRejectPo) && (
+            <button data-tour="pr-detail-reject" disabled={busy} onClick={reject} style={dangerBtn}>Reject</button>
           )}
         </div>
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Cannot Complete Action" message={error} onClose={() => setError('')} />
-
-      {pr.status === 'rejected' && pr.rejected_reason && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          Rejected: {pr.rejected_reason}
-        </div>
-      )}
-      {pr.status === 'cancelled' && pr.cancelled_reason && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(148,163,184,0.12)', border: '1px solid rgba(148,163,184,0.3)', color: '#475569', fontSize: 13 }}>
-          Cancelled: {pr.cancelled_reason}
-        </div>
-      )}
 
       {activePanel === 'edit' && (
         <div style={sectionStyle}>
@@ -254,7 +275,7 @@ export default function MyP2PRequestDetailPage() {
         </div>
       )}
 
-      <div style={sectionStyle}>
+      <div data-tour="pr-detail-request-info" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Request Details</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
           <InfoRow label="Department" value={pr.department || '—'} />
@@ -268,56 +289,127 @@ export default function MyP2PRequestDetailPage() {
         {pr.remarks && <div style={{ marginTop: 10 }}><InfoRow label="Remarks" value={pr.remarks} /></div>}
       </div>
 
-      {pr.status === 'po_raised' || pr.status === 'po_approved' || pr.po_number ? (
-        <div style={sectionStyle}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>PO Approval</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
-            {poApprovalRoles.map((r) => (
-              <div key={r.role}>
-                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{r.label}</p>
-                <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: r.approvedAt ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.15)', color: r.approvedAt ? '#16a34a' : '#64748b' }}>
-                    {r.approvedAt ? 'Approved' : 'Pending'}
-                  </span>
-                </p>
-                {r.comment && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{r.comment}&quot;</p>}
+      {po && (
+        <div data-tour="pr-detail-po-info" style={sectionStyle}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Order</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 14 }}>
+            <InfoRow label="PO Number" value={po.po_number} />
+            <InfoRow label="Vendor" value={po.vendor_name || '—'} />
+          </div>
+          <div>
+            <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>PO Document</p>
+            {po.document_filename && rfq ? (
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getPoDocumentBlob(rfq.id, po.id), po.document_filename!) }}
+                style={{ fontSize: 13.5, color: '#2563eb', textDecoration: 'none' }}
+              >
+                {po.document_filename}
+              </a>
+            ) : (
+              <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>No document attached.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {rfq && rfq.attachments.length > 0 && (
+        <div data-tour="pr-detail-vendor-quotations" style={sectionStyle}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Vendor Quotations</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
+            {rfq.attachments.map((a) => (
+              <div key={a.id} style={{ borderRadius: 12, border: `1px solid ${BORDER.normal}`, padding: 12 }}>
+                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{a.vendor_tier}</p>
+                <p style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 2px' }}>{a.vendor_name || '—'}</p>
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getAttachmentBlob(rfq.id, a.id), a.filename) }}
+                  style={{ fontSize: 12.5, color: '#2563eb', textDecoration: 'none' }}
+                >
+                  {a.filename}
+                </a>
               </div>
             ))}
           </div>
         </div>
-      ) : null}
+      )}
 
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Approval</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-          {approvalRoles.map((r) => (
-            <div key={r.role}>
-              <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{r.label}</p>
-              {r.id == null ? (
-                <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— not assigned</p>
-              ) : (
-                <>
-                  <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
-                    {r.name || '—'}
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: r.approvedAt ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.15)', color: r.approvedAt ? '#16a34a' : '#64748b' }}>
-                      {r.approvedAt ? 'Approved' : 'Pending'}
-                    </span>
-                  </p>
-                  {r.comment && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{r.comment}&quot;</p>}
-                </>
-              )}
-            </div>
-          ))}
+      <div data-tour="pr-detail-po-approval" style={sectionStyle}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>PO Approval</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+          {poApprovalRoles.map((r) => {
+            const pill = rowPill(r.role, r.approvedAt)
+            const note = rejectedByRole === r.role ? pr.rejected_reason || r.comment : r.comment
+            const actor = rejectedByRole === r.role ? pr.rejected_by_name : r.name
+            return (
+              <div key={r.role}>
+                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{r.label}</p>
+                {!poRaised ? (
+                  <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— PO not raised yet</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                      {actor || '—'}
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: pill.bg, color: pill.color }}>
+                        {pill.text}
+                      </span>
+                    </p>
+                    {note && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{note}&quot;</p>}
+                  </>
+                )}
+              </div>
+            )
+          })}
         </div>
       </div>
 
-      <div style={{ ...sectionStyle, overflow: 'hidden' }}>
+      <div data-tour="pr-detail-approval" style={sectionStyle}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Approval</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+          {approvalRoles.map((r) => {
+            const pill = rowPill(r.role, r.approvedAt)
+            const note = rejectedByRole === r.role ? pr.rejected_reason || r.comment : r.comment
+            return (
+              <div key={r.role}>
+                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{r.label}</p>
+                {r.id == null ? (
+                  <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— not assigned</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                      {(rejectedByRole === r.role ? pr.rejected_by_name : null) || r.name || '—'}
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: pill.bg, color: pill.color }}>
+                        {pill.text}
+                      </span>
+                    </p>
+                    {note && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{note}&quot;</p>}
+                  </>
+                )}
+              </div>
+            )
+          })}
+          {terminalNote && (
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{terminalNote.label}</p>
+              <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                {terminalNote.name || '—'}
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: terminalNote.bg, color: terminalNote.color }}>
+                  {terminalNote.label}
+                </span>
+              </p>
+              {terminalNote.reason && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{terminalNote.reason}&quot;</p>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div data-tour="pr-detail-items" style={{ ...sectionStyle, overflow: 'hidden' }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Item Details</h2>
         <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr>
-              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', 'Attachments', ...(isPurchaseTeam ? ['Stock Item'] : [])].map((h) => (
+              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', 'Attachments'].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
@@ -340,7 +432,7 @@ export default function MyP2PRequestDetailPage() {
                     <a
                       key={a.id}
                       href="#"
-                      onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAttachmentBlob(pr.id, a.id)) }}
+                      onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAttachmentBlob(pr.id, a.id), a.filename) }}
                       style={{ display: 'block', color: TEXT.heading, textDecoration: 'none' }}
                     >
                       {a.filename}
@@ -358,14 +450,14 @@ export default function MyP2PRequestDetailPage() {
 
 
       {pr.attachments.length > 0 && (
-        <div style={sectionStyle}>
+        <div data-tour="pr-detail-attachments" style={sectionStyle}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Attachments</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {pr.attachments.map((a) => (
               <a
                 key={a.id}
                 href="#"
-                onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAttachmentBlob(pr.id, a.id)) }}
+                onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => p2pApi.getAttachmentBlob(pr.id, a.id), a.filename) }}
                 style={{ fontSize: 13, color: TEXT.heading, textDecoration: 'none' }}
               >
                 {a.filename} <span style={{ color: TEXT.muted, fontSize: 11 }}>({a.doc_type})</span>

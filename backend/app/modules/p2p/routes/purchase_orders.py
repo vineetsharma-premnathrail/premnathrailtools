@@ -30,6 +30,7 @@ def _to_response(db: Session, po: P2PPurchaseOrder) -> P2PPurchaseOrderResponse:
 async def list_purchase_orders(
     status: str | None = None,
     search: str | None = None,
+    p2p_request_id: int | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=1000),
     db: Session = Depends(get_db),
@@ -40,6 +41,8 @@ async def list_purchase_orders(
         query = query.filter(P2PPurchaseOrder.status == status)
     if search:
         query = query.filter(P2PPurchaseOrder.po_number.ilike(f"%{search}%"))
+    if p2p_request_id:
+        query = query.filter(P2PPurchaseOrder.p2p_request_id == p2p_request_id)
     pos = query.order_by(P2PPurchaseOrder.created_at.desc()).offset(skip).limit(limit).all()
     return [_to_response(db, po) for po in pos]
 
@@ -50,6 +53,21 @@ async def create_purchase_order(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
+    if payload.p2p_request_id:
+        # Nothing here flips the linked PR's status, so — unlike the RFQ ->
+        # PO-draft flow — a retried/duplicate call (network retry, double
+        # submit) had no gate at all stopping it from leaving a second
+        # orphaned draft PO behind for the same request.
+        existing = db.query(P2PPurchaseOrder).filter(
+            P2PPurchaseOrder.p2p_request_id == payload.p2p_request_id,
+            P2PPurchaseOrder.status != "cancelled",
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Purchase order '{existing.po_number}' already exists for this P2P request",
+            )
+
     po = P2PPurchaseOrder(
         po_number=generate_po_number(db),
         p2p_request_id=payload.p2p_request_id,

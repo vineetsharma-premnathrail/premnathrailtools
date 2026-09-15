@@ -23,6 +23,7 @@ from app.modules.p2p.schemas.rfq import (
 )
 from app.modules.p2p.schemas.purchase_order import P2PPurchaseOrderCreate, P2PPurchaseOrderUpdate, P2PPurchaseOrderResponse
 from app.modules.p2p.service import generate_rfq_number, generate_po_number, compute_line_total
+from app.modules.p2p.routes.p2p_requests import _write_audit as _write_pr_audit
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
 
 router = APIRouter(prefix="/p2p/rfqs", tags=["P2P"])
@@ -103,6 +104,18 @@ async def create_rfq(
         raise HTTPException(status_code=404, detail="P2P request not found")
     if pr.status != "approved":
         raise HTTPException(status_code=409, detail=f"An RFQ can only be raised on an approved PR (current status: {pr.status})")
+
+    # Reuse an already-started draft RFQ for this PR instead of minting a
+    # duplicate one. The PR's status doesn't change until the RFQ is
+    # submitted/locked, so nothing else here stops a retried/duplicate
+    # create call (network retry, resubmitted form after a page reload —
+    # the frontend's own draftRfqId guard only survives within one page
+    # session) from leaving an orphaned draft RFQ row behind every time.
+    existing_draft = db.query(RFQ).filter(
+        RFQ.p2p_request_id == pr.id, RFQ.status == "draft"
+    ).order_by(RFQ.created_at.desc()).first()
+    if existing_draft:
+        return _to_response(db, existing_draft)
 
     rfq = RFQ(
         rfq_number=generate_rfq_number(db),
@@ -325,7 +338,7 @@ async def submit_rfq(
     _write_audit(db, rfq.id, "submitted", user, summary=f"{user.name or user.email} submitted and locked RFQ '{rfq.rfq_number}'.")
     pr.status = "vendor_quotations"
     pr.rfq_number = rfq.rfq_number
-    _write_audit(db, pr.id, "vendor_quotations_started", user,
+    _write_pr_audit(db, pr.id, "vendor_quotations_started", user,
                  summary=f"RFQ '{rfq.rfq_number}' was locked and {pr.p2p_number} moved to Vendor Quotations.",
                  old_status="approved", new_status="vendor_quotations")
 
@@ -363,7 +376,7 @@ async def add_vendor_quotation(
         created_by_id=user.id,
     )
     db.add(vq)
-    _write_audit(db, pr.id, "vendor_quotation_added", user,
+    _write_pr_audit(db, pr.id, "vendor_quotation_added", user,
                  summary=f"{user.name or user.email} recorded a quotation from '{payload.vendor_name}' for {pr.p2p_number}.")
     db.commit()
     db.refresh(vq)
@@ -422,7 +435,7 @@ async def start_technical_evaluation(
 
     old_status = pr.status
     pr.status = "technical_evaluation"
-    _write_audit(db, pr.id, "technical_evaluation_started", user,
+    _write_pr_audit(db, pr.id, "technical_evaluation_started", user,
                  summary=f"{user.name or user.email} started Technical Evaluation for {pr.p2p_number}.",
                  old_status=old_status, new_status="technical_evaluation")
     db.commit()
@@ -450,7 +463,7 @@ async def evaluate_technical(
     vq.technical_remarks = payload.remarks
     vq.technical_evaluated_by_id = user.id
     vq.technical_evaluated_at = datetime.now(timezone.utc)
-    _write_audit(db, pr.id, "vendor_quotation_technical_evaluated", user,
+    _write_pr_audit(db, pr.id, "vendor_quotation_technical_evaluated", user,
                  summary=f"{user.name or user.email} marked '{vq.vendor_name}' as {payload.status} (technical) for {pr.p2p_number}.")
     db.commit()
     db.refresh(vq)
@@ -481,7 +494,7 @@ async def start_commercial_evaluation(
 
     old_status = pr.status
     pr.status = "commercial_evaluation"
-    _write_audit(db, pr.id, "commercial_evaluation_started", user,
+    _write_pr_audit(db, pr.id, "commercial_evaluation_started", user,
                  summary=f"{user.name or user.email} started Commercial Evaluation for {pr.p2p_number}.",
                  old_status=old_status, new_status="commercial_evaluation")
     db.commit()
@@ -511,7 +524,7 @@ async def evaluate_commercial(
     vq.commercial_remarks = payload.remarks
     vq.commercial_evaluated_by_id = user.id
     vq.commercial_evaluated_at = datetime.now(timezone.utc)
-    _write_audit(db, pr.id, "vendor_quotation_commercial_evaluated", user,
+    _write_pr_audit(db, pr.id, "vendor_quotation_commercial_evaluated", user,
                  summary=f"{user.name or user.email} marked '{vq.vendor_name}' as {payload.status} (commercial) for {pr.p2p_number}.")
     db.commit()
     db.refresh(vq)
@@ -540,7 +553,7 @@ async def select_vendor_quotation(
     old_status = pr.status
     pr.selected_vendor = vq.vendor_name
     pr.status = "vendor_selected"
-    _write_audit(db, pr.id, "vendor_selected", user,
+    _write_pr_audit(db, pr.id, "vendor_selected", user,
                  summary=f"{user.name or user.email} selected vendor '{vq.vendor_name}' for {pr.p2p_number}.",
                  old_status=old_status, new_status="vendor_selected")
     db.commit()
@@ -555,28 +568,39 @@ async def create_po_draft(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
-    """Creates an editable draft PO (status='draft') from the selected
-    vendor's quotation. Still requires the existing submit-po-draft step
-    before it enters the unchanged Purchase Head -> Director -> MD approval
-    chain (see p2p_requests.py approve_po)."""
+    """Creates an editable draft PO (status='draft'). Most RFQs go through
+    formal vendor selection first (pr.status == 'vendor_selected'), but the
+    frontend's current flow also attaches a PO that was already agreed/
+    issued outside the system directly from 'vendor_quotations' — the buyer
+    supplies vendor_name (and optionally po_number / total_value) by hand
+    instead of picking a selected VendorQuotation. Still requires the
+    existing submit-po-draft step before it enters the unchanged Purchase
+    Head -> Director -> MD approval chain (see p2p_requests.py approve_po)."""
     rfq = _get_rfq_or_404(db, rfq_id)
     pr = _get_pr_for_rfq(db, rfq)
-    if pr.status != "vendor_selected":
-        raise HTTPException(status_code=409, detail=f"A PO draft can only be created once a vendor is selected (current status: {pr.status})")
+    if pr.status not in ("vendor_quotations", "vendor_selected"):
+        raise HTTPException(status_code=409, detail=f"A PO draft can only be created while the PR is at 'vendor_quotations' or 'vendor_selected' (current status: {pr.status})")
 
     selected = next((vq for vq in rfq.vendor_quotations if vq.is_selected), None)
-    if not selected:
-        raise HTTPException(status_code=409, detail="No vendor quotation has been selected for this RFQ")
+    if not selected and not (payload.vendor_name or "").strip():
+        raise HTTPException(status_code=400, detail="A vendor name is required to create the PO")
+
+    if payload.po_number:
+        if db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.po_number == payload.po_number).first():
+            raise HTTPException(status_code=409, detail=f"PO number '{payload.po_number}' already exists")
+        po_number = payload.po_number
+    else:
+        po_number = generate_po_number(db)
 
     po = P2PPurchaseOrder(
-        po_number=generate_po_number(db),
+        po_number=po_number,
         p2p_request_id=pr.id,
-        vendor_id=selected.vendor_id,
-        vendor_name=selected.vendor_name,
+        vendor_id=selected.vendor_id if selected else payload.vendor_id,
+        vendor_name=selected.vendor_name if selected else payload.vendor_name,
         status="draft",
         po_date=payload.po_date or date.today(),
         expected_delivery=payload.expected_delivery,
-        delivery_terms=payload.delivery_terms or selected.payment_terms,
+        delivery_terms=payload.delivery_terms or (selected.payment_terms if selected else None),
         created_by_id=user.id,
     )
     db.add(po)
@@ -610,12 +634,15 @@ async def create_po_draft(
             tax_rate=item.tax_rate,
             line_total=line_total,
         ))
-    po.total_value = round(total, 2) if has_pricing else selected.quoted_price
+    if payload.total_value is not None:
+        po.total_value = payload.total_value
+    else:
+        po.total_value = round(total, 2) if has_pricing else (selected.quoted_price if selected else None)
 
     old_status = pr.status
     pr.status = "po_drafted"
     pr.po_number = po.po_number
-    _write_audit(db, pr.id, "po_draft_created", user,
+    _write_pr_audit(db, pr.id, "po_draft_created", user,
                  summary=f"{user.name or user.email} created draft PO '{po.po_number}' for {pr.p2p_number}.",
                  old_status=old_status, new_status="po_drafted")
 
@@ -693,7 +720,7 @@ async def upload_po_document(
     po.document_uploaded_by_id = user.id
     po.document_uploaded_at = datetime.now(timezone.utc)
 
-    _write_audit(db, pr.id, "po_document_uploaded", user,
+    _write_pr_audit(db, pr.id, "po_document_uploaded", user,
                  summary=f"{user.name or user.email} uploaded the PO document for '{po.po_number}'.")
 
     db.commit()
@@ -755,7 +782,7 @@ async def submit_po_draft(
     pr.po_value = po.total_value
     pr.expected_delivery = po.expected_delivery
     pr.ordered_quantity = pr.ordered_quantity if pr.ordered_quantity is not None else sum(i.quantity for i in po.items)
-    _write_audit(db, pr.id, "po_raised", user,
+    _write_pr_audit(db, pr.id, "po_raised", user,
                  summary=f"{user.name or user.email} submitted PO '{po.po_number}' for {pr.p2p_number} — entering PO approval.",
                  old_status=old_status, new_status="po_raised")
 

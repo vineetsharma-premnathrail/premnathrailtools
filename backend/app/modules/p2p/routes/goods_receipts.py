@@ -8,7 +8,7 @@ from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
-from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
+from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem, P2P_GRN_QUALITY_STATUSES
 from app.modules.p2p.schemas.goods_receipt import (
     P2PGoodsReceiptCreate,
     P2PGoodsReceiptInspectPayload,
@@ -191,9 +191,16 @@ async def create_goods_receipt(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
+    # Locks the PO row for the rest of this transaction — without it, two
+    # concurrent (or double-submitted) requests against the same PO each
+    # compute `already_received` from the same pre-commit snapshot and can
+    # both pass the "still outstanding" check below, over-receiving the PO
+    # with two separate GRN rows. A second request now blocks here until the
+    # first commits or rolls back, so its own already_received query is
+    # guaranteed to see that first GRN.
     po = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(
         P2PPurchaseOrder.id == payload.purchase_order_id
-    ).first()
+    ).with_for_update().first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
     if po.status not in _RECEIVABLE_PO_STATUSES:
@@ -301,6 +308,11 @@ async def inspect_goods_receipt(
         item = items_by_id.get(entry.item_id)
         if not item:
             raise HTTPException(status_code=422, detail=f"Item {entry.item_id} does not belong to this goods receipt")
+        if entry.quality_status not in P2P_GRN_QUALITY_STATUSES or entry.quality_status == "pending":
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid quality_status '{entry.quality_status}' — must be one of {P2P_GRN_QUALITY_STATUSES[1:]}",
+            )
         if entry.accepted_quantity < 0 or entry.rejected_quantity < 0:
             raise HTTPException(status_code=422, detail=f"Accepted/rejected quantity for '{item.item_name}' cannot be negative")
         if entry.accepted_quantity + entry.rejected_quantity > item.received_quantity + 1e-9:

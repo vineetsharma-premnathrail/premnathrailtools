@@ -17,6 +17,11 @@ if TYPE_CHECKING:
 # status gate that /close still checks).
 P2P_GRN_STATUSES = ("draft", "completed")
 
+# A line item's quality-inspection result. "pending" is the pre-inspection
+# default; the frontend's inspection dropdown only ever submits one of the
+# other three (see grn/[id]/page.tsx QUALITY_OPTIONS).
+P2P_GRN_QUALITY_STATUSES = ("pending", "passed", "failed", "partial")
+
 
 class P2PGoodsReceipt(Base, TimestampMixin):
     """A goods receipt note against one Purchase Order — the real,

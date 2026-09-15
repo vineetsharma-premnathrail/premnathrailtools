@@ -711,15 +711,19 @@ export interface P2PRequest {
   plant_head_approved_at?: string
   plant_head_comment?: string
   purchase_head_approved_at?: string
+  purchase_head_approved_by_name?: string
   purchase_head_comment?: string
   director_approved_at?: string
+  director_approved_by_name?: string
   director_comment?: string
   md_approved_at?: string
+  md_approved_by_name?: string
   md_comment?: string
   /** Role slugs ('department_head'|'project_head'|'plant_head') still awaiting sign-off. */
   pending_approval_roles?: string[]
   pending_po_approval_roles?: string[]
   rejected_by_role?: string
+  rejected_by_name?: string
   remarks?: string
   status: P2PRequestStatus
   approved_by_id?: number
@@ -960,6 +964,11 @@ export interface P2PPurchaseOrder {
   created_at?: string
   updated_at?: string
   items: P2PPurchaseOrderItem[]
+  document_filename?: string
+  document_content_type?: string
+  document_size?: number
+  document_uploaded_at?: string
+  document_uploaded_by_name?: string
 }
 
 export interface P2PGoodsReceiptItem {

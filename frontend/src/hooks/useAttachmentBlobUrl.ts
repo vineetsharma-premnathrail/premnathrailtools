@@ -35,12 +35,29 @@ export function useAttachmentBlobUrl(fetchBlob: (() => Promise<Blob>) | null): s
 
 /** For an on-click "open in new tab" action (documents, not thumbnails) —
  * fetches the blob on demand and opens it, instead of a static href pointing
- * at a real SharePoint URL. */
-export async function openAttachmentBlob(fetchBlob: () => Promise<Blob>): Promise<void> {
+ * at a real SharePoint URL. A bare `window.open(objectUrl)` has no filename
+ * to offer: `blob:` URLs carry none, so if the browser can't render the mime
+ * type inline (e.g. .docx) and the user saves it from the new tab, it falls
+ * back to the UUID from the blob URL itself as the suggested filename — the
+ * server's Content-Disposition header never reaches the save dialog since
+ * the response was already consumed into a Blob before this point. Passing
+ * `filename` routes the download through a hidden `<a download>` instead,
+ * which lets the browser use the real name. */
+export async function openAttachmentBlob(fetchBlob: () => Promise<Blob>, filename?: string): Promise<void> {
   const blob = await fetchBlob()
   const objectUrl = URL.createObjectURL(blob)
-  window.open(objectUrl, '_blank')
-  // Give the new tab time to load before revoking; browsers keep the blob
-  // alive as long as a tab references it, but we don't want to leak forever.
+  if (filename) {
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+  } else {
+    window.open(objectUrl, '_blank')
+  }
+  // Give the new tab/download time to start before revoking; browsers keep
+  // the blob alive as long as something references it, but we don't want to
+  // leak forever.
   setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000)
 }

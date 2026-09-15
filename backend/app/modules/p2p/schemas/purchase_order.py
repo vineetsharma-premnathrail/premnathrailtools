@@ -28,8 +28,10 @@ class P2PPurchaseOrderItemResponse(BaseModel):
 
 class P2PPurchaseOrderCreate(BaseModel):
     p2p_request_id: int | None = None
+    po_number: str | None = None
     vendor_id: int | None = None
     vendor_name: str | None = None
+    total_value: float | None = None
     po_date: date | None = None
     expected_delivery: date | None = None
     delivery_terms: str | None = None

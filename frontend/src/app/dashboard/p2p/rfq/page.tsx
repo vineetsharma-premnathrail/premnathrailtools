@@ -73,7 +73,7 @@ export default function P2PRfqPage() {
       <MessageDialog open={!!error} variant="error" title="Cannot Load RFQ Data" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 
       <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>Purchase Requests Awaiting RFQ</h2>
-      <div style={sectionStyle}>
+      <div data-tour="rfq-awaiting-table" style={sectionStyle}>
        <div style={sectionScrollStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead>
@@ -98,7 +98,7 @@ export default function P2PRfqPage() {
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(pr.required_date)}</td>
                 <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                   {isPurchaseTeam && (
-                    <span onClick={() => router.push(`/dashboard/p2p/rfq/new?pr_id=${pr.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>
+                    <span data-tour="rfq-start-btn" onClick={() => router.push(`/dashboard/p2p/rfq/new?pr_id=${pr.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>
                       Start RFQ
                     </span>
                   )}
@@ -111,7 +111,7 @@ export default function P2PRfqPage() {
       </div>
 
       <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>RFQs</h2>
-      <div style={sectionStyle}>
+      <div data-tour="rfq-list-table" style={sectionStyle}>
        <div style={sectionScrollStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead>
@@ -136,7 +136,7 @@ export default function P2PRfqPage() {
                 <td style={tdStyle}>{rfq.is_single_quotation ? 'Yes' : 'No'}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(rfq.created_at)}</td>
                 <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(`/dashboard/p2p/rfq/${rfq.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
+                  <span data-tour="rfq-list-view" onClick={() => router.push(`/dashboard/p2p/rfq/${rfq.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

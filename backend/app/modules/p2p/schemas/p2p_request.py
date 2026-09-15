@@ -140,14 +140,18 @@ class P2PRequestResponse(BaseModel):
     plant_head_approved_at: datetime | None = None
     plant_head_comment: str | None = None
     purchase_head_approved_at: datetime | None = None
+    purchase_head_approved_by_name: str | None = None
     purchase_head_comment: str | None = None
     director_approved_at: datetime | None = None
+    director_approved_by_name: str | None = None
     director_comment: str | None = None
     md_approved_at: datetime | None = None
+    md_approved_by_name: str | None = None
     md_comment: str | None = None
     pending_approval_roles: list[str] = Field(default_factory=list)
     pending_po_approval_roles: list[str] = Field(default_factory=list)
     rejected_by_role: str | None = None
+    rejected_by_name: str | None = None
     remarks: str | None = None
     status: str
     approved_by_id: int | None = None

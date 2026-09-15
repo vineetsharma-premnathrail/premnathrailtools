@@ -111,7 +111,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
 
       {tab === 'Overview' && <OverviewTab org={org} />}
       {tab === 'Contacts' && <ContactsTab org={org} canModify={canModify} onRefresh={load} />}
-      {tab === 'Inquiries' && <InquiriesTab orgId={org.id} canModify={canModify} />}
+      {tab === 'Inquiries' && <InquiriesTab orgId={org.id} canModify={canModify} contacts={org.contacts} />}
       {tab === 'Tenders' && <TendersTab orgId={org.id} canModify={canModify} />}
       {tab === 'Audit Trail' && <AuditTab orgId={org.id} />}
 
@@ -374,9 +374,10 @@ function StatusPill({ value }: { value: string }) {
   )
 }
 
-function InquiriesTab({ orgId, canModify }: { orgId: number; canModify: boolean }) {
+function InquiriesTab({ orgId, canModify, contacts }: { orgId: number; canModify: boolean; contacts: OrgContact[] }) {
   const router = useRouter()
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
+  const contactName = (contactId?: number) => contacts.find((c) => c.id === contactId)?.name
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const load = () => crmApi.listInquiries({ org_id: orgId }).then(setInquiries).finally(() => setLoading(false))
@@ -414,7 +415,7 @@ function InquiriesTab({ orgId, canModify }: { orgId: number; canModify: boolean 
           <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#fffaf5' }}>
-                {['ID', 'Product', 'Status', 'Priority', 'Follow-up'].map((h) => (
+                {['ID', 'Product', 'Contact Person', 'Status', 'Priority', 'Follow-up'].map((h) => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fffaf5', zIndex: 1 }}>{h}</th>
                 ))}
               </tr>
@@ -424,6 +425,7 @@ function InquiriesTab({ orgId, canModify }: { orgId: number; canModify: boolean 
                 <tr key={i.id} onClick={() => router.push(`/dashboard/crm/inquiries/${i.id}`)} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }}>
                   <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: 12, color: '#FF7A45', fontWeight: 600 }}>{i.universal_id || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#1f1108', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.product || '—'}</td>
+                  <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{contactName(i.org_contact_id) || '—'}</td>
                   <td style={{ padding: '10px 16px' }}><StatusPill value={i.status} /></td>
                   <td style={{ padding: '10px 16px' }}><StatusPill value={i.priority} /></td>
                   <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{i.next_followup_date || '—'}</td>

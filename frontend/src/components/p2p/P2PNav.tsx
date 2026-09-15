@@ -2,14 +2,16 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
 import NotificationBell from '@/components/erp/NotificationBell'
+import TourButton from '@/components/tour/TourButton'
 
 const TABS = [
-  { href: '/dashboard/p2p', label: 'Purchase Requisitions', icon: 'file' },
-  { href: '/dashboard/p2p/approval', label: 'P.R Approval', icon: 'check' },
-  { href: '/dashboard/p2p/rfq', label: 'R.F.Q', icon: 'send' },
-  { href: '/dashboard/p2p/po-approval', label: 'P.O Approval', icon: 'clipboard' },
-  { href: '/dashboard/p2p/grn', label: 'G.R.N', icon: 'truck' },
+  { href: '/dashboard/p2p', label: 'Purchase Requisitions', icon: 'file', purchaseOnly: false },
+  { href: '/dashboard/p2p/approval', label: 'P.R Approval', icon: 'check', purchaseOnly: false },
+  { href: '/dashboard/p2p/rfq', label: 'R.F.Q', icon: 'send', purchaseOnly: true },
+  { href: '/dashboard/p2p/po-approval', label: 'P.O Approval', icon: 'clipboard', purchaseOnly: false },
+  { href: '/dashboard/p2p/grn', label: 'G.R.N', icon: 'truck', purchaseOnly: true },
 ] as const
 
 function TabIcon({ name }: { name: string }) {
@@ -34,16 +36,19 @@ function TabIcon({ name }: { name: string }) {
 
 export default function P2PNav() {
   const pathname = usePathname()
+  const { user } = useAuth()
+  const isPurchaseTeam = !!user?.apps?.includes('purchase')
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
-        {TABS.map((tab) => {
+        {TABS.filter((tab) => !tab.purchaseOnly || isPurchaseTeam).map((tab) => {
           const isActive = tab.href === '/dashboard/p2p' ? pathname === tab.href : pathname.startsWith(tab.href)
           return (
             <Link
               key={tab.href}
               href={tab.href}
+              data-tour={`p2p-nav-${tab.icon}`}
               className="nav-tab-link"
               style={{
                 display: 'flex',
@@ -67,8 +72,11 @@ export default function P2PNav() {
           )
         })}
       </div>
-      <div style={{ paddingBottom: 8, flex: 'none' }}>
-        <NotificationBell />
+      <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <TourButton variant="icon" />
+        <div data-tour="p2p-nav-bell">
+          <NotificationBell />
+        </div>
       </div>
     </div>
   )

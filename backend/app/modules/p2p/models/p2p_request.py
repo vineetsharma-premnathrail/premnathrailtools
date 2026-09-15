@@ -105,13 +105,21 @@ class P2PRequest(Base, TimestampMixin):
     plant_head_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     plant_head_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     plant_head_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # PO approvers aren't assigned upfront the way the three heads above are —
+    # whoever holds the purchase-head/director/MD flag at the time acts — so
+    # the actor's name is stamped here as each stage is approved, otherwise
+    # the PO Approval panel can only say a stage was approved, not by whom.
     purchase_head_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purchase_head_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     purchase_head_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     director_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    director_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     director_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     md_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    md_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     md_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     rejected_by_role: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    rejected_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     status: Mapped[str] = mapped_column(String(30), default="submitted", nullable=False)

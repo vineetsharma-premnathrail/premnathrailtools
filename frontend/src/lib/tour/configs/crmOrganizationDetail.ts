@@ -28,7 +28,7 @@ const steps: TourStep[] = [
   {
     target: 'orgdetail-tab-Inquiries',
     title: 'Inquiries',
-    purpose: 'Every inquiry raised for this organization, with quick status/priority/follow-up info. Click a row to open that inquiry\'s full detail page.',
+    purpose: 'Every inquiry raised for this organization, with its contact person plus quick status/priority/follow-up info. Click a row to open that inquiry\'s full detail page.',
     autoActivate: true,
   },
   {

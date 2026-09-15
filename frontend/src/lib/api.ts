@@ -359,6 +359,13 @@ export const crmApi = {
     files.forEach((f) => formData.append('files', f))
     const { data } = await apiClient.post(`/crm/activities/${activityId}/attachments`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // File uploads (esp. to SharePoint via the backend) routinely take
+      // longer than the global 10s JSON-request timeout — that was tripping
+      // ECONNABORTED (or, if the connection dropped instead of cleanly
+      // timing out, a bare network error) on ordinary multi-MB attachments
+      // and surfacing a misleading "check your internet connection" message
+      // even when connectivity was fine.
+      timeout: 120000,
     })
     return data
   },
@@ -384,7 +391,7 @@ export const crmApi = {
     const formData = new FormData()
     Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) formData.append(k, String(v)) })
     files.forEach((f) => formData.append('files', f))
-    const { data } = await apiClient.post('/crm/documents', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+    const { data } = await apiClient.post('/crm/documents', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
     return data
   },
   getDocumentContent: async (id: number): Promise<Blob> => {
@@ -517,6 +524,13 @@ export const erpApi = {
     }
     const { data } = await apiClient.post(`/erp/projects/${id}/attachments`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // File uploads (esp. to SharePoint via the backend) routinely take
+      // longer than the global 10s JSON-request timeout — that was tripping
+      // ECONNABORTED (or, if the connection dropped instead of cleanly
+      // timing out, a bare network error) on ordinary multi-MB attachments
+      // and surfacing a misleading "check your internet connection" message
+      // even when connectivity was fine.
+      timeout: 120000,
     })
     return data
   },
@@ -625,6 +639,13 @@ export const erpApi = {
     files.forEach((f) => formData.append('files', f))
     const { data } = await apiClient.post(`/erp/service-requests/${srId}/materials/${matId}/attachments`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // File uploads (esp. to SharePoint via the backend) routinely take
+      // longer than the global 10s JSON-request timeout — that was tripping
+      // ECONNABORTED (or, if the connection dropped instead of cleanly
+      // timing out, a bare network error) on ordinary multi-MB attachments
+      // and surfacing a misleading "check your internet connection" message
+      // even when connectivity was fine.
+      timeout: 120000,
     })
     return data
   },
@@ -664,6 +685,13 @@ export const erpApi = {
     files.forEach((f) => formData.append('files', f))
     const { data } = await apiClient.post(`/erp/service-requests/${srId}/attachments`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // File uploads (esp. to SharePoint via the backend) routinely take
+      // longer than the global 10s JSON-request timeout — that was tripping
+      // ECONNABORTED (or, if the connection dropped instead of cleanly
+      // timing out, a bare network error) on ordinary multi-MB attachments
+      // and surfacing a misleading "check your internet connection" message
+      // even when connectivity was fine.
+      timeout: 120000,
     })
     return data
   },
@@ -764,11 +792,6 @@ export const p2pApi = {
     return data
   },
 
-  linkItemToStock: async (id: number, itemId: number, stockItemId: number | null) => {
-    const { data } = await apiClient.patch(`/p2p/requests/${id}/items/${itemId}/stock-link`, { stock_item_id: stockItemId })
-    return data
-  },
-
   close: async (id: number) => {
     const { data } = await apiClient.post(`/p2p/requests/${id}/close`)
     return data
@@ -781,6 +804,13 @@ export const p2pApi = {
     if (itemId) formData.append('item_id', String(itemId))
     const { data } = await apiClient.post(`/p2p/requests/${id}/attachments`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // File uploads (esp. to SharePoint via the backend) routinely take
+      // longer than the global 10s JSON-request timeout — that was tripping
+      // ECONNABORTED (or, if the connection dropped instead of cleanly
+      // timing out, a bare network error) on ordinary multi-MB attachments
+      // and surfacing a misleading "check your internet connection" message
+      // even when connectivity was fine.
+      timeout: 120000,
     })
     return data
   },
@@ -825,6 +855,13 @@ export const rfqApi = {
     if (vendorContact) formData.append('vendor_contact', vendorContact)
     const { data } = await apiClient.post(`/p2p/rfqs/${id}/attachments`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      // File uploads (esp. to SharePoint via the backend) routinely take
+      // longer than the global 10s JSON-request timeout — that was tripping
+      // ECONNABORTED (or, if the connection dropped instead of cleanly
+      // timing out, a bare network error) on ordinary multi-MB attachments
+      // and surfacing a misleading "check your internet connection" message
+      // even when connectivity was fine.
+      timeout: 120000,
     })
     return data
   },
@@ -903,6 +940,21 @@ export const rfqApi = {
 
   submitPoDraft: async (rfqId: number, poId: number) => {
     const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/po-draft/${poId}/submit`)
+    return data
+  },
+
+  uploadPoDocument: async (rfqId: number, poId: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/po-draft/${poId}/document`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+    return data
+  },
+
+  getPoDocumentBlob: async (rfqId: number, poId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/p2p/rfqs/${rfqId}/po-draft/${poId}/document/content`, { responseType: 'blob' })
     return data
   },
 }

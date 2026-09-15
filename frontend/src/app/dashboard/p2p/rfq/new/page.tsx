@@ -79,6 +79,7 @@ export default function NewRfqPage() {
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const [draftRfqId, setDraftRfqId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -123,7 +124,11 @@ export default function NewRfqPage() {
 
     setBusy(true)
     try {
-      const rfq = await rfqApi.create(Number(prId), requiresTechnicalEvaluation)
+      // Reuse the draft from a prior failed attempt instead of minting a new
+      // RFQ row each retry (a mid-flow failure — attachment upload, submit
+      // validation — used to leave the already-created draft orphaned).
+      const rfq = draftRfqId ? { id: draftRfqId } : await rfqApi.create(Number(prId), requiresTechnicalEvaluation)
+      if (!draftRfqId) setDraftRfqId(rfq.id)
       for (const slot of VENDOR_SLOTS) {
         const v = vendors[slot.tier]
         if (v.file) await rfqApi.uploadAttachments(rfq.id, [v.file], slot.tier, v.vendorName.trim(), v.vendorContact.trim() || undefined)
@@ -155,7 +160,7 @@ export default function NewRfqPage() {
           </p>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Raise RFQ</h1>
         </div>
-        <button onClick={() => router.push('/dashboard/p2p/rfq')} type="button" style={secondaryBtnStyle}>
+        <button data-tour="rfq-new-back" onClick={() => router.push('/dashboard/p2p/rfq')} type="button" style={secondaryBtnStyle}>
           ← Back
         </button>
       </div>
@@ -169,7 +174,7 @@ export default function NewRfqPage() {
           <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Purchase Requisition</h2>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 320px', minWidth: 260 }}>
+          <div data-tour="rfq-new-pr" style={{ flex: '1 1 320px', minWidth: 260 }}>
             <SearchableSelect
               value={prId}
               onChange={setPrId}
@@ -200,15 +205,15 @@ export default function NewRfqPage() {
                   {slot.label}{slot.required ? ' *' : ' (optional)'}
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                  <div>
+                  <div data-tour="rfq-vendor-name">
                     <label style={labelStyle}>Vendor Name{v.file ? ' *' : ''}</label>
                     <input style={inputStyle} value={v.vendorName} onChange={(e) => updateVendor(slot.tier, { vendorName: e.target.value })} placeholder="Vendor name" />
                   </div>
-                  <div>
-                    <label style={labelStyle}>Contact Number</label>
+                  <div data-tour="rfq-vendor-contact">
+                    <label style={labelStyle}>Contact Number{slot.required ? ' *' : ''}</label>
                     <input style={inputStyle} value={v.vendorContact} onChange={(e) => updateVendor(slot.tier, { vendorContact: e.target.value })} placeholder="Phone number" />
                   </div>
-                  <div>
+                  <div data-tour="rfq-vendor-file">
                     <label style={labelStyle}>Quotation{slot.required ? ' *' : ''}</label>
                     <FileUploadField
                       file={v.file}
@@ -233,11 +238,11 @@ export default function NewRfqPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
             <div>
               <label style={labelStyle}>Reason for Single Quotation *</label>
-              <textarea style={{ ...inputStyle, minHeight: 60 }} value={singleQuotationReason} onChange={(e) => setSingleQuotationReason(e.target.value)} />
+              <textarea data-tour="rfq-single-reason" style={{ ...inputStyle, minHeight: 60 }} value={singleQuotationReason} onChange={(e) => setSingleQuotationReason(e.target.value)} />
             </div>
             <div>
               <label style={labelStyle}>Comments *</label>
-              <textarea style={{ ...inputStyle, minHeight: 60 }} value={comments} onChange={(e) => setComments(e.target.value)} />
+              <textarea data-tour="rfq-single-comments" style={{ ...inputStyle, minHeight: 60 }} value={comments} onChange={(e) => setComments(e.target.value)} />
             </div>
           </div>
         </div>
@@ -252,15 +257,15 @@ export default function NewRfqPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 16 }}>
           <div>
             <label style={labelStyle}>Payment Terms *</label>
-            <input style={inputStyle} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. 50% advance, 50% on delivery" />
+            <input data-tour="rfq-payment-terms" style={inputStyle} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. 50% advance, 50% on delivery" />
           </div>
           <div>
             <label style={labelStyle}>Delivery Lead Time *</label>
-            <input style={inputStyle} value={deliveryLeadTime} onChange={(e) => setDeliveryLeadTime(e.target.value)} placeholder="e.g. 4 weeks" />
+            <input data-tour="rfq-delivery-lead-time" style={inputStyle} value={deliveryLeadTime} onChange={(e) => setDeliveryLeadTime(e.target.value)} placeholder="e.g. 4 weeks" />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={labelStyle}>Late Delivery Clause *</label>
-            <textarea style={{ ...inputStyle, minHeight: 60 }} value={lateDeliveryClause} onChange={(e) => setLateDeliveryClause(e.target.value)} placeholder="Late delivery clause" />
+            <textarea data-tour="rfq-late-delivery-clause" style={{ ...inputStyle, minHeight: 60 }} value={lateDeliveryClause} onChange={(e) => setLateDeliveryClause(e.target.value)} placeholder="Late delivery clause" />
           </div>
         </div>
 
@@ -272,8 +277,8 @@ export default function NewRfqPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <button disabled={busy} onClick={save} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Save RFQ'}</button>
-          <button disabled={busy} onClick={() => router.push('/dashboard/p2p/rfq')} style={ghostBtn}>Cancel</button>
+          <button data-tour="rfq-new-save" disabled={busy} onClick={save} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Save RFQ'}</button>
+          <button data-tour="rfq-new-cancel" disabled={busy} onClick={() => router.push('/dashboard/p2p/rfq')} style={ghostBtn}>Cancel</button>
         </div>
       </div>
     </div>

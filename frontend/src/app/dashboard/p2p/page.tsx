@@ -25,6 +25,7 @@ export default function P2PHomePage() {
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>{user?.department ? `${user.department} — ` : ''}Purchase Requisitions</p>
         </div>
         <button
+          data-tour="p2p-new-btn"
           onClick={() => router.push('/dashboard/p2p/new')}
           style={{
             padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',

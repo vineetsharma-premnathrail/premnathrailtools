@@ -165,7 +165,7 @@ export default function NewP2PRequestPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New Purchase Requisition</h1>
         </div>
-        <button onClick={() => router.back()} type="button" style={secondaryBtnStyle}>
+        <button data-tour="pr-new-back" onClick={() => router.back()} type="button" style={secondaryBtnStyle}>
           ← Back
         </button>
       </div>
@@ -175,7 +175,7 @@ export default function NewP2PRequestPage() {
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Request Details</h2>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
-          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+          <div data-tour="pr-new-project" style={{ flex: '1 1 220px', minWidth: 200 }}>
             <label style={labelStyle}>Project</label>
             <SearchableSelect
               value={projectId}
@@ -186,18 +186,18 @@ export default function NewP2PRequestPage() {
           </div>
           <div style={{ flex: '1 1 200px', minWidth: 180 }}>
             <label style={labelStyle}>Purchase Requisition Category *</label>
-            <select style={inputStyle} value={categoryCode} onChange={(e) => setCategoryCode(e.target.value)}>
+            <select data-tour="pr-new-category" style={inputStyle} value={categoryCode} onChange={(e) => setCategoryCode(e.target.value)}>
               <option value="">Select category…</option>
               {categories.map((c) => <option key={c.code} value={c.code}>{c.label} ({c.code})</option>)}
             </select>
           </div>
           <div style={{ flex: '0 1 170px', minWidth: 150 }}>
             <label style={labelStyle}>Required Date</label>
-            <DateField value={requiredDate} onChange={setRequiredDate} />
+            <div data-tour="pr-new-required-date"><DateField value={requiredDate} onChange={setRequiredDate} /></div>
           </div>
           <div style={{ flex: '1 1 180px', minWidth: 160 }}>
             <label style={labelStyle}>Requirement Type</label>
-            <select style={inputStyle} value={requirementType} onChange={(e) => setRequirementType(e.target.value)}>
+            <select data-tour="pr-new-requirement-type" style={inputStyle} value={requirementType} onChange={(e) => setRequirementType(e.target.value)}>
               <option value="">Select type…</option>
               {requirementTypes.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
@@ -206,7 +206,7 @@ export default function NewP2PRequestPage() {
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Item Details</h2>
-          <button onClick={addItem} type="button" style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${BRAND.primaryBorder}`, background: BRAND.primarySoft, color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+          <button data-tour="pr-new-add-item" onClick={addItem} type="button" style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${BRAND.primaryBorder}`, background: BRAND.primarySoft, color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
             + Add Item
           </button>
         </div>
@@ -226,36 +226,36 @@ export default function NewP2PRequestPage() {
                 <tr key={idx}>
                   <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 600, color: TEXT.muted }}>{idx + 1}</td>
                   <td style={{ padding: '6px 8px', minWidth: 160 }}>
-                    <input style={inputStyle} value={item.item_name} onChange={(e) => updateItem(idx, 'item_name', e.target.value)} />
+                    <input data-tour="pr-new-item-name" style={inputStyle} value={item.item_name} onChange={(e) => updateItem(idx, 'item_name', e.target.value)} />
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 110 }}>
-                    <input style={inputStyle} value={item.make} onChange={(e) => updateItem(idx, 'make', e.target.value)} />
+                    <input data-tour="pr-new-item-make" style={inputStyle} value={item.make} onChange={(e) => updateItem(idx, 'make', e.target.value)} />
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 110 }}>
-                    <input style={inputStyle} value={item.part_code} onChange={(e) => updateItem(idx, 'part_code', e.target.value)} />
+                    <input data-tour="pr-new-item-partcode" style={inputStyle} value={item.part_code} onChange={(e) => updateItem(idx, 'part_code', e.target.value)} />
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 90 }}>
-                    <input style={inputStyle} value={item.unit} onChange={(e) => updateItem(idx, 'unit', e.target.value)} placeholder="pcs / kg" />
+                    <input data-tour="pr-new-item-unit" style={inputStyle} value={item.unit} onChange={(e) => updateItem(idx, 'unit', e.target.value)} placeholder="pcs / kg" />
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 70 }}>
-                    <input type="number" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
+                    <input data-tour="pr-new-item-qty" type="number" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 130 }}>
-                    <select style={inputStyle} value={item.project_inhouse} onChange={(e) => updateItem(idx, 'project_inhouse', e.target.value)}>
+                    <select data-tour="pr-new-item-projinhouse" style={inputStyle} value={item.project_inhouse} onChange={(e) => updateItem(idx, 'project_inhouse', e.target.value)}>
                       <option value="">Select…</option>
                       <option value="Project">Project</option>
                       <option value="Inhouse">Inhouse</option>
                     </select>
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 130 }}>
-                    <input style={inputStyle} value={item.category} onChange={(e) => updateItem(idx, 'category', e.target.value)} />
+                    <input data-tour="pr-new-item-category" style={inputStyle} value={item.category} onChange={(e) => updateItem(idx, 'category', e.target.value)} />
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 140 }}>
-                    <input style={inputStyle} value={item.ship_to} onChange={(e) => updateItem(idx, 'ship_to', e.target.value)} />
+                    <input data-tour="pr-new-item-shipto" style={inputStyle} value={item.ship_to} onChange={(e) => updateItem(idx, 'ship_to', e.target.value)} />
                   </td>
                   <td style={{ padding: '6px 8px' }}>
                     {items.length > 1 && (
-                      <span onClick={() => removeItem(idx)} style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</span>
+                      <span data-tour="pr-new-item-remove" onClick={() => removeItem(idx)} style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</span>
                     )}
                   </td>
                 </tr>
@@ -268,19 +268,19 @@ export default function NewP2PRequestPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
           <div style={{ flex: '0 1 180px', minWidth: 160 }}>
             <label style={labelStyle}>Priority</label>
-            <select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value)}>
+            <select data-tour="pr-new-priority" style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value)}>
               {PRIORITIES.map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
             </select>
           </div>
           <div style={{ flex: '1 1 320px' }}>
             <label style={labelStyle}>Remarks</label>
-            <textarea style={{ ...inputStyle, minHeight: 42 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+            <textarea data-tour="pr-new-remarks" style={{ ...inputStyle, minHeight: 42 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
           </div>
         </div>
 
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Approval</h2>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
-          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+          <div data-tour="pr-new-dept-head" style={{ flex: '1 1 220px', minWidth: 200 }}>
             <label style={labelStyle}>Department Head</label>
             <SearchableSelect
               value={departmentHeadId}
@@ -289,7 +289,7 @@ export default function NewP2PRequestPage() {
               placeholder="Search department head…"
             />
           </div>
-          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+          <div data-tour="pr-new-project-head" style={{ flex: '1 1 220px', minWidth: 200 }}>
             <label style={labelStyle}>Project Head</label>
             <SearchableSelect
               value={projectHeadId}
@@ -298,7 +298,7 @@ export default function NewP2PRequestPage() {
               placeholder="Search project head…"
             />
           </div>
-          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+          <div data-tour="pr-new-plant-head" style={{ flex: '1 1 220px', minWidth: 200 }}>
             <label style={labelStyle}>Plant Head</label>
             <SearchableSelect
               value={plantHeadId}
@@ -316,20 +316,20 @@ export default function NewP2PRequestPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
           <div style={{ flex: '0 1 280px', minWidth: 240 }}>
             <label style={labelStyle}>Supporting Documents</label>
-            <input type="file" multiple onChange={(e) => setSupportingFiles(Array.from(e.target.files || []))} style={inputStyle} />
+            <input data-tour="pr-new-supporting-docs" type="file" multiple onChange={(e) => setSupportingFiles(Array.from(e.target.files || []))} style={inputStyle} />
           </div>
           <div style={{ flex: '0 1 280px', minWidth: 240 }}>
             <label style={labelStyle}>Specification / Reference File</label>
-            <input type="file" multiple onChange={(e) => setSpecFiles(Array.from(e.target.files || []))} style={inputStyle} />
+            <input data-tour="pr-new-spec-docs" type="file" multiple onChange={(e) => setSpecFiles(Array.from(e.target.files || []))} style={inputStyle} />
           </div>
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-        <button onClick={() => router.back()} type="button" style={{ padding: '12px 22px', borderRadius: 12, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+        <button data-tour="pr-new-cancel" onClick={() => router.back()} type="button" style={{ padding: '12px 22px', borderRadius: 12, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
           Cancel
         </button>
-        <button onClick={handleSubmit} disabled={submitting} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: submitting ? 0.6 : 1 }}>
+        <button data-tour="pr-new-submit" onClick={handleSubmit} disabled={submitting} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: submitting ? 0.6 : 1 }}>
           {submitting ? 'Submitting…' : 'Submit Purchase Requisition'}
         </button>
       </div>

@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
 import { p2pApi } from '@/lib/api'
 import { P2PRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 import MessageDialog from '@/components/erp/MessageDialog'
+import PromptDialog from '@/components/erp/PromptDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 
@@ -49,30 +51,93 @@ function displayStatus(pr: P2PRequest): { label: string; hex: string } {
 
 export default function P2PRequestList({ statuses, emptyLabel, context }: { statuses?: string[]; emptyLabel: string; context?: string }) {
   const router = useRouter()
+  const { user } = useAuth()
   const [prs, setPrs] = useState<P2PRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
+  const [actionError, setActionError] = useState<string | string[]>('')
+  const [approvingId, setApprovingId] = useState<number | null>(null)
+  const [rejectingId, setRejectingId] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
   const detailHref = (id: number) => (context ? `/dashboard/p2p/${id}?from=${context}` : `/dashboard/p2p/${id}`)
 
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await p2pApi.list({ limit: 500 })
+      setPrs(statuses ? data.filter((pr: P2PRequest) => statuses.includes(pr.status)) : data)
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Failed to load your Procure-to-Pay requests.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    ;(async () => {
-      setLoading(true)
-      setError('')
-      try {
-        const data = await p2pApi.list({ limit: 500 })
-        setPrs(statuses ? data.filter((pr: P2PRequest) => statuses.includes(pr.status)) : data)
-      } catch (err: any) {
-        setError(extractErrorMessages(err, 'Failed to load your Procure-to-Pay requests.'))
-      } finally {
-        setLoading(false)
-      }
-    })()
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statuses])
+
+  const isAdmin = user?.role === 'admin'
+  const poRole = user?.is_purchase_head ? 'purchase_head' : user?.is_director ? 'director' : user?.is_md ? 'md' : null
+  const canApprovePoInline = (pr: P2PRequest) =>
+    context === 'po-approval' && pr.status === 'po_raised' && poRole != null && (pr.pending_po_approval_roles || []).includes(poRole)
+  const canRejectPoInline = (pr: P2PRequest) =>
+    context === 'po-approval' && pr.status === 'po_raised' && (poRole != null || isAdmin)
+
+  const confirmApprovePo = async (comment: string) => {
+    if (approvingId == null) return
+    setBusy(true)
+    try {
+      await p2pApi.approvePO(approvingId, comment || undefined)
+      setApprovingId(null)
+      await load()
+    } catch (err: any) {
+      setApprovingId(null)
+      setActionError(extractErrorMessages(err, 'Failed to approve this PO.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmRejectPo = async (reason: string) => {
+    if (rejectingId == null) return
+    setBusy(true)
+    try {
+      await p2pApi.reject(rejectingId, reason || undefined)
+      setRejectingId(null)
+      await load()
+    } catch (err: any) {
+      setRejectingId(null)
+      setActionError(extractErrorMessages(err, 'Failed to reject this PO.'))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div>
       <MessageDialog open={!!error} variant="error" title="Cannot Load Requests" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
+      <MessageDialog open={!!actionError} variant="error" title="Cannot Complete Action" message={actionError} onClose={() => setActionError('')} />
+      <PromptDialog
+        open={approvingId != null}
+        title="Approve this PO?"
+        placeholder="Comment (optional)"
+        confirmLabel="Approve"
+        danger={false}
+        onConfirm={confirmApprovePo}
+        onCancel={() => (busy ? null : setApprovingId(null))}
+      />
+      <PromptDialog
+        open={rejectingId != null}
+        title="Reject this PO?"
+        placeholder="Reason for rejecting (optional)"
+        confirmLabel="Reject"
+        onConfirm={confirmRejectPo}
+        onCancel={() => (busy ? null : setRejectingId(null))}
+      />
+      <div data-tour="p2p-list-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
@@ -104,7 +169,15 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
                   </span>
                 </td>
                 <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(detailHref(pr.id))} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <span data-tour="p2p-list-view" onClick={() => router.push(detailHref(pr.id))} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
+                    {canApprovePoInline(pr) && (
+                      <span data-tour="p2p-list-approve" onClick={() => setApprovingId(pr.id)} style={{ fontSize: 11.5, fontWeight: 600, color: '#16a34a', cursor: 'pointer' }}>Approve</span>
+                    )}
+                    {canRejectPoInline(pr) && (
+                      <span data-tour="p2p-list-reject" onClick={() => setRejectingId(pr.id)} style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer' }}>Reject</span>
+                    )}
+                  </div>
                 </td>
               </tr>
               )

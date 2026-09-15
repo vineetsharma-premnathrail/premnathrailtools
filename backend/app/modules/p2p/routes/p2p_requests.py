@@ -140,17 +140,33 @@ def _check_reject_access(pr: P2PRequest, user: User) -> str:
     raise HTTPException(status_code=403, detail="Only an assigned approver (or admin) can reject this PR.")
 
 
-def _check_po_approve_access(pr: P2PRequest, user: User) -> str:
+def _check_po_reject_access(pr: P2PRequest, user: User) -> str:
+    """Who is rejecting a PO-raised request — any PO approver (purchase head,
+    director or MD, approved or not) or an admin may reject it."""
+    if user.role == "admin":
+        return "admin"
+    if user.is_purchase_head:
+        return "purchase_head"
+    if user.is_director:
+        return "director"
+    if user.is_md:
+        return "md"
+    raise HTTPException(status_code=403, detail="Only a PO approver (purchase head, director or MD) or admin can reject this PO.")
+
+
+def _check_po_approve_access(pr: P2PRequest, user: User) -> list[str]:
+    """Every PO approval slot `user` is acting as. Returns all still-pending
+    PO roles assigned to this user, not just the first one, so a user holding
+    multiple PO approver roles (purchase_head/director/md) clears every one
+    of their slots in a single click."""
     role_flags = {
         "purchase_head": user.is_purchase_head,
         "director": user.is_director,
         "md": user.is_md,
     }
     roles = [role for role, enabled in role_flags.items() if enabled and role in pr.pending_po_approval_roles]
-    if len(roles) == 1:
-        return roles[0]
-    if len(roles) > 1:
-        raise HTTPException(status_code=403, detail="Your account has more than one pending PO approval role. Ask an administrator to assign one role before approving.")
+    if roles:
+        return roles
     raise HTTPException(status_code=403, detail="You do not have a pending PO approval role for this request.")
 
 
@@ -297,7 +313,15 @@ async def list_p2p_requests(
     )
     if not _is_purchase_team(user):
         if _is_po_approver(user):
-            query = query.filter(P2PRequest.status == "po_raised")
+            # A pure PO approver (purchase_head/director/md without "purchase"
+            # app access) needs to see their PO Approval history, not just the
+            # pending queue — the po-approval page's Approved/Rejected/All
+            # tabs filter this same result set client-side by exact status,
+            # so restricting the query to "po_raised" here made those tabs
+            # always render empty for such users.
+            query = query.filter(P2PRequest.status.in_(
+                ("po_raised", "po_approved", "partially_received", "received", "closed", "rejected")
+            ))
         else:
         # Requesters see their own history; an assigned department/project/
         # plant head also sees PRs routed to them for approval — regardless
@@ -468,13 +492,16 @@ async def approve_po(
     if pr.status != "po_raised":
         raise HTTPException(status_code=409, detail=f"Only a PO raised request can be approved (current status: {pr.status})")
 
-    role = _check_po_approve_access(pr, user)
+    roles = _check_po_approve_access(pr, user)
     now = datetime.now(timezone.utc)
-    setattr(pr, f"{role}_approved_at", now)
-    if payload.comment:
-        setattr(pr, f"{role}_comment", payload.comment)
+    for role in roles:
+        setattr(pr, f"{role}_approved_at", now)
+        setattr(pr, f"{role}_approved_by_name", user.name or user.email)
+        if payload.comment:
+            setattr(pr, f"{role}_comment", payload.comment)
+    role_labels = " & ".join(_PO_ROLE_LABELS[role] for role in roles)
     _write_audit(db, pr.id, "po_approved", user,
-                 summary=f"{user.name or user.email} approved PO for {pr.p2p_number} as {_PO_ROLE_LABELS[role]}.")
+                 summary=f"{user.name or user.email} approved PO for {pr.p2p_number} as {role_labels}.")
 
     if not pr.pending_po_approval_roles:
         pr.status = "po_approved"
@@ -495,14 +522,15 @@ async def reject_p2p_request(
     user: User = Depends(_requester_or_purchase),
 ):
     pr = _get_pr_or_404(db, pr_id)
-    if pr.status not in ("submitted", "approved"):
+    if pr.status not in ("submitted", "approved", "po_raised"):
         raise HTTPException(status_code=409, detail=f"Cannot reject a PR with status '{pr.status}'")
-    role = _check_reject_access(pr, user)
+    role = _check_po_reject_access(pr, user) if pr.status == "po_raised" else _check_reject_access(pr, user)
 
     old_status = pr.status
     pr.status = "rejected"
     pr.rejected_reason = payload.reason
     pr.rejected_by_role = role
+    pr.rejected_by_name = user.name or user.email
     reason_note = f" Reason: {payload.reason}" if payload.reason else ""
     _write_audit(db, pr.id, "rejected", user, summary=f"{user.name or user.email} rejected P2P request {pr.p2p_number}.{reason_note}",
                  old_status=old_status, new_status="rejected")

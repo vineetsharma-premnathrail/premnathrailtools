@@ -116,12 +116,12 @@ export default function GoodsReceiptDetailPage() {
           </p>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{grn.grn_number}</h1>
         </div>
-        <button onClick={() => router.push('/dashboard/p2p/grn')} type="button" style={secondaryBtnStyle}>← Back</button>
+        <button data-tour="grn-detail-back" onClick={() => router.push('/dashboard/p2p/grn')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Cannot Complete Inspection" message={error} onClose={() => setError('')} />
 
-      <div style={sectionStyle}>
+      <div data-tour="grn-detail-meta" style={sectionStyle}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, fontSize: 13 }}>
           <div><span style={{ color: TEXT.muted }}>PO Number: </span><strong style={{ color: TEXT.heading }}>{grn.po_number}</strong></div>
           <div><span style={{ color: TEXT.muted }}>PR Number: </span><strong style={{ color: TEXT.heading }}>{grn.p2p_number || '—'}</strong></div>
@@ -136,7 +136,7 @@ export default function GoodsReceiptDetailPage() {
         {grn.remarks && <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '12px 0 0' }}>Remarks: {grn.remarks}</p>}
       </div>
 
-      <div style={sectionStyle}>
+      <div data-tour="grn-detail-inspection" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>
           {isDraft ? 'Quality Inspection' : 'Inspection Result'}
         </h2>
@@ -157,7 +157,7 @@ export default function GoodsReceiptDetailPage() {
                     <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.item_name}{it.unit ? ` (${it.unit})` : ''}</td>
                     <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.ordered_quantity}</td>
                     <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.received_quantity}</td>
-                    <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <td data-tour="grn-inspect-accepted" style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
                       {isDraft ? (
                         <input type="number" min={0} max={it.received_quantity} step="any" value={r.accepted_quantity}
                           onChange={(e) => setRow(it.id, { accepted_quantity: e.target.value })} style={{ ...inputStyle, width: 80 }} />
@@ -165,7 +165,7 @@ export default function GoodsReceiptDetailPage() {
                         <span style={{ fontWeight: 600, color: SUCCESS.text }}>{it.accepted_quantity ?? '—'}</span>
                       )}
                     </td>
-                    <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <td data-tour="grn-inspect-rejected" style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
                       {isDraft ? (
                         <input type="number" min={0} max={it.received_quantity} step="any" value={r.rejected_quantity}
                           onChange={(e) => setRow(it.id, { rejected_quantity: e.target.value })} style={{ ...inputStyle, width: 80 }} />
@@ -173,7 +173,7 @@ export default function GoodsReceiptDetailPage() {
                         <span style={{ fontWeight: 600, color: it.rejected_quantity ? DANGER.text : TEXT.muted }}>{it.rejected_quantity ?? '—'}</span>
                       )}
                     </td>
-                    <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <td data-tour="grn-inspect-quality-status" style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
                       {isDraft ? (
                         <select value={r.quality_status} onChange={(e) => setRow(it.id, { quality_status: e.target.value })} style={{ ...inputStyle, width: 150 }}>
                           {QUALITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -184,7 +184,7 @@ export default function GoodsReceiptDetailPage() {
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
+                    <td data-tour="grn-inspect-rejection-reason" style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
                       {isDraft && r.quality_status !== 'passed' ? (
                         <input value={r.rejection_reason} onChange={(e) => setRow(it.id, { rejection_reason: e.target.value })} style={{ ...inputStyle, width: 180 }} placeholder="Reason" />
                       ) : (
@@ -200,7 +200,7 @@ export default function GoodsReceiptDetailPage() {
 
         {isDraft && (
           <div style={{ marginTop: 16 }}>
-            <button disabled={busy} onClick={complete} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Completing…' : 'Complete Inspection'}</button>
+            <button data-tour="grn-detail-complete-btn" disabled={busy} onClick={complete} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Completing…' : 'Complete Inspection'}</button>
           </div>
         )}
       </div>

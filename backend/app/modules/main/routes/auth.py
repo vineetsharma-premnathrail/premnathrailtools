@@ -446,6 +446,12 @@ async def get_current_user_info(user: User = Depends(get_current_user)):
         assigned_apps=user.assigned_apps or [],
         erp_permissions=user.erp_permissions or [],
         apps=user.get_apps(),
+        is_department_head=user.is_department_head,
+        is_project_head=user.is_project_head,
+        is_plant_head=user.is_plant_head,
+        is_purchase_head=user.is_purchase_head,
+        is_director=user.is_director,
+        is_md=user.is_md,
     )
 
 

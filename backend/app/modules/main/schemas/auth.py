@@ -20,3 +20,9 @@ class CurrentUserResponse(BaseModel):
     assigned_apps: list[str] = []
     erp_permissions: list[str] = []
     apps: list[str] = []
+    is_department_head: bool = False
+    is_project_head: bool = False
+    is_plant_head: bool = False
+    is_purchase_head: bool = False
+    is_director: bool = False
+    is_md: bool = False

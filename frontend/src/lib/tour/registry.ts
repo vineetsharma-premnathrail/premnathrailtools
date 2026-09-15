@@ -20,6 +20,15 @@ const loadTenderDetailOrEdit = () =>
     ? import('./configs/crmTenderEditForm')
     : import('./configs/crmTenderDetail')
 
+// The RFQ detail page's "Admin Edit" panel opens inline on the same URL
+// (toggled by `editing` state), the same view/edit ambiguity as Inquiries and
+// Tenders above — probing for its own Save button is the only way to tell
+// which one is actually on screen right now.
+const loadRfqDetailOrEdit = () =>
+  typeof document !== 'undefined' && document.querySelector('[data-tour="rfq-edit-save"]')
+    ? import('./configs/p2pRfqEditForm')
+    : import('./configs/p2pRfqDetail')
+
 // Each entry matches a route pattern (regex) to a lazily-imported tour config.
 // Add one entry per page as tour content is authored — pages with no match
 // simply show no Tour button content (TourButton hides itself). `load` also
@@ -86,6 +95,50 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
   {
     pattern: /^\/dashboard\/crm\/products$/,
     load: () => import('./configs/crmProducts'),
+  },
+  {
+    pattern: /^\/dashboard\/p2p$/,
+    load: () => import('./configs/p2pRequestsList'),
+  },
+  {
+    pattern: /^\/dashboard\/p2p\/new$/,
+    load: () => import('./configs/p2pRequestForm'),
+  },
+  {
+    pattern: /^\/dashboard\/p2p\/\d+$/,
+    load: () => import('./configs/p2pRequestDetail'),
+  },
+  {
+    pattern: /^\/dashboard\/p2p\/approval$/,
+    load: () => import('./configs/p2pApprovalList'),
+  },
+  {
+    pattern: /^\/dashboard\/p2p\/po-approval$/,
+    load: () => import('./configs/p2pPoApprovalList'),
+  },
+  {
+    pattern: /^\/dashboard\/p2p\/rfq$/,
+    load: () => import('./configs/p2pRfqList'),
+  },
+  {
+    pattern: /^\/dashboard\/p2p\/rfq\/new$/,
+    load: () => import('./configs/p2pRfqForm'),
+  },
+  {
+    pattern: /^\/dashboard\/p2p\/rfq\/\d+$/,
+    load: () => loadRfqDetailOrEdit(),
+  },
+  {
+    pattern: /^\/dashboard\/p2p\/grn$/,
+    load: () => import('./configs/p2pGrnList'),
+  },
+  {
+    pattern: /^\/dashboard\/p2p\/grn\/new$/,
+    load: () => import('./configs/p2pGrnForm'),
+  },
+  {
+    pattern: /^\/dashboard\/p2p\/grn\/\d+$/,
+    load: () => import('./configs/p2pGrnDetail'),
   },
 ]
 

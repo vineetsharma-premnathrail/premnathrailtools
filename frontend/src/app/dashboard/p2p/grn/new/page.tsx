@@ -92,14 +92,14 @@ export default function NewGoodsReceiptPage() {
           </p>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Record Goods Receipt</h1>
         </div>
-        <button onClick={() => router.push('/dashboard/p2p/grn')} type="button" style={secondaryBtnStyle}>← Back</button>
+        <button data-tour="grn-new-back" onClick={() => router.push('/dashboard/p2p/grn')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Cannot Save Goods Receipt" message={error} onClose={() => setError('')} />
 
       <div style={sectionStyle}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-          <div style={{ flex: '1 1 320px', minWidth: 260 }}>
+          <div data-tour="grn-new-po" style={{ flex: '1 1 320px', minWidth: 260 }}>
             <label style={labelStyle}>Purchase Order *</label>
             <SearchableSelect
               value={poId}
@@ -110,14 +110,14 @@ export default function NewGoodsReceiptPage() {
           </div>
           <div style={{ flex: '0 1 220px', minWidth: 200 }}>
             <label style={labelStyle}>Store Location</label>
-            <select style={inputStyle} value={storeLocationId} onChange={(e) => setStoreLocationId(e.target.value)}>
+            <select data-tour="grn-new-location" style={inputStyle} value={storeLocationId} onChange={(e) => setStoreLocationId(e.target.value)}>
               <option value="">-- None --</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </div>
           <div style={{ flex: '0 1 180px', minWidth: 160 }}>
             <label style={labelStyle}>Received Date *</label>
-            <DateField value={receivedDate} onChange={setReceivedDate} />
+            <div data-tour="grn-new-received-date"><DateField value={receivedDate} onChange={setReceivedDate} /></div>
           </div>
         </div>
       </div>
@@ -142,6 +142,7 @@ export default function NewGoodsReceiptPage() {
                     <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.quantity}</td>
                     <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
                       <input
+                        data-tour="grn-new-received-qty"
                         type="number" min={0} max={it.quantity} step="any"
                         value={receivedQty[it.id] || ''}
                         onChange={(e) => setReceivedQty((q) => ({ ...q, [it.id]: e.target.value }))}
@@ -157,7 +158,7 @@ export default function NewGoodsReceiptPage() {
 
           <div style={{ marginTop: 16 }}>
             <label style={labelStyle}>Remarks</label>
-            <textarea style={{ ...inputStyle, minHeight: 60 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Delivery note reference, condition on arrival, etc." />
+            <textarea data-tour="grn-new-remarks" style={{ ...inputStyle, minHeight: 60 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Delivery note reference, condition on arrival, etc." />
           </div>
 
           <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '14px 0 0' }}>
@@ -167,8 +168,8 @@ export default function NewGoodsReceiptPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10 }}>
-        <button disabled={busy || !selectedPo} onClick={save} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Save Goods Receipt'}</button>
-        <button disabled={busy} onClick={() => router.push('/dashboard/p2p/grn')} style={{ ...secondaryBtnStyle, opacity: busy ? 0.6 : 1, cursor: busy ? 'default' : 'pointer' }}>Cancel</button>
+        <button data-tour="grn-new-save" disabled={busy || !selectedPo} onClick={save} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Save Goods Receipt'}</button>
+        <button data-tour="grn-new-cancel" disabled={busy} onClick={() => router.push('/dashboard/p2p/grn')} style={{ ...secondaryBtnStyle, opacity: busy ? 0.6 : 1, cursor: busy ? 'default' : 'pointer' }}>Cancel</button>
       </div>
     </div>
   )

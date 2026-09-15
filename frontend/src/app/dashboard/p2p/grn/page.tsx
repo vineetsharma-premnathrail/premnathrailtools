@@ -40,10 +40,10 @@ export default function P2PGrnPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Goods Receipt (GRN)</h1>
         </div>
-        <button onClick={() => router.push('/dashboard/p2p/grn/new')} style={primaryBtn}>+ New Goods Receipt</button>
+        <button data-tour="grn-new-btn" onClick={() => router.push('/dashboard/p2p/grn/new')} style={primaryBtn}>+ New Goods Receipt</button>
       </div>
 
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+      <div data-tour="grn-list-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr>
@@ -71,7 +71,7 @@ export default function P2PGrnPage() {
                     </span>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderBottom: `1px solid ${BORDER.normal}` }}>
-                    <span onClick={() => router.push(`/dashboard/p2p/grn/${g.id}`)} style={{ fontSize: 12.5, fontWeight: 600, color: '#c2410c', cursor: 'pointer' }}>View</span>
+                    <span data-tour="grn-list-view" onClick={() => router.push(`/dashboard/p2p/grn/${g.id}`)} style={{ fontSize: 12.5, fontWeight: 600, color: '#c2410c', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

@@ -846,7 +846,7 @@ function AttachmentsTab({ sr, canEdit, canDelete, onRefresh }: { sr: ServiceRequ
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
                 <a
                   href="#"
-                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => erpApi.getAttachmentBlob(sr.id, a.id)) }}
+                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => erpApi.getAttachmentBlob(sr.id, a.id), a.filename) }}
                   style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}
                 >
                   {a.filename}
