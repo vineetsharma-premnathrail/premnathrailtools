@@ -22,7 +22,7 @@ class ServiceRequest(Base, TimestampMixin, SoftDeleteMixin):
     project_id: Mapped[int] = mapped_column(Integer, ForeignKey("erp_projects.id"), nullable=False, index=True)
 
     # Issue details
-    issue_title: Mapped[str] = mapped_column(String(300), nullable=False)
+    issue_title: Mapped[str] = mapped_column(Text, nullable=False)
     issue_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     issue_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     sub_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
