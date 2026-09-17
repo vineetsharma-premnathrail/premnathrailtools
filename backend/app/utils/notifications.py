@@ -55,7 +55,15 @@ def _send_teams_activity_notification(azure_user_id: str, title: str, message: s
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
-        resp.raise_for_status()
+        if resp.is_error:
+            # raise_for_status() alone logs only "403 Forbidden", which is
+            # indistinguishable between "the app registration is missing
+            # TeamsActivity.Send consent" and "this recipient never installed
+            # the Teams app" — Graph puts that difference in the body, so keep it.
+            raise RuntimeError(
+                f"Graph sendActivityNotification failed for {azure_user_id}: "
+                f"{resp.status_code} {resp.text[:500]}"
+            )
 
 
 def _notify_teams_sync(user_id: int, azure_id: str, title: str, message: str) -> None:
