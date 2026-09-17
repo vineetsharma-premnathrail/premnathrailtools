@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'LI', 'BR', 'DIV', 'P', 'SPAN'])
 const SAFE_FONT_SIZE = /^\d{1,2}px$/
 
-function sanitizeHtml(html: string): string {
+/** `onStrip` fires when an element is dropped for not being in ALLOWED_TAGS,
+ * so callers can tell "nothing changed" from "content was silently removed". */
+function sanitizeHtml(html: string, onStrip?: () => void): string {
   const doc = document.createElement('div')
   doc.innerHTML = html
   const walk = (node: Element) => {
@@ -13,6 +15,7 @@ function sanitizeHtml(html: string): string {
       if (child.nodeType === Node.ELEMENT_NODE) {
         const el = child as Element
         if (!ALLOWED_TAGS.has(el.tagName)) {
+          onStrip?.()
           const text = document.createTextNode(el.textContent || '')
           node.replaceChild(text, el)
           return
@@ -71,6 +74,8 @@ const TOOLBAR_BTN_STYLE: React.CSSProperties = {
   background: 'transparent', color: '#57534e', fontSize: 13, fontWeight: 700, cursor: 'pointer',
 }
 
+const NO_IMAGE_MSG = 'Images can’t be added here — attach the file to the record instead.'
+
 const activeBtnStyle = (active: boolean): React.CSSProperties =>
   active ? { background: 'rgba(244,113,59,0.12)', color: '#c2410c' } : {}
 
@@ -94,6 +99,16 @@ export default function RichTextEditor({
   const [focused, setFocused] = useState(false)
   const [empty, setEmpty] = useState(!value)
   const [activeStates, setActiveStates] = useState({ bold: false, italic: false, ul: false, ol: false })
+  const [notice, setNotice] = useState('')
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const flashNotice = (msg: string) => {
+    setNotice(msg)
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+    noticeTimer.current = setTimeout(() => setNotice(''), 5000)
+  }
+
+  useEffect(() => () => { if (noticeTimer.current) clearTimeout(noticeTimer.current) }, [])
 
   const syncToolbarState = () => {
     if (document.activeElement !== ref.current) return
@@ -132,9 +147,52 @@ export default function RichTextEditor({
   }
 
   const handleInput = () => {
-    const html = sanitizeHtml(ref.current?.innerHTML || '')
+    const raw = ref.current?.innerHTML || ''
+    let stripped = false
+    const html = sanitizeHtml(raw, () => { stripped = true })
+    // Safety net: only the sanitized HTML is ever saved, so if something the
+    // sanitizer rejects made it into the DOM (a dragged-in image, say) the
+    // editor would keep showing content that was never stored. Repair the DOM
+    // to match. Paste and drop are guarded, so this is a rare last resort and
+    // moving the caret to the end here is an acceptable cost.
+    if (stripped && ref.current) {
+      ref.current.innerHTML = html
+      const sel = window.getSelection()
+      const range = document.createRange()
+      range.selectNodeContents(ref.current)
+      range.collapse(false)
+      sel?.removeAllRanges()
+      sel?.addRange(range)
+      flashNotice(NO_IMAGE_MSG)
+    }
     setEmpty(!html || html === '<br>')
     onChange(html)
+  }
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const cd = e.clipboardData
+    const hasImage = Array.from(cd.items).some((i) => i.kind === 'file' && i.type.startsWith('image/'))
+    const html = cd.getData('text/html')
+    const text = cd.getData('text/plain')
+    // Sanitize before it reaches the DOM so what the editor shows is exactly
+    // what gets saved — pasting used to insert images and rich markup that the
+    // sanitizer then silently dropped from the saved value.
+    if (html) {
+      document.execCommand('insertHTML', false, sanitizeHtml(html))
+    } else if (text) {
+      document.execCommand('insertText', false, text)
+    }
+    if (hasImage) flashNotice(NO_IMAGE_MSG)
+    handleInput()
+    syncToolbarState()
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    if (Array.from(e.dataTransfer?.files || []).some((f) => f.type.startsWith('image/'))) {
+      e.preventDefault()
+      flashNotice(NO_IMAGE_MSG)
+    }
   }
 
   return (
@@ -174,6 +232,8 @@ export default function RichTextEditor({
           contentEditable
           suppressContentEditableWarning
           onInput={handleInput}
+          onPaste={handlePaste}
+          onDrop={handleDrop}
           onFocus={() => { setFocused(true); syncToolbarState() }}
           onBlur={() => setFocused(false)}
           onKeyUp={syncToolbarState}
@@ -181,6 +241,16 @@ export default function RichTextEditor({
           style={{ minHeight, padding: '10px 12px', fontSize: 13, color: '#1f1108', outline: 'none', overflowY: 'auto' }}
         />
       </div>
+      {notice && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+          borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(245,158,11,0.08)',
+          fontSize: 11.5, color: '#92400e',
+        }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+          {notice}
+        </div>
+      )}
     </div>
   )
 }
