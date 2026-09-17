@@ -30,7 +30,10 @@ type FormState = {
 
 function toFormState(initial?: Partial<CrmActivity>, defaultAssignedTo?: string): FormState {
   return {
-    activity_type: initial?.activity_type || ACTIVITY_TYPES[0],
+    // Legacy records can carry a type we no longer offer — fall back to a valid one.
+    activity_type: initial?.activity_type && ACTIVITY_TYPES.includes(initial.activity_type)
+      ? initial.activity_type
+      : ACTIVITY_TYPES[0],
     subject: initial?.subject || '',
     activity_date: initial?.activity_date || new Date().toISOString().slice(0, 10),
     next_followup: initial?.next_followup || '',
@@ -70,9 +73,6 @@ export default function ActivityForm({
   const contactsRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [showCamera, setShowCamera] = useState(false)
-  const activityTypeOptions = initial?.activity_type && !ACTIVITY_TYPES.includes(initial.activity_type)
-    ? [...ACTIVITY_TYPES, initial.activity_type]
-    : ACTIVITY_TYPES
   const [contacts, setContacts] = useState<OrgContact[]>([])
   const [newContact, setNewContact] = useState({ name: '', designation: '', department: '', mobile: '', email: '' })
   const [savingContact, setSavingContact] = useState(false)
@@ -318,7 +318,7 @@ export default function ActivityForm({
             <div style={{ flex: '1 1 150px', minWidth: 140 }}>
               <Field label="Activity Type" tourId="activity-type">
                 <select value={form.activity_type} onChange={(e) => set('activity_type', e.target.value)} style={inputStyle}>
-                  {activityTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {ACTIVITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </Field>
             </div>
