@@ -20,6 +20,9 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.api_key import APIKey
 from app.modules.main.models.user_session import UserSession
+from app.modules.main.models.module import Module
+from app.modules.organization.models.branch import Branch
+from app.modules.organization.models.department import Department
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.project_attachment import ProjectAttachment
 from app.modules.erp.models.service_request import ServiceRequest
@@ -29,11 +32,16 @@ from app.modules.erp.models.service_material_attachment import ServiceMaterialAt
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
+from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
+from app.modules.p2p.models.rfq import RFQ
+from app.modules.p2p.models.rfq_attachment import RFQAttachment
+from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
+from app.modules.store.models.location import StoreLocation
 from app.modules.crm.models import (
-    Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, Quotation, QuotationLineItem,
-    Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity,
-    CrmDocument, CrmStageLog,
+    Organization, OrgContact, Inquiry, InquiryLineItem, Quotation, QuotationLineItem,
+    Tender, Activity,
+    CrmDocument, CrmStageLog, Product, PaymentTerm,
 )
 from app.modules.rnd.models.calculation_history import CalculationHistory
 from app.modules.rnd.models.tool_calculations import (
