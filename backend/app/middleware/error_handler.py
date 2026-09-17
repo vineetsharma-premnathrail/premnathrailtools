@@ -8,6 +8,9 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
+from sqlalchemy.exc import DBAPIError
+
+from app.core.db_errors import describe_db_error
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +19,22 @@ async def error_handler(request: Request, exc: Exception):
     """
     Handle unexpected errors and return proper response.
 
-    Logs error details for debugging without exposing sensitive info.
+    Database errors the user caused (text too long, duplicate value, missing
+    required field) are explained in plain language so they can fix the form
+    themselves — "Internal server error. Please contact support." tells them
+    nothing and sends them to us for something they can correct in a second.
+    Anything genuinely unexpected still returns a generic message.
     """
+    if isinstance(exc, DBAPIError):
+        described = describe_db_error(exc)
+        if described:
+            status_code, message = described
+            logger.warning(
+                f"Database error explained to user on {request.method} {request.url.path}: {message}",
+                exc_info=True,
+            )
+            return JSONResponse(status_code=status_code, content={"detail": message})
+
     logger.error(
         f"Unexpected error: {str(exc)}",
         extra={
@@ -32,7 +49,11 @@ async def error_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
-            "detail": "Internal server error. Please contact support.",
+            "detail": (
+                "Something went wrong on the server while handling this request, so nothing "
+                "was saved. Please try again — if it keeps happening, report this reference "
+                f"to support: {type(exc).__name__} #{id(exc)}."
+            ),
             "error_id": id(exc)  # For user to report
         }
     )
@@ -156,6 +177,10 @@ def setup_error_handlers(app):
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         return await validation_error_handler(request, exc)
+
+    @app.exception_handler(DBAPIError)
+    async def database_exception_handler(request: Request, exc: DBAPIError):
+        return await error_handler(request, exc)
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):

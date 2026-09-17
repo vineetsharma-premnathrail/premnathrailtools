@@ -57,15 +57,25 @@ export function extractErrorMessages(err: any, fallback = 'Something went wrong.
     }
     return ["Couldn't reach the server. Nothing was saved — check your internet connection and try again."]
   }
-  const detail = err.response.data?.detail
+  const data = err.response.data
+  // A 422 from this API puts the per-field problems in `errors` and leaves
+  // `detail` as the bare word "Validation error" - read `errors` first, or the
+  // user is told only that something was invalid, never which field.
+  const fieldErrors = Array.isArray(data?.errors) ? data.errors : null
+  if (fieldErrors?.length) return fieldErrors.map(describeFieldError)
+  const detail = data?.detail
   if (!detail) return [err?.message || fallback]
   if (typeof detail === 'string') return [detail]
-  if (Array.isArray(detail)) {
-    return detail.map((d: any) => {
-      const field = Array.isArray(d?.loc) ? d.loc[d.loc.length - 1] : d?.loc
-      const label = typeof field === 'string' ? field.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : null
-      return label ? `${label}: ${d.msg}` : (d?.msg || fallback)
-    })
-  }
+  if (Array.isArray(detail)) return detail.map(describeFieldError)
   return [fallback]
+}
+
+// One entry of a FastAPI/Pydantic validation-error array -> "Issue title: Field required".
+function describeFieldError(d: any): string {
+  const field = Array.isArray(d?.loc) ? d.loc[d.loc.length - 1] : d?.loc
+  const label = typeof field === 'string' && field !== 'body'
+    ? field.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
+    : null
+  const msg = d?.msg || 'is not valid.'
+  return label ? `${label}: ${msg}` : msg
 }
