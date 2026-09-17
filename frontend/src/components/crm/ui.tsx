@@ -1,6 +1,6 @@
 'use client'
 
-import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { COLORS, RADII, BORDERS, GLASS, SHADOWS, TEXT, BRAND, SUCCESS } from '@/lib/theme'
 import { CrmActivityAttachment } from '@/types'
@@ -270,11 +270,31 @@ export function ComboBox({
   // An exact match already exists — offer it for picking, don't invite creating a duplicate.
   const hasExactMatch = options.some((o) => o.label.toLowerCase() === value.trim().toLowerCase())
 
-  const openDropdown = () => {
+  const measure = useCallback(() => {
     const rect = wrapperRef.current?.getBoundingClientRect()
     if (rect) setPos({ top: rect.bottom + 6, left: rect.left, width: rect.width })
+  }, [])
+
+  const openDropdown = () => {
+    measure()
     setOpen(true)
   }
+
+  // The menu is portalled to <body> with position:fixed, so its coordinates are
+  // viewport-relative and go stale the instant anything scrolls — it used to be
+  // measured once on open and then hang in place, detached from its input, while
+  // the form scrolled away underneath it. Re-measure on every scroll (capture
+  // phase, so scrolling containers count, not just the window) and on resize.
+  useEffect(() => {
+    if (!open) return
+    const reposition = () => measure()
+    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    return () => {
+      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+    }
+  }, [open, measure])
 
   // Enter must never submit the surrounding <form> — it commits the typed/matched value
   // (creating it if it's new) and moves focus to the next field, like Tab would.
