@@ -64,12 +64,6 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     organization: Mapped["Organization"] = relationship("Organization", back_populates="inquiries")
-    tasks: Mapped[list["InquiryTask"]] = relationship(
-        "InquiryTask", back_populates="inquiry", cascade="all, delete-orphan"
-    )
-    approvals: Mapped[list["InquiryApproval"]] = relationship(
-        "InquiryApproval", back_populates="inquiry", cascade="all, delete-orphan"
-    )
     quotations: Mapped[list["Quotation"]] = relationship(
         "Quotation", back_populates="inquiry", cascade="all, delete-orphan"
     )
@@ -92,42 +86,6 @@ class InquiryLineItem(Base):
     quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     inquiry: Mapped["Inquiry"] = relationship("Inquiry", back_populates="additional_items")
-
-
-class InquiryTask(Base, TimestampMixin, SoftDeleteMixin):
-    __tablename__ = "crm_inquiry_tasks"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    inquiry_id: Mapped[int] = mapped_column(Integer, ForeignKey("crm_inquiries.id"), nullable=False, index=True)
-    department: Mapped[str] = mapped_column(String(100), nullable=False)
-    task_title: Mapped[str] = mapped_column(String(255), nullable=False)
-    assigned_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    assigned_user_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
-    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    priority: Mapped[str] = mapped_column(String(20), default="Medium", nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="Pending", nullable=False)
-    remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-    inquiry: Mapped["Inquiry"] = relationship("Inquiry", back_populates="tasks")
-
-
-class InquiryApproval(Base):
-    __tablename__ = "crm_inquiry_approvals"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    inquiry_id: Mapped[int] = mapped_column(Integer, ForeignKey("crm_inquiries.id"), nullable=False, index=True)
-    approval_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="Pending", nullable=False)
-    approved_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    comments: Mapped[str | None] = mapped_column(Text, nullable=True)
-    version: Mapped[str] = mapped_column(String(20), default="1")
-    created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-    inquiry: Mapped["Inquiry"] = relationship("Inquiry", back_populates="approvals")
 
 
 class Quotation(Base):

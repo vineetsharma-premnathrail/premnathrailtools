@@ -32,8 +32,8 @@ from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.crm.models import (
-    Organization, OrgContact, Inquiry, InquiryTask, InquiryApproval, InquiryLineItem, Quotation, QuotationLineItem,
-    Tender, TenderTask, TenderCompetitor, PurchaseOrder, Activity,
+    Organization, OrgContact, Inquiry, InquiryLineItem, Quotation, QuotationLineItem,
+    Tender, Activity,
     CrmDocument, CrmStageLog, Product, PaymentTerm,
 )
 from app.modules.rnd.models.calculation_history import CalculationHistory

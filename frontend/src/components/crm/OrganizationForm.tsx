@@ -7,7 +7,7 @@ import PhoneField, { isPhoneValid } from '@/components/erp/PhoneField'
 import { isValidEmail, isValidGST, isValidWebsite } from './validators'
 import { extractErrorMessages } from '@/lib/validation'
 import MessageDialog from '@/components/erp/MessageDialog'
-import { ORG_TYPES, ORG_TYPE_LABELS, RAILWAY_ZONES, COUNTRIES } from './constants'
+import { ORG_TYPES, ORG_TYPE_LABELS, RAILWAY_ZONES, COUNTRIES, orgTypeHasRailwayFields } from './constants'
 import { Field, Section, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, XIcon } from './ui'
 
 type FormState = {
@@ -135,7 +135,7 @@ export default function OrganizationForm({
   const [dialog, setDialog] = useState<{ variant: 'success' | 'error'; title: string; message: string | string[] } | null>(null)
   const [savedOrg, setSavedOrg] = useState<Organization | null>(null)
 
-  const showRailwayFields = form.org_type === 'Railway' || form.org_type === 'Govt Department'
+  const showRailwayFields = orgTypeHasRailwayFields(form.org_type)
 
   // Real-time duplicate detection — recomputed on every render so the user sees the
   // warning the moment a repeated value is typed, not just at submit. Checked across
@@ -162,7 +162,7 @@ export default function OrganizationForm({
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
 
   const setOrgType = (value: string) => {
-    const showsZone = value === 'Railway' || value === 'Govt Department'
+    const showsZone = orgTypeHasRailwayFields(value)
     setForm((f) => ({
       ...f,
       org_type: value,

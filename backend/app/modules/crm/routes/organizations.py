@@ -10,6 +10,7 @@ from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.services.org_code import generate_org_code
+from app.modules.crm.services.cascade import cascade_delete_organization
 from app.modules.crm.models.inquiry import Inquiry
 from app.modules.crm.models.tender import Tender
 from app.modules.crm.schemas.organization import (
@@ -269,8 +270,9 @@ async def delete_organization(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("crm")),
 ):
-    """Soft delete an organization, cascading to its Inquiries and Tenders (setting
-    is_deleted doesn't trigger the ORM's delete-orphan cascade, so it's done explicitly)."""
+    """Soft delete an organization and everything under it — Inquiries, Tenders and
+    the follow-ups/documents logged against them (setting is_deleted doesn't trigger
+    the ORM's delete-orphan cascade, so it's done explicitly in cascade_delete_organization)."""
     org = db.query(Organization).filter(Organization.id == org_id, Organization.is_deleted == False).first()  # noqa: E712
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -280,12 +282,7 @@ async def delete_organization(
     now = datetime.now(timezone.utc)
     org.is_deleted = True
     org.deleted_at = now
-    for inq in db.query(Inquiry).filter(Inquiry.org_id == org_id, Inquiry.is_deleted == False).all():  # noqa: E712
-        inq.is_deleted = True
-        inq.deleted_at = now
-    for tnd in db.query(Tender).filter(Tender.org_id == org_id, Tender.is_deleted == False).all():  # noqa: E712
-        tnd.is_deleted = True
-        tnd.deleted_at = now
+    cascade_delete_organization(db, org_id, now)
 
     _write_audit(db, org.id, "deleted", user, summary=f"Organization {org.name} deleted by {user.name or user.email}.")
     broadcast_notification(

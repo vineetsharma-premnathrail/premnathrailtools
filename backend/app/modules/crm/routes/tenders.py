@@ -10,6 +10,7 @@ from app.core.permissions import require_app_access
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.tender import Tender
+from app.modules.crm.services.cascade import cascade_delete_children
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.models.stage_log import CrmStageLog
 from app.modules.crm.models.organization import Organization, OrgContact
@@ -236,8 +237,12 @@ async def delete_tender(
     if not _can_modify(tender, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this tender.")
 
+    now = datetime.now(timezone.utc)
     tender.is_deleted = True
-    tender.deleted_at = datetime.now(timezone.utc)
+    tender.deleted_at = now
+    # Takes this tender's own follow-ups/documents with it — the organization and
+    # its other records are untouched.
+    cascade_delete_children(db, "tender", tender_id, now)
     _write_audit(db, tender.id, "deleted", user, summary=f"Tender {tender.universal_id} deleted by {user.name or user.email}.")
     broadcast_notification(
         db, title="Tender Deleted", message=f"Tender '{tender.universal_id}' was deleted by {user.name or user.email}.",

@@ -10,6 +10,7 @@ from app.core.permissions import require_app_access
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem
+from app.modules.crm.services.cascade import cascade_delete_children
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.models.stage_log import CrmStageLog
 from app.modules.crm.models.organization import Organization, OrgContact
@@ -239,18 +240,12 @@ async def delete_inquiry(
     if not _can_modify(inquiry, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this inquiry.")
 
+    now = datetime.now(timezone.utc)
     inquiry.is_deleted = True
-    inquiry.deleted_at = datetime.now(timezone.utc)
-    # Activities/documents only carry a bare related_id (no FK) — if left behind, an
-    # orphaned row can resurface under a future inquiry that lands on the same id.
-    for act in db.query(Activity).filter(
-        Activity.related_module == "inquiry", Activity.related_id == inquiry_id, Activity.is_deleted == False,  # noqa: E712
-    ).all():
-        act.is_deleted = True
-    for doc in db.query(CrmDocument).filter(
-        CrmDocument.related_module == "inquiry", CrmDocument.related_id == inquiry_id, CrmDocument.is_deleted == False,  # noqa: E712
-    ).all():
-        doc.is_deleted = True
+    inquiry.deleted_at = now
+    # Takes this inquiry's own follow-ups/documents with it — the organization and
+    # its other records are untouched.
+    cascade_delete_children(db, "inquiry", inquiry_id, now)
     _write_audit(db, inquiry.id, "deleted", user, summary=f"Inquiry {inquiry.universal_id} deleted by {user.name or user.email}.")
     broadcast_notification(
         db, title="Inquiry Deleted", message=f"Inquiry '{inquiry.universal_id}' was deleted by {user.name or user.email}.",

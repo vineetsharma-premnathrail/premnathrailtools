@@ -505,50 +505,6 @@ export interface CrmStageLogEntry {
   created_at?: string
 }
 
-export interface InquiryTask {
-  id: number
-  inquiry_id: number
-  department: string
-  task_title: string
-  assigned_user_id?: number
-  assigned_user_name?: string
-  due_date?: string
-  priority: string
-  status: string
-  remarks?: string
-  created_by_id?: number
-  created_at?: string
-}
-
-export interface TenderTaskItem {
-  id: number
-  tender_id: number
-  department: string
-  task_title: string
-  assigned_user_id?: number
-  assigned_user_name?: string
-  due_date?: string
-  priority: string
-  status: string
-  remarks?: string
-  created_by_id?: number
-  created_at?: string
-}
-
-export interface InquiryApprovalItem {
-  id: number
-  inquiry_id: number
-  approval_type: string
-  status: string
-  approved_by_id?: number
-  approved_by_name?: string
-  approved_at?: string
-  comments?: string
-  version: string
-  created_by_id?: number
-  created_at?: string
-}
-
 export interface QuotationLineItem {
   id: number
   description?: string
@@ -587,31 +543,6 @@ export interface QuotationItem {
   created_by_id?: number
   created_at?: string
   items: QuotationLineItem[]
-}
-
-export interface PurchaseOrderItem {
-  id: number
-  inquiry_id?: number
-  tender_id?: number
-  org_id: number
-  po_number?: string
-  po_date?: string
-  po_value?: number
-  delivery_schedule?: string
-  special_conditions?: string
-  status: string
-  created_by_id?: number
-  created_at?: string
-}
-
-export interface TenderCompetitorItem {
-  id: number
-  tender_id: number
-  competitor_name: string
-  expected_price?: number
-  remarks?: string
-  created_by_id?: number
-  created_at?: string
 }
 
 export interface CrmDashboard {

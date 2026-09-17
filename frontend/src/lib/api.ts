@@ -403,17 +403,6 @@ export const crmApi = {
     return data
   },
 
-  // Inquiry workflow sub-entities
-  listInquiryTasks: async (inquiryId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/tasks`)).data,
-  createInquiryTask: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/tasks`, payload)).data,
-  updateInquiryTask: async (inquiryId: number, taskId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/inquiries/${inquiryId}/tasks/${taskId}`, payload)).data,
-  deleteInquiryTask: async (inquiryId: number, taskId: number) => (await apiClient.delete(`/crm/inquiries/${inquiryId}/tasks/${taskId}`)).data,
-
-  listInquiryApprovals: async (inquiryId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/approvals`)).data,
-  createInquiryApproval: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/approvals`, payload)).data,
-  updateInquiryApproval: async (inquiryId: number, approvalId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/inquiries/${inquiryId}/approvals/${approvalId}`, payload)).data,
-  deleteInquiryApproval: async (inquiryId: number, approvalId: number) => (await apiClient.delete(`/crm/inquiries/${inquiryId}/approvals/${approvalId}`)).data,
-
   listQuotations: async (inquiryId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/quotations`)).data,
   createQuotation: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/quotations`, payload)).data,
   updateQuotation: async (inquiryId: number, quotId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/inquiries/${inquiryId}/quotations/${quotId}`, payload)).data,
@@ -438,24 +427,6 @@ export const crmApi = {
   createPaymentTerm: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/payment-terms', payload)).data,
   updatePaymentTerm: async (id: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/payment-terms/${id}`, payload)).data,
   deletePaymentTerm: async (id: number) => (await apiClient.delete(`/crm/payment-terms/${id}`)).data,
-
-  listInquiryPurchaseOrders: async (inquiryId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/purchase-orders`)).data,
-  createInquiryPurchaseOrder: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/purchase-orders`, payload)).data,
-  listTenderPurchaseOrders: async (tenderId: number) => (await apiClient.get(`/crm/tenders/${tenderId}/purchase-orders`)).data,
-  createTenderPurchaseOrder: async (tenderId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/tenders/${tenderId}/purchase-orders`, payload)).data,
-  updatePurchaseOrder: async (poId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/purchase-orders/${poId}`, payload)).data,
-  deletePurchaseOrder: async (poId: number) => (await apiClient.delete(`/crm/purchase-orders/${poId}`)).data,
-
-  // Tender workflow sub-entities
-  listTenderTasks: async (tenderId: number) => (await apiClient.get(`/crm/tenders/${tenderId}/tasks`)).data,
-  createTenderTask: async (tenderId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/tenders/${tenderId}/tasks`, payload)).data,
-  updateTenderTask: async (tenderId: number, taskId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/tenders/${tenderId}/tasks/${taskId}`, payload)).data,
-  deleteTenderTask: async (tenderId: number, taskId: number) => (await apiClient.delete(`/crm/tenders/${tenderId}/tasks/${taskId}`)).data,
-
-  listTenderCompetitors: async (tenderId: number) => (await apiClient.get(`/crm/tenders/${tenderId}/competitors`)).data,
-  createTenderCompetitor: async (tenderId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/tenders/${tenderId}/competitors`, payload)).data,
-  updateTenderCompetitor: async (tenderId: number, compId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/tenders/${tenderId}/competitors/${compId}`, payload)).data,
-  deleteTenderCompetitor: async (tenderId: number, compId: number) => (await apiClient.delete(`/crm/tenders/${tenderId}/competitors/${compId}`)).data,
 }
 
 export const erpApi = {

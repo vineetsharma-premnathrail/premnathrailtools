@@ -61,12 +61,14 @@ def _assignable_app_keys(db: Session) -> set[str]:
     """Module keys an admin may assign: everything in the `modules` registry,
     plus AVAILABLE_APPS as a floor.
 
-    The hardcoded set alone had drifted behind the registry, so ticking one of
-    the newer modules (hr, design, electrical, manufacturing) failed with a
-    400. Inactive rows count too — the registry endpoint deliberately shows
-    admins every row, active or not, and `purchase` is currently inactive yet
-    still drives P2P's purchase-team checks, so filtering on is_active here
-    would reject exactly the module the checklist is offering."""
+    The hardcoded set alone had drifted behind the registry, so ticking a
+    module the registry had gained but the set had not failed with a 400.
+    Inactive rows count too — the registry endpoint deliberately shows admins
+    every row, active or not, and `purchase` is currently inactive yet still
+    drives P2P's purchase-team checks, so filtering on is_active here would
+    reject exactly the module the checklist is offering. The registry is also
+    the only place an unbuilt module gets retired from: drop its row and the
+    checklist stops offering it (see the d8a1c3e5f7b9 migration)."""
     return {k for (k,) in db.query(Module.key).all()} | set(AVAILABLE_APPS)
 
 

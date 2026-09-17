@@ -5,10 +5,6 @@ export const RAILWAY_ZONES = [
   'North Western Railway', 'South Western Railway', 'Metro Railway Kolkata', 'Not Applicable', 'Other',
 ]
 
-export const DEPARTMENTS = [
-  'Business Development', 'Design', 'R&D', 'Estimation', 'Production', 'Purchase', 'QA/QC', 'Accounts', 'Dispatch', 'Service',
-]
-
 export const DOC_CATEGORIES = [
   'RFQ', 'Tender Notice', 'BOQ', 'Technical Specifications', 'Drawings', 'Cost Sheet',
   'Quotation', 'Purchase Documents', 'Approval Documents', 'Other',
@@ -32,6 +28,11 @@ export const ORG_TYPES = ['PSU', 'Govt Department', 'Railway', 'Private', 'Joint
 export const ORG_TYPE_LABELS: Record<string, string> = {
   PSU: 'Public Sector Undertaking (PSU)',
 }
+
+// Railway zone / division only apply to railway-side organizations — they are
+// hidden on the form and on the detail view for every other org type.
+export const orgTypeHasRailwayFields = (orgType?: string | null) =>
+  orgType === 'Railway' || orgType === 'Govt Department'
 
 export const COUNTRIES = ['India', 'USA', 'UK', 'UAE', 'Other']
 
@@ -128,12 +129,6 @@ export const TENDER_TYPES = ['Open', 'Limited', 'Single', 'Global']
 
 export const CURRENCIES = ['INR', 'USD', 'EUR']
 
-export const TASK_STATUSES = ['Pending', 'In Progress', 'Completed', 'On Hold']
-
-export const APPROVAL_TYPES = ['Technical', 'Design', 'Commercial', 'Management', 'Final']
-
 export const CUSTOMER_RESPONSES = ['— Awaiting —', 'Accepted', 'Rejected', 'Negotiating']
-
-export const PO_STATUSES = ['Active', 'Closed', 'Cancelled']
 
 export const QUOTE_CONDITIONS = ['Standard T&C', 'Ex-works', 'FOR Destination', 'FOB', 'CIF', 'Other/Custom']

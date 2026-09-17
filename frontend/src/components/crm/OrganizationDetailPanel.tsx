@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
 import { OrganizationDetail, Inquiry, Tender, OrgContact } from '@/types'
@@ -11,9 +11,20 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages, isValidEmail } from '@/lib/validation'
 import InquiryForm from '@/components/crm/InquiryForm'
 import TenderForm from '@/components/crm/TenderForm'
+import { orgTypeHasRailwayFields } from '@/components/crm/constants'
 import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab } from '@/components/crm/ui'
 
 const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Audit Trail'] as const
+
+// Links out to an inquiry/tender carry a `back` param so its Back button returns
+// here — to this organization, on the tab the link was clicked from.
+function useBackSuffix(tab: typeof TABS[number]) {
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const params = new URLSearchParams(searchParams.toString())
+  params.set('tab', tab)
+  return `?back=${encodeURIComponent(`${pathname}?${params.toString()}`)}`
+}
 
 export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink = true }: { orgId: number; onDeleted?: () => void; showEditLink?: boolean }) {
   const { user } = useAuth()
@@ -22,7 +33,10 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
   const [org, setOrg] = useState<OrganizationDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
-  const [tab, setTab] = useState<typeof TABS[number]>('Overview')
+  const searchParams = useSearchParams()
+  const initialTab = (t: string | null): typeof TABS[number] =>
+    TABS.includes(t as typeof TABS[number]) ? (t as typeof TABS[number]) : 'Overview'
+  const [tab, setTab] = useState<typeof TABS[number]>(() => initialTab(searchParams.get('tab')))
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   const load = async () => {
@@ -38,7 +52,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
   }
 
   useEffect(() => {
-    if (orgId) { setTab('Overview'); load() }
+    if (orgId) { setTab(initialTab(searchParams.get('tab'))); load() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId])
 
@@ -128,14 +142,16 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
 }
 
 function OverviewTab({ org }: { org: OrganizationDetail }) {
+  // Keep the rows for legacy records that carry a value under a non-railway type.
+  const showRailwayFields = orgTypeHasRailwayFields(org.org_type) || !!org.railway_zone || !!org.division_workshop
   return (
     <div data-tour="orgdetail-overview" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
       <Card title="Organization Details">
         <InfoRow label="Organization Code" value={org.org_code || 'Not provided'} />
         <InfoRow label="Type" value={org.org_type || 'Not provided'} />
         <InfoRow label="Parent Organization" value={org.parent_org || 'Not provided'} />
-        <InfoRow label="Railway Zone" value={org.railway_zone || 'Not provided'} />
-        <InfoRow label="Division / Workshop" value={org.division_workshop || 'Not provided'} />
+        {showRailwayFields && <InfoRow label="Railway Zone" value={org.railway_zone || 'Not provided'} />}
+        {showRailwayFields && <InfoRow label="Division / Workshop" value={org.division_workshop || 'Not provided'} />}
       </Card>
       <Card title="Location">
         <InfoRow label="Address" value={org.address || 'Not provided'} />
@@ -155,6 +171,7 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
 }
 
 function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; canModify: boolean; onRefresh: () => void }) {
+  const backSuffix = useBackSuffix('Contacts')
   const router = useRouter()
   const emptyForm = { name: '', designation: '', mobile: '', email: '', department: '' }
   const [showForm, setShowForm] = useState(false)
@@ -325,7 +342,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
                   {linkedInquiries.map((i) => (
                     <span
                       key={`inq-${i.id}`}
-                      onClick={() => router.push(`/dashboard/crm/inquiries/${i.id}`)}
+                      onClick={() => router.push(`/dashboard/crm/inquiries/${i.id}${backSuffix}`)}
                       style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: 'rgba(59,130,246,0.1)', color: '#3b82f6', cursor: 'pointer', fontFamily: 'monospace' }}
                     >
                       Inquiry {i.universal_id || `#${i.id}`}
@@ -334,7 +351,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
                   {linkedTenders.map((t) => (
                     <span
                       key={`tnd-${t.id}`}
-                      onClick={() => router.push(`/dashboard/crm/tenders/${t.id}`)}
+                      onClick={() => router.push(`/dashboard/crm/tenders/${t.id}${backSuffix}`)}
                       style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: '#f4713b', cursor: 'pointer', fontFamily: 'monospace' }}
                     >
                       Tender {t.universal_id || `#${t.id}`}
@@ -375,6 +392,7 @@ function StatusPill({ value }: { value: string }) {
 }
 
 function InquiriesTab({ orgId, canModify, contacts }: { orgId: number; canModify: boolean; contacts: OrgContact[] }) {
+  const backSuffix = useBackSuffix('Inquiries')
   const router = useRouter()
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
   const contactName = (contactId?: number) => contacts.find((c) => c.id === contactId)?.name
@@ -422,7 +440,7 @@ function InquiriesTab({ orgId, canModify, contacts }: { orgId: number; canModify
             </thead>
             <tbody>
               {inquiries.map((i) => (
-                <tr key={i.id} onClick={() => router.push(`/dashboard/crm/inquiries/${i.id}`)} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }}>
+                <tr key={i.id} onClick={() => router.push(`/dashboard/crm/inquiries/${i.id}${backSuffix}`)} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }}>
                   <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: 12, color: '#FF7A45', fontWeight: 600 }}>{i.universal_id || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#1f1108', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.product || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{contactName(i.org_contact_id) || '—'}</td>
@@ -441,6 +459,7 @@ function InquiriesTab({ orgId, canModify, contacts }: { orgId: number; canModify
 }
 
 function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean }) {
+  const backSuffix = useBackSuffix('Tenders')
   const router = useRouter()
   const [tenders, setTenders] = useState<Tender[]>([])
   const [loading, setLoading] = useState(true)
@@ -489,7 +508,7 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
               {tenders.map((t) => (
                 <tr
                   key={t.id}
-                  onClick={() => router.push(`/dashboard/crm/tenders/${t.id}`)}
+                  onClick={() => router.push(`/dashboard/crm/tenders/${t.id}${backSuffix}`)}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,122,69,0.05)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }}

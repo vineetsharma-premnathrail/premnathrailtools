@@ -1,20 +1,19 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
-import { Tender, Organization, OrgContact, TenderTaskItem, TenderCompetitorItem, PurchaseOrderItem, CrmActivity, CrmDocument, CrmStageLogEntry } from '@/types'
+import { Tender, Organization, OrgContact, CrmActivity, CrmDocument, CrmStageLogEntry } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import DateField from '@/components/erp/DateField'
 import TenderForm from '@/components/crm/TenderForm'
 import { RichText } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import ActivityForm from '@/components/crm/ActivityForm'
 import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
-import { TND_STAGES, TENDER_STATUSES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, DOC_CATEGORIES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
-import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, handleEnterAsTab, StageProgress } from '@/components/crm/ui'
+import { TND_STAGES, TENDER_STATUSES, DOC_CATEGORIES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
+import { Card, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, StageProgress } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -23,6 +22,9 @@ const TABS = ['Info', 'Dates', 'Documents', 'Follow Ups', 'Timeline'] as const
 export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const backParam = searchParams.get('back')
+  const backHref = backParam && backParam.startsWith('/dashboard/') ? backParam : '/dashboard/crm/inquiries'
 
   const [tender, setTender] = useState<Tender | null>(null)
   const [org, setOrg] = useState<Organization | null>(null)
@@ -165,7 +167,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
           />
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button onClick={() => router.push('/dashboard/crm/inquiries')} type="button" style={secondaryBtnStyle}>
+              <button onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>
                 ← Back
               </button>
               <button
@@ -340,240 +342,6 @@ function DatesTab({ tender }: { tender: Tender }) {
           ))}
         </tbody>
       </table>
-    </div>
-  )
-}
-
-function TasksTab({ tenderId, canModify }: { tenderId: number; canModify: boolean }) {
-  const [tasks, setTasks] = useState<TenderTaskItem[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const emptyForm = { department: DEPARTMENTS[0], task_title: '', assigned_user_name: '', due_date: '', priority: 'Medium', status: 'Pending', remarks: '' }
-  const [form, setForm] = useState(emptyForm)
-  const load = () => crmApi.listTenderTasks(tenderId).then(setTasks)
-  useEffect(() => { load() }, [tenderId])
-
-  const startEdit = (t: TenderTaskItem) => {
-    setEditingId(t.id)
-    setForm({ department: t.department, task_title: t.task_title, assigned_user_name: t.assigned_user_name || '', due_date: t.due_date || '', priority: t.priority, status: t.status, remarks: t.remarks || '' })
-    setShowForm(true)
-  }
-
-  const cancelForm = () => {
-    setEditingId(null)
-    setForm(emptyForm)
-    setShowForm(false)
-  }
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.task_title.trim()) return
-    const payload: Record<string, unknown> = { ...form }
-    Object.keys(payload).forEach((k) => { if (payload[k] === '') delete payload[k] })
-    if (editingId) await crmApi.updateTenderTask(tenderId, editingId, payload)
-    else await crmApi.createTenderTask(tenderId, payload)
-    cancelForm()
-    load()
-  }
-
-  const updateStatus = async (taskId: number, status: string) => {
-    await crmApi.updateTenderTask(tenderId, taskId, { status })
-    load()
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {canModify && (
-        <div>
-          <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Task'}</button>
-          {showForm && (
-            <form onSubmit={save} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="Department">
-                <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} style={inputStyle}>
-                  {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </Field>
-              <Field label="Task Title *"><input value={form.task_title} onChange={(e) => setForm((f) => ({ ...f, task_title: e.target.value }))} placeholder="Task description" style={inputStyle} /></Field>
-              <Field label="Assigned To"><input value={form.assigned_user_name} onChange={(e) => setForm((f) => ({ ...f, assigned_user_name: e.target.value }))} style={inputStyle} /></Field>
-              <Field label="Due Date"><DateField value={form.due_date} onChange={(v) => setForm((f) => ({ ...f, due_date: v }))} /></Field>
-              <Field label="Priority">
-                <select value={form.priority} onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))} style={inputStyle}>
-                  {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </Field>
-              <Field label="Status">
-                <select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} style={inputStyle}>
-                  {TASK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </Field>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <Field label="Remarks"><textarea value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button type="submit" style={primaryBtnStyle}>{editingId ? 'Save Changes' : 'Save Task'}</button>
-              </div>
-            </form>
-          )}
-        </div>
-      )}
-      {tasks.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No tasks yet.</p>
-      ) : (
-        tasks.map((t) => (
-          <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{t.task_title} <span style={{ fontWeight: 500, color: '#78716c' }}>· {t.department}</span></p>
-              <p style={{ fontSize: 12, color: '#78716c', margin: 0 }}>
-                {t.assigned_user_name && `Assigned: ${t.assigned_user_name} · `}Priority: {t.priority} {t.due_date && `· Due: ${t.due_date}`}
-              </p>
-              {t.remarks && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>{t.remarks}</p>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <select value={t.status} onChange={(e) => updateStatus(t.id, e.target.value)} disabled={!canModify} style={{ ...inputStyle, width: 140 }}>
-                {TASK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-              {canModify && <button onClick={() => startEdit(t)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>}
-            </div>
-          </div>
-        ))
-      )}
-    </div>
-  )
-}
-
-function CompetitorsTab({ tenderId, canModify }: { tenderId: number; canModify: boolean }) {
-  const [competitors, setCompetitors] = useState<TenderCompetitorItem[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const emptyForm = { competitor_name: '', expected_price: '', remarks: '' }
-  const [form, setForm] = useState(emptyForm)
-  const load = () => crmApi.listTenderCompetitors(tenderId).then(setCompetitors)
-  useEffect(() => { load() }, [tenderId])
-
-  const create = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.competitor_name.trim()) return
-    await crmApi.createTenderCompetitor(tenderId, { ...form, expected_price: form.expected_price ? Number(form.expected_price) : undefined })
-    setForm(emptyForm)
-    setShowForm(false)
-    load()
-  }
-
-  const remove = async (id: number) => {
-    await crmApi.deleteTenderCompetitor(tenderId, id)
-    load()
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {canModify && (
-        <div>
-          <button onClick={() => setShowForm((v) => !v)} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Competitor'}</button>
-          {showForm && (
-            <form onSubmit={create} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="Competitor Name *"><input value={form.competitor_name} onChange={(e) => setForm((f) => ({ ...f, competitor_name: e.target.value }))} style={inputStyle} /></Field>
-              <Field label="Expected Price (₹)"><input type="number" value={form.expected_price} onChange={(e) => setForm((f) => ({ ...f, expected_price: e.target.value }))} style={inputStyle} /></Field>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <Field label="Remarks"><textarea value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button type="submit" style={primaryBtnStyle}>Save</button>
-              </div>
-            </form>
-          )}
-        </div>
-      )}
-      {competitors.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No competitor data yet.</p>
-      ) : (
-        competitors.map((c) => (
-          <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{c.competitor_name}</p>
-              <p style={{ fontSize: 12.5, color: '#57534e', margin: 0 }}>{c.expected_price != null ? `₹${c.expected_price.toLocaleString()}` : '—'}</p>
-              {c.remarks && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>{c.remarks}</p>}
-            </div>
-            {canModify && <button onClick={() => remove(c.id)} style={{ ...dangerBtnStyle, padding: '5px 12px', fontSize: 11.5 }}>Delete</button>}
-          </div>
-        ))
-      )}
-    </div>
-  )
-}
-
-function PurchaseOrdersTab({ tenderId, orgId, canModify }: { tenderId: number; orgId: number; canModify: boolean }) {
-  const [pos, setPos] = useState<PurchaseOrderItem[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const emptyForm = { po_number: '', po_date: '', po_value: '', delivery_schedule: '', special_conditions: '', status: 'Active' }
-  const [form, setForm] = useState(emptyForm)
-  const load = () => crmApi.listTenderPurchaseOrders(tenderId).then(setPos)
-  useEffect(() => { load() }, [tenderId])
-
-  const startEdit = (po: PurchaseOrderItem) => {
-    setEditingId(po.id)
-    setForm({
-      po_number: po.po_number || '', po_date: po.po_date || '', po_value: po.po_value != null ? String(po.po_value) : '',
-      delivery_schedule: po.delivery_schedule || '', special_conditions: po.special_conditions || '', status: po.status || 'Active',
-    })
-    setShowForm(true)
-  }
-
-  const cancelForm = () => {
-    setEditingId(null)
-    setForm(emptyForm)
-    setShowForm(false)
-  }
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const payload: Record<string, unknown> = { ...form, po_value: form.po_value ? Number(form.po_value) : undefined }
-    Object.keys(payload).forEach((k) => { if (payload[k] === '') delete payload[k] })
-    if (editingId) await crmApi.updatePurchaseOrder(editingId, payload)
-    else await crmApi.createTenderPurchaseOrder(tenderId, { ...payload, org_id: orgId })
-    cancelForm()
-    load()
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {canModify && (
-        <div>
-          <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add PO'}</button>
-          {showForm && (
-            <form onSubmit={save} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="PO Number"><input value={form.po_number} onChange={(e) => setForm((f) => ({ ...f, po_number: e.target.value }))} style={inputStyle} /></Field>
-              <Field label="PO Date"><DateField value={form.po_date} onChange={(v) => setForm((f) => ({ ...f, po_date: v }))} /></Field>
-              <Field label="PO Value (₹)"><input type="number" value={form.po_value} onChange={(e) => setForm((f) => ({ ...f, po_value: e.target.value }))} style={inputStyle} /></Field>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <Field label="Delivery Schedule"><textarea value={form.delivery_schedule} onChange={(e) => setForm((f) => ({ ...f, delivery_schedule: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <Field label="Special Conditions"><textarea value={form.special_conditions} onChange={(e) => setForm((f) => ({ ...f, special_conditions: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button type="submit" style={primaryBtnStyle}>{editingId ? 'Save Changes' : 'Save PO'}</button>
-              </div>
-            </form>
-          )}
-        </div>
-      )}
-      {pos.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No sales yet.</p>
-      ) : (
-        pos.map((po) => (
-          <div key={po.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{po.po_number || `PO #${po.id}`}</p>
-              <p style={{ fontSize: 12.5, color: '#57534e', margin: 0 }}>
-                {po.po_value != null ? `₹${po.po_value.toLocaleString()}` : '—'} · {po.status}{po.po_date && ` · ${po.po_date}`}
-              </p>
-              {po.delivery_schedule && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>Delivery: {po.delivery_schedule}</p>}
-              {po.special_conditions && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>{po.special_conditions}</p>}
-            </div>
-            {canModify && <button onClick={() => startEdit(po)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>Edit</button>}
-          </div>
-        ))
-      )}
     </div>
   )
 }

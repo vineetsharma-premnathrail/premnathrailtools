@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { Inquiry, Organization, OrgContact, InquiryTask, InquiryApprovalItem, QuotationItem, QuotationLineItem, PurchaseOrderItem, CrmActivity, CrmDocument, CrmStageLogEntry } from '@/types'
+import { Inquiry, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import DateField from '@/components/erp/DateField'
 import InquiryForm from '@/components/crm/InquiryForm'
@@ -14,8 +14,8 @@ import { RichText } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
-import { INQ_STAGES, INQUIRY_STATUSES, DEPARTMENTS, TASK_STATUSES, PRIORITIES, APPROVAL_TYPES, CUSTOMER_RESPONSES, PO_STATUSES, DOC_CATEGORIES, QUOTE_CONDITIONS, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
-import { Card, InfoRow, Field, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab, XIcon, StageProgress } from '@/components/crm/ui'
+import { INQ_STAGES, INQUIRY_STATUSES, PRIORITIES, CUSTOMER_RESPONSES, DOC_CATEGORIES, QUOTE_CONDITIONS, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
+import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab, XIcon, StageProgress } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -24,6 +24,9 @@ const TABS = ['Info', 'Quotations', 'Documents', 'Follow Ups', 'Timeline'] as co
 export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const backParam = searchParams.get('back')
+  const backHref = backParam && backParam.startsWith('/dashboard/') ? backParam : '/dashboard/crm/inquiries'
 
   const [inquiry, setInquiry] = useState<Inquiry | null>(null)
   const [org, setOrg] = useState<Organization | null>(null)
@@ -193,7 +196,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
           />
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button onClick={() => router.push('/dashboard/crm/inquiries')} type="button" style={secondaryBtnStyle}>
+              <button onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>
                 ← Back
               </button>
               <button
@@ -407,103 +410,6 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
         <SpecInfoRow label="Requirement Summary" value={inquiry.requirement_desc || 'Not provided'} change={changeFor('requirement_desc')} />
         <InfoRow label="Project Details" value={inquiry.project_details || 'Not provided'} />
       </Card>
-    </div>
-  )
-}
-
-function TasksTab({ inquiryId, canModify }: { inquiryId: number; canModify: boolean }) {
-  const [tasks, setTasks] = useState<InquiryTask[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const emptyForm = { department: DEPARTMENTS[0], task_title: '', assigned_user_name: '', due_date: '', priority: 'Medium', status: 'Pending', remarks: '' }
-  const [form, setForm] = useState(emptyForm)
-  const load = () => crmApi.listInquiryTasks(inquiryId).then(setTasks)
-  useEffect(() => { load() }, [inquiryId])
-
-  const startEdit = (t: InquiryTask) => {
-    setEditingId(t.id)
-    setForm({ department: t.department, task_title: t.task_title, assigned_user_name: t.assigned_user_name || '', due_date: t.due_date || '', priority: t.priority, status: t.status, remarks: t.remarks || '' })
-    setShowForm(true)
-  }
-
-  const cancelForm = () => {
-    setEditingId(null)
-    setForm(emptyForm)
-    setShowForm(false)
-  }
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.task_title.trim()) return
-    const payload: Record<string, unknown> = { ...form }
-    Object.keys(payload).forEach((k) => { if (payload[k] === '') delete payload[k] })
-    if (editingId) await crmApi.updateInquiryTask(inquiryId, editingId, payload)
-    else await crmApi.createInquiryTask(inquiryId, payload)
-    cancelForm()
-    load()
-  }
-
-  const updateStatus = async (taskId: number, status: string) => {
-    await crmApi.updateInquiryTask(inquiryId, taskId, { status })
-    load()
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {canModify && (
-        <div>
-          <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Task'}</button>
-          {showForm && (
-            <form onSubmit={save} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-              <Field label="Department">
-                <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} style={inputStyle}>
-                  {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </Field>
-              <Field label="Task Title *"><input value={form.task_title} onChange={(e) => setForm((f) => ({ ...f, task_title: e.target.value }))} placeholder="Task description" style={inputStyle} /></Field>
-              <Field label="Assigned To"><input value={form.assigned_user_name} onChange={(e) => setForm((f) => ({ ...f, assigned_user_name: e.target.value }))} placeholder="Person name" style={inputStyle} /></Field>
-              <Field label="Due Date"><DateField value={form.due_date} onChange={(v) => setForm((f) => ({ ...f, due_date: v }))} /></Field>
-              <Field label="Priority">
-                <select value={form.priority} onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))} style={inputStyle}>
-                  {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-              </Field>
-              <Field label="Status">
-                <select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} style={inputStyle}>
-                  {TASK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </Field>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <Field label="Remarks"><textarea value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button type="submit" style={primaryBtnStyle}>{editingId ? 'Save Changes' : 'Save Task'}</button>
-              </div>
-            </form>
-          )}
-        </div>
-      )}
-      {tasks.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No tasks yet.</p>
-      ) : (
-        tasks.map((t) => (
-          <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{t.task_title} <span style={{ fontWeight: 500, color: '#78716c' }}>· {t.department}</span></p>
-              <p style={{ fontSize: 12, color: '#78716c', margin: 0 }}>
-                {t.assigned_user_name && `Assigned: ${t.assigned_user_name} · `}Priority: {t.priority} {t.due_date && `· Due: ${t.due_date}`}
-              </p>
-              {t.remarks && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>{t.remarks}</p>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <select value={t.status} onChange={(e) => updateStatus(t.id, e.target.value)} disabled={!canModify} style={{ ...inputStyle, width: 140 }}>
-                {TASK_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-              {canModify && <button onClick={() => startEdit(t)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>}
-            </div>
-          </div>
-        ))
-      )}
     </div>
   )
 }
@@ -1171,84 +1077,6 @@ function quotationRevisionFieldLabel(field: string): string {
   return QUOTATION_REVISION_FIELD_LABELS[field] || field
 }
 
-function PurchaseOrdersTab({ inquiryId, orgId, canModify }: { inquiryId: number; orgId: number; canModify: boolean }) {
-  const [pos, setPos] = useState<PurchaseOrderItem[]>([])
-  const [showForm, setShowForm] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const emptyForm = { po_number: '', po_date: '', po_value: '', delivery_schedule: '', special_conditions: '', status: 'Active' }
-  const [form, setForm] = useState(emptyForm)
-  const load = () => crmApi.listInquiryPurchaseOrders(inquiryId).then(setPos)
-  useEffect(() => { load() }, [inquiryId])
-
-  const startEdit = (po: PurchaseOrderItem) => {
-    setEditingId(po.id)
-    setForm({
-      po_number: po.po_number || '', po_date: po.po_date || '', po_value: po.po_value != null ? String(po.po_value) : '',
-      delivery_schedule: po.delivery_schedule || '', special_conditions: po.special_conditions || '', status: po.status || 'Active',
-    })
-    setShowForm(true)
-  }
-
-  const cancelForm = () => {
-    setEditingId(null)
-    setForm(emptyForm)
-    setShowForm(false)
-  }
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const payload: Record<string, unknown> = { ...form, po_value: form.po_value ? Number(form.po_value) : undefined }
-    Object.keys(payload).forEach((k) => { if (payload[k] === '') delete payload[k] })
-    if (editingId) await crmApi.updatePurchaseOrder(editingId, payload)
-    else await crmApi.createInquiryPurchaseOrder(inquiryId, { ...payload, org_id: orgId })
-    cancelForm()
-    load()
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {canModify && (
-        <div>
-          <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add PO'}</button>
-          {showForm && (
-            <form onSubmit={save} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-              <Field label="PO Number"><input value={form.po_number} onChange={(e) => setForm((f) => ({ ...f, po_number: e.target.value }))} style={inputStyle} /></Field>
-              <Field label="PO Date"><DateField value={form.po_date} onChange={(v) => setForm((f) => ({ ...f, po_date: v }))} /></Field>
-              <Field label="PO Value (₹)"><input type="number" value={form.po_value} onChange={(e) => setForm((f) => ({ ...f, po_value: e.target.value }))} style={inputStyle} /></Field>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <Field label="Delivery Schedule"><textarea value={form.delivery_schedule} onChange={(e) => setForm((f) => ({ ...f, delivery_schedule: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <Field label="Special Conditions"><textarea value={form.special_conditions} onChange={(e) => setForm((f) => ({ ...f, special_conditions: e.target.value }))} rows={2} style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <button type="submit" style={primaryBtnStyle}>{editingId ? 'Save Changes' : 'Save PO'}</button>
-              </div>
-            </form>
-          )}
-        </div>
-      )}
-      {pos.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No sales yet.</p>
-      ) : (
-        pos.map((po) => (
-          <div key={po.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-            <div>
-              <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>{po.po_number || `PO #${po.id}`}</p>
-              <p style={{ fontSize: 12.5, color: '#57534e', margin: 0 }}>
-                {po.po_value != null ? `₹${po.po_value.toLocaleString()}` : '—'} · {po.status}{po.po_date && ` · ${po.po_date}`}
-              </p>
-              {po.delivery_schedule && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>Delivery: {po.delivery_schedule}</p>}
-              {po.special_conditions && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>{po.special_conditions}</p>}
-            </div>
-            {canModify && <button onClick={() => startEdit(po)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>Edit</button>}
-          </div>
-        ))
-      )}
-    </div>
-  )
-}
-
 function DocumentsTab({ inquiry, canModify, isAdmin }: { inquiry: Inquiry; canModify: boolean; isAdmin: boolean }) {
   const [documents, setDocuments] = useState<CrmDocument[]>([])
   const [error, setError] = useState<string | string[]>('')
@@ -1354,14 +1182,6 @@ function DocumentFolderPanel({ tourId, title, folderType, docs, inquiry, canModi
           <input ref={fileRef} type="file" multiple onChange={(e) => handleUpload(e.target.files)} disabled={uploading} style={inputStyle} />
         </div>
       )}
-    </div>
-  )
-}
-
-function MailsTab() {
-  return (
-    <div style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: 40, textAlign: 'center' }}>
-      <p style={{ fontSize: 13, color: '#a8a29e', fontStyle: 'italic', margin: 0 }}>Email integration coming soon.</p>
     </div>
   )
 }
