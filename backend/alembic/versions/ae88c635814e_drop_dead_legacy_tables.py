@@ -50,8 +50,20 @@ def upgrade() -> None:
             op.drop_constraint(constraint, table, type_="foreignkey")
 
     def drop_table_if_exists(table: str) -> None:
-        if table in existing_tables:
-            op.drop_table(table)
+        if table not in existing_tables:
+            return
+        if table == "vendors":
+            # CASCADE: on a fresh database, `baseline` may already have
+            # created today's Accounts module (vendor_invoices,
+            # payment_transactions, ...) via live Base.metadata.create_all()
+            # — those didn't exist yet at this point in the real historical
+            # chain, only here, and their real FKs to vendors.id (unlike the
+            # two vestigial ones above) block a plain DROP TABLE. Harmless:
+            # c8d3e5f1a7b2 and the Accounts module's own migration each
+            # recreate whatever they need later in this same chain.
+            op.execute(sa.text("DROP TABLE vendors CASCADE"))
+            return
+        op.drop_table(table)
 
     # Vestigial FKs pointing at `vendors` — not reflected in either model.
     drop_fk_if_exists("p2p_purchase_orders", "p2p_purchase_orders_vendor_id_fkey")

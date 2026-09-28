@@ -16,6 +16,18 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # On a fresh database, `baseline` may already have created a `vendors`
+    # table reflecting whatever current model maps to that name today (the
+    # Accounts module's Vendor, added long after this migration was
+    # written) via live Base.metadata.create_all() — this old Quality/
+    # Vendor-Development-era shape is superseded either way (dropped later
+    # by ae88c635814e as dead legacy schema, then the Accounts module
+    # creates its own real one), so just skip creating it again here rather
+    # than colliding with whatever's already there.
+    inspector = sa.inspect(op.get_bind())
+    if "vendors" in inspector.get_table_names():
+        return
+
     op.create_table(
         'vendors',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
@@ -41,5 +53,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index('ix_vendors_name', table_name='vendors')
+    inspector = sa.inspect(op.get_bind())
+    if "vendors" not in inspector.get_table_names():
+        return
+    existing_indexes = {ix["name"] for ix in inspector.get_indexes("vendors")}
+    if "ix_vendors_name" in existing_indexes:
+        op.drop_index('ix_vendors_name', table_name='vendors')
     op.drop_table('vendors')

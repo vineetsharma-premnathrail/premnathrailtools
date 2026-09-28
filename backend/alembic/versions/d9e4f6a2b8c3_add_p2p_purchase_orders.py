@@ -16,6 +16,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # On a fresh database, `baseline` may already have created both tables
+    # via live Base.metadata.create_all() against today's models.
+    inspector = sa.inspect(op.get_bind())
+    existing_tables = set(inspector.get_table_names())
+    if "p2p_purchase_orders" in existing_tables and "p2p_purchase_order_items" in existing_tables:
+        return
+
     op.create_table(
         'p2p_purchase_orders',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
@@ -52,6 +59,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table('p2p_purchase_order_items')
-    op.drop_index('ix_p2p_purchase_orders_po_number', table_name='p2p_purchase_orders')
-    op.drop_table('p2p_purchase_orders')
+    inspector = sa.inspect(op.get_bind())
+    existing_tables = set(inspector.get_table_names())
+    if "p2p_purchase_order_items" in existing_tables:
+        op.drop_table('p2p_purchase_order_items')
+    if "p2p_purchase_orders" in existing_tables:
+        existing_indexes = {ix["name"] for ix in inspector.get_indexes("p2p_purchase_orders")}
+        if "ix_p2p_purchase_orders_po_number" in existing_indexes:
+            op.drop_index('ix_p2p_purchase_orders_po_number', table_name='p2p_purchase_orders')
+        op.drop_table('p2p_purchase_orders')

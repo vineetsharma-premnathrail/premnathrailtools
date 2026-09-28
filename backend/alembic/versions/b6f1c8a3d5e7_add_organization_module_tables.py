@@ -16,52 +16,62 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        'companies',
-        sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('name', sa.String(length=150), nullable=False),
-        sa.Column('code', sa.String(length=30), nullable=False),
-        sa.Column('gst_number', sa.String(length=30), nullable=True),
-        sa.Column('pan_number', sa.String(length=20), nullable=True),
-        sa.Column('address', sa.Text(), nullable=True),
-        sa.Column('phone', sa.String(length=30), nullable=True),
-        sa.Column('email', sa.String(length=150), nullable=True),
-        sa.Column('logo_url', sa.String(length=500), nullable=True),
-        sa.Column('letterhead_html', sa.Text(), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-    )
-    op.create_index('ix_companies_code', 'companies', ['code'], unique=True)
+    # On a fresh database, `baseline` may already have created some/all of
+    # these via live Base.metadata.create_all() against today's (already
+    # much-expanded) models — guarded per-table since `companies` in
+    # particular gets dropped and recreated again later in this same chain
+    # (see a6b3d9e1c4f7 / d8e0f2c4a6b9), so it can't just be an all-or-nothing check.
+    existing_tables = set(sa.inspect(op.get_bind()).get_table_names())
 
-    op.create_table(
-        'branches',
-        sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
-        sa.Column('name', sa.String(length=150), nullable=False),
-        sa.Column('code', sa.String(length=30), nullable=False),
-        sa.Column('address', sa.Text(), nullable=True),
-        sa.Column('city', sa.String(length=100), nullable=True),
-        sa.Column('state', sa.String(length=100), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-    )
-    op.create_index('ix_branches_code', 'branches', ['code'], unique=True)
+    if 'companies' not in existing_tables:
+        op.create_table(
+            'companies',
+            sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column('name', sa.String(length=150), nullable=False),
+            sa.Column('code', sa.String(length=30), nullable=False),
+            sa.Column('gst_number', sa.String(length=30), nullable=True),
+            sa.Column('pan_number', sa.String(length=20), nullable=True),
+            sa.Column('address', sa.Text(), nullable=True),
+            sa.Column('phone', sa.String(length=30), nullable=True),
+            sa.Column('email', sa.String(length=150), nullable=True),
+            sa.Column('logo_url', sa.String(length=500), nullable=True),
+            sa.Column('letterhead_html', sa.Text(), nullable=True),
+            sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+            sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        )
+        op.create_index('ix_companies_code', 'companies', ['code'], unique=True)
 
-    op.create_table(
-        'departments',
-        sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
-        sa.Column('branch_id', sa.Integer(), sa.ForeignKey('branches.id'), nullable=True),
-        sa.Column('name', sa.String(length=150), nullable=False),
-        sa.Column('code', sa.String(length=30), nullable=False),
-        sa.Column('head_user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-    )
-    op.create_index('ix_departments_code', 'departments', ['code'], unique=True)
+    if 'branches' not in existing_tables:
+        op.create_table(
+            'branches',
+            sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
+            sa.Column('name', sa.String(length=150), nullable=False),
+            sa.Column('code', sa.String(length=30), nullable=False),
+            sa.Column('address', sa.Text(), nullable=True),
+            sa.Column('city', sa.String(length=100), nullable=True),
+            sa.Column('state', sa.String(length=100), nullable=True),
+            sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+            sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        )
+        op.create_index('ix_branches_code', 'branches', ['code'], unique=True)
+
+    if 'departments' not in existing_tables:
+        op.create_table(
+            'departments',
+            sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
+            sa.Column('branch_id', sa.Integer(), sa.ForeignKey('branches.id'), nullable=True),
+            sa.Column('name', sa.String(length=150), nullable=False),
+            sa.Column('code', sa.String(length=30), nullable=False),
+            sa.Column('head_user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
+            sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+            sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        )
+        op.create_index('ix_departments_code', 'departments', ['code'], unique=True)
 
 
 def downgrade() -> None:

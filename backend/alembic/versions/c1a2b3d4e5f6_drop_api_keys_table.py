@@ -16,7 +16,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_table("api_keys")
+    # On a fresh database, the ApiKey model was already removed from the
+    # codebase before `baseline`'s live Base.metadata.create_all() ran, so
+    # this table was never created in the first place.
+    if "api_keys" in sa.inspect(op.get_bind()).get_table_names():
+        op.drop_table("api_keys")
 
 
 def downgrade() -> None:

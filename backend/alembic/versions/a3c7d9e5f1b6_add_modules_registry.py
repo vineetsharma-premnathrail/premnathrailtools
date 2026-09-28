@@ -35,20 +35,30 @@ SEED = [
 
 
 def upgrade() -> None:
-    op.create_table(
-        'modules',
-        sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('key', sa.String(length=50), nullable=False),
-        sa.Column('label', sa.String(length=100), nullable=False),
-        sa.Column('icon', sa.String(length=50), nullable=True),
-        sa.Column('description', sa.String(length=255), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column('sort_order', sa.Integer(), nullable=False, server_default='0'),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-    )
-    op.create_index('ix_modules_key', 'modules', ['key'], unique=True)
-    op.bulk_insert(modules_table, SEED)
+    # On a fresh database, `baseline` may already have created the table
+    # (schema only, no seed data) via live Base.metadata.create_all()
+    # against today's models — still need to seed it in that case.
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if "modules" not in inspector.get_table_names():
+        op.create_table(
+            'modules',
+            sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column('key', sa.String(length=50), nullable=False),
+            sa.Column('label', sa.String(length=100), nullable=False),
+            sa.Column('icon', sa.String(length=50), nullable=True),
+            sa.Column('description', sa.String(length=255), nullable=True),
+            sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column('sort_order', sa.Integer(), nullable=False, server_default='0'),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+            sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        )
+        op.create_index('ix_modules_key', 'modules', ['key'], unique=True)
+
+    existing_keys = {row[0] for row in bind.execute(sa.text("SELECT key FROM modules"))}
+    to_seed = [row for row in SEED if row['key'] not in existing_keys]
+    if to_seed:
+        op.bulk_insert(modules_table, to_seed)
 
 
 def downgrade() -> None:

@@ -16,17 +16,25 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        'store_locations',
-        sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('name', sa.String(length=150), nullable=False),
-        sa.Column('code', sa.String(length=30), nullable=False),
-        sa.Column('address', sa.Text(), nullable=True),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
-    )
-    op.create_index('ix_store_locations_code', 'store_locations', ['code'], unique=True)
+    # On a fresh database, `baseline` may already have created
+    # `store_locations` (still a live table today) via live
+    # Base.metadata.create_all() against today's (much-expanded) model —
+    # the other three tables here are long since dead (superseded by the
+    # current Store module's item-master/stock-ledger tables, dropped by
+    # d1e3f5a7b9c2 later in this chain), so no live model ever creates them
+    # and they're safe to always create fresh here.
+    if 'store_locations' not in sa.inspect(op.get_bind()).get_table_names():
+        op.create_table(
+            'store_locations',
+            sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column('name', sa.String(length=150), nullable=False),
+            sa.Column('code', sa.String(length=30), nullable=False),
+            sa.Column('address', sa.Text(), nullable=True),
+            sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.true()),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+            sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        )
+        op.create_index('ix_store_locations_code', 'store_locations', ['code'], unique=True)
 
     op.create_table(
         'stock_items',
@@ -81,5 +89,8 @@ def downgrade() -> None:
     op.drop_table('stock_balances')
     op.drop_index('ix_stock_items_part_code', table_name='stock_items')
     op.drop_table('stock_items')
-    op.drop_index('ix_store_locations_code', table_name='store_locations')
-    op.drop_table('store_locations')
+    if 'store_locations' in sa.inspect(op.get_bind()).get_table_names():
+        indexes = {ix["name"] for ix in sa.inspect(op.get_bind()).get_indexes('store_locations')}
+        if 'ix_store_locations_code' in indexes:
+            op.drop_index('ix_store_locations_code', table_name='store_locations')
+        op.drop_table('store_locations')

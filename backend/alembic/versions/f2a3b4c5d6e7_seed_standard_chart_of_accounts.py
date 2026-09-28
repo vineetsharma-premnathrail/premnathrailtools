@@ -79,6 +79,15 @@ def upgrade() -> None:
         {
             "code": code, "name": name, "account_type": account_type, "account_sub_type": sub_type,
             "is_posting_account": is_posting, "is_control_account": is_control,
+            # Provided explicitly rather than relying on the column's
+            # server_default: on a fresh database, `baseline`'s live
+            # Base.metadata.create_all() may have already created this
+            # table (guarding e1f2a3b4c5d6's own create_table, which is
+            # where that server_default actually gets attached) straight
+            # from the model, whose `status`/`currency` defaults are
+            # Python-side (default=) only, not server_default= — so the
+            # DB column ends up NOT NULL with no DB-level default.
+            "status": "active", "currency": "INR",
         }
         for code, name, account_type, sub_type, is_posting, is_control in CHART_OF_ACCOUNTS
         if code not in existing
@@ -93,6 +102,8 @@ def upgrade() -> None:
                 sa.column("account_sub_type", sa.String),
                 sa.column("is_posting_account", sa.Boolean),
                 sa.column("is_control_account", sa.Boolean),
+                sa.column("status", sa.String),
+                sa.column("currency", sa.String),
             ),
             rows,
         )

@@ -16,6 +16,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # On a fresh database, `baseline` may already have created this table
+    # via live Base.metadata.create_all() against today's models.
+    if "user_sessions" in sa.inspect(op.get_bind()).get_table_names():
+        return
+
     op.create_table(
         "user_sessions",
         sa.Column("id", sa.Integer(), primary_key=True),

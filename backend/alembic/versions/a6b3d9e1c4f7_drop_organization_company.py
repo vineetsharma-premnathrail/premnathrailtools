@@ -38,7 +38,14 @@ def upgrade() -> None:
             batch_op.drop_column("company_id")
 
     if "companies" in inspector.get_table_names():
-        op.drop_table("companies")
+        # CASCADE: on a fresh database, `baseline` may already have created
+        # today's company_addresses/company_contacts/company_financial_years/
+        # company_documents tables too (they didn't exist yet at this point
+        # in the real historical chain, only via live Base.metadata.create_all()
+        # here) — all FK-referencing companies.id, which blocks a plain DROP
+        # TABLE. Harmless: a1c3e5f7b9d2 recreates all four later in this
+        # same chain regardless of whether they get cascade-dropped here.
+        op.execute(sa.text("DROP TABLE companies CASCADE"))
 
 
 def downgrade() -> None:

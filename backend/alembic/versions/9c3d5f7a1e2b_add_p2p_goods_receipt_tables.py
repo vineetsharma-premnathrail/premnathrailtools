@@ -16,6 +16,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # On a fresh database, `baseline` may already have created both tables
+    # via live Base.metadata.create_all() against today's models.
+    inspector = sa.inspect(op.get_bind())
+    existing_tables = set(inspector.get_table_names())
+    if "p2p_goods_receipts" in existing_tables and "p2p_goods_receipt_items" in existing_tables:
+        return
+
     op.create_table(
         "p2p_goods_receipts",
         sa.Column("id", sa.Integer(), primary_key=True),
