@@ -1,16 +1,19 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useRequireAdmin } from '@/hooks/useAuth'
 import { usersApi, modulesApi } from '@/lib/api'
 import { User, ModuleMeta } from '@/types'
+import { TEXT, BRAND, BORDER } from '@/lib/theme'
 import FeedbackBell from '@/components/FeedbackBell'
-import Checkbox from '@/components/Checkbox'
 import MessageDialog from '@/components/erp/MessageDialog'
-import { extractErrorMessages } from '@/lib/validation'
+
+const STATUS_TABS = ['All Users', 'Active Users', 'Inactive Users'] as const
 
 export default function UsersRolesPage() {
-  const { user: currentUser, isAuthorized, isLoading } = useRequireAdmin()
+  const { isAuthorized, isLoading } = useRequireAdmin()
+  const router = useRouter()
   const [users, setUsers] = useState<User[]>([])
   // Assignable-apps checklist — driven by the modules registry (data change,
   // not a frontend code change, to add a new department). See
@@ -21,7 +24,7 @@ export default function UsersRolesPage() {
   const [errorTitle, setErrorTitle] = useState('')
 
   const [search, setSearch] = useState('')
-  const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [statusTab, setStatusTab] = useState<typeof STATUS_TABS[number]>('All Users')
   const [syncing, setSyncing] = useState(false)
 
   const load = async () => {
@@ -61,38 +64,13 @@ export default function UsersRolesPage() {
   )
 
   const filtered = useMemo(() => {
+    let list = users
+    if (statusTab === 'Active Users') list = list.filter((u) => u.is_active)
+    else if (statusTab === 'Inactive Users') list = list.filter((u) => !u.is_active)
     const q = search.trim().toLowerCase()
-    if (!q) return users
-    return users.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
-  }, [users, search])
-
-  const handleSaveAccess = async (
-    userId: number,
-    apps: string[],
-    erpPermissions: string[],
-    isDepartmentHead: boolean,
-    isProjectHead: boolean,
-    isPlantHead: boolean,
-    isPurchaseHead: boolean,
-    isDirector: boolean,
-    isMd: boolean
-  ) => {
-    try {
-      const updated = await usersApi.updateModuleAccess(userId, apps, erpPermissions, isDepartmentHead, isProjectHead, isPlantHead, isPurchaseHead, isDirector, isMd)
-      setUsers((prev) => prev.map((u) => (u.id === userId ? updated : u)))
-      setEditingUser(null)
-    } catch (err) {
-      // Keep the modal open on failure so the admin's unsaved ticks survive
-      // and can be corrected — closing it would discard them silently.
-      setErrorTitle('Cannot Save Module Access')
-      setError(extractErrorMessages(err, 'Failed to save module access.').join(' '))
-    }
-  }
-
-  const handleToggleActive = async (u: User) => {
-    const updated = u.is_active ? await usersApi.deactivate(u.id) : await usersApi.activate(u.id)
-    setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)))
-  }
+    if (!q) return list
+    return list.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+  }, [users, search, statusTab])
 
   const handleSyncAzure = async () => {
     setSyncing(true)
@@ -132,11 +110,28 @@ export default function UsersRolesPage() {
       />
 
       {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
+      <div data-tour="org-roles-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
         <StatCard label="Total Users" value={stats.total} color="#3b82f6" icon={<UsersIcon />} />
         <StatCard label="Active" value={stats.active} color="#10b981" icon={<CheckIcon />} />
         <StatCard label="Inactive" value={stats.inactive} color="#ef4444" icon={<XIcon />} />
         <StatCard label="Admins" value={stats.admins} color="#FF7A45" icon={<ShieldIcon />} />
+      </div>
+
+      {/* Status tabs */}
+      <div data-tour="org-roles-status-tabs" style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
+        {STATUS_TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setStatusTab(t)}
+            style={{
+              padding: '10px 6px', marginRight: 16, border: 'none', borderRadius: 0, boxShadow: 'none', outline: 'none',
+              background: 'transparent', borderBottom: statusTab === t ? `2px solid ${BRAND.primary}` : '2px solid transparent',
+              color: statusTab === t ? BRAND.primary : TEXT.secondary, fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
+            }}
+          >
+            {t}
+          </button>
+        ))}
       </div>
 
       {/* Search */}
@@ -145,6 +140,7 @@ export default function UsersRolesPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name or email..."
+          data-tour="org-roles-search"
           style={{
             flex: '1 1 260px',
             padding: '10px 14px',
@@ -158,6 +154,7 @@ export default function UsersRolesPage() {
         <button
           onClick={handleSyncAzure}
           disabled={syncing}
+          data-tour="org-roles-sync-btn"
           style={{
             padding: '10px 18px',
             borderRadius: 10,
@@ -203,7 +200,7 @@ export default function UsersRolesPage() {
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody data-tour="org-roles-table-rows">
             {loading && (
               <tr>
                 <td colSpan={9} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>
@@ -218,11 +215,14 @@ export default function UsersRolesPage() {
                 </td>
               </tr>
             )}
-            {filtered.map((u) => {
-              const isSelf = u.id === currentUser?.id
+            {filtered.map((u, idx) => {
               const isAdminRole = u.role === 'admin'
               return (
-                <tr key={u.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                <tr
+                  key={u.id}
+                  onClick={() => router.push(`/dashboard/users/${u.id}`)}
+                  style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
+                >
                   <td style={{ padding: '12px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div
@@ -319,7 +319,8 @@ export default function UsersRolesPage() {
                   </td>
                   <td style={{ padding: '12px 16px' }}>
                     <button
-                      onClick={() => setEditingUser(u)}
+                      onClick={() => router.push(`/dashboard/users/${u.id}`)}
+                      data-tour={idx === 0 ? 'org-roles-edit-btn' : undefined}
                       style={{
                         fontSize: 12.5,
                         fontWeight: 600,
@@ -343,16 +344,6 @@ export default function UsersRolesPage() {
         </div>
       </div>
 
-      {editingUser && (
-        <EditUserModal
-          user={editingUser}
-          isSelf={editingUser.id === currentUser?.id}
-          apps={APPS}
-          onClose={() => setEditingUser(null)}
-          onSave={handleSaveAccess}
-          onToggleActive={handleToggleActive}
-        />
-      )}
     </div>
   )
 }
@@ -367,346 +358,6 @@ function StatCard({ label, value, color, icon }: { label: string; value: number;
         <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 2px' }}>{label}</p>
         <p style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: 0 }}>{value}</p>
       </div>
-    </div>
-  )
-}
-
-const ERP_PERMISSION_GROUPS: { label: string; icon: string; perms: { id: string; label: string }[] }[] = [
-  {
-    label: 'Projects', icon: '📁',
-    perms: [
-      { id: 'project_view', label: 'View' },
-      { id: 'project_create', label: 'Create' },
-      { id: 'project_edit', label: 'Edit' },
-      { id: 'project_delete', label: 'Delete' },
-    ],
-  },
-  {
-    label: 'Service Requests', icon: '🔧',
-    perms: [
-      { id: 'sr_view', label: 'View' },
-      { id: 'sr_create', label: 'Create' },
-      { id: 'sr_edit', label: 'Edit' },
-      { id: 'sr_delete', label: 'Delete' },
-    ],
-  },
-]
-
-const P2P_PERMISSION_GROUPS: { label: string; icon: string; perms: { id: string; label: string }[] }[] = [
-  {
-    label: 'Purchase Requisition', icon: '📝',
-    perms: [
-      { id: 'pr_create', label: 'Create' },
-    ],
-  },
-  {
-    label: 'Approval', icon: '✅',
-    perms: [
-      { id: 'approval_view', label: 'View' },
-      { id: 'approval_action', label: 'Action' },
-    ],
-  },
-  {
-    label: 'RFQ', icon: '📄',
-    perms: [
-      { id: 'rfq_view', label: 'View' },
-      { id: 'rfq_action', label: 'Action' },
-    ],
-  },
-  {
-    label: 'GRN', icon: '📦',
-    perms: [
-      { id: 'grn_view', label: 'View' },
-      { id: 'grn_action', label: 'Action' },
-    ],
-  },
-]
-
-function EditUserModal({
-  user,
-  isSelf,
-  apps,
-  onClose,
-  onSave,
-  onToggleActive,
-}: {
-  user: User
-  isSelf: boolean
-  apps: { id: string; label: string }[]
-  onClose: () => void
-  onSave: (id: number, apps: string[], erpPermissions: string[], isDepartmentHead: boolean, isProjectHead: boolean, isPlantHead: boolean, isPurchaseHead: boolean, isDirector: boolean, isMd: boolean) => Promise<void>
-  onToggleActive: (u: User) => Promise<void>
-}) {
-  const isAdminRole = user.role === 'admin'
-  const [selected, setSelected] = useState<string[]>(user.assigned_apps || [])
-  const [erpPerms, setErpPerms] = useState<string[]>(user.erp_permissions || [])
-  const [isDepartmentHead, setIsDepartmentHead] = useState(!!user.is_department_head)
-  const [isProjectHead, setIsProjectHead] = useState(!!user.is_project_head)
-  const [isPlantHead, setIsPlantHead] = useState(!!user.is_plant_head)
-  const [isPurchaseHead, setIsPurchaseHead] = useState(!!user.is_purchase_head)
-  const [isDirector, setIsDirector] = useState(!!user.is_director)
-  const [isMd, setIsMd] = useState(!!user.is_md)
-  const [saving, setSaving] = useState(false)
-
-  const toggle = (app: string) => {
-    setSelected((prev) => (prev.includes(app) ? prev.filter((a) => a !== app) : [...prev, app]))
-  }
-
-  const togglePerm = (perm: string) => {
-    setErpPerms((prev) => (prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm]))
-  }
-
-  const save = async () => {
-    setSaving(true)
-    try {
-      await onSave(user.id, selected, erpPerms, isDepartmentHead, isProjectHead, isPlantHead, isPurchaseHead, isDirector, isMd)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div
-      onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20 }}
-    >
-      {/* Capped to the viewport (less the backdrop's own 20px padding) with
-          only the body scrolling — this panel grows tall enough to overflow
-          once a user has several modules ticked, and without the cap it was
-          simply clipped by `overflow: hidden` with no way to reach the rest. */}
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 520, maxHeight: 'calc(100vh - 40px)', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: 20, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
-        <div style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-          <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1f1108', margin: 0 }}>Module Access — {user.name}</h2>
-          <button onClick={onClose} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#a8a29e', fontSize: 18 }}>
-            ✕
-          </button>
-        </div>
-
-        <div style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', padding: '20px 24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, padding: 16, borderRadius: 14, background: '#faf9f7', marginBottom: 20 }}>
-            <Field label="Full Name" value={user.name} />
-            <Field label="Email" value={user.email} />
-            <Field label="Designation" value={user.designation || '—'} />
-            <Field label="Department" value={user.department || '—'} />
-            <Field label="Office Location" value={user.office_location || '—'} />
-            <Field label="Branch" value={user.branch_name || '—'} />
-            <Field label="Reporting Manager" value={user.reporting_manager_name || '—'} />
-            <Field label="Phone" value={user.phone || '—'} />
-            <Field label="Role" value={user.role.replace('_', ' ')} capitalize />
-          </div>
-
-          <p style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 10px' }}>
-            Module Access
-          </p>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {apps.map((a) => (
-              <span
-                key={a.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '9px 14px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(0,0,0,0.1)',
-                  opacity: isAdminRole ? 0.5 : 1,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: '#1f1108',
-                }}
-              >
-                <Checkbox
-                  disabled={isAdminRole}
-                  checked={isAdminRole || selected.includes(a.id)}
-                  onChange={() => toggle(a.id)}
-                />
-                {a.label}
-              </span>
-            ))}
-          </div>
-          <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '10px 0 0' }}>Admins have access to all modules automatically.</p>
-
-          <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: '#faf9f7' }}>
-            <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 10px' }}>
-              Approval Roles
-            </p>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <span
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
-                  border: isDepartmentHead ? '1px solid #FF7A45' : '1px solid rgba(0,0,0,0.1)',
-                  background: isDepartmentHead ? 'rgba(244,113,59,0.05)' : '#fff',
-                  opacity: !user.department ? 0.5 : 1,
-                  fontSize: 13, fontWeight: 600, color: '#1f1108',
-                }}
-              >
-                <Checkbox
-                  disabled={!user.department}
-                  checked={isDepartmentHead}
-                  onChange={() => setIsDepartmentHead((v) => !v)}
-                />
-                Department Head{user.department ? ` (${user.department})` : ''}
-              </span>
-              <span
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
-                  border: isProjectHead ? '1px solid #2563eb' : '1px solid rgba(0,0,0,0.1)',
-                  background: isProjectHead ? 'rgba(59,130,246,0.05)' : '#fff',
-                  fontSize: 13, fontWeight: 600, color: '#1f1108',
-                }}
-              >
-                <Checkbox checked={isProjectHead} onChange={() => setIsProjectHead((v) => !v)} />
-                Project Head
-              </span>
-              <span
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10,
-                  border: isPlantHead ? '1px solid #047857' : '1px solid rgba(0,0,0,0.1)',
-                  background: isPlantHead ? 'rgba(16,185,129,0.06)' : '#fff',
-                  fontSize: 13, fontWeight: 600, color: '#1f1108',
-                }}
-              >
-                <Checkbox checked={isPlantHead} onChange={() => setIsPlantHead((v) => !v)} />
-                Plant Head
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isPurchaseHead ? '1px solid #c2410c' : '1px solid rgba(0,0,0,0.1)', background: isPurchaseHead ? 'rgba(234,88,12,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: '#1f1108' }}>
-                <Checkbox checked={isPurchaseHead} onChange={() => setIsPurchaseHead((v) => !v)} />
-                Purchase Head
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isDirector ? '1px solid #7c3aed' : '1px solid rgba(0,0,0,0.1)', background: isDirector ? 'rgba(124,58,237,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: '#1f1108' }}>
-                <Checkbox checked={isDirector} onChange={() => setIsDirector((v) => !v)} />
-                Director
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isMd ? '1px solid #be123c' : '1px solid rgba(0,0,0,0.1)', background: isMd ? 'rgba(190,18,60,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: '#1f1108' }}>
-                <Checkbox checked={isMd} onChange={() => setIsMd((v) => !v)} />
-                MD
-              </span>
-            </div>
-            <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '10px 0 0' }}>
-              A Department Head is auto-routed any Procure-to-Pay request raised from their own department (
-              {user.department ? `set for this user` : 'set a department for this user first'}). On the New PR form the
-              requester can pick any user as Department Head, Project Head, or Plant Head — these checkboxes only
-              control the auto-routing above, not who&apos;s searchable there. A PR only moves to &quot;approved&quot; once every
-              role assigned to it has signed off. After RFQ, a PO requires Purchase Head, Director, and MD approval from their own accounts.
-            </p>
-          </div>
-
-          {!isAdminRole && selected.includes('erp') && (
-            <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: '#faf9f7' }}>
-              <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 12px' }}>
-                ERP Permissions
-              </p>
-              {ERP_PERMISSION_GROUPS.map((group, i) => (
-                <div key={group.label} style={{ marginBottom: i < ERP_PERMISSION_GROUPS.length - 1 ? 12 : 0 }}>
-                  <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 6px' }}>{group.icon} {group.label}</p>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {group.perms.map((p) => (
-                      <span
-                        key={p.id}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8,
-                          border: erpPerms.includes(p.id) ? '1px solid #FF7A45' : '1px solid rgba(0,0,0,0.1)',
-                          background: erpPerms.includes(p.id) ? 'rgba(244,113,59,0.05)' : '#fff',
-                          color: erpPerms.includes(p.id) ? '#FF7A45' : '#1f1108',
-                          fontSize: 12.5, fontWeight: 600,
-                        }}
-                      >
-                        <Checkbox checked={erpPerms.includes(p.id)} onChange={() => togglePerm(p.id)} />
-                        {p.label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {!isAdminRole && selected.includes('p2p') && (
-            <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: '#faf9f7' }}>
-              <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: '0 0 12px' }}>
-                Procure-to-Pay Permissions
-              </p>
-              {P2P_PERMISSION_GROUPS.map((group, i) => (
-                <div key={group.label} style={{ marginBottom: i < P2P_PERMISSION_GROUPS.length - 1 ? 12 : 0 }}>
-                  <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108', margin: '0 0 6px' }}>{group.icon} {group.label}</p>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {group.perms.map((p) => (
-                      <span
-                        key={p.id}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8,
-                          border: erpPerms.includes(p.id) ? '1px solid #FF7A45' : '1px solid rgba(0,0,0,0.1)',
-                          background: erpPerms.includes(p.id) ? 'rgba(244,113,59,0.05)' : '#fff',
-                          color: erpPerms.includes(p.id) ? '#FF7A45' : '#1f1108',
-                          fontSize: 12.5, fontWeight: 600,
-                        }}
-                      >
-                        <Checkbox checked={erpPerms.includes(p.id)} onChange={() => togglePerm(p.id)} />
-                        {p.label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div style={{ flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '16px 24px', borderTop: '1px solid rgba(0,0,0,0.06)' }}>
-          <button
-            onClick={() => onToggleActive(user)}
-            disabled={isSelf}
-            style={{
-              fontSize: 12.5,
-              fontWeight: 600,
-              padding: '9px 16px',
-              borderRadius: 10,
-              border: '1px solid rgba(0,0,0,0.1)',
-              background: '#fff',
-              color: user.is_active ? '#b91c1c' : '#047857',
-              cursor: isSelf ? 'not-allowed' : 'pointer',
-              opacity: isSelf ? 0.5 : 1,
-            }}
-          >
-            {user.is_active ? 'Deactivate User' : 'Activate User'}
-          </button>
-
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button
-              onClick={onClose}
-              style={{ fontSize: 13, fontWeight: 600, padding: '10px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', cursor: 'pointer' }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={save}
-              disabled={saving}
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                padding: '10px 20px',
-                borderRadius: 10,
-                border: 'none',
-                background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
-                color: '#fff',
-                cursor: saving ? 'not-allowed' : 'pointer',
-                opacity: saving ? 0.7 : 1,
-              }}
-            >
-              {saving ? 'Saving…' : 'Save Access'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Field({ label, value, capitalize }: { label: string; value: string; capitalize?: boolean }) {
-  return (
-    <div>
-      <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 3px' }}>{label}</p>
-      <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: 0, textTransform: capitalize ? 'capitalize' : 'none' }}>{value}</p>
     </div>
   )
 }

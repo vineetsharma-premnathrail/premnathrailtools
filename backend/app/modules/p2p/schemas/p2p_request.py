@@ -38,7 +38,39 @@ class P2PRequestItemResponse(BaseModel):
     project_inhouse: str | None = None
     category: str | None = None
     ship_to: str | None = None
+    fulfillment_status: str = "pending"
+    issued_from_location_id: int | None = None
+    issued_qty: float | None = None
+    material_issue_id: int | None = None
     attachments: list[P2PRequestAttachmentResponse] = Field(default_factory=list)
+
+    # Denormalized display fields, filled in by the route.
+    issued_from_location_name: str | None = None
+
+
+class P2PRequestItemStockLocationInfo(BaseModel):
+    location_id: int | None = None
+    location_name: str | None = None
+    on_hand_qty: float = 0
+    reserved_qty: float = 0
+    available_qty: float = 0
+
+
+class P2PRequestItemStockCheckResponse(BaseModel):
+    matched: bool
+    store_item_id: int | None = None
+    store_item_code: str | None = None
+    store_item_name: str | None = None
+    part_code_matched: bool = False
+    requested_qty: float
+    ship_to_location: P2PRequestItemStockLocationInfo | None = None
+    total_across_locations: P2PRequestItemStockLocationInfo | None = None
+    message: str | None = None
+
+
+class P2PRequestIssueFromStockPayload(BaseModel):
+    location_id: int
+    quantity: float | None = None
 
 
 class P2PRequestCreate(BaseModel):
@@ -105,12 +137,24 @@ class P2PRequestSelectVendorPayload(BaseModel):
     selected_vendor: str
 
 
+class P2PRequestCreatePOItemPricing(BaseModel):
+    """Pricing for one PR line item, keyed by that item's id (P2PRequestItem.id)
+    — matches this PO's price/tax back to a specific requisitioned line
+    instead of trusting a single hand-typed PO total (see
+    compute_line_total in service.py, same pattern the RFQ PO-draft flow
+    already uses)."""
+    pr_item_id: int
+    unit_price: float | None = None
+    tax_rate: float | None = None
+
+
 class P2PRequestCreatePOPayload(BaseModel):
     po_number: str
     po_date: date | None = None
     po_value: float | None = None
     expected_delivery: date | None = None
     ordered_quantity: float | None = None
+    item_pricing: list[P2PRequestCreatePOItemPricing] = Field(default_factory=list)
 
 
 class P2PRequestResponse(BaseModel):

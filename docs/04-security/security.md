@@ -25,7 +25,6 @@ The document covers:
 * Authorization
 * Microsoft Entra ID
 * Microsoft Teams authentication
-* API keys
 * Session management
 * SharePoint security
 * Microsoft Graph
@@ -299,77 +298,15 @@ This supports authentication inside the cross-site Teams iframe environment.
 
 ---
 
-# 14. API-Key Authentication
-
-ERP-PremnathRail also supports API-key authentication for external clients.
-
-API keys use the format:
-
-```text
-pew_<random>
-```
-
-The raw key is never permanently stored.
-
----
-
-# 15. API-Key Storage
-
-The raw API key is transformed using:
-
-```text
-HMAC-SHA256(raw_key, SECRET_KEY)
-```
-
-Only the resulting digest is stored.
-
-The raw key:
-
-* Is displayed once
-* Is not persisted
-* Is not logged
-* Cannot be recovered from the database
-
----
-
-# 16. API-Key Authorization
-
-A validated API key creates a synthetic user:
-
-```text
-role = "api_service"
-```
-
-The synthetic user receives the API key's:
-
-```text
-allowed_apps
-```
-
-The same application authorization system is then used.
-
-```text
-API Key
- ↓
-Synthetic User
- ↓
-allowed_apps
- ↓
-require_app_access()
- ↓
-Application
-```
-
----
-
 # 17. Session Resolution Order
+
+> Note: sections 14-16 (API-Key Authentication/Storage/Authorization) were removed — the API-key auth mechanism was fully removed from the codebase (unused, zero real consumers, zero rows in its table) as of the migration `c1a2b3d4e5f6_drop_api_keys_table`.
 
 `get_current_user` checks credentials in this order:
 
 ```text
-1. X-API-Key
-2. session_token cookie
-3. Authorization: Bearer
+1. session_token cookie
+2. Authorization: Bearer
 ```
 
 The first available credential wins.
@@ -714,7 +651,6 @@ API requests without a valid:
 
 * Bearer token
 * Session cookie
-* API key
 
 are rejected unless the path is explicitly public.
 
@@ -908,23 +844,7 @@ Database URL
 
 These values are trusted as supplied by the deployment environment.
 
----
-
-# 46. API-Key Secret Handling
-
-API keys receive stricter treatment.
-
-The raw key:
-
-```text
-Displayed once
-        ↓
-HMAC-SHA256
-        ↓
-Digest stored
-```
-
-The application cannot recover the original usable key from its own database.
+> Note: section 46 (API-Key Secret Handling) was removed along with the rest of the API-key auth mechanism — see the note under "Session Resolution Order" above.
 
 ---
 

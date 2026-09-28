@@ -1,20 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Fragment } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 
 import { p2pApi, rfqApi, purchaseOrdersApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
-import { P2PRequest, RFQ, P2PPurchaseOrder } from '@/types'
+import { P2PRequest, RFQ, P2PPurchaseOrder, P2PRequestItemStockCheck } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import PromptDialog from '@/components/erp/PromptDialog'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
+
+const FULFILLMENT_LABELS: Record<string, string> = {
+  pending: 'Awaiting Decision', stock_issued: 'Issued from Stock', sent_to_procurement: 'In Procurement',
+}
+const FULFILLMENT_HEX: Record<string, string> = {
+  pending: '#f59e0b', stock_issued: '#22c55e', sent_to_procurement: '#3b82f6',
+}
 
 const STATUS_LABELS: Record<string, string> = {
   submitted: 'Submitted', approved: 'Approved', po_raised: 'PO Raised', po_approved: 'PO Approved',
@@ -86,6 +94,12 @@ export default function MyP2PRequestDetailPage() {
   const [rfq, setRfq] = useState<RFQ | null>(null)
   const [po, setPo] = useState<P2PPurchaseOrder | null>(null)
 
+  const [stockCheckOpenId, setStockCheckOpenId] = useState<number | null>(null)
+  const [stockCheckLoadingId, setStockCheckLoadingId] = useState<number | null>(null)
+  const [stockCheckResults, setStockCheckResults] = useState<Record<number, P2PRequestItemStockCheck>>({})
+  const [issueQtyByItem, setIssueQtyByItem] = useState<Record<number, string>>({})
+  const [confirmProcurementItemId, setConfirmProcurementItemId] = useState<number | null>(null)
+
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
 
   const load = async () => {
@@ -156,6 +170,36 @@ export default function MyP2PRequestDetailPage() {
     })
   )
 
+  const checkStock = async (itemId: number) => {
+    if (stockCheckOpenId === itemId) { setStockCheckOpenId(null); return }
+    setStockCheckOpenId(itemId)
+    if (stockCheckResults[itemId]) return
+    setStockCheckLoadingId(itemId)
+    setError('')
+    try {
+      const result = await p2pApi.checkItemStock(prId, itemId)
+      setStockCheckResults((prev) => ({ ...prev, [itemId]: result }))
+      setIssueQtyByItem((prev) => ({ ...prev, [itemId]: String(result.requested_qty) }))
+    } catch (err: any) {
+      setError(extractErrorMessages(err, 'Stock check failed.'))
+      setStockCheckOpenId(null)
+    } finally {
+      setStockCheckLoadingId(null)
+    }
+  }
+
+  const issueFromStock = (itemId: number, locationId: number) => runAction(async () => {
+    const qty = Number(issueQtyByItem[itemId])
+    await p2pApi.issueItemFromStock(prId, itemId, { location_id: locationId, quantity: qty > 0 ? qty : undefined })
+    setStockCheckOpenId(null)
+  })
+
+  const sendToProcurement = (itemId: number) => runAction(async () => {
+    await p2pApi.sendItemToProcurement(prId, itemId)
+    setStockCheckOpenId(null)
+    setConfirmProcurementItemId(null)
+  })
+
 
 
   if (isLoading || !isAuthorized) return null
@@ -209,6 +253,11 @@ export default function MyP2PRequestDetailPage() {
   const poRole = user?.is_purchase_head ? 'purchase_head' : user?.is_director ? 'director' : user?.is_md ? 'md' : null
   const canApprovePo = fromPoApproval && pr.status === 'po_raised' && poRole != null && (pr.pending_po_approval_roles || []).includes(poRole)
   const canRejectPo = fromPoApproval && pr.status === 'po_raised' && (poRole != null || isAdmin)
+  // Once a PR is approved, the buyer can check store stock per item and
+  // decide item-by-item whether to issue it from stock or send it to
+  // procurement — not available once the request has been rejected/cancelled
+  // (nothing left to decide) or before it's even approved (submitted).
+  const canManageStock = isPurchaseTeam && pr.status !== 'submitted' && pr.status !== 'rejected' && pr.status !== 'cancelled'
 
   return (
     <div>
@@ -409,14 +458,19 @@ export default function MyP2PRequestDetailPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr>
-              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', 'Attachments'].map((h) => (
+              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', 'Attachments', 'Fulfillment'].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {pr.items.map((it, idx) => (
-              <tr key={it.id} style={{ borderTop: `1px solid ${BORDER.light}` }}>
+            {pr.items.map((it, idx) => {
+              const fulfillmentHex = FULFILLMENT_HEX[it.fulfillment_status] || '#64748b'
+              const check = stockCheckResults[it.id]
+              const showActions = canManageStock && it.fulfillment_status === 'pending'
+              return (
+              <Fragment key={it.id}>
+                <tr style={{ borderTop: `1px solid ${BORDER.light}` }}>
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{idx + 1}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13 }}>{it.item_name}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.make || '—'}</td>
@@ -439,9 +493,95 @@ export default function MyP2PRequestDetailPage() {
                     </a>
                   ))}
                 </td>
-
-              </tr>
-            ))}
+                <td style={{ padding: '8px 10px', fontSize: 12.5 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${fulfillmentHex}1a`, color: fulfillmentHex, whiteSpace: 'nowrap' }}>
+                      {FULFILLMENT_LABELS[it.fulfillment_status] || it.fulfillment_status}
+                    </span>
+                    {it.fulfillment_status === 'stock_issued' && (
+                      <span style={{ fontSize: 11, color: TEXT.muted }}>{it.issued_qty} {it.unit || ''} @ {it.issued_from_location_name || '—'}</span>
+                    )}
+                    {showActions && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => checkStock(it.id)}
+                        style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', color: TEXT.heading, cursor: 'pointer' }}
+                      >
+                        {stockCheckOpenId === it.id ? 'Hide Stock Check' : 'Check Stock'}
+                      </button>
+                    )}
+                  </div>
+                </td>
+                </tr>
+                {stockCheckOpenId === it.id && (
+                  <tr key={`${it.id}-stock`} style={{ borderTop: `1px solid ${BORDER.light}` }}>
+                    <td colSpan={11} style={{ padding: '10px 14px', background: 'rgba(148,163,184,0.06)' }}>
+                      {stockCheckLoadingId === it.id ? (
+                        <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>Checking store stock…</p>
+                      ) : !check ? null : !check.matched ? (
+                        <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{check.message || 'No matching store item found.'}</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-end' }}>
+                          <div>
+                            <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>Matched Store Item</p>
+                            <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>{check.store_item_code} — {check.store_item_name}</p>
+                          </div>
+                          <div>
+                            <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>At Ship-To ({it.ship_to || '—'})</p>
+                            <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
+                              {check.ship_to_location ? `${check.ship_to_location.available_qty} available` : 'Ship-to location not recognized'}
+                            </p>
+                          </div>
+                          <div>
+                            <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>Total (All Locations)</p>
+                            <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>{check.total_across_locations?.available_qty ?? 0} available</p>
+                          </div>
+                          <div>
+                            <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>Requested Qty</p>
+                            <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>{check.requested_qty}</p>
+                          </div>
+                          {check.ship_to_location && (
+                            <div>
+                              <label style={{ ...labelStyle, marginBottom: 4 }}>Issue Qty</label>
+                              <input
+                                type="number"
+                                min={0}
+                                max={check.requested_qty}
+                                value={issueQtyByItem[it.id] ?? String(check.requested_qty)}
+                                onChange={(e) => setIssueQtyByItem((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                                style={{ ...inputStyle, width: 90, padding: '7px 10px' }}
+                              />
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            {check.ship_to_location && (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => issueFromStock(it.id, check.ship_to_location!.location_id!)}
+                                style={{ ...primaryBtn, padding: '8px 14px', fontSize: 12.5 }}
+                              >
+                                Issue from Stock
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => setConfirmProcurementItemId(it.id)}
+                              style={{ fontSize: 12.5, fontWeight: 600, padding: '8px 14px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', color: TEXT.heading, cursor: 'pointer' }}
+                            >
+                              Send to Procurement
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+              )
+            })}
           </tbody>
         </table>
         </div>
@@ -498,6 +638,15 @@ export default function MyP2PRequestDetailPage() {
         confirmLabel="Reject"
         onConfirm={promptActionDo}
         onCancel={() => setPromptAction('')}
+      />
+      <ConfirmDialog
+        open={confirmProcurementItemId != null}
+        title="Send Item to Procurement?"
+        message="This confirms the item is not available in store stock and will be purchased through the normal RFQ/PO flow. This cannot be undone."
+        confirmLabel="Send to Procurement"
+        danger={false}
+        onConfirm={() => confirmProcurementItemId != null && sendToProcurement(confirmProcurementItemId)}
+        onCancel={() => setConfirmProcurementItemId(null)}
       />
     </div>
   )

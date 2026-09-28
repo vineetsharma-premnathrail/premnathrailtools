@@ -1,0 +1,330 @@
+import { TourConfig } from '../types'
+
+const config: TourConfig = {
+  id: 'org-info-edit',
+  pageTitle: 'Edit Organization Info',
+  steps: [
+    {
+      target: 'org-edit-tab-basic',
+      title: 'Basic',
+      purpose: 'Company identity fields — name, code, incorporation details, and locale defaults.',
+      autoActivate: true,
+    },
+    {
+      target: 'org-edit-name',
+      title: 'Company Name',
+      required: true,
+      purpose: 'The name shown across the portal wherever this company is referenced.',
+    },
+    {
+      target: 'org-edit-legal-name',
+      title: 'Legal Name',
+      required: true,
+      purpose: 'The full registered legal name — printed on invoices, POs, and statutory documents, which can differ from the shorter trading Company Name.',
+    },
+    {
+      target: 'org-edit-code',
+      title: 'Code',
+      required: true,
+      purpose: 'Short internal identifier for this company, used in numbering series (PR/PO/invoice numbers).',
+      whatToEnter: 'Auto-uppercased as you type.',
+      validExample: 'PNR',
+    },
+    {
+      target: 'org-edit-country',
+      title: 'Country',
+      required: true,
+    },
+    {
+      target: 'org-edit-currency',
+      title: 'Default Currency',
+      required: true,
+      whatToEnter: '3-letter ISO currency code.',
+      validExample: 'INR',
+    },
+    {
+      target: 'org-edit-timezone',
+      title: 'Time Zone',
+      required: true,
+      whatToEnter: 'IANA timezone name, used to timestamp records consistently.',
+      validExample: 'Asia/Kolkata',
+    },
+    {
+      target: 'org-edit-tab-address',
+      title: 'Address',
+      purpose: 'Manage the company\'s registered/branch addresses — a full add/edit/delete list, separate from the read-only Basic tab.',
+      autoActivate: true,
+    },
+    {
+      target: 'org-addr-type',
+      title: 'Address Type',
+      whatToEnter: 'A label distinguishing this address from others, e.g. Registered Office, Branch Office.',
+      validExample: 'Registered Office',
+    },
+    {
+      target: 'org-addr-line1',
+      title: 'Address Line 1',
+      required: true,
+    },
+    {
+      target: 'org-addr-pincode',
+      title: 'PIN Code',
+      whatToEnter: '6-digit Indian postal code.',
+      validExample: '110001',
+    },
+    {
+      target: 'org-addr-flags',
+      title: 'Primary / Active',
+      purpose: 'Primary marks this as the default address used on documents when more than one exists. Active marks whether the address is currently in use — an inactive one is kept for record-keeping but hidden from pickers.',
+    },
+    {
+      target: 'org-addr-save',
+      title: 'Save Address',
+      after: 'Adds the address to the list below (or updates it, if you were editing an existing one).',
+    },
+    {
+      target: 'org-addr-list',
+      title: 'Addresses list',
+      purpose: 'Every saved address, with Edit and Delete actions on each row.',
+    },
+    {
+      target: 'org-edit-tab-legal',
+      title: 'Legal & Registration',
+      purpose: 'Statutory registration numbers — CIN, PAN, GSTIN, MSME/Udyam — and capital details required for compliance and vendor/customer onboarding.',
+      autoActivate: true,
+    },
+    {
+      target: 'org-edit-cin',
+      title: 'CIN',
+      purpose: 'Corporate Identification Number issued by the Ministry of Corporate Affairs — identifies this as a registered company.',
+    },
+    {
+      target: 'org-edit-pan',
+      title: 'PAN',
+      purpose: 'Permanent Account Number — the company\'s tax identity, used on invoices and TDS filings.',
+      validExample: 'AABCU9603R',
+    },
+    {
+      target: 'org-edit-gstin',
+      title: 'GSTIN',
+      purpose: '15-character GST registration number used for tax-compliant invoicing.',
+      validExample: '07AABCU9603R1ZW',
+      invalidExample: 'A PAN number alone, or fewer/more than 15 characters',
+    },
+    {
+      target: 'org-edit-authorized-capital',
+      title: 'Authorized Capital',
+      purpose: 'The maximum share capital this company is legally authorized to issue, per its incorporation documents.',
+    },
+    {
+      target: 'org-edit-legal-docs-note',
+      title: 'Legal documents note',
+      purpose: 'Points you to the Company Documents tab for uploading the actual license/certificate/agreement files — this tab only holds their reference numbers.',
+    },
+    {
+      target: 'org-edit-tab-tax',
+      title: 'Tax Configuration',
+      purpose: 'How this company\'s transactions are taxed by default — GST type, and whether TDS/TCS deduction applies.',
+      autoActivate: true,
+    },
+    {
+      target: 'org-edit-gst-type',
+      title: 'GST Registration Type',
+      whatToEnter: 'e.g. Regular, Composition, Unregistered.',
+      validExample: 'Regular',
+    },
+    {
+      target: 'org-edit-tax-applicability',
+      title: 'TDS / TCS Applicable',
+      purpose: 'Whether Tax Deducted at Source and Tax Collected at Source rules apply to this company\'s transactions — drives tax calculation in downstream modules like P2P and Store.',
+    },
+    {
+      target: 'org-edit-tab-contacts',
+      title: 'Contacts',
+      purpose: 'People to reach at this company for official correspondence — separate from the portal\'s own user accounts.',
+      autoActivate: true,
+    },
+    {
+      target: 'org-contact-person',
+      title: 'Contact Person',
+      required: true,
+      validExample: 'Rajesh Kumar',
+    },
+    {
+      target: 'org-contact-mobile',
+      title: 'Mobile',
+      whatToEnter: 'Include country code, e.g. +91.',
+      validExample: '+91 98765 43210',
+    },
+    {
+      target: 'org-contact-email',
+      title: 'Email',
+      validExample: 'rajesh.kumar@company.com',
+    },
+    {
+      target: 'org-contact-save',
+      title: 'Save Contact',
+    },
+    {
+      target: 'org-contact-list',
+      title: 'Contacts list',
+      purpose: 'Every saved contact, with a PRIMARY badge for the default one and Edit/Delete actions per row.',
+    },
+    {
+      target: 'org-edit-tab-fy',
+      title: 'Financial Year',
+      purpose: 'The accounting periods this company reports against — used across ERP and P2P for period-based filtering and closing.',
+      autoActivate: true,
+    },
+    {
+      target: 'org-fy-name',
+      title: 'Financial Year Name',
+      required: true,
+      validExample: 'FY 2025-26',
+    },
+    {
+      target: 'org-fy-start',
+      title: 'Start Date',
+      required: true,
+    },
+    {
+      target: 'org-fy-end',
+      title: 'End Date',
+      required: true,
+    },
+    {
+      target: 'org-fy-status',
+      title: 'Status',
+      options: [
+        { value: 'open', meaning: 'In use — new entries can be posted against this year.' },
+        { value: 'locked', meaning: 'No new entries allowed, but existing ones remain visible; typically set while closing accounts.' },
+        { value: 'closed', meaning: 'Finalized — the period is fully closed out.' },
+      ],
+    },
+    {
+      target: 'org-fy-save',
+      title: 'Save Financial Year',
+    },
+    {
+      target: 'org-fy-list',
+      title: 'Financial Years list',
+      purpose: 'Every financial year on record, with its current status badge and date range.',
+    },
+    {
+      target: 'org-edit-tab-branding',
+      title: 'Branding',
+      purpose: 'Logo, brand colors, and the header/footer/watermark text stamped on generated documents like invoices and POs.',
+      autoActivate: true,
+    },
+    {
+      target: 'org-edit-logo-url',
+      title: 'Company Logo URL',
+      purpose: 'A hosted image URL — shown on generated documents and, where used, in the app header.',
+    },
+    {
+      target: 'org-edit-brand-colors',
+      title: 'Primary / Secondary / Accent Color',
+      purpose: 'The brand colors used to theme generated documents. Pick with the color swatch or type a hex code directly.',
+      validExample: '#FF7A45',
+    },
+    {
+      target: 'org-edit-header',
+      title: 'Company Header',
+      purpose: 'Free text shown at the top of generated documents, e.g. a tagline or registered address line.',
+    },
+    {
+      target: 'org-edit-footer',
+      title: 'Company Footer',
+      purpose: 'Free text shown at the bottom of generated documents, e.g. terms or a disclaimer.',
+    },
+    {
+      target: 'org-edit-email-signature',
+      title: 'Email Signature',
+      purpose: 'Appended to system-generated emails sent on this company\'s behalf.',
+    },
+    {
+      target: 'org-edit-tab-documents',
+      title: 'Documents',
+      purpose: 'Upload and manage the actual files for licenses, certificates, registrations, and agreements — this is where the Legal & Registration tab\'s numbers get their supporting documents attached.',
+      autoActivate: true,
+    },
+    {
+      target: 'org-doc-file',
+      title: 'Document File',
+      required: true,
+      purpose: 'The file being uploaded and attached to this company record.',
+    },
+    {
+      target: 'org-doc-type',
+      title: 'Document Type',
+      required: true,
+      options: [
+        { value: 'License', meaning: 'An operating license or permit.' },
+        { value: 'Certificate', meaning: 'A certification, e.g. ISO or quality certificate.' },
+        { value: 'Registration', meaning: 'A statutory registration certificate, e.g. GST/MSME.' },
+        { value: 'Agreement', meaning: 'A signed agreement or contract.' },
+        { value: 'Legal', meaning: 'Any other legal document.' },
+        { value: 'Tax', meaning: 'A tax filing or tax-related document.' },
+        { value: 'Other', meaning: 'Anything not covered above.' },
+      ],
+    },
+    {
+      target: 'org-doc-name',
+      title: 'Document Name',
+      required: true,
+    },
+    {
+      target: 'org-doc-expiry',
+      title: 'Expiry Date',
+      purpose: 'When set, shown on the Documents tab of the Info page so an expiring license/certificate can be spotted at a glance.',
+    },
+    {
+      target: 'org-doc-confidentiality',
+      title: 'Confidentiality',
+      options: [
+        { value: 'Public', meaning: 'No restriction on viewing.' },
+        { value: 'Internal', meaning: 'For internal staff use only — the default.' },
+        { value: 'Confidential', meaning: 'Sensitive — handle with restricted access in mind.' },
+      ],
+    },
+    {
+      target: 'org-doc-save',
+      title: 'Save Document',
+      after: 'Uploads the file and adds it to the Company Documents list.',
+    },
+    {
+      target: 'org-doc-list',
+      title: 'Company Documents list',
+      purpose: 'Every uploaded document, with type, confidentiality, expiry, and issuing authority shown. Delete removes it permanently.',
+    },
+    {
+      target: 'org-edit-tab-defaults',
+      title: 'Defaults & Controls',
+      purpose: 'The default plant, warehouse, cost center, and profit center pre-filled on new transactions raised for this company.',
+      autoActivate: true,
+    },
+    {
+      target: 'org-edit-default-plant',
+      title: 'Default Plant',
+      purpose: 'Pre-selected as the plant/branch on new records where a plant is required, unless overridden.',
+    },
+    {
+      target: 'org-edit-default-warehouse',
+      title: 'Default Warehouse',
+      purpose: 'Pre-selected as the warehouse on new Store transactions, unless overridden.',
+    },
+    {
+      target: 'org-edit-cancel',
+      title: 'Cancel',
+      purpose: 'Discards any unsaved changes on the currently open tab and returns to the read-only Info page.',
+    },
+    {
+      target: 'org-edit-save',
+      title: 'Save Changes',
+      purpose: 'Validates and saves the Basic/Legal/Tax/Branding/Defaults fields together as one company record. (Address, Contacts, Financial Year, and Documents each save immediately via their own Save button, since they are separate records.)',
+      after: 'On success returns you to the read-only Info page. Company Name and Code are required — leaving either blank blocks the save with an inline error.',
+    },
+  ],
+}
+
+export default config

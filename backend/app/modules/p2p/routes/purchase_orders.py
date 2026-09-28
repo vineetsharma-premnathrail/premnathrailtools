@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem, P2P_PO_STATUSES
+from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt
 from app.modules.p2p.schemas.purchase_order import (
     P2PPurchaseOrderCreate, P2PPurchaseOrderUpdate, P2PPurchaseOrderResponse,
 )
@@ -20,9 +21,13 @@ def _to_response(db: Session, po: P2PPurchaseOrder) -> P2PPurchaseOrderResponse:
     if po.p2p_request_id:
         pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first()
         resp.p2p_request_number = pr.p2p_number if pr else None
+        resp.assigned_buyer_id = pr.assigned_buyer_id if pr else None
     if po.created_by_id:
         creator = db.query(User).filter(User.id == po.created_by_id).first()
         resp.created_by_name = creator.name or creator.email if creator else None
+    if resp.assigned_buyer_id:
+        buyer = db.query(User).filter(User.id == resp.assigned_buyer_id).first()
+        resp.assigned_buyer_name = buyer.name or buyer.email if buyer else None
     return resp
 
 
@@ -133,6 +138,19 @@ async def update_purchase_order(
     updates = payload.model_dump(exclude_unset=True)
     if "status" in updates and updates["status"] not in P2P_PO_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status '{updates['status']}'")
+
+    # Once any GRN has been posted against this PO, its status can no longer
+    # be forced back to draft/cancelled through this generic endpoint — that
+    # would leave the PO's status inconsistent with stock the vendor has
+    # already delivered and this system has already received into stores,
+    # with nothing here reversing that receipt.
+    if updates.get("status") in ("draft", "cancelled"):
+        has_grn = db.query(P2PGoodsReceipt).filter(P2PGoodsReceipt.purchase_order_id == po.id).first() is not None
+        if has_grn:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot set status to '{updates['status']}' — goods have already been received against this PO",
+            )
 
     for field, val in updates.items():
         setattr(po, field, val)

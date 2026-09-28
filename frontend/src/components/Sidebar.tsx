@@ -89,6 +89,25 @@ const icons: Record<string, ReactNode> = {
       <line x1="9" y1="17" x2="15" y2="17" />
     </svg>
   ),
+  quality: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2l7 3v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V5z" />
+      <polyline points="9 12 11 14 15 10" />
+    </svg>
+  ),
+  projects: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="9" y1="3" x2="9" y2="21" />
+      <path d="M13 8l3 3-3 3" />
+    </svg>
+  ),
+  finance: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="1" x2="12" y2="23" />
+      <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+    </svg>
+  ),
 }
 
 export default function Sidebar({ user, onNavigate }: { user: User | null; onNavigate?: () => void }) {
@@ -141,6 +160,10 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     { href: '/dashboard/rnd', label: 'R&D Tools', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
     { href: '/dashboard/crm', label: 'CRM Module', icon: 'crm', visible: !!user?.apps?.includes('crm') },
     { href: '/dashboard/p2p', label: 'Procure-to-Pay', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
+    { href: '/dashboard/store', label: 'Store & Inventory', icon: 'store', visible: !!user?.apps?.includes('store') },
+    { href: '/dashboard/quality', label: 'Quality', icon: 'quality', visible: !!user?.apps?.includes('quality') },
+    { href: '/dashboard/projects', label: 'Project Management', icon: 'projects', visible: !!user?.apps?.includes('projects') },
+    { href: '/dashboard/finance', label: 'Finance & Accounting', icon: 'finance', visible: !!user?.apps?.includes('accounts') },
     { href: '/dashboard/organization', label: 'Organization', icon: 'organization', visible: isAdmin },
   ].filter((link) => link.visible)
 

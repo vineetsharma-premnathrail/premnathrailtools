@@ -65,7 +65,6 @@ The following fields have uniqueness requirements.
 | ----------------------- | ---------------- | ------------------ |
 | `users`                 | `email`          | Unique + indexed   |
 | `users`                 | `azure_id`       | Unique             |
-| `api_keys`              | `key_hash`       | Unique + indexed   |
 | `erp_projects`          | `serial_number`  | Unique + indexed   |
 | `erp_service_requests`  | `request_number` | Unique + indexed   |
 | `purchase_requisitions` | `pr_number`      | Unique + indexed   |

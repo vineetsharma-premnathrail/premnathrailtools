@@ -2,12 +2,15 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import TourButton from '@/components/tour/TourButton'
 
 const TABS = [
+  { href: '/dashboard/organization/info', label: 'Info', icon: 'building' },
+  { href: '/dashboard/organization/plants', label: 'Branches', icon: 'map' },
   { href: '/dashboard/organization/department', label: 'Department', icon: 'grid' },
-  { href: '/dashboard/organization/branch', label: 'Branch', icon: 'map' },
   { href: '/dashboard/organization/users', label: 'Users', icon: 'users' },
   { href: '/dashboard/organization/roles', label: 'Role & Permissions', icon: 'shield' },
+  { href: '/dashboard/organization/audit-logs', label: 'Audit Logs', icon: 'clock' },
 ] as const
 
 function TabIcon({ name }: { name: string }) {
@@ -25,6 +28,8 @@ function TabIcon({ name }: { name: string }) {
       return <svg {...common}><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>
     case 'shield':
       return <svg {...common}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+    case 'clock':
+      return <svg {...common}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
     default:
       return null
   }
@@ -64,6 +69,9 @@ export default function OrganizationNav() {
             </Link>
           )
         })}
+      </div>
+      <div style={{ paddingBottom: 8, flex: 'none' }}>
+        <TourButton variant="icon" />
       </div>
     </div>
   )

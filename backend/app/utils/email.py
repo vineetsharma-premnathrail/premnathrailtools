@@ -9,6 +9,7 @@ reachable, which it isn't in local dev (it's localhost).
 import base64
 import logging
 import datetime as _dt
+from html import escape
 from pathlib import Path
 import httpx
 from sqlalchemy.orm import Session
@@ -97,8 +98,12 @@ async def _send_graph_mail(
 
 
 def _sr_email_table_row(label: str, value: str, shaded: bool) -> str:
+    """`value` (and `label`, defensively) routinely carries free-text fields a
+    non-admin user entered (vendor name, remarks, item names, ...) — escape
+    both before splicing into the HTML body so that text can never be
+    interpreted as markup/links in the recipient's mail client."""
     bg = "background:#f8fafc;" if shaded else ""
-    return f'<tr style="{bg}"><td style="padding:10px 14px;color:#64748b;width:180px">{label}</td><td style="padding:10px 14px;font-weight:700">{value}</td></tr>'
+    return f'<tr style="{bg}"><td style="padding:10px 14px;color:#64748b;width:180px">{escape(label)}</td><td style="padding:10px 14px;font-weight:700">{escape(value)}</td></tr>'
 
 
 def _wrap_email_html(body_content: str) -> str:
@@ -315,6 +320,190 @@ async def send_purchase_requisition_email(db: Session, pr, sr, project, material
         logger.warning("Purchase requisition email failed: %s", "; ".join(errors))
         _write_audit(db, sr.id, "email_failed", None, f"Purchase requisition email ({pr.p2p_number}) failed. {'; '.join(errors)}")
     return any_success
+
+
+def _p2p_items_table_html(items) -> str:
+    if not items:
+        return '<p style="margin:0;font-size:13.5px;color:#94a3b8">No items listed.</p>'
+    rows = "".join(
+        f'<tr><td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">{escape(i.item_name)}</td>'
+        f'<td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">{escape(i.make) if i.make else "—"}</td>'
+        f'<td style="padding:8px 10px;border-bottom:1px solid #e2e8f0">{escape(i.part_code) if i.part_code else "—"}</td>'
+        f'<td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;text-align:right">{i.quantity:g} {escape(i.unit) if i.unit else ""}</td>'
+        for i in items
+    )
+    return f"""<table style="width:100%;border-collapse:collapse;font-size:12.5px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
+      <thead><tr style="background:#f8fafc">
+        <th style="padding:8px 10px;text-align:left;color:#64748b">Item</th>
+        <th style="padding:8px 10px;text-align:left;color:#64748b">Make</th>
+        <th style="padding:8px 10px;text-align:left;color:#64748b">Part Code</th>
+        <th style="padding:8px 10px;text-align:right;color:#64748b">Qty</th>
+      </tr></thead>
+      <tbody>{rows}</tbody>
+    </table>"""
+
+
+def _p2p_email_shell(header_label: str, title: str, badge_label: str, badge_color: str, body_content: str) -> str:
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f1f5f9">
+<div style="font-family:Arial,sans-serif;max-width:660px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)">
+  <div style="background:#fff;padding:20px 28px;border-bottom:3px solid #f97316">{_logo_header()}</div>
+  <div style="background:#0f172a;padding:18px 28px;display:flex;align-items:center;justify-content:space-between">
+    <div>
+      <p style="color:#94a3b8;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:1px">{header_label}</p>
+      <h2 style="color:#fff;margin:0;font-size:20px;font-weight:700">{title}</h2>
+    </div>
+    <span style="background:{badge_color};color:#fff;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;text-transform:uppercase">{badge_label}</span>
+  </div>
+  <div style="padding:28px">{body_content}</div>
+  <div style="background:#f8fafc;padding:14px 28px;border-top:1px solid #e2e8f0">
+    <p style="font-size:11px;color:#94a3b8;margin:0;text-align:center">This is an automated internal notification from Premnathrail ERP Portal.</p>
+  </div>
+</div>
+</body></html>"""
+
+
+async def send_p2p_pr_approval_email(db: Session, pr, approver, role_label: str) -> bool:
+    """Emails a PR's assigned approver (Department/Project/Plant Head) that a
+    P2P request is awaiting their sign-off, with the full PR + line-item
+    detail inline so they can review without opening the portal. Called from
+    a BackgroundTask right after the PR is created — best-effort, failure is
+    logged to the PR's own audit trail but never raised."""
+    sender_email = settings.SENDER_EMAIL
+    if not sender_email or not approver or not approver.email:
+        return False
+
+    from app.modules.main.models.user import User
+    from app.modules.p2p.models.p2p_request import P2P_CATEGORIES
+    requester = db.query(User).filter(User.id == pr.requested_by_id).first() if pr.requested_by_id else None
+    requester_name = (requester.name or requester.email) if requester else "—"
+    request_date = pr.request_date.strftime("%d %b %Y") if pr.request_date else "—"
+    required_date = pr.required_date.strftime("%d %b %Y") if pr.required_date else "—"
+
+    subject = f"PR Approval Required — {pr.p2p_number}"
+    body_content = f"""
+    <p style="margin:0 0 4px;font-size:14px;color:#1e293b;font-weight:700">Dear {approver.name or approver.email},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.7">A purchase requisition is awaiting your approval as <strong>{role_label}</strong>.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
+      {_sr_email_table_row("PR Number", pr.p2p_number, True)}
+      {_sr_email_table_row("Category", P2P_CATEGORIES.get(pr.category_code, pr.category_code), False)}
+      {_sr_email_table_row("Department", pr.department or "—", True)}
+      {_sr_email_table_row("Requested By", requester_name, False)}
+      {_sr_email_table_row("Request Date", request_date, True)}
+      {_sr_email_table_row("Required Date", required_date, False)}
+      {_sr_email_table_row("Priority", (pr.priority or "medium").title(), True)}
+      {_sr_email_table_row("Project / Machine", pr.project_label or "—", False)}
+      {_sr_email_table_row("Requirement Type", pr.requirement_type or "—", True)}
+      {_sr_email_table_row("Remarks", pr.remarks or "—", False)}
+    </table>
+    <p style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#64748b;margin:0 0 8px">Items</p>
+    {_p2p_items_table_html(pr.items)}
+    <p style="margin:0;font-size:14px;color:#1e293b">Regards,<br><strong>Premnathrail ERP Portal</strong></p>"""
+    html = _p2p_email_shell("Purchase Requisition — Approval Required", pr.p2p_number, "Pending Approval", "#f97316", body_content)
+
+    success, error = await _send_graph_mail(sender_email, subject, html, approver.email, approver.name or approver.email)
+    summary = (
+        f"PR approval email ({role_label}) sent to {approver.email}."
+        if success else f"PR approval email ({role_label}) to {approver.email} failed. {error}"
+    )
+    db.add(AuditLog(
+        entity_type="p2p_request", entity_id=pr.id,
+        action="email_sent" if success else "email_failed", performed_by_id=None, summary=summary,
+    ))
+    if not success:
+        logger.warning("PR approval email failed: %s", error)
+    return success
+
+
+async def send_p2p_po_approval_email(db: Session, pr, po, approver, role_label: str) -> bool:
+    """Emails a PO approver (Purchase Head / Director / MD) that a purchase
+    order raised against a PR is awaiting their sign-off, with the full PO +
+    line-item detail inline. Called from a BackgroundTask right after the PO
+    is raised — best-effort, failure is logged to the PR's audit trail but
+    never raised."""
+    sender_email = settings.SENDER_EMAIL
+    if not sender_email or not approver or not approver.email:
+        return False
+
+    from app.modules.main.models.user import User
+    creator = db.query(User).filter(User.id == po.created_by_id).first() if po.created_by_id else None
+    creator_name = (creator.name or creator.email) if creator else "—"
+    po_date = po.po_date.strftime("%d %b %Y") if po.po_date else "—"
+    expected_delivery = po.expected_delivery.strftime("%d %b %Y") if po.expected_delivery else "—"
+
+    subject = f"PO Approval Required — {po.po_number}"
+    body_content = f"""
+    <p style="margin:0 0 4px;font-size:14px;color:#1e293b;font-weight:700">Dear {approver.name or approver.email},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.7">A purchase order is awaiting your approval as <strong>{role_label}</strong>.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
+      {_sr_email_table_row("PO Number", po.po_number, True)}
+      {_sr_email_table_row("Against PR", pr.p2p_number, False)}
+      {_sr_email_table_row("Vendor", po.vendor_name or "—", True)}
+      {_sr_email_table_row("PO Date", po_date, False)}
+      {_sr_email_table_row("Expected Delivery", expected_delivery, True)}
+      {_sr_email_table_row("Department", pr.department or "—", False)}
+      {_sr_email_table_row("Raised By", creator_name, True)}
+    </table>
+    <p style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#64748b;margin:0 0 8px">Items</p>
+    {_p2p_items_table_html(po.items)}
+    <p style="margin:0;font-size:14px;color:#1e293b">Regards,<br><strong>Premnathrail ERP Portal</strong></p>"""
+    html = _p2p_email_shell("Purchase Order — Approval Required", po.po_number, "Pending Approval", "#f97316", body_content)
+
+    success, error = await _send_graph_mail(sender_email, subject, html, approver.email, approver.name or approver.email)
+    summary = (
+        f"PO approval email ({role_label}) sent to {approver.email}."
+        if success else f"PO approval email ({role_label}) to {approver.email} failed. {error}"
+    )
+    db.add(AuditLog(
+        entity_type="p2p_request", entity_id=pr.id,
+        action="email_sent" if success else "email_failed", performed_by_id=None, summary=summary,
+    ))
+    if not success:
+        logger.warning("PO approval email failed: %s", error)
+    return success
+
+
+async def send_po_overdue_email(db: Session, po, buyer, days_overdue: int) -> bool:
+    """Emails the buyer assigned to an overdue PO (or its creator, for an
+    ad-hoc PO with no linked PR) that the vendor's expected delivery date has
+    passed with no goods receipt yet. Called daily by the scheduled
+    po_overdue_reminders task (see app/tasks/po_overdue_reminders.py) — one
+    email per PO per day for as long as it stays overdue."""
+    sender_email = settings.SENDER_EMAIL
+    if not sender_email or not buyer or not buyer.email:
+        return False
+
+    expected_delivery = po.expected_delivery.strftime("%d %b %Y") if po.expected_delivery else "—"
+    against_pr = po.p2p_request.p2p_number if po.p2p_request_id and po.p2p_request else "Ad-hoc (no linked PR)"
+    day_word = "day" if days_overdue == 1 else "days"
+
+    subject = f"Purchase Order Overdue — {po.po_number}"
+    body_content = f"""
+    <p style="margin:0 0 4px;font-size:14px;color:#1e293b;font-weight:700">Dear {buyer.name or buyer.email},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.7">The vendor's expected delivery date for the purchase order below has passed and no goods have been received yet. Please follow up with the vendor.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:20px">
+      {_sr_email_table_row("PO Number", po.po_number, True)}
+      {_sr_email_table_row("Against PR", against_pr, False)}
+      {_sr_email_table_row("Vendor", po.vendor_name or "—", True)}
+      {_sr_email_table_row("Expected Delivery", expected_delivery, False)}
+      {_sr_email_table_row("Days Overdue", f"{days_overdue} {day_word}", True)}
+    </table>
+    <p style="margin:0;font-size:14px;color:#1e293b">Regards,<br><strong>Premnathrail ERP Portal</strong></p>"""
+    html = _p2p_email_shell("Purchase Order — Delivery Overdue", po.po_number, "Overdue", "#dc2626", body_content)
+
+    success, error = await _send_graph_mail(sender_email, subject, html, buyer.email, buyer.name or buyer.email)
+    summary = (
+        f"PO overdue email sent to {buyer.email} ({days_overdue} {day_word} overdue)."
+        if success else f"PO overdue email to {buyer.email} failed. {error}"
+    )
+    db.add(AuditLog(
+        entity_type="p2p_purchase_order", entity_id=po.id,
+        action="email_sent" if success else "email_failed", performed_by_id=None, summary=summary,
+    ))
+    if not success:
+        logger.warning("PO overdue email failed: %s", error)
+    return success
 
 
 async def send_technical_offer_request_email(

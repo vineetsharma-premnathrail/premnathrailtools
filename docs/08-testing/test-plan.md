@@ -212,8 +212,6 @@ Current security tests cover:
 * Rate limiting
 * IP banning
 * Security headers
-* API-key authentication
-* API-key scoping
 * Bulk-delete protections
 
 These tests operate through actual HTTP requests so that externally observable behavior is validated.

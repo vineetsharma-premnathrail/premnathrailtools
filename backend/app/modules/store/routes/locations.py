@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.permissions import require_app_access
@@ -10,12 +10,29 @@ from app.modules.store.schemas.location import StoreLocationCreate, StoreLocatio
 router = APIRouter(prefix="/store/locations", tags=["Store"])
 
 
+def _to_response(location: StoreLocation, db: Session) -> StoreLocationResponse:
+    branch_name = None
+    if location.branch_id:
+        from app.modules.organization.models.branch import Branch  # local import avoids a cross-module cycle at startup
+        branch = db.query(Branch).filter(Branch.id == location.branch_id).first()
+        branch_name = branch.name if branch else None
+    manager = db.query(User).filter(User.id == location.manager_user_id).first() if location.manager_user_id else None
+    return StoreLocationResponse.model_validate(location).model_copy(
+        update={"branch_name": branch_name, "manager_user_name": manager.name if manager else None}
+    )
+
+
 @router.get("", response_model=list[StoreLocationResponse])
 async def list_locations(
+    branch_id: int | None = Query(None),
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("store")),
 ):
-    return db.query(StoreLocation).order_by(StoreLocation.name.asc()).all()
+    query = db.query(StoreLocation)
+    if branch_id is not None:
+        query = query.filter(StoreLocation.branch_id == branch_id)
+    locations = query.order_by(StoreLocation.name.asc()).all()
+    return [_to_response(loc, db) for loc in locations]
 
 
 @router.post("", response_model=StoreLocationResponse)
@@ -30,7 +47,7 @@ async def create_location(
     db.add(location)
     db.commit()
     db.refresh(location)
-    return location
+    return _to_response(location, db)
 
 
 @router.patch("/{location_id}", response_model=StoreLocationResponse)
@@ -47,4 +64,21 @@ async def update_location(
         setattr(location, field, val)
     db.commit()
     db.refresh(location)
-    return location
+    return _to_response(location, db)
+
+
+@router.delete("/{location_id}")
+async def delete_location(
+    location_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("store")),
+):
+    location = db.query(StoreLocation).filter(StoreLocation.id == location_id).first()
+    if not location:
+        raise HTTPException(status_code=404, detail="Location not found")
+    from app.modules.organization.models.branch import Branch  # local import avoids a cross-module cycle at startup
+    if db.query(Branch).filter(Branch.default_warehouse_id == location_id).first():
+        raise HTTPException(status_code=409, detail="Cannot delete — this warehouse is set as a branch's default warehouse.")
+    db.delete(location)
+    db.commit()
+    return {"ok": True}

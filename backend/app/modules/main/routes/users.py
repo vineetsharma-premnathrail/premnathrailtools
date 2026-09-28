@@ -1,15 +1,29 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.permission_registry import MODULES as PERMISSION_MODULES, ACTIONS as PERMISSION_ACTIONS, DATA_ACCESS_SCOPES as PERMISSION_SCOPES
 from app.db.session import get_db
 from app.modules.main.models.user import User, AVAILABLE_APPS
 from app.modules.main.models.module import Module
-from app.modules.main.schemas.user import UserResponse, UserUpdate
+from app.modules.main.models.audit_log import AuditLog
+from app.modules.main.models.user_session import UserSession
+from app.modules.main.models.user_document import UserDocument
+from app.modules.main.schemas.user import (
+    UserResponse, UserUpdate, UserSessionResponse, UserActivityResponse, UserDocumentResponse, UserPermissionsUpdate,
+)
 from app.modules.main.routes.auth import get_current_user
 from app.auth.microsoft import list_azure_org_users, get_azure_admin_ids
 from app.modules.organization.services.provisioning import sync_user_org_links
 from app.modules.organization.models.branch import Branch
+from app.modules.organization.models.branch_user_assignment import BranchUserAssignment
+from app.modules.organization.models.department import Department
+from app.modules.organization.schemas.branch import BranchUserAssignmentResponse
+from app.utils.sharepoint import (
+    upload_file_to_sharepoint, sanitize_folder_name, delete_file_from_sharepoint, download_file_content,
+)
 
 router = APIRouter(prefix="/users", tags=["Users & Roles"])
 
@@ -124,6 +138,233 @@ async def list_user_directory(
     ]
 
 
+@router.get("/permissions/registry")
+async def get_permission_registry(
+    _admin: User = Depends(require_admin),
+):
+    """The full module/subtab/action/scope catalog the Permission Matrix UI
+    renders — single source of truth so the frontend doesn't hardcode it."""
+    return {
+        "modules": PERMISSION_MODULES,
+        "actions": PERMISSION_ACTIONS,
+        "scopes": PERMISSION_SCOPES,
+    }
+
+
+@router.get("/{user_id}", response_model=UserResponse)
+async def get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    return to_response(target, db)
+
+
+@router.get("/{user_id}/assignments", response_model=list[BranchUserAssignmentResponse])
+async def list_user_branch_assignments(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """All of this user's branch assignments, across every branch — the
+    reverse direction of GET /organization/branches/{id}/user-assignments."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    assignments = db.query(BranchUserAssignment).filter(BranchUserAssignment.user_id == user_id).order_by(BranchUserAssignment.id).all()
+    dept_ids = {a.department_id for a in assignments if a.department_id}
+    depts_by_id = {d.id: d for d in db.query(Department).filter(Department.id.in_(dept_ids)).all()} if dept_ids else {}
+    return [
+        BranchUserAssignmentResponse.model_validate(a).model_copy(
+            update={"user_name": target.name, "department_name": depts_by_id[a.department_id].name if a.department_id in depts_by_id else None}
+        )
+        for a in assignments
+    ]
+
+
+@router.patch("/{user_id}/permissions", response_model=UserResponse)
+async def update_user_permissions(
+    user_id: int,
+    payload: UserPermissionsUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    valid_ids = {
+        f"{mk}:{stk}:{a}"
+        for mk, m in PERMISSION_MODULES.items()
+        for stk in (m["subtabs"] or {"": None})
+        for a in PERMISSION_ACTIONS
+    }
+    invalid = set(payload.granular_permissions) - valid_ids
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Invalid permission id(s): {', '.join(sorted(invalid)[:5])}")
+    invalid_scopes = {v for v in payload.data_access_scopes.values() if v not in PERMISSION_SCOPES}
+    if invalid_scopes:
+        raise HTTPException(status_code=400, detail=f"Invalid scope(s): {', '.join(sorted(invalid_scopes))}")
+    invalid_modules = set(payload.data_access_scopes.keys()) - set(PERMISSION_MODULES.keys())
+    if invalid_modules:
+        raise HTTPException(status_code=400, detail=f"Invalid module(s): {', '.join(sorted(invalid_modules))}")
+
+    added = sorted(set(payload.granular_permissions) - set(target.granular_permissions or []))
+    removed = sorted(set(target.granular_permissions or []) - set(payload.granular_permissions))
+    target.granular_permissions = payload.granular_permissions
+    target.data_access_scopes = payload.data_access_scopes
+    db.add(AuditLog(
+        entity_type="user_permissions", entity_id=user_id, action="update",
+        summary=f"{admin.name} updated permissions for {target.name}" + (
+            f" (+{len(added)}/-{len(removed)})" if added or removed else " (data access scopes only)"
+        ),
+        old_value=None, new_value=None, performed_by_id=admin.id,
+    ))
+    db.commit()
+    db.refresh(target)
+    return to_response(target, db)
+
+
+@router.get("/{user_id}/permission-history", response_model=list[UserActivityResponse])
+async def list_user_permission_history(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    if not db.query(User).filter(User.id == user_id).first():
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.query(AuditLog).filter(
+        AuditLog.entity_type == "user_permissions", AuditLog.entity_id == user_id
+    ).order_by(AuditLog.performed_at.desc()).limit(200).all()
+
+
+@router.get("/{user_id}/sessions", response_model=list[UserSessionResponse])
+async def list_user_sessions(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    if not db.query(User).filter(User.id == user_id).first():
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.query(UserSession).filter(UserSession.user_id == user_id).order_by(UserSession.created_at.desc()).limit(100).all()
+
+
+@router.get("/{user_id}/activity", response_model=list[UserActivityResponse])
+async def list_user_activity(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    if not db.query(User).filter(User.id == user_id).first():
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.query(AuditLog).filter(AuditLog.performed_by_id == user_id).order_by(AuditLog.performed_at.desc()).limit(200).all()
+
+
+@router.get("/{user_id}/documents", response_model=list[UserDocumentResponse])
+async def list_user_documents(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    if not db.query(User).filter(User.id == user_id).first():
+        raise HTTPException(status_code=404, detail="User not found")
+    return db.query(UserDocument).filter(UserDocument.user_id == user_id).order_by(UserDocument.id.desc()).all()
+
+
+@router.post("/{user_id}/documents", response_model=UserDocumentResponse)
+async def upload_user_document(
+    user_id: int,
+    file: UploadFile = File(...),
+    document_type: str = Form(...),
+    document_name: str = Form(...),
+    document_number: str | None = Form(None),
+    issue_date: date | None = Form(None),
+    expiry_date: date | None = Form(None),
+    issuing_authority: str | None = Form(None),
+    confidentiality: str | None = Form(None),
+    tags: str | None = Form(None),
+    remarks: str | None = Form(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+
+    folder_path = f"{sanitize_folder_name(settings.SHAREPOINT_FOLDER or 'ERP-media')}/user-documents/{sanitize_folder_name(target.name)}"
+    result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, file)
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+
+    document = UserDocument(
+        user_id=user_id,
+        document_type=document_type,
+        document_name=document_name,
+        document_number=document_number,
+        issue_date=issue_date,
+        expiry_date=expiry_date,
+        issuing_authority=issuing_authority,
+        filename=result["name"],
+        content_type=file.content_type,
+        size=result["size"],
+        sharepoint_path=result["path"],
+        sharepoint_url=result.get("webUrl"),
+        confidentiality=confidentiality,
+        tags=tag_list,
+        remarks=remarks,
+        created_by_id=admin.id,
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+@router.get("/{user_id}/documents/{document_id}/content")
+async def get_user_document_content(
+    user_id: int,
+    document_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    document = db.query(UserDocument).filter(UserDocument.id == document_id, UserDocument.user_id == user_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, document.sharepoint_path or "")
+    return Response(
+        content=content,
+        media_type=document.content_type or content_type,
+        headers={"Content-Disposition": f'inline; filename="{document.filename}"'},
+    )
+
+
+@router.delete("/{user_id}/documents/{document_id}")
+async def delete_user_document(
+    user_id: int,
+    document_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    document = db.query(UserDocument).filter(UserDocument.id == document_id, UserDocument.user_id == user_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if settings.SHAREPOINT_SITE_ID and document.sharepoint_path:
+        try:
+            await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, document.sharepoint_path)
+        except HTTPException:
+            pass
+    db.delete(document)
+    db.commit()
+    return {"ok": True}
+
+
 @router.patch("/{user_id}", response_model=UserResponse)
 async def update_user(
     user_id: int,
@@ -172,6 +413,9 @@ async def update_user(
 
     if payload.is_md is not None:
         target.is_md = payload.is_md
+
+    if payload.is_finance_manager is not None:
+        target.is_finance_manager = payload.is_finance_manager
 
     if payload.name is not None:
         target.name = payload.name

@@ -22,7 +22,6 @@ from datetime import datetime, timedelta, timezone
 from app.auth.microsoft import get_auth_url, exchange_code_for_token, get_microsoft_user_profile, get_microsoft_manager_profile
 from app.modules.organization.services.provisioning import sync_user_org_links
 from app.core.config import settings
-from app.middleware.api_key import get_api_key_record
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -123,39 +122,26 @@ def _issue_refresh_session(db: Session, user: User, user_agent: str = "") -> str
     return raw
 
 
-def _make_api_key_user(api_key) -> User:
-    """In-memory User standing in for an API key — acts like a service account
-    scoped to whatever apps the key was granted (never persisted, id=0)."""
-    return User(
-        id=0,
-        email=f"apikey:{api_key.name}",
-        name=api_key.name,
-        role="api_service",
-        is_active=True,
-        assigned_apps=api_key.allowed_apps or [],
-        erp_permissions=[],
-    )
-
-
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
-    """Dependency: authenticate via API key first (external integrations),
-    then the session_token httponly cookie, then a JWT Bearer header
-    (kept for API clients / tooling that can't rely on cookies).
+    """Dependency: authenticate via the session_token httponly cookie, then a
+    JWT Bearer header (kept for API clients / tooling that can't rely on
+    cookies).
 
     The access token is deliberately short-lived (15 min) and this
     dependency does NOT renew it — keeping a daily-active user signed in is
     the job of POST /auth/refresh (called by the frontend on a 401), backed
     by a revocable `user_sessions` row. See that route's docstring for why
     silently re-minting the JWT here instead would be the wrong fix."""
-    api_key = get_api_key_record(request, db)
-    if api_key is not None:
-        return _make_api_key_user(api_key)
+    from app.core.audit_context import set_api_source
 
     token = request.cookies.get("session_token")
-    if not token:
+    if token:
+        set_api_source("web_app")
+    else:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
+            set_api_source("bearer_token")
 
     if not token:
         raise HTTPException(status_code=401, detail="Missing or invalid token")

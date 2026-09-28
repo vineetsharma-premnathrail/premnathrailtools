@@ -141,9 +141,10 @@ export const usersApi = {
     is_plant_head?: boolean,
     is_purchase_head?: boolean,
     is_director?: boolean,
-    is_md?: boolean
+    is_md?: boolean,
+    is_finance_manager?: boolean
   ) => {
-    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, is_department_head, is_project_head, is_plant_head, is_purchase_head, is_director, is_md })
+    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, is_department_head, is_project_head, is_plant_head, is_purchase_head, is_director, is_md, is_finance_manager })
     return data
   },
 
@@ -164,6 +165,53 @@ export const usersApi = {
 
   directory: async (): Promise<import('@/types').DirectoryUser[]> => {
     const { data } = await apiClient.get('/users/directory')
+    return data
+  },
+
+  getUser: async (id: number) => {
+    const { data } = await apiClient.get(`/users/${id}`)
+    return data
+  },
+  listUserAssignments: async (id: number) => {
+    const { data } = await apiClient.get(`/users/${id}/assignments`)
+    return data
+  },
+  listUserSessions: async (id: number) => {
+    const { data } = await apiClient.get(`/users/${id}/sessions`)
+    return data
+  },
+  listUserActivity: async (id: number) => {
+    const { data } = await apiClient.get(`/users/${id}/activity`)
+    return data
+  },
+  listUserDocuments: async (id: number) => {
+    const { data } = await apiClient.get(`/users/${id}/documents`)
+    return data
+  },
+  uploadUserDocument: async (id: number, file: File, meta: Record<string, string>) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    Object.entries(meta).forEach(([k, v]) => { if (v) formData.append(k, v) })
+    const { data } = await apiClient.post(`/users/${id}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+    return data
+  },
+  deleteUserDocument: async (id: number, documentId: number) => {
+    await apiClient.delete(`/users/${id}/documents/${documentId}`)
+  },
+
+  getPermissionRegistry: async (): Promise<import('@/types').PermissionRegistry> => {
+    const { data } = await apiClient.get('/users/permissions/registry')
+    return data
+  },
+  updatePermissions: async (id: number, granularPermissions: string[], dataAccessScopes: Record<string, string>) => {
+    const { data } = await apiClient.patch(`/users/${id}/permissions`, { granular_permissions: granularPermissions, data_access_scopes: dataAccessScopes })
+    return data
+  },
+  listPermissionHistory: async (id: number) => {
+    const { data } = await apiClient.get(`/users/${id}/permission-history`)
     return data
   },
 }
@@ -427,6 +475,20 @@ export const crmApi = {
   createPaymentTerm: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/payment-terms', payload)).data,
   updatePaymentTerm: async (id: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/payment-terms/${id}`, payload)).data,
   deletePaymentTerm: async (id: number) => (await apiClient.delete(`/crm/payment-terms/${id}`)).data,
+
+  downloadBulkImportTemplate: async () => {
+    const { data } = await apiClient.get('/crm/bulk-import/template', { responseType: 'blob' })
+    return data as Blob
+  },
+  bulkImport: async (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post('/crm/bulk-import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000, // hundreds-to-thousands of rows take longer than the default JSON timeout
+    })
+    return data
+  },
 }
 
 export const erpApi = {
@@ -768,6 +830,21 @@ export const p2pApi = {
     return data
   },
 
+  checkItemStock: async (id: number, itemId: number) => {
+    const { data } = await apiClient.get(`/p2p/requests/${id}/items/${itemId}/stock-check`)
+    return data
+  },
+
+  issueItemFromStock: async (id: number, itemId: number, payload: { location_id: number; quantity?: number }) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/items/${itemId}/issue-from-stock`, payload)
+    return data
+  },
+
+  sendItemToProcurement: async (id: number, itemId: number) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/items/${itemId}/send-to-procurement`)
+    return data
+  },
+
   uploadAttachments: async (id: number, files: File[], docType: string = 'supporting', itemId?: number) => {
     const formData = new FormData()
     files.forEach((f) => formData.append('files', f))
@@ -795,6 +872,165 @@ export const p2pApi = {
     const { data } = await apiClient.get(`/p2p/requests/${id}/attachments/${attachmentId}/content`, { responseType: 'blob' })
     return data
   },
+
+  // MIS Report
+  getMisSummary: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/p2p/mis/summary', { params })
+    return data
+  },
+  exportMisReport: async (params: Record<string, unknown> = {}): Promise<Blob> => {
+    const { data } = await apiClient.get('/p2p/mis/export', { params, responseType: 'blob' })
+    return data
+  },
+}
+
+export const qualityApi = {
+  listStandards: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/standards', { params }); return data },
+  getStandard: async (id: number) => { const { data } = await apiClient.get(`/quality/standards/${id}`); return data },
+  createStandard: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/standards', payload); return data },
+  updateStandard: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/standards/${id}`, payload); return data },
+  deleteStandard: async (id: number) => { const { data } = await apiClient.delete(`/quality/standards/${id}`); return data },
+  listChecklists: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/checklists', { params }); return data },
+  getChecklist: async (id: number) => { const { data } = await apiClient.get(`/quality/checklists/${id}`); return data },
+  createChecklist: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/checklists', payload); return data },
+  updateChecklist: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/checklists/${id}`, payload); return data },
+  deleteChecklist: async (id: number) => { const { data } = await apiClient.delete(`/quality/checklists/${id}`); return data },
+  listInspectionPlans: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/inspection-plans', { params }); return data },
+  getInspectionPlan: async (id: number) => { const { data } = await apiClient.get(`/quality/inspection-plans/${id}`); return data },
+  createInspectionPlan: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/inspection-plans', payload); return data },
+  updateInspectionPlan: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/inspection-plans/${id}`, payload); return data },
+  deleteInspectionPlan: async (id: number) => { const { data } = await apiClient.delete(`/quality/inspection-plans/${id}`); return data },
+  listInspections: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/inspections', { params }); return data },
+  getInspection: async (id: number) => { const { data } = await apiClient.get(`/quality/inspections/${id}`); return data },
+  createInspection: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/inspections', payload); return data },
+  updateInspection: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/inspections/${id}`, payload); return data },
+  deleteInspection: async (id: number) => { const { data } = await apiClient.delete(`/quality/inspections/${id}`); return data },
+  listNcrs: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/ncr', { params }); return data },
+  getNcr: async (id: number) => { const { data } = await apiClient.get(`/quality/ncr/${id}`); return data },
+  createNcr: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/ncr', payload); return data },
+  updateNcr: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/ncr/${id}`, payload); return data },
+  deleteNcr: async (id: number) => { const { data } = await apiClient.delete(`/quality/ncr/${id}`); return data },
+  listRejections: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/rejections', { params }); return data },
+  getRejection: async (id: number) => { const { data } = await apiClient.get(`/quality/rejections/${id}`); return data },
+  createRejection: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/rejections', payload); return data },
+  updateRejection: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/rejections/${id}`, payload); return data },
+  deleteRejection: async (id: number) => { const { data } = await apiClient.delete(`/quality/rejections/${id}`); return data },
+  listCapas: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/capa', { params }); return data },
+  getCapa: async (id: number) => { const { data } = await apiClient.get(`/quality/capa/${id}`); return data },
+  createCapa: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/capa', payload); return data },
+  updateCapa: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/capa/${id}`, payload); return data },
+  deleteCapa: async (id: number) => { const { data } = await apiClient.delete(`/quality/capa/${id}`); return data },
+  listComplaints: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/complaints', { params }); return data },
+  getComplaint: async (id: number) => { const { data } = await apiClient.get(`/quality/complaints/${id}`); return data },
+  createComplaint: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/complaints', payload); return data },
+  updateComplaint: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/complaints/${id}`, payload); return data },
+  deleteComplaint: async (id: number) => { const { data } = await apiClient.delete(`/quality/complaints/${id}`); return data },
+  listSupplierScorecards: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/supplier-quality', { params }); return data },
+  getSupplierScorecard: async (id: number) => { const { data } = await apiClient.get(`/quality/supplier-quality/${id}`); return data },
+  createSupplierScorecard: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/supplier-quality', payload); return data },
+  updateSupplierScorecard: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/supplier-quality/${id}`, payload); return data },
+  deleteSupplierScorecard: async (id: number) => { const { data } = await apiClient.delete(`/quality/supplier-quality/${id}`); return data },
+
+  // Documents
+  listDocuments: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/documents', { params }); return data },
+  uploadDocuments: async (formData: FormData) => {
+    const { data } = await apiClient.post('/quality/documents', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      // File uploads (esp. to SharePoint via the backend) routinely take
+      // longer than the global 10s JSON-request timeout — that was tripping
+      // ECONNABORTED (or, if the connection dropped instead of cleanly
+      // timing out, a bare network error) on ordinary multi-MB attachments
+      // and surfacing a misleading "check your internet connection" message
+      // even when connectivity was fine.
+      timeout: 120000,
+    })
+    return data
+  },
+  getDocumentContent: async (id: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/quality/documents/${id}/content`, { responseType: 'blob' })
+    return data
+  },
+  deleteDocument: async (id: number) => { const { data } = await apiClient.delete(`/quality/documents/${id}`); return data },
+
+  // Dashboard
+  getDashboard: async () => { const { data } = await apiClient.get('/quality/dashboard'); return data },
+}
+
+export const projectsApi = {
+  list: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/projects', { params }); return data },
+  get: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}`); return data },
+  create: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/projects', payload); return data },
+  update: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${id}`, payload); return data },
+  delete: async (id: number) => { const { data } = await apiClient.delete(`/projects/${id}`); return data },
+  getAudit: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/audit`); return data },
+  getMeta: async () => { const { data } = await apiClient.get('/projects/meta'); return data },
+
+  listPhases: async (projectId: number) => { const { data } = await apiClient.get(`/projects/${projectId}/phases`); return data },
+  createPhase: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/phases`, payload); return data },
+  updatePhase: async (projectId: number, phaseId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/phases/${phaseId}`, payload); return data },
+  deletePhase: async (projectId: number, phaseId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/phases/${phaseId}`); return data },
+  listTasks: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/tasks`, { params }); return data },
+  createTask: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/tasks`, payload); return data },
+  updateTask: async (projectId: number, taskId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/tasks/${taskId}`, payload); return data },
+  deleteTask: async (projectId: number, taskId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/tasks/${taskId}`); return data },
+  listMilestones: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/milestones`, { params }); return data },
+  createMilestone: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/milestones`, payload); return data },
+  updateMilestone: async (projectId: number, milestoneId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/milestones/${milestoneId}`, payload); return data },
+  deleteMilestone: async (projectId: number, milestoneId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/milestones/${milestoneId}`); return data },
+  listResources: async (projectId: number) => { const { data } = await apiClient.get(`/projects/${projectId}/resources`); return data },
+  createResource: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/resources`, payload); return data },
+  deleteResource: async (projectId: number, resourceId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/resources/${resourceId}`); return data },
+
+  listBudgetLines: async (projectId: number) => { const { data } = await apiClient.get(`/projects/${projectId}/budget/lines`); return data },
+  createBudgetLine: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/budget/lines`, payload); return data },
+  updateBudgetLine: async (projectId: number, lineId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/budget/lines/${lineId}`, payload); return data },
+  deleteBudgetLine: async (projectId: number, lineId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/budget/lines/${lineId}`); return data },
+  listCostEntries: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/budget/entries`, { params }); return data },
+  createCostEntry: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/budget/entries`, payload); return data },
+  updateCostEntry: async (projectId: number, entryId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/budget/entries/${entryId}`, payload); return data },
+  deleteCostEntry: async (projectId: number, entryId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/budget/entries/${entryId}`); return data },
+
+  listDeliverables: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/deliverables`, { params }); return data },
+  createDeliverable: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/deliverables`, payload); return data },
+  updateDeliverable: async (projectId: number, id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/deliverables/${id}`, payload); return data },
+  deleteDeliverable: async (projectId: number, id: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/deliverables/${id}`); return data },
+
+  listProjectDocuments: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/documents`, { params }); return data },
+  uploadProjectDocument: async (projectId: number, formData: FormData) => {
+    const { data } = await apiClient.post(`/projects/${projectId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      // File uploads (esp. to SharePoint via the backend) routinely take
+      // longer than the global 10s JSON-request timeout — that was tripping
+      // ECONNABORTED (or, if the connection dropped instead of cleanly
+      // timing out, a bare network error) on ordinary multi-MB attachments
+      // and surfacing a misleading "check your internet connection" message
+      // even when connectivity was fine.
+      timeout: 120000,
+    })
+    return data
+  },
+  getProjectDocumentContent: async (projectId: number, id: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/projects/${projectId}/documents/${id}/content`, { responseType: 'blob' })
+    return data
+  },
+  deleteProjectDocument: async (projectId: number, id: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/documents/${id}`); return data },
+
+  listIssues: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/issues`, { params }); return data },
+  createIssue: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/issues`, payload); return data },
+  updateIssue: async (projectId: number, issueId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/issues/${issueId}`, payload); return data },
+  deleteIssue: async (projectId: number, issueId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/issues/${issueId}`); return data },
+  listRisks: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/risks`, { params }); return data },
+  createRisk: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/risks`, payload); return data },
+  updateRisk: async (projectId: number, riskId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/risks/${riskId}`, payload); return data },
+  deleteRisk: async (projectId: number, riskId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/risks/${riskId}`); return data },
+  listChangeRequests: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/changes`, { params }); return data },
+  createChangeRequest: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/changes`, payload); return data },
+  updateChangeRequest: async (projectId: number, changeId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/changes/${changeId}`, payload); return data },
+  deleteChangeRequest: async (projectId: number, changeId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/changes/${changeId}`); return data },
+  listApprovals: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/approvals`, { params }); return data },
+  createApproval: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/approvals`, payload); return data },
+  updateApproval: async (projectId: number, approvalId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/approvals/${approvalId}`, payload); return data },
+  deleteApproval: async (projectId: number, approvalId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/approvals/${approvalId}`); return data },
 }
 
 export const rfqApi = {
@@ -1007,8 +1243,8 @@ export const goodsReceiptsApi = {
 }
 
 export const storeApi = {
-  listLocations: async () => {
-    const { data } = await apiClient.get('/store/locations')
+  listLocations: async (branchId?: number) => {
+    const { data } = await apiClient.get('/store/locations', { params: branchId ? { branch_id: branchId } : undefined })
     return data
   },
 
@@ -1016,11 +1252,470 @@ export const storeApi = {
     const { data } = await apiClient.post('/store/locations', payload)
     return data
   },
+  updateLocation: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/store/locations/${id}`, payload)
+    return data
+  },
+  deleteLocation: async (id: number) => {
+    await apiClient.delete(`/store/locations/${id}`)
+  },
+
+  listCategories: async (parentId?: number) => {
+    const { data } = await apiClient.get('/store/categories', { params: parentId ? { parent_id: parentId } : undefined })
+    return data
+  },
+  createCategory: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/categories', payload)
+    return data
+  },
+  updateCategory: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/store/categories/${id}`, payload)
+    return data
+  },
+  deleteCategory: async (id: number) => {
+    await apiClient.delete(`/store/categories/${id}`)
+  },
+
+  listItems: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/items', { params })
+    return data
+  },
+  getItem: async (id: number) => {
+    const { data } = await apiClient.get(`/store/items/${id}`)
+    return data
+  },
+  createItem: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/items', payload)
+    return data
+  },
+  updateItem: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/store/items/${id}`, payload)
+    return data
+  },
+  deleteItem: async (id: number) => {
+    await apiClient.delete(`/store/items/${id}`)
+  },
+
+  listBins: async (locationId?: number, parentId?: number) => {
+    const { data } = await apiClient.get('/store/bins', { params: { location_id: locationId, parent_id: parentId } })
+    return data
+  },
+  createBin: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/bins', payload)
+    return data
+  },
+  updateBin: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/store/bins/${id}`, payload)
+    return data
+  },
+  deleteBin: async (id: number) => {
+    await apiClient.delete(`/store/bins/${id}`)
+  },
+
+  listStockBalances: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/stock/balances', { params })
+    return data
+  },
+  listStockTransactions: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/stock/transactions', { params })
+    return data
+  },
+  createStockTransaction: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/stock/transactions', payload)
+    return data
+  },
+
+  listMaterialIssues: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/material-issues', { params })
+    return data
+  },
+  getMaterialIssue: async (id: number) => {
+    const { data } = await apiClient.get(`/store/material-issues/${id}`)
+    return data
+  },
+  createMaterialIssue: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/material-issues', payload)
+    return data
+  },
+
+  listMaterialReturns: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/material-returns', { params })
+    return data
+  },
+  getMaterialReturn: async (id: number) => {
+    const { data } = await apiClient.get(`/store/material-returns/${id}`)
+    return data
+  },
+  createMaterialReturn: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/material-returns', payload)
+    return data
+  },
+
+  listStockTransfers: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/stock-transfers', { params })
+    return data
+  },
+  getStockTransfer: async (id: number) => {
+    const { data } = await apiClient.get(`/store/stock-transfers/${id}`)
+    return data
+  },
+  createStockTransfer: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/stock-transfers', payload)
+    return data
+  },
+
+  listStockAdjustments: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/stock-adjustments', { params })
+    return data
+  },
+  getStockAdjustment: async (id: number) => {
+    const { data } = await apiClient.get(`/store/stock-adjustments/${id}`)
+    return data
+  },
+  createStockAdjustment: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/stock-adjustments', payload)
+    return data
+  },
+
+  listStockReservations: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/stock-reservations', { params })
+    return data
+  },
+  createStockReservation: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/store/stock-reservations', payload)
+    return data
+  },
+  cancelStockReservation: async (id: number) => {
+    const { data } = await apiClient.post(`/store/stock-reservations/${id}/cancel`)
+    return data
+  },
+  fulfillStockReservation: async (id: number) => {
+    const { data } = await apiClient.post(`/store/stock-reservations/${id}/fulfill`)
+    return data
+  },
+}
+
+export const costCentersApi = {
+  listCostCenters: async (branchId?: number) => {
+    const { data } = await apiClient.get('/organization/cost-centers', { params: branchId ? { branch_id: branchId } : undefined })
+    return data
+  },
+  createCostCenter: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/organization/cost-centers', payload)
+    return data
+  },
+  updateCostCenter: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/organization/cost-centers/${id}`, payload)
+    return data
+  },
+  deleteCostCenter: async (id: number) => {
+    await apiClient.delete(`/organization/cost-centers/${id}`)
+  },
+}
+
+export const accountsApi = {
+  listGLAccounts: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/gl-accounts', { params })
+    return data
+  },
+  createGLAccount: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/gl-accounts', payload)
+    return data
+  },
+  updateGLAccount: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/accounts/gl-accounts/${id}`, payload)
+    return data
+  },
+  deleteGLAccount: async (id: number) => {
+    await apiClient.delete(`/accounts/gl-accounts/${id}`)
+  },
+
+  listBankAccounts: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/bank-accounts', { params })
+    return data
+  },
+  createBankAccount: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/bank-accounts', payload)
+    return data
+  },
+  updateBankAccount: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/accounts/bank-accounts/${id}`, payload)
+    return data
+  },
+  deleteBankAccount: async (id: number) => {
+    await apiClient.delete(`/accounts/bank-accounts/${id}`)
+  },
+
+  listVendors: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/vendors', { params })
+    return data
+  },
+  createVendor: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/vendors', payload)
+    return data
+  },
+  updateVendor: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/accounts/vendors/${id}`, payload)
+    return data
+  },
+  deleteVendor: async (id: number) => {
+    await apiClient.delete(`/accounts/vendors/${id}`)
+  },
+
+  listInternalOrders: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/internal-orders', { params })
+    return data
+  },
+  createInternalOrder: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/internal-orders', payload)
+    return data
+  },
+  updateInternalOrder: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/accounts/internal-orders/${id}`, payload)
+    return data
+  },
+  deleteInternalOrder: async (id: number) => {
+    await apiClient.delete(`/accounts/internal-orders/${id}`)
+  },
+
+  listJournalEntries: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/journal-entries', { params })
+    return data
+  },
+  getJournalEntry: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/journal-entries/${id}`)
+    return data
+  },
+  createJournalEntry: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/journal-entries', payload)
+    return data
+  },
+  reverseJournalEntry: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/accounts/journal-entries/${id}/reverse`, { reason })
+    return data
+  },
+  getGLAccountBalance: async (glAccountId: number, period?: string) => {
+    const { data } = await apiClient.get(`/accounts/gl-accounts/${glAccountId}/balance`, { params: period ? { period } : undefined })
+    return data
+  },
+
+  matchPreview: async (purchaseOrderId: number, invoiceQty: number, invoiceAmount: number) => {
+    const { data } = await apiClient.get('/accounts/vendor-invoices/match-preview', {
+      params: { purchase_order_id: purchaseOrderId, invoice_qty: invoiceQty, invoice_amount: invoiceAmount },
+    })
+    return data
+  },
+  listVendorInvoices: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/vendor-invoices', { params })
+    return data
+  },
+  getVendorInvoice: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/vendor-invoices/${id}`)
+    return data
+  },
+  createVendorInvoice: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/vendor-invoices', payload)
+    return data
+  },
+  approveVendorInvoiceVariance: async (id: number, note?: string) => {
+    const { data } = await apiClient.post(`/accounts/vendor-invoices/${id}/approve-variance`, { note })
+    return data
+  },
+  postVendorInvoice: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/vendor-invoices/${id}/post`)
+    return data
+  },
+
+  listPayments: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/payments', { params })
+    return data
+  },
+  createPayment: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/payments', payload)
+    return data
+  },
+
+  listArTransactions: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/ar-transactions', { params })
+    return data
+  },
+  getArTransaction: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/ar-transactions/${id}`)
+    return data
+  },
+  createArTransaction: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/ar-transactions', payload)
+    return data
+  },
+  postArTransaction: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/ar-transactions/${id}/post`)
+    return data
+  },
+  collectArTransaction: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/accounts/ar-transactions/${id}/collect`, payload)
+    return data
+  },
+
+  listPeriodCloses: async () => {
+    const { data } = await apiClient.get('/accounts/period-close')
+    return data
+  },
+  closePeriod: async (period: string, notes?: string) => {
+    const { data } = await apiClient.post(`/accounts/period-close/${period}/close`, { notes })
+    return data
+  },
+  reopenPeriod: async (period: string, reason: string) => {
+    const { data } = await apiClient.post(`/accounts/period-close/${period}/reopen`, { reason })
+    return data
+  },
+
+  listBankReconciliations: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/bank-reconciliations', { params })
+    return data
+  },
+  getBankReconciliation: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/bank-reconciliations/${id}`)
+    return data
+  },
+  createBankReconciliation: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/bank-reconciliations', payload)
+    return data
+  },
+  listUnreconciledPayments: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/bank-reconciliations/${id}/unreconciled-payments`)
+    return data
+  },
+  reconcilePayments: async (id: number, paymentTransactionIds: number[]) => {
+    const { data } = await apiClient.post(`/accounts/bank-reconciliations/${id}/reconcile-payments`, { payment_transaction_ids: paymentTransactionIds })
+    return data
+  },
+  completeBankReconciliation: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/bank-reconciliations/${id}/complete`)
+    return data
+  },
+
+  getLiquidityForecast: async () => {
+    const { data } = await apiClient.get('/accounts/liquidity-forecast')
+    return data
+  },
+
+  getTrialBalance: async (period?: string) => {
+    const { data } = await apiClient.get('/accounts/reports/trial-balance', { params: period ? { period } : undefined })
+    return data
+  },
+  getGLLedger: async (glAccountId: number, fromPeriod?: string, toPeriod?: string) => {
+    const { data } = await apiClient.get('/accounts/reports/gl-ledger', { params: { gl_account_id: glAccountId, from_period: fromPeriod, to_period: toPeriod } })
+    return data
+  },
+  getApAging: async () => {
+    const { data } = await apiClient.get('/accounts/reports/ap-aging')
+    return data
+  },
+  getArAging: async () => {
+    const { data } = await apiClient.get('/accounts/reports/ar-aging')
+    return data
+  },
+  getProfitAndLoss: async (period?: string) => {
+    const { data } = await apiClient.get('/accounts/reports/profit-and-loss', { params: period ? { period } : undefined })
+    return data
+  },
+  getBalanceSheet: async (period?: string) => {
+    const { data } = await apiClient.get('/accounts/reports/balance-sheet', { params: period ? { period } : undefined })
+    return data
+  },
+  getVarianceAnalysis: async (fromPeriod?: string, toPeriod?: string) => {
+    const { data } = await apiClient.get('/accounts/reports/variance-analysis', { params: { from_period: fromPeriod, to_period: toPeriod } })
+    return data
+  },
+  getMonthlyReportPack: async (period?: string) => {
+    const { data } = await apiClient.get('/accounts/reports/monthly-pack', { params: period ? { period } : undefined })
+    return data
+  },
 }
 
 export const organizationApi = {
+  // Company Info (single-record settings — one companies row per deployment)
+  getCompanyInfo: async () => {
+    const { data } = await apiClient.get('/organization/company')
+    return data
+  },
+  updateCompanyInfo: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch('/organization/company', payload)
+    return data
+  },
+
+  listCompanyAddresses: async () => {
+    const { data } = await apiClient.get('/organization/company/addresses')
+    return data
+  },
+  createCompanyAddress: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/organization/company/addresses', payload)
+    return data
+  },
+  updateCompanyAddress: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/organization/company/addresses/${id}`, payload)
+    return data
+  },
+  deleteCompanyAddress: async (id: number) => {
+    await apiClient.delete(`/organization/company/addresses/${id}`)
+  },
+
+  listCompanyContacts: async () => {
+    const { data } = await apiClient.get('/organization/company/contacts')
+    return data
+  },
+  createCompanyContact: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/organization/company/contacts', payload)
+    return data
+  },
+  updateCompanyContact: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/organization/company/contacts/${id}`, payload)
+    return data
+  },
+  deleteCompanyContact: async (id: number) => {
+    await apiClient.delete(`/organization/company/contacts/${id}`)
+  },
+
+  listCompanyFinancialYears: async () => {
+    const { data } = await apiClient.get('/organization/company/financial-years')
+    return data
+  },
+  createCompanyFinancialYear: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/organization/company/financial-years', payload)
+    return data
+  },
+  updateCompanyFinancialYear: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/organization/company/financial-years/${id}`, payload)
+    return data
+  },
+  deleteCompanyFinancialYear: async (id: number) => {
+    await apiClient.delete(`/organization/company/financial-years/${id}`)
+  },
+
+  listCompanyDocuments: async () => {
+    const { data } = await apiClient.get('/organization/company/documents')
+    return data
+  },
+  uploadCompanyDocument: async (file: File, meta: Record<string, string>) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    Object.entries(meta).forEach(([k, v]) => { if (v) formData.append(k, v) })
+    const { data } = await apiClient.post('/organization/company/documents', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+    return data
+  },
+  deleteCompanyDocument: async (id: number) => {
+    await apiClient.delete(`/organization/company/documents/${id}`)
+  },
+
   listBranches: async () => {
     const { data } = await apiClient.get('/organization/branches')
+    return data
+  },
+  getBranch: async (id: number) => {
+    const { data } = await apiClient.get(`/organization/branches/${id}`)
     return data
   },
   createBranch: async (payload: Record<string, unknown>) => {
@@ -1035,8 +1730,67 @@ export const organizationApi = {
     await apiClient.delete(`/organization/branches/${id}`)
   },
 
-  listDepartments: async () => {
-    const { data } = await apiClient.get('/organization/departments')
+  listBranchAddresses: async (branchId: number) => {
+    const { data } = await apiClient.get(`/organization/branches/${branchId}/addresses`)
+    return data
+  },
+  createBranchAddress: async (branchId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/organization/branches/${branchId}/addresses`, payload)
+    return data
+  },
+  updateBranchAddress: async (branchId: number, id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/organization/branches/${branchId}/addresses/${id}`, payload)
+    return data
+  },
+  deleteBranchAddress: async (branchId: number, id: number) => {
+    await apiClient.delete(`/organization/branches/${branchId}/addresses/${id}`)
+  },
+
+  listBranchUserAssignments: async (branchId: number) => {
+    const { data } = await apiClient.get(`/organization/branches/${branchId}/user-assignments`)
+    return data
+  },
+  createBranchUserAssignment: async (branchId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/organization/branches/${branchId}/user-assignments`, payload)
+    return data
+  },
+  updateBranchUserAssignment: async (branchId: number, id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/organization/branches/${branchId}/user-assignments/${id}`, payload)
+    return data
+  },
+  deleteBranchUserAssignment: async (branchId: number, id: number) => {
+    await apiClient.delete(`/organization/branches/${branchId}/user-assignments/${id}`)
+  },
+
+  listBranchDocuments: async (branchId: number) => {
+    const { data } = await apiClient.get(`/organization/branches/${branchId}/documents`)
+    return data
+  },
+  uploadBranchDocument: async (branchId: number, file: File, meta: Record<string, string>) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    Object.entries(meta).forEach(([k, v]) => { if (v) formData.append(k, v) })
+    const { data } = await apiClient.post(`/organization/branches/${branchId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+    return data
+  },
+  deleteBranchDocument: async (branchId: number, id: number) => {
+    await apiClient.delete(`/organization/branches/${branchId}/documents/${id}`)
+  },
+
+  listAuditLogs: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/organization/audit-logs', { params })
+    return data
+  },
+  getAuditDashboard: async () => {
+    const { data } = await apiClient.get('/organization/audit-logs/dashboard')
+    return data
+  },
+
+  listDepartments: async (branchId?: number) => {
+    const { data } = await apiClient.get('/organization/departments', { params: branchId ? { branch_id: branchId } : undefined })
     return data
   },
   createDepartment: async (payload: Record<string, unknown>) => {
@@ -1053,6 +1807,13 @@ export const organizationApi = {
   getDepartmentMembers: async (id: number) => {
     const { data } = await apiClient.get(`/organization/departments/${id}/members`)
     return data
+  },
+  addDepartmentMember: async (id: number, userId: number) => {
+    const { data } = await apiClient.post(`/organization/departments/${id}/members`, { user_id: userId })
+    return data
+  },
+  removeDepartmentMember: async (id: number, userId: number) => {
+    await apiClient.delete(`/organization/departments/${id}/members/${userId}`)
   },
 }
 

@@ -91,6 +91,10 @@ class OrganizationCreate(BaseModel):
     additional_phones: list[str] | None = None
     additional_emails: list[str] | None = None
     website: str | None = None
+    credit_limit: float | None = None
+    credit_days: int | None = None
+    discount_percentage: float | None = None
+    gl_reconciliation_account_id: int | None = None
 
     _validate_email = field_validator("official_email")(validate_email_format)
     _validate_gst = field_validator("gst_number")(validate_gst_format)
@@ -122,6 +126,10 @@ class OrganizationUpdate(BaseModel):
     additional_phones: list[str] | None = None
     additional_emails: list[str] | None = None
     website: str | None = None
+    credit_limit: float | None = None
+    credit_days: int | None = None
+    discount_percentage: float | None = None
+    gl_reconciliation_account_id: int | None = None
 
     _validate_email = field_validator("official_email")(validate_email_format)
     _validate_gst = field_validator("gst_number")(validate_gst_format)
@@ -150,6 +158,10 @@ class OrganizationResponse(BaseModel):
     additional_phones: list[str] | None = None
     additional_emails: list[str] | None = None
     website: str | None = None
+    credit_limit: float | None = None
+    credit_days: int | None = None
+    discount_percentage: float | None = None
+    gl_reconciliation_account_id: int | None = None
     created_by_id: int | None = None
     created_by_name: str | None = None
     created_at: datetime | None = None

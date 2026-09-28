@@ -71,3 +71,5 @@ class P2PPurchaseOrderResponse(BaseModel):
     p2p_request_number: str | None = None
     created_by_name: str | None = None
     document_uploaded_by_name: str | None = None
+    assigned_buyer_id: int | None = None
+    assigned_buyer_name: str | None = None

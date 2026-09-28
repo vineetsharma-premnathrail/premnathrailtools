@@ -74,6 +74,7 @@ export default function OrganizationUsersPage() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search by name or email..."
+        data-tour="org-users-search"
         style={{ width: '100%', maxWidth: 320, padding: '10px 14px', marginBottom: 16, borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 13.5, outline: 'none' }}
       />
 
@@ -87,7 +88,7 @@ export default function OrganizationUsersPage() {
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody data-tour="org-users-table-rows">
             {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && filtered.length === 0 && (
               <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No users match your search.</td></tr>

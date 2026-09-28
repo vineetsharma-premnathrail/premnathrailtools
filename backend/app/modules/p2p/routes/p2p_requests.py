@@ -1,11 +1,11 @@
 from datetime import date, datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.core.permissions import require_app_access
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.routes.auth import get_current_user
@@ -27,12 +27,77 @@ from app.modules.p2p.schemas.p2p_request import (
     P2PRequestSelectVendorPayload,
     P2PRequestCreatePOPayload,
     P2PRequestAttachmentResponse,
+    P2PRequestItemStockCheckResponse,
+    P2PRequestItemStockLocationInfo,
+    P2PRequestIssueFromStockPayload,
 )
-from app.modules.p2p.service import generate_p2p_number
+from app.modules.p2p.service import generate_p2p_number, compute_line_total
+from app.modules.store.models.item import StoreItem
+from app.modules.store.models.location import StoreLocation
+from app.modules.store.models.stock_balance import StoreStockBalance
+from app.modules.store.models.material_issue import StoreMaterialIssue, StoreMaterialIssueItem
+from app.modules.store.service import generate_material_issue_number
+from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
 from app.utils.notifications import notify_user
+from app.utils.email import send_p2p_pr_approval_email, send_p2p_po_approval_email
 
 router = APIRouter(prefix="/p2p/requests", tags=["P2P"])
+
+_PR_APPROVAL_SLOT_LABELS = (("approver_id", "Department Head"), ("project_head_id", "Project Head"), ("plant_head_id", "Plant Head"))
+_PO_APPROVAL_ROLE_FLAGS = {"purchase_head": "is_purchase_head", "director": "is_director", "md": "is_md"}
+
+
+async def _send_p2p_pr_approval_emails_background(pr_id: int) -> None:
+    """Best-effort email to each assigned PR approver, run after the PR has
+    already been committed — mirrors the ERP module's
+    `_send_purchase_requisition_email_background` pattern of opening its own
+    DB session since the request-scoped one is closed by the time a
+    BackgroundTask runs."""
+    db = SessionLocal()
+    try:
+        pr = db.query(P2PRequest).options(selectinload(P2PRequest.items)).filter(P2PRequest.id == pr_id).first()
+        if not pr:
+            return
+        for field, role_label in _PR_APPROVAL_SLOT_LABELS:
+            approver_id = getattr(pr, field)
+            if not approver_id:
+                continue
+            approver = db.query(User).filter(User.id == approver_id).first()
+            if approver:
+                await send_p2p_pr_approval_email(db, pr, approver, role_label)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _send_p2p_po_approval_emails_background(pr_id: int) -> None:
+    """Best-effort email to every user holding a still-pending PO approval
+    role (purchase head / director / MD), run after the PO has already been
+    committed. Opens its own DB session for the same reason as above."""
+    db = SessionLocal()
+    try:
+        pr = db.query(P2PRequest).filter(P2PRequest.id == pr_id).first()
+        if not pr:
+            return
+        po = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(
+            P2PPurchaseOrder.p2p_request_id == pr.id
+        ).order_by(P2PPurchaseOrder.id.desc()).first()
+        if not po:
+            return
+        for role in pr.pending_po_approval_roles:
+            role_label = _PO_ROLE_LABELS[role]
+            flag_name = _PO_APPROVAL_ROLE_FLAGS[role]
+            approvers = db.query(User).filter(User.is_active == True, getattr(User, flag_name) == True).all()  # noqa: E712
+            for approver in approvers:
+                await send_p2p_po_approval_email(db, pr, po, approver, role_label)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _requester_or_purchase(user: User = Depends(get_current_user)) -> User:
@@ -74,14 +139,27 @@ def _to_response(db: Session, pr: P2PRequest) -> P2PRequestResponse:
             resp.requested_by_name = users[pr.requested_by_id].name or users[pr.requested_by_id].email
         if pr.assigned_buyer_id and pr.assigned_buyer_id in users:
             resp.assigned_buyer_name = users[pr.assigned_buyer_id].name or users[pr.assigned_buyer_id].email
+
+    location_ids = {item.issued_from_location_id for item in pr.items} - {None}
+    if location_ids:
+        locations = {l.id: l for l in db.query(StoreLocation).filter(StoreLocation.id.in_(location_ids)).all()}
+        for item_resp in resp.items:
+            if item_resp.issued_from_location_id and item_resp.issued_from_location_id in locations:
+                item_resp.issued_from_location_name = locations[item_resp.issued_from_location_id].name
     return resp
 
 
-def _get_pr_or_404(db: Session, pr_id: int) -> P2PRequest:
-    pr = db.query(P2PRequest).options(
+def _get_pr_or_404(db: Session, pr_id: int, *, for_update: bool = False) -> P2PRequest:
+    query = db.query(P2PRequest).options(
         selectinload(P2PRequest.items).selectinload(P2PRequestItem.attachments),
         selectinload(P2PRequest.attachments),
-    ).filter(P2PRequest.id == pr_id).first()
+    ).filter(P2PRequest.id == pr_id)
+    if for_update:
+        # Locks just the PR row itself — selectinload's collection queries
+        # run separately and aren't part of this lock, which is fine since
+        # only the PR's own status/po_* fields need protecting here.
+        query = query.with_for_update()
+    pr = query.first()
     if not pr:
         raise HTTPException(status_code=404, detail="P2P request not found")
     return pr
@@ -221,6 +299,7 @@ def _validate_head(db: Session, user_id: int | None, role_label: str) -> User | 
 @router.post("", response_model=P2PRequestResponse)
 async def create_p2p_request(
     payload: P2PRequestCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("p2p")),
 ):
@@ -290,6 +369,7 @@ async def create_p2p_request(
 
     db.commit()
     db.refresh(pr)
+    background_tasks.add_task(_send_p2p_pr_approval_emails_background, pr.id)
     return _to_response(db, pr)
 
 
@@ -604,6 +684,192 @@ async def assign_buyer(
     return _to_response(db, pr)
 
 
+def _get_pr_item_or_404(pr: P2PRequest, item_id: int) -> P2PRequestItem:
+    for item in pr.items:
+        if item.id == item_id:
+            return item
+    raise HTTPException(status_code=404, detail="P2P request item not found on this PR")
+
+
+def _match_store_item(db: Session, item: P2PRequestItem) -> StoreItem | None:
+    """Matches a free-text PR item to the store item master by name, and by
+    part code too when the PR item has one — see plan doc for why name-only
+    matching was rejected (too many false positives)."""
+    query = db.query(StoreItem).filter(StoreItem.item_name.ilike(item.item_name))
+    if item.part_code:
+        query = query.filter(
+            (StoreItem.part_number.ilike(item.part_code)) | (StoreItem.manufacturer_part_number.ilike(item.part_code))
+        )
+    return query.first()
+
+
+def _stock_balance_info(db: Session, item_id: int, location_id: int | None = None) -> P2PRequestItemStockLocationInfo:
+    query = db.query(StoreStockBalance).filter(StoreStockBalance.item_id == item_id)
+    if location_id is not None:
+        query = query.filter(StoreStockBalance.location_id == location_id)
+    balances = query.all()
+    on_hand = sum(b.on_hand_qty for b in balances)
+    reserved = sum(b.reserved_qty for b in balances)
+    location_name = None
+    if location_id is not None:
+        location = db.query(StoreLocation).filter(StoreLocation.id == location_id).first()
+        location_name = location.name if location else None
+    return P2PRequestItemStockLocationInfo(
+        location_id=location_id, location_name=location_name,
+        on_hand_qty=on_hand, reserved_qty=reserved, available_qty=on_hand - reserved,
+    )
+
+
+@router.get("/{pr_id}/items/{item_id}/stock-check", response_model=P2PRequestItemStockCheckResponse)
+async def check_item_stock(
+    pr_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("purchase")),
+):
+    """Manual, per-item lookup a buyer runs on an approved PR to see whether
+    the requested item is already sitting in store stock before deciding to
+    raise a purchase for it — see issue_item_from_stock / send_item_to_procurement
+    for the two follow-up decisions."""
+    pr = _get_pr_or_404(db, pr_id)
+    if pr.status == "submitted" or pr.status in ("rejected", "cancelled"):
+        raise HTTPException(status_code=409, detail=f"Stock can only be checked on an approved PR (current status: {pr.status})")
+    item = _get_pr_item_or_404(pr, item_id)
+    if item.fulfillment_status != "pending":
+        raise HTTPException(status_code=409, detail=f"This item has already been decided ('{item.fulfillment_status}')")
+
+    store_item = _match_store_item(db, item)
+    if not store_item:
+        message = (
+            f"No store item found matching name '{item.item_name}' and part code '{item.part_code}'."
+            if item.part_code else
+            f"No store item found matching name '{item.item_name}'. (PR item has no part code to narrow the match.)"
+        )
+        return P2PRequestItemStockCheckResponse(matched=False, requested_qty=item.quantity, message=message)
+
+    ship_to_location = None
+    if item.ship_to:
+        location = db.query(StoreLocation).filter(
+            (StoreLocation.name.ilike(item.ship_to)) | (StoreLocation.code.ilike(item.ship_to))
+        ).first()
+        if location:
+            ship_to_location = _stock_balance_info(db, store_item.id, location.id)
+
+    return P2PRequestItemStockCheckResponse(
+        matched=True,
+        store_item_id=store_item.id,
+        store_item_code=store_item.item_code,
+        store_item_name=store_item.item_name,
+        part_code_matched=bool(item.part_code),
+        requested_qty=item.quantity,
+        ship_to_location=ship_to_location,
+        total_across_locations=_stock_balance_info(db, store_item.id),
+    )
+
+
+@router.post("/{pr_id}/items/{item_id}/issue-from-stock", response_model=P2PRequestResponse)
+async def issue_item_from_stock(
+    pr_id: int,
+    item_id: int,
+    payload: P2PRequestIssueFromStockPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("purchase")),
+):
+    pr = _get_pr_or_404(db, pr_id)
+    if pr.status == "submitted" or pr.status in ("rejected", "cancelled"):
+        raise HTTPException(status_code=409, detail=f"An item can only be issued from stock on an approved PR (current status: {pr.status})")
+    # Locks this specific PR-item row so two concurrent/double-clicked calls
+    # against the same item can't both read fulfillment_status=='pending'
+    # and both post a stock issue — only one can hold the lock at a time,
+    # and the second sees the already-updated status once it gets in.
+    item = db.query(P2PRequestItem).filter(
+        P2PRequestItem.id == item_id, P2PRequestItem.p2p_request_id == pr.id,
+    ).with_for_update().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="P2P request item not found on this PR")
+    if item.fulfillment_status != "pending":
+        raise HTTPException(status_code=409, detail=f"This item has already been decided ('{item.fulfillment_status}')")
+    if not db.query(StoreLocation).filter(StoreLocation.id == payload.location_id).first():
+        raise HTTPException(status_code=404, detail="Store location not found")
+
+    store_item = _match_store_item(db, item)
+    if not store_item:
+        raise HTTPException(status_code=404, detail=f"No store item found matching name '{item.item_name}'" + (f" and part code '{item.part_code}'" if item.part_code else ""))
+
+    quantity = payload.quantity if payload.quantity is not None else item.quantity
+    if quantity <= 0:
+        raise HTTPException(status_code=422, detail="Quantity must be greater than zero")
+    if quantity > item.quantity:
+        raise HTTPException(status_code=422, detail=f"Quantity ({quantity}) cannot exceed the PR item's requested quantity ({item.quantity})")
+
+    issue = StoreMaterialIssue(
+        issue_number=generate_material_issue_number(db),
+        location_id=payload.location_id,
+        requested_by_id=pr.requested_by_id,
+        project_or_work_order=pr.project_label,
+        issue_date=date.today(),
+        issued_by_id=user.id,
+        remarks=f"Issued against P2P request {pr.p2p_number}, item '{item.item_name}'.",
+        p2p_request_id=pr.id,
+    )
+    db.add(issue)
+    db.flush()
+    db.add(StoreMaterialIssueItem(issue_id=issue.id, item_id=store_item.id, quantity=quantity))
+
+    try:
+        post_stock_transaction(
+            db, item_id=store_item.id, location_id=payload.location_id, transaction_type="issue",
+            quantity=quantity, reference_type="p2p_request", reference_number=pr.p2p_number,
+            created_by_id=user.id,
+        )
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(e))
+
+    item.fulfillment_status = "stock_issued"
+    item.issued_from_location_id = payload.location_id
+    item.issued_qty = quantity
+    item.material_issue_id = issue.id
+
+    _write_audit(db, pr.id, "item_issued_from_stock", user,
+                 summary=f"{user.name or user.email} issued '{item.item_name}' (qty {quantity}) from store stock for {pr.p2p_number} instead of purchasing it.")
+
+    if pr.requested_by_id:
+        notify_user(
+            db, user_id=pr.requested_by_id,
+            title="Item Issued from Stock",
+            message=f"'{item.item_name}' on your PR '{pr.p2p_number}' was issued from existing store stock (issue '{issue.issue_number}') instead of being purchased.",
+            notification_type="p2p_request_item_issued_from_stock", entity_type="p2p_request", entity_id=pr.id,
+        )
+
+    db.commit()
+    db.refresh(pr)
+    return _to_response(db, pr)
+
+
+@router.post("/{pr_id}/items/{item_id}/send-to-procurement", response_model=P2PRequestResponse)
+async def send_item_to_procurement(
+    pr_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("purchase")),
+):
+    pr = _get_pr_or_404(db, pr_id)
+    if pr.status == "submitted" or pr.status in ("rejected", "cancelled"):
+        raise HTTPException(status_code=409, detail=f"This decision can only be made on an approved PR (current status: {pr.status})")
+    item = _get_pr_item_or_404(pr, item_id)
+    if item.fulfillment_status != "pending":
+        raise HTTPException(status_code=409, detail=f"This item has already been decided ('{item.fulfillment_status}')")
+
+    item.fulfillment_status = "sent_to_procurement"
+    _write_audit(db, pr.id, "item_sent_to_procurement", user,
+                 summary=f"{user.name or user.email} confirmed '{item.item_name}' is not in store stock and sent it to procurement for {pr.p2p_number}.")
+
+    db.commit()
+    db.refresh(pr)
+    return _to_response(db, pr)
+
+
 @router.post("/{pr_id}/request-quotations", response_model=P2PRequestResponse)
 async def request_quotations(
     pr_id: int,
@@ -648,21 +914,56 @@ async def select_vendor(
 async def create_po(
     pr_id: int,
     payload: P2PRequestCreatePOPayload,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    # Locks the PR row for the rest of this request so a concurrent/
+    # double-submitted create-PO call can't both pass the status check below
+    # before either commits.
+    pr = _get_pr_or_404(db, pr_id, for_update=True)
     if pr.status != "approved":
         raise HTTPException(status_code=409, detail=f"A PO can only be raised on an approved PR (current status: {pr.status})")
     if db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.po_number == payload.po_number).first():
         raise HTTPException(status_code=409, detail=f"PO number '{payload.po_number}' already exists")
+    existing_po = db.query(P2PPurchaseOrder).filter(
+        P2PPurchaseOrder.p2p_request_id == pr.id, P2PPurchaseOrder.status != "cancelled",
+    ).first()
+    if existing_po:
+        raise HTTPException(status_code=409, detail=f"PR '{pr.p2p_number}' already has a PO ('{existing_po.po_number}') — cancel it first to raise a new one")
+
+    # Items already fulfilled from existing store stock (see
+    # issue_item_from_stock above) aren't purchased — they're excluded from
+    # the PO entirely.
+    procurable_items = [i for i in pr.items if i.fulfillment_status != "stock_issued"]
+
+    # Per-line pricing (see P2PRequestCreatePOItemPricing) is what
+    # actually derives the PO's total — payload.po_value is only used as a
+    # fallback when no line pricing was supplied, so this total is grounded
+    # in real quantities/prices rather than an arbitrary typed-in number
+    # wherever the caller supplies it (see check_three_way_match in
+    # accounts/service.py, which trusts this total for AP's 3-way match).
+    pricing_by_item_id = {p.pr_item_id: p for p in payload.item_pricing}
+    computed_total = 0.0
+    has_pricing = False
+    line_pricing: list[tuple[float | None, float | None, float | None]] = []  # (unit_price, tax_rate, line_total) per procurable_items entry
+    for item in procurable_items:
+        pricing = pricing_by_item_id.get(item.id)
+        unit_price = pricing.unit_price if pricing else None
+        tax_rate = pricing.tax_rate if pricing else None
+        line_total = compute_line_total(item.quantity, unit_price, tax_rate)
+        if line_total is not None:
+            has_pricing = True
+            computed_total += line_total
+        line_pricing.append((unit_price, tax_rate, line_total))
+    po_value = round(computed_total, 2) if has_pricing else payload.po_value
 
     old_status = pr.status
     pr.po_number = payload.po_number
     pr.po_date = payload.po_date or date.today()
-    pr.po_value = payload.po_value
+    pr.po_value = po_value
     pr.expected_delivery = payload.expected_delivery
-    pr.ordered_quantity = payload.ordered_quantity if payload.ordered_quantity is not None else sum(i.quantity for i in pr.items)
+    pr.ordered_quantity = payload.ordered_quantity if payload.ordered_quantity is not None else sum(i.quantity for i in procurable_items)
     pr.status = "po_raised"
 
     # The PR's po_* fields above are a denormalized snapshot for quick display;
@@ -676,11 +977,11 @@ async def create_po(
         po_date=pr.po_date,
         expected_delivery=pr.expected_delivery,
         created_by_id=user.id,
-        total_value=payload.po_value,
+        total_value=po_value,
     )
     db.add(po)
     db.flush()
-    for item in pr.items:
+    for item, (unit_price, tax_rate, line_total) in zip(procurable_items, line_pricing):
         db.add(P2PPurchaseOrderItem(
             purchase_order_id=po.id,
             item_name=item.item_name,
@@ -688,6 +989,9 @@ async def create_po(
             part_code=item.part_code,
             unit=item.unit,
             quantity=item.quantity,
+            unit_price=unit_price,
+            tax_rate=tax_rate,
+            line_total=line_total,
         ))
 
     _write_audit(db, pr.id, "po_raised", user,
@@ -702,8 +1006,19 @@ async def create_po(
             notification_type="p2p_request_po_raised", entity_type="p2p_request", entity_id=pr.id,
         )
 
+    for role in pr.pending_po_approval_roles:
+        flag_name = _PO_APPROVAL_ROLE_FLAGS[role]
+        for approver in db.query(User).filter(User.is_active == True, getattr(User, flag_name) == True).all():  # noqa: E712
+            notify_user(
+                db, user_id=approver.id,
+                title="Purchase Order Awaiting Approval",
+                message=f"PO '{payload.po_number}' for PR '{pr.p2p_number}' awaits your approval as {_PO_ROLE_LABELS[role]}.",
+                notification_type="p2p_po_approval_pending", entity_type="p2p_request", entity_id=pr.id,
+            )
+
     db.commit()
     db.refresh(pr)
+    background_tasks.add_task(_send_p2p_po_approval_emails_background, pr.id)
     return _to_response(db, pr)
 
 

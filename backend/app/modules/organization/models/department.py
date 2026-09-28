@@ -1,5 +1,6 @@
 from __future__ import annotations
 from sqlalchemy import String, Integer, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -25,3 +26,7 @@ class Department(Base, TimestampMixin):
     # routes/department.py). A single `head_user_id` remains the primary/
     # first-seen head; this is the second one, not a general multi-head list.
     secondary_head_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # Any heads beyond the two named slots above — the manual "Add Department"
+    # form allows an unbounded number of heads, unlike Azure-sync
+    # auto-provisioning which only ever fills the two named columns.
+    additional_head_user_ids: Mapped[list[int] | None] = mapped_column(JSONB, nullable=True, default=list)

@@ -1,5 +1,6 @@
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.permissions import require_app_access
@@ -15,7 +16,9 @@ from app.modules.p2p.schemas.goods_receipt import (
     P2PGoodsReceiptResponse,
 )
 from app.modules.p2p.service import generate_grn_number
+from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
+from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.utils.notifications import notify_user
 
 router = APIRouter(prefix="/p2p/goods-receipts", tags=["P2P"])
@@ -43,6 +46,35 @@ def _get_grn_or_404(db: Session, grn_id: int) -> P2PGoodsReceipt:
 
 def _write_audit(db: Session, pr_id: int, action: str, user: User, summary: str) -> None:
     db.add(AuditLog(entity_type="p2p_request", entity_id=pr_id, action=action, performed_by_id=user.id, summary=summary))
+
+
+def _sync_stock_for_grn(db: Session, grn: P2PGoodsReceipt, user_id: int) -> list[str]:
+    """Posts each accepted line item onto the Store stock ledger at
+    grn.store_location_id, matched to an Item Master row by exact
+    (case-insensitive) item_name — GRN lines only carry a name snapshot, not
+    a real Item Master link. Returns human-readable notes for any line that
+    could NOT be posted (no store location on this GRN, or no matching Item
+    Master entry) so the Store team knows exactly what to fix; never raises —
+    a stock-sync gap must not block completing the quality inspection itself."""
+    notes: list[str] = []
+    if not grn.store_location_id:
+        return [f"'{it.item_name}': GRN has no store location set — stock was not updated." for it in grn.items if (it.accepted_quantity or 0) > 0]
+
+    for it in grn.items:
+        qty = it.accepted_quantity or 0
+        if qty <= 0:
+            continue
+        store_item = db.query(StoreItem).filter(func.lower(StoreItem.item_name) == it.item_name.strip().lower()).first()
+        if not store_item:
+            notes.append(f"'{it.item_name}': not found in Store Item Master — add it there, then adjust stock in manually for this GRN.")
+            continue
+        post_stock_transaction(
+            db, item_id=store_item.id, location_id=grn.store_location_id, transaction_type="receipt",
+            quantity=qty, reference_type="grn", reference_number=grn.grn_number,
+            transaction_date=grn.received_date, remarks=f"GRN {grn.grn_number} quality-passed receipt",
+            created_by_id=user_id,
+        )
+    return notes
 
 
 def _to_response(db: Session, grn: P2PGoodsReceipt) -> P2PGoodsReceiptResponse:
@@ -335,6 +367,7 @@ async def inspect_goods_receipt(
 
     po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == grn.purchase_order_id).first()
     _sync_po_and_pr_status(db, po, user.id)
+    stock_sync_notes = _sync_stock_for_grn(db, grn, user.id)
 
     if po.p2p_request_id:
         _write_audit(db, po.p2p_request_id, "grn_inspected", user,
@@ -342,4 +375,6 @@ async def inspect_goods_receipt(
 
     db.commit()
     db.refresh(grn)
-    return _to_response(db, grn)
+    resp = _to_response(db, grn)
+    resp.stock_sync_notes = stock_sync_notes
+    return resp

@@ -607,13 +607,16 @@ async def create_po_draft(
     db.flush()
 
     # Default to the PR's own line items (editable afterwards) when the
-    # buyer doesn't supply an explicit item breakdown.
+    # buyer doesn't supply an explicit item breakdown. Items already
+    # fulfilled from existing store stock (see issue_item_from_stock in
+    # p2p_requests.py) are excluded — otherwise the same requirement could
+    # be issued from stock AND ordered on a PO, double-fulfilling it.
     source_items = payload.items if payload.items else [
         type("Item", (), {
             "item_name": i.item_name, "make": i.make, "part_code": i.part_code,
             "unit": i.unit, "quantity": i.quantity, "unit_price": None, "tax_rate": None,
         })()
-        for i in pr.items
+        for i in pr.items if i.fulfillment_status != "stock_issued"
     ]
 
     total = 0.0

@@ -1,7 +1,5 @@
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
-from app.modules.main.models.api_key import APIKey
-from app.middleware.api_key import generate_api_key
 from app.middleware.owasp import get_rate_store
 
 
@@ -146,59 +144,3 @@ def test_security_headers_present_on_response(client, db):
     assert response.headers.get("Cache-Control", "").startswith("no-store")
     assert "X-Request-ID" in response.headers
     assert "server" not in response.headers
-
-
-# ── API key authentication ───────────────────────────────────────────────────
-
-def test_api_key_authenticates_like_a_user(client, db):
-    raw_key, key_hash = generate_api_key()
-    db.add(APIKey(name="integration-bot", key_hash=key_hash, prefix=raw_key[:12], allowed_apps=["erp"], is_active=True))
-    db.commit()
-
-    response = client.get("/api/v1/erp/projects", headers={"X-API-Key": raw_key})
-    assert response.status_code == 200
-
-
-def test_inactive_api_key_is_rejected(client, db):
-    raw_key, key_hash = generate_api_key()
-    db.add(APIKey(name="revoked-bot", key_hash=key_hash, prefix=raw_key[:12], allowed_apps=["erp"], is_active=False))
-    db.commit()
-
-    response = client.get("/api/v1/erp/projects", headers={"X-API-Key": raw_key})
-    assert response.status_code == 401
-
-
-def test_api_key_scoped_to_allowed_apps_only(client, db):
-    raw_key, key_hash = generate_api_key()
-    db.add(APIKey(name="crm-only-bot", key_hash=key_hash, prefix=raw_key[:12], allowed_apps=["crm"], is_active=True))
-    db.commit()
-
-    response = client.get("/api/v1/erp/projects", headers={"X-API-Key": raw_key})
-    assert response.status_code == 403
-
-
-def test_admin_can_issue_and_list_api_keys(client, db):
-    admin = make_user(db, "sec_admin@premnathrail.com", role="admin")
-    response = client.post(
-        "/api/v1/api-keys",
-        json={"name": "reporting-tool", "allowed_apps": ["erp"]},
-        headers=auth_header(admin),
-    )
-    assert response.status_code == 201
-    body = response.json()
-    assert body["api_key"].startswith("pew_")
-
-    listing = client.get("/api/v1/api-keys", headers=auth_header(admin)).json()
-    assert any(k["name"] == "reporting-tool" for k in listing)
-    # The raw key/hash must never be exposed in the list endpoint.
-    assert all("api_key" not in k and "key_hash" not in k for k in listing)
-
-
-def test_non_admin_cannot_issue_api_keys(client, db):
-    user = make_user(db, "sec_notadmin@premnathrail.com")
-    response = client.post(
-        "/api/v1/api-keys",
-        json={"name": "sneaky-tool", "allowed_apps": ["erp"]},
-        headers=auth_header(user),
-    )
-    assert response.status_code == 403

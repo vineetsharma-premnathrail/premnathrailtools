@@ -11,7 +11,8 @@ const TABS = [
   { href: '/dashboard/p2p/approval', label: 'P.R Approval', icon: 'check', purchaseOnly: false },
   { href: '/dashboard/p2p/rfq', label: 'R.F.Q', icon: 'send', purchaseOnly: true },
   { href: '/dashboard/p2p/po-approval', label: 'P.O Approval', icon: 'clipboard', purchaseOnly: false },
-  { href: '/dashboard/p2p/grn', label: 'G.R.N', icon: 'truck', purchaseOnly: true },
+  { href: '/dashboard/p2p/po-tracking', label: 'P.O Tracking', icon: 'truck', purchaseOnly: true },
+  { href: '/dashboard/p2p/mis', label: 'M.I.S Report', icon: 'chart', purchaseOnly: true },
 ] as const
 
 function TabIcon({ name }: { name: string }) {
@@ -29,6 +30,8 @@ function TabIcon({ name }: { name: string }) {
       return <svg {...common}><rect x="1" y="3" width="15" height="13" /><path d="M16 8h4l3 3v5h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
     case 'users':
       return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg>
+    case 'chart':
+      return <svg {...common}><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>
     default:
       return null
   }

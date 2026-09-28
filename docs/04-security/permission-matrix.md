@@ -25,7 +25,6 @@ It records:
 * ERP-level permissions
 * Frontend route guards
 * Administrator-only operations
-* API-key access behavior
 * Known permission gaps
 
 This document describes the **currently implemented permission controls**, not a future-state authorization design.
@@ -69,14 +68,11 @@ The application currently distinguishes between:
 ```text
 admin
 ordinary staff/user
-api_service
 ```
 
 The `admin` role receives unrestricted application-module access according to the current application-access implementation.
 
 Ordinary users receive only their assigned applications.
-
-API-service users are generated for API-key authentication and are scoped to the applications allowed by the API key.
 
 ---
 
@@ -700,61 +696,7 @@ Permissions
 
 ---
 
-# 32. API-Key Authorization
-
-API-key authentication creates a synthetic user:
-
-```text
-role = "api_service"
-```
-
-The API key contains:
-
-```text
-allowed_apps
-```
-
-The resulting identity passes through the same application authorization system.
-
-```text
-API Key
- ↓
-Synthetic User
- ↓
-allowed_apps
- ↓
-require_app_access
- ↓
-Application
-```
-
----
-
-# 33. API-Key ERP Permissions
-
-API-key-authenticated users also pass through the same:
-
-```text
-has_erp_permission
-```
-
-mechanism where ERP granular permissions are applicable.
-
-Therefore API access does not bypass the standard authorization architecture.
-
----
-
-# 34. API-Key Security Testing
-
-The existing security test suite verifies:
-
-* API-key authentication
-* Inactive API-key rejection
-* Application-scoped API-key access
-
-This confirms that the API-key authorization path is tested at the application level.
-
-Whether external integrations currently use this mechanism is separate from whether the mechanism exists.
+> Note: sections 32-34 (API-Key Authorization/ERP Permissions/Security Testing) were removed — the API-key auth mechanism (and its `APIKey` table, middleware, admin routes, and tests) was fully removed from the codebase as unused infrastructure with zero real consumers and zero rows in its table (see migration `c1a2b3d4e5f6_drop_api_keys_table`).
 
 ---
 
@@ -913,7 +855,6 @@ Update this Permission Matrix when:
 * A backend authorization check changes.
 * A frontend route guard changes.
 * Admin capabilities change.
-* API-key authorization changes.
 * A permission gap is resolved.
 
 ---

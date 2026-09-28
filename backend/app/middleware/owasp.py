@@ -152,7 +152,7 @@ ALLOWED_CONTENT_TYPES = {
 # affect every row — block those outright (only per-resource delete is allowed).
 BULK_DELETE_COLLECTION_SUFFIXES = (
     "projects", "service-requests", "organizations", "inquiries", "tenders",
-    "users", "api-keys", "activities",
+    "users", "activities",
 )
 
 
@@ -262,9 +262,8 @@ class OWASPMiddleware(BaseHTTPMiddleware):
             if not is_public:
                 auth_header = request.headers.get("Authorization", "")
                 has_bearer = auth_header.startswith("Bearer ")
-                has_api_key = bool(request.headers.get("X-API-Key"))
                 has_session_cookie = bool(request.cookies.get("session_token"))
-                if not (has_bearer or has_api_key or has_session_cookie):
+                if not (has_bearer or has_session_cookie):
                     logger.warning(
                         "[A01] Unauthenticated API access | ip=%s path=%s rid=%s",
                         ip, path, request_id,

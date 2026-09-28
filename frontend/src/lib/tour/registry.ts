@@ -29,6 +29,15 @@ const loadRfqDetailOrEdit = () =>
     ? import('./configs/p2pRfqEditForm')
     : import('./configs/p2pRfqDetail')
 
+// The Store Item detail page swaps into an inline edit form (toggled by
+// `editing` state) on the same URL, the same view/edit ambiguity as above —
+// probing for its own Save button is the only way to tell which is on
+// screen right now.
+const loadStoreItemDetailOrEdit = () =>
+  typeof document !== 'undefined' && document.querySelector('[data-tour="item-edit-save-btn"]')
+    ? import('./configs/storeItemEditForm')
+    : import('./configs/storeItemDetail')
+
 // Each entry matches a route pattern (regex) to a lazily-imported tour config.
 // Add one entry per page as tour content is authored — pages with no match
 // simply show no Tour button content (TourButton hides itself). `load` also
@@ -97,6 +106,10 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/crmProducts'),
   },
   {
+    pattern: /^\/dashboard\/crm\/bulk-import$/,
+    load: () => import('./configs/crmBulkImport'),
+  },
+  {
     pattern: /^\/dashboard\/p2p$/,
     load: () => import('./configs/p2pRequestsList'),
   },
@@ -129,16 +142,127 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => loadRfqDetailOrEdit(),
   },
   {
-    pattern: /^\/dashboard\/p2p\/grn$/,
-    load: () => import('./configs/p2pGrnList'),
+    pattern: /^\/dashboard\/store$/,
+    load: () => import('./configs/storeItemsList'),
   },
   {
-    pattern: /^\/dashboard\/p2p\/grn\/new$/,
-    load: () => import('./configs/p2pGrnForm'),
+    pattern: /^\/dashboard\/store\/new$/,
+    load: () => import('./configs/storeItemForm'),
   },
   {
-    pattern: /^\/dashboard\/p2p\/grn\/\d+$/,
-    load: () => import('./configs/p2pGrnDetail'),
+    pattern: /^\/dashboard\/store\/\d+$/,
+    load: () => loadStoreItemDetailOrEdit(),
+  },
+  {
+    pattern: /^\/dashboard\/store\/categories$/,
+    load: () => import('./configs/storeCategories'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/locations$/,
+    load: () => import('./configs/storeWarehouses'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/stock$/,
+    load: () => import('./configs/storeStock'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/issues$/,
+    load: () => import('./configs/storeIssuesList'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/issues\/new$/,
+    load: () => import('./configs/storeIssueForm'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/issues\/\d+$/,
+    load: () => import('./configs/storeIssueDetail'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/returns$/,
+    load: () => import('./configs/storeReturnsList'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/returns\/new$/,
+    load: () => import('./configs/storeReturnForm'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/returns\/\d+$/,
+    load: () => import('./configs/storeReturnDetail'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/transfers$/,
+    load: () => import('./configs/storeTransfersList'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/transfers\/new$/,
+    load: () => import('./configs/storeTransferForm'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/transfers\/\d+$/,
+    load: () => import('./configs/storeTransferDetail'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/adjustments$/,
+    load: () => import('./configs/storeAdjustmentsList'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/adjustments\/new$/,
+    load: () => import('./configs/storeAdjustmentForm'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/adjustments\/\d+$/,
+    load: () => import('./configs/storeAdjustmentDetail'),
+  },
+  {
+    pattern: /^\/dashboard\/store\/reservations$/,
+    load: () => import('./configs/storeReservations'),
+  },
+  {
+    pattern: /^\/dashboard\/organization\/info$/,
+    load: () => import('./configs/orgInfoView'),
+  },
+  {
+    pattern: /^\/dashboard\/organization\/info\/edit$/,
+    load: () => import('./configs/orgInfoEdit'),
+  },
+  {
+    pattern: /^\/dashboard\/organization\/department$/,
+    load: () => import('./configs/orgDepartment'),
+  },
+  {
+    pattern: /^\/dashboard\/organization\/audit-logs$/,
+    load: () => import('./configs/orgAuditLogs'),
+  },
+  {
+    pattern: /^\/dashboard\/organization\/plants$/,
+    load: () => import('./configs/orgPlantsList'),
+  },
+  {
+    pattern: /^\/dashboard\/organization\/plants\/new$/,
+    load: () => import('./configs/orgPlantForm'),
+  },
+  {
+    pattern: /^\/dashboard\/organization\/plants\/\d+\/edit$/,
+    load: () => import('./configs/orgPlantForm'),
+  },
+  {
+    pattern: /^\/dashboard\/organization\/plants\/\d+$/,
+    load: () => import('./configs/orgPlantDetail'),
+  },
+  {
+    pattern: /^\/dashboard\/organization\/users$/,
+    load: () => import('./configs/orgUsers'),
+  },
+  // Organization > Role & Permissions reuses the same component that also
+  // renders standalone at /dashboard/users (see organization/roles/page.tsx),
+  // so both routes share this one config's data-tour targets.
+  {
+    pattern: /^\/dashboard\/organization\/roles$/,
+    load: () => import('./configs/orgRoles'),
+  },
+  {
+    pattern: /^\/dashboard\/users$/,
+    load: () => import('./configs/orgRoles'),
   },
 ]
 

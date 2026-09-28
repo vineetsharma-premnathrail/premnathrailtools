@@ -103,7 +103,7 @@ Unknown environment variables are therefore ignored by the settings model.
 | `AZURE_REDIRECT_URI`          | OAuth callback URL                                      | `http://localhost:8000/auth/callback` |
 | `DOMAIN_EMAIL`                | Allowed organizational email domain                     | Empty                                 |
 | `SECURE_COOKIES`              | Enables Secure authentication cookies                   | `False`                               |
-| `SECRET_KEY`                  | JWT/session signing and API-key HMAC key                | Placeholder                           |
+| `SECRET_KEY`                  | JWT/session signing key                                 | Placeholder                           |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Session/JWT lifetime                                    | `1440`                                |
 | `SHAREPOINT_SITE_ID`          | SharePoint site Graph ID                                | Empty                                 |
 | `SHAREPOINT_FOLDER`           | Root SharePoint upload folder                           | `ERP-media`                           |
@@ -351,7 +351,6 @@ for security-sensitive cryptographic operations including:
 
 * Session/JWT signing
 * Token signing
-* HMAC-based API-key hashing
 * Other application security operations
 
 The secret must never be committed to source control.
@@ -502,28 +501,10 @@ Client IP Resolution
 
 SECRET_KEY
         ↓
-API-Key HMAC
+JWT/session signing
 ```
 
----
-
-# 24. API-Key Hashing
-
-External API keys are hashed using:
-
-```text
-HMAC-SHA256
-```
-
-with:
-
-```text
-SECRET_KEY
-```
-
-as the HMAC key.
-
-The raw API key is not stored in the database.
+> Note: section 24 (API-Key Hashing) was removed — the API-key auth mechanism was fully removed from the codebase as unused infrastructure (see migration `c1a2b3d4e5f6_drop_api_keys_table`).
 
 ---
 

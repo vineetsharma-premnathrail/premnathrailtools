@@ -355,7 +355,6 @@ It is used for security-sensitive operations such as:
 
 * Session/token signing
 * HMAC operations
-* External API-key hashing
 
 Production requires:
 

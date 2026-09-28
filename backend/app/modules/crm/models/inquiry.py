@@ -21,6 +21,14 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     # inquiries always require a contact (see InquiryCreate.org_contact_id).
     org_contact_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_org_contacts.id"), nullable=True)
 
+    # The `inquiry_ref` column from a CRM bulk-import CSV (see
+    # routes/bulk_import.py), scoped per organization — lets a LATER upload
+    # of the same/updated file find this exact inquiry again by (org_id,
+    # bulk_import_ref) and update it in place, instead of creating a
+    # duplicate every time the file is re-imported. Null for any inquiry
+    # created through the normal UI, which has no such concept.
+    bulk_import_ref: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+
     railway_zone: Mapped[str | None] = mapped_column(String(100), nullable=True)
     division: Mapped[str | None] = mapped_column(String(150), nullable=True)
     lead_source: Mapped[str | None] = mapped_column(String(100), nullable=True)

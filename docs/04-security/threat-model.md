@@ -86,7 +86,6 @@ Key assets include:
 ### Authentication Credentials
 
 * Session JWT
-* API keys
 * Document-share tokens
 * OAuth-related credentials
 
@@ -131,12 +130,6 @@ FastAPI Backend
                 ↓
             SharePoint
 
-External API Client
-        │
-     X-API-Key
-        ↓
-FastAPI Backend
-
 External Recipient
         │
  Signed Share Token
@@ -151,7 +144,6 @@ FastAPI Backend
 | Threat                      | Attack Surface                | Mitigation                                                | Status                            |
 | --------------------------- | ----------------------------- | --------------------------------------------------------- | --------------------------------- |
 | Forged session token        | Session cookie / Bearer token | JWT signature validation and production secret validation | Mitigated                         |
-| Stolen API key reuse        | `X-API-Key`                   | Raw key shown once; only HMAC-SHA256 digest is stored     | Mitigated                         |
 | Teams token replay          | `/auth/teams-token`           | `jti` replay protection and RS256/JWKS verification       | Mitigated                         |
 | IP spoofing                 | `X-Forwarded-For`             | Trusted-proxy configuration fails closed                  | Mitigated if correctly configured |
 | OAuth state forgery         | OAuth callback                | Server-side state with TTL                                | Mitigated                         |

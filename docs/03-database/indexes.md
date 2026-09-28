@@ -21,7 +21,6 @@ The intent of this document is to state facts about what indexing exists, not to
 |---|---|---|
 | users | email | `unique=True, index=True` |
 | users | azure_id | `unique=True` (no explicit `index=True`, but Postgres still needs an index internally to enforce uniqueness) |
-| api_keys | key_hash | `unique=True, index=True` |
 | erp_projects | serial_number | `unique=True, index=True` |
 | erp_service_requests | request_number | `unique=True, index=True` |
 | purchase_requisitions | pr_number | `unique=True, index=True` |

@@ -7,7 +7,7 @@ from app.db.mixins import TimestampMixin
 # Modules a user's `assigned_apps` list may contain. The admin role
 # bypasses this entirely and gets access to every module regardless
 # of what's in the list (see get_user_apps() usage in routes).
-AVAILABLE_APPS = {"erp", "rnd", "crm", "p2p", "store", "purchase"}
+AVAILABLE_APPS = {"erp", "rnd", "crm", "p2p", "store", "purchase", "quality", "projects", "accounts"}
 
 
 class User(Base, TimestampMixin):
@@ -52,6 +52,9 @@ class User(Base, TimestampMixin):
     is_purchase_head: Mapped[bool] = mapped_column(default=False)
     is_director: Mapped[bool] = mapped_column(default=False)
     is_md: Mapped[bool] = mapped_column(default=False)
+    # Accounts module — approves an AP 3-way-match variance before an invoice
+    # outside tolerance can post (see old_docs/product/ACCOUNTS_MODULE_ROADMAP.md).
+    is_finance_manager: Mapped[bool] = mapped_column(default=False)
 
     # Present in the remote production DB (main.users) — added here so the
     # migration from that schema doesn't have to drop them. Not yet wired
@@ -80,6 +83,15 @@ class User(Base, TimestampMixin):
     # of record for those, per PRODUCT.md's stated non-goal).
     reporting_manager_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     date_of_joining: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Granular permission matrix (module:subtab:action ids, e.g.
+    # "erp:projects:approve") — additive to `assigned_apps`/`erp_permissions`
+    # above, not a replacement. Like `erp_permissions`, nothing enforces these
+    # at the route level yet; they're captured so the admin UI has somewhere
+    # real to write to ahead of routes actually checking them.
+    granular_permissions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # module_key -> scope ("own" | "department" | "branch" | "company" | "all")
+    data_access_scopes: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
 
     def get_apps(self) -> list[str]:
         """Modules this user can see: admins get all of them, everyone else

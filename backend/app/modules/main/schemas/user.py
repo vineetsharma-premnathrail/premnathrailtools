@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel
 
 
@@ -20,6 +20,7 @@ class UserUpdate(BaseModel):
     is_purchase_head: bool | None = None
     is_director: bool | None = None
     is_md: bool | None = None
+    is_finance_manager: bool | None = None
 
 
 class UserHRUpdate(BaseModel):
@@ -54,8 +55,61 @@ class UserResponse(BaseModel):
     is_purchase_head: bool = False
     is_director: bool = False
     is_md: bool = False
+    is_finance_manager: bool = False
     apps: list[str] = []
     is_azure_admin: bool = False
     reporting_manager_id: int | None = None
     reporting_manager_name: str | None = None
     date_of_joining: date | None = None
+    granular_permissions: list[str] = []
+    data_access_scopes: dict[str, str] = {}
+
+
+class UserPermissionsUpdate(BaseModel):
+    granular_permissions: list[str]
+    data_access_scopes: dict[str, str]
+
+
+class UserSessionResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None
+    last_used_at: datetime
+    user_agent: str | None
+
+
+class UserActivityResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    entity_type: str
+    entity_id: int | None
+    action: str
+    summary: str | None
+    performed_at: datetime
+
+
+class UserDocumentResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    user_id: int
+    document_type: str
+    document_name: str
+    document_number: str | None
+    issue_date: date | None
+    expiry_date: date | None
+    issuing_authority: str | None
+    filename: str
+    content_type: str | None
+    size: int | None
+    sharepoint_url: str | None
+    confidentiality: str | None
+    tags: list[str] | None
+    remarks: str | None
+    created_by_id: int | None
+    created_at: datetime
+    updated_at: datetime

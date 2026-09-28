@@ -27,6 +27,15 @@ class P2PRequestItem(Base, TimestampMixin):
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     ship_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Per-item buyer decision after a manual store-stock check on an approved
+    # PR — "stock_issued" items are excluded from PO creation (see
+    # create_po in p2p/routes/p2p_requests.py) since they were already
+    # fulfilled out of existing store stock instead of being purchased.
+    fulfillment_status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    issued_from_location_id: Mapped[int | None] = mapped_column(ForeignKey("store_locations.id"), nullable=True)
+    issued_qty: Mapped[float | None] = mapped_column(Float, nullable=True)
+    material_issue_id: Mapped[int | None] = mapped_column(ForeignKey("store_material_issues.id"), nullable=True)
+
     p2p_request: Mapped["P2PRequest"] = relationship("P2PRequest", back_populates="items")
     attachments: Mapped[list["P2PRequestAttachment"]] = relationship(
         "P2PRequestAttachment", back_populates="item", cascade="all, delete-orphan"

@@ -192,7 +192,6 @@ Contains request-level cross-cutting functionality.
 Current areas include:
 
 ```text id="f1r8sm"
-api_key.py
 owasp.py
 error_handler.py
 rate_store.py
@@ -200,7 +199,6 @@ rate_store.py
 
 Responsibilities include:
 
-* API-key authentication
 * Security middleware
 * Error handling
 * Rate-limit storage
@@ -352,7 +350,6 @@ Examples include:
 ```text id="w2k8qm"
 Users
 Authentication
-API Keys
 Notifications
 Feedback
 Audit Logs

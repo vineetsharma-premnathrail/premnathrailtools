@@ -136,7 +136,7 @@ Two additional module directories currently do not define their own database mod
 
 | Module     | Tables | Primary Purpose                                                   |
 | ---------- | -----: | ----------------------------------------------------------------- |
-| Main       |      6 | Identity, authorization, audit, notifications, feedback, API keys |
+| Main       |      5 | Identity, authorization, audit, notifications, feedback           |
 | ERP        |      7 | Projects, machines, service requests and materials                |
 | CRM        |     18 | Organizations, inquiries, tenders, quotations and CRM activities  |
 | Purchase   |      2 | ERP-origin purchase requisitions                                  |
@@ -246,22 +246,7 @@ Important fields:
 
 ---
 
-## 6.5 `api_keys`
-
-Stores credentials used by external systems.
-
-Only the hashed API key is stored.
-
-Important fields:
-
-* `name`
-* `key_hash`
-* `prefix`
-* `allowed_apps`
-* `is_active`
-* `created_by_id`
-* `last_used_at`
-* `created_at`
+> Note: a `6.5 api_keys` table previously existed here — it was removed as unused infrastructure (zero real consumers, zero rows) along with the rest of the API-key auth mechanism (see migration `c1a2b3d4e5f6_drop_api_keys_table`).
 
 ---
 

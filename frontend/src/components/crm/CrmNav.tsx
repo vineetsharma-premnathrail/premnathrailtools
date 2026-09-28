@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 import { BRAND } from '@/lib/theme'
@@ -10,6 +11,10 @@ const TABS = [
   { href: '/dashboard/crm', label: 'Dashboard', icon: 'grid' },
   { href: '/dashboard/crm/organizations', label: 'Organizations', icon: 'building' },
   { href: '/dashboard/crm/inquiries', label: 'Inquiries & Tenders', icon: 'file' },
+] as const
+
+const ADMIN_TABS = [
+  { href: '/dashboard/crm/bulk-import', label: 'Bulk Import', icon: 'upload' },
 ] as const
 
 function TabIcon({ name }: { name: string }) {
@@ -23,6 +28,8 @@ function TabIcon({ name }: { name: string }) {
       return <svg {...common}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
     case 'box':
       return <svg {...common}><path d="M21 8l-9-5-9 5 9 5 9-5z" /><path d="M3 8v8l9 5 9-5V8" /><path d="M12 13v8" /></svg>
+    case 'upload':
+      return <svg {...common}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
     default:
       return null
   }
@@ -30,11 +37,13 @@ function TabIcon({ name }: { name: string }) {
 
 export default function CrmNav() {
   const pathname = usePathname()
+  const { user } = useAuth()
+  const tabs = user?.role === 'admin' ? [...TABS, ...ADMIN_TABS] : TABS
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const isActive = tab.href === '/dashboard/crm' ? pathname === tab.href : pathname.startsWith(tab.href)
           return (
             <Link

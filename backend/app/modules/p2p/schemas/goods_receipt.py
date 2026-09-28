@@ -68,3 +68,8 @@ class P2PGoodsReceiptResponse(BaseModel):
     store_location_name: str | None = None
     received_by_name: str | None = None
     inspected_by_name: str | None = None
+    # Populated only right after /inspect completes — items whose accepted
+    # quantity could NOT be posted to the Store stock ledger (no matching
+    # Item Master entry by name, or no store_location_id on this GRN), so the
+    # Store team knows exactly what to add before stock reflects the receipt.
+    stock_sync_notes: list[str] = Field(default_factory=list)

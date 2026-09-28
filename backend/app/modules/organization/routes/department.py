@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -6,17 +6,25 @@ from app.modules.main.models.user import User
 from app.modules.main.routes.users import require_admin
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.department import Department
-from app.modules.organization.schemas.department import DepartmentCreate, DepartmentUpdate, DepartmentResponse, DepartmentMemberResponse
+from app.modules.organization.schemas.department import (
+    DepartmentCreate, DepartmentUpdate, DepartmentResponse, DepartmentMemberResponse, DepartmentAddMemberPayload,
+)
 from app.modules.organization.services.provisioning import unique_code
 
 router = APIRouter(prefix="/organization/departments", tags=["Organization"])
 
 
+def _all_head_ids(dept: Department) -> list[int]:
+    ids = [dept.head_user_id, dept.secondary_head_user_id, *(dept.additional_head_user_ids or [])]
+    return [i for i in ids if i]
+
+
 def _to_response(dept: Department, db: Session) -> DepartmentResponse:
     branch = db.query(Branch).filter(Branch.id == dept.branch_id).first() if dept.branch_id else None
-    head = db.query(User).filter(User.id == dept.head_user_id).first() if dept.head_user_id else None
-    secondary_head = db.query(User).filter(User.id == dept.secondary_head_user_id).first() if dept.secondary_head_user_id else None
-    head_names = [h.name for h in (head, secondary_head) if h]
+    head_ids = _all_head_ids(dept)
+    heads = db.query(User).filter(User.id.in_(head_ids)).all() if head_ids else []
+    heads_by_id = {h.id: h for h in heads}
+    head_names = [heads_by_id[i].name for i in head_ids if i in heads_by_id]
     return DepartmentResponse.model_validate(dept).model_copy(
         update={
             "branch_name": branch.name if branch else None,
@@ -27,10 +35,14 @@ def _to_response(dept: Department, db: Session) -> DepartmentResponse:
 
 @router.get("", response_model=list[DepartmentResponse])
 async def list_departments(
+    branch_id: int | None = Query(None),
     db: Session = Depends(get_db),
     _user: User = Depends(require_admin),
 ):
-    departments = db.query(Department).order_by(Department.name.asc()).all()
+    query = db.query(Department)
+    if branch_id is not None:
+        query = query.filter(Department.branch_id == branch_id)
+    departments = query.order_by(Department.name.asc()).all()
     return [_to_response(d, db) for d in departments]
 
 
@@ -68,7 +80,7 @@ async def list_department_members(
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=404, detail="Department not found")
-    head_ids = {department.head_user_id, department.secondary_head_user_id} - {None}
+    head_ids = set(_all_head_ids(department))
     members = (
         db.query(User)
         .filter(User.branch_id == department.branch_id, User.department.ilike(department.name))
@@ -84,6 +96,52 @@ async def list_department_members(
         DepartmentMemberResponse(id=u.id, name=u.name, email=u.email, designation=u.designation, is_head=u.id in head_ids)
         for u in members
     ]
+
+
+@router.post("/{department_id}/members", response_model=DepartmentMemberResponse, status_code=201)
+async def add_department_member(
+    department_id: int,
+    payload: DepartmentAddMemberPayload,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    """Membership is derived from User.department/branch_id (see
+    list_department_members docstring), so "adding" a member here means
+    reassigning that user onto this department/branch — the same field HR
+    edits from its own module, just also editable by an org admin here."""
+    department = db.query(Department).filter(Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found")
+    user = db.query(User).filter(User.id == payload.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.department = department.name
+    if department.branch_id:
+        user.branch_id = department.branch_id
+    db.commit()
+    db.refresh(user)
+    head_ids = set(_all_head_ids(department))
+    return DepartmentMemberResponse(id=user.id, name=user.name, email=user.email, designation=user.designation, is_head=user.id in head_ids)
+
+
+@router.delete("/{department_id}/members/{user_id}", status_code=204)
+async def remove_department_member(
+    department_id: int,
+    user_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    """Removes membership by clearing the user's department field — does not
+    touch head_user_id/secondary_head_user_id/additional_head_user_ids, so a
+    head stays a head even if pulled off the plain member list this way."""
+    department = db.query(Department).filter(Department.id == department_id).first()
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found")
+    user = db.query(User).filter(User.id == user_id, User.department.ilike(department.name)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User is not a member of this department")
+    user.department = None
+    db.commit()
 
 
 @router.patch("/{department_id}", response_model=DepartmentResponse)
@@ -112,7 +170,7 @@ async def delete_department(
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=404, detail="Department not found")
-    head_ids = {department.head_user_id, department.secondary_head_user_id} - {None}
+    head_ids = set(_all_head_ids(department))
     member_count = db.query(User).filter(
         User.branch_id == department.branch_id, User.department.ilike(department.name)
     ).count()

@@ -4,7 +4,6 @@ SELECT table_name
  WHERE table_schema = 'public'
    AND table_type   = 'BASE TABLE'
    AND table_name NOT IN ('alembic_version',
-       'api_keys',
        'audit_logs',
        'branches',
        'crm_activities',

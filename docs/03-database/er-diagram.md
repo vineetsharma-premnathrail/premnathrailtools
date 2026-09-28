@@ -105,21 +105,7 @@ Not every user reference is necessarily enforced as a database foreign key. Some
 
 ---
 
-# 5. API Keys
-
-`api_keys` provides an alternative identity mechanism for machine-to-machine/API access.
-
-API keys are associated with allowed applications rather than necessarily being tied to an individual employee.
-
-Conceptually:
-
-```text id="c5h8v2"
-API Key
-   ↓
-Allowed Applications
-   ↓
-API Access
-```
+> Note: section 5 (API Keys) was removed — the `api_keys` table and its machine-to-machine auth mechanism were fully removed from the codebase as unused infrastructure (see migration `c1a2b3d4e5f6_drop_api_keys_table`).
 
 ---
 

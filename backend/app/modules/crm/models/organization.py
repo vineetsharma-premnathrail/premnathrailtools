@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Integer, Text, ForeignKey, DateTime
+from sqlalchemy import String, Integer, Text, Float, ForeignKey, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
@@ -34,6 +34,13 @@ class Organization(Base, TimestampMixin, SoftDeleteMixin):
     additional_emails: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True, default=list)
     website: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
+    # Accounts module — this organization acting as a customer master for AR.
+    # See old_docs/product/ACCOUNTS_MODULE_ROADMAP.md Phase 1.
+    credit_limit: Mapped[float | None] = mapped_column(Float, nullable=True)
+    credit_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    discount_percentage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    gl_reconciliation_account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("gl_accounts.id"), nullable=True)
 
     contacts: Mapped[list["OrgContact"]] = relationship(
         "OrgContact", back_populates="organization", cascade="all, delete-orphan"
