@@ -11,7 +11,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.routes.auth import get_current_user
 from app.modules.erp.models.project import Project
 from app.modules.p2p.models.p2p_request import (
-    P2PRequest, P2P_REQUEST_STATUSES, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2P_CATEGORY_AUTO_BUYERS,
+    P2PRequest, P2P_REQUEST_STATUSES, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, resolve_auto_buyer_id,
 )
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment, P2P_ATTACHMENT_DOC_TYPES
@@ -318,7 +318,7 @@ async def create_p2p_request(
 
     # Buyer is auto-assigned from the category — no manual "Assign Buyer"
     # step needed once the PR is raised.
-    auto_buyer_id = P2P_CATEGORY_AUTO_BUYERS.get(payload.category_code)
+    auto_buyer_id = resolve_auto_buyer_id(db, payload.category_code)
 
     pr = P2PRequest(
         p2p_number=generate_p2p_number(db, payload.category_code),

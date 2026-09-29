@@ -53,16 +53,33 @@ P2P_CATEGORIES: dict[str, str] = {
 }
 
 # Buyer auto-assigned at PR creation based on category — replaces manually
-# picking a buyer from the Purchase Processing panel. User ids are fixed
-# per the current buyer roster; re-map here if buyers change.
-P2P_CATEGORY_AUTO_BUYERS: dict[str, int] = {
-    "MKT": 127,  # Suraj Panwar
-    "PNH": 127,  # Suraj Panwar
-    "RAW": 127,  # Suraj Panwar
-    "ELE": 174,  # Manish Kumar
-    "HWC": 137,  # Mahender Singh
-    "JOB": 130,  # Gaurav Katiyar
+# picking a buyer from the Purchase Processing panel. Keyed by email, not a
+# hardcoded user id: auto-increment ids get renumbered by any database
+# restore or Azure re-sync (this broke PR creation in production with
+# "Assigned buyer points to a record that no longer exists" the moment a
+# restore changed every user's id), while email is stable. Re-map here if
+# buyers change. Resolved to the current id via resolve_auto_buyer_id().
+P2P_CATEGORY_AUTO_BUYERS: dict[str, str] = {
+    "MKT": "suraj.panwar@premnathrail.com",
+    "PNH": "suraj.panwar@premnathrail.com",
+    "RAW": "suraj.panwar@premnathrail.com",
+    "ELE": "manish.kumar@premnathrail.com",
+    "HWC": "mahender.singh@premnathrail.com",
+    "JOB": "gaurav.katiyar@premnathrail.com",
 }
+
+
+def resolve_auto_buyer_id(db, category_code: str) -> int | None:
+    """Look up the auto-assigned buyer's current user id by email. Returns
+    None (no buyer auto-assigned, PR still creates fine) if the category has
+    no mapping or that email doesn't match any user, rather than letting a
+    stale id 500 the whole PR creation."""
+    email = P2P_CATEGORY_AUTO_BUYERS.get(category_code)
+    if not email:
+        return None
+    from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
+    buyer = db.query(User).filter(User.email == email).first()
+    return buyer.id if buyer else None
 
 P2P_REQUIREMENT_TYPES = ("Material", "Service", "Material + Service", "Capital Equipment", "Others")
 

@@ -25,7 +25,7 @@ from app.modules.erp.schemas.service_request import (
     MaterialReceivePayload,
 )
 from app.modules.p2p.models.p2p_request import (
-    P2PRequest, P2P_CATEGORY_AUTO_BUYERS, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2P_REQUEST_PRIORITIES,
+    P2PRequest, resolve_auto_buyer_id, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2P_REQUEST_PRIORITIES,
 )
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.schemas.p2p_request import P2PRequestResponse
@@ -917,7 +917,7 @@ def _create_p2p_request_for_sr(
     This is now the sole creation path for a PR raised out of an SR's
     Materials tab — there is no separate `purchase_requisitions` row."""
     category_code = payload.category_code or "OTH"
-    auto_buyer_id = P2P_CATEGORY_AUTO_BUYERS.get(category_code)
+    auto_buyer_id = resolve_auto_buyer_id(db, category_code)
 
     request = P2PRequest(
         p2p_number=generate_p2p_number(db, category_code),
