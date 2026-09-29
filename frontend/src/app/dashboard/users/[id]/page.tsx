@@ -358,9 +358,6 @@ function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id:
   const isAdminRole = user.role === 'admin'
   const [selected, setSelected] = useState<string[]>(user.assigned_apps || [])
   const [erpPerms, setErpPerms] = useState<string[]>(user.erp_permissions || [])
-  const [isDepartmentHead, setIsDepartmentHead] = useState(!!user.is_department_head)
-  const [isProjectHead, setIsProjectHead] = useState(!!user.is_project_head)
-  const [isPlantHead, setIsPlantHead] = useState(!!user.is_plant_head)
   const [isPurchaseHead, setIsPurchaseHead] = useState(!!user.is_purchase_head)
   const [isDirector, setIsDirector] = useState(!!user.is_director)
   const [isMd, setIsMd] = useState(!!user.is_md)
@@ -375,7 +372,7 @@ function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id:
     setSaving(true)
     setError('')
     try {
-      await usersApi.updateModuleAccess(user.id, selected, erpPerms, isDepartmentHead, isProjectHead, isPlantHead, isPurchaseHead, isDirector, isMd, isFinanceManager)
+      await usersApi.updateModuleAccess(user.id, selected, erpPerms, isPurchaseHead, isDirector, isMd, isFinanceManager)
       onRefresh()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save module access.').join(' '))
@@ -403,18 +400,6 @@ function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id:
       <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)' }}>
         <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 10px' }}>Approval Roles</p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isDepartmentHead ? '1px solid #FF7A45' : `1px solid ${BORDER.normal}`, background: isDepartmentHead ? 'rgba(244,113,59,0.05)' : '#fff', opacity: !user.department ? 0.5 : 1, fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-            <Checkbox disabled={!user.department} checked={isDepartmentHead} onChange={() => setIsDepartmentHead((v) => !v)} />
-            Department Head{user.department ? ` (${user.department})` : ''}
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isProjectHead ? '1px solid #2563eb' : `1px solid ${BORDER.normal}`, background: isProjectHead ? 'rgba(59,130,246,0.05)' : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-            <Checkbox checked={isProjectHead} onChange={() => setIsProjectHead((v) => !v)} />
-            Project Head
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isPlantHead ? '1px solid #047857' : `1px solid ${BORDER.normal}`, background: isPlantHead ? 'rgba(16,185,129,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-            <Checkbox checked={isPlantHead} onChange={() => setIsPlantHead((v) => !v)} />
-            Plant Head
-          </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isPurchaseHead ? '1px solid #c2410c' : `1px solid ${BORDER.normal}`, background: isPurchaseHead ? 'rgba(234,88,12,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
             <Checkbox checked={isPurchaseHead} onChange={() => setIsPurchaseHead((v) => !v)} />
             Purchase Head

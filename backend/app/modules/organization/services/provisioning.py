@@ -16,11 +16,19 @@ app/modules/main/routes/users.py) right after a user's `office_location`,
   - A Department's `code` is just its full name (not an abbreviation) per
     product decision; since `code` is globally unique but two branches can
     have same-named departments, a numeric suffix is appended on collision.
+  - A BranchUserAssignment row is auto-created the first time a user is
+    linked to a branch this way, so Organization > Users > Assignments isn't
+    empty for everyone by default. Only created once per (user, branch) —
+    never touched again after that, so admin edits on the Assignments tab
+    (employee ID, role, access level, etc.) stick.
 """
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
+from app.modules.organization.models.branch_user_assignment import BranchUserAssignment
 from app.modules.organization.models.department import Department
 
 
@@ -73,6 +81,26 @@ def unique_code(db: Session, model, base_name: str) -> str:
     return code
 
 
+def _ensure_branch_assignment(db: Session, user: User, branch_id: int, department_id: int | None) -> None:
+    exists = db.query(BranchUserAssignment).filter(
+        BranchUserAssignment.user_id == user.id, BranchUserAssignment.branch_id == branch_id,
+    ).first()
+    if exists:
+        return
+    is_primary = not db.query(BranchUserAssignment).filter(
+        BranchUserAssignment.user_id == user.id, BranchUserAssignment.is_primary_branch == True,  # noqa: E712
+    ).first()
+    db.add(BranchUserAssignment(
+        branch_id=branch_id,
+        user_id=user.id,
+        department_id=department_id,
+        designation=user.designation,
+        is_primary_branch=is_primary,
+        effective_from=date.today(),
+        status="active",
+    ))
+
+
 def sync_user_org_links(db: Session, user: User) -> None:
     """Best-effort: link `user` to a Branch (from office_location) and a
     Department (from department)."""
@@ -81,5 +109,9 @@ def sync_user_org_links(db: Session, user: User) -> None:
         branch = _get_or_create_branch(db, user.office_location)
         user.branch_id = branch.id
 
+    department = None
     if user.department and branch:
-        _get_or_create_department(db, branch.id, user.department, user.reporting_manager_id)
+        department = _get_or_create_department(db, branch.id, user.department, user.reporting_manager_id)
+
+    if branch:
+        _ensure_branch_assignment(db, user, branch.id, department.id if department else None)

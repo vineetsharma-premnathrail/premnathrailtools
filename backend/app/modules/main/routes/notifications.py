@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -8,6 +9,10 @@ from app.modules.main.models.notification import Notification
 from app.modules.main.routes.auth import get_current_user
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
+
+
+class NotificationPreferences(BaseModel):
+    enabled: bool
 
 
 @router.get("/unread-count")
@@ -64,3 +69,16 @@ async def mark_all_read(
     )
     db.commit()
     return {"message": "All marked as read"}
+
+
+@router.patch("/preferences")
+async def update_notification_preferences(
+    payload: NotificationPreferences,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Turn the in-app bell + Teams activity push on/off for the current user.
+    Doesn't affect the fixed department-inbox emails (TEAM_EMAIL etc.)."""
+    user.notifications_enabled = payload.enabled
+    db.commit()
+    return {"notifications_enabled": user.notifications_enabled}

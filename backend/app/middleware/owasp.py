@@ -184,11 +184,15 @@ def _rate_bucket(path: str, method: str) -> str:
 
 
 def _is_rate_limited(bucket: str, ip: str) -> bool:
+    if _is_exempt_from_abuse_checks(ip):
+        return False
     cfg = RATE_CONFIG[bucket]
     return _store.is_rate_limited(f"{bucket}:{ip}", cfg["limit"], cfg["window"])
 
 
 def _record_violation(ip: str) -> bool:
+    if _is_exempt_from_abuse_checks(ip):
+        return False
     banned = _store.record_violation(ip, BAN_DURATION_SECONDS, BAN_THRESHOLD)
     if banned:
         logger.critical("[A07] IP BANNED | ip=%s", ip)
@@ -197,6 +201,15 @@ def _record_violation(ip: str) -> bool:
 
 def _is_banned(ip: str) -> bool:
     return _store.is_banned(ip)
+
+
+# Local-dev-only escape hatch — see TRUSTED_LOCAL_DEV's docstring in config.py
+# for why this must never be true in production.
+_LOCAL_DEV_EXEMPT_IPS = {"127.0.0.1", "::1"}
+
+
+def _is_exempt_from_abuse_checks(ip: str) -> bool:
+    return settings.TRUSTED_LOCAL_DEV and ip in _LOCAL_DEV_EXEMPT_IPS
 
 
 def _is_private_ip(host: str) -> bool:
@@ -224,6 +237,8 @@ def _check_ssrf(value: str) -> bool:
 
 def _track_404(ip: str) -> bool:
     """A01: Detect port/path scanning. Returns True if IP is scanning."""
+    if _is_exempt_from_abuse_checks(ip):
+        return False
     return _store.track_scan(ip, window=60, limit=30)
 
 
@@ -248,7 +263,7 @@ class OWASPMiddleware(BaseHTTPMiddleware):
         request_id = str(uuid.uuid4())[:8]
 
         # ── A07: Check IP ban first (fastest reject) ──────────────────────
-        if _is_banned(ip):
+        if _is_banned(ip) and not _is_exempt_from_abuse_checks(ip):
             logger.warning("[A07] Banned IP request | ip=%s path=%s", ip, path)
             return JSONResponse(
                 status_code=429,

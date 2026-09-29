@@ -28,12 +28,12 @@ const config: TourConfig = {
     {
       target: 'org-roles-table-rows',
       title: 'Users table',
-      purpose: 'Every user, with role, module access (Apps), and approval-role badges (Dept Head, Project Head, Plant Head) shown inline.',
+      purpose: 'Every user, with role and module access (Apps) shown inline.',
     },
     {
       target: 'org-roles-edit-btn',
       title: 'Edit',
-      purpose: 'Opens the full editor for this one user — where their role, which modules (P2P, Store, CRM, etc.) they can access, and approval-role flags (Dept Head, Project Head, Plant Head, Purchase Head, Director, MD) are actually granted or changed.',
+      purpose: 'Opens the full editor for this one user — where their role, which modules (P2P, Store, CRM, etc.) they can access, and approval-role flags (Purchase Head, Director, MD, Finance Manager) are actually granted or changed. Department/Project/Plant Head are picked per-request instead, directly on the Purchase Requisition form.',
       after: 'This is the only place those permissions can be changed — the Organization > Users tab only displays them for reference.',
     },
   ],

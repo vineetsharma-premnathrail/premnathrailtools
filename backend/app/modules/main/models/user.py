@@ -84,6 +84,12 @@ class User(Base, TimestampMixin):
     reporting_manager_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     date_of_joining: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # Personal opt-out from the in-app Notification bell + Teams activity
+    # push (see app/utils/notifications.py). Doesn't affect the fixed
+    # department-inbox emails (TEAM_EMAIL/PURCHASE_EMAIL/RND_EMAIL) — those
+    # aren't per-user notifications.
+    notifications_enabled: Mapped[bool] = mapped_column(default=True)
+
     # Granular permission matrix (module:subtab:action ids, e.g.
     # "erp:projects:approve") — additive to `assigned_apps`/`erp_permissions`
     # above, not a replacement. Like `erp_permissions`, nothing enforces these

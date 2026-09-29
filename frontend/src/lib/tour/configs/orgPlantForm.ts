@@ -52,7 +52,7 @@ const config: TourConfig = {
     {
       target: 'org-plant-head',
       title: 'Branch Head',
-      purpose: 'The senior person overseeing this branch. Selecting someone here can also drive approval routing wherever a "Plant Head" sign-off is required.',
+      purpose: 'The senior person overseeing this branch — for reference only. Doesn\'t drive approval routing; a Purchase Requisition\'s Plant Head is picked separately, per-request, on the PR form itself.',
       whatToEnter: 'Pick from the user directory.',
     },
     {

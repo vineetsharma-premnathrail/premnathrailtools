@@ -136,15 +136,12 @@ export const usersApi = {
     id: number,
     assigned_apps: string[],
     erp_permissions: string[],
-    is_department_head?: boolean,
-    is_project_head?: boolean,
-    is_plant_head?: boolean,
     is_purchase_head?: boolean,
     is_director?: boolean,
     is_md?: boolean,
     is_finance_manager?: boolean
   ) => {
-    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, is_department_head, is_project_head, is_plant_head, is_purchase_head, is_director, is_md, is_finance_manager })
+    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, is_purchase_head, is_director, is_md, is_finance_manager })
     return data
   },
 
@@ -1955,6 +1952,11 @@ export const notificationsApi = {
 
   markAllRead: async () => {
     const { data } = await apiClient.patch('/notifications/read-all')
+    return data
+  },
+
+  updatePreferences: async (enabled: boolean) => {
+    const { data } = await apiClient.patch('/notifications/preferences', { enabled })
     return data
   },
 }

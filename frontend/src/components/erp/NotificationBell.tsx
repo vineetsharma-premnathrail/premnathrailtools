@@ -26,12 +26,24 @@ const DELETED_TYPE_LINK: Record<string, string> = {
 }
 
 export default function NotificationBell() {
-  const { user } = useAuth()
+  const { user, fetchUser } = useAuth()
   const [open, setOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
+  const [savingPref, setSavingPref] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const notificationsEnabled = user?.notifications_enabled !== false
+
+  const toggleNotificationsEnabled = async () => {
+    setSavingPref(true)
+    try {
+      await notificationsApi.updatePreferences(!notificationsEnabled)
+      await fetchUser()
+    } finally {
+      setSavingPref(false)
+    }
+  }
 
   const refreshCount = () => {
     notificationsApi.getUnreadCount().then((r) => setUnreadCount(r.count)).catch(() => {})
@@ -148,12 +160,39 @@ export default function NotificationBell() {
         <div style={{ maxHeight: 420, overflowY: 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: '#1f1108' }}>Notifications</span>
-            {unreadCount > 0 && (
-              <button onClick={markAllRead} style={{ fontSize: 11.5, fontWeight: 600, color: '#FF7A45', background: 'none', border: 'none', cursor: 'pointer' }}>
-                Mark all read
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {unreadCount > 0 && (
+                <button onClick={markAllRead} style={{ fontSize: 11.5, fontWeight: 600, color: '#FF7A45', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  Mark all read
+                </button>
+              )}
+              <button
+                onClick={toggleNotificationsEnabled}
+                disabled={savingPref}
+                title={notificationsEnabled ? 'Turn notifications off' : 'Turn notifications on'}
+                aria-label={notificationsEnabled ? 'Turn notifications off' : 'Turn notifications on'}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: notificationsEnabled ? '#78716c' : '#a8a29e',
+                  background: 'none',
+                  border: '1px solid rgba(0,0,0,0.1)',
+                  borderRadius: 8,
+                  padding: '3px 8px',
+                  cursor: savingPref ? 'default' : 'pointer',
+                  opacity: savingPref ? 0.6 : 1,
+                }}
+              >
+                {notificationsEnabled ? 'On' : 'Off'}
               </button>
-            )}
+            </div>
           </div>
+
+          {!notificationsEnabled && (
+            <div style={{ padding: '8px 16px', fontSize: 11.5, color: '#a8a29e', background: '#fafaf9', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+              Notifications are turned off. You won&apos;t receive new alerts here or in Teams until you turn them back on.
+            </div>
+          )}
 
           {loading ? (
             <p style={{ fontSize: 12.5, color: '#a8a29e', padding: 16, margin: 0 }}>Loading…</p>

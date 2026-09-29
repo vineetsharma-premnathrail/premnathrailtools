@@ -26,3 +26,4 @@ class CurrentUserResponse(BaseModel):
     is_purchase_head: bool = False
     is_director: bool = False
     is_md: bool = False
+    notifications_enabled: bool = True

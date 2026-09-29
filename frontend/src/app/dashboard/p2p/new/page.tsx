@@ -112,6 +112,9 @@ export default function NewP2PRequestPage() {
     setError('')
     if (!categoryCode) { setError('Please select a Purchase Requisition category.'); return }
     if (items.length === 0 || !items[0].item_name) { setError('At least one item is required.'); return }
+    if (!departmentHeadId) { setError('Please select a Department Head.'); return }
+    if (!projectHeadId) { setError('Please select a Project Head.'); return }
+    if (!plantHeadId) { setError('Please select a Plant Head.'); return }
 
     setSubmitting(true)
     try {
@@ -281,7 +284,7 @@ export default function NewP2PRequestPage() {
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Approval</h2>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
           <div data-tour="pr-new-dept-head" style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <label style={labelStyle}>Department Head</label>
+            <label style={labelStyle}>Department Head *</label>
             <SearchableSelect
               value={departmentHeadId}
               onChange={setDepartmentHeadId}
@@ -290,7 +293,7 @@ export default function NewP2PRequestPage() {
             />
           </div>
           <div data-tour="pr-new-project-head" style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <label style={labelStyle}>Project Head</label>
+            <label style={labelStyle}>Project Head *</label>
             <SearchableSelect
               value={projectHeadId}
               onChange={setProjectHeadId}
@@ -299,7 +302,7 @@ export default function NewP2PRequestPage() {
             />
           </div>
           <div data-tour="pr-new-plant-head" style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <label style={labelStyle}>Plant Head</label>
+            <label style={labelStyle}>Plant Head *</label>
             <SearchableSelect
               value={plantHeadId}
               onChange={setPlantHeadId}
@@ -308,9 +311,6 @@ export default function NewP2PRequestPage() {
             />
           </div>
         </div>
-        <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '-10px 0 24px' }}>
-          Leave blank to skip a role. If a Department Head isn&apos;t picked here, one is auto-assigned from your own department when configured.
-        </p>
 
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Documents</h2>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>

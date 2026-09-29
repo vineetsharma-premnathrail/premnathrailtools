@@ -9,9 +9,6 @@ import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 
 const APPROVAL_ROLE_FLAGS: { key: keyof User; label: string }[] = [
-  { key: 'is_department_head', label: 'Dept Head' },
-  { key: 'is_project_head', label: 'Project Head' },
-  { key: 'is_plant_head', label: 'Plant Head' },
   { key: 'is_purchase_head', label: 'Purchase Head' },
   { key: 'is_director', label: 'Director' },
   { key: 'is_md', label: 'MD' },

@@ -450,6 +450,7 @@ async def get_current_user_info(user: User = Depends(get_current_user)):
         is_purchase_head=user.is_purchase_head,
         is_director=user.is_director,
         is_md=user.is_md,
+        notifications_enabled=user.notifications_enabled,
     )
 
 

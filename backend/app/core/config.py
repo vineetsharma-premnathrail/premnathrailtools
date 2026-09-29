@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     # Behind a reverse proxy in production, set this to that proxy's IP.
     TRUSTED_PROXIES: str = ""
 
+    # Exempts 127.0.0.1/::1 from the OWASP middleware's rate limiting and IP
+    # bans (app/middleware/owasp.py). False by default — only ever set True in
+    # a local .env. Never set this in production: if the app sits behind a
+    # same-host reverse proxy that isn't in TRUSTED_PROXIES (misconfigured),
+    # every real external request also arrives from 127.0.0.1, and this flag
+    # would blind the rate limiter/ban to all of them, not just a developer's
+    # own machine.
+    TRUSTED_LOCAL_DEV: bool = False
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]

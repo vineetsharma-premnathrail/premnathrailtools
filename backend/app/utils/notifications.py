@@ -99,6 +99,8 @@ def broadcast_notification(
                 continue
             if exclude_user_id and u.id == exclude_user_id:
                 continue
+            if not u.notifications_enabled:
+                continue
             db.add(Notification(
                 user_id=u.id, title=title, message=message, notification_type=notification_type,
                 entity_type=entity_type, entity_id=entity_id,
@@ -118,11 +120,13 @@ def notify_user(
     entity_id: int | None = None,
 ) -> None:
     try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user and not user.notifications_enabled:
+            return
         db.add(Notification(
             user_id=user_id, title=title, message=message, notification_type=notification_type,
             entity_type=entity_type, entity_id=entity_id,
         ))
-        user = db.query(User).filter(User.id == user_id).first()
         if user:
             _notify_teams(user, title, message)
     except Exception:
