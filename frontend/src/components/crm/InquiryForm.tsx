@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { crmApi } from '@/lib/api'
+import { crmApi, usersApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
-import { Inquiry, InquiryLineItem, Organization, OrgContact, Tender } from '@/types'
+import { Inquiry, InquiryLineItem, Organization, OrgContact, Tender, DirectoryUser } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField, { isPhoneValid } from '@/components/erp/PhoneField'
@@ -74,9 +74,17 @@ export default function InquiryForm({
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
 }) {
   const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const bdOwnerName = initial?.bd_owner || user?.name || ''
   const orgLocked = !!defaultOrgId
   const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
+  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    usersApi.directory().then((data) => setDirectoryUsers(Array.isArray(data) ? data : [])).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin])
   const [railwayZoneCustom, setRailwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )
@@ -302,7 +310,7 @@ export default function InquiryForm({
         org_contact_id: Number(form.org_contact_id),
         railway_zone: form.railway_zone === 'Other' ? railwayZoneCustom : form.railway_zone,
         product_category: form.product_category,
-        bd_owner: bdOwnerName,
+        bd_owner: isAdmin ? (form.bd_owner || bdOwnerName) : bdOwnerName,
         quantity: form.quantity ? Number(form.quantity) : undefined,
         additional_items: filledExtraProducts.map((r) => ({
           product_category: r.product_category || undefined,
@@ -376,7 +384,16 @@ export default function InquiryForm({
           </div>
           <div style={{ flex: '1 1 110px', minWidth: 110 }}>
             <Field label="BD Owner" tourId="inq-bd-owner">
-              <input value={bdOwnerName} disabled style={{ ...inputStyle, padding: '8px 10px', fontSize: 12, background: '#f5f5f4', color: '#78716c' }} />
+              {isAdmin ? (
+                <SearchableSelect
+                  value={form.bd_owner || bdOwnerName}
+                  onChange={(v) => set('bd_owner', v)}
+                  options={directoryUsers.map((u) => ({ value: u.name, label: u.name }))}
+                  placeholder="Select BD Owner..."
+                />
+              ) : (
+                <input value={bdOwnerName} disabled style={{ ...inputStyle, padding: '8px 10px', fontSize: 12, background: '#f5f5f4', color: '#78716c' }} />
+              )}
             </Field>
           </div>
         </div>

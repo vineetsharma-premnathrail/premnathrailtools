@@ -230,7 +230,12 @@ export default function TenderForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <form onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ display: 'flex', flexDirection: 'column', gap: 20, position: 'relative' }}>
+      {saving && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(2px)' }}>
+          <div className="loader" />
+        </div>
+      )}
       <MessageDialog open={!!error} variant="error" title="Cannot Save" message={error} onClose={() => setError('')} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>

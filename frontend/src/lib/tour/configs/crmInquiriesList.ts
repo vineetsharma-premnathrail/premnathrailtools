@@ -13,8 +13,8 @@ const config: TourConfig = {
     {
       target: 'iq-search',
       title: 'Search',
-      purpose: 'Searches across ID, product, owner, zone, status, and stage in one box — matching Inquiries and Tenders together.',
-      whatToEnter: 'Any part of an ID, product name, owner, etc. Updates the list automatically as you type.',
+      purpose: 'Searches across ID, organization, product, owner, zone, and stage in one box — matching Inquiries and Tenders together.',
+      whatToEnter: 'Any part of an ID, organization name, product name, owner, etc. Updates the list automatically as you type.',
     },
     {
       target: 'iq-clear-btn',
@@ -32,15 +32,15 @@ const config: TourConfig = {
       purpose: 'Click to sort by the record\'s ID (which also reflects creation order); click again to reverse.',
     },
     {
+      target: 'iq-col-product',
+      title: 'Product',
+      purpose: 'Shows the Inquiry\'s product, or the Tender\'s category — not filterable or sortable, for context only.',
+    },
+    {
       target: 'iq-col-stage',
       title: 'Stage (filterable)',
       purpose: 'Narrows the list to records currently at a specific pipeline stage.',
-      after: 'Every filterable column here (Stage, Status, Created By) combines with the others and with Search and Type above.',
-    },
-    {
-      target: 'iq-col-status',
-      title: 'Status (filterable)',
-      purpose: 'Narrows the list by status — for an Inquiry this is one of the Inquiry statuses (Requirement Received, Quotation Sent, etc.); for a Tender it\'s the tender\'s own status.',
+      after: 'Every filterable column here (Stage, Created By) combines with the others and with Search and Type above.',
     },
     {
       target: 'iq-col-created_at',

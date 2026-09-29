@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import date
-from sqlalchemy import String, Integer, Text, ForeignKey, Date, Boolean
+from sqlalchemy import String, Integer, Text, ForeignKey, Date
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -40,4 +40,3 @@ class Branch(Base, TimestampMixin):
     timezone: Mapped[str | None] = mapped_column(String(60), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

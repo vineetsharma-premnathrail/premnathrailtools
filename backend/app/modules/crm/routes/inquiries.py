@@ -1,12 +1,11 @@
 import json
 from datetime import datetime, timezone, date
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.core.permissions import require_app_access
+from app.core.sequential_id import next_sequential_id
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem
@@ -57,8 +56,7 @@ def _can_modify(record, user: User) -> bool:
 
 def _generate_universal_id(db: Session) -> str:
     today = date.today().strftime("%Y%m%d")
-    seq = db.query(func.count(Inquiry.id)).scalar() + 1
-    return f"INQ-{today}-{seq:04d}"
+    return next_sequential_id(db, prefix=f"INQ-{today}-", column=Inquiry.universal_id)
 
 
 def _log_stage(db: Session, inquiry_id: int, universal_id: str, stage: str, user: User, notes: str | None = None):
@@ -86,6 +84,9 @@ async def list_inquiries(
         query = query.filter(Inquiry.org_id == org_id)
     if search:
         like = f"%{search}%"
+        matching_org_ids = [
+            row[0] for row in db.query(Organization.id).filter(Organization.name.ilike(like)).all()
+        ]
         query = query.filter(
             (Inquiry.universal_id.ilike(like)) | (Inquiry.product.ilike(like)) | (Inquiry.bd_owner.ilike(like))
             | (Inquiry.sales_engineer.ilike(like)) | (Inquiry.railway_zone.ilike(like)) | (Inquiry.division.ilike(like))
@@ -93,6 +94,7 @@ async def list_inquiries(
             | (Inquiry.product_category.ilike(like)) | (Inquiry.delivery_location.ilike(like))
             | (Inquiry.requirement_desc.ilike(like))
             | (Inquiry.followup_assigned_to.ilike(like)) | (Inquiry.priority.ilike(like))
+            | (Inquiry.org_id.in_(matching_org_ids) if matching_org_ids else False)
         )
     inquiries = query.order_by(Inquiry.id.desc()).offset(skip).limit(limit).all()
     creator_ids = {i.created_by_id for i in inquiries if i.created_by_id}
@@ -123,18 +125,10 @@ async def create_inquiry(
             raise HTTPException(status_code=422, detail="org_contact_id does not belong to the specified organization")
 
     data = payload.model_dump(exclude={"additional_items"})
-    inquiry = None
-    for attempt in range(5):
-        try:
-            universal_id = _generate_universal_id(db)
-            inquiry = Inquiry(**data, universal_id=universal_id, created_by_id=user.id)
-            db.add(inquiry)
-            db.flush()
-            break
-        except IntegrityError:
-            db.rollback()
-            if attempt == 4:
-                raise HTTPException(status_code=500, detail="Could not allocate an inquiry ID, please retry")
+    universal_id = _generate_universal_id(db)
+    inquiry = Inquiry(**data, universal_id=universal_id, created_by_id=user.id)
+    db.add(inquiry)
+    db.flush()
 
     if payload.additional_items:
         inquiry.additional_items = [

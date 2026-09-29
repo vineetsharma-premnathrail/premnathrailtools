@@ -1,12 +1,11 @@
 import json
 from datetime import datetime, timezone, date
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.core.permissions import require_app_access
+from app.core.sequential_id import next_sequential_id
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.tender import Tender
@@ -63,8 +62,7 @@ def _can_modify(record, user: User) -> bool:
 
 def _generate_universal_id(db: Session) -> str:
     today = date.today().strftime("%Y%m%d")
-    seq = db.query(func.count(Tender.id)).scalar() + 1
-    return f"TND-{today}-{seq:04d}"
+    return next_sequential_id(db, prefix=f"TND-{today}-", column=Tender.universal_id)
 
 
 def _log_stage(db: Session, tender_id: int, universal_id: str, stage: str, user: User, notes: str | None = None):
@@ -92,11 +90,15 @@ async def list_tenders(
         query = query.filter(Tender.org_id == org_id)
     if search:
         like = f"%{search}%"
+        matching_org_ids = [
+            row[0] for row in db.query(Organization.id).filter(Organization.name.ilike(like)).all()
+        ]
         query = query.filter(
             (Tender.universal_id.ilike(like)) | (Tender.tender_number.ilike(like)) | (Tender.tender_name.ilike(like))
             | (Tender.tender_authority.ilike(like)) | (Tender.tender_portal.ilike(like)) | (Tender.tender_type.ilike(like))
             | (Tender.tender_category.ilike(like)) | (Tender.status.ilike(like)) | (Tender.current_stage.ilike(like))
             | (Tender.railway_zone.ilike(like)) | (Tender.division.ilike(like)) | (Tender.workshop.ilike(like))
+            | (Tender.org_id.in_(matching_org_ids) if matching_org_ids else False)
         )
     tenders = query.order_by(Tender.id.desc()).offset(skip).limit(limit).all()
     creator_ids = {t.created_by_id for t in tenders if t.created_by_id}
@@ -136,18 +138,10 @@ async def create_tender(
         if clash:
             raise HTTPException(status_code=409, detail="A tender with this number already exists for this zone/division")
 
-    tender = None
-    for attempt in range(5):
-        try:
-            universal_id = _generate_universal_id(db)
-            tender = Tender(**payload.model_dump(), universal_id=universal_id, created_by_id=user.id)
-            db.add(tender)
-            db.flush()
-            break
-        except IntegrityError:
-            db.rollback()
-            if attempt == 4:
-                raise HTTPException(status_code=500, detail="Could not allocate a tender ID, please retry")
+    universal_id = _generate_universal_id(db)
+    tender = Tender(**payload.model_dump(), universal_id=universal_id, created_by_id=user.id)
+    db.add(tender)
+    db.flush()
 
     _log_stage(db, tender.id, universal_id, "Tender created", user)
     if tender.submission_date:

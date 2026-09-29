@@ -10,7 +10,6 @@ import CrmNav from '@/components/crm/CrmNav'
 import InquiryDetailPanel from '@/components/crm/InquiryDetailPanel'
 import TenderDetailPanel from '@/components/crm/TenderDetailPanel'
 import { secondaryBtnStyle, pageBtnStyle } from '@/components/crm/ui'
-import { inquiryStatusColor } from '@/components/crm/constants'
 import { BRAND, TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import MessageDialog from '@/components/erp/MessageDialog'
@@ -37,6 +36,7 @@ interface CombinedRow {
   universal_id: string
   org_id: number
   title: string
+  product: string
   stage: string
   status: string
   secondary: string
@@ -116,15 +116,15 @@ export default function InquiriesPage() {
 
   const orgById = useMemo(() => new Map(organizations.map((o) => [o.id, o])), [organizations])
 
-  type ColFilterKey = 'stage' | 'status' | 'created_by_name'
-  const COL_FILTER_KEYS: ColFilterKey[] = ['stage', 'status', 'created_by_name']
-  const [colFilters, setColFilters] = useState<Record<ColFilterKey, string>>({ stage: '', status: '', created_by_name: '' })
+  type ColFilterKey = 'stage' | 'created_by_name'
+  const COL_FILTER_KEYS: ColFilterKey[] = ['stage', 'created_by_name']
+  const [colFilters, setColFilters] = useState<Record<ColFilterKey, string>>({ stage: '', created_by_name: '' })
   const setColFilter = (key: ColFilterKey, value: string) => setColFilters((f) => ({ ...f, [key]: value }))
 
   const clearFilters = () => {
     setSearch('')
     setTypeFilter('all')
-    setColFilters({ stage: '', status: '', created_by_name: '' })
+    setColFilters({ stage: '', created_by_name: '' })
   }
 
   const combined = useMemo<CombinedRow[]>(() => {
@@ -135,6 +135,7 @@ export default function InquiriesPage() {
       universal_id: i.universal_id,
       org_id: i.org_id,
       title: i.product || 'Not provided',
+      product: i.product || 'Not provided',
       stage: i.current_stage || 'Not provided',
       status: i.status || 'Not provided',
       secondary: i.priority || 'Not provided',
@@ -150,6 +151,7 @@ export default function InquiriesPage() {
       universal_id: t.universal_id,
       org_id: t.org_id,
       title: t.tender_name || t.tender_number || 'Not provided',
+      product: t.tender_category || 'Not provided',
       stage: t.current_stage || 'Not provided',
       status: t.status || 'Not provided',
       secondary: t.tender_value != null ? `${t.currency || ''} ${t.tender_value.toLocaleString()}` : 'Not provided',
@@ -163,7 +165,7 @@ export default function InquiriesPage() {
   }, [inquiries, tenders, typeFilter, orgById])
 
   const colFilterOptions = useMemo(() => {
-    const options: Record<ColFilterKey, string[]> = { stage: [], status: [], created_by_name: [] }
+    const options: Record<ColFilterKey, string[]> = { stage: [], created_by_name: [] }
     for (const key of COL_FILTER_KEYS) {
       const values = new Set<string>()
       for (const r of combined) {
@@ -193,12 +195,12 @@ export default function InquiriesPage() {
     }
   }
 
-  const columns: { label: string; key: SortKey | ColFilterKey | 'kind' | 'org_name' | 'secondary'; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
+  const columns: { label: string; key: SortKey | ColFilterKey | 'kind' | 'org_name' | 'secondary' | 'product'; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
     { label: 'Type', key: 'kind', type: 'filter' },
     { label: 'ID', key: 'universal_id', type: 'sort', sortLabels: ['Old', 'Latest'] },
     { label: 'Organization', key: 'org_name', type: 'none' },
+    { label: 'Product', key: 'product', type: 'none' },
     { label: 'Stage', key: 'stage', type: 'filter' },
-    { label: 'Status', key: 'status', type: 'filter' },
     { label: 'Value / Priority', key: 'secondary', type: 'none' },
     { label: 'Created Date', key: 'created_at', type: 'sort', sortLabels: ['Old', 'Latest'] },
     { label: 'Created By', key: 'created_by_name', type: 'filter' },
@@ -268,7 +270,7 @@ export default function InquiriesPage() {
         data-tour="iq-search"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search ID, product, owner, zone, status, stage..."
+        placeholder="Search ID, organization, product, owner, zone, stage..."
         style={{ flex: '1 1 auto', minWidth: 0, padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 12.5, outline: 'none' }}
       />
       <button onClick={clearFilters} data-tour="iq-clear-btn" style={{ ...secondaryBtnStyle, flex: '0 0 auto', padding: '8px 10px', fontSize: 11.5 }}>Clear</button>
@@ -379,14 +381,8 @@ export default function InquiriesPage() {
                   </div>
                 </td>
                 <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{orgById.get(r.org_id)?.name || 'Not provided'}</td>
+                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.product}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.stage}</td>
-                <td style={{ padding: '7px 16px', whiteSpace: 'nowrap' }}>
-                  {r.kind === 'inquiry' ? (
-                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: inquiryStatusColor(r.status).bg, color: inquiryStatusColor(r.status).text }}>{r.status}</span>
-                  ) : (
-                    <span style={{ fontSize: 12.5, color: '#57534e' }}>{r.status}</span>
-                  )}
-                </td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.secondary}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : formatDate(r.created_at)}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_by_name}</td>

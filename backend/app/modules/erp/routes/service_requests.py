@@ -1,7 +1,6 @@
 from datetime import date, datetime, timezone, timedelta
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, UploadFile, File
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -265,23 +264,15 @@ async def create_service_request(
     if not project:
         raise HTTPException(status_code=404, detail="Machine/Project not found")
 
-    sr = None
-    for attempt in range(5):
-        try:
-            sr_number = _generate_sr_number(db)
-            sr = ServiceRequest(
-                request_number=sr_number,
-                created_by_id=user.id,
-                opened_at=datetime.now(timezone.utc),
-                **data.model_dump(),
-            )
-            db.add(sr)
-            db.flush()
-            break
-        except IntegrityError:
-            db.rollback()
-            if attempt == 4:
-                raise HTTPException(status_code=500, detail="Could not allocate a service request number, please retry")
+    sr_number = _generate_sr_number(db)
+    sr = ServiceRequest(
+        request_number=sr_number,
+        created_by_id=user.id,
+        opened_at=datetime.now(timezone.utc),
+        **data.model_dump(),
+    )
+    db.add(sr)
+    db.flush()
 
     _write_audit(db, sr.id, "created", user, request, summary=f"Service request {sr.request_number} created by {user.name or user.email}.")
     broadcast_notification(

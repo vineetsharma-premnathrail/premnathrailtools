@@ -417,8 +417,9 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
 const emptyLineItem = { description: '', model_number: '', quantity: '', unit_price: '', gst_percent: '', subtotal: '', total: '' }
 
 // A valid Delivery Time must carry a unit, not just a bare number — "7" is ambiguous,
-// "7 days" isn't. Accepts day/week/month/hour in singular or plural, any case.
-const DELIVERY_TIME_PATTERN = /\d+\s*-?\s*\d*\s*(day|days|week|weeks|month|months|hour|hours|hrs?)\b/i
+// "7 days" isn't. Accepts day/week/month/hour in singular or plural, any case, with
+// any words in between the number and the unit (e.g. "120 working days").
+const DELIVERY_TIME_PATTERN = /\d+.*\b(day|days|week|weeks|month|months|hour|hours|hrs?)\b/i
 
 type QuotationItemErrors = { description?: string; quantity?: string; unit_price?: string; gst_percent?: string }
 type QuotationFormErrors = {

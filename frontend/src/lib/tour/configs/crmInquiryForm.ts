@@ -59,7 +59,7 @@ const config: TourConfig = {
     {
       target: 'inq-bd-owner',
       title: 'BD Owner',
-      purpose: 'The business-development person responsible for this inquiry — auto-filled with your own name and locked.',
+      purpose: 'The business-development person responsible for this inquiry — auto-filled with your own name and locked. Admins can instead pick any user from the directory here.',
       required: false,
     },
     {
