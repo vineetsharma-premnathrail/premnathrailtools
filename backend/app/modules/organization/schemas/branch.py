@@ -48,7 +48,6 @@ class BranchUpdate(BaseModel):
     timezone: str | None = None
     currency: str | None = None
     remarks: str | None = None
-    is_active: bool | None = None
 
 
 class BranchResponse(BaseModel):
@@ -80,7 +79,6 @@ class BranchResponse(BaseModel):
     timezone: str | None = None
     currency: str | None = None
     remarks: str | None = None
-    is_active: bool
     created_at: datetime
     updated_at: datetime
 

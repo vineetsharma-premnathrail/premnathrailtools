@@ -26,6 +26,7 @@ export interface User {
   is_director?: boolean
   is_md?: boolean
   is_finance_manager?: boolean
+  notifications_enabled?: boolean
   /** Modules this user can actually reach right now (admins get all, regardless of assigned_apps). */
   apps: AppModule[]
   reporting_manager_id?: number
@@ -1172,7 +1173,6 @@ export interface Branch {
   timezone?: string | null
   currency?: string | null
   remarks?: string | null
-  is_active: boolean
   created_at: string
   updated_at: string
 }
