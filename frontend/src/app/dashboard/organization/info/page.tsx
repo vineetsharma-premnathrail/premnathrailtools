@@ -45,23 +45,33 @@ export default function OrganizationInfoPage() {
   const [documents, setDocuments] = useState<CompanyDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [notSetUp, setNotSetUp] = useState(false)
   const [tab, setTab] = useState<typeof TABS[number]>('Basic')
 
   useEffect(() => {
     if (isAuthorized) {
       setLoading(true)
       setError('')
-      Promise.all([
-        organizationApi.getCompanyInfo(),
-        organizationApi.listCompanyAddresses(),
-        organizationApi.listCompanyContacts(),
-        organizationApi.listCompanyFinancialYears(),
-        organizationApi.listCompanyDocuments(),
-      ])
-        .then(([c, a, ct, fy, d]) => {
-          setCompany(c); setAddresses(a); setContacts(ct); setFinancialYears(fy); setDocuments(d)
+      setNotSetUp(false)
+      organizationApi.getCompanyInfo()
+        .then((c) =>
+          Promise.all([
+            organizationApi.listCompanyAddresses(),
+            organizationApi.listCompanyContacts(),
+            organizationApi.listCompanyFinancialYears(),
+            organizationApi.listCompanyDocuments(),
+          ]).then(([a, ct, fy, d]) => {
+            setCompany(c); setAddresses(a); setContacts(ct); setFinancialYears(fy); setDocuments(d)
+          })
+        )
+        .catch((err: unknown) => {
+          const status = (err as { response?: { status?: number } })?.response?.status
+          if (status === 404) {
+            setNotSetUp(true)
+          } else {
+            setError('Failed to load company info.')
+          }
         })
-        .catch(() => setError('Failed to load company info.'))
         .finally(() => setLoading(false))
     }
   }, [isAuthorized])
@@ -79,7 +89,7 @@ export default function OrganizationInfoPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Info</h1>
         </div>
-        {company && (
+        {(company || notSetUp) && (
           <button
             data-tour="org-info-edit-btn"
             onClick={() => router.push('/dashboard/organization/info/edit')}
@@ -90,7 +100,7 @@ export default function OrganizationInfoPage() {
               boxShadow: `0 4px 14px ${BRAND.primaryGlow}`,
             }}
           >
-            Edit
+            {notSetUp ? 'Set Up Company Info' : 'Edit'}
           </button>
         )}
       </div>
@@ -110,6 +120,11 @@ export default function OrganizationInfoPage() {
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px 20px', color: TEXT.muted, fontSize: 13 }}>Loading…</div>
+      ) : notSetUp ? (
+        <div style={{ ...sectionStyle, textAlign: 'center', padding: '40px 20px' }}>
+          <p style={{ fontSize: 13.5, color: TEXT.body, margin: '0 0 4px', fontWeight: 600 }}>Company info hasn&apos;t been set up yet</p>
+          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Click &quot;Set Up Company Info&quot; above to add your organization&apos;s name, address, and other master details.</p>
+        </div>
       ) : !company ? null : (
         <>
           <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>

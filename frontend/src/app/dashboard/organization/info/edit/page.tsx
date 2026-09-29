@@ -69,6 +69,7 @@ export default function EditOrganizationInfoPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [tab, setTab] = useState<typeof TABS[number]>('Basic')
+  const [isNew, setIsNew] = useState(false)
 
   const loadLists = () => {
     Promise.all([
@@ -85,20 +86,34 @@ export default function EditOrganizationInfoPage() {
     if (isAuthorized) {
       setLoading(true)
       setError('')
-      Promise.all([
-        organizationApi.getCompanyInfo(), organizationApi.listBranches(), storeApi.listLocations(),
-        organizationApi.listCompanyAddresses(), organizationApi.listCompanyContacts(),
-        organizationApi.listCompanyFinancialYears(), organizationApi.listCompanyDocuments(),
-      ])
-        .then(([company, branchList, locationList, a, ct, fy, d]) => {
-          setForm(company)
+      Promise.all([organizationApi.listBranches(), storeApi.listLocations()])
+        .then(([branchList, locationList]) => {
           setBranches(branchList)
           setLocations(locationList)
-          setAddresses(a); setContacts(ct); setFinancialYears(fy); setDocuments(d)
         })
         .catch(() => setError('Failed to load company info.'))
+
+      // Company info (and everything under it — addresses/contacts/FYs/
+      // documents) 404s until the one-time setup row exists. That's not a
+      // load failure here — it means this is a first-time setup, so start
+      // from a blank form instead of showing an error.
+      organizationApi.getCompanyInfo()
+        .then((company) => {
+          setForm(company)
+          loadLists()
+        })
+        .catch((err: unknown) => {
+          const status = (err as { response?: { status?: number } })?.response?.status
+          if (status === 404) {
+            setIsNew(true)
+            setForm({})
+          } else {
+            setError('Failed to load company info.')
+          }
+        })
         .finally(() => setLoading(false))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
   const setField = (field: keyof Company, value: unknown) => setForm((f) => ({ ...f, [field]: value }))
@@ -115,7 +130,11 @@ export default function EditOrganizationInfoPage() {
     setSaving(true)
     setError('')
     try {
-      await organizationApi.updateCompanyInfo(form)
+      if (isNew) {
+        await organizationApi.createCompanyInfo(form)
+      } else {
+        await organizationApi.updateCompanyInfo(form)
+      }
       router.push('/dashboard/organization/info')
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -174,6 +193,15 @@ export default function EditOrganizationInfoPage() {
               </button>
             ))}
           </div>
+
+          {isNew && (
+            <div style={{ ...sectionStyle, background: 'rgba(255,122,69,0.08)', borderColor: 'rgba(255,122,69,0.3)' }}>
+              <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
+                Company info hasn&apos;t been set up yet. Fill in at least Name and Code below and Save — Address, Contacts,
+                Financial Year, and Documents can only be added after that first save.
+              </p>
+            </div>
+          )}
 
           {tab === 'Basic' && (
             <div style={sectionStyle}>
@@ -249,7 +277,9 @@ export default function EditOrganizationInfoPage() {
             </div>
           )}
 
-          {tab === 'Address' && <AddressesEditor addresses={addresses} onRefresh={loadLists} />}
+          {tab === 'Address' && (isNew
+            ? <p style={{ fontSize: 12.5, color: TEXT.muted }}>Save the Basic tab first to add addresses.</p>
+            : <AddressesEditor addresses={addresses} onRefresh={loadLists} />)}
 
           {tab === 'Legal & Registration' && (
             <div style={sectionStyle}>
@@ -395,9 +425,13 @@ export default function EditOrganizationInfoPage() {
             </div>
           )}
 
-          {tab === 'Contacts' && <ContactsEditor contacts={contacts} onRefresh={loadLists} />}
+          {tab === 'Contacts' && (isNew
+            ? <p style={{ fontSize: 12.5, color: TEXT.muted }}>Save the Basic tab first to add contacts.</p>
+            : <ContactsEditor contacts={contacts} onRefresh={loadLists} />)}
 
-          {tab === 'Financial Year' && <FinancialYearsEditor financialYears={financialYears} onRefresh={loadLists} />}
+          {tab === 'Financial Year' && (isNew
+            ? <p style={{ fontSize: 12.5, color: TEXT.muted }}>Save the Basic tab first to add financial years.</p>
+            : <FinancialYearsEditor financialYears={financialYears} onRefresh={loadLists} />)}
 
           {tab === 'Branding' && (
             <div style={sectionStyle}>
@@ -448,7 +482,9 @@ export default function EditOrganizationInfoPage() {
             </div>
           )}
 
-          {tab === 'Documents' && <DocumentsEditor documents={documents} onRefresh={loadLists} />}
+          {tab === 'Documents' && (isNew
+            ? <p style={{ fontSize: 12.5, color: TEXT.muted }}>Save the Basic tab first to add documents.</p>
+            : <DocumentsEditor documents={documents} onRefresh={loadLists} />)}
 
           {tab === 'Defaults & Controls' && (
             <div style={sectionStyle}>

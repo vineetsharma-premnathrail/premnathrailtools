@@ -1639,6 +1639,10 @@ export const organizationApi = {
     const { data } = await apiClient.get('/organization/company')
     return data
   },
+  createCompanyInfo: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/organization/company', payload)
+    return data
+  },
   updateCompanyInfo: async (payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch('/organization/company', payload)
     return data

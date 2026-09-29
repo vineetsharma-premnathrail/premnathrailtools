@@ -44,6 +44,29 @@ async def get_company_info(
     return _get_company(db)
 
 
+@router.post("", response_model=CompanyResponse, status_code=201)
+async def create_company_info(
+    payload: CompanyUpdate,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
+    """One-time setup: creates the single companies row. Nothing else in this
+    module can create it (GET/PATCH both 404 until it exists — see
+    _get_company), so without this endpoint Company Info is permanently
+    unusable on any database that doesn't already have a hand-inserted row."""
+    if db.query(Company).first():
+        raise HTTPException(status_code=409, detail="Company info already exists")
+    if not payload.name or not payload.name.strip():
+        raise HTTPException(status_code=422, detail="Company name is required")
+    if not payload.code or not payload.code.strip():
+        raise HTTPException(status_code=422, detail="Company code is required")
+    company = Company(**payload.model_dump(exclude_unset=True))
+    db.add(company)
+    db.commit()
+    db.refresh(company)
+    return company
+
+
 @router.patch("", response_model=CompanyResponse)
 async def update_company_info(
     payload: CompanyUpdate,
