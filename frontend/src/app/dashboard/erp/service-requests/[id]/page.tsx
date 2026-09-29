@@ -57,8 +57,8 @@ export default function ServiceRequestDetailPage() {
       const data = await erpApi.getServiceRequest(srId)
       setSr(data)
       erpApi.getProject(data.project_id).then(setProject).catch(() => {})
-    } catch {
-      setError('Service request not found.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Service request not found.').join(' '))
     } finally {
       setLoading(false)
     }

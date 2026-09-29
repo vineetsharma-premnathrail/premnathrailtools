@@ -50,7 +50,8 @@ async def get_microsoft_user_profile(access_token: str) -> dict:
             },
             headers={"Authorization": f"Bearer {access_token}"},
         )
-        resp.raise_for_status()
+        if resp.is_error:
+            raise RuntimeError(f"Graph GET /me failed: {resp.status_code} {resp.text[:500]}")
         return resp.json()
 
 
@@ -65,7 +66,8 @@ async def get_microsoft_manager_profile(access_token: str) -> dict | None:
         )
         if resp.status_code == 404:
             return None
-        resp.raise_for_status()
+        if resp.is_error:
+            raise RuntimeError(f"Graph GET /me/manager failed: {resp.status_code} {resp.text[:500]}")
         return resp.json()
 
 
@@ -99,7 +101,14 @@ async def list_azure_org_users() -> list[dict]:
             resp = await client.get(
                 url, headers={"Authorization": f"Bearer {token}"}, params=params
             )
-            resp.raise_for_status()
+            if resp.is_error:
+                # raise_for_status() alone gives "403 Forbidden" with no way to
+                # tell missing Graph API permission (User.Read.All) from a
+                # revoked admin consent or a disabled app registration — Graph
+                # puts that difference in the body.
+                raise RuntimeError(
+                    f"Graph GET /users failed: {resp.status_code} {resp.text[:500]}"
+                )
             data = resp.json()
             users.extend(data.get("value", []))
             url = data.get("@odata.nextLink")
@@ -117,7 +126,10 @@ async def list_azure_org_users() -> list[dict]:
             if manager_resp.status_code == 404:
                 user["manager"] = None
                 return
-            manager_resp.raise_for_status()
+            if manager_resp.is_error:
+                raise RuntimeError(
+                    f"Graph GET /users/{user_id}/manager failed: {manager_resp.status_code} {manager_resp.text[:500]}"
+                )
             user["manager"] = manager_resp.json()
 
         await asyncio.gather(*(fetch_manager(user) for user in users))

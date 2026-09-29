@@ -159,8 +159,8 @@ function UserDetailsTab({ user, isSelf, onRefresh }: { user: User; isSelf: boole
       if (user.is_active) await usersApi.deactivate(user.id)
       else await usersApi.activate(user.id)
       onRefresh()
-    } catch {
-      setError('Failed to update user status.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to update user status.').join(' '))
     } finally {
       setToggling(false)
     }
@@ -254,8 +254,8 @@ function AssignmentsTab({ user, assignments, branches, departments, onRefresh }:
       await organizationApi.deleteBranchUserAssignment(deleteTarget.branch_id, deleteTarget.id)
       setDeleteTarget(null)
       onRefresh()
-    } catch {
-      setError('Failed to delete assignment.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to delete assignment.').join(' '))
       setDeleteTarget(null)
     }
   }
@@ -710,8 +710,8 @@ function UserDocumentsTab({ userId, documents, onRefresh }: { userId: number; do
       await usersApi.deleteUserDocument(userId, deleteTarget.id)
       setDeleteTarget(null)
       onRefresh()
-    } catch {
-      setError('Failed to delete document.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to delete document.').join(' '))
       setDeleteTarget(null)
     }
   }

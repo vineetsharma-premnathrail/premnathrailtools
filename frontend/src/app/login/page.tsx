@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { authApi } from '@/lib/api'
 import { GRADIENTS, TEXT } from '@/lib/theme'
+import { extractErrorMessages } from '@/lib/validation'
 
 const ERROR_MESSAGES: Record<string, string> = {
   unauthorized: 'Your Microsoft account\'s email domain is not authorized for this portal.',
@@ -98,8 +99,8 @@ function LoginPageInner() {
       await authApi.teamsExchange(code)
       await fetchUser()
       router.push('/dashboard')
-    } catch {
-      setTeamsMessage('Sign-in failed. Please try again.')
+    } catch (err) {
+      setTeamsMessage(extractErrorMessages(err, 'Sign-in failed. Please try again.').join(' '))
     } finally {
       setBusy(false)
     }

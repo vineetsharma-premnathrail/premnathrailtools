@@ -30,8 +30,8 @@ export default function StoreCategoriesPage() {
     setLoading(true)
     try {
       setCategories(await storeApi.listCategories())
-    } catch {
-      setLoadError('Failed to load categories.')
+    } catch (err) {
+      setLoadError(extractErrorMessages(err, 'Failed to load categories.').join(' '))
     } finally {
       setLoading(false)
     }

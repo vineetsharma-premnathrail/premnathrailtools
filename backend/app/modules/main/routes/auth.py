@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json as _json
+import logging
 import secrets
 import time
 from typing import Dict
@@ -22,6 +23,8 @@ from datetime import datetime, timedelta, timezone
 from app.auth.microsoft import get_auth_url, exchange_code_for_token, get_microsoft_user_profile, get_microsoft_manager_profile
 from app.modules.organization.services.provisioning import sync_user_org_links
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -243,7 +246,10 @@ async def oauth_callback(request: Request, code: str, state: str, db: Session = 
                 user.reporting_manager_id = manager_user.id if manager_user else user.reporting_manager_id
                 db.commit()
         except Exception:
-            pass
+            # Best-effort per the comment above — a 403 here is the expected,
+            # common case, but still log it so a genuinely broken case (DB
+            # error, Graph outage) doesn't disappear without a trace.
+            logger.info("Manager resolution during login skipped for user %s", user.id, exc_info=True)
 
         # Auto-link this user to a Branch (from office_location) and
         # Department (from department) — see provisioning.py docstring.
@@ -301,7 +307,13 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
         token_tid = unverified.get("tid", "")
         token_exp = unverified.get("exp", time.time() + 3600)
         token_jti = unverified.get("jti") or hashlib.sha256(token.encode()).hexdigest()[:32]
-    except Exception:
+    except Exception as e:
+        # This is an anonymous, pre-auth endpoint (Teams silent SSO) decoding a
+        # caller-supplied token before it's verified — keep the client message
+        # generic (don't echo raw parser internals back to an unauthenticated
+        # caller), but log the real cause (bad base64, bad JSON, too few
+        # dot-separated segments, etc.) so a genuine bug is diagnosable.
+        logger.warning("Teams token login: malformed token (%s)", e)
         raise HTTPException(status_code=401, detail="Malformed token")
 
     if not actual_aud or not actual_aud.endswith(f"/{client_id}"):
@@ -393,7 +405,7 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
         )
         ms_access_token = obo_result.get("access_token", "")
     except Exception:
-        pass
+        logger.info("Graph on-behalf-of token acquisition failed for Teams login", exc_info=True)
 
     refresh_token = _issue_refresh_session(db, user, request.headers.get("user-agent", ""))
     response = JSONResponse({"ok": True})

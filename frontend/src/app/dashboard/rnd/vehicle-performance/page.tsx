@@ -8,6 +8,7 @@ import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
 import ChartJsLineChart, { colorForIndex } from '@/components/rnd/ChartJsLineChart'
 import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob } from '@/components/rnd/toolStyles'
+import { extractErrorMessages } from '@/lib/validation'
 
 interface GraphPoint { speed_kmh: number; value: number; slope: number; gear: number }
 interface VehiclePerfResult {
@@ -158,7 +159,7 @@ function VehiclePerformancePageInner() {
   const downloadDocx = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadVehiclePerformanceReport(payload()), 'Vehicle_Performance_Report.docx') }
-    catch { setError('Report generation failed.') } finally { setBusy(false) }
+    catch (err) { setError(extractErrorMessages(err, 'Report generation failed.').join(' ')) } finally { setBusy(false) }
   }
 
   const exportCsv = () => {

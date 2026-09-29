@@ -15,6 +15,7 @@ import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadField from '@/components/shared/FileUploadField'
 import { PLANT_STATUS_LABELS } from '@/components/organization/PlantForm'
 import { secondaryBtnStyle } from '@/components/shared/ui'
+import { extractErrorMessages } from '@/lib/validation'
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -382,8 +383,8 @@ function AddressesEditor({ branchId, addresses, onRefresh }: { branchId: number;
       await organizationApi.deleteBranchAddress(branchId, deleteTarget.id)
       setDeleteTarget(null)
       onRefresh()
-    } catch {
-      setError('Failed to delete address.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to delete address.').join(' '))
       setDeleteTarget(null)
     }
   }
@@ -501,8 +502,8 @@ function UserAssignmentsEditor({ branchId, assignments, directory, departments, 
       await organizationApi.deleteBranchUserAssignment(branchId, deleteTarget.id)
       setDeleteTarget(null)
       onRefresh()
-    } catch {
-      setError('Failed to delete assignment.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to delete assignment.').join(' '))
       setDeleteTarget(null)
     }
   }
@@ -873,8 +874,8 @@ function DocumentsEditor({ branchId, documents, onRefresh }: { branchId: number;
       await organizationApi.deleteBranchDocument(branchId, deleteTarget.id)
       setDeleteTarget(null)
       onRefresh()
-    } catch {
-      setError('Failed to delete document.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to delete document.').join(' '))
       setDeleteTarget(null)
     }
   }

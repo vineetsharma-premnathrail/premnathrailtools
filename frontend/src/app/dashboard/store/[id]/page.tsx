@@ -50,8 +50,8 @@ export default function StoreItemDetailPage() {
       const data = await storeApi.getItem(itemId)
       setItem(data)
       setForm(data)
-    } catch {
-      setLoadError('Failed to load this item — it may have been removed.')
+    } catch (err) {
+      setLoadError(extractErrorMessages(err, 'Failed to load this item — it may have been removed.').join(' '))
     } finally {
       setLoading(false)
     }

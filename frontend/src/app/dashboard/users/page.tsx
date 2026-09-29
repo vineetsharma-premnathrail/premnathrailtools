@@ -8,6 +8,7 @@ import { User, ModuleMeta } from '@/types'
 import { TEXT, BRAND, BORDER } from '@/lib/theme'
 import FeedbackBell from '@/components/FeedbackBell'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const STATUS_TABS = ['All Users', 'Active Users', 'Inactive Users'] as const
 
@@ -79,9 +80,9 @@ export default function UsersRolesPage() {
     try {
       const data = await usersApi.syncAzure()
       setUsers(data)
-    } catch {
+    } catch (err) {
       setErrorTitle('Azure Sync Failed')
-      setError('Azure sync failed. Check that the app has directory-read permission in Azure AD.')
+      setError(extractErrorMessages(err, 'Azure sync failed.').join(' '))
     } finally {
       setSyncing(false)
     }
@@ -249,15 +250,6 @@ export default function UsersRolesPage() {
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{u.designation || '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>
                     {u.department || '—'}
-                    {u.is_department_head && (
-                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(250,155,155,0.15)', color: '#FF7A45', textTransform: 'uppercase' }}>Dept Head</span>
-                    )}
-                    {u.is_project_head && (
-                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(59,130,246,0.12)', color: '#2563eb', textTransform: 'uppercase' }}>Project Head</span>
-                    )}
-                    {u.is_plant_head && (
-                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#047857', textTransform: 'uppercase' }}>Plant Head</span>
-                    )}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{u.office_location || '—'}</td>
                   <td style={{ padding: '12px 16px' }}>

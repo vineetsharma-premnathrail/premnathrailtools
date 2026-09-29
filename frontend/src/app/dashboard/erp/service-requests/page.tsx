@@ -11,6 +11,7 @@ import ErpNav from '@/components/erp/ErpNav'
 import { inputStyle, pageBtnStyle } from '@/components/shared/ui'
 import Checkbox from '@/components/Checkbox'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const STATUS_LABELS: Record<SRStatus, string> = {
   open: 'Open / Reported',
@@ -99,8 +100,8 @@ export default function ServiceRequestsPage() {
       ])
       setSrs(srData)
       setProjects(projectData)
-    } catch {
-      setError('Failed to load service requests.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to load service requests.').join(' '))
     } finally {
       setLoading(false)
     }

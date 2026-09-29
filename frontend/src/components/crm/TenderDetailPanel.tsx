@@ -56,8 +56,8 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         setContact(null)
       }
       crmApi.getTenderSpecRevisions(tenderId).then(setRevisions).catch(() => setRevisions([]))
-    } catch {
-      setError('Tender not found.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Tender not found.'))
     } finally {
       setLoading(false)
     }
@@ -429,8 +429,8 @@ function TenderDocumentFolderPanel({ tourId, title, folderType, docs, tender, ca
                     try {
                       const blob = await crmApi.getDocumentContent(d.id)
                       window.open(URL.createObjectURL(blob), '_blank')
-                    } catch {
-                      setError('Unable to open document.')
+                    } catch (err) {
+                      setError(extractErrorMessages(err, 'Unable to open document.'))
                     }
                   }}
                   style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none', cursor: 'pointer' }}
@@ -483,8 +483,8 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
       link.download = `MOM_${orgSlug}_${dateSlug}.docx`
       link.click()
       URL.revokeObjectURL(url)
-    } catch {
-      setMomError('MoM export failed.')
+    } catch (err) {
+      setMomError(extractErrorMessages(err, 'MoM export failed.'))
     } finally {
       setExportingMomId(null)
     }

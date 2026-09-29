@@ -63,8 +63,8 @@ export default function StoreStockPage() {
       setTransactions(t)
       setItems(i)
       setLocations(l)
-    } catch {
-      setLoadError('Failed to load stock data.')
+    } catch (err) {
+      setLoadError(extractErrorMessages(err, 'Failed to load stock data.').join(' '))
     } finally {
       setLoading(false)
     }

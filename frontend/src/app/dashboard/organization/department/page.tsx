@@ -8,6 +8,7 @@ import { Branch, Department, DepartmentMember, DirectoryUser } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -74,8 +75,8 @@ export default function OrganizationDepartmentPage() {
       const [d, b] = await Promise.all([organizationApi.listDepartments(), organizationApi.listBranches()])
       setDepartments(d)
       setBranches(b)
-    } catch {
-      setError('Failed to load departments.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to load departments.').join(' '))
     } finally {
       setLoading(false)
     }

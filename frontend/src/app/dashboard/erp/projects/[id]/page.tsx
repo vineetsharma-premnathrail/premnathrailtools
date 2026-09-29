@@ -12,6 +12,7 @@ import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadPreview from '@/components/FileUploadPreview'
 import { Card, InfoRow, secondaryBtnStyle } from '@/components/shared/ui'
+import { extractErrorMessages } from '@/lib/validation'
 
 const TABS = ['Overview', 'Technical Specs', 'Maintenance History', 'Documents', 'Audit Trail'] as const
 
@@ -36,8 +37,8 @@ export default function ProjectDetailPage() {
     setError('')
     try {
       setProject(await erpApi.getProject(projectId))
-    } catch {
-      setError('Machine not found.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Machine not found.').join(' '))
     } finally {
       setLoading(false)
     }

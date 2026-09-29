@@ -120,8 +120,8 @@ export default function MyP2PRequestDetailPage() {
       ])
       setRfq(rfqList[0] || null)
       setPo(poList[0] || null)
-    } catch {
-      setError('Purchase requisition not found, or you do not have access to it.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Purchase requisition not found, or you do not have access to it.').join(' '))
     } finally {
       setLoading(false)
     }

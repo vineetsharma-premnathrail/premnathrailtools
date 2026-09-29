@@ -9,6 +9,7 @@ import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
 import { primaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const ITEM_TYPE_LABELS: Record<string, string> = {
   raw_material: 'Raw Material',
@@ -34,8 +35,8 @@ export default function StoreItemsPage() {
     try {
       const data = await storeApi.listItems({ search: search || undefined, item_type: typeFilter || undefined })
       setItems(data)
-    } catch {
-      setError('Failed to load items.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to load items.').join(' '))
     } finally {
       setLoading(false)
     }

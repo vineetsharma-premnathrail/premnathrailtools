@@ -10,6 +10,7 @@ import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadField from '@/components/shared/FileUploadField'
+import { extractErrorMessages } from '@/lib/validation'
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -606,8 +607,8 @@ function AddressesEditor({ addresses, onRefresh }: { addresses: CompanyAddress[]
       await organizationApi.deleteCompanyAddress(deleteTarget.id)
       setDeleteTarget(null)
       onRefresh()
-    } catch {
-      setError('Failed to delete address.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to delete address.').join(' '))
       setDeleteTarget(null)
     }
   }
@@ -735,8 +736,8 @@ function ContactsEditor({ contacts, onRefresh }: { contacts: CompanyContact[]; o
       await organizationApi.deleteCompanyContact(deleteTarget.id)
       setDeleteTarget(null)
       onRefresh()
-    } catch {
-      setError('Failed to delete contact.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to delete contact.').join(' '))
       setDeleteTarget(null)
     }
   }
@@ -861,8 +862,8 @@ function FinancialYearsEditor({ financialYears, onRefresh }: { financialYears: C
       await organizationApi.deleteCompanyFinancialYear(deleteTarget.id)
       setDeleteTarget(null)
       onRefresh()
-    } catch {
-      setError('Failed to delete financial year.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to delete financial year.').join(' '))
       setDeleteTarget(null)
     }
   }
@@ -983,8 +984,8 @@ function DocumentsEditor({ documents, onRefresh }: { documents: CompanyDocument[
       await organizationApi.deleteCompanyDocument(deleteTarget.id)
       setDeleteTarget(null)
       onRefresh()
-    } catch {
-      setError('Failed to delete document.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to delete document.').join(' '))
       setDeleteTarget(null)
     }
   }

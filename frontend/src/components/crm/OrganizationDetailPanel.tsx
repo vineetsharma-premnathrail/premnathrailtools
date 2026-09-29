@@ -44,8 +44,8 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
     setError('')
     try {
       setOrg(await crmApi.getOrganizationDetail(orgId))
-    } catch {
-      setError('Organization not found.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Organization not found.'))
     } finally {
       setLoading(false)
     }

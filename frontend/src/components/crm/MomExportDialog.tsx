@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { crmApi, usersApi } from '@/lib/api'
+import { extractErrorMessages } from '@/lib/validation'
 import { CrmActivity, OrgContact, DirectoryUser } from '@/types'
 import { XIcon, inputStyle, primaryBtnStyle, secondaryBtnStyle, Field } from '@/components/crm/ui'
 import Checkbox from '@/components/Checkbox'
@@ -101,8 +102,8 @@ export default function MomExportDialog({
       link.click()
       URL.revokeObjectURL(url)
       onClose()
-    } catch {
-      setError(`MOM ${kind === 'docx' ? 'Word' : 'PDF'} export failed.`)
+    } catch (err) {
+      setError(extractErrorMessages(err, `MOM ${kind === 'docx' ? 'Word' : 'PDF'} export failed.`).join(' '))
     } finally {
       setExporting(null)
     }

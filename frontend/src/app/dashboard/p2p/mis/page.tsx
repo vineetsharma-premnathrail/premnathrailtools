@@ -8,6 +8,7 @@ import { p2pApi } from '@/lib/api'
 import { P2PMisSummary } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
 import P2PNav from '@/components/p2p/P2PNav'
+import { extractErrorMessages } from '@/lib/validation'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
@@ -77,8 +78,8 @@ export default function P2PMisPage() {
       link.download = `P2P_MIS_${period}_${summary?.date_from || ''}_to_${summary?.date_to || ''}.xlsx`
       link.click()
       URL.revokeObjectURL(url)
-    } catch {
-      setError('Excel export failed. Please try again.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Excel export failed. Please try again.').join(' '))
     } finally {
       setExporting(false)
     }

@@ -43,8 +43,8 @@ export default function StoreStockReservationsPage() {
       setReservations(r)
       setItems(i)
       setLocations(l)
-    } catch {
-      setLoadError('Failed to load stock reservations.')
+    } catch (err) {
+      setLoadError(extractErrorMessages(err, 'Failed to load stock reservations.').join(' '))
     } finally {
       setLoading(false)
     }

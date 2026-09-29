@@ -7,6 +7,7 @@ import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
 import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob } from '@/components/rnd/toolStyles'
+import { extractErrorMessages } from '@/lib/validation'
 
 interface LoadDistResult {
   report: string
@@ -130,7 +131,7 @@ function LoadDistributionPageInner() {
   const downloadDocx = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadLoadDistributionReport(payload()), 'Load_Distribution_Report.docx') }
-    catch { setError('Report generation failed.') } finally { setBusy(false) }
+    catch (err) { setError(extractErrorMessages(err, 'Report generation failed.').join(' ')) } finally { setBusy(false) }
   }
 
   const importCsv = (e: React.ChangeEvent<HTMLInputElement>) => {

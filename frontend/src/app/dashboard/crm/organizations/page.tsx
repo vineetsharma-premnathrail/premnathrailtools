@@ -13,6 +13,7 @@ import ErrorRecoveryDialog from '@/components/erp/ErrorRecoveryDialog'
 import { secondaryBtnStyle, pageBtnStyle, XIcon } from '@/components/crm/ui'
 import { BRAND, TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
+import { extractErrorMessages } from '@/lib/validation'
 
 const PAGE_SIZE = 16
 const PINNED_ORGS_KEY = 'crm_pinned_org_ids'
@@ -86,8 +87,8 @@ export default function OrganizationsPage() {
       })
       setOrgs(data)
       setPage(1)
-    } catch {
-      setError('Failed to load organizations. The server did not respond, or your connection was interrupted.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to load organizations. The server did not respond, or your connection was interrupted.').join(' '))
     } finally {
       setLoading(false)
       setHasLoadedOnce(true)

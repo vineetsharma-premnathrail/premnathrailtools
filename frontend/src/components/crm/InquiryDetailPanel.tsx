@@ -58,8 +58,8 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         setContact(null)
       }
       crmApi.getInquirySpecRevisions(inquiryId).then(setRevisions).catch(() => setRevisions([]))
-    } catch {
-      setError('Inquiry not found.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Inquiry not found.'))
     } finally {
       setLoading(false)
     }
@@ -554,8 +554,8 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
       link.download = `${q.quot_number || `Quotation-${q.id}`}.pdf`
       link.click()
       URL.revokeObjectURL(url)
-    } catch {
-      setPdfError('PDF generation failed.')
+    } catch (err) {
+      setPdfError(extractErrorMessages(err, 'PDF generation failed.'))
     } finally {
       setDownloadingId(null)
     }
@@ -1161,8 +1161,8 @@ function DocumentFolderPanel({ tourId, title, folderType, docs, inquiry, canModi
                     try {
                       const blob = await crmApi.getDocumentContent(d.id)
                       window.open(URL.createObjectURL(blob), '_blank')
-                    } catch {
-                      setError('Unable to open document.')
+                    } catch (err) {
+                      setError(extractErrorMessages(err, 'Unable to open document.'))
                     }
                   }}
                   style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none', cursor: 'pointer' }}
@@ -1214,8 +1214,8 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
       link.download = `MOM_${orgSlug}_${dateSlug}.docx`
       link.click()
       URL.revokeObjectURL(url)
-    } catch {
-      setMomError('MoM export failed.')
+    } catch (err) {
+      setMomError(extractErrorMessages(err, 'MoM export failed.'))
     } finally {
       setExportingMomId(null)
     }

@@ -107,8 +107,8 @@ export default function RfqDetailPage() {
       } else {
         setPoDraft(null)
       }
-    } catch {
-      setError('RFQ not found, or you do not have access to it.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'RFQ not found, or you do not have access to it.').join(' '))
     } finally {
       setLoading(false)
     }

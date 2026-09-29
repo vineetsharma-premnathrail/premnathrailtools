@@ -8,6 +8,7 @@ import { rndApi } from '@/lib/api'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
 import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, smBtnStyle, calcButtonStyle, downloadCsv, downloadBlob } from '@/components/rnd/toolStyles'
+import { extractErrorMessages } from '@/lib/validation'
 
 interface SplineResult {
   pitch_diameter: number; base_diameter: number; tooth_thickness: number; tooth_height: number
@@ -152,12 +153,12 @@ function SplinePageInner() {
   const downloadDocx = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadSplineDocx(payload()), `Spline_Report_${docNo}.docx`) }
-    catch { setError('DOCX generation failed.') } finally { setBusy(false) }
+    catch (err) { setError(extractErrorMessages(err, 'DOCX generation failed.').join(' ')) } finally { setBusy(false) }
   }
   const downloadPdf = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadSplinePdf(payload()), `Spline_Report_${docNo}.pdf`) }
-    catch { setError('PDF generation failed.') } finally { setBusy(false) }
+    catch (err) { setError(extractErrorMessages(err, 'PDF generation failed.').join(' ')) } finally { setBusy(false) }
   }
 
   const importCsv = (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -10,6 +10,7 @@ import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { PLANT_STATUS_LABELS, PLANT_STATUS_HEX } from '@/components/organization/PlantForm'
+import { extractErrorMessages } from '@/lib/validation'
 
 export default function OrganizationPlantsPage() {
   const { isAuthorized, isLoading } = useRequireAdmin()
@@ -24,8 +25,8 @@ export default function OrganizationPlantsPage() {
     try {
       const data = await organizationApi.listBranches()
       setPlants(data)
-    } catch {
-      setError('Failed to load branches.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to load branches.').join(' '))
     } finally {
       setLoading(false)
     }
@@ -55,8 +56,8 @@ export default function OrganizationPlantsPage() {
     try {
       const updated = await organizationApi.updateBranch(p.id, { status: p.status === 'active' ? 'inactive' : 'active' })
       setPlants((prev) => prev.map((x) => (x.id === p.id ? updated : x)))
-    } catch {
-      setError('Failed to update branch status.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to update branch status.').join(' '))
     }
   }
 

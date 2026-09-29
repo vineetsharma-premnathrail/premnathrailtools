@@ -43,8 +43,8 @@ export default function RecycleBinPage() {
       const [p, s] = await Promise.all([erpApi.getDeletedProjects(), erpApi.getRecycleBin()])
       setProjects(p)
       setSrs(s)
-    } catch {
-      setError('Failed to load recycle bin.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to load recycle bin.').join(' '))
     } finally {
       setLoading(false)
     }

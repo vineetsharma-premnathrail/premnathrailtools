@@ -9,6 +9,7 @@ import { Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import { inputStyle, Field, pageBtnStyle } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 interface FilterOptions {
   statuses: string[]
@@ -79,8 +80,8 @@ export default function ProjectsRegistryPage() {
       setProjects(data)
       setSrs(srData)
       setPage(1)
-    } catch {
-      setError('Failed to load the asset register.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to load the asset register.').join(' '))
     } finally {
       setLoading(false)
     }

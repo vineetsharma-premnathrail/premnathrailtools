@@ -3,6 +3,7 @@
 import { ReactNode, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
+import { extractErrorMessages } from '@/lib/validation'
 import RndNav from '@/components/rnd/RndNav'
 import { Field, inputStyle, primaryBtnStyle } from '@/components/shared/ui'
 
@@ -87,8 +88,8 @@ export default function ToolCalculatorPage({
     try {
       const data = await calculate(buildPayload(form))
       setResult(data)
-    } catch {
-      setError('Calculation failed. Check your inputs and try again.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Calculation failed. Check your inputs and try again.').join(' '))
     } finally {
       setBusy(false)
     }
@@ -105,8 +106,8 @@ export default function ToolCalculatorPage({
       a.download = d.filename
       a.click()
       URL.revokeObjectURL(url)
-    } catch {
-      setError(`${d.label} failed.`)
+    } catch (err) {
+      setError(extractErrorMessages(err, `${d.label} failed.`).join(' '))
     } finally {
       setBusy(false)
     }
@@ -125,8 +126,8 @@ export default function ToolCalculatorPage({
       })
       setSaveStatus(`Saved as "${saved.calculation_name}".`)
       setSaveName('')
-    } catch {
-      setSaveStatus('Failed to save.')
+    } catch (err) {
+      setSaveStatus(extractErrorMessages(err, 'Failed to save.').join(' '))
     } finally {
       setBusy(false)
     }

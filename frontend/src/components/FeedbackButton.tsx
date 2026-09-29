@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { feedbackApi } from '@/lib/api'
+import { extractErrorMessages } from '@/lib/validation'
 
 export default function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' | 'row' }) {
   const [open, setOpen] = useState(false)
@@ -50,8 +51,8 @@ export default function FeedbackButton({ variant = 'icon' }: { variant?: 'icon' 
       await feedbackApi.submit(message.trim())
       setMessage('')
       setSubmitted(true)
-    } catch {
-      setError('Could not send feedback. Please try again.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not send feedback. Please try again.').join(' '))
     } finally {
       setSubmitting(false)
     }
