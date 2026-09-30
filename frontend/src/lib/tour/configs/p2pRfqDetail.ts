@@ -4,17 +4,12 @@ const steps: TourStep[] = [
   {
     target: 'rfq-detail-vendor-quotations',
     title: 'Supplier / Vendor Quotations',
-    purpose: 'Every vendor quotation attached when this RFQ was raised, one card per vendor tier (Vendor 1–4), each with its own document link.',
-  },
-  {
-    target: 'rfq-detail-po-vendor-tier',
-    title: 'Vendor Tier',
-    purpose: 'Picks which of the attached vendor quotations the Purchase Order is being raised against. Only shown when more than one vendor quotation was attached.',
+    purpose: 'Every vendor quotation attached when this RFQ was raised, one card per vendor (L1–L4 Vendor), each with its own document link.',
   },
   {
     target: 'rfq-detail-po-vendor-name',
-    title: 'Vendor Name',
-    purpose: 'Pre-filled from the selected vendor tier\'s quotation — the vendor the PO is actually being placed with.',
+    title: 'L1 Vendor',
+    purpose: 'The PO is always placed with the L1 vendor quoted on this RFQ — filled in automatically and not editable.',
   },
   {
     target: 'rfq-detail-po-number',
@@ -58,7 +53,7 @@ const steps: TourStep[] = [
   {
     target: 'rfq-detail-commercial-terms',
     title: 'Commercial Terms',
-    purpose: 'The payment terms, delivery lead time, and late delivery clause agreed with Vendor 1 when this RFQ was raised.',
+    purpose: 'The payment terms, delivery lead time, and late delivery clause agreed with L1 Vendor when this RFQ was raised.',
   },
   {
     target: 'rfq-detail-meta',

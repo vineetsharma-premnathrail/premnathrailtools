@@ -13,7 +13,7 @@ const config: TourConfig = {
     {
       target: 'rfq-edit-payment-terms',
       title: 'Payment Terms',
-      purpose: 'Corrects the agreed payment terms with Vendor 1, even though this RFQ is otherwise locked.',
+      purpose: 'Corrects the agreed payment terms with L1 Vendor, even though this RFQ is otherwise locked.',
       required: false,
     },
     {

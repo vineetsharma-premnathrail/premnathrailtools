@@ -14,7 +14,7 @@ const config: TourConfig = {
     {
       target: 'rfq-vendor-name',
       title: 'Vendor Name',
-      purpose: 'The vendor this quotation slot belongs to (Vendor 1 through Vendor 4).',
+      purpose: 'The vendor this quotation slot belongs to (L1 Vendor through L4 Vendor).',
       required: false,
       why: 'Required as soon as a quotation file is attached for that vendor slot.',
     },
@@ -23,19 +23,19 @@ const config: TourConfig = {
       title: 'Contact Number',
       purpose: 'The vendor\'s contact phone number for this quotation.',
       required: false,
-      why: 'Required for Vendor 1 — it is the only mandatory vendor slot.',
+      why: 'Required for L1 Vendor — it is the only mandatory vendor slot.',
     },
     {
       target: 'rfq-vendor-file',
       title: 'Quotation',
       purpose: 'The vendor\'s quotation document for this slot.',
       required: false,
-      after: 'At least the Vendor 1 quotation must be attached before this RFQ can be saved.',
+      after: 'At least the L1 Vendor quotation must be attached before this RFQ can be saved.',
     },
     {
       target: 'rfq-single-reason',
       title: 'Reason for Single Quotation',
-      purpose: 'Only shown when just Vendor 1 was attached. Explains why competing quotations from other vendors weren\'t obtained.',
+      purpose: 'Only shown when just L1 Vendor was attached. Explains why competing quotations from other vendors weren\'t obtained.',
       required: true,
     },
     {
@@ -47,21 +47,21 @@ const config: TourConfig = {
     {
       target: 'rfq-payment-terms',
       title: 'Payment Terms',
-      purpose: 'The agreed payment terms with Vendor 1 — e.g. advance/on-delivery split.',
+      purpose: 'The agreed payment terms with L1 Vendor — e.g. advance/on-delivery split.',
       required: true,
       validExample: '50% advance, 50% on delivery',
     },
     {
       target: 'rfq-delivery-lead-time',
       title: 'Delivery Lead Time',
-      purpose: 'How long Vendor 1 needs to deliver after the PO is placed.',
+      purpose: 'How long L1 Vendor needs to deliver after the PO is placed.',
       required: true,
       validExample: '4 weeks',
     },
     {
       target: 'rfq-late-delivery-clause',
       title: 'Late Delivery Clause',
-      purpose: 'The penalty or clause agreed with Vendor 1 in case of a late delivery.',
+      purpose: 'The penalty or clause agreed with L1 Vendor in case of a late delivery.',
       required: true,
     },
     {

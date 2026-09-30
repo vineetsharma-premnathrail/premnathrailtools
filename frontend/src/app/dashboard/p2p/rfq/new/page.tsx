@@ -40,10 +40,10 @@ const stepNumberStyle = (active: boolean): React.CSSProperties => ({
 })
 
 const VENDOR_SLOTS = [
-  { tier: 'L1', label: 'Vendor 1', required: true },
-  { tier: 'L2', label: 'Vendor 2', required: false },
-  { tier: 'L3', label: 'Vendor 3', required: false },
-  { tier: 'L4', label: 'Vendor 4', required: false },
+  { tier: 'L1', label: 'L1 Vendor', required: true },
+  { tier: 'L2', label: 'L2 Vendor', required: false },
+  { tier: 'L3', label: 'L3 Vendor', required: false },
+  { tier: 'L4', label: 'L4 Vendor', required: false },
 ] as const
 
 interface VendorSlotState {
@@ -108,16 +108,16 @@ export default function NewRfqPage() {
 
   const validate = (): string | null => {
     if (!prId) return 'Select a purchase request.'
-    if (!vendors.L1.file) return 'The Vendor 1 quotation attachment is required.'
-    if (!vendors.L1.vendorName.trim()) return 'Vendor 1 name is required.'
-    if (!vendors.L1.vendorContact.trim()) return 'Vendor 1 contact number is required.'
+    if (!vendors.L1.file) return 'The L1 Vendor quotation attachment is required.'
+    if (!vendors.L1.vendorName.trim()) return 'L1 Vendor name is required.'
+    if (!vendors.L1.vendorContact.trim()) return 'L1 Vendor contact number is required.'
     for (const slot of VENDOR_SLOTS) {
       const v = vendors[slot.tier]
       if (v.file && !v.vendorName.trim()) return `${slot.label} name is required since a quotation is attached.`
     }
     if (onlyL1) {
-      if (!singleQuotationReason.trim()) return 'Reason for single quotation is required when only Vendor 1 is attached.'
-      if (!comments.trim()) return 'Comments are required when only Vendor 1 is attached.'
+      if (!singleQuotationReason.trim()) return 'Reason for single quotation is required when only L1 Vendor is attached.'
+      if (!comments.trim()) return 'Comments are required when only L1 Vendor is attached.'
     }
     if (!paymentTerms.trim()) return 'Payment terms are required.'
     if (!deliveryLeadTime.trim()) return 'Delivery lead time is required.'
@@ -252,14 +252,14 @@ export default function NewRfqPage() {
           })}
         </div>
         {noAttachments && (
-          <p style={{ fontSize: 11.5, color: '#b45309', margin: '12px 0 0' }}>At least the Vendor 1 quotation must be attached.</p>
+          <p style={{ fontSize: 11.5, color: '#b45309', margin: '12px 0 0' }}>At least the L1 Vendor quotation must be attached.</p>
         )}
       </div>
 
       {onlyL1 && (
         <div style={sectionStyle}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Single Quotation</h2>
-          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 14px' }}>Only Vendor 1 was attached — a reason and comments are required.</p>
+          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 14px' }}>Only L1 Vendor was attached — a reason and comments are required.</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
             <div>
               <label style={labelStyle}>Reason for Single Quotation *</label>
@@ -273,11 +273,11 @@ export default function NewRfqPage() {
         </div>
       )}
 
-      {/* Step 3 — Vendor 1 Commercial Terms */}
+      {/* Step 3 — L1 Vendor Commercial Terms */}
       <div style={sectionStyle}>
         <div style={stepHeaderStyle}>
           <span style={stepNumberStyle(true)}>3</span>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Vendor 1 Commercial Terms</h2>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>L1 Vendor Commercial Terms</h2>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 16 }}>
           <div>

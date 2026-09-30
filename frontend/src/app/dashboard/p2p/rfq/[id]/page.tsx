@@ -78,7 +78,6 @@ export default function RfqDetailPage() {
 
   // --- Purchase Order: the PO already exists outside the system — just record
   // its number/vendor, attach the document, and send it for approval.
-  const [poVendorTier, setPoVendorTier] = useState<'L1' | 'L2' | 'L3' | 'L4'>('L1')
   const [poVendorName, setPoVendorName] = useState('')
   const [poNumber, setPoNumber] = useState('')
   const [poDraft, setPoDraft] = useState<P2PPurchaseOrder | null>(null)
@@ -101,10 +100,9 @@ export default function RfqDetailPage() {
       setLateDeliveryClause(data.late_delivery_clause || '')
       setSingleQuotationReason(data.single_quotation_reason || '')
       setComments(data.comments || '')
-      if (data.attachments?.[0]) {
-        setPoVendorTier(data.attachments[0].vendor_tier)
-        setPoVendorName((prev: string) => prev || data.attachments[0].vendor_name || '')
-      }
+      // The PO always goes to the L1 vendor.
+      const l1 = data.attachments?.find((a: { vendor_tier: string }) => a.vendor_tier === 'L1') || data.attachments?.[0]
+      if (l1) setPoVendorName(l1.vendor_name || '')
 
       if (['po_drafted', 'po_raised', 'po_approved', 'partially_received', 'received', 'closed'].includes(data.p2p_status || '')) {
         loadPoDraft(data.p2p_request_id)
@@ -276,7 +274,7 @@ export default function RfqDetailPage() {
             if (!attachment) return null
             return (
               <div key={tier} style={{ borderRadius: 12, border: `1px solid ${BORDER.normal}`, padding: 12 }}>
-                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>Vendor {i + 1}</p>
+                <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{tier} Vendor</p>
                 <p style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 2px' }}>{attachment.vendor_name || '—'}</p>
                 <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 8px' }}>{attachment.vendor_contact || '—'}</p>
                 <a
@@ -306,27 +304,9 @@ export default function RfqDetailPage() {
           {!['po_drafted', 'po_raised', 'po_approved', 'partially_received', 'received', 'closed'].includes(rfq.p2p_status) && (
             <>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
-                {rfq.attachments.length > 1 && (
-                  <div data-tour="rfq-detail-po-vendor-tier" style={{ flex: '0 1 160px', minWidth: 140 }}>
-                    <label style={labelStyle}>Vendor Tier</label>
-                    <select
-                      style={inputStyle}
-                      value={poVendorTier}
-                      onChange={(e) => {
-                        const tier = e.target.value as 'L1' | 'L2' | 'L3' | 'L4'
-                        setPoVendorTier(tier)
-                        setPoVendorName(rfq.attachments.find((a) => a.vendor_tier === tier)?.vendor_name || '')
-                      }}
-                    >
-                      {rfq.attachments.map((a) => (
-                        <option key={a.vendor_tier} value={a.vendor_tier}>{a.vendor_tier}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
                 <div data-tour="rfq-detail-po-vendor-name" style={{ flex: '1 1 200px', minWidth: 180, maxWidth: 320 }}>
-                  <label style={labelStyle}>Vendor Name</label>
-                  <input style={inputStyle} value={poVendorName} onChange={(e) => setPoVendorName(e.target.value)} />
+                  <label style={labelStyle}>L1 Vendor</label>
+                  <input style={{ ...inputStyle, background: 'rgba(148,163,184,0.08)' }} value={poVendorName} readOnly />
                 </div>
                 <div data-tour="rfq-detail-po-number" style={{ flex: '0 1 180px', minWidth: 150 }}>
                   <label style={labelStyle}>PO Number</label>
@@ -487,7 +467,7 @@ export default function RfqDetailPage() {
           )}
 
           <div data-tour="rfq-detail-commercial-terms" style={sectionStyle}>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Commercial Terms</h2>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>L1 Vendor Commercial Terms</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
               <InfoRow label="Payment Terms" value={rfq.payment_terms || '—'} />
               <InfoRow label="Delivery Lead Time" value={rfq.delivery_lead_time || '—'} />

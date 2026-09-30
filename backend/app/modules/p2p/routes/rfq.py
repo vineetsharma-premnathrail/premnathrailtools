@@ -610,6 +610,10 @@ async def create_po_draft(
         raise HTTPException(status_code=409, detail=f"A PO draft can only be created while the PR is at 'vendor_quotations' or 'vendor_selected' (current status: {pr.status})")
 
     selected = next((vq for vq in rfq.vendor_quotations if vq.is_selected), None)
+    # The PO always goes to the L1 (lowest) vendor quoted on the RFQ.
+    l1 = next((a for a in rfq.attachments if a.vendor_tier == "L1" and a.vendor_name), None)
+    if not selected and l1:
+        payload.vendor_name = l1.vendor_name
     if not selected and not (payload.vendor_name or "").strip():
         raise HTTPException(status_code=400, detail="A vendor name is required to create the PO")
 
