@@ -283,16 +283,12 @@ export default function MyP2PRequestDetailPage() {
   const canRejectStill = fromApproval && canRejectAccess
   // Which of this PR's PO-approval roles the viewer holds (matrix or legacy).
   const myPoRoles = userPoRoles(user, pr).filter((r) => (pr.pending_po_approval_roles || []).includes(r))
-  // Matrix SoD: the requester can't approve their own PR's PO (the backend
-  // refuses it too — this just hides a button that would be refused).
-  const poSelfBlocked = isMatrixPr && pr.requested_by_id === user?.id
-  const canApprovePo = fromPoApproval && pr.status === 'po_raised' && myPoRoles.length > 0 && !poSelfBlocked
+  const canApprovePo = fromPoApproval && pr.status === 'po_raised' && myPoRoles.length > 0
   // Say why Approve PO is missing instead of silently hiding it.
   const poApproveBlockedReason = !fromPoApproval || pr.status !== 'po_raised' || canApprovePo ? null
-    : poSelfBlocked ? "You raised this requisition, so you can't approve its PO — another Director must approve it."
-    : userPoRoles(user, pr).length === 0 ? `Only a Director can approve this PO. Ask an admin to tick "Director" on your user if you should approve POs.`
+    : userPoRoles(user, pr).length === 0 ? `Only a ${(pr.po_approval_role_labels || []).join(', ')} can approve this PO. Ask an admin to tick one of those roles on your user.`
     : 'You have already acted on this PO, or it is no longer pending your approval.'
-  const canRejectPo = fromPoApproval && pr.status === 'po_raised' && ((userPoRoles(user, pr).length > 0 && !poSelfBlocked) || isAdmin)
+  const canRejectPo = fromPoApproval && pr.status === 'po_raised' && (userPoRoles(user, pr).length > 0 || isAdmin)
   // Once a PR is approved, the buyer can check store stock per item and
   // decide item-by-item whether to issue it from stock or send it to
   // procurement — not available once the request has been rejected/cancelled

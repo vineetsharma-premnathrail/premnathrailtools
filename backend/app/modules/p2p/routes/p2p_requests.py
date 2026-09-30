@@ -467,8 +467,8 @@ async def list_p2p_requests(
     elif queue == "po-approval" and user.role != "admin":
         # The P.O Approval queue: ONLY PRs whose PO this viewer is eligible
         # to approve — their role flags intersected with each PR's role set
-        # (matrix by project_type, legacy PH/Director/MD otherwise), never
-        # their own requisitions. POs they raised themselves are filtered
+        # (matrix by project_type, legacy PH/Director/MD otherwise) — the
+        # requester may approve if they hold a role. POs they raised are filtered
         # below once the rows are loaded.
         eligibility = []
         for ptype, roles in PO_APPROVAL_ROLE_SETS.items():
@@ -478,7 +478,7 @@ async def list_p2p_requests(
             eligibility.append(P2PRequest.project_type.is_(None))
         if not eligibility:
             return []
-        query = query.filter(or_(*eligibility), P2PRequest.requested_by_id != user.id)
+        query = query.filter(or_(*eligibility))
     elif not _is_purchase_team(user):
         if _is_po_approver(user):
             # A pure PO approver (purchase_head/director/md without "purchase"
@@ -719,8 +719,6 @@ async def approve_po(
         if not eligible:
             labels = ", ".join(P2P_ROLE_LABELS[r] for r in role_set)
             raise HTTPException(status_code=403, detail=f"Only one of {labels} can approve this PO.")
-        if pr.requested_by_id == user.id:
-            raise HTTPException(status_code=403, detail="You raised this requisition, so you can't approve its PO — another role holder must.")
         po = db.query(P2PPurchaseOrder).filter(
             P2PPurchaseOrder.p2p_request_id == pr.id, P2PPurchaseOrder.status != "cancelled",
         ).order_by(P2PPurchaseOrder.id.desc()).first()

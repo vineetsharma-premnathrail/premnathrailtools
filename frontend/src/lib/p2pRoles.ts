@@ -13,8 +13,8 @@ export const PR_APPROVAL_ROLE_SETS: Record<P2PProjectType, string[]> = {
 }
 
 export const PO_APPROVAL_ROLE_SETS: Record<P2PProjectType, string[]> = {
-  existing: ['director'],
-  new: ['director'],
+  existing: ['production_manager', 'purchase_manager', 'project_manager', 'director'],
+  new: ['rnd_manager', 'purchase_manager', 'production_manager', 'director'],
 }
 
 /** Role key -> the User boolean flag that marks a holder of that role.

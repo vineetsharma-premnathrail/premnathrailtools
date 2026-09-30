@@ -22,7 +22,7 @@ const config: TourConfig = {
     {
       target: 'pr-detail-po-approval',
       title: 'PO Approval',
-      purpose: 'The second approval — only shown once this requisition has reached the RFQ stage (before that it may still be fulfilled entirely from store stock and never need a PO). Once a PO is raised it goes to every Director, and any ONE Director approving approves it. Shows who approved, as which role, and their comment. Requisitions from before this matrix still show the old Purchase Head → Director → MD chain.',
+      purpose: 'The second approval — only shown once this requisition has reached the RFQ stage (before that it may still be fulfilled entirely from store stock and never need a PO). Once a PO is raised it goes to every holder of this requisition\'s PO approval roles — existing project: Production, Purchase and Project Managers plus the Director; new project: R&D, Purchase and Production Managers plus the Director — and any ONE of them approving approves it, even the requester if they hold one of those roles. Shows who approved, as which role, and their comment. Requisitions from before this matrix still show the old Purchase Head → Director → MD chain.',
     },
     {
       target: 'pr-detail-approval',
