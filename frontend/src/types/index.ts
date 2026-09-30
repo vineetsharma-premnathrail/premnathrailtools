@@ -789,7 +789,7 @@ export interface P2PRequest {
   po_approval_comment?: string
   /** Labels of the roles that may approve the PO ("any one of ..."). Empty on legacy PRs. */
   po_approval_role_labels?: string[]
-  po_approvers?: { role: string; role_label: string; names: string[] }[]
+  po_approval_panel?: { role: string; role_label: string; people: { id: number; name?: string | null }[] }[]
   /** Role slugs still awaiting sign-off. */
   pending_approval_roles?: string[]
   pending_po_approval_roles?: string[]

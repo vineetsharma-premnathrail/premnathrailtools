@@ -85,12 +85,22 @@ def _create_pr(client, requester, **overrides):
     test can act as them."""
     db = object_session(requester)
     approvers = _pr_approvers(db)
+    n = next(_seq)
+    po_approvers = {
+        role: make_user(db, f"po.{role}.{n}@premnathrail.com", assigned_apps=("p2p",))
+        for role in ("rnd_manager", "purchase_manager", "production_manager")
+    }
     response = client.post(
-        BASE, json=_create_payload(approvers={r: u.id for r, u in approvers.items()}, **overrides), headers=auth_header(requester),
+        BASE, json=_create_payload(
+            approvers={r: u.id for r, u in approvers.items()},
+            po_approvers={r: u.id for r, u in po_approvers.items()},
+            **overrides,
+        ), headers=auth_header(requester),
     )
     assert response.status_code == 200, response.text
     pr = response.json()
     pr["_approvers"] = approvers
+    pr["_po_approvers"] = po_approvers
     return pr
 
 
@@ -923,6 +933,7 @@ def _approved_pr_with_stock(client, db, tag, on_hand, qty):
     requester = _requester(db, f"req{tag}@premnathrail.com")
     pr = _create_pr(client, requester, items=[{"item_name": f"Item {tag}", "quantity": qty, "unit": "NOS", "project_inhouse": "Project"}])
     approved = _approve_pr(client, pr).json()
+    approved["_store_manager"] = pr["_approvers"]["store_manager"]
     return approved, approved["items"][0]["id"], loc.id
 
 
@@ -933,7 +944,7 @@ def test_only_store_manager_can_issue_and_comment_is_required(client, db):
     buyer = _purchaser(db, "buyer.i1@premnathrail.com")
     assert client.post(url, json={"location_id": loc_id, "comment": "x"}, headers=auth_header(buyer)).status_code == 403
 
-    store = make_user(db, "store.i1@premnathrail.com", assigned_apps=("store",), is_store_manager=True)
+    store = pr["_store_manager"]
     assert client.post(url, json={"location_id": loc_id}, headers=auth_header(store)).status_code == 400
 
     ok = client.post(url, json={"location_id": loc_id, "comment": "Handed to site"}, headers=auth_header(store))
@@ -944,7 +955,7 @@ def test_only_store_manager_can_issue_and_comment_is_required(client, db):
 
 def test_partial_issue_sends_only_shortfall_to_procurement(client, db):
     pr, item_id, loc_id = _approved_pr_with_stock(client, db, "I2", on_hand=200, qty=400)
-    store = make_user(db, "store.i2@premnathrail.com", assigned_apps=("store",), is_store_manager=True)
+    store = pr["_store_manager"]
     resp = client.post(
         f"{BASE}/{pr['id']}/items/{item_id}/issue-from-stock",
         json={"location_id": loc_id, "quantity": 200, "comment": "Partial from Plant store"},
@@ -955,3 +966,31 @@ def test_partial_issue_sends_only_shortfall_to_procurement(client, db):
     assert line["fulfillment_status"] == "sent_to_procurement"
     assert line["issued_qty"] == 200
     assert resp.json()["status"] == "approved"
+
+
+
+def test_picked_po_approver_can_approve_but_unpicked_role_holder_cannot(client, db):
+    requester = _requester(db, "reqpo9@premnathrail.com")
+    pr = _create_pr(client, requester)
+    buyer = _purchaser(db, "buyerpo9@premnathrail.com")
+    _raise_po(client, db, pr, buyer)
+
+    # Holding a manager flag no longer counts — only the person picked on the PR.
+    other_pm = make_user(db, "other.pm9@premnathrail.com", assigned_apps=("p2p",), is_purchase_manager=True)
+    refused = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "OK"}, headers=auth_header(other_pm))
+    assert refused.status_code == 403
+
+    picked = pr["_po_approvers"]["purchase_manager"]
+    queue = client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(picked)).json()
+    assert [p["id"] for p in queue] == [pr["id"]]
+    ok = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "OK"}, headers=auth_header(picked))
+    assert ok.status_code == 200
+    assert ok.json()["po_approved_role"] == "purchase_manager"
+
+
+def test_create_requires_po_approvers(client, db):
+    requester = _requester(db, "reqpo10@premnathrail.com")
+    approvers = _pr_approvers(db)
+    resp = client.post(BASE, json=_create_payload(approvers={r: u.id for r, u in approvers.items()}), headers=auth_header(requester))
+    assert resp.status_code == 400
+    assert "PO approver" in resp.json()["detail"]

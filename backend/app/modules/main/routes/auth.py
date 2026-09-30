@@ -466,7 +466,11 @@ def _p2p_approver_flags(db: Session, user: User) -> tuple[bool, bool]:
             | (P2PRequest.plant_head_id == user.id)
         ).first() is not None
     )
-    is_po_approver = any(getattr(user, flag, False) for flag in P2P_PO_APPROVER_FLAGS)
+    from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover
+    is_po_approver = (
+        any(getattr(user, flag, False) for flag in P2P_PO_APPROVER_FLAGS)
+        or db.query(P2PRequestPOApprover.id).filter(P2PRequestPOApprover.approver_id == user.id).first() is not None
+    )
     return is_pr_approver, is_po_approver
 
 

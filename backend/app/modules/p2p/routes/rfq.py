@@ -26,7 +26,7 @@ from app.modules.p2p.schemas.purchase_order import (
 )
 from app.modules.p2p.service import generate_rfq_number, generate_po_number, compute_line_total
 from app.modules.p2p.routes.p2p_requests import (
-    _write_audit as _write_pr_audit, _send_p2p_po_approval_emails_background, _PO_APPROVAL_ROLE_FLAGS,
+    _write_audit as _write_pr_audit, _send_p2p_po_approval_emails_background, po_approver_users,
 )
 from app.modules.p2p.models.p2p_request import P2P_ROLE_LABELS
 from app.utils.notifications import notify_user
@@ -854,21 +854,15 @@ async def submit_po_draft(
                  summary=f"{user.name or user.email} submitted PO '{po.po_number}' for {pr.p2p_number} — entering PO approval.",
                  old_status=old_status, new_status="po_raised")
 
-    # Tell every holder of the PR's PO-approval roles (bell + Teams, and an
-    # email with the full PO after commit) — any one of them approves.
-    notified: set[int] = set()
-    for role in pr.pending_po_approval_roles:
-        flag_name = _PO_APPROVAL_ROLE_FLAGS[role]
-        for approver in db.query(User).filter(User.is_active == True, getattr(User, flag_name) == True).all():  # noqa: E712
-            if approver.id in notified:
-                continue
-            notified.add(approver.id)
-            notify_user(
-                db, user_id=approver.id,
-                title="Purchase Order Awaiting Approval",
-                message=f"PO '{po.po_number}' for PR '{pr.p2p_number}' awaits your approval as {P2P_ROLE_LABELS.get(role, role)}.",
-                notification_type="p2p_po_approval_pending", entity_type="p2p_request", entity_id=pr.id,
-            )
+    # Tell everyone the PO goes to (bell + Teams, and an email with the full
+    # PO after commit) — any one of them approves.
+    for approver, role in po_approver_users(db, pr):
+        notify_user(
+            db, user_id=approver.id,
+            title="Purchase Order Awaiting Approval",
+            message=f"PO '{po.po_number}' for PR '{pr.p2p_number}' awaits your approval as {P2P_ROLE_LABELS.get(role, role)}.",
+            notification_type="p2p_po_approval_pending", entity_type="p2p_request", entity_id=pr.id,
+        )
 
     db.commit()
     background_tasks.add_task(_send_p2p_po_approval_emails_background, pr.id)

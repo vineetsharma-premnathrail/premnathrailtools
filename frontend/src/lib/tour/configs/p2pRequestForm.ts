@@ -122,9 +122,16 @@ const config: TourConfig = {
     {
       target: 'pr-new-approvers',
       title: 'Approvers',
-      purpose: 'Who must approve this requisition — every slot must sign before it is approved. For an existing project the slots are Design, Production, Project and Store Manager; for a new project R&D, Production and Store Manager. Pick any user for each slot, including yourself.',
+      purpose: 'Who must approve this requisition — every slot must sign before it is approved. For an existing project the slots are Design, Production, Project and Store Manager; for a new project R&D, Production and Store Manager. Pick any user for each slot, including yourself. The Store Manager picked here is also the one who issues this requisition\'s items from store stock.',
       required: true,
       whatToEnter: 'Search by name or email in each role\'s picker.',
+    },
+    {
+      target: 'pr-new-po-approvers',
+      title: 'PO Approval',
+      purpose: 'Who approves this requisition\'s PO once it is raised. Existing project: pick a Production, Purchase and Project Manager; new project: an R&D, Purchase and Production Manager. The PO also goes to every Director. Any ONE of them approving approves the PO.',
+      required: true,
+      whatToEnter: 'Search by name or email in each role\'s picker. Directors are added automatically.',
     },
     {
       target: 'pr-new-supporting-docs',

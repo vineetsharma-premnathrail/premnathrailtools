@@ -114,7 +114,7 @@ export default function MyP2PRequestDetailPage() {
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
   // Issuing from store stock is the Store Manager's job (admins too); the
   // Purchase team sees the stock result and decides what to procure.
-  const canIssueStock = user?.role === 'admin' || !!user?.is_store_manager
+  const canIssueStock = user?.role === 'admin' || (pr?.approvals || []).some((a) => a.role === 'store_manager' && a.approver_id === user?.id)
   const [issuePrompt, setIssuePrompt] = useState<{ itemId: number; locationId: number; qty: number } | null>(null)
 
   const load = async () => {
@@ -286,7 +286,7 @@ export default function MyP2PRequestDetailPage() {
   const canApprovePo = fromPoApproval && pr.status === 'po_raised' && myPoRoles.length > 0
   // Say why Approve PO is missing instead of silently hiding it.
   const poApproveBlockedReason = !fromPoApproval || pr.status !== 'po_raised' || canApprovePo ? null
-    : userPoRoles(user, pr).length === 0 ? `Only a ${(pr.po_approval_role_labels || []).join(', ')} can approve this PO. Ask an admin to tick one of those roles on your user.`
+    : userPoRoles(user, pr).length === 0 ? 'Only the PO approvers picked on this requisition, or a Director, can approve this PO.'
     : 'You have already acted on this PO, or it is no longer pending your approval.'
   const canRejectPo = fromPoApproval && pr.status === 'po_raised' && (userPoRoles(user, pr).length > 0 || isAdmin)
   // Once a PR is approved, the buyer can check store stock per item and
@@ -452,11 +452,11 @@ export default function MyP2PRequestDetailPage() {
             <div>
               <p style={{ fontSize: 13.5, color: TEXT.body, margin: '0 0 12px' }}>Awaiting approval — any one of these approves the PO.</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-                {(pr.po_approvers || []).map((a) => (
+                {(pr.po_approval_panel || []).map((a) => (
                   <div key={a.role}>
                     <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{a.role_label}</p>
-                    {a.names.length ? a.names.map((n) => (
-                      <p key={n} style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                    {a.people.length ? a.people.map(({ id, name: n }) => (
+                      <p key={id} style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
                         {n}
                         <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(148,163,184,0.15)', color: '#64748b' }}>Pending</span>
                       </p>

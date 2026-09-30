@@ -97,6 +97,8 @@ class P2PRequestCreate(BaseModel):
     # pydantic "field required").
     project_type: str
     approvers: dict[str, int] = Field(default_factory=dict)
+    # PO approvers picked per role (PO_PICKED_ROLE_SETS) — Director excluded.
+    po_approvers: dict[str, int] = Field(default_factory=dict)
     remarks: str | None = None
     items: list[P2PRequestItemPayload] = Field(default_factory=list)
 
@@ -224,8 +226,9 @@ class P2PRequestResponse(BaseModel):
     # Labels of the roles that may approve the PO ("any one of ..."), for
     # display; empty on legacy PRs.
     po_approval_role_labels: list[str] = Field(default_factory=list)
-    # Who actually holds each PO-approval role, so the panel can name them.
-    po_approvers: list[dict] = Field(default_factory=list)
+    # Who the PO goes to, per role — the people picked on the PR plus every
+    # Director — so the PO Approval panel can name them.
+    po_approval_panel: list[dict] = Field(default_factory=list)
     pending_approval_roles: list[str] = Field(default_factory=list)
     pending_po_approval_roles: list[str] = Field(default_factory=list)
     rejected_by_role: str | None = None

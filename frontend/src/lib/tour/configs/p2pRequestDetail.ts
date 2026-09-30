@@ -22,7 +22,7 @@ const config: TourConfig = {
     {
       target: 'pr-detail-po-approval',
       title: 'PO Approval',
-      purpose: 'The second approval — only shown once this requisition has reached the RFQ stage (before that it may still be fulfilled entirely from store stock and never need a PO). Once a PO is raised it goes to every holder of this requisition\'s PO approval roles — existing project: Production, Purchase and Project Managers plus the Director; new project: R&D, Purchase and Production Managers plus the Director — and any ONE of them approving approves it, even the requester if they hold one of those roles. Shows who approved, as which role, and their comment. Requisitions from before this matrix still show the old Purchase Head → Director → MD chain.',
+      purpose: 'The second approval — only shown once this requisition has reached the RFQ stage (before that it may still be fulfilled entirely from store stock and never need a PO). Once a PO is raised it goes to the PO approvers picked on the New PR form plus every Director, each listed here by name; any ONE of them approving approves it (the requester or the PO\'s creator included, if they are one of them). Shows who approved, as which role, and their comment. Requisitions from before this matrix still show the old Purchase Head → Director → MD chain.',
     },
     {
       target: 'pr-detail-approval',
@@ -48,7 +48,7 @@ const config: TourConfig = {
     {
       target: 'pr-detail-items',
       title: 'Item Details',
-      purpose: 'Every line item on this requisition — description, make, part code, unit, quantity, and any per-item attachments. Each still-undecided line runs its store stock check automatically and shows the result inline. Only a Store Manager can issue from stock: pick the warehouse to Issue From (defaults to the Ship To warehouse, else the one with the most stock) and a comment is required. If stock covers only part of the quantity, the button issues what is available and only the shortfall goes to procurement on this same requisition. The Purchase team sends lines with no or too little stock to procurement.',
+      purpose: 'Every line item on this requisition — description, make, part code, unit, quantity, and any per-item attachments. Each still-undecided line runs its store stock check automatically and shows the result inline. Only the Store Manager picked on this requisition (or an admin) can issue from stock: pick the warehouse to Issue From (defaults to the Ship To warehouse, else the one with the most stock) and a comment is required. If stock covers only part of the quantity, the button issues what is available and only the shortfall goes to procurement on this same requisition. The Purchase team sends lines with no or too little stock to procurement.',
     },
     {
       target: 'pr-detail-attachments',

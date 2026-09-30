@@ -360,16 +360,7 @@ const P2P_PERMISSION_GROUPS: { label: string; icon: string; perms: { id: string;
 // and MD only matter for PRs raised before the matrix and are kept so those
 // can still finish their old Purchase Head → Director → MD chain.
 const APPROVAL_ROLE_FLAGS: { key: string; label: string; hex: string }[] = [
-  { key: 'is_design_manager', label: 'Design Manager', hex: '#0369a1' },
-  { key: 'is_rnd_manager', label: 'R&D Manager', hex: '#9333ea' },
-  { key: 'is_production_manager', label: 'Production Manager', hex: '#b45309' },
-  { key: 'is_project_manager', label: 'Project Manager', hex: '#0f766e' },
-  { key: 'is_store_manager', label: 'Store Manager', hex: '#4d7c0f' },
-  { key: 'is_purchase_manager', label: 'Purchase Manager', hex: '#c2410c' },
   { key: 'is_director', label: 'Director', hex: '#7c3aed' },
-  { key: 'is_finance_manager', label: 'Finance Manager', hex: '#0f766e' },
-  { key: 'is_purchase_head', label: 'Purchase Head (legacy)', hex: '#78716c' },
-  { key: 'is_md', label: 'MD (legacy)', hex: '#78716c' },
 ]
 
 function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id: string; label: string }[]; onRefresh: () => void }) {
@@ -419,7 +410,7 @@ function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id:
       <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)' }}>
         <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 6px' }}>Approval Roles</p>
         <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '0 0 10px' }}>
-          Manager roles drive P.O approval: a P.O goes to every holder of its role set, and any one of them approves it. Store Manager issues P.R items from store stock. P.R approvers are picked per requisition on the New PR form.
+          Director approves every P.O (any one approval approves it).
         </p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {APPROVAL_ROLE_FLAGS.map((f) => (

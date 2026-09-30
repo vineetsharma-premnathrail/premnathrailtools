@@ -100,10 +100,9 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const canApprovePoInline = (pr: P2PRequest) =>
     context === 'po-approval' && pr.status === 'po_raised'
     && userPoRoles(user, pr).some((r) => (pr.pending_po_approval_roles || []).includes(r))
-    && !(pr.project_type && pr.requested_by_id === user?.id)
   const canRejectPoInline = (pr: P2PRequest) =>
     context === 'po-approval' && pr.status === 'po_raised'
-    && ((userPoRoles(user, pr).length > 0 && !(pr.project_type && pr.requested_by_id === user?.id)) || isAdmin)
+    && (userPoRoles(user, pr).length > 0 || isAdmin)
 
   const confirmApprovePo = async (comment: string) => {
     if (approvingId == null) return

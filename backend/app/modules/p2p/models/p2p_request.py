@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.modules.p2p.models.p2p_request_item import P2PRequestItem
     from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
     from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
+    from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover
 
 # Lifecycle of a standalone P2P Request raised directly by any department —
 # including PRs raised out of an ERP Service Request's Materials tab, which
@@ -121,9 +122,14 @@ P2P_ROLE_FLAGS: dict[str, str] = {
 # both matrix role sets plus the legacy Purchase Head / MD flags carried by
 # in-flight pre-matrix PRs. Drives the P.O Approval tab visibility
 # (is_po_approver on /auth/me).
-P2P_PO_APPROVER_FLAGS: tuple[str, ...] = tuple(sorted(
-    {P2P_ROLE_FLAGS[r] for roles in PO_APPROVAL_ROLE_SETS.values() for r in roles} | {"is_purchase_head", "is_md"}
-))
+P2P_PO_APPROVER_FLAGS: tuple[str, ...] = ("is_director", "is_md", "is_purchase_head")
+
+# The PO-approval roles the requester fills with a named person on the New
+# PR form — every role in the set except Director, which is a user flag and
+# goes to every Director.
+PO_PICKED_ROLE_SETS: dict[str, tuple[str, ...]] = {
+    ptype: tuple(r for r in roles if r != "director") for ptype, roles in PO_APPROVAL_ROLE_SETS.items()
+}
 
 # Display labels for every role key that can appear on a PR — the matrix
 # roles plus the legacy ones still carried by in-flight PRs.
@@ -253,6 +259,10 @@ class P2PRequest(Base, TimestampMixin):
     approvals: Mapped[list["P2PRequestApproval"]] = relationship(
         "P2PRequestApproval", back_populates="p2p_request", cascade="all, delete-orphan",
         order_by="P2PRequestApproval.id",
+    )
+    po_approvers: Mapped[list["P2PRequestPOApprover"]] = relationship(
+        "P2PRequestPOApprover", back_populates="p2p_request", cascade="all, delete-orphan",
+        order_by="P2PRequestPOApprover.id",
     )
 
     @property

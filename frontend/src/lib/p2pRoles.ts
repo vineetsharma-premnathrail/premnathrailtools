@@ -50,11 +50,24 @@ export const P2P_ROLE_LABELS: Record<string, string> = {
 
 export const p2pRoleLabel = (role?: string | null): string => (role ? P2P_ROLE_LABELS[role] || role : '')
 
-/** Which of this PR's PO-approval roles the user holds. Legacy PRs (no
- * project_type) fall back to the old Purchase Head / Director / MD chain. */
-export function userPoRoles(user: User | null | undefined, pr: { project_type?: P2PProjectType | null }): string[] {
+/** PO-approval roles the requester fills with a named person on the New PR
+ * form — every PO role except Director (a user flag; every Director gets it). */
+export const PO_PICKED_ROLE_SETS: Record<P2PProjectType, string[]> = {
+  existing: PO_APPROVAL_ROLE_SETS.existing.filter((r) => r !== 'director'),
+  new: PO_APPROVAL_ROLE_SETS.new.filter((r) => r !== 'director'),
+}
+
+/** Which of this PR's PO-approval roles the user holds: matrix PRs use the
+ * people picked on the PR plus every Director (po_approval_panel); legacy
+ * PRs (no project_type) fall back to the Purchase Head / Director / MD flags. */
+export function userPoRoles(
+  user: User | null | undefined,
+  pr: { project_type?: P2PProjectType | null; po_approval_panel?: { role: string; people: { id: number }[] }[] },
+): string[] {
   if (!user) return []
-  const roleSet = pr.project_type ? PO_APPROVAL_ROLE_SETS[pr.project_type] : ['purchase_head', 'director', 'md']
+  if (pr.project_type) {
+    return (pr.po_approval_panel || []).filter((row) => row.people.some((p) => p.id === user.id)).map((row) => row.role)
+  }
   const flags = user as unknown as Record<string, boolean>
-  return roleSet.filter((role) => !!flags[P2P_ROLE_FLAGS[role]])
+  return ['purchase_head', 'director', 'md'].filter((role) => !!flags[P2P_ROLE_FLAGS[role]])
 }

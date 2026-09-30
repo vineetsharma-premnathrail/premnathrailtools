@@ -12,7 +12,7 @@ import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
-import { PR_APPROVAL_ROLE_SETS, P2P_ROLE_LABELS, P2PProjectType } from '@/lib/p2pRoles'
+import { PR_APPROVAL_ROLE_SETS, PO_PICKED_ROLE_SETS, P2P_ROLE_LABELS, P2PProjectType } from '@/lib/p2pRoles'
 
 const PRIORITIES = ['low', 'medium', 'high']
 
@@ -46,6 +46,7 @@ export default function NewP2PRequestPage() {
   // AND (later) which roles the PO goes to.
   const [projectType, setProjectType] = useState<'' | P2PProjectType>('')
   const [approverIds, setApproverIds] = useState<Record<string, string>>({})
+  const [poApproverIds, setPoApproverIds] = useState<Record<string, string>>({})
 
   const [projectId, setProjectId] = useState('')
   const [newProjectName, setNewProjectName] = useState('')
@@ -103,6 +104,7 @@ export default function NewP2PRequestPage() {
   // themselves ("user self select kar sake") — the role just labels the
   // slot. Being named on the PR is what grants the approver access to it.
   const approvalRoles = projectType ? PR_APPROVAL_ROLE_SETS[projectType] : []
+  const poApprovalRoles = projectType ? PO_PICKED_ROLE_SETS[projectType] : []
   const approverOptions = directoryUsers
     .map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})${u.department ? ` — ${u.department}` : ''}${u.id === user?.id ? ' — you' : ''}` }))
 
@@ -111,6 +113,7 @@ export default function NewP2PRequestPage() {
     // A different project type means a different approval chain — clear picks
     // that no longer apply rather than silently submitting them.
     setApproverIds({})
+    setPoApproverIds({})
     if (value === 'existing') setNewProjectName('')
     if (value === 'new') setProjectId('')
   }
@@ -141,6 +144,9 @@ export default function NewP2PRequestPage() {
     for (const role of approvalRoles) {
       if (!approverIds[role]) { setError(`Please select a ${P2P_ROLE_LABELS[role]}.`); return }
     }
+    for (const role of poApprovalRoles) {
+      if (!poApproverIds[role]) { setError(`Please select the PO approver for ${P2P_ROLE_LABELS[role]}.`); return }
+    }
 
     setSubmitting(true)
     try {
@@ -157,6 +163,7 @@ export default function NewP2PRequestPage() {
         priority,
         remarks: remarks || undefined,
         approvers: Object.fromEntries(approvalRoles.map((role) => [role, Number(approverIds[role])])),
+        po_approvers: Object.fromEntries(poApprovalRoles.map((role) => [role, Number(poApproverIds[role])])),
         items: filledItems.map((it) => ({
           ...it,
           quantity: Number(it.quantity) || 1,
@@ -347,6 +354,32 @@ export default function NewP2PRequestPage() {
             </div>
           ))}
         </div>
+
+        {projectType && (
+          <>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>PO Approval</h2>
+            <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>
+              Once a PO is raised it goes to the people picked below and to every Director — any one approval approves the PO.
+            </p>
+            <div data-tour="pr-new-po-approvers" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
+              {poApprovalRoles.map((role) => (
+                <div key={role} style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 340 }}>
+                  <label style={labelStyle}>{P2P_ROLE_LABELS[role]} *</label>
+                  <SearchableSelect
+                    value={poApproverIds[role] || ''}
+                    onChange={(v) => setPoApproverIds((prev) => ({ ...prev, [role]: v }))}
+                    options={approverOptions}
+                    placeholder={`Search ${P2P_ROLE_LABELS[role].toLowerCase()}…`}
+                  />
+                </div>
+              ))}
+              <div style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 340 }}>
+                <label style={labelStyle}>Director</label>
+                <p style={{ fontSize: 13, color: TEXT.secondary, margin: '10px 0 0' }}>Every Director — set on the user</p>
+              </div>
+            </div>
+          </>
+        )}
 
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Documents</h2>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>

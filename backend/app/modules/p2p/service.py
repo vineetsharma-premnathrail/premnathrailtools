@@ -123,3 +123,22 @@ def resolve_pr_approvers(db: Session, requester: "User", project_type: str, appr
             raise ValueError(f"The selected {label} was not found or is no longer active — pick another user.")
         approvers[role] = approver
     return approvers
+
+
+def resolve_po_approvers(db: Session, project_type: str, approver_ids: dict) -> dict[str, "User"]:
+    """Validates the PO approvers picked on the New PR form — one person per
+    role in PO_PICKED_ROLE_SETS[project_type] (Director isn't picked; every
+    Director gets the PO). Raises ValueError with a user-facing reason."""
+    from app.modules.p2p.models.p2p_request import PO_PICKED_ROLE_SETS, P2P_ROLE_LABELS
+
+    approvers: dict[str, User] = {}
+    for role in PO_PICKED_ROLE_SETS.get(project_type, ()):
+        label = P2P_ROLE_LABELS[role]
+        approver_id = (approver_ids or {}).get(role)
+        if approver_id is None:
+            raise ValueError(f"PO approver {label} is required — pick who approves this requisition's PO as {label}.")
+        approver = db.query(User).filter(User.id == approver_id, User.is_active == True).first()  # noqa: E712
+        if not approver:
+            raise ValueError(f"The selected PO approver ({label}) was not found or is no longer active — pick another user.")
+        approvers[role] = approver
+    return approvers
