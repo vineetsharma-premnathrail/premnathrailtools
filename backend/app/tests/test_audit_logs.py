@@ -37,7 +37,7 @@ def test_organization_lifecycle_writes_audit_trail_in_order(client, db):
 
     create = client.post(
         "/api/v1/crm/organizations",
-        json={"name": "Audit Test Org", "railway_zone": "NR"},
+        json={"org_type": "Customer", "name": "Audit Test Org", "railway_zone": "NR"},
         headers=auth_header(user),
     )
     org_id = create.json()["id"]
@@ -108,7 +108,7 @@ def test_audit_endpoint_labels_null_performed_by_as_system(client, db):
     user = make_user(db, "system-audit@premnathrail.com")
     create = client.post(
         "/api/v1/crm/organizations",
-        json={"name": "System Audit Org"},
+        json={"org_type": "Customer", "name": "System Audit Org"},
         headers=auth_header(user),
     )
     org_id = create.json()["id"]

@@ -35,7 +35,8 @@ GST_OUTPUT_ACCOUNT_CODE = "2020"  # GST Output Payable
 def _lock_number_series(db: Session, prefix: str) -> None:
     """See app/modules/p2p/service.py's identical helper for why this is
     needed — serializes concurrent number generation for this prefix."""
-    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
+    if db.get_bind().dialect.name == "postgresql":  # SQLite (tests) has no advisory locks
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
 
 
 def generate_je_number(db: Session) -> str:

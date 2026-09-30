@@ -385,6 +385,7 @@ async def test_get_microsoft_user_profile_success(mock_get):
 
     # Mock Microsoft Graph API response
     mock_response = MagicMock()
+    mock_response.is_error = False
     mock_response.json.return_value = {
         "id": "user-123",
         "displayName": "John Doe",

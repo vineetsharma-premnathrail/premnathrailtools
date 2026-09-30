@@ -18,7 +18,7 @@ def auth_header(user):
 
 
 def make_org(client, user, name="Photo Org"):
-    return client.post("/api/v1/crm/organizations", json={"name": name}, headers=auth_header(user)).json()
+    return client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": name}, headers=auth_header(user)).json()
 
 
 def make_activity(client, user, org_id):

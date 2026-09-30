@@ -21,7 +21,8 @@ def next_sequential_id(db: Session, *, prefix: str, column) -> str:
     next number. They simply proceed one after another, never crash. The
     lock releases automatically at the end of the current transaction.
     """
-    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
+    if db.get_bind().dialect.name == "postgresql":  # SQLite (tests) has no advisory locks
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
     last = db.query(func.max(column)).filter(column.like(f"{prefix}%")).scalar()
     if last:
         last_num = int(last.rsplit("-", 1)[-1])

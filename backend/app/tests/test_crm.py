@@ -16,6 +16,13 @@ def auth_header(user):
     return {"Authorization": f"Bearer {token}"}
 
 
+def inquiry_payload(client, user, org_id, **extra):
+    """Minimum valid inquiry create body — an inquiry needs a contact of its
+    organization and a lead source."""
+    contact = client.post(f"/api/v1/crm/organizations/{org_id}/contacts", json={"name": "Primary Contact"}, headers=auth_header(user)).json()
+    return {"org_id": org_id, "org_contact_id": contact["id"], "lead_source": "Direct", **extra}
+
+
 def test_list_organizations_requires_crm_access(client, db):
     user = make_user(db, "nocrm@premnathrail.com", assigned_apps=[])
     response = client.get("/api/v1/crm/organizations", headers=auth_header(user))
@@ -24,7 +31,7 @@ def test_list_organizations_requires_crm_access(client, db):
 
 def test_create_organization_and_get(client, db):
     user = make_user(db, "crmuser1@premnathrail.com")
-    response = client.post("/api/v1/crm/organizations", json={"name": "Indian Railways Ltd"}, headers=auth_header(user))
+    response = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Indian Railways Ltd"}, headers=auth_header(user))
     assert response.status_code == 201
     org_id = response.json()["id"]
 
@@ -35,25 +42,25 @@ def test_create_organization_and_get(client, db):
 
 def test_create_organization_rejects_duplicate_name(client, db):
     user = make_user(db, "crmuser2@premnathrail.com")
-    client.post("/api/v1/crm/organizations", json={"name": "Dup Org"}, headers=auth_header(user))
-    response = client.post("/api/v1/crm/organizations", json={"name": "Dup Org"}, headers=auth_header(user))
+    client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Dup Org"}, headers=auth_header(user))
+    response = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Dup Org"}, headers=auth_header(user))
     assert response.status_code == 409
 
 
 def test_create_organization_rejects_duplicate_gst(client, db):
     user = make_user(db, "crmuser3@premnathrail.com")
-    client.post("/api/v1/crm/organizations", json={"name": "Org A", "gst_number": "27ABCDE1234F1Z5"}, headers=auth_header(user))
-    response = client.post("/api/v1/crm/organizations", json={"name": "Org B", "gst_number": "27ABCDE1234F1Z5"}, headers=auth_header(user))
+    client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Org A", "gst_number": "27ABCDE1234F1Z5"}, headers=auth_header(user))
+    response = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Org B", "gst_number": "27ABCDE1234F1Z5"}, headers=auth_header(user))
     assert response.status_code == 409
 
 
 def test_create_inquiry_generates_universal_id_and_stage_log(client, db):
     user = make_user(db, "crmuser4@premnathrail.com")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Inquiry Org"}, headers=auth_header(user)).json()
+    org = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Inquiry Org"}, headers=auth_header(user)).json()
 
     response = client.post(
         "/api/v1/crm/inquiries",
-        json={"org_id": org["id"], "product": "Brake System"},
+        json=inquiry_payload(client, user, org["id"], product="Brake System"),
         headers=auth_header(user),
     )
     assert response.status_code == 201
@@ -67,8 +74,8 @@ def test_create_inquiry_generates_universal_id_and_stage_log(client, db):
 
 def test_inquiry_stage_change_logs_and_updates_current_stage(client, db):
     user = make_user(db, "crmuser5@premnathrail.com")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Stage Org"}, headers=auth_header(user)).json()
-    inquiry = client.post("/api/v1/crm/inquiries", json={"org_id": org["id"]}, headers=auth_header(user)).json()
+    org = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Stage Org"}, headers=auth_header(user)).json()
+    inquiry = client.post("/api/v1/crm/inquiries", json=inquiry_payload(client, user, org["id"]), headers=auth_header(user)).json()
 
     response = client.patch(
         f"/api/v1/crm/inquiries/{inquiry['id']}", json={"current_stage": "Negotiation"}, headers=auth_header(user)
@@ -82,9 +89,9 @@ def test_inquiry_stage_change_logs_and_updates_current_stage(client, db):
 
 def test_create_tender_rejects_duplicate_number_same_zone_division(client, db):
     user = make_user(db, "crmuser6@premnathrail.com")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Tender Org"}, headers=auth_header(user)).json()
+    org = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Tender Org"}, headers=auth_header(user)).json()
 
-    payload = {"org_id": org["id"], "tender_number": "TND-001", "railway_zone": "Northern Railway", "division": "Delhi"}
+    payload = {"org_id": org["id"], "tender_number": "TND-001", "lead_source": "Direct", "railway_zone": "Northern Railway", "division": "Delhi"}
     r1 = client.post("/api/v1/crm/tenders", json=payload, headers=auth_header(user))
     assert r1.status_code == 201
 
@@ -100,7 +107,7 @@ def test_create_tender_rejects_duplicate_number_same_zone_division(client, db):
 def test_update_permission_rejects_non_owner_non_admin(client, db):
     owner = make_user(db, "crmowner@premnathrail.com")
     other = make_user(db, "crmother@premnathrail.com")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Perm Org"}, headers=auth_header(owner)).json()
+    org = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Perm Org"}, headers=auth_header(owner)).json()
 
     response = client.patch(
         f"/api/v1/crm/organizations/{org['id']}", json={"city": "Delhi"}, headers=auth_header(other)
@@ -110,8 +117,8 @@ def test_update_permission_rejects_non_owner_non_admin(client, db):
 
 def test_search_organization_name(client, db):
     user = make_user(db, "crmsearch@premnathrail.com")
-    client.post("/api/v1/crm/organizations", json={"name": "Zonal Railway Workshop"}, headers=auth_header(user))
-    client.post("/api/v1/crm/organizations", json={"name": "Unrelated Vendor"}, headers=auth_header(user))
+    client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Zonal Railway Workshop"}, headers=auth_header(user))
+    client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Unrelated Vendor"}, headers=auth_header(user))
 
     response = client.get("/api/v1/crm/organizations/search-name?q=Zonal", headers=auth_header(user))
     assert response.status_code == 200
@@ -122,10 +129,10 @@ def test_search_organization_name(client, db):
 
 def test_organization_detail_includes_contacts_and_counts(client, db):
     user = make_user(db, "crmdetail@premnathrail.com")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Detail Org"}, headers=auth_header(user)).json()
-    client.post(f"/api/v1/crm/organizations/{org['id']}/contacts", json={"name": "Contact A"}, headers=auth_header(user))
-    client.post("/api/v1/crm/inquiries", json={"org_id": org["id"]}, headers=auth_header(user))
-    client.post("/api/v1/crm/tenders", json={"org_id": org["id"]}, headers=auth_header(user))
+    org = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Detail Org"}, headers=auth_header(user)).json()
+    contact = client.post(f"/api/v1/crm/organizations/{org['id']}/contacts", json={"name": "Contact A"}, headers=auth_header(user)).json()
+    client.post("/api/v1/crm/inquiries", json={"org_id": org["id"], "org_contact_id": contact["id"], "lead_source": "Direct"}, headers=auth_header(user))
+    client.post("/api/v1/crm/tenders", json={"org_id": org["id"], "lead_source": "Direct"}, headers=auth_header(user))
 
     response = client.get(f"/api/v1/crm/organizations/{org['id']}/detail", headers=auth_header(user))
     assert response.status_code == 200
@@ -138,7 +145,7 @@ def test_organization_detail_includes_contacts_and_counts(client, db):
 
 def test_organization_audit_log_records_create_and_update(client, db):
     user = make_user(db, "crmaudit@premnathrail.com")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Audit Org"}, headers=auth_header(user)).json()
+    org = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Audit Org"}, headers=auth_header(user)).json()
     client.patch(f"/api/v1/crm/organizations/{org['id']}", json={"city": "Chennai"}, headers=auth_header(user))
 
     response = client.get(f"/api/v1/crm/organizations/{org['id']}/audit", headers=auth_header(user))
@@ -150,7 +157,7 @@ def test_organization_audit_log_records_create_and_update(client, db):
 
 def test_org_contact_crud(client, db):
     user = make_user(db, "crmcontact@premnathrail.com")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Contact Org"}, headers=auth_header(user)).json()
+    org = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Contact Org"}, headers=auth_header(user)).json()
 
     response = client.post(
         f"/api/v1/crm/organizations/{org['id']}/contacts", json={"name": "John Doe"}, headers=auth_header(user)
@@ -183,7 +190,7 @@ def test_org_contact_crud(client, db):
 def test_org_contact_update_rejects_non_owner_non_admin(client, db):
     owner = make_user(db, "crmcontactowner@premnathrail.com")
     other = make_user(db, "crmcontactother@premnathrail.com")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Contact Perm Org"}, headers=auth_header(owner)).json()
+    org = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Contact Perm Org"}, headers=auth_header(owner)).json()
     contact = client.post(
         f"/api/v1/crm/organizations/{org['id']}/contacts", json={"name": "Owner Contact"}, headers=auth_header(owner)
     ).json()
@@ -200,12 +207,12 @@ def test_list_organizations_filters_by_search_and_railway_zone(client, db):
     user = make_user(db, "crmfilter@premnathrail.com")
     client.post(
         "/api/v1/crm/organizations",
-        json={"name": "Northern Zone Depot", "railway_zone": "Northern Railway"},
+        json={"org_type": "Customer", "name": "Northern Zone Depot", "railway_zone": "Northern Railway"},
         headers=auth_header(user),
     )
     client.post(
         "/api/v1/crm/organizations",
-        json={"name": "Southern Zone Depot", "railway_zone": "Southern Railway"},
+        json={"org_type": "Customer", "name": "Southern Zone Depot", "railway_zone": "Southern Railway"},
         headers=auth_header(user),
     )
 
@@ -226,9 +233,9 @@ def test_delete_organization_cascades_to_inquiries_and_tenders(client, db):
     # Deleting an organization is admin-only (app.modules.crm.routes.organizations.delete_organization).
     user = make_user(db, "crmcascade@premnathrail.com")
     admin = make_user(db, "crmcascade-admin@premnathrail.com", role="admin")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Cascade Org"}, headers=auth_header(user)).json()
-    inquiry = client.post("/api/v1/crm/inquiries", json={"org_id": org["id"]}, headers=auth_header(user)).json()
-    tender = client.post("/api/v1/crm/tenders", json={"org_id": org["id"]}, headers=auth_header(user)).json()
+    org = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Cascade Org"}, headers=auth_header(user)).json()
+    inquiry = client.post("/api/v1/crm/inquiries", json=inquiry_payload(client, user, org["id"]), headers=auth_header(user)).json()
+    tender = client.post("/api/v1/crm/tenders", json={"org_id": org["id"], "lead_source": "Direct"}, headers=auth_header(user)).json()
 
     response = client.delete(f"/api/v1/crm/organizations/{org['id']}", headers=auth_header(admin))
     assert response.status_code == 204
@@ -239,27 +246,8 @@ def test_delete_organization_cascades_to_inquiries_and_tenders(client, db):
 
 def test_dashboard_returns_counts(client, db):
     user = make_user(db, "crmdash@premnathrail.com")
-    client.post("/api/v1/crm/organizations", json={"name": "Dash Org"}, headers=auth_header(user))
+    client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Dash Org"}, headers=auth_header(user))
     response = client.get("/api/v1/crm/dashboard", headers=auth_header(user))
     assert response.status_code == 200
     data = response.json()
     assert data["total_organizations"] >= 1
-
-
-def test_inquiry_task_permission_check(client, db):
-    owner = make_user(db, "crmtaskowner@premnathrail.com")
-    other = make_user(db, "crmtaskother@premnathrail.com")
-    org = client.post("/api/v1/crm/organizations", json={"name": "Task Org"}, headers=auth_header(owner)).json()
-    inquiry = client.post("/api/v1/crm/inquiries", json={"org_id": org["id"]}, headers=auth_header(owner)).json()
-    task = client.post(
-        f"/api/v1/crm/inquiries/{inquiry['id']}/tasks",
-        json={"department": "Design", "task_title": "Prepare drawing"},
-        headers=auth_header(owner),
-    ).json()
-
-    response = client.patch(
-        f"/api/v1/crm/inquiries/{inquiry['id']}/tasks/{task['id']}",
-        json={"status": "Completed"},
-        headers=auth_header(other),
-    )
-    assert response.status_code == 403

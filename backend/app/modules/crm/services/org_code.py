@@ -15,7 +15,8 @@ def generate_org_code(db: Session) -> str:
     # at the end of the current transaction (covers this request's eventual
     # db.commit()). Matches the locking strategy used for P2P/PO/RFQ/GRN/SR
     # number generation — see app.modules.p2p.service._lock_number_series.
-    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
+    if db.get_bind().dialect.name == "postgresql":  # SQLite (tests) has no advisory locks
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
     last = db.query(func.max(Organization.org_code)).filter(
         Organization.org_code.like(f"{prefix}%")
     ).scalar()

@@ -18,11 +18,18 @@ def auth_header(user):
 
 
 def make_org(client, user, name="Doc Org"):
-    return client.post("/api/v1/crm/organizations", json={"name": name}, headers=auth_header(user)).json()
+    return client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": name}, headers=auth_header(user)).json()
+
+
+def inquiry_payload(client, user, org_id, **extra):
+    """Minimum valid inquiry create body — an inquiry needs a contact of its
+    organization and a lead source."""
+    contact = client.post(f"/api/v1/crm/organizations/{org_id}/contacts", json={"name": "Primary Contact"}, headers=auth_header(user)).json()
+    return {"org_id": org_id, "org_contact_id": contact["id"], "lead_source": "Direct", **extra}
 
 
 def make_inquiry(client, user, org_id):
-    return client.post("/api/v1/crm/inquiries", json={"org_id": org_id}, headers=auth_header(user)).json()
+    return client.post("/api/v1/crm/inquiries", json=inquiry_payload(client, user, org_id), headers=auth_header(user)).json()
 
 
 def test_upload_requires_sharepoint_config(client, db, monkeypatch):
@@ -161,7 +168,7 @@ def test_deleted_document_excluded_from_tender_list(client, db, monkeypatch):
 
     user = make_user(db, "crmdoc5@premnathrail.com")
     org = make_org(client, user, "Doc Org 5")
-    tender = client.post("/api/v1/crm/tenders", json={"org_id": org["id"]}, headers=auth_header(user)).json()
+    tender = client.post("/api/v1/crm/tenders", json={"org_id": org["id"], "lead_source": "Direct"}, headers=auth_header(user)).json()
 
     upload_response = client.post(
         "/api/v1/crm/documents",

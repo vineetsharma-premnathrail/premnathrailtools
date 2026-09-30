@@ -128,7 +128,8 @@ def _next_asset_code(db: Session) -> str:
     'AST-9999' vs 'AST-10000' string ordering can't derail the series. Same
     advisory-lock key as app/core/sequential_id.py, so concurrent creates
     still serialise."""
-    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": AUTO_CODE_PREFIX})
+    if db.get_bind().dialect.name == "postgresql":  # SQLite (tests) has no advisory locks
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": AUTO_CODE_PREFIX})
     last = (
         db.query(func.max(cast(func.substring(HrAsset.asset_code, len(AUTO_CODE_PREFIX) + 1), Numeric)))
         .filter(HrAsset.asset_code.op("~")(f"^{AUTO_CODE_PREFIX}[0-9]+$"))

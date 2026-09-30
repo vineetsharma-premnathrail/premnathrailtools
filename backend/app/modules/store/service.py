@@ -13,7 +13,8 @@ from app.modules.store.models.stock_reservation import StoreStockReservation
 
 
 def _lock_number_series(db: Session, prefix: str) -> None:
-    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
+    if db.get_bind().dialect.name == "postgresql":  # SQLite (tests) has no advisory locks
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
 
 
 def generate_material_issue_number(db: Session) -> str:

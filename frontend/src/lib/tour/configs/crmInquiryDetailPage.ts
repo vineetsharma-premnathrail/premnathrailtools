@@ -59,13 +59,13 @@ const steps: TourStep[] = [
     target: 'inq-docs-client',
     title: 'Client Documents',
     purpose: 'Documents the customer sent — RFQs, drawings, specifications.',
-    after: 'Pick a category, then choose a file to upload; click a filename to open it. Deleting is admin-only.',
+    after: 'Pick a category, then choose a file to upload — large files (up to 100 GB) stream straight to SharePoint with progress shown; click a filename to open it (very large files open via a direct SharePoint link). Deleting is admin-only.',
   },
   {
     target: 'inq-docs-internal',
     title: 'Internal Documents',
     purpose: 'Your own working files for this inquiry — internal notes, calculations, draft quotations.',
-    after: 'Pick a category, then choose a file to upload; click a filename to open it. Deleting is admin-only.',
+    after: 'Pick a category, then choose a file to upload — large files (up to 100 GB) stream straight to SharePoint with progress shown; click a filename to open it (very large files open via a direct SharePoint link). Deleting is admin-only.',
   },
   ...activityConfig.steps,
   {

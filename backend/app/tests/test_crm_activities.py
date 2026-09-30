@@ -17,11 +17,18 @@ def auth_header(user):
 
 
 def make_org(client, user, name="Activity Org"):
-    return client.post("/api/v1/crm/organizations", json={"name": name}, headers=auth_header(user)).json()
+    return client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": name}, headers=auth_header(user)).json()
+
+
+def inquiry_payload(client, user, org_id, **extra):
+    """Minimum valid inquiry create body — an inquiry needs a contact of its
+    organization and a lead source."""
+    contact = client.post(f"/api/v1/crm/organizations/{org_id}/contacts", json={"name": "Primary Contact"}, headers=auth_header(user)).json()
+    return {"org_id": org_id, "org_contact_id": contact["id"], "lead_source": "Direct", **extra}
 
 
 def make_inquiry(client, user, org_id):
-    return client.post("/api/v1/crm/inquiries", json={"org_id": org_id}, headers=auth_header(user)).json()
+    return client.post("/api/v1/crm/inquiries", json=inquiry_payload(client, user, org_id), headers=auth_header(user)).json()
 
 
 def make_contact(client, user, org_id, name="Ravi Kumar"):

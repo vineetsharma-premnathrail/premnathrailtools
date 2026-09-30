@@ -57,13 +57,13 @@ const steps: TourStep[] = [
     target: 'tender-docs-client',
     title: 'Client Documents',
     purpose: 'Documents the tendering authority issued — the tender notice, corrigenda, etc.',
-    after: 'Pick a category, then choose a file to upload; click a filename to open it. Deleting is admin-only.',
+    after: 'Pick a category, then choose a file to upload — large files (up to 100 GB) stream straight to SharePoint with progress shown; click a filename to open it (very large files open via a direct SharePoint link). Deleting is admin-only.',
   },
   {
     target: 'tender-docs-internal',
     title: 'Internal Documents',
     purpose: 'Your own working files for this tender — draft bids, internal notes, calculations.',
-    after: 'Pick a category, then choose a file to upload; click a filename to open it. Deleting is admin-only.',
+    after: 'Pick a category, then choose a file to upload — large files (up to 100 GB) stream straight to SharePoint with progress shown; click a filename to open it (very large files open via a direct SharePoint link). Deleting is admin-only.',
   },
   {
     target: 'tender-tab-Follow Ups',

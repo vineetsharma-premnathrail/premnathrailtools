@@ -26,7 +26,8 @@ def _lock_number_series(db: Session, prefix: str) -> None:
     released automatically at the end of the current transaction, so it
     covers the request's eventual db.commit(), not just this function.
     """
-    db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
+    if db.get_bind().dialect.name == "postgresql":  # SQLite (tests) has no advisory locks
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:prefix))"), {"prefix": prefix})
 
 
 def generate_inspection_plan_number(db: Session) -> str:
