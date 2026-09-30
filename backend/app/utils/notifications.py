@@ -82,6 +82,16 @@ def _notify_teams(user: User, title: str, message: str) -> None:
     _teams_executor.submit(_notify_teams_sync, user.id, user.azure_id, title, message)
 
 
+# Record create/update/delete events are not notified at all — neither in the
+# bell nor in Teams (2026-09-30). Only actionable notifications go out:
+# approvals, assignments, results and follow-up reminders.
+_SUPPRESSED_SUFFIXES = ("_created", "_updated", "_deleted")
+
+
+def _is_suppressed(notification_type: str) -> bool:
+    return notification_type.endswith(_SUPPRESSED_SUFFIXES)
+
+
 def broadcast_notification(
     db: Session,
     title: str,
@@ -93,6 +103,8 @@ def broadcast_notification(
     app_name: str = "erp",
 ) -> None:
     """Notify every user with access to `app_name` (except the actor)."""
+    if _is_suppressed(notification_type):
+        return
     try:
         for u in db.query(User).filter(User.is_active == True).all():  # noqa: E712
             if app_name not in u.get_apps():
@@ -119,6 +131,8 @@ def notify_user(
     entity_type: str | None = None,
     entity_id: int | None = None,
 ) -> None:
+    if _is_suppressed(notification_type):
+        return
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if user and not user.notifications_enabled:

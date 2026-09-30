@@ -1,5 +1,6 @@
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
+from app.utils.notifications import notify_user
 
 
 def make_user(db, email, role="user", assigned_apps=("erp",), erp_permissions=()):
@@ -18,7 +19,7 @@ def auth_header(user):
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_sr_creation_notifies_other_erp_users_and_the_actor(client, db):
+def test_sr_creation_sends_no_notification(client, db):
     creator = make_user(db, "notif1@premnathrail.com", erp_permissions=("project_create", "sr_create"))
     other = make_user(db, "notif2@premnathrail.com")
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-N1"}, headers=auth_header(creator)).json()
@@ -29,15 +30,12 @@ def test_sr_creation_notifies_other_erp_users_and_the_actor(client, db):
         headers=auth_header(creator),
     )
 
-    other_notifications = client.get("/api/v1/notifications", headers=auth_header(other)).json()
-    assert any(n["notification_type"] == "sr_created" for n in other_notifications)
-
-    # The creator also gets a self-confirmation notification, clickable straight to the new SR.
-    creator_notifications = client.get("/api/v1/notifications", headers=auth_header(creator)).json()
-    assert any(n["notification_type"] == "sr_created" for n in creator_notifications)
+    for u in (other, creator):
+        notifications = client.get("/api/v1/notifications", headers=auth_header(u)).json()
+        assert not any(n["notification_type"] == "sr_created" for n in notifications)
 
 
-def test_sr_update_notifies_creator_when_someone_else_changes_it(client, db):
+def test_sr_update_sends_no_notification(client, db):
     creator = make_user(db, "notif3@premnathrail.com", erp_permissions=("project_create", "sr_create"))
     admin = make_user(db, "notif4@premnathrail.com", role="admin")
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-N2"}, headers=auth_header(creator)).json()
@@ -50,18 +48,23 @@ def test_sr_update_notifies_creator_when_someone_else_changes_it(client, db):
     client.patch(f"/api/v1/erp/service-requests/{sr['id']}", json={"priority": "high"}, headers=auth_header(admin))
 
     creator_notifications = client.get("/api/v1/notifications", headers=auth_header(creator)).json()
-    assert any(n["notification_type"] == "sr_updated" for n in creator_notifications)
+    assert not any(n["notification_type"] == "sr_updated" for n in creator_notifications)
+
+
+def test_approval_and_followup_notifications_still_sent(client, db):
+    user = make_user(db, "notif9@premnathrail.com")
+    notify_user(db, user_id=user.id, title="PR approved", message="m", notification_type="p2p_request_approved")
+    notify_user(db, user_id=user.id, title="Follow-up due", message="m", notification_type="activity_followup_due_today")
+    db.commit()
+
+    types = {n["notification_type"] for n in client.get("/api/v1/notifications", headers=auth_header(user)).json()}
+    assert {"p2p_request_approved", "activity_followup_due_today"} <= types
 
 
 def test_unread_count_and_mark_all_read(client, db):
-    creator = make_user(db, "notif5@premnathrail.com", erp_permissions=("project_create", "sr_create"))
     other = make_user(db, "notif6@premnathrail.com")
-    project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-N3"}, headers=auth_header(creator)).json()
-    client.post(
-        "/api/v1/erp/service-requests",
-        json={"project_id": project["id"], "issue_title": "Unread count test"},
-        headers=auth_header(creator),
-    )
+    notify_user(db, user_id=other.id, title="PR approved", message="m", notification_type="p2p_request_approved")
+    db.commit()
 
     unread = client.get("/api/v1/notifications/unread-count", headers=auth_header(other)).json()
     assert unread["count"] >= 1
@@ -72,14 +75,12 @@ def test_unread_count_and_mark_all_read(client, db):
     assert unread_after["count"] == 0
 
 
-def test_project_creation_and_deletion_notify_other_erp_users(client, db):
+def test_project_creation_and_deletion_send_no_notification(client, db):
     creator = make_user(db, "notif7@premnathrail.com", erp_permissions=("project_create", "project_delete"))
     other = make_user(db, "notif8@premnathrail.com")
 
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-N4"}, headers=auth_header(creator)).json()
-    other_notifications = client.get("/api/v1/notifications", headers=auth_header(other)).json()
-    assert any(n["notification_type"] == "project_created" for n in other_notifications)
-
     client.delete(f"/api/v1/erp/projects/{project['id']}", headers=auth_header(creator))
-    other_notifications = client.get("/api/v1/notifications", headers=auth_header(other)).json()
-    assert any(n["notification_type"] == "project_deleted" for n in other_notifications)
+
+    types = {n["notification_type"] for n in client.get("/api/v1/notifications", headers=auth_header(other)).json()}
+    assert not types & {"project_created", "project_deleted"}
