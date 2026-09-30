@@ -1003,6 +1003,14 @@ async def check_item_stock(
         if location:
             ship_to_location = _stock_balance_info(db, store_item.id, location.id)
 
+    location_ids = {
+        b.location_id for b in db.query(StoreStockBalance).filter(StoreStockBalance.item_id == store_item.id).all()
+    }
+    locations = sorted(
+        (info for info in (_stock_balance_info(db, store_item.id, loc_id) for loc_id in location_ids) if info.available_qty > 0),
+        key=lambda info: info.available_qty, reverse=True,
+    )
+
     return P2PRequestItemStockCheckResponse(
         matched=True,
         store_item_id=store_item.id,
@@ -1012,6 +1020,7 @@ async def check_item_stock(
         requested_qty=item.quantity,
         ship_to_location=ship_to_location,
         total_across_locations=_stock_balance_info(db, store_item.id),
+        locations=locations,
     )
 
 

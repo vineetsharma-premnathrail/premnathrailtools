@@ -108,6 +108,7 @@ export default function MyP2PRequestDetailPage() {
   const [stockCheckResults, setStockCheckResults] = useState<Record<number, P2PRequestItemStockCheck>>({})
   const stockCheckFetched = useRef<Set<number>>(new Set())
   const [issueQtyByItem, setIssueQtyByItem] = useState<Record<number, string>>({})
+  const [issueLocByItem, setIssueLocByItem] = useState<Record<number, string>>({})
   const [confirmProcurementItemId, setConfirmProcurementItemId] = useState<number | null>(null)
 
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
@@ -603,7 +604,7 @@ export default function MyP2PRequestDetailPage() {
                           <div>
                             <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>At Ship-To ({it.ship_to || '—'})</p>
                             <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
-                              {check.ship_to_location ? `${check.ship_to_location.available_qty} available` : 'Ship-to location not recognized'}
+                              {check.ship_to_location ? `${check.ship_to_location.available_qty} available` : it.ship_to ? 'Not a store warehouse — pick one below' : 'Not set — pick a warehouse below'}
                             </p>
                           </div>
                           <div>
@@ -614,39 +615,78 @@ export default function MyP2PRequestDetailPage() {
                             <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>Requested Qty</p>
                             <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>{check.requested_qty}</p>
                           </div>
-                          {check.ship_to_location && (
-                            <div>
-                              <label style={{ ...labelStyle, marginBottom: 4 }}>Issue Qty</label>
-                              <input
-                                type="number"
-                                min={0}
-                                max={check.requested_qty}
-                                value={issueQtyByItem[it.id] ?? String(check.requested_qty)}
-                                onChange={(e) => setIssueQtyByItem((prev) => ({ ...prev, [it.id]: e.target.value }))}
-                                style={{ ...inputStyle, width: 90, padding: '7px 10px' }}
-                              />
-                            </div>
-                          )}
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            {check.ship_to_location && (
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => issueFromStock(it.id, check.ship_to_location!.location_id!)}
-                                style={{ ...primaryBtn, padding: '8px 14px', fontSize: 12.5 }}
-                              >
-                                Issue from Stock
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => setConfirmProcurementItemId(it.id)}
-                              style={{ fontSize: 12.5, fontWeight: 600, padding: '8px 14px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', color: TEXT.heading, cursor: 'pointer' }}
-                            >
-                              Send to Procurement
-                            </button>
-                          </div>
+                          {(() => {
+                            // Issue from whichever warehouse actually holds the
+                            // stock — the line's Ship To is often blank or not a
+                            // store location, and that must not force a purchase.
+                            const locs = check.locations || []
+                            const shipToId = check.ship_to_location?.location_id
+                            const defaultLoc = (shipToId && locs.some((l) => l.location_id === shipToId) ? shipToId : locs[0]?.location_id) ?? null
+                            const selectedLocId = issueLocByItem[it.id] ? Number(issueLocByItem[it.id]) : defaultLoc
+                            const selectedLoc = locs.find((l) => l.location_id === selectedLocId)
+                            const fullyCovered = locs.some((l) => l.available_qty >= check.requested_qty)
+                            return (
+                              <>
+                                {locs.length > 0 && (
+                                  <>
+                                    <div>
+                                      <label style={{ ...labelStyle, marginBottom: 4 }}>Issue From</label>
+                                      <select
+                                        value={selectedLocId ?? ''}
+                                        onChange={(e) => setIssueLocByItem((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                                        style={{ ...inputStyle, width: 'auto', minWidth: 180, padding: '7px 10px' }}
+                                      >
+                                        {locs.map((l) => (
+                                          <option key={l.location_id!} value={l.location_id!}>{l.location_name || `Location ${l.location_id}`} — {l.available_qty} available</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label style={{ ...labelStyle, marginBottom: 4 }}>Issue Qty</label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={Math.min(check.requested_qty, selectedLoc?.available_qty ?? check.requested_qty)}
+                                        value={issueQtyByItem[it.id] ?? String(check.requested_qty)}
+                                        onChange={(e) => setIssueQtyByItem((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                                        style={{ ...inputStyle, width: 90, padding: '7px 10px' }}
+                                      />
+                                    </div>
+                                  </>
+                                )}
+                                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                                  {selectedLocId != null && (
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => issueFromStock(it.id, selectedLocId)}
+                                      style={{ ...primaryBtn, padding: '8px 14px', fontSize: 12.5 }}
+                                    >
+                                      Issue from Stock
+                                    </button>
+                                  )}
+                                  {fullyCovered ? (
+                                    <span
+                                      onClick={() => !busy && setConfirmProcurementItemId(it.id)}
+                                      title="Stock covers this request — only purchase if the store stock can't be used"
+                                      style={{ fontSize: 11.5, fontWeight: 600, color: TEXT.muted, cursor: 'pointer', textDecoration: 'underline' }}
+                                    >
+                                      Purchase instead
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      onClick={() => setConfirmProcurementItemId(it.id)}
+                                      style={{ fontSize: 12.5, fontWeight: 600, padding: '8px 14px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', color: TEXT.heading, cursor: 'pointer' }}
+                                    >
+                                      Send to Procurement
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            )
+                          })()}
                         </div>
                       )}
                     </td>

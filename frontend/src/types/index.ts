@@ -709,6 +709,13 @@ export interface P2PRequestItemStockCheck {
     reserved_qty: number
     available_qty: number
   } | null
+  locations?: {
+    location_id?: number | null
+    location_name?: string | null
+    on_hand_qty: number
+    reserved_qty: number
+    available_qty: number
+  }[]
   message?: string | null
 }
 

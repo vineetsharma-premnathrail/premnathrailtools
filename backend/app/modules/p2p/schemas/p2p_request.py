@@ -71,6 +71,9 @@ class P2PRequestItemStockCheckResponse(BaseModel):
     requested_qty: float
     ship_to_location: P2PRequestItemStockLocationInfo | None = None
     total_across_locations: P2PRequestItemStockLocationInfo | None = None
+    # Every warehouse holding available stock, most first — lets the buyer
+    # issue even when the line's Ship To is blank or isn't a store location.
+    locations: list[P2PRequestItemStockLocationInfo] = []
     message: str | None = None
 
 
