@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, selectinload
 
@@ -25,7 +25,11 @@ from app.modules.p2p.schemas.purchase_order import (
     P2PPurchaseOrderCreate, P2PPurchaseOrderDraftUpdatePayload, P2PPurchaseOrderResponse,
 )
 from app.modules.p2p.service import generate_rfq_number, generate_po_number, compute_line_total
-from app.modules.p2p.routes.p2p_requests import _write_audit as _write_pr_audit
+from app.modules.p2p.routes.p2p_requests import (
+    _write_audit as _write_pr_audit, _send_p2p_po_approval_emails_background, _PO_APPROVAL_ROLE_FLAGS,
+)
+from app.modules.p2p.models.p2p_request import P2P_ROLE_LABELS
+from app.utils.notifications import notify_user
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
 
 router = APIRouter(prefix="/p2p/rfqs", tags=["P2P"])
@@ -811,6 +815,7 @@ async def get_po_document_content(
 async def submit_po_draft(
     rfq_id: int,
     po_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
@@ -849,7 +854,24 @@ async def submit_po_draft(
                  summary=f"{user.name or user.email} submitted PO '{po.po_number}' for {pr.p2p_number} — entering PO approval.",
                  old_status=old_status, new_status="po_raised")
 
+    # Tell every holder of the PR's PO-approval roles (bell + Teams, and an
+    # email with the full PO after commit) — any one of them approves.
+    notified: set[int] = set()
+    for role in pr.pending_po_approval_roles:
+        flag_name = _PO_APPROVAL_ROLE_FLAGS[role]
+        for approver in db.query(User).filter(User.is_active == True, getattr(User, flag_name) == True).all():  # noqa: E712
+            if approver.id in notified:
+                continue
+            notified.add(approver.id)
+            notify_user(
+                db, user_id=approver.id,
+                title="Purchase Order Awaiting Approval",
+                message=f"PO '{po.po_number}' for PR '{pr.p2p_number}' awaits your approval as {P2P_ROLE_LABELS.get(role, role)}.",
+                notification_type="p2p_po_approval_pending", entity_type="p2p_request", entity_id=pr.id,
+            )
+
     db.commit()
+    background_tasks.add_task(_send_p2p_po_approval_emails_background, pr.id)
     db.refresh(po)
     resp = P2PPurchaseOrderResponse.model_validate(po)
     resp.p2p_request_number = pr.p2p_number

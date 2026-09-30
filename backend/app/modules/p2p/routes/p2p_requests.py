@@ -99,11 +99,15 @@ async def _send_p2p_po_approval_emails_background(pr_id: int) -> None:
         ).order_by(P2PPurchaseOrder.id.desc()).first()
         if not po:
             return
+        emailed: set[int] = set()
         for role in pr.pending_po_approval_roles:
             role_label = P2P_ROLE_LABELS.get(role, role)
             flag_name = _PO_APPROVAL_ROLE_FLAGS[role]
             approvers = db.query(User).filter(User.is_active == True, getattr(User, flag_name) == True).all()  # noqa: E712
             for approver in approvers:
+                if approver.id in emailed:
+                    continue
+                emailed.add(approver.id)
                 await send_p2p_po_approval_email(db, pr, po, approver, role_label)
         db.commit()
     except Exception:
