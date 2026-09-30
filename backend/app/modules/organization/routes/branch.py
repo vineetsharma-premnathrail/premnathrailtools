@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.users import require_admin
+from app.modules.main.routes.auth import get_current_user
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.branch_address import BranchAddress
 from app.modules.organization.models.branch_user_assignment import BranchUserAssignment
@@ -63,10 +64,19 @@ def _get_branch_or_404(branch_id: int, db: Session) -> Branch:
     return branch
 
 
+def _branch_reader(user: User = Depends(get_current_user)) -> User:
+    """Reading the branch list: admins, plus Store users — a warehouse is
+    created under a branch, so the Warehouses form needs the list. Creating
+    or changing branches stays admin-only."""
+    if user.role == "admin" or "store" in user.get_apps():
+        return user
+    raise HTTPException(status_code=403, detail="Only admins and Store users can view the branch list.")
+
+
 @router.get("", response_model=list[BranchResponse])
 async def list_branches(
     db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(_branch_reader),
 ):
     branches = db.query(Branch).order_by(Branch.name.asc()).all()
     return [_to_response(b, db) for b in branches]

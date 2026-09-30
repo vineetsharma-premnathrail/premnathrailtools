@@ -45,11 +45,13 @@ export default function StoreLocationsPage() {
   const load = async () => {
     setLoading(true)
     try {
-      const [l, b] = await Promise.all([storeApi.listLocations(), organizationApi.listBranches()])
+      // Branches only feed the form's Branch dropdown — a failure there must
+      // not hide the warehouse list itself.
+      const [l, b] = await Promise.all([storeApi.listLocations(), organizationApi.listBranches().catch(() => [])])
       setLocations(l)
       setBranches(b)
-    } catch {
-      setLoadError('Failed to load warehouses.')
+    } catch (err) {
+      setLoadError(extractErrorMessages(err, 'Failed to load warehouses.').join(' '))
     } finally {
       setLoading(false)
     }
