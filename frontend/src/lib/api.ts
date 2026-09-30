@@ -1,6 +1,10 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import { useAuthStore } from '@/store/authStore'
 import { beginRequest } from '@/lib/requestActivity'
+import { DIRECT_UPLOAD_THRESHOLD, uploadToSession } from '@/lib/largeUpload'
+
+// Files above this open through a direct SharePoint link rather than the API.
+const LARGE_DOWNLOAD_BYTES = 50 * 1024 * 1024
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
 
@@ -456,15 +460,46 @@ export const crmApi = {
     fields: { related_module: string; related_id: number; folder_type: string; doc_category?: string; universal_id?: string; org_id?: number },
     files: File[]
   ) => {
-    const formData = new FormData()
-    Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) formData.append(k, String(v)) })
-    files.forEach((f) => formData.append('files', f))
-    const { data } = await apiClient.post('/crm/documents', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
-    return data
+    // Files up to DIRECT_UPLOAD_THRESHOLD go through the API as before; bigger
+    // ones (up to 100 GB) go straight from the browser to SharePoint in chunks
+    // (lib/largeUpload.ts) — the portal proxy can't carry them.
+    const small = files.filter((f) => f.size <= DIRECT_UPLOAD_THRESHOLD)
+    const large = files.filter((f) => f.size > DIRECT_UPLOAD_THRESHOLD)
+    const saved: unknown[] = []
+    if (small.length) {
+      const formData = new FormData()
+      Object.entries(fields).forEach(([k, v]) => { if (v !== undefined) formData.append(k, String(v)) })
+      small.forEach((f) => formData.append('files', f))
+      const { data } = await apiClient.post('/crm/documents', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000 })
+      saved.push(...(Array.isArray(data) ? data : [data]))
+    }
+    for (const file of large) {
+      const { data: session } = await apiClient.post('/crm/documents/upload-session', {
+        related_module: fields.related_module, related_id: fields.related_id, universal_id: fields.universal_id, org_id: fields.org_id,
+        file_name: file.name, file_size: file.size, content_type: file.type || null,
+      })
+      const item = await uploadToSession(file, session)
+      const { data } = await apiClient.post('/crm/documents/complete-upload', {
+        upload_token: session.upload_token, drive_item_id: item.id, folder_type: fields.folder_type, doc_category: fields.doc_category,
+      }, { timeout: 120000 })
+      saved.push(data)
+    }
+    return saved
   },
   getDocumentContent: async (id: number): Promise<Blob> => {
     const { data } = await apiClient.get(`/crm/documents/${id}/content`, { responseType: 'blob' })
     return data
+  },
+  // Opens a document in a new tab. Large files use a short-lived direct
+  // SharePoint link instead of being pulled through the portal.
+  openDocument: async (doc: { id: number; file_size?: number | null }) => {
+    if ((doc.file_size || 0) > LARGE_DOWNLOAD_BYTES) {
+      const { data } = await apiClient.get(`/crm/documents/${doc.id}/download-url`)
+      window.open(data.url, '_blank', 'noopener')
+      return
+    }
+    const { data } = await apiClient.get(`/crm/documents/${doc.id}/content`, { responseType: 'blob' })
+    window.open(URL.createObjectURL(data), '_blank')
   },
   deleteDocument: async (id: number) => {
     const { data } = await apiClient.delete(`/crm/documents/${id}`)

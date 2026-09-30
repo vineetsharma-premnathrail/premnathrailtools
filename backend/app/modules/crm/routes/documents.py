@@ -7,13 +7,16 @@ from app.db.session import get_db
 from app.core.permissions import require_app_access
 from app.modules.main.routes.auth import get_current_user
 from app.modules.main.models.user import User
-from app.auth.jwt_handler import verify_document_share_token
+from app.auth.jwt_handler import verify_document_share_token, create_upload_token, verify_upload_token
 from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.models.organization import Organization
-from app.modules.crm.schemas.document import CrmDocumentResponse
+from app.modules.crm.schemas.document import (
+    CrmDocumentResponse, CrmDocumentUploadSessionPayload, CrmDocumentUploadSessionResponse, CrmDocumentCompleteUploadPayload,
+)
 from app.utils.sharepoint import (
     upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint,
-    download_file_content,
+    download_file_content, validate_upload_metadata, create_upload_session, verify_direct_upload, get_download_url,
+    DIRECT_UPLOAD_CHUNK_BYTES,
 )
 
 router = APIRouter(prefix="/crm/documents", tags=["CRM - Documents"])
@@ -104,6 +107,106 @@ async def upload_documents(
             db.refresh(d)
     db.commit()
     return documents
+
+
+def _crm_folder(db: Session, user: User, related_module: str, related_id: int, universal_id: str | None, org_id: int | None) -> str:
+    """Same folder the regular upload uses, so both paths file side by side."""
+    org_name = "General"
+    if org_id:
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+        if org:
+            org_name = org.name
+    return build_sharepoint_folder_path(
+        user.name or user.email or "", org_name, f"crm/{related_module}/{universal_id or related_id}",
+        root_folder="CRM-media",
+    )
+
+
+@router.post("/upload-session", response_model=CrmDocumentUploadSessionResponse)
+async def start_direct_upload(
+    payload: CrmDocumentUploadSessionPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    """Large files (up to 100 GB) go straight from the browser to SharePoint
+    in chunks, never through the portal. This opens the upload session in the
+    document's folder and signs what it was opened for."""
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+    file_name = validate_upload_metadata(payload.file_name, payload.file_size, payload.content_type)
+    folder = _crm_folder(db, user, payload.related_module, payload.related_id, payload.universal_id, payload.org_id)
+    session = await create_upload_session(settings.SHAREPOINT_SITE_ID, folder, file_name)
+    token = create_upload_token({
+        "user_id": user.id, "folder": folder, "file_name": file_name, "file_size": payload.file_size,
+        "content_type": payload.content_type, "related_module": payload.related_module, "related_id": payload.related_id,
+        "universal_id": payload.universal_id, "org_id": payload.org_id,
+    })
+    return CrmDocumentUploadSessionResponse(
+        upload_url=session["upload_url"], upload_token=token, chunk_size=DIRECT_UPLOAD_CHUNK_BYTES,
+        file_name=file_name, expires_at=session.get("expires_at"),
+    )
+
+
+@router.post("/complete-upload", response_model=CrmDocumentResponse)
+async def complete_direct_upload(
+    payload: CrmDocumentCompleteUploadPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("crm")),
+):
+    """Records a file the browser finished uploading to SharePoint, after
+    checking it is exactly what the session was opened for."""
+    claims = verify_upload_token(payload.upload_token)
+    if not claims:
+        raise HTTPException(status_code=400, detail="This upload link has expired or is invalid. Start the upload again.")
+    if claims.get("user_id") != user.id:
+        raise HTTPException(status_code=403, detail="This upload was started by a different user.")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+    result = await verify_direct_upload(
+        settings.SHAREPOINT_SITE_ID, payload.drive_item_id, claims["folder"], claims["file_size"], claims.get("content_type"),
+    )
+    doc = CrmDocument(
+        related_module=claims["related_module"],
+        related_id=claims["related_id"],
+        related_sub_module=payload.related_sub_module,
+        related_sub_id=payload.related_sub_id,
+        universal_id=claims.get("universal_id"),
+        folder_type=payload.folder_type,
+        doc_category=payload.doc_category,
+        file_name=result["name"],
+        file_path=result["path"],
+        sharepoint_path=result["path"],
+        sharepoint_url=result.get("webUrl"),
+        file_size=result["size"],
+        mime_type=claims.get("content_type"),
+        description=payload.description,
+        uploaded_by_name=user.name or user.email,
+        org_id=claims.get("org_id"),
+        created_by_id=user.id,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+@router.get("/{document_id}/download-url")
+async def get_document_download_url(
+    document_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Short-lived direct SharePoint link, for files too large to stream
+    through the portal. Same access rule as /content (crm module, or a
+    document shared via a Technical Offer Request)."""
+    doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not doc.shared_via_tor and user.role != "admin" and "crm" not in user.get_apps():
+        raise HTTPException(status_code=403, detail="Access to 'crm' module required")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="SharePoint site is not configured")
+    return {"url": await get_download_url(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or ""), "file_name": doc.file_name}
 
 
 @router.get("/{document_id}/shared-content")

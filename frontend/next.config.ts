@@ -22,6 +22,14 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizePackageImports: ["@/"],
+    // The /api/* rewrite below buffers request bodies; the default 10 MB cap
+    // cut multipart uploads short ("Request body exceeded 10MB"). Files over
+    // 20 MB no longer come through here at all — they go browser ->
+    // SharePoint directly (src/lib/largeUpload.ts) — so this only has to fit
+    // a batch of ordinary attachments.
+    proxyClientMaxBodySize: "200mb",
+    // Slow uploads over the proxy were being cut off mid-request (~100 s).
+    proxyTimeout: 10 * 60 * 1000,
   },
   onDemandEntries: {
     maxInactiveAge: 25 * 1000,

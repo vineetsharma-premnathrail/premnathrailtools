@@ -1159,8 +1159,7 @@ function DocumentFolderPanel({ tourId, title, folderType, docs, inquiry, canModi
                   onClick={async (e) => {
                     e.preventDefault()
                     try {
-                      const blob = await crmApi.getDocumentContent(d.id)
-                      window.open(URL.createObjectURL(blob), '_blank')
+                      await crmApi.openDocument(d)
                     } catch (err) {
                       setError(extractErrorMessages(err, 'Unable to open document.'))
                     }

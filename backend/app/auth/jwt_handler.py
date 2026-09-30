@@ -63,3 +63,19 @@ def verify_document_share_token(token: str, doc_type: str, doc_id: int) -> bool:
         and payload.get("doc_type") == doc_type
         and payload.get("doc_id") == doc_id
     )
+
+
+def create_upload_token(claims: dict, expires_hours: int = 24) -> str:
+    """Signs what a direct-to-SharePoint upload was opened for (folder, file
+    name, size, owner, module context) so complete-upload can trust it
+    without server-side state. 24 h covers very large uploads."""
+    expire = datetime.utcnow() + timedelta(hours=expires_hours)
+    return jwt.encode({**claims, "purpose": "direct_upload", "exp": expire}, settings.SECRET_KEY, algorithm="HS256")
+
+
+def verify_upload_token(token: str) -> dict | None:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+    except JWTError:
+        return None
+    return payload if payload.get("purpose") == "direct_upload" else None

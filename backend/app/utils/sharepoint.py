@@ -349,3 +349,140 @@ def build_sharepoint_folder_path(user_name: str, project_name: str, service_requ
     project_folder = sanitize_folder_name(project_name or "project")
     service_folder = sanitize_folder_name(service_request_number or "service-request")
     return f"{root}/{user_folder}/{project_folder}/{service_folder}"
+
+
+# ---------------------------------------------------------------------------
+# Direct browser -> SharePoint uploads (large files, up to 100 GB)
+#
+# Big files can't go through the portal: the Next.js proxy caps request
+# bodies, and the API would spool the whole file to disk/memory before
+# forwarding it. Instead the API opens a Graph *upload session* in the right
+# folder and hands the browser its pre-authenticated uploadUrl; the browser
+# PUTs the file in chunks straight to SharePoint (CORS allows it), then
+# calls the module's complete-upload endpoint, which re-checks the stored
+# file (folder, size, extension, real byte signature) before recording it.
+# ---------------------------------------------------------------------------
+
+DIRECT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024 * 1024  # 100 GB (SharePoint's own cap is 250 GB)
+# Graph requires chunk sizes in multiples of 320 KiB; 10 MiB = 32 x 320 KiB.
+DIRECT_UPLOAD_CHUNK_BYTES = 10 * 1024 * 1024
+_DANGEROUS_EXTENSIONS = {".svg", ".svgz", ".html", ".htm", ".xhtml", ".xml", ".js", ".mjs"}
+
+
+def validate_upload_metadata(filename: str, size: int, content_type: str | None = None) -> str:
+    """Same allow/deny rules as _validate_uploaded_file, applied to what the
+    browser says it is about to upload (no bytes yet). Returns the sanitized
+    file name that will be used in SharePoint."""
+    name = (filename or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="The file has no name.")
+    content_type = (content_type or "").lower()
+    ext = f".{name.lower().rsplit('.', 1)[-1]}" if "." in name else ""
+    if ext in _DANGEROUS_EXTENSIONS or "svg" in content_type or content_type in ("text/html", "application/xhtml+xml"):
+        raise HTTPException(status_code=400, detail=f"{name}: this file type is not allowed (web pages and SVGs can carry scripts).")
+    if not (any(content_type.startswith(p) for p in ALLOWED_CONTENT_PREFIXES) or content_type in ALLOWED_CONTENT_TYPES or ext in ALLOWED_EXTENSIONS):
+        raise HTTPException(status_code=400, detail=f"{name}: unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}.")
+    if size <= 0:
+        raise HTTPException(status_code=400, detail=f"{name} is empty.")
+    if size > DIRECT_UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"{name} is {size / 1024 ** 3:.1f} GB. The maximum is {DIRECT_UPLOAD_MAX_BYTES // 1024 ** 3} GB per file.")
+    return sanitize_folder_name(name)
+
+
+async def create_upload_session(site_id: str, folder_path: str, filename: str) -> dict:
+    """Opens a Graph upload session for folder_path/filename. conflictBehavior
+    is "rename" so a same-named file never silently overwrites an existing
+    one (Graph appends " 1", " 2" ...). Returns {upload_url, expires_at}."""
+    if not site_id:
+        raise HTTPException(status_code=503, detail="SharePoint site ID is not configured")
+    encoded_path = "/".join(_encode_path_segment(p) for p in folder_path.split("/") if p)
+    url = f"{GRAPH_API}/sites/{site_id}/drive/root:/{encoded_path}/{_encode_path_segment(filename)}:/createUploadSession"
+    token = await get_app_graph_token()
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(url, headers={"Authorization": f"Bearer {token}"}, json={"item": {"@microsoft.graph.conflictBehavior": "rename"}})
+    if response.status_code not in (200, 201):
+        raise HTTPException(status_code=502, detail=f"SharePoint could not start the upload for {filename}: {response.text[:300]}")
+    body = response.json()
+    return {"upload_url": body["uploadUrl"], "expires_at": body.get("expirationDateTime")}
+
+
+async def get_drive_item(site_id: str, item_id: str) -> dict:
+    token = await get_app_graph_token()
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.get(f"{GRAPH_API}/sites/{site_id}/drive/items/{quote(item_id, safe='')}", headers={"Authorization": f"Bearer {token}"})
+    if response.status_code == 404:
+        raise HTTPException(status_code=400, detail="The uploaded file was not found in SharePoint; the upload may not have finished. Try uploading it again.")
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Could not read the uploaded file from SharePoint: {response.text[:300]}")
+    return response.json()
+
+
+async def read_item_head(site_id: str, item_id: str, length: int = 16) -> bytes:
+    """First `length` bytes of a stored file (HTTP Range), for the byte-
+    signature check; never downloads the whole file."""
+    token = await get_app_graph_token()
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        response = await client.get(
+            f"{GRAPH_API}/sites/{site_id}/drive/items/{quote(item_id, safe='')}/content",
+            headers={"Authorization": f"Bearer {token}", "Range": f"bytes=0-{length - 1}"},
+        )
+    if response.status_code not in (200, 206):
+        raise HTTPException(status_code=502, detail=f"Could not verify the uploaded file: {response.text[:200]}")
+    return response.content[:length]
+
+
+async def delete_drive_item(site_id: str, item_id: str) -> None:
+    token = await get_app_graph_token()
+    async with httpx.AsyncClient(timeout=60) as client:
+        await client.delete(f"{GRAPH_API}/sites/{site_id}/drive/items/{quote(item_id, safe='')}", headers={"Authorization": f"Bearer {token}"})
+
+
+async def verify_direct_upload(site_id: str, item_id: str, folder_path: str, expected_size: int, content_type: str | None) -> dict:
+    """Checks a browser-uploaded file really is what the upload session was
+    opened for: in the promised folder, the promised size, an allowed type,
+    and bytes that match its extension. Deletes it from SharePoint and 400s
+    otherwise. Returns {name, path, webUrl, size, item_id}."""
+    item = await get_drive_item(site_id, item_id)
+    name = item.get("name") or ""
+    parent = (item.get("parentReference") or {}).get("path") or ""
+    # Graph reports parents as "/drive/root:/<folder>".
+    parent_folder = parent.split("root:", 1)[-1].strip("/")
+    problem = None
+    if parent_folder.lower() != folder_path.strip("/").lower():
+        problem = "it landed in a different folder than the upload was opened for"
+    elif int(item.get("size") or 0) != int(expected_size):
+        problem = f"its size ({item.get('size')} bytes) does not match the {expected_size} bytes announced, so the upload may be incomplete"
+    else:
+        try:
+            validate_upload_metadata(name, int(item.get("size") or 0), content_type)
+        except HTTPException as exc:
+            problem = str(exc.detail)
+        else:
+            if not _verify_magic_bytes(name, (content_type or "").lower(), await read_item_head(site_id, item_id)):
+                problem = f"the content of {name} does not match its file type"
+    if problem:
+        await delete_drive_item(site_id, item_id)
+        raise HTTPException(status_code=400, detail=f"The uploaded file was rejected and removed: {problem}. Please upload it again.")
+    return {"name": name, "path": f"{folder_path}/{name}", "webUrl": item.get("webUrl"), "size": int(item.get("size") or 0), "item_id": item_id}
+
+
+async def get_download_url(site_id: str, file_path: str) -> str:
+    """A short-lived (about 1 h), pre-authenticated direct download link for a
+    stored file, for files too big to stream through the API. Callers MUST
+    authorize the user first: the link itself is the credential."""
+    if not site_id:
+        raise HTTPException(status_code=503, detail="SharePoint site ID is not configured")
+    encoded_path = "/".join(_encode_path_segment(p) for p in (file_path or "").split("/") if p)
+    token = await get_app_graph_token()
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.get(
+            f"{GRAPH_API}/sites/{site_id}/drive/root:/{encoded_path}",
+            params={"select": "id,name,@microsoft.graph.downloadUrl"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Could not get a download link for {file_path}: {response.text[:200]}")
+    url = response.json().get("@microsoft.graph.downloadUrl")
+    if not url:
+        raise HTTPException(status_code=502, detail=f"SharePoint returned no download link for {file_path}.")
+    return url

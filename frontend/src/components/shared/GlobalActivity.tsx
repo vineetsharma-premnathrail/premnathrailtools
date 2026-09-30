@@ -31,9 +31,16 @@ function useSinceAtLeast(since: number | null, delay: number): boolean {
   return since !== null && now - since >= delay
 }
 
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(2)} GB`
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
 export default function GlobalActivity() {
-  const { writes, writeSince, anySince } = useSyncExternalStore(subscribeActivity, getActivitySnapshot, getServerActivitySnapshot)
+  const { writes, writeSince, anySince, uploads } = useSyncExternalStore(subscribeActivity, getActivitySnapshot, getServerActivitySnapshot)
   const writing = writes > 0
+  const uploading = uploads.some((u) => u.status === 'uploading')
   const showBar = useSinceAtLeast(anySince, BAR_DELAY_MS)
   const block = useSinceAtLeast(writeSince, BLOCK_DELAY_MS)
   const showCard = useSinceAtLeast(writeSince, CARD_DELAY_MS)
@@ -56,16 +63,16 @@ export default function GlobalActivity() {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [writing])
 
-  // Warn before closing the tab mid-save.
+  // Warn before closing the tab mid-save or mid-upload.
   useEffect(() => {
-    if (!writing) return
+    if (!writing && !uploading) return
     const onUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault()
       e.returnValue = ''
     }
     window.addEventListener('beforeunload', onUnload)
     return () => window.removeEventListener('beforeunload', onUnload)
-  }, [writing])
+  }, [writing, uploading])
 
   return (
     <>
@@ -114,6 +121,34 @@ export default function GlobalActivity() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {uploads.length > 0 && (
+        <div role="status" aria-live="polite"
+          style={{
+            position: 'fixed', right: 16, bottom: 16, zIndex: 10002, width: 'min(360px, calc(100vw - 32px))',
+            background: '#fff', borderRadius: 14, boxShadow: '0 12px 32px rgba(15,23,42,0.18)', border: `1px solid ${BRAND.primaryBorder}`, padding: 14,
+          }}>
+          <p style={{ margin: '0 0 8px', fontSize: 12.5, fontWeight: 700, color: TEXT.heading }}>
+            {uploading ? 'Uploading to SharePoint — keep this tab open' : 'Uploads'}
+          </p>
+          {uploads.map((u) => {
+            const pct = u.total ? Math.floor((u.loaded / u.total) * 100) : 0
+            const hex = u.status === 'failed' ? '#DC2626' : u.status === 'done' ? '#16A34A' : BRAND.primaryHover
+            return (
+              <div key={u.id} style={{ marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: TEXT.secondary }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</span>
+                  <span style={{ flex: 'none', fontWeight: 600, color: hex }}>
+                    {u.status === 'done' ? 'Done' : u.status === 'failed' ? 'Failed' : `${pct}% · ${formatSize(u.loaded)} / ${formatSize(u.total)}`}
+                  </span>
+                </div>
+                <div style={{ height: 6, borderRadius: 9999, background: 'rgba(0,0,0,0.08)', overflow: 'hidden', marginTop: 4 }}>
+                  <div style={{ width: `${u.status === 'done' ? 100 : pct}%`, height: '100%', background: hex, transition: 'width 300ms ease' }} />
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
     </>
