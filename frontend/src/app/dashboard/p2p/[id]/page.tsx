@@ -287,6 +287,11 @@ export default function MyP2PRequestDetailPage() {
   // refuses it too — this just hides a button that would be refused).
   const poSelfBlocked = isMatrixPr && pr.requested_by_id === user?.id
   const canApprovePo = fromPoApproval && pr.status === 'po_raised' && myPoRoles.length > 0 && !poSelfBlocked
+  // Say why Approve PO is missing instead of silently hiding it.
+  const poApproveBlockedReason = !fromPoApproval || pr.status !== 'po_raised' || canApprovePo ? null
+    : poSelfBlocked ? "You raised this requisition, so you can't approve its PO — another Director must approve it."
+    : userPoRoles(user, pr).length === 0 ? `Only a Director can approve this PO. Ask an admin to tick "Director" on your user if you should approve POs.`
+    : 'You have already acted on this PO, or it is no longer pending your approval.'
   const canRejectPo = fromPoApproval && pr.status === 'po_raised' && ((userPoRoles(user, pr).length > 0 && !poSelfBlocked) || isAdmin)
   // Once a PR is approved, the buyer can check store stock per item and
   // decide item-by-item whether to issue it from stock or send it to
@@ -323,6 +328,12 @@ export default function MyP2PRequestDetailPage() {
           )}
         </div>
       </div>
+
+      {poApproveBlockedReason && (
+        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#92400e', fontSize: 13 }}>
+          Approve PO isn&apos;t available to you: {poApproveBlockedReason}
+        </div>
+      )}
 
       <MessageDialog open={!!error} variant="error" title="Cannot Complete Action" message={error} onClose={() => setError('')} />
 
