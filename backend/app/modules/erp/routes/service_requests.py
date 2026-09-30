@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
-from app.core.permissions import require_app_access, has_erp_permission
+from app.core.permissions import require_app_access, has_erp_permission, require_tab_access
 from app.db.session import SessionLocal, get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
@@ -28,8 +28,10 @@ from app.modules.p2p.models.p2p_request import (
     P2PRequest, resolve_auto_buyer_id, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2P_REQUEST_PRIORITIES,
 )
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
+from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 from app.modules.p2p.schemas.p2p_request import P2PRequestResponse
-from app.modules.p2p.service import generate_p2p_number, _lock_number_series
+from app.modules.p2p.routes.p2p_requests import _send_p2p_pr_approval_emails_background, _refresh_stock_snapshot
+from app.modules.p2p.service import generate_p2p_number, _lock_number_series, resolve_pr_approvers
 from pydantic import BaseModel
 from fastapi.responses import Response
 from app.utils.sharepoint import (
@@ -52,8 +54,12 @@ class RaisePurchaseRequestPayload(BaseModel):
     reason: str | None = None
     category_code: str | None = None
     requirement_type: str | None = None
-    approver_id: int | None = None
-    approver_name: str | None = None
+    # Manager-role approvers, role key -> user id. An SR always belongs to an
+    # existing project, so the 'existing' PR role set applies (Design /
+    # Production / Project / Store Manager) — every role required, none may
+    # be the requester, each must hold the role flag, same rule as the P2P
+    # New PR form (resolve_pr_approvers).
+    approvers: dict[str, int] = {}
 
 # Fields tracked in the audit log on PATCH, with a human-readable label
 _TRACKED_FIELDS = {
@@ -225,6 +231,7 @@ async def list_service_requests(
     limit: int = Query(50, ge=1, le=1000),
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("erp")),
+    _tab: User = Depends(require_tab_access("erp", "service_requests")),
 ):
     query = db.query(ServiceRequest).options(
         selectinload(ServiceRequest.attachments), selectinload(ServiceRequest.materials)
@@ -304,6 +311,7 @@ async def create_service_request(
 async def list_deleted_service_requests(
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("erp")),
+    _tab: User = Depends(require_tab_access("erp", "recycle_bin")),
 ):
     RECYCLE_DAYS = 10
     srs = db.query(ServiceRequest).filter(ServiceRequest.is_deleted == True).all()  # noqa: E712
@@ -918,6 +926,10 @@ def _create_p2p_request_for_sr(
     Materials tab — there is no separate `purchase_requisitions` row."""
     category_code = payload.category_code or "OTH"
     auto_buyer_id = resolve_auto_buyer_id(db, category_code)
+    try:
+        approvers = resolve_pr_approvers(db, user, "existing", payload.approvers)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     request = P2PRequest(
         p2p_number=generate_p2p_number(db, category_code),
@@ -929,8 +941,7 @@ def _create_p2p_request_for_sr(
         department=user.department,
         requested_by_id=user.id,
         priority=payload.priority,
-        approver_id=payload.approver_id,
-        approver_name=payload.approver_name,
+        project_type="existing",
         assigned_buyer_id=auto_buyer_id,
         assignment_date=date.today() if auto_buyer_id else None,
         remarks=f"Raised from ERP Service Request {sr.request_number}."
@@ -940,23 +951,46 @@ def _create_p2p_request_for_sr(
     db.add(request)
     db.flush()
 
+    created_items: list[P2PRequestItem] = []
+
+    for role, approver in approvers.items():
+        db.add(P2PRequestApproval(
+            p2p_request_id=request.id, role=role, approver_id=approver.id,
+            approver_name=approver.name or approver.email,
+        ))
+
     for mat in materials:
-        db.add(P2PRequestItem(
+        item_row = P2PRequestItem(
             p2p_request_id=request.id,
             item_name=mat.material_name,
             part_code=mat.part_number,
             unit=mat.unit,
             quantity=mat.quantity,
-        ))
+            # SR materials always belong to the customer's machine/project, so
+            # the mandatory Project/Inhouse split is fixed to "Project" here —
+            # the manual New PR form asks per line instead.
+            project_inhouse="Project",
+        )
+        db.add(item_row)
+        created_items.append(item_row)
         mat.pr_id = request.id
         mat.pr_number = request.p2p_number
         mat.pr_status = request.status
+
+    _refresh_stock_snapshot(db, created_items)
 
     if auto_buyer_id:
         notify_user(
             db, user_id=auto_buyer_id,
             title="New P2P Request for Review",
             message=f"P2P request '{request.p2p_number}' was raised from ERP SR '{sr.request_number}' ({project_label}).",
+            notification_type="p2p_request_submitted", entity_type="p2p_request", entity_id=request.id,
+        )
+    for head in {h.id: h for h in approvers.values()}.values():
+        notify_user(
+            db, user_id=head.id,
+            title="New P2P Request for Review",
+            message=f"PR '{request.p2p_number}' was raised by {user.name or user.email} from ERP SR '{sr.request_number}' and awaits your review.",
             notification_type="p2p_request_submitted", entity_type="p2p_request", entity_id=request.id,
         )
     return request
@@ -1029,6 +1063,7 @@ async def raise_purchase_requisition(
     db.commit()
     db.refresh(pr)
     background_tasks.add_task(_send_purchase_requisition_email_background, pr.id, sr.id)
+    background_tasks.add_task(_send_p2p_pr_approval_emails_background, pr.id)
 
     resp = P2PRequestResponse.model_validate(pr)
     if pr.category_code:

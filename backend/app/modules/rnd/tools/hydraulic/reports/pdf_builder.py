@@ -703,7 +703,7 @@ def generate_hydraulic_pdf_report(context: Mapping[str, Any]) -> io.BytesIO:
     Improved behavior:
     - Treat produced PDF as success even if the LaTeX process exits with a non-zero code (MiKTeX/pdfTeX sometimes returns 1 but still writes a PDF).
     - Include both stdout/stderr and the .log tail in error messages to make debugging easier.
-    - Try pdflatex, then xelatex, then lualatex; accept the first run that produces a PDF file.
+    - Try pdflatex, then xelatex; accept the first run that produces a PDF file.
     """
     try:
         from jinja2 import Environment, FileSystemLoader
@@ -774,7 +774,7 @@ def generate_hydraulic_pdf_report(context: Mapping[str, Any]) -> io.BytesIO:
             # (escape_latex neutralizes the backslash), but this is defense
             # in depth against any future field that reaches the template
             # unescaped.
-            _tex_env = {**os.environ, "openin_any": "p"}
+            _tex_env = {**os.environ, "openin_any": "p", "openout_any": "p"}
 
             def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
                 return subprocess.run(cmd, cwd=td, capture_output=True, text=True, timeout=60, env=_tex_env)
@@ -796,7 +796,9 @@ def generate_hydraulic_pdf_report(context: Mapping[str, Any]) -> io.BytesIO:
                         return candidate
                 return name  # fallback — will raise FileNotFoundError if not found
 
-            engines = [_resolve_engine(e) for e in ['pdflatex', 'xelatex', 'lualatex']]
+            # lualatex is deliberately excluded: its \directlua gives Lua io/os
+            # access that -no-shell-escape and openin_any do not fully restrict.
+            engines = [_resolve_engine(e) for e in ['pdflatex', 'xelatex']]
             last_res: subprocess.CompletedProcess[str] | None = None
             engines_tried: list[str] = []
             engines_missing: list[str] = []
@@ -848,6 +850,6 @@ def generate_hydraulic_pdf_report(context: Mapping[str, Any]) -> io.BytesIO:
     except ImportError:
         raise Exception('Jinja2 required for PDF generation')
     except FileNotFoundError:
-        raise Exception('LaTeX compiler (pdflatex/xelatex/lualatex) not found on PATH — install TeX Live / MiKTeX or add to PATH')
+        raise Exception('LaTeX compiler (pdflatex/xelatex) not found on PATH — install TeX Live / MiKTeX or add to PATH')
     except Exception as e:
         raise Exception(f'PDF generation failed: {e}')

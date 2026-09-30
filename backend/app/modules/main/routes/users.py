@@ -17,6 +17,8 @@ from app.modules.main.schemas.user import (
 from app.modules.main.routes.auth import get_current_user
 from app.auth.microsoft import list_azure_org_users, get_azure_admin_ids
 from app.modules.organization.services.provisioning import sync_user_org_links
+from app.modules.hr.services.employee_sync import is_org_locked
+from app.modules.hr.services.exit_guard import get_exit_info, is_exited, revoke_user_sessions
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.branch_user_assignment import BranchUserAssignment
 from app.modules.organization.models.department import Department
@@ -56,7 +58,7 @@ VALID_ERP_PERMISSIONS = {
     "sr_view", "sr_create", "sr_edit", "sr_delete",
 }
 
-# The modal's "Procure-to-Pay Permissions" section writes into that same
+# The modal's "Procurement Permissions" section writes into that same
 # erp_permissions list, so these have to pass the check below too. Nothing
 # reads them yet — P2P still gates on the `p2p`/`purchase` module toggles and
 # the approval-role flags — but they're stored so enforcement can be wired up
@@ -133,6 +135,12 @@ async def list_user_directory(
         {
             "id": u.id, "name": u.name, "email": u.email, "department": u.department, "designation": u.designation,
             "is_department_head": u.is_department_head, "is_project_head": u.is_project_head, "is_plant_head": u.is_plant_head,
+            # Manager-role flags for the P2P approval matrix — the New PR
+            # form's approver pickers filter the directory by these.
+            "is_design_manager": u.is_design_manager, "is_rnd_manager": u.is_rnd_manager,
+            "is_production_manager": u.is_production_manager, "is_project_manager": u.is_project_manager,
+            "is_store_manager": u.is_store_manager, "is_purchase_manager": u.is_purchase_manager,
+            "is_director": u.is_director,
         }
         for u in users
     ]
@@ -417,6 +425,12 @@ async def update_user(
     if payload.is_finance_manager is not None:
         target.is_finance_manager = payload.is_finance_manager
 
+    for manager_flag in ("is_design_manager", "is_rnd_manager", "is_production_manager",
+                         "is_project_manager", "is_store_manager", "is_purchase_manager"):
+        value = getattr(payload, manager_flag, None)
+        if value is not None:
+            setattr(target, manager_flag, value)
+
     if payload.name is not None:
         target.name = payload.name
 
@@ -438,6 +452,9 @@ async def deactivate_user(
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
     target.is_active = False
+    # Deactivation must also cut off every signed-in device, not just new
+    # logins (security finding S-10 / P2-USR-17).
+    revoke_user_sessions(db, target.id)
     db.commit()
     db.refresh(target)
     return to_response(target)
@@ -453,6 +470,16 @@ async def activate_user(
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    exited, exit_date = get_exit_info(db, target.id)
+    if exited:
+        when = f" on {exit_date.strftime('%d-%m-%Y')}" if exit_date else ""
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{target.name} was exited in HR & Administration{when}, so the account can't be re-activated here. "
+                "If they have rejoined, complete a joining event for them in HR > Lifecycle — that re-activates the account."
+            ),
+        )
     target.is_active = True
     db.commit()
     db.refresh(target)
@@ -496,11 +523,17 @@ async def sync_azure_users(
         if target:
             target.azure_id = azure_id or target.azure_id
             target.name = au.get("displayName") or target.name
-            target.department = au.get("department") or target.department
-            target.designation = au.get("jobTitle") or target.designation
+            # HR & Administration owns these once an employee profile locks
+            # them (see app/modules/hr/services/employee_sync.py).
+            if not is_org_locked(db, target.id):
+                target.department = au.get("department") or target.department
+                target.designation = au.get("jobTitle") or target.designation
             target.phone = au.get("mobilePhone") or target.phone
             target.office_location = au.get("officeLocation") or target.office_location
-            target.is_active = True
+            # Never re-activate someone HR has exited (their Entra account is
+            # often left enabled during handover) — security finding S-10.
+            if not is_exited(db, target.id):
+                target.is_active = True
             target.is_azure_admin = is_az_admin
             if is_az_admin and target.role == "user":
                 target.role = "admin"
@@ -529,7 +562,7 @@ async def sync_azure_users(
         azure_id = au.get("id")
         target = azure_id_to_user.get(azure_id) if azure_id else None
         manager = au.get("manager") or {}
-        if target and "manager" in au:
+        if target and "manager" in au and not is_org_locked(db, target.id):
             manager_id = manager.get("id")
             manager_user = azure_id_to_user.get(manager_id) if manager_id else None
             target.reporting_manager_id = manager_user.id if manager_user else None
@@ -543,6 +576,8 @@ async def sync_azure_users(
     # Deactivate any azure-linked local users no longer in the active tenant list
     for u in db.query(User).filter(User.azure_id.isnot(None)).all():
         if u.azure_id not in active_azure_ids:
+            if u.is_active:
+                revoke_user_sessions(db, u.id)
             u.is_active = False
 
     db.commit()

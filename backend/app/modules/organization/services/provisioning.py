@@ -104,6 +104,11 @@ def _ensure_branch_assignment(db: Session, user: User, branch_id: int, departmen
 def sync_user_org_links(db: Session, user: User) -> None:
     """Best-effort: link `user` to a Branch (from office_location) and a
     Department (from department)."""
+    # An HR employee profile with org_fields_locked owns the user's plant and
+    # department — Azure's office location must not re-link them.
+    from app.modules.hr.services.employee_sync import is_org_locked
+    if is_org_locked(db, user.id):
+        return
     branch = None
     if user.office_location:
         branch = _get_or_create_branch(db, user.office_location)

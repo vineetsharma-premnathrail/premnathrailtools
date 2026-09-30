@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse, RedirectResponse
 from . import core, validation
 from .schemas import SplineInput
 from .docx_builder import create_spline_docx
-from app.services.pdf_service import PdfService
+from .reports.pdf_builder import generate_spline_pdf
 
 router = APIRouter(tags=["spline"])
 
@@ -30,12 +30,9 @@ def report(data: SplineInput):
         print('calculating results...')
         result = core.calculate_spline_mode(data.dict())
         print('calculation finished')
-        # build PDF with PdfService and custom template
-        pdf_buffer = PdfService().create_pdf(
-            template_name="spline_template.tex",
-            context={"data": data.dict(), "result": result},
-            filename="spline_report.pdf",
-        )
+        # generate_spline_pdf escapes every user-supplied field and runs the
+        # compiler sandboxed — never render this template with raw input.
+        pdf_buffer = generate_spline_pdf(data.dict(), result)
         print('pdf buffer obtained, size', pdf_buffer.getbuffer().nbytes)
         pdf_bytes = pdf_buffer.getvalue()
         print('pdf bytes length', len(pdf_bytes))

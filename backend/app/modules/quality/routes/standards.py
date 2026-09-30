@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -22,10 +24,25 @@ def _to_response(db: Session, standard: QualityStandard) -> QualityStandardRespo
 
 
 def _get_or_404(db: Session, standard_id: int) -> QualityStandard:
-    standard = db.query(QualityStandard).filter(QualityStandard.id == standard_id).first()
+    standard = db.query(QualityStandard).filter(QualityStandard.is_deleted == False, QualityStandard.id == standard_id).first()  # noqa: E712
     if not standard:
         raise HTTPException(status_code=404, detail="Quality standard not found")
     return standard
+
+
+def _ensure_code_free(db: Session, code: str) -> None:
+    """Standard codes stay unique across deleted records too (deleted ones are
+    kept for the audit trail), so say so when the clash is with a deleted
+    standard the user can no longer see in the list."""
+    existing = db.query(QualityStandard).filter(QualityStandard.standard_code == code).first()
+    if not existing:
+        return
+    if existing.is_deleted:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Standard code '{code}' belongs to a deleted standard, which is kept for the audit trail — use a different code (e.g. '{code}-R1').",
+        )
+    raise HTTPException(status_code=409, detail=f"Standard code '{code}' already exists")
 
 
 @router.get("", response_model=list[QualityStandardResponse])
@@ -35,7 +52,7 @@ async def list_quality_standards(
     search: str | None = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(QualityStandard)
+    query = db.query(QualityStandard).filter(QualityStandard.is_deleted == False)  # noqa: E712
     if status_filter:
         query = query.filter(QualityStandard.status == status_filter)
     if category:
@@ -57,8 +74,7 @@ async def create_quality_standard(
 ):
     if payload.status not in QUALITY_STANDARD_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status '{payload.status}'")
-    if db.query(QualityStandard).filter(QualityStandard.standard_code == payload.standard_code).first():
-        raise HTTPException(status_code=409, detail=f"Standard code '{payload.standard_code}' already exists")
+    _ensure_code_free(db, payload.standard_code)
 
     standard = QualityStandard(
         standard_code=payload.standard_code,
@@ -96,8 +112,7 @@ async def update_quality_standard(
 
     new_code = updates.get("standard_code")
     if new_code and new_code != standard.standard_code:
-        if db.query(QualityStandard).filter(QualityStandard.standard_code == new_code).first():
-            raise HTTPException(status_code=409, detail=f"Standard code '{new_code}' already exists")
+        _ensure_code_free(db, new_code)
 
     for field, val in updates.items():
         setattr(standard, field, val)
@@ -110,6 +125,9 @@ async def update_quality_standard(
 @router.delete("/{standard_id}")
 async def delete_quality_standard(standard_id: int, db: Session = Depends(get_db)):
     standard = _get_or_404(db, standard_id)
-    db.delete(standard)
+    # Soft delete — quality records are retained for audit (ISO 9001 §7.5.3),
+    # and the delete itself is logged by app/core/audit.py.
+    standard.is_deleted = True
+    standard.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "Quality standard deleted"}

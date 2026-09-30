@@ -1,4 +1,3 @@
-from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
@@ -6,13 +5,15 @@ from app.core.permissions import require_app_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.p2p.models.p2p_request import P2PRequest
-from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem, P2P_PO_STATUSES
-from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt
-from app.modules.p2p.schemas.purchase_order import (
-    P2PPurchaseOrderCreate, P2PPurchaseOrderUpdate, P2PPurchaseOrderResponse,
-)
-from app.modules.p2p.service import generate_po_number, compute_line_total
+from app.modules.main.models.audit_log import AuditLog
+from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+from app.modules.p2p.schemas.purchase_order import P2PPurchaseOrderUpdate, P2PPurchaseOrderResponse
 
+# POs are only ever created through the RFQ -> PO draft -> submit flow (or
+# the legacy PR create-po route), both of which tie the PO to an approved PR
+# and enter the Purchase Head -> Director -> MD chain. The old ad-hoc
+# `POST /p2p/purchase-orders` created a PR-less PO outside that chain and has
+# been removed.
 router = APIRouter(prefix="/p2p/purchase-orders", tags=["P2P Purchase Orders"])
 
 
@@ -52,66 +53,6 @@ async def list_purchase_orders(
     return [_to_response(db, po) for po in pos]
 
 
-@router.post("", response_model=P2PPurchaseOrderResponse)
-async def create_purchase_order(
-    payload: P2PPurchaseOrderCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
-):
-    if payload.p2p_request_id:
-        # Nothing here flips the linked PR's status, so — unlike the RFQ ->
-        # PO-draft flow — a retried/duplicate call (network retry, double
-        # submit) had no gate at all stopping it from leaving a second
-        # orphaned draft PO behind for the same request.
-        existing = db.query(P2PPurchaseOrder).filter(
-            P2PPurchaseOrder.p2p_request_id == payload.p2p_request_id,
-            P2PPurchaseOrder.status != "cancelled",
-        ).first()
-        if existing:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Purchase order '{existing.po_number}' already exists for this P2P request",
-            )
-
-    po = P2PPurchaseOrder(
-        po_number=generate_po_number(db),
-        p2p_request_id=payload.p2p_request_id,
-        vendor_id=payload.vendor_id,
-        vendor_name=payload.vendor_name,
-        status="draft",
-        po_date=payload.po_date or date.today(),
-        expected_delivery=payload.expected_delivery,
-        delivery_terms=payload.delivery_terms,
-        created_by_id=user.id,
-    )
-    db.add(po)
-    db.flush()
-
-    total = 0.0
-    has_pricing = False
-    for item in payload.items:
-        line_total = compute_line_total(item.quantity, item.unit_price, item.tax_rate)
-        if line_total is not None:
-            has_pricing = True
-            total += line_total
-        db.add(P2PPurchaseOrderItem(
-            purchase_order_id=po.id,
-            item_name=item.item_name,
-            make=item.make,
-            part_code=item.part_code,
-            unit=item.unit,
-            quantity=item.quantity,
-            unit_price=item.unit_price,
-            tax_rate=item.tax_rate,
-            line_total=line_total,
-        ))
-    po.total_value = round(total, 2) if has_pricing else None
-
-    db.commit()
-    db.refresh(po)
-    return _to_response(db, po)
-
-
 @router.get("/{po_id}", response_model=P2PPurchaseOrderResponse)
 async def get_purchase_order(
     po_id: int,
@@ -129,31 +70,30 @@ async def update_purchase_order(
     po_id: int,
     payload: P2PPurchaseOrderUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(require_app_access("purchase")),
 ):
     po = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(P2PPurchaseOrder.id == po_id).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
 
-    updates = payload.model_dump(exclude_unset=True)
-    if "status" in updates and updates["status"] not in P2P_PO_STATUSES:
-        raise HTTPException(status_code=400, detail=f"Invalid status '{updates['status']}'")
+    # Status used to be settable here, so a purchase user could mark a PO
+    # 'issued' (or an ad-hoc PO with no PR at all) and receive/invoice it
+    # with no Purchase Head / Director / MD approval ever recorded.
+    if payload.model_extra:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{', '.join(sorted(payload.model_extra))} can't be edited here — only expected delivery and delivery terms can. A PO's status changes only through submit, approval and goods receipt.",
+        )
 
-    # Once any GRN has been posted against this PO, its status can no longer
-    # be forced back to draft/cancelled through this generic endpoint — that
-    # would leave the PO's status inconsistent with stock the vendor has
-    # already delivered and this system has already received into stores,
-    # with nothing here reversing that receipt.
-    if updates.get("status") in ("draft", "cancelled"):
-        has_grn = db.query(P2PGoodsReceipt).filter(P2PGoodsReceipt.purchase_order_id == po.id).first() is not None
-        if has_grn:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Cannot set status to '{updates['status']}' — goods have already been received against this PO",
-            )
-
+    updates = payload.model_dump(exclude_unset=True, exclude=set(payload.model_extra or {}))
     for field, val in updates.items():
         setattr(po, field, val)
+
+    if updates and po.p2p_request_id:
+        db.add(AuditLog(
+            entity_type="p2p_request", entity_id=po.p2p_request_id, action="po_updated", performed_by_id=user.id,
+            summary=f"{user.name or user.email} updated {', '.join(k.replace('_', ' ') for k in updates)} on PO '{po.po_number}'.",
+        ))
 
     db.commit()
     db.refresh(po)

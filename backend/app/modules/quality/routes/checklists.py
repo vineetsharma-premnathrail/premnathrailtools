@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
@@ -17,7 +19,7 @@ router = APIRouter(prefix="/quality/checklists", tags=["Quality"], dependencies=
 def _get_or_404(db: Session, checklist_id: int) -> QualityChecklist:
     checklist = db.query(QualityChecklist).options(
         selectinload(QualityChecklist.items)
-    ).filter(QualityChecklist.id == checklist_id).first()
+    ).filter(QualityChecklist.id == checklist_id, QualityChecklist.is_deleted == False).first()  # noqa: E712
     if not checklist:
         raise HTTPException(status_code=404, detail="Quality checklist not found")
     return checklist
@@ -29,7 +31,7 @@ async def list_quality_checklists(
     search: str | None = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(QualityChecklist).options(selectinload(QualityChecklist.items))
+    query = db.query(QualityChecklist).options(selectinload(QualityChecklist.items)).filter(QualityChecklist.is_deleted == False)  # noqa: E712
     if status_filter:
         query = query.filter(QualityChecklist.status == status_filter)
     if search:
@@ -112,6 +114,9 @@ async def update_quality_checklist(
 @router.delete("/{checklist_id}")
 async def delete_quality_checklist(checklist_id: int, db: Session = Depends(get_db)):
     checklist = _get_or_404(db, checklist_id)
-    db.delete(checklist)
+    # Soft delete — quality records are retained for audit (ISO 9001 §7.5.3),
+    # and the delete itself is logged by app/core/audit.py.
+    checklist.is_deleted = True
+    checklist.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "Quality checklist deleted"}

@@ -104,7 +104,7 @@ export default function P2PMisPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Procure-to-Pay Module
+            Procurement Module
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>M.I.S Report</h1>
           {summary && (

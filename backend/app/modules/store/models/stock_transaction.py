@@ -26,7 +26,7 @@ STORE_STOCK_TXN_TYPES = (
 # source document (a GRN number, an Issue number, ...). reference_number is
 # free text rather than a hard FK, since the source can be in another module
 # (P2P) or not exist yet (a manual correction has no source doc).
-STORE_STOCK_TXN_REFERENCE_TYPES = ("grn", "material_issue", "material_return", "stock_transfer", "stock_adjustment", "manual")
+STORE_STOCK_TXN_REFERENCE_TYPES = ("grn", "material_issue", "material_return", "stock_transfer", "stock_adjustment", "work_order", "manual", "maintenance_work_order")
 
 
 class StoreStockTransaction(Base, TimestampMixin):

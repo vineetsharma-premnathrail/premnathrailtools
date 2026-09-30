@@ -9,6 +9,28 @@ from app.db.mixins import TimestampMixin
 # the DB (see item_type below) — kept as a suggested set for the frontend.
 STORE_ITEM_TYPES = ("raw_material", "consumable", "spare_part", "finished_good", "semi_finished", "asset", "other")
 
+# Item-code prefix per type. Auto codes are <TYPE>-<CATEGORY CODE>-<NNNN>,
+# e.g. RM-HYD-0001 (see service.generate_item_code).
+STORE_ITEM_TYPE_PREFIXES: dict[str, str] = {
+    "raw_material": "RM", "consumable": "CN", "spare_part": "SP", "finished_good": "FG",
+    "semi_finished": "SF", "asset": "AS", "other": "OT",
+}
+# Category code used when an item has no category picked.
+STORE_ITEM_NO_CATEGORY_CODE = "GEN"
+
+# Units of measure offered in the item master dropdown (code -> label). A
+# fixed list keeps "Nos" / "NOS" / "nos." from becoming three units.
+STORE_UOMS: dict[str, str] = {
+    "NOS": "Numbers", "PCS": "Pieces", "SET": "Set", "PAIR": "Pair", "KIT": "Kit", "LOT": "Lot",
+    "KG": "Kilogram", "GM": "Gram", "TON": "Tonne",
+    "MTR": "Metre", "MM": "Millimetre", "CM": "Centimetre", "FT": "Foot", "INCH": "Inch",
+    "SQM": "Square metre", "SQFT": "Square foot", "CUM": "Cubic metre",
+    "LTR": "Litre", "ML": "Millilitre",
+    "BOX": "Box", "PKT": "Packet", "ROLL": "Roll", "BAG": "Bag", "DRUM": "Drum", "CAN": "Can",
+    "BTL": "Bottle", "SHEET": "Sheet", "COIL": "Coil", "BUNDLE": "Bundle",
+    "HR": "Hour", "DAY": "Day", "JOB": "Job",
+}
+
 STORE_ITEM_STATUSES = ("active", "inactive", "discontinued")
 
 

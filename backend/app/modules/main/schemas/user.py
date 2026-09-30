@@ -15,6 +15,12 @@ class UserUpdate(BaseModel):
     assigned_apps: list[str] | None = None
     erp_permissions: list[str] | None = None
     is_department_head: bool | None = None
+    is_design_manager: bool | None = None
+    is_rnd_manager: bool | None = None
+    is_production_manager: bool | None = None
+    is_project_manager: bool | None = None
+    is_store_manager: bool | None = None
+    is_purchase_manager: bool | None = None
     is_project_head: bool | None = None
     is_plant_head: bool | None = None
     is_purchase_head: bool | None = None
@@ -50,6 +56,12 @@ class UserResponse(BaseModel):
     assigned_apps: list[str] = []
     erp_permissions: list[str] = []
     is_department_head: bool = False
+    is_design_manager: bool = False
+    is_rnd_manager: bool = False
+    is_production_manager: bool = False
+    is_project_manager: bool = False
+    is_store_manager: bool = False
+    is_purchase_manager: bool = False
     is_project_head: bool = False
     is_plant_head: bool = False
     is_purchase_head: bool = False

@@ -2,23 +2,25 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
+import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 
 const TABS = [
-  { href: '/dashboard/quality', label: 'Dashboard', icon: 'dashboard' },
-  { href: '/dashboard/quality/standards', label: 'Standards', icon: 'file' },
-  { href: '/dashboard/quality/inspection-plans', label: 'Inspection Plans', icon: 'clipboard' },
-  { href: '/dashboard/quality/incoming-inspection', label: 'Incoming Inspection', icon: 'inbox' },
-  { href: '/dashboard/quality/in-process-inspection', label: 'In-Process Inspection', icon: 'gear' },
-  { href: '/dashboard/quality/final-inspection', label: 'Final Inspection', icon: 'check' },
-  { href: '/dashboard/quality/checklists', label: 'Checklists', icon: 'list' },
-  { href: '/dashboard/quality/ncr', label: 'NCR', icon: 'alert' },
-  { href: '/dashboard/quality/rejections', label: 'Rejections', icon: 'x-circle' },
-  { href: '/dashboard/quality/capa', label: 'CAPA', icon: 'tool' },
-  { href: '/dashboard/quality/complaints', label: 'Complaints', icon: 'message' },
-  { href: '/dashboard/quality/supplier-quality', label: 'Supplier Quality', icon: 'truck' },
-  { href: '/dashboard/quality/documents', label: 'Documents', icon: 'folder' },
-  { href: '/dashboard/quality/reports', label: 'Reports', icon: 'bar-chart' },
+  { href: '/dashboard/quality', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
+  { href: '/dashboard/quality/standards', label: 'Standards', icon: 'file', subtabKey: 'standards' },
+  { href: '/dashboard/quality/inspection-plans', label: 'Inspection Plans', icon: 'clipboard', subtabKey: 'inspection_plans' },
+  { href: '/dashboard/quality/incoming-inspection', label: 'Incoming Inspection', icon: 'inbox', subtabKey: 'incoming_inspection' },
+  { href: '/dashboard/quality/in-process-inspection', label: 'In-Process Inspection', icon: 'gear', subtabKey: 'in_process_inspection' },
+  { href: '/dashboard/quality/final-inspection', label: 'Final Inspection', icon: 'check', subtabKey: 'final_inspection' },
+  { href: '/dashboard/quality/checklists', label: 'Checklists', icon: 'list', subtabKey: 'checklists' },
+  { href: '/dashboard/quality/ncr', label: 'NCR', icon: 'alert', subtabKey: 'ncr' },
+  { href: '/dashboard/quality/rejections', label: 'Rejections', icon: 'x-circle', subtabKey: 'rejections' },
+  { href: '/dashboard/quality/capa', label: 'CAPA', icon: 'tool', subtabKey: 'capa' },
+  { href: '/dashboard/quality/complaints', label: 'Complaints', icon: 'message', subtabKey: 'complaints' },
+  { href: '/dashboard/quality/supplier-quality', label: 'Supplier Quality', icon: 'truck', subtabKey: 'supplier_quality' },
+  { href: '/dashboard/quality/documents', label: 'Documents', icon: 'folder', subtabKey: 'documents' },
+  { href: '/dashboard/quality/reports', label: 'Reports', icon: 'bar-chart', subtabKey: 'reports' },
 ] as const
 
 function TabIcon({ name }: { name: string }) {
@@ -59,11 +61,13 @@ function TabIcon({ name }: { name: string }) {
 
 export default function QualityNav() {
   const pathname = usePathname()
+  const { user } = useAuth()
+  const visibleTabs = filterTabsByAccess('quality', TABS, user)
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
-        {TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const isActive = tab.href === '/dashboard/quality' ? pathname === tab.href : pathname.startsWith(tab.href)
           return (
             <Link

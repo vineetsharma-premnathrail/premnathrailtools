@@ -37,12 +37,14 @@ def generate_braking_pdf_report(context: Dict[str, Any]) -> io.BytesIO:
 
             pdf_path = temp_path / 'report.pdf'
             last_res = None
-            # openin_any=p restricts \input/\include file resolution to the
+            # openin_any/openout_any=p restrict file reads/writes to the
             # temp working directory — defense in depth alongside escaping
             # user-supplied fields before they reach the template.
-            tex_env = {**os.environ, "openin_any": "p"}
+            tex_env = {**os.environ, "openin_any": "p", "openout_any": "p"}
 
-            for compiler in ['pdflatex', 'xelatex', 'lualatex']:
+            # lualatex is deliberately excluded: its \directlua gives Lua io/os
+            # access that -no-shell-escape and openin_any do not fully restrict.
+            for compiler in ['pdflatex', 'xelatex']:
                 try:
                     last_res = subprocess.run(
                         [compiler, '-interaction=nonstopmode', '-no-shell-escape', 'report.tex'],

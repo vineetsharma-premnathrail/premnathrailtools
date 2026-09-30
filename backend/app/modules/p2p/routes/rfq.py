@@ -21,7 +21,9 @@ from app.modules.p2p.schemas.rfq import (
     VendorQuotationCreate, VendorQuotationUpdate, VendorQuotationEvaluatePayload,
     VendorQuotationSelectPayload, VendorQuotationResponse,
 )
-from app.modules.p2p.schemas.purchase_order import P2PPurchaseOrderCreate, P2PPurchaseOrderUpdate, P2PPurchaseOrderResponse
+from app.modules.p2p.schemas.purchase_order import (
+    P2PPurchaseOrderCreate, P2PPurchaseOrderDraftUpdatePayload, P2PPurchaseOrderResponse,
+)
 from app.modules.p2p.service import generate_rfq_number, generate_po_number, compute_line_total
 from app.modules.p2p.routes.p2p_requests import _write_audit as _write_pr_audit
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
@@ -561,6 +563,14 @@ async def select_vendor_quotation(
     return _to_response(db, rfq)
 
 
+def _derive_po_total(items) -> float | None:
+    """Sum of line totals (qty x unit price + tax), or None while any line is
+    still unpriced — a partial sum would understate what's being approved."""
+    if not items or any(i.line_total is None for i in items):
+        return None
+    return round(sum(i.line_total for i in items), 2)
+
+
 @router.post("/{rfq_id}/po-draft", response_model=P2PPurchaseOrderResponse)
 async def create_po_draft(
     rfq_id: int,
@@ -572,10 +582,11 @@ async def create_po_draft(
     formal vendor selection first (pr.status == 'vendor_selected'), but the
     frontend's current flow also attaches a PO that was already agreed/
     issued outside the system directly from 'vendor_quotations' — the buyer
-    supplies vendor_name (and optionally po_number / total_value) by hand
-    instead of picking a selected VendorQuotation. Still requires the
-    existing submit-po-draft step before it enters the unchanged Purchase
-    Head -> Director -> MD approval chain (see p2p_requests.py approve_po)."""
+    supplies vendor_name (and optionally po_number) by hand instead of
+    picking a selected VendorQuotation. Line prices are then filled in on the
+    draft (PATCH below); submit-po-draft refuses to send it into the
+    Purchase Head -> Director -> MD approval chain until every line is priced
+    (see p2p_requests.py approve_po)."""
     rfq = _get_rfq_or_404(db, rfq_id)
     pr = _get_pr_for_rfq(db, rfq)
     if pr.status not in ("vendor_quotations", "vendor_selected"):
@@ -619,14 +630,10 @@ async def create_po_draft(
         for i in pr.items if i.fulfillment_status != "stock_issued"
     ]
 
-    total = 0.0
-    has_pricing = False
+    po_items: list[P2PPurchaseOrderItem] = []
     for item in source_items:
         line_total = compute_line_total(item.quantity, item.unit_price, item.tax_rate)
-        if line_total is not None:
-            has_pricing = True
-            total += line_total
-        db.add(P2PPurchaseOrderItem(
+        po_item = P2PPurchaseOrderItem(
             purchase_order_id=po.id,
             item_name=item.item_name,
             make=item.make,
@@ -636,11 +643,14 @@ async def create_po_draft(
             unit_price=item.unit_price,
             tax_rate=item.tax_rate,
             line_total=line_total,
-        ))
-    if payload.total_value is not None:
-        po.total_value = payload.total_value
-    else:
-        po.total_value = round(total, 2) if has_pricing else (selected.quoted_price if selected else None)
+        )
+        db.add(po_item)
+        po_items.append(po_item)
+    # The PO value is always derived from its priced lines — never a typed-in
+    # lump sum or the quotation's headline price — because the approvers sign
+    # off on it and AP's 3-way match pays against those line prices. Unpriced
+    # lines leave it null until the buyer fills them in on the draft.
+    po.total_value = _derive_po_total(po_items)
 
     old_status = pr.status
     pr.status = "po_drafted"
@@ -660,7 +670,7 @@ async def create_po_draft(
 async def update_po_draft(
     rfq_id: int,
     po_id: int,
-    payload: P2PPurchaseOrderUpdate,
+    payload: P2PPurchaseOrderDraftUpdatePayload,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
@@ -674,10 +684,26 @@ async def update_po_draft(
     if pr.status != "po_drafted" or po.status != "draft":
         raise HTTPException(status_code=409, detail="This PO draft is no longer editable")
 
-    updates = payload.model_dump(exclude_unset=True)
-    updates.pop("status", None)  # status transition happens via the submit route below
+    updates = payload.model_dump(exclude_unset=True, exclude={"items"})
     for field, val in updates.items():
         setattr(po, field, val)
+
+    if payload.items is not None:
+        items_by_id = {i.id: i for i in po.items}
+        unknown = [p.id for p in payload.items if p.id not in items_by_id]
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"Line item(s) {', '.join(map(str, unknown))} don't belong to PO '{po.po_number}' — reload the page and try again.")
+        for pricing in payload.items:
+            item = items_by_id[pricing.id]
+            item.unit_price = pricing.unit_price
+            item.tax_rate = pricing.tax_rate
+            item.line_total = compute_line_total(item.quantity, item.unit_price, item.tax_rate)
+        po.total_value = _derive_po_total(po.items)
+
+    if updates or payload.items is not None:
+        value_note = f" PO value now {po.total_value:,.2f}." if po.total_value is not None else ""
+        _write_pr_audit(db, pr.id, "po_draft_updated", user,
+                        summary=f"{user.name or user.email} updated draft PO '{po.po_number}'.{value_note}")
 
     db.commit()
     db.refresh(po)
@@ -766,8 +792,9 @@ async def submit_po_draft(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
-    """Finalizes the draft PO and hands the PR off to the existing,
-    unchanged PO approval chain (Purchase Head -> Director -> MD)."""
+    """Finalizes the draft PO and hands the PR off to PO approval — the
+    manager-role set for the PR's project type, any one of whom approves
+    (legacy PRs keep the Purchase Head -> Director -> MD chain)."""
     rfq = _get_rfq_or_404(db, rfq_id)
     pr = _get_pr_for_rfq(db, rfq)
     po = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(
@@ -777,6 +804,17 @@ async def submit_po_draft(
         raise HTTPException(status_code=404, detail="Draft PO not found")
     if pr.status != "po_drafted" or po.status != "draft":
         raise HTTPException(status_code=409, detail=f"Only a drafted PO on a 'po_drafted' PR can be submitted (current status: {pr.status})")
+    # Approvers must see — and sign off on — a real value. Without this the
+    # chain approved blank POs and AP's 3-way match then accepted any amount.
+    if not po.items:
+        raise HTTPException(status_code=400, detail=f"PO '{po.po_number}' has no line items — it can't be sent for approval.")
+    unpriced = [i.item_name for i in po.items if not i.unit_price or i.unit_price <= 0]
+    if unpriced:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Enter a unit price for every line before sending the PO for approval — missing: {', '.join(unpriced)}.",
+        )
+    po.total_value = _derive_po_total(po.items)
 
     old_status = pr.status
     po.status = "issued"

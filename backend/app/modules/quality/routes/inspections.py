@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
@@ -35,7 +37,7 @@ def _get_or_404(db: Session, inspection_id: int) -> QualityInspection:
     inspection = db.query(QualityInspection).options(
         selectinload(QualityInspection.results),
         selectinload(QualityInspection.attachments),
-    ).filter(QualityInspection.id == inspection_id).first()
+    ).filter(QualityInspection.id == inspection_id, QualityInspection.is_deleted == False).first()  # noqa: E712
     if not inspection:
         raise HTTPException(status_code=404, detail="Inspection not found")
     return inspection
@@ -51,7 +53,7 @@ async def list_inspections(
     query = db.query(QualityInspection).options(
         selectinload(QualityInspection.results),
         selectinload(QualityInspection.attachments),
-    )
+    ).filter(QualityInspection.is_deleted == False)  # noqa: E712
     if inspection_type:
         query = query.filter(QualityInspection.inspection_type == inspection_type)
     if status_filter:
@@ -74,7 +76,7 @@ async def create_inspection(
     if payload.inspection_type not in QUALITY_INSPECTION_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid inspection_type '{payload.inspection_type}'")
     if payload.inspection_plan_id is not None and not db.query(QualityInspectionPlan).filter(
-        QualityInspectionPlan.id == payload.inspection_plan_id
+        QualityInspectionPlan.id == payload.inspection_plan_id, QualityInspectionPlan.is_deleted == False  # noqa: E712
     ).first():
         raise HTTPException(status_code=404, detail=f"Inspection plan #{payload.inspection_plan_id} not found")
 
@@ -139,12 +141,18 @@ async def update_inspection(
     if new_status and new_status not in QUALITY_INSPECTION_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status '{new_status}'")
     new_plan_id = updates.get("inspection_plan_id")
-    if new_plan_id is not None and not db.query(QualityInspectionPlan).filter(QualityInspectionPlan.id == new_plan_id).first():
+    if new_plan_id is not None and not db.query(QualityInspectionPlan).filter(QualityInspectionPlan.is_deleted == False, QualityInspectionPlan.id == new_plan_id).first():  # noqa: E712
         raise HTTPException(status_code=404, detail=f"Inspection plan #{new_plan_id} not found")
 
     results = updates.pop("results", None)
+    status_changed = new_status is not None and new_status != inspection.status
     for field, val in updates.items():
         setattr(inspection, field, val)
+    if status_changed:
+        # If this inspection is a Production quality gate, tell the work
+        # order's supervisor the step can be completed (or must be reworked).
+        from app.modules.production.service import notify_inspection_result
+        notify_inspection_result(db, inspection)
 
     if results is not None:
         # Replace all existing results — delete then re-insert, matching the
@@ -176,6 +184,9 @@ async def update_inspection(
 @router.delete("/{inspection_id}")
 async def delete_inspection(inspection_id: int, db: Session = Depends(get_db)):
     inspection = _get_or_404(db, inspection_id)
-    db.delete(inspection)
+    # Soft delete — quality records are retained for audit (ISO 9001 §7.5.3),
+    # and the delete itself is logged by app/core/audit.py.
+    inspection.is_deleted = True
+    inspection.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "Inspection deleted"}

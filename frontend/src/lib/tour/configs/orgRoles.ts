@@ -33,7 +33,7 @@ const config: TourConfig = {
     {
       target: 'org-roles-edit-btn',
       title: 'Edit',
-      purpose: 'Opens the full editor for this one user — where their role, which modules (P2P, Store, CRM, etc.) they can access, and approval-role flags (Purchase Head, Director, MD, Finance Manager) are actually granted or changed. Department/Project/Plant Head are picked per-request instead, directly on the Purchase Requisition form.',
+      purpose: 'Opens the full editor for this one user — where their role, which modules (P2P, Store, CRM, etc.) they can access, and approval-role flags (Design/R&D/Production/Project/Store/Purchase Manager, Director, Finance Manager) are actually granted or changed. The manager roles decide who a Purchase Order goes to for approval; Purchase Requisition approvers are picked per requisition on the New PR form.',
       after: 'This is the only place those permissions can be changed — the Organization > Users tab only displays them for reference.',
     },
   ],

@@ -1,4 +1,4 @@
-export type AppModule = 'erp' | 'rnd' | 'crm' | 'p2p' | 'store' | 'purchase' | 'quality' | 'projects' | 'accounts'
+export type AppModule = 'erp' | 'rnd' | 'crm' | 'p2p' | 'store' | 'purchase' | 'quality' | 'projects' | 'accounts' | 'hr' | 'production' | 'design' | 'electrical' | 'hydraulic' | 'maintenance'
 
 export interface User {
   id: number
@@ -26,6 +26,16 @@ export interface User {
   is_director?: boolean
   is_md?: boolean
   is_finance_manager?: boolean
+  /** Manager roles for the P2P approval matrix — PR approver pickers filter by these, and PO approval fans out to every holder. */
+  is_design_manager?: boolean
+  is_rnd_manager?: boolean
+  is_production_manager?: boolean
+  is_project_manager?: boolean
+  is_store_manager?: boolean
+  is_purchase_manager?: boolean
+  /** Approval-queue visibility: named as a PR approver on >=1 PR / holds a PO-approval role flag. Admins get both. */
+  is_pr_approver?: boolean
+  is_po_approver?: boolean
   notifications_enabled?: boolean
   /** Modules this user can actually reach right now (admins get all, regardless of assigned_apps). */
   apps: AppModule[]
@@ -34,6 +44,8 @@ export interface User {
   date_of_joining?: string
   granular_permissions?: string[]
   data_access_scopes?: Record<string, string>
+  /** module key -> subtab keys this user may view under the Permission Matrix. A module absent here is unrestricted (matrix never used for it) — *Nav.tsx components show every tab in that case. */
+  tab_access?: Record<string, string[]>
   created_at: string
   updated_at: string
 }
@@ -234,6 +246,14 @@ export interface DirectoryUser {
   is_department_head?: boolean
   is_project_head?: boolean
   is_plant_head?: boolean
+  /** Manager roles for the P2P approval matrix — PR approver pickers filter by these, and PO approval fans out to every holder. */
+  is_design_manager?: boolean
+  is_rnd_manager?: boolean
+  is_production_manager?: boolean
+  is_project_manager?: boolean
+  is_store_manager?: boolean
+  is_purchase_manager?: boolean
+  is_director?: boolean
 }
 
 export interface AuditEntry {
@@ -657,6 +677,10 @@ export interface P2PRequestLineItem {
   stock_item_id?: number
   item_id?: number | null
   fulfillment_status: 'pending' | 'stock_issued' | 'sent_to_procurement'
+  /** Automatic store-stock snapshot — taken at PR creation, refreshed at final approval. */
+  stock_status?: 'in_stock' | 'partial' | 'not_in_stock' | 'no_match' | null
+  stock_available_qty?: number | null
+  stock_checked_at?: string | null
   issued_from_location_id?: number | null
   issued_from_location_name?: string | null
   issued_qty?: number | null
@@ -700,12 +724,24 @@ export interface P2PRequestLineItemInput {
   item_id?: number | null
 }
 
+export interface P2PRequestApproval {
+  id: number
+  role: string
+  role_label?: string
+  approver_id: number
+  approver_name?: string
+  approved_at?: string
+  comment?: string
+}
+
 export interface P2PRequest {
   id: number
   p2p_number: string
   category_code: string
   category_label?: string
   project_label?: string
+  /** 'existing' | 'new' — picks the manager-role approval sets. Absent on PRs from before the matrix (legacy heads flow). */
+  project_type?: 'existing' | 'new'
   required_date?: string
   requirement_type?: string
   request_date: string
@@ -735,7 +771,18 @@ export interface P2PRequest {
   md_approved_at?: string
   md_approved_by_name?: string
   md_comment?: string
-  /** Role slugs ('department_head'|'project_head'|'plant_head') still awaiting sign-off. */
+  /** Manager-matrix PRs: per-role approver slots (all must approve). Empty on legacy PRs. */
+  approvals?: P2PRequestApproval[]
+  /** Manager-matrix PO approval: any ONE holder of the PR's PO role set approves, stamped here. */
+  po_approved_by_id?: number
+  po_approved_by_name?: string
+  po_approved_role?: string
+  po_approved_role_label?: string
+  po_approved_at?: string
+  po_approval_comment?: string
+  /** Labels of the roles that may approve the PO ("any one of ..."). Empty on legacy PRs. */
+  po_approval_role_labels?: string[]
+  /** Role slugs still awaiting sign-off. */
   pending_approval_roles?: string[]
   pending_po_approval_roles?: string[]
   rejected_by_role?: string
@@ -1389,6 +1436,10 @@ export interface VendorInvoice {
   variance_approved_by_name?: string | null
   variance_approved_at?: string | null
   variance_note?: string | null
+  created_by_id?: number | null
+  created_by_name?: string | null
+  posted_by_id?: number | null
+  posted_by_name?: string | null
   created_at?: string | null
 }
 
@@ -1398,6 +1449,11 @@ export interface MatchPreview {
   qty_variance_pct: number
   amount_variance_pct: number
   matching_status: 'matched' | 'variance'
+  po_value?: number | null
+  received_value?: number | null
+  already_invoiced_qty: number
+  already_invoiced_amount: number
+  variance_reasons: string[]
 }
 
 export interface PaymentTransaction {
@@ -1848,6 +1904,9 @@ export interface StoreStockAdjustment {
   created_by_id?: number | null
   created_by_name?: string | null
   remarks?: string | null
+  status: 'pending_approval' | 'approved' | 'rejected'
+  decided_at?: string | null
+  rejected_reason?: string | null
   items: StoreStockAdjustmentItem[]
 }
 
@@ -2676,3 +2735,2887 @@ export interface PmApprovalInput {
   status?: PmApprovalStatus
 }
 
+
+// ---------------------------------------------------------------------------
+// R&D module — projects, experiments, prototypes, feasibility
+// ---------------------------------------------------------------------------
+
+export type RndProjectType = 'new_product' | 'product_improvement' | 'process_development' | 'technology_research'
+export type RndProjectPriority = 'low' | 'medium' | 'high' | 'critical'
+export type RndProjectStage = 'initiation' | 'research' | 'development' | 'feasibility' | 'handover' | 'closed'
+export type RndProjectStatus = 'active' | 'on_hold' | 'cancelled'
+export type RndExperimentType = 'research' | 'lab_test' | 'field_trial' | 'simulation' | 'validation'
+export type RndExperimentStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled'
+export type RndExperimentResult = 'pass' | 'fail' | 'inconclusive'
+export type RndPrototypeStatus = 'design' | 'building' | 'testing' | 'validated' | 'rejected'
+export type RndFeasibilityRating = 'feasible' | 'conditional' | 'not_feasible'
+export type RndFeasibilityRecommendation = 'go' | 'conditional_go' | 'no_go'
+
+export interface RndProject {
+  id: number
+  project_number: string
+  title: string
+  project_type: RndProjectType
+  priority: RndProjectPriority
+  stage: RndProjectStage
+  status: RndProjectStatus
+  objective: string
+  scope?: string | null
+  lead_id?: number | null
+  team_member_ids: number[]
+  start_date?: string | null
+  target_end_date?: string | null
+  actual_end_date?: string | null
+  budget_amount?: number | null
+  handover_specs_final: boolean
+  handover_bom_approved: boolean
+  handover_process_documented: boolean
+  handover_quality_standards: boolean
+  handover_notes?: string | null
+  handed_over_at?: string | null
+  remarks?: string | null
+  created_by_id?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  lead_name?: string | null
+  team_members: { id: number; name: string }[]
+  actual_cost: number
+  experiment_count: number
+  prototype_count: number
+}
+
+export interface RndProjectDetail extends RndProject {
+  experiments: { id: number; experiment_number: string; title: string; status: RndExperimentStatus; result?: RndExperimentResult | null; experiment_date?: string | null }[]
+  prototypes: { id: number; prototype_number: string; name: string; version: string; status: RndPrototypeStatus; bom_cost: number; production_bom_id?: number | null; production_bom_number?: string | null }[]
+  has_feasibility: boolean
+  feasibility_recommendation?: RndFeasibilityRecommendation | null
+}
+
+export interface RndFeasibilityStudy {
+  id: number
+  project_id: number
+  material_cost?: number | null
+  labour_cost?: number | null
+  overhead_cost?: number | null
+  target_selling_price?: number | null
+  costing_rating?: RndFeasibilityRating | null
+  costing_notes?: string | null
+  sourcing_rating?: RndFeasibilityRating | null
+  sourcing_notes?: string | null
+  process_rating?: RndFeasibilityRating | null
+  process_notes?: string | null
+  quality_rating?: RndFeasibilityRating | null
+  quality_notes?: string | null
+  recommendation?: RndFeasibilityRecommendation | null
+  decision_notes?: string | null
+  reviewed_by_id?: number | null
+  reviewed_at?: string | null
+  reviewed_by_name?: string | null
+  estimated_unit_cost?: number | null
+  estimated_margin_pct?: number | null
+}
+
+export interface RndExperimentParameter {
+  parameter: string
+  specification?: string | null
+  measured?: string | null
+  unit?: string | null
+  result?: 'pass' | 'fail' | '' | null
+}
+
+export interface RndExperiment {
+  id: number
+  experiment_number: string
+  project_id: number
+  prototype_id?: number | null
+  title: string
+  experiment_type: RndExperimentType
+  status: RndExperimentStatus
+  result?: RndExperimentResult | null
+  objective?: string | null
+  method?: string | null
+  experiment_date?: string | null
+  conducted_by_id?: number | null
+  parameters: RndExperimentParameter[]
+  observations?: string | null
+  conclusion?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  project_number?: string | null
+  project_title?: string | null
+  prototype_number?: string | null
+  conducted_by_name?: string | null
+}
+
+export interface RndPrototypeBomItem {
+  id: number
+  store_item_id?: number | null
+  item_code?: string | null
+  item_name: string
+  quantity: number
+  uom?: string | null
+  unit_cost?: number | null
+  remarks?: string | null
+  line_cost: number
+}
+
+export interface RndPrototypeBomItemInput {
+  store_item_id?: number | null
+  item_code?: string | null
+  item_name: string
+  quantity: number
+  uom?: string | null
+  unit_cost?: number | null
+  remarks?: string | null
+}
+
+export interface RndPrototype {
+  id: number
+  prototype_number: string
+  project_id: number
+  name: string
+  version: string
+  status: RndPrototypeStatus
+  description?: string | null
+  build_date?: string | null
+  findings?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  bom_items: RndPrototypeBomItem[]
+  project_number?: string | null
+  project_title?: string | null
+  bom_cost: number
+  experiment_count: number
+  document_count: number
+  production_bom_id?: number | null
+  production_bom_number?: string | null
+  production_bom_status?: string | null
+  released_at?: string | null
+  released_by_name?: string | null
+}
+
+export type RndDocumentType = 'specification' | 'drawing' | 'test_report' | 'research_note' | 'process_document' | 'other'
+
+export interface RndDocument {
+  id: number
+  project_id: number
+  experiment_id?: number | null
+  prototype_id?: number | null
+  doc_type: RndDocumentType
+  title: string
+  version?: string | null
+  description?: string | null
+  file_name: string
+  sharepoint_url?: string | null
+  file_size?: number | null
+  mime_type?: string | null
+  uploaded_by_id?: number | null
+  uploaded_by_name?: string | null
+  created_at?: string | null
+  project_number?: string | null
+  experiment_number?: string | null
+  prototype_number?: string | null
+}
+
+export interface RndStoreItemLookup {
+  id: number
+  item_code: string
+  item_name: string
+  uom?: string | null
+}
+
+// ============================================================
+// HR & Administration — each feature owner adds its interfaces
+// directly under its own marker line (keep the marker).
+// ============================================================
+// ── hr:employees (A) ──
+export type HrEmploymentType = 'permanent' | 'probation' | 'contract' | 'trainee' | 'intern' | 'consultant'
+export type HrEmploymentStatus = 'onboarding' | 'probation' | 'active' | 'notice' | 'exited'
+
+/** Full employee record (User + HR profile). PII fields are only ever sent to HR and to the employee themself. */
+export interface HrEmployeeProfile {
+  user_id: number
+  has_profile: boolean
+  profile_id?: number | null
+  name: string
+  email: string
+  phone?: string | null
+  is_active: boolean
+  role?: string | null
+  profile_photo_url?: string | null
+  office_location?: string | null
+  reporting_manager_id?: number | null
+  reporting_manager_name?: string | null
+  reporting_manager_email?: string | null
+  date_of_joining?: string | null
+  user_department?: string | null
+  user_designation?: string | null
+  employee_code?: string | null
+  department_id?: number | null
+  department_name?: string | null
+  designation_id?: number | null
+  designation_name?: string | null
+  grade_id?: number | null
+  grade_name?: string | null
+  grade_code?: string | null
+  branch_id?: number | null
+  branch_name?: string | null
+  shift_id?: number | null
+  shift_name?: string | null
+  employment_type?: HrEmploymentType | null
+  employment_status?: HrEmploymentStatus | null
+  probation_end_date?: string | null
+  confirmation_date?: string | null
+  date_of_exit?: string | null
+  exit_reason?: string | null
+  work_location?: string | null
+  org_fields_locked?: boolean | null
+  notes?: string | null
+  gender?: string | null
+  date_of_birth?: string | null
+  blood_group?: string | null
+  marital_status?: string | null
+  personal_email?: string | null
+  personal_phone?: string | null
+  emergency_contact_name?: string | null
+  emergency_contact_phone?: string | null
+  emergency_contact_relation?: string | null
+  current_address?: string | null
+  permanent_address?: string | null
+  pan_number?: string | null
+  aadhaar_last4?: string | null
+  uan_number?: string | null
+  esic_number?: string | null
+  direct_reports_count: number
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+/** One row of the HR employee list (no PII). */
+export interface HrEmployeeListItem {
+  user_id: number
+  has_profile: boolean
+  name: string
+  email: string
+  is_active: boolean
+  profile_photo_url?: string | null
+  employee_code?: string | null
+  department_id?: number | null
+  department_name?: string | null
+  designation_id?: number | null
+  designation_name?: string | null
+  grade_name?: string | null
+  branch_id?: number | null
+  branch_name?: string | null
+  reporting_manager_id?: number | null
+  reporting_manager_name?: string | null
+  date_of_joining?: string | null
+  employment_type?: HrEmploymentType | null
+  employment_status?: HrEmploymentStatus | null
+  probation_end_date?: string | null
+}
+
+export interface HrEmployeeListResponse {
+  items: HrEmployeeListItem[]
+  total: number
+  page: number
+  page_size: number
+  total_users: number
+  with_profile: number
+  without_profile: number
+}
+
+/** Directory / org-chart node — deliberately PII-free. */
+export interface HrDirectoryEntry {
+  id: number
+  name: string
+  designation?: string | null
+  department?: string | null
+  branch?: string | null
+  manager_id?: number | null
+  profile_photo_url?: string | null
+}
+
+export interface HrOrgChart {
+  nodes: HrDirectoryEntry[]
+  root_ids: number[]
+}
+// ── hr:masters (A) ──
+export interface HrGrade {
+  id: number
+  code: string
+  name: string
+  level: number
+  description?: string | null
+  is_active: boolean
+  employee_count: number
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface HrDesignation {
+  id: number
+  name: string
+  code: string
+  department_id?: number | null
+  department_name?: string | null
+  grade_id?: number | null
+  grade_name?: string | null
+  grade_code?: string | null
+  description?: string | null
+  is_active: boolean
+  employee_count: number
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface HrShift {
+  id: number
+  code: string
+  name: string
+  /** "HH:MM:SS" */
+  start_time: string
+  end_time: string
+  grace_minutes: number
+  working_hours?: string | number | null
+  is_night: boolean
+  branch_id?: number | null
+  branch_name?: string | null
+  is_active: boolean
+  employee_count: number
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface HrLookupOption {
+  id: number
+  name: string
+  code?: string | null
+  is_active: boolean
+}
+
+export interface HrLookupUser {
+  id: number
+  name: string
+  email: string
+  designation?: string | null
+  department?: string | null
+  is_active: boolean
+}
+
+/** GET /hr/masters/lookups — dropdown data for every HR form. */
+export interface HrLookups {
+  departments: HrLookupOption[]
+  branches: HrLookupOption[]
+  designations: HrLookupOption[]
+  grades: HrLookupOption[]
+  shifts: HrLookupOption[]
+  users: HrLookupUser[]
+}
+// ── hr:lifecycle (B) ──
+export type HrLifecycleEventType = 'joining' | 'confirmation' | 'transfer' | 'promotion' | 'exit'
+export type HrLifecycleStatus = 'draft' | 'in_progress' | 'completed' | 'cancelled'
+export type HrChecklistItemStatus = 'pending' | 'done' | 'not_applicable'
+
+export interface HrChecklistItem {
+  id: number
+  event_id: number
+  template_id: number | null
+  category: string
+  title: string
+  owner_user_id: number | null
+  status: HrChecklistItemStatus
+  done_by_id: number | null
+  done_at: string | null
+  remarks: string | null
+  sort_order: number
+  created_at: string | null
+  updated_at: string | null
+  owner_name: string | null
+  done_by_name: string | null
+  can_edit: boolean
+}
+
+export interface HrChecklistTask extends HrChecklistItem {
+  event_no: string | null
+  event_type: HrLifecycleEventType | null
+  event_status: HrLifecycleStatus | null
+  subject_name: string | null
+}
+
+export interface HrLifecycleCompletionSummary {
+  changes?: string[]
+  conflicts?: string[]
+  warnings?: string[]
+  outstanding_assets?: string[]
+  pending_checklist_items?: string[]
+  forced?: boolean
+  force_reason?: string
+  completed_on?: string
+  completed_by?: string
+  [key: string]: unknown
+}
+
+export interface HrLifecycleEvent {
+  id: number
+  event_no: string
+  event_type: HrLifecycleEventType
+  user_id: number | null
+  candidate_name: string | null
+  candidate_email: string | null
+  status: HrLifecycleStatus
+  effective_date: string | null
+  from_department_id: number | null
+  to_department_id: number | null
+  from_branch_id: number | null
+  to_branch_id: number | null
+  from_designation_id: number | null
+  to_designation_id: number | null
+  from_grade_id: number | null
+  to_grade_id: number | null
+  from_manager_id: number | null
+  to_manager_id: number | null
+  resignation_date: string | null
+  last_working_day: string | null
+  exit_type: string | null
+  exit_reason: string | null
+  notice_period_days: number | null
+  handover_to_id: number | null
+  remarks: string | null
+  completion_summary: HrLifecycleCompletionSummary | null
+  created_by_id: number | null
+  completed_by_id: number | null
+  completed_at: string | null
+  cancelled_reason: string | null
+  created_at: string | null
+  updated_at: string | null
+  subject_name: string | null
+  subject_email: string | null
+  user_name: string | null
+  user_email: string | null
+  employee_code: string | null
+  from_department_name: string | null
+  to_department_name: string | null
+  from_branch_name: string | null
+  to_branch_name: string | null
+  from_designation_name: string | null
+  to_designation_name: string | null
+  from_grade_name: string | null
+  to_grade_name: string | null
+  from_manager_name: string | null
+  to_manager_name: string | null
+  handover_to_name: string | null
+  created_by_name: string | null
+  completed_by_name: string | null
+  items_total: number
+  items_pending: number
+  items: HrChecklistItem[]
+  is_hr_view: boolean
+}
+
+export interface HrLifecycleCounts {
+  open_by_type: Record<HrLifecycleEventType, number>
+  by_status: Record<HrLifecycleStatus, number>
+  total: number
+}
+
+export interface HrLifecycleMetaOption { value: string; label: string }
+export interface HrLifecycleMeta {
+  event_types: HrLifecycleMetaOption[]
+  statuses: string[]
+  exit_types: string[]
+  employment_types: string[]
+  categories: HrLifecycleMetaOption[]
+  item_statuses: string[]
+  head_flags: HrLifecycleMetaOption[]
+  departments: { id: number; name: string; code: string }[]
+  branches: { id: number; name: string; code: string }[]
+  designations: { id: number; name: string; code: string }[]
+  grades: { id: number; name: string; code: string; level: number }[]
+  users: { id: number; name: string; email: string; designation: string | null; department: string | null }[]
+}
+
+export interface HrLifecycleImpact {
+  user: { id: number; name: string; email: string; is_active: boolean } | null
+  event_type: HrLifecycleEventType
+  pending_checklist_items: { id: number; title: string; category: string; owner_user_id: number | null; owner_name?: string | null }[]
+  unreturned_assets: { id: number; asset_code: string; name: string; category: string; serial_number: string | null; status: string }[]
+  direct_reportees: { id: number; name: string; email: string; designation: string | null; department: string | null }[]
+  departments_headed: { id: number; name: string; code: string; slots: string[] }[]
+  role_flags: { flag: string; label: string }[]
+  pending_hr_approvals: { kind: string; label: string; id: number; ref: string; requester_id: number; requester_name: string | null }[]
+  pending_p2p_approvals: { id: number; p2p_number: string; roles: string[]; requested_by_id: number | null; requested_by_name: string | null; department: string | null }[]
+  p2p_buyer_requests: { id: number; p2p_number: string; status: string }[]
+  checklist_items_owned: { id: number; title: string; event_id: number; event_no: string }[]
+  templates_owned: { id: number; title: string; event_type: string }[]
+  own_open_requests: { kind: string; label: string; id: number; ref: string; status: string; action: 'cancel' | 'keep'; amount?: number }[]
+  own_open_p2p_requests: { id: number; p2p_number: string; status: string }[]
+  auto_buyer_categories: string[]
+  needs_handover: boolean
+  blockers: { pending_checklist_items: number; unreturned_assets: number }
+  warnings: string[]
+}
+
+export interface HrChecklistTemplate {
+  id: number
+  event_type: HrLifecycleEventType
+  category: string
+  title: string
+  description: string | null
+  default_owner_user_id: number | null
+  sort_order: number
+  is_active: boolean
+  created_at: string | null
+  updated_at: string | null
+  default_owner_name: string | null
+}
+// ── hr:leave (C) ──
+export interface HrLeaveType {
+  id: number
+  code: string
+  name: string
+  annual_quota: string | number
+  is_paid: boolean
+  carry_forward: boolean
+  max_carry_forward: string | number
+  allow_half_day: boolean
+  requires_document_after_days: number | null
+  gender_restriction: 'female' | 'male' | null
+  max_consecutive_days: number | null
+  is_active: boolean
+  sort_order: number
+}
+
+export interface HrLeaveBalance {
+  id: number
+  user_id: number
+  leave_type_id: number
+  year: number
+  opening: string | number
+  allotted: string | number
+  adjusted: string | number
+  used: string | number
+  available: string | number
+  pending: string | number
+  updated_at: string | null
+  user_name: string | null
+  user_email: string | null
+  employee_code: string | null
+  department_name: string | null
+  leave_type_code: string | null
+  leave_type_name: string | null
+  is_paid: boolean | null
+}
+
+export type HrLeaveSession = 'full' | 'first_half' | 'second_half'
+
+export interface HrLeaveRequest {
+  id: number
+  request_no: string
+  user_id: number
+  leave_type_id: number
+  from_date: string
+  to_date: string
+  from_session: HrLeaveSession
+  to_session: HrLeaveSession
+  days: string | number
+  reason: string | null
+  contact_during_leave: string | null
+  attachment_url: string | null
+  attachment_path: string | null
+  attachment_name: string | null
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled'
+  approver_id: number | null
+  decided_by_id: number | null
+  decided_at: string | null
+  decision_remarks: string | null
+  cancelled_at: string | null
+  created_at: string | null
+  user_name: string | null
+  user_email: string | null
+  employee_code: string | null
+  department_name: string | null
+  leave_type_code: string | null
+  leave_type_name: string | null
+  approver_name: string | null
+  decided_by_name: string | null
+  can_decide: boolean
+  can_cancel: boolean
+}
+
+export interface HrLeaveDayPortion {
+  date: string
+  kind: 'working' | 'weekly_off' | 'holiday'
+  portion: string | number
+  holiday_name: string | null
+}
+
+export interface HrLeavePreview {
+  days: string | number
+  breakdown: HrLeaveDayPortion[]
+  errors: string[]
+  warnings: string[]
+  document_required: boolean
+  balance_checked: boolean
+  balance_available: string | number | null
+  balance_pending: string | number
+  approver_id: number | null
+  approver_name: string | null
+}
+
+export interface HrLeaveAllotSummary {
+  year: number
+  employees: number
+  leave_types: string[]
+  created: number
+  updated: number
+  unchanged: number
+  skipped_gender: number
+  skipped_not_joined: number
+}
+// ── hr:attendance (C) ──
+export type HrAttendanceStatus = 'present' | 'absent' | 'half_day' | 'on_leave' | 'holiday' | 'weekly_off' | 'on_duty' | 'work_from_home'
+
+export interface HrAttendanceDay {
+  date: string
+  status: HrAttendanceStatus | 'unmarked' | null
+  computed: boolean
+  source: string | null
+  id: number | null
+  check_in: string | null
+  check_out: string | null
+  check_in_time: string | null
+  check_out_time: string | null
+  remarks: string | null
+  holiday_name: string | null
+  day_kind: 'working' | 'weekly_off' | 'holiday'
+  late_minutes: number | null
+}
+
+export interface HrAttendanceCounts {
+  present: number
+  absent: number
+  half_day: number
+  on_leave: number
+  holiday: number
+  weekly_off: number
+  on_duty: number
+  work_from_home: number
+  unmarked: number
+  late_days: number
+  present_equivalent: number
+}
+
+export interface HrAttendanceMonth {
+  user_id: number
+  user_name: string
+  employee_code: string | null
+  department_name: string | null
+  shift_name: string | null
+  year: number
+  month: number
+  days: HrAttendanceDay[]
+  counts: HrAttendanceCounts
+}
+
+export interface HrAttendanceToday {
+  date: string
+  now: string
+  day: HrAttendanceDay
+  shift: { id: number; name: string; start_time: string; end_time: string; grace_minutes: number } | null
+  can_check_in: boolean
+  can_check_out: boolean
+  on_leave: boolean
+}
+
+export interface HrAttendanceEmployee {
+  user_id: number
+  user_name: string
+  user_email: string
+  employee_code: string | null
+  department_name: string | null
+  branch_id: number | null
+  branch_name: string | null
+  shift_name: string | null
+}
+
+export interface HrAttendanceRegisterRow extends HrAttendanceEmployee, HrAttendanceDay {}
+
+export interface HrAttendanceRegister {
+  date: string
+  items: HrAttendanceRegisterRow[]
+  counts: Record<string, number>
+  total: number
+}
+
+export interface HrAttendanceSummaryRow extends HrAttendanceEmployee, HrAttendanceCounts {}
+
+export interface HrAttendanceLookups {
+  branches: { id: number; name: string }[]
+  departments: { id: number; name: string; branch_id: number | null }[]
+  employees: HrAttendanceEmployee[]
+  statuses: { value: HrAttendanceStatus; label: string }[]
+}
+
+export interface HrAttendanceImportResult {
+  dry_run: boolean
+  total_rows: number
+  created: number
+  updated: number
+  errors: { row: number; identifier: string; message: string }[]
+}
+
+export interface HrAttendanceRegularization {
+  id: number
+  request_no: string
+  user_id: number
+  attendance_date: string
+  requested_status: HrAttendanceStatus
+  check_in: string | null
+  check_out: string | null
+  check_in_time: string | null
+  check_out_time: string | null
+  reason: string | null
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled'
+  approver_id: number | null
+  decided_by_id: number | null
+  decided_at: string | null
+  decision_remarks: string | null
+  created_at: string | null
+  user_name: string | null
+  user_email: string | null
+  employee_code: string | null
+  department_name: string | null
+  approver_name: string | null
+  decided_by_name: string | null
+  current_status: string | null
+  can_decide: boolean
+  can_cancel: boolean
+}
+// ── hr:holidays (C) ──
+export type HrHolidayType = 'national' | 'festival' | 'restricted' | 'optional'
+
+export interface HrHoliday {
+  id: number
+  holiday_date: string
+  name: string
+  holiday_type: HrHolidayType
+  branch_id: number | null
+  branch_name: string | null
+  year: number
+  description: string | null
+  is_active: boolean
+  weekday: string | null
+}
+// ── hr:assets (D) ──
+export interface HrBranchLookup {
+  id: number
+  code?: string | null
+  name: string
+}
+
+export interface HrAssetAssignment {
+  id: number
+  asset_id: number
+  user_id: number
+  issued_on: string
+  issued_by_id?: number | null
+  expected_return_on?: string | null
+  condition_on_issue?: string | null
+  returned_on?: string | null
+  received_by_id?: number | null
+  condition_on_return?: string | null
+  remarks?: string | null
+  created_at?: string | null
+  user_name?: string | null
+  user_email?: string | null
+  issued_by_name?: string | null
+  received_by_name?: string | null
+  asset_code?: string | null
+  asset_name?: string | null
+  asset_category?: string | null
+  asset_serial_number?: string | null
+  asset_status?: string | null
+}
+
+export interface HrAsset {
+  id: number
+  asset_code: string
+  name: string
+  category: string
+  make?: string | null
+  model?: string | null
+  serial_number?: string | null
+  purchase_date?: string | null
+  purchase_cost?: string | number | null
+  vendor_name?: string | null
+  invoice_no?: string | null
+  warranty_until?: string | null
+  branch_id?: number | null
+  status: string
+  condition?: string | null
+  current_holder_id?: number | null
+  remarks?: string | null
+  created_by_id?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  branch_name?: string | null
+  current_holder_name?: string | null
+  current_holder_email?: string | null
+  issued_on?: string | null
+  expected_return_on?: string | null
+  created_by_name?: string | null
+  assignments?: HrAssetAssignment[] | null
+}
+// ── hr:visitors (D) ──
+export interface HrVisitor {
+  id: number
+  visit_no: string
+  visitor_name: string
+  visitor_company?: string | null
+  visitor_phone?: string | null
+  visitor_email?: string | null
+  id_proof_type?: string | null
+  id_proof_last4?: string | null
+  purpose?: string | null
+  host_user_id: number
+  branch_id?: number | null
+  expected_at?: string | null
+  check_in_at?: string | null
+  check_out_at?: string | null
+  badge_no?: string | null
+  vehicle_no?: string | null
+  items_carried?: string | null
+  number_of_persons: number
+  status: string
+  remarks?: string | null
+  created_by_id?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  host_name?: string | null
+  host_department?: string | null
+  branch_name?: string | null
+  created_by_name?: string | null
+}
+
+export interface HrVisitorBoard {
+  date: string
+  expected: HrVisitor[]
+  inside: HrVisitor[]
+  checked_out: HrVisitor[]
+}
+// ── hr:travel (D) ──
+export interface HrTravelRequest {
+  id: number
+  request_no: string
+  user_id: number
+  purpose: string
+  from_city: string
+  to_city: string
+  depart_date: string
+  return_date?: string | null
+  travel_mode: string
+  accommodation_required: boolean
+  advance_required: string | number
+  estimated_cost?: string | number | null
+  project_reference?: string | null
+  status: string
+  approver_id?: number | null
+  decided_by_id?: number | null
+  decided_at?: string | null
+  decision_remarks?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  user_name?: string | null
+  user_email?: string | null
+  user_department?: string | null
+  approver_name?: string | null
+  decided_by_name?: string | null
+  can_decide: boolean
+  can_cancel: boolean
+  can_edit: boolean
+}
+// ── hr:expenses (D) ──
+export interface HrExpenseClaimItem {
+  id: number
+  claim_id: number
+  expense_date: string
+  category: string
+  description?: string | null
+  amount: string | number
+  receipt_filename?: string | null
+  created_at?: string | null
+  has_receipt: boolean
+  receipt_required: boolean
+}
+
+export interface HrExpenseClaim {
+  id: number
+  claim_no: string
+  user_id: number
+  travel_request_id?: number | null
+  title: string
+  claim_date: string
+  total_amount: string | number
+  status: string
+  approver_id?: number | null
+  submitted_at?: string | null
+  decided_by_id?: number | null
+  decided_at?: string | null
+  decision_remarks?: string | null
+  paid_on?: string | null
+  payment_reference?: string | null
+  paid_by_id?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  user_name?: string | null
+  user_email?: string | null
+  user_department?: string | null
+  approver_name?: string | null
+  decided_by_name?: string | null
+  paid_by_name?: string | null
+  travel_request_no?: string | null
+  travel_route?: string | null
+  item_count: number
+  items?: HrExpenseClaimItem[] | null
+  receipt_threshold?: string | number | null
+  can_edit: boolean
+  can_decide: boolean
+  can_mark_paid: boolean
+  can_cancel: boolean
+}
+
+export interface HrLinkableTrip {
+  id: number
+  request_no: string
+  from_city: string
+  to_city: string
+  depart_date: string
+  return_date?: string | null
+  status: string
+}
+// ── hr:dashboard (Integration) ──
+export interface HrDashboardCount { label: string; count: number }
+export interface HrDashboardPerson {
+  user_id?: number | null
+  name: string
+  date?: string | null
+  department?: string | null
+  designation?: string | null
+  status?: string | null
+  event_id?: number | null
+  pending: boolean
+}
+export interface HrDashboardOnLeave {
+  request_id: number
+  user_id: number
+  name: string
+  leave_type: string
+  leave_type_name: string
+  from_date: string
+  to_date: string
+  half_day: boolean
+}
+export interface HrDashboardPending { total: number; awaiting_hr: number }
+export interface HrDashboardEvent {
+  id: number
+  event_no: string
+  event_type: string
+  status: string
+  name?: string | null
+  due_date?: string | null
+  items_total: number
+  items_done: number
+}
+export interface HrDashboardVisitor {
+  id: number
+  visit_no: string
+  visitor_name: string
+  visitor_company?: string | null
+  host_name: string
+  check_in_at?: string | null
+  badge_no?: string | null
+  number_of_persons?: number | null
+}
+export interface HrDashboardDocument {
+  document_id: number
+  user_id: number
+  name: string
+  document_type: string
+  document_name: string
+  expiry_date: string
+  days_left: number
+}
+export interface HrDashboardProbationItem {
+  user_id: number
+  name: string
+  probation_end_date: string
+  days_left: number
+  employment_status: string
+}
+export interface HrDashboard {
+  today: string
+  month_start: string
+  month_end: string
+  headcount: { total: number; by_status: HrDashboardCount[]; by_department: HrDashboardCount[]; by_branch: HrDashboardCount[] }
+  missing_profiles: number
+  joiners_this_month: HrDashboardPerson[]
+  joiners_count: number
+  exits_this_month: HrDashboardPerson[]
+  exits_count: number
+  on_leave_today: HrDashboardOnLeave[]
+  attendance_today: {
+    date: string
+    headcount: number
+    present: number
+    absent: number
+    on_leave: number
+    marked: number
+    not_marked: number
+    by_status: HrDashboardCount[]
+    holidays_today: string[]
+  }
+  approvals: {
+    leave: HrDashboardPending
+    regularization: HrDashboardPending
+    travel: HrDashboardPending
+    expense: HrDashboardPending
+    claims_to_pay: number
+    claims_to_pay_amount: number
+    checklist_items_pending: number
+  }
+  lifecycle: { total_open: number; by_type: HrDashboardCount[]; events: HrDashboardEvent[] }
+  assets: { total: number; issued: number; in_stock: number; under_repair: number; lost: number; retired: number; held_by_inactive: number }
+  visitors: { inside_now: number; persons_inside: number; expected_today: number; inside: HrDashboardVisitor[] }
+  documents: { expiring_count: number; expired_count: number; items: HrDashboardDocument[] }
+  probation: { count: number; overdue_count: number; items: HrDashboardProbationItem[] }
+}
+
+// ---- Production ----
+
+export type ProductionWorkstationType = 'machine' | 'work_center' | 'assembly_bay' | 'test_bench' | 'paint_booth' | 'other'
+export type ProductionWorkstationStatus = 'active' | 'under_maintenance' | 'inactive'
+export type ProductionBomStatus = 'draft' | 'active' | 'obsolete'
+export type ProductionWorkOrderStatus = 'draft' | 'released' | 'in_progress' | 'completed' | 'closed' | 'cancelled'
+export type ProductionPriority = 'low' | 'normal' | 'high' | 'urgent'
+export type ProductionOperationStatus = 'pending' | 'in_progress' | 'completed'
+
+export interface ProductionLookupOption {
+  id: number
+  label: string
+  code?: string | null
+  extra?: string | null
+}
+
+// ── Maintenance ─────────────────────────────────────────────────────────────
+
+export interface MaintenanceAsset {
+  id: number
+  asset_code: string
+  name: string
+  description?: string | null
+  category: string
+  parent_asset_id?: number | null
+  branch_id: number
+  department_id?: number | null
+  location_text?: string | null
+  workstation_id?: number | null
+  make?: string | null
+  model?: string | null
+  serial_number?: string | null
+  year_of_manufacture?: number | null
+  supplier_vendor_id?: number | null
+  purchase_date?: string | null
+  purchase_cost?: number | null
+  warranty_expiry?: string | null
+  amc_vendor_id?: number | null
+  amc_expiry?: string | null
+  criticality: string
+  status: string
+  meter_unit?: string | null
+  current_meter_reading?: number | null
+  meter_updated_at?: string | null
+  commissioned_on?: string | null
+  decommissioned_on?: string | null
+  remarks?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  branch_name?: string | null
+  department_name?: string | null
+  parent_asset_code?: string | null
+  workstation_code?: string | null
+  workstation_status?: string | null
+  supplier_vendor_name?: string | null
+  amc_vendor_name?: string | null
+  open_work_orders: number
+  down_since?: string | null
+}
+
+export interface MaintenanceAssetHistoryEntry {
+  kind: 'request' | 'work_order'
+  id: number
+  number: string
+  title: string
+  status: string
+  date?: string | null
+  downtime_minutes?: number | null
+  total_cost?: number | null
+}
+
+export interface MaintenanceRequestWorkOrderSummary {
+  id: number
+  wo_number: string
+  status: string
+  assigned_to_name?: string | null
+  action_taken?: string | null
+  root_cause?: string | null
+  downtime_minutes?: number | null
+  requester_confirmed_at?: string | null
+}
+
+export interface MaintenanceRequest {
+  id: number
+  request_number: string
+  asset_id: number
+  request_type: string
+  machine_down: boolean
+  reported_at: string
+  problem_description: string
+  priority: string
+  status: string
+  raised_by_id?: number | null
+  acknowledged_by_id?: number | null
+  acknowledged_at?: string | null
+  rejection_reason?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  asset_code?: string | null
+  asset_name?: string | null
+  asset_criticality?: string | null
+  asset_status?: string | null
+  branch_name?: string | null
+  raised_by_name?: string | null
+  acknowledged_by_name?: string | null
+  work_order?: MaintenanceRequestWorkOrderSummary | null
+  can_confirm: boolean
+}
+
+export interface MaintenanceWorkOrderTask {
+  id: number
+  sequence: number
+  description: string
+  expected_value?: string | null
+  result?: string | null
+  measured_value?: string | null
+  remarks?: string | null
+  done_by_id?: number | null
+  done_by_name?: string | null
+}
+
+export interface MaintenanceWorkOrderSpare {
+  id: number
+  store_item_id: number
+  location_id: number
+  qty_planned: number
+  qty_issued: number
+  qty_returned: number
+  unit_cost: number
+  remarks?: string | null
+  item_code?: string | null
+  item_name?: string | null
+  uom?: string | null
+  location_name?: string | null
+  available_qty?: number | null
+  net_cost: number
+}
+
+export interface MaintenanceLabourLog {
+  id: number
+  technician_id: number
+  start_time?: string | null
+  end_time?: string | null
+  hours: number
+  hourly_rate: number
+  remarks?: string | null
+  technician_name?: string | null
+  cost: number
+}
+
+export interface MaintenanceWorkOrder {
+  id: number
+  wo_number: string
+  asset_id: number
+  request_id?: number | null
+  wo_type: string
+  priority: string
+  title: string
+  description?: string | null
+  status: string
+  machine_down: boolean
+  assigned_to_id?: number | null
+  planned_start?: string | null
+  planned_end?: string | null
+  estimated_hours?: number | null
+  actual_start?: string | null
+  actual_end?: string | null
+  downtime_start?: string | null
+  downtime_end?: string | null
+  downtime_minutes?: number | null
+  failure_category?: string | null
+  root_cause?: string | null
+  action_taken?: string | null
+  hold_reason?: string | null
+  cancel_reason?: string | null
+  external_vendor_id?: number | null
+  external_cost: number
+  labour_cost: number
+  spares_cost: number
+  total_cost: number
+  requester_confirmed_at?: string | null
+  requester_comment?: string | null
+  created_by_id?: number | null
+  completed_by_id?: number | null
+  verified_by_id?: number | null
+  verified_at?: string | null
+  closed_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  tasks: MaintenanceWorkOrderTask[]
+  spares: MaintenanceWorkOrderSpare[]
+  labour_logs: MaintenanceLabourLog[]
+  asset_code?: string | null
+  asset_name?: string | null
+  asset_status?: string | null
+  branch_id?: number | null
+  branch_name?: string | null
+  request_number?: string | null
+  requester_id?: number | null
+  requester_name?: string | null
+  assigned_to_name?: string | null
+  external_vendor_name?: string | null
+  verified_by_name?: string | null
+  awaiting_confirmation: boolean
+  live_downtime_minutes?: number | null
+}
+
+export interface MaintenanceAttachment {
+  id: number
+  entity_type: 'asset' | 'request' | 'work_order'
+  entity_id: number
+  doc_type: string
+  filename: string
+  content_type?: string | null
+  size?: number | null
+  sharepoint_url?: string | null
+  created_by_id?: number | null
+  created_by_name?: string | null
+  created_at?: string | null
+}
+
+export interface MaintenanceLookups {
+  asset_categories: string[]
+  asset_statuses: string[]
+  criticalities: string[]
+  request_types: string[]
+  priorities: string[]
+  wo_types: string[]
+  wo_statuses: string[]
+  failure_categories: string[]
+  branches: { id: number; name: string }[]
+  technicians: { id: number; name: string; email: string }[]
+  store_locations: { id: number; name: string; branch_id?: number | null }[]
+  vendors: { id: number; name: string }[]
+  departments?: { id: number; name: string; branch_id?: number | null }[]
+  workstations?: { id: number; code: string; name: string; branch_id?: number | null; status: string; linked_asset_id?: number | null }[]
+}
+
+export interface MaintenanceAssetOption {
+  id: number
+  asset_code: string
+  name: string
+  criticality: string
+  status: string
+  branch_id: number
+  location_text?: string | null
+}
+
+export interface MaintenanceStoreItemOption {
+  id: number
+  item_code: string
+  item_name: string
+  uom?: string | null
+  item_type?: string | null
+  available_qty?: number | null
+}
+
+export interface MaintenanceDashboard {
+  counts: { assets: number; down: number; open_requests: number; open_work_orders: number; awaiting_close: number; my_work_orders: number }
+  last_30_days: { breakdowns: number; downtime_minutes: number; mttr_minutes?: number | null; maintenance_cost: number }
+  machines_down: { asset_id: number; asset_code: string; name: string; status: string; criticality: string; down_since?: string | null; down_minutes?: number | null; work_order_id?: number | null; wo_number?: string | null }[]
+  open_requests: { id: number; request_number: string; asset_code: string; asset_name: string; priority: string; machine_down: boolean; reported_at: string; raised_by_name?: string | null; problem_description: string }[]
+  my_work_orders: { id: number; wo_number: string; title: string; status: string; priority: string; asset_code: string; planned_start?: string | null }[]
+  awaiting_close: { id: number; wo_number: string; title: string; asset_code: string; awaiting_confirmation: boolean }[]
+}
+
+export interface ProductionWorkstation {
+  id: number
+  code: string
+  name: string
+  workstation_type: ProductionWorkstationType
+  branch_id?: number | null
+  department_id?: number | null
+  capacity_hours_per_day: number
+  hourly_rate: number
+  status: ProductionWorkstationStatus
+  description?: string | null
+  created_at?: string
+  updated_at?: string
+  branch_name?: string | null
+  department_name?: string | null
+  open_operations: number
+}
+
+export interface ProductionBomItem {
+  id: number
+  component_item_id: number
+  quantity: number
+  scrap_percent: number
+  remarks?: string | null
+  sort_order: number
+  item_code?: string | null
+  item_name?: string | null
+  uom?: string | null
+  unit_cost: number
+}
+
+export interface ProductionBomItemInput {
+  component_item_id: number
+  quantity: number
+  scrap_percent: number
+  remarks?: string | null
+}
+
+export interface ProductionBomOperation {
+  id: number
+  sequence: number
+  operation_name: string
+  workstation_id?: number | null
+  setup_hours: number
+  run_hours_per_unit: number
+  requires_inspection: boolean
+  instructions?: string | null
+  workstation_name?: string | null
+}
+
+export type ProductionBomOperationInput = Omit<ProductionBomOperation, 'id' | 'workstation_name'>
+
+export interface ProductionBom {
+  id: number
+  bom_number: string
+  product_item_id: number
+  version: number
+  base_quantity: number
+  status: ProductionBomStatus
+  description?: string | null
+  remarks?: string | null
+  created_by_id?: number | null
+  activated_by_id?: number | null
+  activated_at?: string | null
+  created_at?: string
+  updated_at?: string
+  items: ProductionBomItem[]
+  operations: ProductionBomOperation[]
+  product_code?: string | null
+  product_name?: string | null
+  product_uom?: string | null
+  created_by_name?: string | null
+  activated_by_name?: string | null
+  standard_material_cost: number
+  standard_labour_cost: number
+  work_order_count: number
+}
+
+export interface ProductionWorkOrderMaterial {
+  id: number
+  item_id: number
+  required_qty: number
+  issued_qty: number
+  returned_qty: number
+  remarks?: string | null
+  item_code?: string | null
+  item_name?: string | null
+  uom?: string | null
+  outstanding_qty: number
+  reserved_qty: number
+  available_qty: number
+}
+
+export interface ProductionWorkOrderOperation {
+  id: number
+  sequence: number
+  operation_name: string
+  workstation_id?: number | null
+  planned_hours: number
+  requires_inspection: boolean
+  status: ProductionOperationStatus
+  qty_good: number
+  qty_scrap: number
+  started_at?: string | null
+  completed_at?: string | null
+  quality_inspection_id?: number | null
+  instructions?: string | null
+  remarks?: string | null
+  workstation_name?: string | null
+  actual_hours: number
+  inspection_number?: string | null
+  inspection_status?: string | null
+}
+
+export interface ProductionWorkOrder {
+  id: number
+  wo_number: string
+  product_item_id: number
+  bom_id: number
+  erp_project_id?: number | null
+  rrv_build_id?: number | null
+  build_role?: 'main' | 'sub_assembly' | null
+  rrv_build_number?: string | null
+  branch_id?: number | null
+  quantity_planned: number
+  quantity_completed: number
+  quantity_scrapped: number
+  priority: ProductionPriority
+  status: ProductionWorkOrderStatus
+  source_location_id?: number | null
+  target_location_id?: number | null
+  planned_start_date?: string | null
+  planned_end_date?: string | null
+  actual_start_at?: string | null
+  actual_end_at?: string | null
+  closed_at?: string | null
+  supervisor_id?: number | null
+  created_by_id?: number | null
+  cancel_reason?: string | null
+  remarks?: string | null
+  created_at?: string
+  updated_at?: string
+  materials: ProductionWorkOrderMaterial[]
+  operations: ProductionWorkOrderOperation[]
+  product_code?: string | null
+  product_name?: string | null
+  product_uom?: string | null
+  bom_number?: string | null
+  bom_version?: number | null
+  project_label?: string | null
+  branch_name?: string | null
+  source_location_name?: string | null
+  target_location_name?: string | null
+  supervisor_name?: string | null
+  created_by_name?: string | null
+  progress_percent: number
+  is_overdue: boolean
+  shortage_count: number
+}
+
+export interface ProductionStockMovement {
+  id: number
+  transaction_type: string
+  item_id: number
+  item_code?: string | null
+  item_name?: string | null
+  location_name?: string | null
+  quantity: number
+  batch_number?: string | null
+  transaction_date: string
+  remarks?: string | null
+  created_by_name?: string | null
+}
+
+export interface ProductionCostLine {
+  item_id: number
+  item_code?: string | null
+  item_name?: string | null
+  unit_cost: number
+  required_qty: number
+  consumed_qty: number
+  estimated_cost: number
+  actual_cost: number
+}
+
+export interface ProductionWorkOrderCosting {
+  work_order_id: number
+  estimated_material_cost: number
+  estimated_labour_cost: number
+  estimated_total_cost: number
+  actual_material_cost: number
+  actual_labour_cost: number
+  actual_total_cost: number
+  planned_hours: number
+  actual_hours: number
+  variance: number
+  variance_percent?: number | null
+  cost_per_unit?: number | null
+  materials: ProductionCostLine[]
+}
+
+export interface ProductionTimeLog {
+  id: number
+  work_order_id: number
+  operation_id?: number | null
+  workstation_id?: number | null
+  operator_id?: number | null
+  log_date: string
+  hours: number
+  qty_good: number
+  qty_scrap: number
+  remarks?: string | null
+  created_by_id?: number | null
+  created_at?: string
+  wo_number?: string | null
+  operation_label?: string | null
+  workstation_name?: string | null
+  operator_name?: string | null
+}
+
+export interface ProductionQueueEntry {
+  operation_id: number
+  work_order_id: number
+  wo_number: string
+  wo_status: ProductionWorkOrderStatus
+  priority: ProductionPriority
+  product_code?: string | null
+  product_name?: string | null
+  project_label?: string | null
+  quantity_planned: number
+  sequence: number
+  operation_name: string
+  status: ProductionOperationStatus
+  workstation_id?: number | null
+  workstation_name?: string | null
+  planned_hours: number
+  actual_hours: number
+  qty_good: number
+  qty_scrap: number
+  requires_inspection: boolean
+  inspection_number?: string | null
+  inspection_status?: string | null
+  planned_end_date?: string | null
+  is_overdue: boolean
+  instructions?: string | null
+}
+
+export interface ProductionScheduleEntry {
+  work_order_id: number
+  wo_number: string
+  status: ProductionWorkOrderStatus
+  priority: ProductionPriority
+  product_name?: string | null
+  quantity_planned: number
+  quantity_completed: number
+  planned_start_date?: string | null
+  planned_end_date?: string | null
+  progress_percent: number
+  is_overdue: boolean
+}
+
+export interface ProductionRequirementOrder {
+  work_order_id: number
+  wo_number: string
+  status: ProductionWorkOrderStatus
+  outstanding_qty: number
+  planned_start_date?: string | null
+}
+
+export interface ProductionMaterialRequirement {
+  item_id: number
+  item_code?: string | null
+  item_name?: string | null
+  uom?: string | null
+  outstanding_qty: number
+  reserved_qty: number
+  available_qty: number
+  shortage_qty: number
+  reorder_level?: number | null
+  make_bom_id?: number | null
+  orders: ProductionRequirementOrder[]
+}
+
+export interface ProductionWorkstationLoad {
+  workstation_id?: number | null
+  workstation_name: string
+  status?: string | null
+  capacity_hours_per_day: number
+  open_operations: number
+  remaining_hours: number
+  load_days?: number | null
+}
+
+export interface ProductionPlanning {
+  requirements: ProductionMaterialRequirement[]
+  workstation_load: ProductionWorkstationLoad[]
+  schedule: ProductionScheduleEntry[]
+}
+
+export interface ProductionDashboard {
+  kpis: {
+    draft: number
+    released: number
+    in_progress: number
+    completed: number
+    overdue: number
+    output_30d: number
+    scrap_30d: number
+    hours_30d: number
+    pending_inspections: number
+    shortage_items: number
+    active_boms: number
+    active_workstations: number
+  }
+  recent: ProductionScheduleEntry[]
+  due_soon: ProductionScheduleEntry[]
+}
+
+export interface ProductionOutputRow {
+  item_id: number
+  item_code?: string | null
+  item_name?: string | null
+  uom?: string | null
+  quantity: number
+  work_orders: number
+}
+
+export interface ProductionCostRow {
+  work_order_id: number
+  wo_number: string
+  status: ProductionWorkOrderStatus
+  product_name?: string | null
+  quantity_planned: number
+  quantity_completed: number
+  quantity_scrapped: number
+  estimated_total_cost: number
+  actual_total_cost: number
+  variance: number
+  variance_percent?: number | null
+  cost_per_unit?: number | null
+}
+
+export interface ProductionUtilizationRow {
+  workstation_id?: number | null
+  workstation_name: string
+  hours_logged: number
+  capacity_hours: number
+  utilization_percent?: number | null
+  qty_good: number
+  qty_scrap: number
+}
+
+export interface ProductionReport {
+  date_from: string
+  date_to: string
+  output: ProductionOutputRow[]
+  costs: ProductionCostRow[]
+  utilization: ProductionUtilizationRow[]
+  total_output: number
+  total_scrap: number
+  scrap_rate_percent?: number | null
+}
+
+// ---- Electrical (RRV electrical jobs) ----
+
+export type ElectricalJobStatus = 'draft' | 'in_progress' | 'on_hold' | 'handed_over' | 'closed' | 'cancelled'
+export type ElectricalPriority = 'low' | 'normal' | 'high' | 'urgent'
+export type ElectricalStageStatus = 'not_started' | 'in_progress' | 'completed' | 'not_applicable'
+export type ElectricalPhase = 'design' | 'procurement' | 'build' | 'test_qc' | 'handover'
+export type ElectricalSelectionStatus = 'proposed' | 'selected' | 'approved'
+export type ElectricalProcurementStatus = 'required' | 'in_stock' | 'pr_raised' | 'ordered' | 'received' | 'issued'
+export type ElectricalPanelStatus = 'designed' | 'in_assembly' | 'assembled' | 'tested' | 'installed'
+export type ElectricalCableStatus = 'designed' | 'cut' | 'harnessed' | 'installed' | 'terminated' | 'tested'
+export type ElectricalRevisionStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'superseded'
+export type ElectricalTestPhase = 'factory' | 'commissioning'
+export type ElectricalTestResult = 'pass' | 'fail'
+export type ElectricalIssueSeverity = 'minor' | 'major' | 'critical'
+export type ElectricalIssueStatus = 'open' | 'investigating' | 'resolved' | 'closed'
+
+export interface ElectricalLookupOption {
+  id: number
+  label: string
+  code?: string | null
+  extra?: string | null
+}
+
+export interface ElectricalStageMeta {
+  key: string
+  label: string
+  phase: ElectricalPhase
+  sequence: number
+  is_mandatory: boolean
+}
+
+export interface ElectricalMeta {
+  stages: ElectricalStageMeta[]
+  phases: Record<ElectricalPhase, string>
+  component_categories: Record<string, string>
+  panel_types: Record<string, string>
+  drawing_types: Record<string, string>
+  test_types: Record<string, string>
+  document_categories: Record<string, string>
+}
+
+export interface ElectricalJobStage {
+  id: number
+  stage_key: string
+  sequence: number
+  status: ElectricalStageStatus
+  assignee_id?: number | null
+  planned_start_date?: string | null
+  planned_end_date?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+  completed_by_id?: number | null
+  remarks?: string | null
+  label: string
+  phase: ElectricalPhase
+  assignee_name?: string | null
+  completed_by_name?: string | null
+  is_mandatory: boolean
+  is_overdue: boolean
+  gate_problems: string[]
+}
+
+export interface ElectricalJob {
+  id: number
+  job_number: string
+  title: string
+  erp_project_id?: number | null
+  rrv_model?: string | null
+  vehicle_number?: string | null
+  customer_name?: string | null
+  branch_id?: number | null
+  lead_engineer_id?: number | null
+  priority: ElectricalPriority
+  status: ElectricalJobStatus
+  planned_start_date?: string | null
+  target_handover_date?: string | null
+  started_at?: string | null
+  system_voltage?: string | null
+  battery_spec?: string | null
+  alternator_spec?: string | null
+  applicable_standards?: string | null
+  customer_spec_ref?: string | null
+  requirement_notes?: string | null
+  quality_inspection_id?: number | null
+  commissioning_location?: string | null
+  commissioned_on?: string | null
+  handover_to_name?: string | null
+  handover_to_organization?: string | null
+  handover_date?: string | null
+  handover_remarks?: string | null
+  handed_over_at?: string | null
+  closed_at?: string | null
+  hold_reason?: string | null
+  cancel_reason?: string | null
+  remarks?: string | null
+  created_by_id?: number | null
+  created_at?: string
+  updated_at?: string
+  project_label?: string | null
+  branch_name?: string | null
+  lead_engineer_name?: string | null
+  created_by_name?: string | null
+  total_stages: number
+  done_stages: number
+  progress_percent: number
+  current_stage_key?: string | null
+  current_stage_label?: string | null
+  current_phase?: ElectricalPhase | null
+  is_overdue: boolean
+}
+
+export interface ElectricalJobSummary {
+  bom_count: number
+  bom_required: number
+  bom_estimated_cost: number
+  cable_count: number
+  cables_installed: number
+  panel_count: number
+  panels_assembled: number
+  drawing_count: number
+  drawings_pending_approval: number
+  as_built_approved: number
+  factory_tests: number
+  commissioning_tests: number
+  open_failures: number
+  open_issues: number
+  document_count: number
+  inspection_number?: string | null
+  inspection_status?: string | null
+}
+
+export interface ElectricalJobDetail extends ElectricalJob {
+  stages: ElectricalJobStage[]
+  summary: ElectricalJobSummary
+}
+
+export interface ElectricalBomItem {
+  id: number
+  job_id: number
+  line_no: number
+  category: string
+  description: string
+  store_item_id?: number | null
+  make?: string | null
+  part_number?: string | null
+  rating?: string | null
+  specification?: string | null
+  quantity: number
+  uom: string
+  estimated_unit_cost?: number | null
+  panel_id?: number | null
+  selection_status: ElectricalSelectionStatus
+  procurement_status: ElectricalProcurementStatus
+  p2p_request_id?: number | null
+  remarks?: string | null
+  store_item_code?: string | null
+  panel_tag?: string | null
+  p2p_number?: string | null
+  p2p_status?: string | null
+  job_number?: string | null
+  job_title?: string | null
+}
+
+export interface ElectricalPanel {
+  id: number
+  job_id: number
+  panel_tag: string
+  name: string
+  panel_type: string
+  location_on_vehicle?: string | null
+  enclosure_material?: string | null
+  ip_rating?: string | null
+  dimensions?: string | null
+  status: ElectricalPanelStatus
+  assembled_by_id?: number | null
+  assembled_at?: string | null
+  remarks?: string | null
+  assembled_by_name?: string | null
+  component_count: number
+}
+
+export interface ElectricalCable {
+  id: number
+  job_id: number
+  cable_tag: string
+  circuit?: string | null
+  from_point: string
+  to_point: string
+  cable_type?: string | null
+  cores?: number | null
+  size_sqmm?: number | null
+  length_m?: number | null
+  voltage_rating?: string | null
+  color_code?: string | null
+  harness_ref?: string | null
+  status: ElectricalCableStatus
+  remarks?: string | null
+}
+
+export interface ElectricalDrawingRevision {
+  id: number
+  drawing_id: number
+  revision_index: number
+  revision_label: string
+  status: ElectricalRevisionStatus
+  change_summary?: string | null
+  file_name?: string | null
+  file_size?: number | null
+  mime_type?: string | null
+  prepared_by_id?: number | null
+  submitted_at?: string | null
+  decided_by_id?: number | null
+  decided_at?: string | null
+  decision_comment?: string | null
+  created_at?: string
+  prepared_by_name?: string | null
+  decided_by_name?: string | null
+  has_file: boolean
+}
+
+export interface ElectricalDrawing {
+  id: number
+  job_id: number
+  drawing_number: string
+  title: string
+  drawing_type: string
+  is_as_built: boolean
+  description?: string | null
+  created_at?: string
+  updated_at?: string
+  job_number?: string | null
+  job_title?: string | null
+  revisions: ElectricalDrawingRevision[]
+  latest_revision_label?: string | null
+  latest_revision_status?: ElectricalRevisionStatus | null
+  approved_revision_label?: string | null
+}
+
+export interface ElectricalTest {
+  id: number
+  job_id: number
+  test_number: string
+  phase: ElectricalTestPhase
+  test_type: string
+  circuit?: string | null
+  panel_id?: number | null
+  cable_id?: number | null
+  instrument?: string | null
+  expected_value?: string | null
+  measured_value?: string | null
+  unit?: string | null
+  result: ElectricalTestResult
+  test_date: string
+  tested_by_id?: number | null
+  retest_of_id?: number | null
+  remarks?: string | null
+  job_number?: string | null
+  job_title?: string | null
+  panel_tag?: string | null
+  cable_tag?: string | null
+  tested_by_name?: string | null
+  retest_of_number?: string | null
+  needs_retest: boolean
+}
+
+export interface ElectricalIssue {
+  id: number
+  job_id: number
+  issue_number: string
+  title: string
+  symptom?: string | null
+  severity: ElectricalIssueSeverity
+  status: ElectricalIssueStatus
+  test_id?: number | null
+  panel_id?: number | null
+  cable_id?: number | null
+  root_cause?: string | null
+  corrective_action?: string | null
+  reported_by_id?: number | null
+  assigned_to_id?: number | null
+  resolved_by_id?: number | null
+  resolved_at?: string | null
+  created_at?: string
+  job_number?: string | null
+  job_title?: string | null
+  test_number?: string | null
+  panel_tag?: string | null
+  cable_tag?: string | null
+  reported_by_name?: string | null
+  assigned_to_name?: string | null
+  resolved_by_name?: string | null
+}
+
+export interface ElectricalDocument {
+  id: number
+  job_id: number
+  stage_key?: string | null
+  category: string
+  title: string
+  description?: string | null
+  file_name: string
+  file_size?: number | null
+  mime_type?: string | null
+  uploaded_by_id?: number | null
+  created_at?: string
+  uploaded_by_name?: string | null
+  stage_label?: string | null
+}
+
+export interface ElectricalDashboard {
+  kpis: {
+    draft: number
+    in_progress: number
+    on_hold: number
+    handed_over: number
+    overdue: number
+    drawings_pending_approval: number
+    open_failures: number
+    open_issues: number
+    critical_issues: number
+    purchase_pending: number
+    awaiting_qc: number
+  }
+  by_phase: { phase: ElectricalPhase; label: string; jobs: number }[]
+  recent: ElectricalJob[]
+  due_soon: ElectricalJob[]
+}
+
+// ---- Design (engineering document control) ----
+
+export type DesignRevisionStatus = 'draft' | 'in_review' | 'in_approval' | 'released' | 'superseded'
+export type DesignDisplayStatus = 'draft' | 'in_review' | 'in_approval' | 'released' | 'revising' | 'obsolete'
+export type DesignEcnStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'implemented' | 'cancelled'
+
+export interface DesignLookupOption {
+  id: number
+  label: string
+  code?: string | null
+  extra?: string | null
+}
+
+export interface DesignRevisionFile {
+  id: number
+  revision_id: number
+  file_role: 'primary' | 'native' | 'supporting'
+  file_name: string
+  file_size?: number | null
+  mime_type?: string | null
+  uploaded_by_id?: number | null
+  uploaded_by_name?: string | null
+  created_at?: string | null
+}
+
+export interface DesignDocumentRevision {
+  id: number
+  document_id: number
+  revision_index: number
+  revision_label: string
+  status: DesignRevisionStatus
+  change_summary?: string | null
+  ecn_id?: number | null
+  ecn_number?: string | null
+  created_by_id?: number | null
+  created_by_name?: string | null
+  reviewer_id?: number | null
+  reviewer_name?: string | null
+  approver_id?: number | null
+  approver_name?: string | null
+  submitted_at?: string | null
+  reviewed_by_id?: number | null
+  reviewed_by_name?: string | null
+  reviewed_at?: string | null
+  review_comment?: string | null
+  approved_by_id?: number | null
+  approved_by_name?: string | null
+  approved_at?: string | null
+  approval_comment?: string | null
+  released_at?: string | null
+  superseded_at?: string | null
+  returned_count: number
+  created_at?: string | null
+  updated_at?: string | null
+  files: DesignRevisionFile[]
+}
+
+export interface DesignEvent {
+  id: number
+  document_id?: number | null
+  revision_id?: number | null
+  ecn_id?: number | null
+  action: string
+  comment?: string | null
+  actor_id?: number | null
+  actor_name?: string | null
+  revision_label?: string | null
+  doc_number?: string | null
+  created_at?: string | null
+}
+
+export interface DesignDocument {
+  id: number
+  doc_number: string
+  title: string
+  description?: string | null
+  document_type: string
+  discipline: string
+  pm_project_id?: number | null
+  pm_project_label?: string | null
+  erp_project_id?: number | null
+  erp_project_label?: string | null
+  store_item_id?: number | null
+  store_item_label?: string | null
+  department_id?: number | null
+  department_name?: string | null
+  owner_id?: number | null
+  owner_name?: string | null
+  created_by_id?: number | null
+  created_by_name?: string | null
+  status: 'active' | 'obsolete'
+  obsoleted_at?: string | null
+  obsoleted_by_name?: string | null
+  obsolete_reason?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  display_status: DesignDisplayStatus
+  released_revision_id?: number | null
+  released_revision_label?: string | null
+  released_at?: string | null
+  open_revision_id?: number | null
+  open_revision_label?: string | null
+  open_revision_status?: DesignRevisionStatus | null
+  pending_with_name?: string | null
+}
+
+export interface DesignDocumentDetail extends DesignDocument {
+  revisions: DesignDocumentRevision[]
+  events: DesignEvent[]
+  open_ecns: { id: number; ecn_number: string; title: string; status: DesignEcnStatus }[]
+  allowed_actions: string[]
+}
+
+export interface DesignChangeNoticeDocument {
+  id: number
+  document_id: number
+  change_description?: string | null
+  doc_number?: string | null
+  title?: string | null
+  document_status?: string | null
+  owner_name?: string | null
+  released_revision_label?: string | null
+  ecn_revision_id?: number | null
+  ecn_revision_label?: string | null
+  implementation_status: 'pending' | DesignRevisionStatus
+}
+
+export interface DesignChangeNotice {
+  id: number
+  ecn_number: string
+  title: string
+  reason: string
+  priority: 'low' | 'medium' | 'high' | 'urgent'
+  description?: string | null
+  impact_assessment?: string | null
+  target_date?: string | null
+  pm_project_id?: number | null
+  pm_project_label?: string | null
+  erp_project_id?: number | null
+  erp_project_label?: string | null
+  status: DesignEcnStatus
+  created_by_id?: number | null
+  created_by_name?: string | null
+  approver_id?: number | null
+  approver_name?: string | null
+  submitted_at?: string | null
+  decided_by_name?: string | null
+  decided_at?: string | null
+  decision_comment?: string | null
+  implemented_by_name?: string | null
+  implemented_at?: string | null
+  cancelled_at?: string | null
+  cancel_reason?: string | null
+  created_at?: string | null
+  documents: DesignChangeNoticeDocument[]
+  document_count: number
+  released_count: number
+}
+
+export interface DesignChangeNoticeDetail extends DesignChangeNotice {
+  events: DesignEvent[]
+  allowed_actions: string[]
+}
+
+export interface DesignTaskItem {
+  kind: 'review' | 'approve' | 'returned' | 'draft' | 'ecn_approve' | 'ecn_implement'
+  document_id?: number | null
+  doc_number?: string | null
+  title: string
+  revision_id?: number | null
+  revision_label?: string | null
+  status: string
+  ecn_id?: number | null
+  ecn_number?: string | null
+  author_name?: string | null
+  comment?: string | null
+  since?: string | null
+  days_waiting: number
+}
+
+export interface DesignMyTasks {
+  to_review: DesignTaskItem[]
+  to_approve: DesignTaskItem[]
+  returned_to_me: DesignTaskItem[]
+  my_drafts: DesignTaskItem[]
+  ecns_to_approve: DesignTaskItem[]
+  ecns_to_implement: DesignTaskItem[]
+}
+
+export interface DesignRecentRelease {
+  document_id: number
+  doc_number: string
+  title: string
+  revision_id: number
+  revision_label: string
+  released_at?: string | null
+  approved_by_name?: string | null
+}
+
+export interface DesignDashboard {
+  active_documents: number
+  released_documents: number
+  drafts: number
+  in_review: number
+  in_approval: number
+  obsolete_documents: number
+  released_this_month: number
+  open_ecns: number
+  waiting_on_me: number
+  overdue_in_workflow: number
+  overdue_days: number
+  my_tasks: DesignTaskItem[]
+  overdue: DesignTaskItem[]
+  recent_releases: DesignRecentRelease[]
+}
+
+export interface DesignReportSummary {
+  by_type: { key: string; count: number }[]
+  by_discipline: { key: string; count: number }[]
+  by_status: { key: string; count: number }[]
+  releases_by_month: { month: string; released: number }[]
+  avg_cycle_days?: number | null
+  avg_returns_per_release?: number | null
+  total_revisions_released: number
+}
+
+// ---- Hydraulic & Pneumatic ----
+
+export type HydSystemType = 'hydraulic' | 'pneumatic'
+export type HydMediaType = HydSystemType | 'both'
+export type HydSystemStatus = 'design' | 'under_build' | 'testing' | 'commissioned' | 'in_service' | 'under_maintenance' | 'decommissioned'
+export type HydCircuitStatus = 'draft' | 'under_review' | 'approved' | 'superseded'
+export type HydBomStatus = 'draft' | 'released' | 'obsolete'
+export type HydTestStatus = 'planned' | 'in_progress' | 'completed'
+export type HydTestResult = 'pending' | 'pass' | 'fail' | 'conditional'
+export type HydReadingResult = 'pass' | 'fail' | 'na'
+export type HydServiceStatus = 'open' | 'in_progress' | 'completed' | 'cancelled'
+export type HydDueStatus = 'overdue' | 'due_soon' | 'ok' | 'inactive'
+export type HydStockStatus = 'ok' | 'low' | 'out' | 'not_linked'
+export type HydDocumentEntity = 'system' | 'component' | 'circuit' | 'test' | 'service_record'
+
+export interface HydLookupOption {
+  id: number
+  label: string
+  code?: string | null
+  extra?: string | null
+}
+
+export interface HydSystem {
+  id: number
+  system_number: string
+  name: string
+  system_type: HydSystemType
+  application?: string | null
+  status: HydSystemStatus
+  erp_project_id?: number | null
+  branch_id?: number | null
+  equipment_ref?: string | null
+  location?: string | null
+  working_pressure_bar?: number | null
+  max_pressure_bar?: number | null
+  flow_rate?: number | null
+  reservoir_capacity_l?: number | null
+  prime_mover_kw?: number | null
+  fluid_medium?: string | null
+  filtration_micron?: number | null
+  cleanliness_target?: string | null
+  operating_temp_min_c?: number | null
+  operating_temp_max_c?: number | null
+  commissioned_on?: string | null
+  running_hours: number
+  owner_id?: number | null
+  description?: string | null
+  remarks?: string | null
+  created_by_id?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  project_label?: string | null
+  branch_name?: string | null
+  owner_name?: string | null
+  created_by_name?: string | null
+  circuit_count: number
+  bom_count: number
+  test_count: number
+  open_service_count: number
+  overdue_plan_count: number
+}
+
+export interface HydComponentSpec {
+  label: string
+  value: string
+}
+
+export interface HydComponent {
+  id: number
+  code: string
+  name: string
+  category: string
+  system_type: HydMediaType
+  status: 'active' | 'obsolete'
+  manufacturer?: string | null
+  model_number?: string | null
+  part_number?: string | null
+  store_item_id?: number | null
+  rated_pressure_bar?: number | null
+  max_pressure_bar?: number | null
+  flow_rate_lpm?: number | null
+  displacement_cc?: number | null
+  bore_mm?: number | null
+  rod_mm?: number | null
+  stroke_mm?: number | null
+  port_size?: string | null
+  mounting?: string | null
+  media?: string | null
+  seal_material?: string | null
+  temp_min_c?: number | null
+  temp_max_c?: number | null
+  weight_kg?: number | null
+  unit_cost: number
+  specifications: HydComponentSpec[]
+  datasheet_url?: string | null
+  description?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  store_item_code?: string | null
+  store_item_name?: string | null
+  bom_usage_count: number
+  spare_count: number
+}
+
+export interface HydCircuitRevisionSummary {
+  id: number
+  revision: string
+  status: HydCircuitStatus
+  approved_at?: string | null
+  change_note?: string | null
+}
+
+export interface HydCircuit {
+  id: number
+  circuit_number: string
+  revision: string
+  title: string
+  system_type: HydSystemType
+  system_id?: number | null
+  status: HydCircuitStatus
+  drawing_number?: string | null
+  symbol_standard?: string | null
+  description?: string | null
+  change_note?: string | null
+  created_by_id?: number | null
+  submitted_by_id?: number | null
+  submitted_at?: string | null
+  approved_by_id?: number | null
+  approved_at?: string | null
+  review_remarks?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  system_number?: string | null
+  system_name?: string | null
+  created_by_name?: string | null
+  submitted_by_name?: string | null
+  approved_by_name?: string | null
+  document_count: number
+  revisions: HydCircuitRevisionSummary[]
+}
+
+export interface HydBomItem {
+  id: number
+  component_id: number
+  tag_number?: string | null
+  quantity: number
+  uom: string
+  remarks?: string | null
+  sort_order: number
+  component_code?: string | null
+  component_name?: string | null
+  component_category?: string | null
+  manufacturer?: string | null
+  model_number?: string | null
+  unit_cost: number
+  line_cost: number
+}
+
+export interface HydBomItemInput {
+  component_id: number
+  tag_number?: string | null
+  quantity: number
+  uom: string
+  remarks?: string | null
+}
+
+export interface HydBom {
+  id: number
+  bom_number: string
+  revision: string
+  title: string
+  system_type: HydSystemType
+  system_id?: number | null
+  circuit_id?: number | null
+  status: HydBomStatus
+  remarks?: string | null
+  created_by_id?: number | null
+  released_by_id?: number | null
+  released_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  items: HydBomItem[]
+  system_number?: string | null
+  system_name?: string | null
+  circuit_number?: string | null
+  circuit_revision?: string | null
+  created_by_name?: string | null
+  released_by_name?: string | null
+  line_count: number
+  total_cost: number
+}
+
+export interface HydCalcInputMeta {
+  key: string
+  label: string
+  unit?: string | null
+  kind: 'number' | 'select'
+  default?: number | string | null
+  min?: number | null
+  optional?: boolean
+  help?: string | null
+  options?: { value: string; label: string }[]
+}
+
+export interface HydCalcTypeMeta {
+  key: string
+  label: string
+  system_type: HydSystemType
+  description: string
+  inputs: HydCalcInputMeta[]
+}
+
+export interface HydCalcResultRow {
+  key: string
+  label: string
+  value: number | string | null
+  unit?: string | null
+  primary?: boolean
+}
+
+export interface HydCalcComputeResult {
+  calc_type: string
+  inputs: Record<string, number | string | null>
+  results: HydCalcResultRow[]
+  warnings: string[]
+}
+
+export interface HydCalculation {
+  id: number
+  calc_number: string
+  title: string
+  calc_type: string
+  system_type: HydSystemType
+  system_id?: number | null
+  inputs: Record<string, number | string | null>
+  results: { results?: HydCalcResultRow[]; warnings?: string[] }
+  remarks?: string | null
+  created_by_id?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  calc_type_label?: string | null
+  system_number?: string | null
+  system_name?: string | null
+  created_by_name?: string | null
+}
+
+export interface HydTestReading {
+  id: number
+  parameter: string
+  unit?: string | null
+  specification?: string | null
+  min_value?: number | null
+  max_value?: number | null
+  measured_value?: number | null
+  measured_text?: string | null
+  result: HydReadingResult
+  remarks?: string | null
+  sort_order: number
+}
+
+export type HydTestReadingInput = Omit<HydTestReading, 'id' | 'sort_order'>
+
+export interface HydTest {
+  id: number
+  test_number: string
+  title: string
+  test_type: string
+  system_type: HydSystemType
+  system_id?: number | null
+  component_id?: number | null
+  component_serial?: string | null
+  status: HydTestStatus
+  result: HydTestResult
+  test_date?: string | null
+  test_standard?: string | null
+  test_pressure_bar?: number | null
+  hold_time_min?: number | null
+  test_medium?: string | null
+  ambient_temp_c?: number | null
+  fluid_temp_c?: number | null
+  tested_by_id?: number | null
+  witnessed_by?: string | null
+  observations?: string | null
+  remarks?: string | null
+  created_by_id?: number | null
+  completed_by_id?: number | null
+  completed_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  readings: HydTestReading[]
+  system_number?: string | null
+  system_name?: string | null
+  component_code?: string | null
+  component_name?: string | null
+  tested_by_name?: string | null
+  completed_by_name?: string | null
+  failed_readings: number
+}
+
+export interface HydMaintenancePlan {
+  id: number
+  plan_number: string
+  title: string
+  system_id: number
+  maintenance_type: string
+  frequency_days?: number | null
+  frequency_hours?: number | null
+  start_date?: string | null
+  last_done_date?: string | null
+  last_done_hours?: number | null
+  next_due_date?: string | null
+  assigned_to_id?: number | null
+  checklist?: string | null
+  is_active: boolean
+  remarks?: string | null
+  created_by_id?: number | null
+  created_at?: string | null
+  updated_at?: string | null
+  system_number?: string | null
+  system_name?: string | null
+  system_type?: HydSystemType | null
+  system_running_hours?: number | null
+  next_due_hours?: number | null
+  assigned_to_name?: string | null
+  due_status: HydDueStatus
+  days_to_due?: number | null
+  open_service_record_id?: number | null
+}
+
+export interface HydServicePart {
+  id: number
+  spare_part_id: number
+  quantity: number
+  unit_cost: number
+  remarks?: string | null
+  issued_location_id?: number | null
+  part_code?: string | null
+  part_name?: string | null
+  uom?: string | null
+  store_linked: boolean
+  issued_location_name?: string | null
+  line_cost: number
+}
+
+export interface HydServiceRecord {
+  id: number
+  record_number: string
+  system_id: number
+  plan_id?: number | null
+  service_type: string
+  status: HydServiceStatus
+  service_date: string
+  completed_on?: string | null
+  reported_problem?: string | null
+  root_cause?: string | null
+  work_done?: string | null
+  checklist?: string | null
+  performed_by_id?: number | null
+  external_agency?: string | null
+  running_hours?: number | null
+  downtime_hours: number
+  fluid_added_l: number
+  oil_condition?: string | null
+  labour_cost: number
+  other_cost: number
+  next_service_date?: string | null
+  remarks?: string | null
+  cancel_reason?: string | null
+  created_by_id?: number | null
+  completed_by_id?: number | null
+  completed_at?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  parts: HydServicePart[]
+  system_number?: string | null
+  system_name?: string | null
+  system_type?: HydSystemType | null
+  plan_number?: string | null
+  plan_title?: string | null
+  performed_by_name?: string | null
+  completed_by_name?: string | null
+  parts_cost: number
+  total_cost: number
+}
+
+export interface HydSparePartSystemUsage {
+  system_id: number
+  system_number: string
+  system_name: string
+  quantity: number
+}
+
+export interface HydSparePart {
+  id: number
+  part_code: string
+  name: string
+  category: string
+  system_type: HydMediaType
+  status: 'active' | 'obsolete'
+  criticality: 'critical' | 'essential' | 'desirable'
+  component_id?: number | null
+  store_item_id?: number | null
+  manufacturer?: string | null
+  part_number?: string | null
+  uom: string
+  unit_cost: number
+  min_stock_qty: number
+  reorder_qty: number
+  lead_time_days?: number | null
+  shelf_life_months?: number | null
+  interchangeable_with?: string | null
+  storage_notes?: string | null
+  remarks?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  component_code?: string | null
+  component_name?: string | null
+  store_item_code?: string | null
+  store_item_name?: string | null
+  on_hand_qty?: number | null
+  available_qty?: number | null
+  stock_status: HydStockStatus
+  used_last_12m: number
+  used_in_systems: HydSparePartSystemUsage[]
+}
+
+export interface HydDocument {
+  id: number
+  entity_type: HydDocumentEntity
+  entity_id: number
+  doc_type: string
+  title: string
+  description?: string | null
+  file_name: string
+  file_size?: number | null
+  mime_type?: string | null
+  uploaded_by_id?: number | null
+  uploaded_by_name?: string | null
+  created_at?: string | null
+}
+
+export interface HydDashboard {
+  kpis: {
+    hydraulic_systems: number
+    pneumatic_systems: number
+    in_service: number
+    under_maintenance: number
+    active_components: number
+    circuits_in_review: number
+    draft_boms: number
+    plans_overdue: number
+    plans_due_soon: number
+    open_service_records: number
+    downtime_hours_30d: number
+    service_cost_30d: number
+    tests_30d: number
+    tests_failed_30d: number
+    spares_low: number
+    critical_spares_out: number
+  }
+  maintenance_due: { plan_id: number; plan_number: string; title: string; system_number?: string | null; system_name?: string | null; next_due_date?: string | null; due_status: HydDueStatus; days_to_due?: number | null }[]
+  recent_tests: { test_id: number; test_number: string; title: string; test_type: string; test_date?: string | null; status: HydTestStatus; result: HydTestResult }[]
+  low_spares: { spare_part_id: number; part_code: string; name: string; criticality: string; available_qty?: number | null; min_stock_qty: number; uom: string; stock_status: HydStockStatus }[]
+  open_services: { record_id: number; record_number: string; system_number?: string | null; system_name?: string | null; service_type: string; service_date: string; status: HydServiceStatus }[]
+}
+
+// ---- Production · RRV Builds ----
+
+export type ProductionRrvBuildStatus = 'planned' | 'in_progress' | 'on_hold' | 'completed' | 'handed_over' | 'cancelled'
+export type ProductionRrvStageStatus = 'not_started' | 'in_progress' | 'completed' | 'not_applicable'
+export type ProductionReworkStatus = 'open' | 'in_progress' | 'done' | 'verified' | 'cancelled'
+
+export interface ProductionRrvBuildStage {
+  id: number
+  stage_key: string
+  sequence: number
+  status: ProductionRrvStageStatus
+  assignee_id?: number | null
+  assignee_name?: string | null
+  planned_start_date?: string | null
+  planned_end_date?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+  completed_by_id?: number | null
+  completed_by_name?: string | null
+  remarks?: string | null
+  label: string
+  phase: string
+  na_allowed: boolean
+  gate_problems: string[]
+  is_overdue: boolean
+}
+
+export interface ProductionRrvTest {
+  id: number
+  build_id: number
+  test_type: string
+  test_label: string
+  test_date: string
+  result: 'pass' | 'fail'
+  expected?: string | null
+  observed?: string | null
+  remarks?: string | null
+  tested_by_name?: string | null
+  witnessed_by?: string | null
+  retest_of_id?: number | null
+  rework_number?: string | null
+  created_at?: string | null
+}
+
+export interface ProductionReworkOrder {
+  id: number
+  rework_number: string
+  build_id: number
+  build_number?: string | null
+  rrv_model?: string | null
+  source: string
+  source_label?: string | null
+  source_test_id?: number | null
+  quality_inspection_id?: number | null
+  inspection_number?: string | null
+  work_order_id?: number | null
+  wo_number?: string | null
+  quality_ncr_id?: number | null
+  title: string
+  defect_description?: string | null
+  root_cause?: string | null
+  corrective_action?: string | null
+  assigned_to_id?: number | null
+  assigned_to_name?: string | null
+  due_date?: string | null
+  status: ProductionReworkStatus
+  hours_spent: number
+  done_at?: string | null
+  done_by_id?: number | null
+  done_by_name?: string | null
+  verified_at?: string | null
+  verified_by_name?: string | null
+  verification_remarks?: string | null
+  cancel_reason?: string | null
+  created_at?: string | null
+  is_overdue: boolean
+}
+
+export interface ProductionRrvWorkOrderSummary {
+  id: number
+  wo_number: string
+  build_role?: 'main' | 'sub_assembly' | null
+  status: string
+  product_code?: string | null
+  product_name?: string | null
+  quantity_planned: number
+  quantity_completed: number
+  operations_total: number
+  operations_done: number
+  outstanding_lines: number
+  planned_end_date?: string | null
+}
+
+export interface ProductionRrvConsumption {
+  rows: {
+    item_id: number
+    item_code?: string | null
+    item_name?: string | null
+    uom?: string | null
+    required_qty: number
+    issued_qty: number
+    returned_qty: number
+    consumed_qty: number
+    outstanding_qty: number
+    unit_cost: number
+    consumed_value: number
+    work_orders: string[]
+  }[]
+  total_consumed_value: number
+  total_required_lines: number
+  lines_fully_issued: number
+}
+
+export interface ProductionRrvBuild {
+  id: number
+  build_number: string
+  rrv_model: string
+  customer_name?: string | null
+  customer_po_number?: string | null
+  customer_po_date?: string | null
+  order_reference?: string | null
+  erp_project_id?: number | null
+  machine_label?: string | null
+  vehicle_serial_number?: string | null
+  chassis_number?: string | null
+  engine_number?: string | null
+  year_of_manufacture?: string | null
+  branch_id?: number | null
+  branch_name?: string | null
+  build_manager_id?: number | null
+  build_manager_name?: string | null
+  priority: 'low' | 'normal' | 'high' | 'urgent'
+  status: ProductionRrvBuildStatus
+  planned_start_date?: string | null
+  target_completion_date?: string | null
+  target_handover_date?: string | null
+  actual_start_at?: string | null
+  completed_at?: string | null
+  completed_by_name?: string | null
+  required_tests: string[]
+  final_inspection_id?: number | null
+  handover_date?: string | null
+  commissioning_date?: string | null
+  handed_over_to_name?: string | null
+  handed_over_to_organization?: string | null
+  handover_location?: string | null
+  customer_acceptance_ref?: string | null
+  warranty_months: number
+  handover_remarks?: string | null
+  handed_over_at?: string | null
+  handed_over_by_name?: string | null
+  hold_reason?: string | null
+  cancel_reason?: string | null
+  remarks?: string | null
+  created_at?: string | null
+  stages_done: number
+  stages_total: number
+  current_stage_key?: string | null
+  current_stage_label?: string | null
+  open_rework_count: number
+  work_order_count: number
+  is_overdue: boolean
+}
+
+export interface ProductionRrvBuildDetail extends ProductionRrvBuild {
+  stages: ProductionRrvBuildStage[]
+  work_orders: ProductionRrvWorkOrderSummary[]
+  tests: ProductionRrvTest[]
+  test_status: Record<string, 'pass' | 'fail' | 'pending'>
+  rework_orders: ProductionReworkOrder[]
+  events: { id: number; action: string; comment?: string | null; actor_name?: string | null; created_at?: string | null }[]
+  integration: {
+    electrical_jobs: { id: number; job_number: string; title: string; status: string }[]
+    hydraulic_systems: { id: number; system_number: string; name: string; status: string }[]
+  }
+  final_inspection_number?: string | null
+  final_inspection_status?: string | null
+  allowed_actions: string[]
+}

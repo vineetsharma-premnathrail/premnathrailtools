@@ -1,17 +1,24 @@
 from __future__ import annotations
-from datetime import date
-from sqlalchemy import String, Integer, Float, Date, Text, ForeignKey
+from datetime import date, datetime
+from sqlalchemy import String, Integer, Float, Date, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
 
+STOCK_ADJUSTMENT_STATUSES = ("pending_approval", "approved", "rejected")
+
+
 class StoreStockAdjustment(Base, TimestampMixin):
-    """A stock-count correction at one warehouse — posts an adjustment_in
-    or adjustment_out transaction per line depending on the sign of
-    (actual_quantity - existing_quantity). existing_quantity is read from
-    the live balance server-side at creation time, not taken from the
-    client, so it can't be spoofed to fabricate a difference."""
+    """A stock-count correction at one warehouse — once approved, posts an
+    adjustment_in or adjustment_out transaction per line depending on the
+    sign of (actual_quantity - existing_quantity). existing_quantity is read
+    from the live balance server-side at creation (count) time, not taken
+    from the client, so it can't be spoofed to fabricate a difference.
+
+    Maker-checker: created as `pending_approval` with nothing posted; only
+    the named approver (`approved_by_id`, never the creator) can approve —
+    which posts the stored per-line difference — or reject it."""
 
     __tablename__ = "store_stock_adjustments"
 
@@ -24,6 +31,9 @@ class StoreStockAdjustment(Base, TimestampMixin):
     approved_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending_approval", server_default="approved", nullable=False)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejected_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     items: Mapped[list["StoreStockAdjustmentItem"]] = relationship(
         "StoreStockAdjustmentItem", back_populates="adjustment", cascade="all, delete-orphan"

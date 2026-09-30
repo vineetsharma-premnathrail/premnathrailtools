@@ -15,7 +15,7 @@ import { extractErrorMessages } from '@/lib/validation'
 interface Line { itemId: string; actualQuantity: string; remarks: string }
 
 export default function NewStockAdjustmentPage() {
-  const { isAuthorized, isLoading } = useRequireApp('store')
+  const { isAuthorized, isLoading, user } = useRequireApp('store')
   const router = useRouter()
 
   const [items, setItems] = useState<StoreItem[]>([])
@@ -60,7 +60,7 @@ export default function NewStockAdjustmentPage() {
   const save = async () => {
     const problems: string[] = []
     if (!locationId) problems.push('Warehouse is required.')
-    if (!approvedById) problems.push('Approved By is required.')
+    if (!approvedById) problems.push('Approver is required — pick who must approve this adjustment before it changes stock.')
     const validLines = lines.filter((l) => l.itemId && l.actualQuantity !== '')
     if (!validLines.length) problems.push('At least one item is required.')
     for (const l of validLines) {
@@ -118,12 +118,14 @@ export default function NewStockAdjustmentPage() {
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </Field>
-          <Field label="Approved By *">
+          <Field label="Approver *">
             <div data-tour="adjustment-approver">
+              {/* You can't approve your own adjustment (the backend refuses it
+                  too), so you're left out of the list. */}
               <SearchableSelect
                 value={approvedById}
                 onChange={setApprovedById}
-                options={directory.map((u) => ({ value: String(u.id), label: `${u.name} — ${u.email}` }))}
+                options={directory.filter((u) => u.id !== user?.id).map((u) => ({ value: String(u.id), label: `${u.name} — ${u.email}` }))}
                 placeholder="Search name or email…"
               />
             </div>
@@ -169,7 +171,7 @@ export default function NewStockAdjustmentPage() {
       </Section>
 
       <div style={{ display: 'flex', gap: 10 }}>
-        <button data-tour="adjustment-save-btn" disabled={busy} onClick={save} style={{ ...primaryBtnStyle, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Post Adjustment'}</button>
+        <button data-tour="adjustment-save-btn" disabled={busy} onClick={save} style={{ ...primaryBtnStyle, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Send for Approval'}</button>
         <button disabled={busy} onClick={() => router.push('/dashboard/store/adjustments')} style={{ ...secondaryBtnStyle, opacity: busy ? 0.6 : 1 }}>Cancel</button>
       </div>
     </div>

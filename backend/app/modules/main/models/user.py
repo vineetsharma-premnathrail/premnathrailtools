@@ -7,7 +7,7 @@ from app.db.mixins import TimestampMixin
 # Modules a user's `assigned_apps` list may contain. The admin role
 # bypasses this entirely and gets access to every module regardless
 # of what's in the list (see get_user_apps() usage in routes).
-AVAILABLE_APPS = {"erp", "rnd", "crm", "p2p", "store", "purchase", "quality", "projects", "accounts"}
+AVAILABLE_APPS = {"erp", "rnd", "crm", "p2p", "store", "purchase", "quality", "projects", "accounts", "hr", "production", "design", "electrical", "hydraulic", "maintenance"}
 
 
 class User(Base, TimestampMixin):
@@ -52,6 +52,18 @@ class User(Base, TimestampMixin):
     is_purchase_head: Mapped[bool] = mapped_column(default=False)
     is_director: Mapped[bool] = mapped_column(default=False)
     is_md: Mapped[bool] = mapped_column(default=False)
+    # Manager roles for the P2P approval matrix (see p2p_request.py
+    # PO_APPROVAL_ROLE_SETS): PO approval is offered to every holder of each
+    # role in the PR's set, any one of whom approves. PR approver pickers
+    # are NOT filtered by these flags — the requester picks any P2P user per
+    # role slot. is_director doubles as the Director role. Edited from the
+    # Users & Roles permissions tab.
+    is_design_manager: Mapped[bool] = mapped_column(default=False)
+    is_rnd_manager: Mapped[bool] = mapped_column(default=False)
+    is_production_manager: Mapped[bool] = mapped_column(default=False)
+    is_project_manager: Mapped[bool] = mapped_column(default=False)
+    is_store_manager: Mapped[bool] = mapped_column(default=False)
+    is_purchase_manager: Mapped[bool] = mapped_column(default=False)
     # Accounts module — approves an AP 3-way-match variance before an invoice
     # outside tolerance can post (see old_docs/product/ACCOUNTS_MODULE_ROADMAP.md).
     is_finance_manager: Mapped[bool] = mapped_column(default=False)

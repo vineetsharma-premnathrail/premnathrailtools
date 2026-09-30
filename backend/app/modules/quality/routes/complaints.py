@@ -34,7 +34,7 @@ def _to_response(db: Session, complaint: QualityCustomerComplaint) -> QualityCus
 
 
 def _get_or_404(db: Session, complaint_id: int) -> QualityCustomerComplaint:
-    complaint = db.query(QualityCustomerComplaint).filter(QualityCustomerComplaint.id == complaint_id).first()
+    complaint = db.query(QualityCustomerComplaint).filter(QualityCustomerComplaint.is_deleted == False, QualityCustomerComplaint.id == complaint_id).first()  # noqa: E712
     if not complaint:
         raise HTTPException(status_code=404, detail="Customer complaint not found")
     return complaint
@@ -47,7 +47,7 @@ async def list_complaints(
     search: str | None = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(QualityCustomerComplaint)
+    query = db.query(QualityCustomerComplaint).filter(QualityCustomerComplaint.is_deleted == False)  # noqa: E712
     if status_filter:
         query = query.filter(QualityCustomerComplaint.status == status_filter)
     if severity:
@@ -128,6 +128,9 @@ async def update_complaint(
 @router.delete("/{complaint_id}")
 async def delete_complaint(complaint_id: int, db: Session = Depends(get_db)):
     complaint = _get_or_404(db, complaint_id)
-    db.delete(complaint)
+    # Soft delete — quality records are retained for audit (ISO 9001 §7.5.3),
+    # and the delete itself is logged by app/core/audit.py.
+    complaint.is_deleted = True
+    complaint.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "Customer complaint deleted"}

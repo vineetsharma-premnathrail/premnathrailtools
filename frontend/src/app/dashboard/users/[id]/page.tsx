@@ -354,16 +354,35 @@ const P2P_PERMISSION_GROUPS: { label: string; icon: string; perms: { id: string;
   { label: 'GRN', icon: '📦', perms: [{ id: 'grn_view', label: 'View' }, { id: 'grn_action', label: 'Action' }] },
 ]
 
+// Approval-role flags an admin can grant. The manager roles drive P.O
+// approval fan-out (a PO goes to every holder of its role set, any one
+// approves); P.R approvers are picked freely per requisition. Purchase Head
+// and MD only matter for PRs raised before the matrix and are kept so those
+// can still finish their old Purchase Head → Director → MD chain.
+const APPROVAL_ROLE_FLAGS: { key: string; label: string; hex: string }[] = [
+  { key: 'is_design_manager', label: 'Design Manager', hex: '#0369a1' },
+  { key: 'is_rnd_manager', label: 'R&D Manager', hex: '#9333ea' },
+  { key: 'is_production_manager', label: 'Production Manager', hex: '#b45309' },
+  { key: 'is_project_manager', label: 'Project Manager', hex: '#0f766e' },
+  { key: 'is_store_manager', label: 'Store Manager', hex: '#4d7c0f' },
+  { key: 'is_purchase_manager', label: 'Purchase Manager', hex: '#c2410c' },
+  { key: 'is_director', label: 'Director', hex: '#7c3aed' },
+  { key: 'is_finance_manager', label: 'Finance Manager', hex: '#0f766e' },
+  { key: 'is_purchase_head', label: 'Purchase Head (legacy)', hex: '#78716c' },
+  { key: 'is_md', label: 'MD (legacy)', hex: '#78716c' },
+]
+
 function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id: string; label: string }[]; onRefresh: () => void }) {
   const isAdminRole = user.role === 'admin'
   const [selected, setSelected] = useState<string[]>(user.assigned_apps || [])
   const [erpPerms, setErpPerms] = useState<string[]>(user.erp_permissions || [])
-  const [isPurchaseHead, setIsPurchaseHead] = useState(!!user.is_purchase_head)
-  const [isDirector, setIsDirector] = useState(!!user.is_director)
-  const [isMd, setIsMd] = useState(!!user.is_md)
-  const [isFinanceManager, setIsFinanceManager] = useState(!!user.is_finance_manager)
+  const [roleFlags, setRoleFlags] = useState<Record<string, boolean>>(
+    Object.fromEntries(APPROVAL_ROLE_FLAGS.map((f) => [f.key, !!(user as unknown as Record<string, boolean>)[f.key]]))
+  )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const toggleRole = (key: string) => setRoleFlags((prev) => ({ ...prev, [key]: !prev[key] }))
 
   const toggle = (app: string) => setSelected((prev) => (prev.includes(app) ? prev.filter((a) => a !== app) : [...prev, app]))
   const togglePerm = (perm: string) => setErpPerms((prev) => (prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm]))
@@ -372,7 +391,7 @@ function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id:
     setSaving(true)
     setError('')
     try {
-      await usersApi.updateModuleAccess(user.id, selected, erpPerms, isPurchaseHead, isDirector, isMd, isFinanceManager)
+      await usersApi.updateModuleAccess(user.id, selected, erpPerms, roleFlags)
       onRefresh()
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save module access.').join(' '))
@@ -398,24 +417,17 @@ function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id:
       <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '10px 0 0' }}>Admins have access to all modules automatically.</p>
 
       <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)' }}>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 10px' }}>Approval Roles</p>
+        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 6px' }}>Approval Roles</p>
+        <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '0 0 10px' }}>
+          Manager roles drive P.O approval: a P.O goes to every holder of its role set, and any one of them approves it. P.R approvers are picked per requisition on the New PR form.
+        </p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isPurchaseHead ? '1px solid #c2410c' : `1px solid ${BORDER.normal}`, background: isPurchaseHead ? 'rgba(234,88,12,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-            <Checkbox checked={isPurchaseHead} onChange={() => setIsPurchaseHead((v) => !v)} />
-            Purchase Head
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isDirector ? '1px solid #7c3aed' : `1px solid ${BORDER.normal}`, background: isDirector ? 'rgba(124,58,237,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-            <Checkbox checked={isDirector} onChange={() => setIsDirector((v) => !v)} />
-            Director
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isMd ? '1px solid #be123c' : `1px solid ${BORDER.normal}`, background: isMd ? 'rgba(190,18,60,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-            <Checkbox checked={isMd} onChange={() => setIsMd((v) => !v)} />
-            MD
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: isFinanceManager ? '1px solid #0f766e' : `1px solid ${BORDER.normal}`, background: isFinanceManager ? 'rgba(15,118,110,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-            <Checkbox checked={isFinanceManager} onChange={() => setIsFinanceManager((v) => !v)} />
-            Finance Manager
-          </span>
+          {APPROVAL_ROLE_FLAGS.map((f) => (
+            <span key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: roleFlags[f.key] ? `1px solid ${f.hex}` : `1px solid ${BORDER.normal}`, background: roleFlags[f.key] ? `${f.hex}0f` : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
+              <Checkbox checked={!!roleFlags[f.key]} onChange={() => toggleRole(f.key)} />
+              {f.label}
+            </span>
+          ))}
         </div>
       </div>
 
@@ -440,7 +452,7 @@ function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id:
 
       {!isAdminRole && selected.includes('p2p') && (
         <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)' }}>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 12px' }}>Procure-to-Pay Permissions</p>
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 12px' }}>Procurement Permissions</p>
           {P2P_PERMISSION_GROUPS.map((group) => (
             <div key={group.label} style={{ marginBottom: 12 }}>
               <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 6px' }}>{group.icon} {group.label}</p>

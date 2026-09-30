@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
+from app.core.audit import audited_entity_modules
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
@@ -23,8 +24,27 @@ _ENTITY_TYPE_MODULE: dict[str, str] = {
 }
 
 
+def _entity_modules() -> dict[str, str]:
+    # Models covered by the automatic audit trail (Quality, Store,
+    # Organization) register their own entity types — see app/core/audit_registry.py.
+    return {**_ENTITY_TYPE_MODULE, **audited_entity_modules()}
+
+
 def _infer_module(entity_type: str) -> str:
-    return _ENTITY_TYPE_MODULE.get(entity_type, "other")
+    return _entity_modules().get(entity_type, "other")
+
+
+def _module_condition(module_key: str):
+    """SQL filter for one module: rows tagged with that module_key, plus older
+    untagged rows whose entity_type maps to it."""
+    mapping = _entity_modules()
+    if module_key == "other":
+        return and_(AuditLog.module_key.is_(None), AuditLog.entity_type.notin_(list(mapping)))
+    types = [et for et, mk in mapping.items() if mk == module_key]
+    tagged = AuditLog.module_key == module_key
+    if not types:
+        return tagged
+    return or_(tagged, and_(AuditLog.module_key.is_(None), AuditLog.entity_type.in_(types)))
 
 
 def _to_response(log: AuditLog, users_by_id: dict[int, User], branches_by_id: dict[int, Branch]) -> AuditLogResponse:
@@ -42,6 +62,7 @@ async def list_audit_logs(
     module_key: str | None = Query(None),
     action: str | None = Query(None),
     entity_type: str | None = Query(None),
+    entity_id: int | None = Query(None),
     performed_by_id: int | None = Query(None),
     q: str | None = Query(None),
     date_from: datetime | None = Query(None),
@@ -52,10 +73,14 @@ async def list_audit_logs(
     _admin: User = Depends(require_admin),
 ):
     query = db.query(AuditLog)
+    if module_key:
+        query = query.filter(_module_condition(module_key))
     if action:
         query = query.filter(AuditLog.action == action)
     if entity_type:
         query = query.filter(AuditLog.entity_type == entity_type)
+    if entity_id is not None:
+        query = query.filter(AuditLog.entity_id == entity_id)
     if performed_by_id:
         query = query.filter(AuditLog.performed_by_id == performed_by_id)
     if date_from:
@@ -66,9 +91,7 @@ async def list_audit_logs(
         like = f"%{q}%"
         query = query.filter(AuditLog.summary.ilike(like))
 
-    logs = query.order_by(AuditLog.performed_at.desc()).offset(offset).limit(limit * 3 if module_key else limit).all()
-    if module_key:
-        logs = [log for log in logs if (log.module_key or _infer_module(log.entity_type)) == module_key][:limit]
+    logs = query.order_by(AuditLog.performed_at.desc(), AuditLog.id.desc()).offset(offset).limit(limit).all()
 
     user_ids = {log.performed_by_id for log in logs if log.performed_by_id}
     branch_ids = {log.branch_id for log in logs if log.branch_id}
@@ -92,10 +115,12 @@ async def audit_dashboard(
 
     by_action = dict(db.query(AuditLog.action, func.count(AuditLog.id)).group_by(AuditLog.action).all())
 
-    entity_counts = dict(db.query(AuditLog.entity_type, func.count(AuditLog.id)).group_by(AuditLog.entity_type).all())
+    grouped = db.query(AuditLog.module_key, AuditLog.entity_type, func.count(AuditLog.id)).group_by(
+        AuditLog.module_key, AuditLog.entity_type
+    ).all()
     by_module: dict[str, int] = {}
-    for entity_type, count in entity_counts.items():
-        mk = _infer_module(entity_type)
+    for stored_module, entity_type, count in grouped:
+        mk = stored_module or _infer_module(entity_type)
         by_module[mk] = by_module.get(mk, 0) + count
 
     top_rows = (

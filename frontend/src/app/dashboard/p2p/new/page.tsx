@@ -12,6 +12,7 @@ import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { PR_APPROVAL_ROLE_SETS, P2P_ROLE_LABELS, P2PProjectType } from '@/lib/p2pRoles'
 
 const PRIORITIES = ['low', 'medium', 'high']
 
@@ -31,7 +32,7 @@ const sectionStyle: React.CSSProperties = {
 }
 
 export default function NewP2PRequestPage() {
-  const { isAuthorized, isLoading } = useRequireApp('p2p')
+  const { isAuthorized, isLoading, user } = useRequireApp('p2p')
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -40,11 +41,13 @@ export default function NewP2PRequestPage() {
   const [projects, setProjects] = useState<{ id: number; label: string }[]>([])
   const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([])
 
-  const [departmentHeadId, setDepartmentHeadId] = useState('')
-  const [projectHeadId, setProjectHeadId] = useState('')
-  const [plantHeadId, setPlantHeadId] = useState('')
+  // '' until the requester picks; the choice drives the approval role sets
+  // AND (later) which roles the PO goes to.
+  const [projectType, setProjectType] = useState<'' | P2PProjectType>('')
+  const [approverIds, setApproverIds] = useState<Record<string, string>>({})
 
   const [projectId, setProjectId] = useState('')
+  const [newProjectName, setNewProjectName] = useState('')
   const [categoryCode, setCategoryCode] = useState('')
   const [requiredDate, setRequiredDate] = useState('')
   const [requirementType, setRequirementType] = useState('')
@@ -74,7 +77,8 @@ export default function NewP2PRequestPage() {
       category: searchParams.get('category') || '',
       ship_to: '',
     }])
-    setRemarks(`Auto-suggested from Store low-stock alert${searchParams.get('part_code') ? ` for part ${searchParams.get('part_code')}` : ''}.`)
+    // `remarks` lets other callers (e.g. Production's shortage planner) say where the request came from.
+    setRemarks(searchParams.get('remarks') || `Auto-suggested from Store low-stock alert${searchParams.get('part_code') ? ` for part ${searchParams.get('part_code')}` : ''}.`)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -93,10 +97,21 @@ export default function NewP2PRequestPage() {
     })()
   }, [isAuthorized])
 
-  // Any active user can be picked for any of these three roles — search by name or email.
-  const departmentHeads = directoryUsers
-  const projectHeads = directoryUsers
-  const plantHeads = directoryUsers
+  // Approvers per role slot: ANY user can be picked, including the requester
+  // themselves ("user self select kar sake") — the role just labels the
+  // slot. Being named on the PR is what grants the approver access to it.
+  const approvalRoles = projectType ? PR_APPROVAL_ROLE_SETS[projectType] : []
+  const approverOptions = directoryUsers
+    .map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})${u.department ? ` — ${u.department}` : ''}${u.id === user?.id ? ' — you' : ''}` }))
+
+  const pickProjectType = (value: '' | P2PProjectType) => {
+    setProjectType(value)
+    // A different project type means a different approval chain — clear picks
+    // that no longer apply rather than silently submitting them.
+    setApproverIds({})
+    if (value === 'existing') setNewProjectName('')
+    if (value === 'new') setProjectId('')
+  }
 
   const updateItem = (idx: number, field: keyof P2PRequestLineItemInput, value: string | number | null) => {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)))
@@ -110,29 +125,36 @@ export default function NewP2PRequestPage() {
 
   const handleSubmit = async () => {
     setError('')
+    if (!projectType) { setError('Please choose whether this requisition is for an existing project or a new project.'); return }
+    if (projectType === 'existing' && !projectId) { setError('Please pick the existing project this requisition is for.'); return }
+    if (projectType === 'new' && !newProjectName.trim()) { setError('Please give the new project\'s name.'); return }
     if (!categoryCode) { setError('Please select a Purchase Requisition category.'); return }
     if (items.length === 0 || !items[0].item_name) { setError('At least one item is required.'); return }
-    if (!departmentHeadId) { setError('Please select a Department Head.'); return }
-    if (!projectHeadId) { setError('Please select a Project Head.'); return }
-    if (!plantHeadId) { setError('Please select a Plant Head.'); return }
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].item_name && !['Project', 'Inhouse'].includes(items[i].project_inhouse || '')) {
+        setError(`Line ${i + 1} (${items[i].item_name}): choose Project or Inhouse.`)
+        return
+      }
+    }
+    for (const role of approvalRoles) {
+      if (!approverIds[role]) { setError(`Please select a ${P2P_ROLE_LABELS[role]}.`); return }
+    }
 
     setSubmitting(true)
     try {
       const filledItems = items.filter((it) => it.item_name)
 
       const pr = await p2pApi.create({
-        project_label: projectId ? projects.find((p) => p.id === Number(projectId))?.label : undefined,
+        project_type: projectType,
+        project_label: projectType === 'existing'
+          ? projects.find((p) => p.id === Number(projectId))?.label
+          : newProjectName.trim(),
         category_code: categoryCode,
         required_date: requiredDate || undefined,
         requirement_type: requirementType || undefined,
         priority,
         remarks: remarks || undefined,
-        approver_id: departmentHeadId ? Number(departmentHeadId) : undefined,
-        approver_name: departmentHeads.find((u) => String(u.id) === departmentHeadId)?.name,
-        project_head_id: projectHeadId ? Number(projectHeadId) : undefined,
-        project_head_name: projectHeads.find((u) => String(u.id) === projectHeadId)?.name,
-        plant_head_id: plantHeadId ? Number(plantHeadId) : undefined,
-        plant_head_name: plantHeads.find((u) => String(u.id) === plantHeadId)?.name,
+        approvers: Object.fromEntries(approvalRoles.map((role) => [role, Number(approverIds[role])])),
         items: filledItems.map((it) => ({
           ...it,
           quantity: Number(it.quantity) || 1,
@@ -164,7 +186,7 @@ export default function NewP2PRequestPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
         <div>
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Procure-to-Pay Module
+            Procurement Module
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New Purchase Requisition</h1>
         </div>
@@ -178,15 +200,31 @@ export default function NewP2PRequestPage() {
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Request Details</h2>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
-          <div data-tour="pr-new-project" style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <label style={labelStyle}>Project</label>
-            <SearchableSelect
-              value={projectId}
-              onChange={setProjectId}
-              options={projects.map((p) => ({ value: String(p.id), label: p.label }))}
-              placeholder="Search existing project…"
-            />
+          <div data-tour="pr-new-project-type" style={{ flex: '0 1 180px', minWidth: 160 }}>
+            <label style={labelStyle}>Project Type *</label>
+            <select style={inputStyle} value={projectType} onChange={(e) => pickProjectType(e.target.value as '' | P2PProjectType)}>
+              <option value="">Select…</option>
+              <option value="existing">Existing project</option>
+              <option value="new">New project</option>
+            </select>
           </div>
+          {projectType !== 'new' && (
+            <div data-tour="pr-new-project" style={{ flex: '1 1 220px', minWidth: 200 }}>
+              <label style={labelStyle}>Project{projectType === 'existing' ? ' *' : ''}</label>
+              <SearchableSelect
+                value={projectId}
+                onChange={setProjectId}
+                options={projects.map((p) => ({ value: String(p.id), label: p.label }))}
+                placeholder="Search existing project…"
+              />
+            </div>
+          )}
+          {projectType === 'new' && (
+            <div data-tour="pr-new-project" style={{ flex: '1 1 220px', minWidth: 200 }}>
+              <label style={labelStyle}>New Project Name *</label>
+              <input style={inputStyle} value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="Name of the new project…" />
+            </div>
+          )}
           <div style={{ flex: '1 1 200px', minWidth: 180 }}>
             <label style={labelStyle}>Purchase Requisition Category *</label>
             <select data-tour="pr-new-category" style={inputStyle} value={categoryCode} onChange={(e) => setCategoryCode(e.target.value)}>
@@ -217,7 +255,7 @@ export default function NewP2PRequestPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1360 }}>
             <thead>
               <tr>
-                {['SL', 'Item Description *', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', ''].map((h) => (
+                {['SL', 'Item Description *', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse *', 'Category', 'Ship To', ''].map((h) => (
                   <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>
                     {h}
                   </th>
@@ -281,35 +319,24 @@ export default function NewP2PRequestPage() {
           </div>
         </div>
 
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Approval</h2>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
-          <div data-tour="pr-new-dept-head" style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <label style={labelStyle}>Department Head *</label>
-            <SearchableSelect
-              value={departmentHeadId}
-              onChange={setDepartmentHeadId}
-              options={departmentHeads.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})${u.department ? ` — ${u.department}` : ''}` }))}
-              placeholder="Search department head…"
-            />
-          </div>
-          <div data-tour="pr-new-project-head" style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <label style={labelStyle}>Project Head *</label>
-            <SearchableSelect
-              value={projectHeadId}
-              onChange={setProjectHeadId}
-              options={projectHeads.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
-              placeholder="Search project head…"
-            />
-          </div>
-          <div data-tour="pr-new-plant-head" style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <label style={labelStyle}>Plant Head *</label>
-            <SearchableSelect
-              value={plantHeadId}
-              onChange={setPlantHeadId}
-              options={plantHeads.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
-              placeholder="Search plant head…"
-            />
-          </div>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Approval</h2>
+        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>
+          {projectType
+            ? 'Every approver below must sign before the requisition is approved — pick who acts as each role for this requisition.'
+            : 'Pick the Project Type above first — it decides which approvals this requisition needs.'}
+        </p>
+        <div data-tour="pr-new-approvers" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 24 }}>
+          {approvalRoles.map((role) => (
+            <div key={role} data-tour={`pr-new-approver-${role}`} style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 340 }}>
+              <label style={labelStyle}>{P2P_ROLE_LABELS[role]} *</label>
+              <SearchableSelect
+                value={approverIds[role] || ''}
+                onChange={(v) => setApproverIds((prev) => ({ ...prev, [role]: v }))}
+                options={approverOptions}
+                placeholder={`Search ${P2P_ROLE_LABELS[role].toLowerCase()}…`}
+              />
+            </div>
+          ))}
         </div>
 
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px', paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>Documents</h2>

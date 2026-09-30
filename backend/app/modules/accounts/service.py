@@ -254,18 +254,20 @@ def _resolve_gl_account_by_code(db: Session, code: str) -> GLAccount:
     return account
 
 
-def _po_and_grn_quantities(db: Session, purchase_order_id: int) -> tuple[float, float]:
-    """Returns (qty_po, qty_gr) — qty_po is the PO's total ordered quantity
-    across all its items, qty_gr is the cumulative accepted quantity from
-    every completed GRN against this PO. Same rollup as
-    goods_receipts.py's _sync_po_and_pr_status, read-only here."""
+def _po_grn_rollup(db: Session, purchase_order_id: int) -> tuple[float, float, float | None]:
+    """(qty_po, qty_gr, received_value). received_value is the pre-tax value
+    of what was actually accepted — sum of each completed GRN line's accepted
+    quantity x its PO line's approved unit price — or None if any accepted
+    line has no unit price (a legacy PO approved without one)."""
     from app.modules.p2p.models.purchase_order import P2PPurchaseOrderItem
     from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt
 
     po_items = db.query(P2PPurchaseOrderItem).filter(P2PPurchaseOrderItem.purchase_order_id == purchase_order_id).all()
     qty_po = sum(i.quantity for i in po_items)
+    unit_price_by_item = {i.id: i.unit_price for i in po_items}
 
     qty_gr = 0.0
+    received_value: float | None = 0.0
     completed_grns = (
         db.query(P2PGoodsReceipt)
         .filter(P2PGoodsReceipt.purchase_order_id == purchase_order_id, P2PGoodsReceipt.status == "completed")
@@ -274,35 +276,113 @@ def _po_and_grn_quantities(db: Session, purchase_order_id: int) -> tuple[float, 
     )
     for g in completed_grns:
         for it in g.items:
-            qty_gr += it.accepted_quantity or 0
-    return qty_po, qty_gr
+            accepted = it.accepted_quantity or 0
+            qty_gr += accepted
+            if accepted <= 0 or received_value is None:
+                continue
+            unit_price = unit_price_by_item.get(it.po_item_id)
+            received_value = None if unit_price is None else received_value + accepted * unit_price
+    return qty_po, qty_gr, (round(received_value, 2) if received_value is not None else None)
+
+
+# PR statuses at which the PO has cleared Purchase Head -> Director -> MD.
+_PO_APPROVED_PR_STATUSES = ("po_approved", "partially_received", "received", "closed")
 
 
 def check_three_way_match(db: Session, *, purchase_order_id: int, invoice_qty: float, invoice_amount: float) -> dict:
-    """Read-only — computes qty_po/qty_gr and whether invoice_qty/invoice_amount
-    fall within tolerance of them. Used both as a pre-submit preview and to
-    stamp a new VendorInvoice's matching_status."""
-    from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+    """Read-only — matches an incoming vendor invoice against the approved PO
+    and what was actually received. Used both as a pre-submit preview and to
+    stamp a new VendorInvoice's matching_status.
 
-    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == purchase_order_id).first()
+    Hard stops (ValueError — no approval can override these):
+      - the PO never completed its Purchase Head / Director / MD approval
+        (or has no parent PR, so it never went through one);
+      - nothing has been accepted on a GRN yet (no invoice before receipt);
+      - this invoice would take the total invoiced past the approved PO value.
+
+    Variance (a Finance Manager other than the invoice's creator must
+    approve): quantity or amount outside tolerance of what was received but
+    not yet invoiced, or a legacy PO with no line prices to match against.
+
+    The invoice amount is compared pre-GST, against accepted qty x PO unit
+    price, net of every earlier invoice on the same PO — so the same receipt
+    can't be invoiced twice and an unpriced PO no longer "matches" anything."""
+    from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+    from app.modules.p2p.models.p2p_request import P2PRequest
+
+    po = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(P2PPurchaseOrder.id == purchase_order_id).first()
     if not po:
         raise ValueError("Purchase order not found.")
+    if invoice_qty <= 0 or invoice_amount <= 0:
+        raise ValueError("Invoice quantity and amount must both be greater than zero.")
 
-    qty_po, qty_gr = _po_and_grn_quantities(db, purchase_order_id)
-    po_amount = po.total_value or 0
+    pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first() if po.p2p_request_id else None
+    if not pr:
+        raise ValueError(f"PO '{po.po_number}' isn't linked to a purchase requisition, so it never went through PO approval — an invoice can't be booked against it.")
+    if pr.status not in _PO_APPROVED_PR_STATUSES or pr.pending_po_approval_roles:
+        raise ValueError(f"PO '{po.po_number}' hasn't completed its Purchase Head / Director / MD approval yet (request status: {pr.status}) — an invoice can't be booked against it until it has.")
 
-    qty_reference = qty_gr if qty_gr > 0 else qty_po
-    qty_variance_pct = abs(invoice_qty - qty_reference) / qty_reference * 100 if qty_reference else 0
-    amount_variance_pct = abs(invoice_amount - po_amount) / po_amount * 100 if po_amount else 0
+    qty_po, qty_gr, received_value = _po_grn_rollup(db, purchase_order_id)
+    if qty_gr <= 0:
+        raise ValueError(f"No goods have been accepted against PO '{po.po_number}' yet — record and inspect the GRN before booking the vendor's invoice.")
 
-    within_tolerance = qty_variance_pct <= QTY_TOLERANCE_PCT and amount_variance_pct <= AMOUNT_TOLERANCE_PCT
+    prior = db.query(VendorInvoice).filter(
+        VendorInvoice.purchase_order_id == purchase_order_id, VendorInvoice.status != "cancelled",
+    ).all()
+    prior_qty = sum(i.qty_invoice or 0 for i in prior)
+    prior_amount = round(sum(i.invoice_amount or 0 for i in prior), 2)
+
+    po_is_priced = bool(po.items) and all(i.unit_price is not None for i in po.items)
+    po_value_pre_tax = round(sum(i.quantity * i.unit_price for i in po.items), 2) if po_is_priced else None
+    if po_value_pre_tax is not None and prior_amount + invoice_amount > po_value_pre_tax * (1 + AMOUNT_TOLERANCE_PCT / 100) + 1e-9:
+        raise ValueError(
+            f"This invoice would take the total invoiced on PO '{po.po_number}' to {prior_amount + invoice_amount:,.2f}, "
+            f"above the approved PO value of {po_value_pre_tax:,.2f} (before GST). "
+            f"Already invoiced: {prior_amount:,.2f}. The PO must be amended and re-approved to pay more."
+        )
+
+    reasons: list[str] = []
+    open_qty = qty_gr - prior_qty
+    if open_qty <= 1e-9:
+        qty_variance_pct = 100.0
+        reasons.append(f"all {qty_gr:g} accepted units have already been invoiced")
+    else:
+        qty_variance_pct = abs(invoice_qty - open_qty) / open_qty * 100
+        if qty_variance_pct > QTY_TOLERANCE_PCT:
+            reasons.append(f"invoice quantity {invoice_qty:g} vs {open_qty:g} received and not yet invoiced")
+
+    open_value = round(received_value - prior_amount, 2) if received_value is not None else None
+    if open_value is None:
+        amount_variance_pct = 100.0
+        reasons.append("the PO has lines with no unit price, so there is no approved value to match against")
+    elif open_value <= 1e-9:
+        amount_variance_pct = 100.0
+        reasons.append("the value of everything received has already been invoiced")
+    else:
+        amount_variance_pct = abs(invoice_amount - open_value) / open_value * 100
+        if amount_variance_pct > AMOUNT_TOLERANCE_PCT:
+            reasons.append(f"invoice amount {invoice_amount:,.2f} vs {open_value:,.2f} value received and not yet invoiced (before GST)")
+
     return {
         "qty_po": qty_po,
         "qty_gr": qty_gr,
         "qty_variance_pct": round(qty_variance_pct, 2),
         "amount_variance_pct": round(amount_variance_pct, 2),
-        "matching_status": "matched" if within_tolerance else "variance",
+        "matching_status": "variance" if reasons else "matched",
+        "po_value": po_value_pre_tax,
+        "received_value": received_value,
+        "already_invoiced_qty": prior_qty,
+        "already_invoiced_amount": prior_amount,
+        "variance_reasons": reasons,
     }
+
+
+def _ensure_not_maker(maker_id: int | None, checker_id: int, action: str) -> None:
+    """Maker-checker: whoever recorded a vendor invoice can't also be the one
+    who approves its variance, posts it, or pays it — otherwise one person
+    can create, post and pay an invoice alone. Applies to admins too."""
+    if maker_id is not None and maker_id == checker_id:
+        raise PermissionError(f"You recorded this invoice, so you can't {action} it yourself — another finance user must do that.")
 
 
 def create_vendor_invoice(db: Session, *, purchase_order_id: int, invoice_number: str, invoice_date: date,
@@ -310,7 +390,9 @@ def create_vendor_invoice(db: Session, *, purchase_order_id: int, invoice_number
                            invoice_qty: float, created_by_id: int | None) -> VendorInvoice:
     from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 
-    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == purchase_order_id).first()
+    # Lock the PO row so two invoices booked at the same moment can't both
+    # pass the cumulative "already invoiced" cap in check_three_way_match.
+    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == purchase_order_id).with_for_update().first()
     if not po:
         raise ValueError("Purchase order not found.")
     vendor = _match_vendor(db, po.vendor_name or "", vendor_id=po.vendor_id)
@@ -350,6 +432,7 @@ def approve_variance(db: Session, *, vendor_invoice_id: int, approved_by_id: int
         raise ValueError("Vendor invoice not found.")
     if invoice.matching_status != "variance":
         raise ValueError(f"This invoice isn't awaiting variance approval (current matching status: '{invoice.matching_status}').")
+    _ensure_not_maker(invoice.created_by_id, approved_by_id, "approve the variance on")
     invoice.matching_status = "approved_variance"
     invoice.variance_approved_by_id = approved_by_id
     invoice.variance_approved_at = datetime.now(timezone.utc)
@@ -366,6 +449,7 @@ def post_vendor_invoice(db: Session, *, vendor_invoice_id: int, created_by_id: i
         raise ValueError(f"Only a pending invoice can be posted (current status: '{invoice.status}').")
     if invoice.matching_status == "variance":
         raise ValueError("This invoice is outside 3-way-match tolerance and needs variance approval before it can be posted.")
+    _ensure_not_maker(invoice.created_by_id, created_by_id, "post")
 
     vendor = db.query(Vendor).filter(Vendor.id == invoice.vendor_id).first()
     ap_account_id = vendor.gl_reconciliation_account_id or _resolve_gl_account_by_code(db, DEFAULT_AP_CONTROL_ACCOUNT_CODE).id
@@ -408,6 +492,7 @@ def post_payment(db: Session, *, vendor_invoice_id: int, bank_account_id: int, a
         raise ValueError("Vendor invoice not found.")
     if invoice.status != "posted":
         raise ValueError(f"Only a posted invoice can be paid (current status: '{invoice.status}').")
+    _ensure_not_maker(invoice.created_by_id, created_by_id, "pay")
     if amount <= 0:
         raise ValueError("Payment amount must be greater than zero.")
     if amount > invoice.amount_due + 1e-9:

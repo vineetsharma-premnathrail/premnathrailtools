@@ -87,3 +87,28 @@ def generate_material_return_number(db: Session) -> str:
         last_num = int(last.rsplit("-", 1)[-1])
         return f"{prefix}{last_num + 1:04d}"
     return f"{prefix}0001"
+
+
+def generate_item_code(db: Session, item_type: str | None, category_name: str | None) -> str:
+    """<TYPE>-<CATEGORY>-<NNNN>, e.g. RM-HYD-0001 — numbered per type +
+    category pair. The category code comes from the item category master
+    (matched by name, as items store the category name); no category → GEN.
+    Serialized with the same advisory lock as the other Store numbers on
+    Postgres (skipped on SQLite, which has no advisory locks)."""
+    from app.modules.store.models.category import StoreItemCategory
+    from app.modules.store.models.item import StoreItem, STORE_ITEM_TYPE_PREFIXES, STORE_ITEM_NO_CATEGORY_CODE
+
+    type_code = STORE_ITEM_TYPE_PREFIXES.get(item_type or "other", "OT")
+    cat_code = STORE_ITEM_NO_CATEGORY_CODE
+    if category_name:
+        cat = db.query(StoreItemCategory).filter(
+            func.lower(StoreItemCategory.name) == category_name.strip().lower(), StoreItemCategory.parent_id.is_(None)
+        ).first()
+        if cat and cat.code:
+            cat_code = cat.code.strip().upper()
+    prefix = f"{type_code}-{cat_code}-"
+    if db.get_bind().dialect.name == "postgresql":
+        _lock_number_series(db, prefix)
+    rows = db.query(StoreItem.item_code).filter(StoreItem.item_code.like(f"{prefix}%")).all()
+    numbers = [int(code.rsplit("-", 1)[-1]) for (code,) in rows if code.rsplit("-", 1)[-1].isdigit()]
+    return f"{prefix}{(max(numbers) + 1) if numbers else 1:04d}"

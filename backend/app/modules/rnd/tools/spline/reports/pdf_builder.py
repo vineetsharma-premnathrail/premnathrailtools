@@ -16,9 +16,14 @@ from ...latex_utils import escape_latex
 # Shared templates folder: backend/app/utils/templates/
 _TEMPLATES_DIR = Path(__file__).resolve().parents[5] / "utils" / "templates"
 
-# Free-text fields the .tex template interpolates directly — must be escaped
-# before reaching the LaTeX compiler (see latex_utils.escape_latex).
-_LATEX_TEXT_FIELDS = ("doc_no", "made_by", "checked_by", "approved_by", "doc_date", "material_type")
+# Every SplineInput field is a str and the .tex template interpolates many of
+# them directly (doc_no, made_by, material_type, loco_weight, speed, ...), so
+# ALL string values are escaped before reaching the LaTeX compiler (see
+# latex_utils.escape_latex). Plain numbers like "12.5" pass through unchanged.
+
+# lualatex is deliberately excluded: its \directlua gives Lua io/os access
+# that -no-shell-escape and openin_any do not fully restrict.
+_LATEX_ENGINES = ("pdflatex", "xelatex")
 
 
 # ── DOCX ──────────────────────────────────────────────────────────────────────
@@ -198,10 +203,10 @@ def generate_spline_pdf(data: Mapping[str, Any], result: Mapping[str, Any]) -> i
 
     env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)))
     template = env.get_template(template_name)
-    safe_data = dict(data)
-    for field in _LATEX_TEXT_FIELDS:
-        if safe_data.get(field):
-            safe_data[field] = escape_latex(str(safe_data[field]))
+    safe_data = {
+        key: escape_latex(value) if isinstance(value, str) else value
+        for key, value in data.items()
+    }
     context = {"data": safe_data, "result": dict(result)}
     latex_content = template.render(**context)
 
@@ -217,11 +222,11 @@ def generate_spline_pdf(data: Mapping[str, Any], result: Mapping[str, Any]) -> i
 
         pdf_path = tmp_path / "spline_report.pdf"
         last_res = None
-        # openin_any=p restricts \input/\include file resolution to the temp
+        # openin_any/openout_any=p restrict file reads/writes to the temp
         # working directory — defense in depth alongside escaping
         # user-supplied fields before they reach the template.
-        tex_env = {**os.environ, "openin_any": "p"}
-        for compiler in ["pdflatex", "xelatex", "lualatex"]:
+        tex_env = {**os.environ, "openin_any": "p", "openout_any": "p"}
+        for compiler in _LATEX_ENGINES:
             try:
                 last_res = subprocess.run(
                     [compiler, "-interaction=nonstopmode", "-no-shell-escape", "spline_report.tex"],

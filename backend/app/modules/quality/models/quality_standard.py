@@ -3,12 +3,12 @@ from datetime import date
 from sqlalchemy import String, Integer, Text, Date, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
-from app.db.mixins import TimestampMixin
+from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 QUALITY_STANDARD_STATUSES = ("active", "draft", "obsolete")
 
 
-class QualityStandard(Base, TimestampMixin):
+class QualityStandard(Base, TimestampMixin, SoftDeleteMixin):
     """A reference quality standard/specification (e.g. an internal SOP or an
     external standard) that inspection plans and checklists can be linked
     against."""

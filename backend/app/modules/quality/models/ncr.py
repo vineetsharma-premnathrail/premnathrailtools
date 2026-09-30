@@ -3,14 +3,14 @@ from datetime import date, datetime
 from sqlalchemy import String, Integer, Date, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
-from app.db.mixins import TimestampMixin
+from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 QUALITY_NCR_SOURCES = ("inspection", "complaint", "internal")
 QUALITY_NCR_SEVERITIES = ("minor", "major", "critical")
 QUALITY_NCR_STATUSES = ("open", "under_review", "capa_assigned", "closed", "rejected", "cancelled")
 
 
-class QualityNcr(Base, TimestampMixin):
+class QualityNcr(Base, TimestampMixin, SoftDeleteMixin):
     """A Non-Conformance Report — raised against an inspection, a customer
     complaint, or an internal finding — that feeds the CAPA loop."""
 

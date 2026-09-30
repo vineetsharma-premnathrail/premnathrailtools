@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'po-approval-bucket-pending',
       title: 'Pending',
-      purpose: 'Requisitions whose Purchase Order has been raised and is awaiting approval (Purchase Head → Director → MD).',
+      purpose: 'Purchase Orders you are eligible to approve — this tab only appears for holders of a PO-approval role, and it lists only POs your roles cover, never your own requisitions or POs you raised. The PO goes to a fixed set of managers based on the requisition\'s project type (existing: Production, Purchase and Project Managers plus the Director; new: R&D, Purchase and Production Managers plus the Director) — any ONE approval approves the PO.',
     },
     {
       target: 'po-approval-bucket-approved',
@@ -37,7 +37,7 @@ const config: TourConfig = {
     {
       target: 'p2p-list-approve',
       title: 'Approve',
-      purpose: 'Approves this PO inline, without opening the full detail page. Only shown when you are one of the pending PO approvers (Purchase Head, Director, or MD) for a PO-raised requisition.',
+      purpose: 'Approves this PO inline, without opening the full detail page. Only shown when you hold one of this requisition\'s PO approval roles — your single approval approves the PO. You never see it on your own requisitions.',
     },
     {
       target: 'p2p-list-reject',

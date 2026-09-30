@@ -2,12 +2,12 @@ from __future__ import annotations
 from sqlalchemy import String, Integer, Float, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
-from app.db.mixins import TimestampMixin
+from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 QUALITY_SUPPLIER_SCORECARD_STATUSES = ("draft", "final")
 
 
-class QualitySupplierScorecard(Base, TimestampMixin):
+class QualitySupplierScorecard(Base, TimestampMixin, SoftDeleteMixin):
     """A periodic quality scorecard for a vendor — rolls up rejection/NCR
     counts and quality/delivery scores for that period."""
 

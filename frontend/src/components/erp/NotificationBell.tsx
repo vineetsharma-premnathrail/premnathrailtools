@@ -5,14 +5,28 @@ import Link from 'next/link'
 import { notificationsApi } from '@/lib/api'
 import { Notification } from '@/types'
 import { useAuth } from '@/hooks/useAuth'
+import { hrNotificationHref } from '@/components/hr/hrNotificationLink'
+
+// Some notification types need a more specific link than their entity type
+// alone gives (P2P approvals key their action buttons off ?from=).
+const NOTIFICATION_TYPE_LINK: Record<string, (id: number) => string> = {
+  p2p_po_approval_pending: (id) => `/dashboard/p2p/${id}?from=po-approval`,
+  p2p_po_approved: (id) => `/dashboard/p2p/${id}?from=po-approval`,
+}
 
 const ENTITY_LINK: Record<string, (id: number) => string> = {
+  p2p_request: (id) => `/dashboard/p2p/${id}?from=approval`,
+  hyd_circuit: (id) => `/dashboard/hydraulic/circuits/${id}`,
   service_request: (id) => `/dashboard/erp/service-requests/${id}`,
   project: (id) => `/dashboard/erp/projects/${id}`,
   organization: (id) => `/dashboard/crm/organizations/${id}`,
   inquiry: (id) => `/dashboard/crm/inquiries/${id}`,
   tender: (id) => `/dashboard/crm/tenders/${id}`,
   activity: () => `/dashboard/crm/followups`,
+  design_document: (id) => `/dashboard/design/documents/${id}`,
+  design_ecn: (id) => `/dashboard/design/change-notices/${id}`,
+  maintenance_request: (id) => `/dashboard/maintenance/requests/${id}`,
+  maintenance_work_order: (id) => `/dashboard/maintenance/work-orders/${id}`,
 }
 
 // Deleted entities 404 on their normal detail route (soft-deleted rows are excluded
@@ -200,7 +214,7 @@ export default function NotificationBell() {
             <p style={{ fontSize: 12.5, color: '#a8a29e', padding: 16, margin: 0 }}>No notifications yet.</p>
           ) : (
             notifications.map((n) => {
-              const href = DELETED_TYPE_LINK[n.notification_type] ?? (n.entity_type && n.entity_id ? ENTITY_LINK[n.entity_type]?.(n.entity_id) : undefined)
+              const href = DELETED_TYPE_LINK[n.notification_type] ?? (n.entity_id ? NOTIFICATION_TYPE_LINK[n.notification_type]?.(n.entity_id) : undefined) ?? (n.entity_type && n.entity_id ? ENTITY_LINK[n.entity_type]?.(n.entity_id) : undefined) ?? hrNotificationHref(n)
               const content = (
                 <div
                   onClick={() => handleClickNotification(n)}

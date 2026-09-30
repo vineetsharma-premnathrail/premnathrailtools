@@ -74,6 +74,36 @@ const QualityIcon = (
     <polyline points="9 12 11 14 15 10" />
   </svg>
 )
+const ProductionIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 20V9l6 4V9l6 4V5h4l2 15z" />
+    <line x1="2" y1="20" x2="22" y2="20" />
+  </svg>
+)
+const MaintenanceIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
+  </svg>
+)
+const DesignIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 19l7-7 3 3-7 7-3-3z" />
+    <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+    <path d="M2 2l7.586 7.586" />
+    <circle cx="11" cy="11" r="2" />
+  </svg>
+)
+const ElectricalIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+  </svg>
+)
+const HydraulicIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2.7l5.66 5.66a8 8 0 11-11.32 0z" />
+    <path d="M9 14a3 3 0 003 3" />
+  </svg>
+)
 const ProjectsIcon = (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -112,12 +142,12 @@ const modules = [
     tagColor: BRAND.primaryActive,
   },
   {
-    title: 'R&D Tools',
+    title: 'R&D',
     app: 'rnd' as const,
-    description: 'Railway engineering calculators — braking, hydraulic, load distribution, and more.',
+    description: 'R&D projects, experiments & test data, prototypes, feasibility, and railway engineering calculators.',
     icon: CalculatorIcon,
     href: '/dashboard/rnd',
-    features: ['Braking', 'Hydraulic', 'Qmax', 'Tractive Effort', '+3 more'],
+    features: ['Projects', 'Experiments', 'Prototypes', 'Feasibility', 'Engineering Tools'],
     barColor: 'linear-gradient(90deg,#3b82f6,#60a5fa)',
     iconBg: 'rgba(59,130,246,0.12)',
     iconColor: '#2563eb',
@@ -138,7 +168,7 @@ const modules = [
     tagColor: '#047857',
   },
   {
-    title: 'Procure-to-Pay',
+    title: 'Procurement',
     app: 'p2p' as const,
     description: 'Standalone purchase requisitions — raise, approve, and track requests.',
     icon: FileTextIcon,
@@ -177,6 +207,71 @@ const modules = [
     tagColor: '#0f766e',
   },
   {
+    title: 'Production',
+    app: 'production' as const,
+    description: 'BOM & routing, work orders, shop-floor bookings, material planning, and production cost.',
+    icon: ProductionIcon,
+    href: '/dashboard/production',
+    features: ['Work Orders', 'Shop Floor', 'BOM', 'Planning'],
+    barColor: 'linear-gradient(90deg,#475569,#64748b)',
+    iconBg: 'rgba(71,85,105,0.12)',
+    iconColor: '#475569',
+    tagBg: 'rgba(71,85,105,0.12)',
+    tagColor: '#334155',
+  },
+  {
+    title: 'Maintenance',
+    app: 'maintenance' as const,
+    description: 'Plant equipment register, breakdown requests, maintenance work orders, spares issue and downtime tracking.',
+    icon: MaintenanceIcon,
+    href: '/dashboard/maintenance',
+    features: ['Assets', 'Breakdowns', 'Work Orders', 'Downtime'],
+    barColor: 'linear-gradient(90deg,#b45309,#d97706)',
+    iconBg: 'rgba(180,83,9,0.12)',
+    iconColor: '#b45309',
+    tagBg: 'rgba(180,83,9,0.12)',
+    tagColor: '#92400e',
+  },
+  {
+    title: 'Design',
+    app: 'design' as const,
+    description: 'Controlled engineering drawings and documents — revisions, check & approval sign-off, and change notices.',
+    icon: DesignIcon,
+    href: '/dashboard/design',
+    features: ['Drawings', 'Revisions', 'Approvals', 'ECN'],
+    barColor: 'linear-gradient(90deg,#4f46e5,#6366f1)',
+    iconBg: 'rgba(79,70,229,0.12)',
+    iconColor: '#4f46e5',
+    tagBg: 'rgba(79,70,229,0.12)',
+    tagColor: '#3730a3',
+  },
+  {
+    title: 'Electrical',
+    app: 'electrical' as const,
+    description: 'RRV electrical creation — requirement, design, BOM, wiring, panels, testing, QC, commissioning and handover.',
+    icon: ElectricalIcon,
+    href: '/dashboard/electrical',
+    features: ['RRV Jobs', 'Drawings', 'Testing', 'Handover'],
+    barColor: 'linear-gradient(90deg,#ca8a04,#eab308)',
+    iconBg: 'rgba(202,138,4,0.12)',
+    iconColor: '#ca8a04',
+    tagBg: 'rgba(202,138,4,0.12)',
+    tagColor: '#a16207',
+  },
+  {
+    title: 'Hydraulic & Pneumatic',
+    app: 'hydraulic' as const,
+    description: 'Hydraulic and pneumatic systems — component master, circuits, BOM, calculations, testing, maintenance and spares.',
+    icon: HydraulicIcon,
+    href: '/dashboard/hydraulic',
+    features: ['Systems', 'Circuits', 'Calculations', 'Maintenance'],
+    barColor: 'linear-gradient(90deg,#0369a1,#0ea5e9)',
+    iconBg: 'rgba(3,105,161,0.12)',
+    iconColor: '#0369a1',
+    tagBg: 'rgba(3,105,161,0.12)',
+    tagColor: '#075985',
+  },
+  {
     title: 'Project Management',
     app: 'projects' as const,
     description: 'Project workspaces — scope, planning, tasks, budget, risks, and closure.',
@@ -203,6 +298,32 @@ const modules = [
     tagColor: '#b45309',
   },
 ]
+
+const HrIcon = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="5" width="20" height="14" rx="2" />
+    <circle cx="8" cy="11" r="2" />
+    <path d="M5 16c.6-1.5 1.7-2.2 3-2.2s2.4.7 3 2.2" />
+    <line x1="14" y1="10" x2="19" y2="10" />
+    <line x1="14" y1="14" x2="17" y2="14" />
+  </svg>
+)
+
+// Shown to every logged-in user (like the sidebar's "HR & Admin" link):
+// My HR — leave, attendance, travel, claims, assets — is self-service. The
+// HR-management tabs inside are gated on the `hr` app.
+const hrModule = {
+  title: 'HR & Administration',
+  description: 'My HR self-service, approvals, employees, lifecycle, leave, attendance, assets, visitors, travel & claims.',
+  icon: HrIcon,
+  href: '/dashboard/hr',
+  features: ['My HR', 'Leave', 'Attendance', 'Travel & Claims', '+4 more'],
+  barColor: 'linear-gradient(90deg,#ec4899,#f472b6)',
+  iconBg: 'rgba(236,72,153,0.12)',
+  iconColor: '#db2777',
+  tagBg: 'rgba(236,72,153,0.12)',
+  tagColor: '#be185d',
+}
 
 // Admin-only — shown regardless of `assigned_apps` (like the sidebar's
 // "Organization" link), not filtered through the modules[] app-access check.
@@ -232,6 +353,7 @@ export default function DashboardPage() {
 
   const visibleModules = [
     ...modules.filter((module) => user?.apps?.includes(module.app)),
+    ...(user ? [hrModule] : []),
     ...(user?.role === 'admin' ? [adminModule] : []),
   ]
 

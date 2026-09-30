@@ -3,13 +3,13 @@ from datetime import date, datetime
 from sqlalchemy import String, Integer, Date, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
-from app.db.mixins import TimestampMixin
+from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 QUALITY_CAPA_ACTION_TYPES = ("corrective", "preventive")
 QUALITY_CAPA_STATUSES = ("open", "in_progress", "pending_verification", "closed", "overdue")
 
 
-class QualityCapa(Base, TimestampMixin):
+class QualityCapa(Base, TimestampMixin, SoftDeleteMixin):
     """A Corrective or Preventive Action — raised against an NCR (or, from
     Phase 3, a customer complaint) — tracked through to verification/close."""
 

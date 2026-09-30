@@ -9,6 +9,7 @@ import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 import MessageDialog from '@/components/erp/MessageDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { userPoRoles } from '@/lib/p2pRoles'
 import { formatDate } from '@/lib/format'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -40,7 +41,8 @@ const STATUS_HEX: Record<string, string> = {
 // "Submitted" (nobody's approved yet) and green "Approved" (all done).
 function displayStatus(pr: P2PRequest): { label: string; hex: string } {
   if (pr.status === 'submitted') {
-    const assignedCount = [pr.approver_id, pr.project_head_id, pr.plant_head_id].filter((v) => v != null).length
+    const assignedCount = pr.approvals?.length
+      || [pr.approver_id, pr.project_head_id, pr.plant_head_id].filter((v) => v != null).length
     const pendingCount = pr.pending_approval_roles?.length ?? assignedCount
     if (assignedCount > 0 && pendingCount > 0 && pendingCount < assignedCount) {
       return { label: 'Partially Approved', hex: '#8b5cf6' }
@@ -49,7 +51,7 @@ function displayStatus(pr: P2PRequest): { label: string; hex: string } {
   return { label: STATUS_LABELS[pr.status] || pr.status, hex: STATUS_HEX[pr.status] || '#64748b' }
 }
 
-export default function P2PRequestList({ statuses, emptyLabel, context }: { statuses?: string[]; emptyLabel: string; context?: string }) {
+export default function P2PRequestList({ statuses, emptyLabel, context, queue, onlyPendingForViewer }: { statuses?: string[]; emptyLabel: string; context?: string; queue?: string; onlyPendingForViewer?: boolean }) {
   const router = useRouter()
   const { user } = useAuth()
   const [prs, setPrs] = useState<P2PRequest[]>([])
@@ -65,10 +67,10 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
     setLoading(true)
     setError('')
     try {
-      const data = await p2pApi.list({ limit: 500 })
+      const data = await p2pApi.list(queue ? { limit: 500, queue } : { limit: 500 })
       setPrs(statuses ? data.filter((pr: P2PRequest) => statuses.includes(pr.status)) : data)
     } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to load your Procure-to-Pay requests.'))
+      setError(extractErrorMessages(err, 'Failed to load your Procurement requests.'))
     } finally {
       setLoading(false)
     }
@@ -77,14 +79,31 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statuses])
+  }, [statuses, queue])
+
+  // "Pending" in the P.R Approval queue means pending on THE VIEWER: their
+  // own slot unsigned (matrix rows, or the legacy head columns). Admins see
+  // every pending PR.
+  const pendingOnViewer = (pr: P2PRequest): boolean => {
+    if (!onlyPendingForViewer || user?.role === 'admin') return true
+    if (pr.approvals?.length) return pr.approvals.some((a) => a.approver_id === user?.id && !a.approved_at)
+    if (pr.approver_id === user?.id && !pr.department_head_approved_at) return true
+    if (pr.project_head_id === user?.id && !pr.project_head_approved_at) return true
+    if (pr.plant_head_id === user?.id && !pr.plant_head_approved_at) return true
+    return false
+  }
 
   const isAdmin = user?.role === 'admin'
-  const poRole = user?.is_purchase_head ? 'purchase_head' : user?.is_director ? 'director' : user?.is_md ? 'md' : null
+  // Matrix PRs: the PO goes to the PR's role set and any one holder approves;
+  // legacy PRs keep the Purchase Head / Director / MD chain. The requester
+  // can't approve their own PR's PO (the backend refuses it too).
   const canApprovePoInline = (pr: P2PRequest) =>
-    context === 'po-approval' && pr.status === 'po_raised' && poRole != null && (pr.pending_po_approval_roles || []).includes(poRole)
+    context === 'po-approval' && pr.status === 'po_raised'
+    && userPoRoles(user, pr).some((r) => (pr.pending_po_approval_roles || []).includes(r))
+    && !(pr.project_type && pr.requested_by_id === user?.id)
   const canRejectPoInline = (pr: P2PRequest) =>
-    context === 'po-approval' && pr.status === 'po_raised' && (poRole != null || isAdmin)
+    context === 'po-approval' && pr.status === 'po_raised'
+    && ((userPoRoles(user, pr).length > 0 && !(pr.project_type && pr.requested_by_id === user?.id)) || isAdmin)
 
   const confirmApprovePo = async (comment: string) => {
     if (approvingId == null) return
@@ -123,9 +142,11 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
       <PromptDialog
         open={approvingId != null}
         title="Approve this PO?"
-        placeholder="Comment (optional)"
+        message="Your comment is recorded on the approval trail."
+        placeholder="Comment (required)"
         confirmLabel="Approve"
         danger={false}
+        requireValue
         onConfirm={confirmApprovePo}
         onCancel={() => (busy ? null : setApprovingId(null))}
       />
@@ -151,10 +172,10 @@ export default function P2PRequestList({ statuses, emptyLabel, context }: { stat
           </thead>
           <tbody>
             {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && prs.length === 0 && (
+            {!loading && prs.filter(pendingOnViewer).length === 0 && (
               <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{emptyLabel}</td></tr>
             )}
-            {prs.map((pr) => {
+            {prs.filter(pendingOnViewer).map((pr) => {
               const status = displayStatus(pr)
               return (
               <tr key={pr.id} onClick={() => router.push(detailHref(pr.id))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>

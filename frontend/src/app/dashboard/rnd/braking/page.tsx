@@ -367,7 +367,7 @@ function BrakingCalculatorPageInner() {
             Rail &amp; Road Braking Performance Analysis
           </p>
         </div>
-        <nav style={{ fontSize: 11.5, color: '#94a3b8' }}>R&amp;D Tools / <span style={{ color: '#FF7A45', fontWeight: 600 }}>Braking Calculator</span></nav>
+        <nav style={{ fontSize: 11.5, color: '#94a3b8' }}>Engineering Tools / <span style={{ color: '#FF7A45', fontWeight: 600 }}>Braking Calculator</span></nav>
       </div>
 
       {/* Stat cards */}

@@ -7,6 +7,7 @@ import { AuditLogEntry, AuditDashboard } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -26,11 +27,72 @@ const cardRowStyle: React.CSSProperties = {
 }
 
 const MODULE_LABELS: Record<string, string> = {
-  organization: 'Organization', erp: 'Service Module', crm: 'CRM Module', p2p: 'Procure-to-Pay', rnd: 'R&D Tools', other: 'Other',
+  organization: 'Organization', erp: 'Service Module', crm: 'CRM Module', p2p: 'Procurement', quality: 'Quality', store: 'Store', production: 'Production', hydraulic: 'Hydraulic & Pneumatic', design: 'Design', rnd: 'R&D', other: 'Other',
 }
 
 const API_SOURCE_LABELS: Record<string, string> = {
   web_app: 'Web App', bearer_token: 'API Client (Bearer Token)',
+}
+
+const ACTION_OPTIONS = [
+  'create', 'created', 'update', 'updated', 'delete', 'deleted', 'restored', 'approve', 'approved', 'reject', 'rejected',
+  'status_change', 'line_added', 'item_added', 'item_removed', 'member_added', 'member_removed',
+]
+
+function parseValues(raw?: string | null): Record<string, unknown> | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+// Field-level before/after values recorded with each entry — an update
+// shows only what changed; a delete shows the full record as it was.
+function ChangeDetails({ log }: { log: AuditLogEntry }) {
+  const oldValues = parseValues(log.old_value)
+  const newValues = parseValues(log.new_value)
+  if (!oldValues && !newValues) {
+    if (!log.old_value && !log.new_value) return null
+    return (
+      <p style={{ fontSize: 11.5, color: TEXT.muted, margin: 0 }}>
+        {log.field_name ? <b>{log.field_name}: </b> : null}{log.old_value || '—'} → {log.new_value || '—'}
+      </p>
+    )
+  }
+  const isChange = !!oldValues && !!newValues
+  const fields = Array.from(new Set([...Object.keys(oldValues || {}), ...Object.keys(newValues || {})]))
+  if (fields.length === 0) return null
+  const label = isChange ? `Changes (${fields.length})` : oldValues ? 'Record as it was before deletion' : 'Values recorded'
+  return (
+    <details style={{ fontSize: 11.5, color: TEXT.secondary }} open={isChange && fields.length <= 3}>
+      <summary style={{ cursor: 'pointer', fontWeight: 600, color: TEXT.secondary }}>{label}</summary>
+      <div style={{ display: 'grid', gridTemplateColumns: isChange ? 'minmax(120px, max-content) 1fr 1fr' : 'minmax(120px, max-content) 1fr', gap: '4px 12px', marginTop: 6, padding: '8px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.03)', overflowX: 'auto' }}>
+        {isChange && (
+          <>
+            <span style={{ fontWeight: 700, color: TEXT.muted }}>Field</span>
+            <span style={{ fontWeight: 700, color: TEXT.muted }}>Before</span>
+            <span style={{ fontWeight: 700, color: TEXT.muted }}>After</span>
+          </>
+        )}
+        {fields.map((f) => (
+          <div key={f} style={{ display: 'contents' }}>
+            <span style={{ fontWeight: 600 }}>{f}</span>
+            {isChange && <span style={{ wordBreak: 'break-word' }}>{formatValue(oldValues?.[f])}</span>}
+            <span style={{ wordBreak: 'break-word' }}>{formatValue(isChange ? newValues?.[f] : (oldValues || newValues)?.[f])}</span>
+          </div>
+        ))}
+      </div>
+    </details>
+  )
 }
 
 function MetaField({ label, value }: { label: string; value?: string | null }) {
@@ -65,7 +127,7 @@ export default function AuditLogsPage() {
       }),
     ])
       .then(([dash, logList]) => { setDashboard(dash); setLogs(logList) })
-      .catch(() => setError('Failed to load audit logs.'))
+      .catch((err) => setError(extractErrorMessages(err, 'Failed to load audit logs.').join(' ')))
       .finally(() => setLoading(false))
   }
 
@@ -138,7 +200,7 @@ export default function AuditLogsPage() {
           </select>
           <select data-tour="org-audit-filter-action" style={inputStyle} value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
             <option value="">All Actions</option>
-            {['create', 'created', 'update', 'updated', 'delete', 'deleted', 'approve', 'approved', 'reject', 'rejected', 'status_change'].map((a) => <option key={a} value={a}>{a}</option>)}
+            {ACTION_OPTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
           <input data-tour="org-audit-filter-search" style={{ ...inputStyle, flex: '1 1 240px' }} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search summary…" />
           <button data-tour="org-audit-search-btn" type="submit" style={{ padding: '9px 18px', borderRadius: 9, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: '#fff' }}>Search</button>
@@ -164,6 +226,7 @@ export default function AuditLogsPage() {
                 <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
                   {log.summary || '—'}{log.performed_by_name ? ` · by ${log.performed_by_name}` : ''}
                 </p>
+                <ChangeDetails log={log} />
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 2 }}>
                   <MetaField label="IP Address" value={log.ip_address} />
                   <MetaField label="Device / Browser" value={log.user_agent} />

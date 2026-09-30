@@ -2,6 +2,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -20,6 +22,13 @@ def _reset_rate_store():
     if hasattr(store, "reset"):
         store.reset()
     yield
+
+
+# Postgres-only JSONB columns (e.g. departments.additional_head_user_ids)
+# otherwise make create_all() fail on SQLite before any test runs.
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_for_sqlite(type_, compiler, **kw):
+    return "JSON"
 
 
 # Use in-memory SQLite for testing. StaticPool keeps a single shared

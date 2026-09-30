@@ -8,6 +8,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.accounts.models.gl_account import GLAccount
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.accounts.models.vendor_invoice import VendorInvoice
+from app.modules.accounts.models.journal_entry import JournalEntry
 from app.modules.accounts.schemas.vendor_invoice import (
     VendorInvoiceCreate, VendorInvoiceResponse, MatchPreviewResponse, ApproveVariancePayload,
 )
@@ -30,12 +31,23 @@ def _to_response(inv: VendorInvoice, db: Session) -> VendorInvoiceResponse:
     po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == inv.purchase_order_id).first()
     vendor = db.query(Vendor).filter(Vendor.id == inv.vendor_id).first()
     gl_account = db.query(GLAccount).filter(GLAccount.id == inv.expense_gl_account_id).first()
-    approver = db.query(User).filter(User.id == inv.variance_approved_by_id).first() if inv.variance_approved_by_id else None
+    entry = db.query(JournalEntry).filter(JournalEntry.id == inv.journal_entry_id).first() if inv.journal_entry_id else None
+    posted_by_id = entry.created_by_id if entry else None
+    user_ids = {inv.variance_approved_by_id, inv.created_by_id, posted_by_id} - {None}
+    users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
+
+    def _name(user_id: int | None) -> str | None:
+        u = users.get(user_id) if user_id else None
+        return (u.name or u.email) if u else None
+
     return VendorInvoiceResponse.model_validate(inv).model_copy(update={
         "po_number": po.po_number if po else None,
         "vendor_name": vendor.name if vendor else None,
         "expense_gl_account_code": gl_account.code if gl_account else None,
-        "variance_approved_by_name": (approver.name or approver.email) if approver else None,
+        "variance_approved_by_name": _name(inv.variance_approved_by_id),
+        "created_by_name": _name(inv.created_by_id),
+        "posted_by_id": posted_by_id,
+        "posted_by_name": _name(posted_by_id),
     })
 
 
@@ -50,7 +62,10 @@ async def match_preview(
     try:
         result = check_three_way_match(db, purchase_order_id=purchase_order_id, invoice_qty=invoice_qty, invoice_amount=invoice_amount)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        # Not-found and business-rule stops (PO not approved, nothing received
+        # yet, over the approved PO value) — the preview shows this reason.
+        status_code = 404 if str(e) == "Purchase order not found." else 400
+        raise HTTPException(status_code=status_code, detail=str(e))
     return MatchPreviewResponse(**result)
 
 
@@ -117,6 +132,9 @@ async def approve_variance_route(
     _require_finance_manager(user)
     try:
         invoice = approve_variance(db, vendor_invoice_id=vendor_invoice_id, approved_by_id=user.id, note=payload.note)
+    except PermissionError as e:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -135,6 +153,9 @@ async def post_vendor_invoice_route(
 ):
     try:
         post_vendor_invoice(db, vendor_invoice_id=vendor_invoice_id, created_by_id=user.id)
+    except PermissionError as e:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))

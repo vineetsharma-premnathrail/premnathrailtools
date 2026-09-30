@@ -40,7 +40,15 @@ class VendorInvoiceResponse(BaseModel):
     variance_approved_by_name: str | None = None
     variance_approved_at: datetime | None = None
     variance_note: str | None = None
+    created_by_id: int | None = None
     created_at: datetime | None = None
+
+    # Denormalized display fields, filled in by the route. posted_by_id is
+    # the user who created the invoice's journal entry — the maker-checker
+    # UI uses it and created_by_id to hide actions the viewer can't take.
+    created_by_name: str | None = None
+    posted_by_id: int | None = None
+    posted_by_name: str | None = None
 
 
 class MatchPreviewResponse(BaseModel):
@@ -49,6 +57,11 @@ class MatchPreviewResponse(BaseModel):
     qty_variance_pct: float
     amount_variance_pct: float
     matching_status: str
+    po_value: float | None = None
+    received_value: float | None = None
+    already_invoiced_qty: float = 0
+    already_invoiced_amount: float = 0
+    variance_reasons: list[str] = []
 
 
 class ApproveVariancePayload(BaseModel):

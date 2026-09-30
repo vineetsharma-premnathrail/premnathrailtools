@@ -11,6 +11,7 @@ export default function PromptDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   danger = true,
+  requireValue = false,
   onConfirm,
   onCancel,
 }: {
@@ -21,10 +22,13 @@ export default function PromptDialog({
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
+  /** Disable the confirm button until non-blank text is entered (e.g. mandatory approval comments). */
+  requireValue?: boolean
   onConfirm: (value: string) => void
   onCancel: () => void
 }) {
   const [value, setValue] = useState('')
+  const confirmDisabled = requireValue && !value.trim()
 
   useEffect(() => {
     if (open) setValue('')
@@ -97,6 +101,7 @@ export default function PromptDialog({
             {cancelLabel}
           </button>
           <button
+            disabled={confirmDisabled}
             onClick={() => onConfirm(value.trim() || '')}
             style={{
               fontSize: 13,
@@ -106,7 +111,8 @@ export default function PromptDialog({
               border: 'none',
               background: danger ? '#dc2626' : 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
               color: '#fff',
-              cursor: 'pointer',
+              cursor: confirmDisabled ? 'not-allowed' : 'pointer',
+              opacity: confirmDisabled ? 0.55 : 1,
             }}
           >
             {confirmLabel}

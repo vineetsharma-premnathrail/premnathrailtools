@@ -58,6 +58,9 @@ async def create_payment(
             amount=payload.amount, payment_mode=payload.payment_mode, payment_date=payload.payment_date,
             cheque_number=payload.cheque_number, cheque_date=payload.cheque_date, created_by_id=user.id,
         )
+    except PermissionError as e:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))

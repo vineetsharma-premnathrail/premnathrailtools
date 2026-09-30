@@ -85,6 +85,10 @@ export default function RfqDetailPage() {
   const [poDraftLoading, setPoDraftLoading] = useState(false)
   const [poDocFile, setPoDocFile] = useState<File | null>(null)
   const [confirmSubmitPo, setConfirmSubmitPo] = useState(false)
+  // Per-line PO prices, keyed by PO item id. Every line must be priced before
+  // the PO can go for approval — the approvers sign off on this value and
+  // Finance's 3-way match pays against it.
+  const [linePrices, setLinePrices] = useState<Record<number, { unitPrice: string; taxRate: string }>>({})
 
   const load = async () => {
     setLoading(true)
@@ -118,9 +122,14 @@ export default function RfqDetailPage() {
     setPoDraftLoading(true)
     try {
       const list = await purchaseOrdersApi.list({ p2p_request_id: p2pRequestId })
-      setPoDraft(list[0] || null)
-    } catch {
-      // non-fatal — the PO draft panel just stays empty
+      const po: P2PPurchaseOrder | null = list[0] || null
+      setPoDraft(po)
+      setLinePrices(Object.fromEntries((po?.items || []).map((i) => [i.id, {
+        unitPrice: i.unit_price != null ? String(i.unit_price) : '',
+        taxRate: i.tax_rate != null ? String(i.tax_rate) : '',
+      }])))
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not load the purchase order for this RFQ.'))
     } finally {
       setPoDraftLoading(false)
     }
@@ -170,10 +179,40 @@ export default function RfqDetailPage() {
     })
   }
 
+  const unpricedLines = (poDraft?.items || []).filter((i) => !(Number(linePrices[i.id]?.unitPrice) > 0))
+  const draftTotal = (poDraft?.items || []).reduce((sum, i) => {
+    const unit = Number(linePrices[i.id]?.unitPrice) || 0
+    const tax = Number(linePrices[i.id]?.taxRate) || 0
+    return sum + i.quantity * unit * (1 + tax / 100)
+  }, 0)
+
+  const pricingPayload = () => ({
+    items: (poDraft?.items || []).map((i) => ({
+      id: i.id,
+      unit_price: Number(linePrices[i.id]?.unitPrice),
+      tax_rate: linePrices[i.id]?.taxRate !== '' ? Number(linePrices[i.id]?.taxRate) : null,
+    })),
+  })
+
+  const savePrices = () => {
+    if (!rfq || !poDraft) return
+    if (unpricedLines.length) { setError(`Enter a unit price greater than zero for: ${unpricedLines.map((i) => i.item_name).join(', ')}.`); return }
+    runPoAction(() => rfqApi.updatePoDraft(rfq.id, poDraft.id, pricingPayload()))
+  }
+
+  const requestSubmitPo = () => {
+    if (unpricedLines.length) { setError(`Enter a unit price for every line before sending the PO for approval — missing: ${unpricedLines.map((i) => i.item_name).join(', ')}.`); return }
+    setConfirmSubmitPo(true)
+  }
+
   const confirmSubmitPoDo = () => {
     setConfirmSubmitPo(false)
     if (!rfq || !poDraft) return
-    runPoAction(() => rfqApi.submitPoDraft(rfq.id, poDraft.id))
+    // Save the prices on screen first, so what's approved is what was entered.
+    runPoAction(async () => {
+      await rfqApi.updatePoDraft(rfq.id, poDraft.id, pricingPayload())
+      await rfqApi.submitPoDraft(rfq.id, poDraft.id)
+    })
   }
 
   if (isLoading || !isAuthorized) return null
@@ -315,6 +354,49 @@ export default function RfqDetailPage() {
                   <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
                 </div>
 
+                <div data-tour="rfq-detail-po-line-prices" style={{ marginBottom: 16 }}>
+                  <p style={labelStyle}>Line Prices *</p>
+                  <div style={{ overflow: 'auto', border: `1px solid ${BORDER.normal}`, borderRadius: 10 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+                      <thead>
+                        <tr>
+                          {['Item', 'Qty', 'Unit Price *', 'Tax %', 'Line Total'].map((h) => (
+                            <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {poDraft.items.map((i) => {
+                          const unit = Number(linePrices[i.id]?.unitPrice) || 0
+                          const tax = Number(linePrices[i.id]?.taxRate) || 0
+                          return (
+                            <tr key={i.id} style={{ borderTop: `1px solid ${BORDER.normal}` }}>
+                              <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body }}>{i.item_name}{i.part_code ? ` (${i.part_code})` : ''}</td>
+                              <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{i.quantity} {i.unit || ''}</td>
+                              <td style={{ padding: '6px 10px', width: 140 }}>
+                                <input type="number" min="0" step="0.01" style={{ ...inputStyle, padding: '7px 10px' }} value={linePrices[i.id]?.unitPrice ?? ''}
+                                  onChange={(e) => setLinePrices((prev) => ({ ...prev, [i.id]: { ...prev[i.id], unitPrice: e.target.value } }))} />
+                              </td>
+                              <td style={{ padding: '6px 10px', width: 100 }}>
+                                <input type="number" min="0" max="100" step="0.01" style={{ ...inputStyle, padding: '7px 10px' }} value={linePrices[i.id]?.taxRate ?? ''}
+                                  onChange={(e) => setLinePrices((prev) => ({ ...prev, [i.id]: { ...prev[i.id], taxRate: e.target.value } }))} />
+                              </td>
+                              <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, whiteSpace: 'nowrap' }}>{unit > 0 ? (i.quantity * unit * (1 + tax / 100)).toFixed(2) : '—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, color: TEXT.body }}>
+                      PO value (incl. tax): <strong>{unpricedLines.length ? '—' : draftTotal.toFixed(2)}</strong>
+                      {unpricedLines.length > 0 && <span style={{ color: '#b91c1c', marginLeft: 8 }}>{unpricedLines.length} line(s) still need a price</span>}
+                    </span>
+                    <button data-tour="rfq-detail-po-save-prices-btn" disabled={busy} onClick={savePrices} style={{ ...ghostBtn, padding: '8px 16px', opacity: busy ? 0.7 : 1 }}>Save Prices</button>
+                  </div>
+                </div>
+
                 <div style={{ marginBottom: 16 }}>
                   <p style={labelStyle}>PO Document</p>
                   {poDraft.document_filename ? (
@@ -333,7 +415,7 @@ export default function RfqDetailPage() {
                   )}
                 </div>
 
-                <button data-tour="rfq-detail-po-send-approval-btn" disabled={busy} onClick={() => setConfirmSubmitPo(true)} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>Send for Approval</button>
+                <button data-tour="rfq-detail-po-send-approval-btn" disabled={busy} onClick={requestSubmitPo} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>Send for Approval</button>
               </>
             )
           )}
@@ -345,12 +427,13 @@ export default function RfqDetailPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
                   <InfoRow label="PO Number" value={poDraft.po_number} />
                   <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
+                  <InfoRow label="PO Value (incl. tax)" value={poDraft.total_value != null ? poDraft.total_value.toFixed(2) : '—'} />
                 </div>
               )}
               <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 12px' }}>
                 {rfq.p2p_status === 'po_raised'
-                  ? 'This PO has been sent for approval (Purchase Head → Director → MD).'
-                  : 'This PO has completed its approval chain.'}
+                  ? 'This PO has been sent for approval — any one of the requisition’s PO approvers can approve it.'
+                  : 'This PO has been approved.'}
               </p>
               <button data-tour="rfq-detail-po-view-approval-btn" onClick={() => router.push(`/dashboard/p2p/${rfq.p2p_request_id}?from=po-approval`)} style={ghostBtn}>View Approval Status</button>
             </div>
@@ -428,7 +511,7 @@ export default function RfqDetailPage() {
       <ConfirmDialog
         open={confirmSubmitPo}
         title="Send this PO for approval?"
-        message="Once submitted, the PO moves into the Purchase Head → Director → MD approval chain and can no longer be edited here."
+        message={`The PO value of ${draftTotal.toFixed(2)} (incl. tax) will be sent to the requisition's PO approvers — any one of them approving approves it — and the PO can no longer be edited here.`}
         confirmLabel="Send for Approval"
         danger={false}
         onConfirm={confirmSubmitPoDo}

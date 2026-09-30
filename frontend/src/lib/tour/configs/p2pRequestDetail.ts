@@ -22,7 +22,7 @@ const config: TourConfig = {
     {
       target: 'pr-detail-po-approval',
       title: 'PO Approval',
-      purpose: 'The second approval chain: once a PO is raised it goes Purchase Head → Director → MD. Each stage names the person who acted, their Approved/Pending/Rejected status, and any comment they left — until a PO exists, all three read "PO not raised yet".',
+      purpose: 'The second approval: once a PO is raised it goes to the requisition\'s PO approval roles (based on project type — e.g. Production, Purchase and Project Managers plus the Director for an existing project), and any ONE of them approving approves it. Shows who approved, as which role, and their comment. Requisitions from before this matrix still show the old Purchase Head → Director → MD chain.',
     },
     {
       target: 'pr-detail-approval',

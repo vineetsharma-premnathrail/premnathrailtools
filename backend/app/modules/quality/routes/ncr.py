@@ -31,7 +31,7 @@ def _to_response(db: Session, ncr: QualityNcr) -> QualityNcrResponse:
 
 
 def _get_or_404(db: Session, ncr_id: int) -> QualityNcr:
-    ncr = db.query(QualityNcr).filter(QualityNcr.id == ncr_id).first()
+    ncr = db.query(QualityNcr).filter(QualityNcr.is_deleted == False, QualityNcr.id == ncr_id).first()  # noqa: E712
     if not ncr:
         raise HTTPException(status_code=404, detail="NCR not found")
     return ncr
@@ -44,7 +44,7 @@ async def list_ncrs(
     search: str | None = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(QualityNcr)
+    query = db.query(QualityNcr).filter(QualityNcr.is_deleted == False)  # noqa: E712
     if status_filter:
         query = query.filter(QualityNcr.status == status_filter)
     if severity:
@@ -71,7 +71,7 @@ async def create_ncr(
     if payload.severity not in QUALITY_NCR_SEVERITIES:
         raise HTTPException(status_code=400, detail=f"Invalid severity '{payload.severity}'")
     if payload.inspection_id is not None and not db.query(QualityInspection).filter(
-        QualityInspection.id == payload.inspection_id
+        QualityInspection.id == payload.inspection_id, QualityInspection.is_deleted == False  # noqa: E712
     ).first():
         raise HTTPException(status_code=404, detail=f"Inspection #{payload.inspection_id} not found")
 
@@ -121,7 +121,7 @@ async def update_ncr(
         raise HTTPException(status_code=400, detail=f"Invalid status '{new_status}'")
     new_inspection_id = updates.get("inspection_id")
     if new_inspection_id is not None and not db.query(QualityInspection).filter(
-        QualityInspection.id == new_inspection_id
+        QualityInspection.id == new_inspection_id, QualityInspection.is_deleted == False  # noqa: E712
     ).first():
         raise HTTPException(status_code=404, detail=f"Inspection #{new_inspection_id} not found")
 
@@ -139,6 +139,9 @@ async def update_ncr(
 @router.delete("/{ncr_id}")
 async def delete_ncr(ncr_id: int, db: Session = Depends(get_db)):
     ncr = _get_or_404(db, ncr_id)
-    db.delete(ncr)
+    # Soft delete — quality records are retained for audit (ISO 9001 §7.5.3),
+    # and the delete itself is logged by app/core/audit.py.
+    ncr.is_deleted = True
+    ncr.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "NCR deleted"}

@@ -63,6 +63,7 @@ export default function FinanceArApPage() {
   const [expenseGlId, setExpenseGlId] = useState('')
   const [preview, setPreview] = useState<MatchPreview | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState('')
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
@@ -105,12 +106,15 @@ export default function FinanceArApPage() {
   }, [isAuthorized])
 
   useEffect(() => {
-    if (!poId || !invoiceAmount || !invoiceQty) { setPreview(null); return }
+    if (!poId || !invoiceAmount || !invoiceQty) { setPreview(null); setPreviewError(''); return }
     const handle = setTimeout(() => {
       setPreviewLoading(true)
       accountsApi.matchPreview(Number(poId), Number(invoiceQty), Number(invoiceAmount))
-        .then(setPreview)
-        .catch(() => setPreview(null))
+        .then((p) => { setPreview(p); setPreviewError('') })
+        // A blocked match (PO not approved, nothing received yet, over the
+        // approved PO value) comes back as an error with the real reason —
+        // show it rather than silently hiding the preview.
+        .catch((err) => { setPreview(null); setPreviewError(extractErrorMessages(err, 'Could not check the 3-way match.').join(' ')) })
         .finally(() => setPreviewLoading(false))
     }, 400)
     return () => clearTimeout(handle)
@@ -119,14 +123,16 @@ export default function FinanceArApPage() {
   if (isLoading || !isAuthorized) return null
 
   const poOptions = purchaseOrders
-    .filter((po) => ['issued', 'acknowledged', 'partially_fulfilled'].includes(po.status))
+    // 'fulfilled' included: goods must be received before an invoice can be
+    // booked, so a fully received PO is the normal case to invoice.
+    .filter((po) => ['issued', 'acknowledged', 'partially_fulfilled', 'fulfilled'].includes(po.status))
     .map((po) => ({ value: String(po.id), label: `${po.po_number}${po.vendor_name ? ` — ${po.vendor_name}` : ''}` }))
   const glOptions = glAccounts.map((a) => ({ value: String(a.id), label: `${a.code} — ${a.name}` }))
   const bankOptions = bankAccounts.map((b) => ({ value: String(b.id), label: `${b.bank_name} — ${b.account_no}` }))
   const customerOptions = customers.map((c) => ({ value: String(c.id), label: c.name }))
 
   const resetForm = () => {
-    setPoId(''); setInvoiceNumber(''); setInvoiceAmount(''); setInvoiceGst('0'); setInvoiceQty(''); setExpenseGlId(''); setPreview(null)
+    setPoId(''); setInvoiceNumber(''); setInvoiceAmount(''); setInvoiceGst('0'); setInvoiceQty(''); setExpenseGlId(''); setPreview(null); setPreviewError('')
   }
 
   const submitInvoice = async () => {
@@ -314,10 +320,26 @@ export default function FinanceArApPage() {
         </div>
 
         {previewLoading && <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>Checking 3-way match…</p>}
+        {previewError && !previewLoading && (
+          <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+            {previewError}
+          </div>
+        )}
         {preview && !previewLoading && (
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 14, padding: '10px 14px', borderRadius: 10, background: preview.matching_status === 'matched' ? 'rgba(34,197,94,0.08)' : 'rgba(220,38,38,0.08)' }}>
-            <Badge label={preview.matching_status === 'matched' ? 'Within Tolerance' : 'Variance — will need approval'} hex={preview.matching_status === 'matched' ? '#16a34a' : '#dc2626'} />
-            <span style={{ fontSize: 12, color: TEXT.secondary }}>PO qty {preview.qty_po} · GRN accepted {preview.qty_gr} · Qty variance {preview.qty_variance_pct}% · Amount variance {preview.amount_variance_pct}%</span>
+          <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 10, background: preview.matching_status === 'matched' ? 'rgba(34,197,94,0.08)' : 'rgba(220,38,38,0.08)' }}>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Badge label={preview.matching_status === 'matched' ? 'Within Tolerance' : 'Variance — will need approval'} hex={preview.matching_status === 'matched' ? '#16a34a' : '#dc2626'} />
+              <span style={{ fontSize: 12, color: TEXT.secondary }}>
+                PO qty {preview.qty_po} · GRN accepted {preview.qty_gr} · Already invoiced {preview.already_invoiced_qty} ·
+                {' '}Received value {preview.received_value != null ? preview.received_value.toFixed(2) : '—'} (before GST) ·
+                {' '}Approved PO value {preview.po_value != null ? preview.po_value.toFixed(2) : '—'}
+              </span>
+            </div>
+            {preview.variance_reasons.length > 0 && (
+              <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, color: '#b91c1c' }}>
+                {preview.variance_reasons.map((r) => <li key={r}>{r}</li>)}
+              </ul>
+            )}
           </div>
         )}
 
@@ -354,17 +376,23 @@ export default function FinanceArApPage() {
                     <td style={{ padding: '10px 12px' }}><Badge label={STATUS_LABELS[inv.status]} hex={STATUS_HEX[inv.status]} /></td>
                     <td style={{ padding: '10px 12px' }}><Badge label={PAY_LABELS[inv.payment_status]} hex={PAY_HEX[inv.payment_status]} /></td>
                     <td style={{ padding: '10px 12px' }}>
-                      <div style={{ display: 'flex', gap: 10 }}>
-                        {inv.status === 'pending' && inv.matching_status === 'variance' && canApproveVariance && (
-                          <button type="button" style={linkBtnStyle} onClick={() => setVariancePromptId(inv.id)}>Approve Variance</button>
-                        )}
-                        {inv.status === 'pending' && inv.matching_status !== 'variance' && (
-                          <button type="button" style={linkBtnStyle} onClick={() => postInvoice(inv.id)}>Post</button>
-                        )}
-                        {inv.status === 'posted' && inv.payment_status !== 'paid' && (
-                          <button type="button" style={dangerLinkStyle} onClick={() => openPaymentPanel(inv)}>Record Payment</button>
-                        )}
-                      </div>
+                      {/* Maker-checker: whoever recorded the invoice can't approve its
+                          variance, post it or pay it — the backend refuses it too. */}
+                      {inv.created_by_id != null && inv.created_by_id === user?.id && inv.payment_status !== 'paid' ? (
+                        <span style={{ fontSize: 11.5, color: TEXT.muted }} title="You recorded this invoice, so another finance user must approve, post and pay it.">Needs another user</span>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 10 }}>
+                          {inv.status === 'pending' && inv.matching_status === 'variance' && canApproveVariance && (
+                            <button type="button" style={linkBtnStyle} onClick={() => setVariancePromptId(inv.id)}>Approve Variance</button>
+                          )}
+                          {inv.status === 'pending' && inv.matching_status !== 'variance' && (
+                            <button type="button" style={linkBtnStyle} onClick={() => postInvoice(inv.id)}>Post</button>
+                          )}
+                          {inv.status === 'posted' && inv.payment_status !== 'paid' && (
+                            <button type="button" style={dangerLinkStyle} onClick={() => openPaymentPanel(inv)}>Record Payment</button>
+                          )}
+                        </div>
+                      )}
                     </td>
                   </tr>
                   {paymentPanelId === inv.id && (

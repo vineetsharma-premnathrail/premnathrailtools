@@ -12,12 +12,12 @@ const config: TourConfig = {
     {
       target: 'org-audit-by-module',
       title: 'Activity by Module',
-      purpose: 'A count of actions logged per module (Organization, Service Module, CRM, Procure-to-Pay, R&D Tools, Other) — shows where activity is concentrated. Only appears once at least one log exists.',
+      purpose: 'A count of actions logged per module (Organization, Service Module, CRM, Procurement, Quality, Store, R&D, Other) — shows where activity is concentrated. Only appears once at least one log exists.',
     },
     {
       target: 'org-audit-filter-module',
       title: 'Module filter',
-      purpose: 'Narrows the list below to logs from one module only, e.g. only Procure-to-Pay actions.',
+      purpose: 'Narrows the list below to logs from one module only, e.g. only Procurement actions.',
       after: 'Applies immediately — no need to click Search.',
     },
     {
@@ -40,7 +40,7 @@ const config: TourConfig = {
     {
       target: 'org-audit-log-list',
       title: 'All Audit Logs',
-      purpose: 'Every matching entry: who did what, on which record, and when — plus IP address, device/browser, session ID, and whether it came from the web app or a bearer-token API client. This list is entirely system-generated; nothing on this page can be added, edited, or deleted manually.',
+      purpose: 'Every matching entry: who did what, on which record, and when — plus IP address, device/browser, session ID, and whether it came from the web app or a bearer-token API client. Expand "Changes" to see the value of each field before and after an update, or the full record as it was before a deletion. This list is entirely system-generated; nothing on this page can be added, edited, or deleted manually.',
     },
   ],
 }

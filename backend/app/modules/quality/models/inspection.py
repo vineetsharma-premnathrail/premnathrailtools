@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import String, Integer, Float, Date, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
-from app.db.mixins import TimestampMixin
+from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 if TYPE_CHECKING:
     from app.modules.quality.models.inspection import QualityInspectionResult, QualityInspectionAttachment
@@ -13,7 +13,7 @@ QUALITY_INSPECTION_STATUSES = ("pending", "in_progress", "passed", "failed", "co
 QUALITY_INSPECTION_RESULT_VALUES = ("pass", "fail", "na")
 
 
-class QualityInspection(Base, TimestampMixin):
+class QualityInspection(Base, TimestampMixin, SoftDeleteMixin):
     """A single inspection instance (incoming / in-process / final) raised
     against a plan (optionally) for a batch/item — the actual pass/fail
     record."""

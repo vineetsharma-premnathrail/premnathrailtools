@@ -10,6 +10,9 @@ import { primaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 
+const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected' }
+const STATUS_HEX: Record<string, string> = { pending_approval: '#f59e0b', approved: '#22c55e', rejected: '#dc2626' }
+
 export default function StoreStockAdjustmentsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
   const router = useRouter()
@@ -47,21 +50,26 @@ export default function StoreStockAdjustmentsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr>
-              {['Adjustment #', 'Warehouse', 'Date', 'Approved By', 'Items', ''].map((h) => (
+              {['Adjustment #', 'Warehouse', 'Date', 'Status', 'Approver', 'Items', ''].map((h) => (
                 <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && adjustments.length === 0 && (
-              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stock adjustments yet.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stock adjustments yet.</td></tr>
             )}
             {adjustments.map((a) => (
               <tr key={a.id} onClick={() => router.push(`/dashboard/store/adjustments/${a.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{a.adjustment_number}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.location_name}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.adjustment_date}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[a.status]}1a`, color: STATUS_HEX[a.status], whiteSpace: 'nowrap' }}>
+                    {STATUS_LABELS[a.status] || a.status}
+                  </span>
+                </td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.approved_by_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.items.length}</td>
                 <td onClick={(e) => e.stopPropagation()}>

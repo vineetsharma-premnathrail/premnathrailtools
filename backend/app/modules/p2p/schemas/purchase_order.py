@@ -7,9 +7,9 @@ class P2PPurchaseOrderItemPayload(BaseModel):
     make: str | None = None
     part_code: str | None = None
     unit: str | None = None
-    quantity: float = 1
-    unit_price: float | None = None
-    tax_rate: float | None = None
+    quantity: float = Field(default=1, gt=0)
+    unit_price: float | None = Field(default=None, gt=0)
+    tax_rate: float | None = Field(default=None, ge=0, le=100)
 
 
 class P2PPurchaseOrderItemResponse(BaseModel):
@@ -31,7 +31,6 @@ class P2PPurchaseOrderCreate(BaseModel):
     po_number: str | None = None
     vendor_id: int | None = None
     vendor_name: str | None = None
-    total_value: float | None = None
     po_date: date | None = None
     expected_delivery: date | None = None
     delivery_terms: str | None = None
@@ -39,9 +38,31 @@ class P2PPurchaseOrderCreate(BaseModel):
 
 
 class P2PPurchaseOrderUpdate(BaseModel):
-    status: str | None = None
+    """Delivery-detail edits only. Status is deliberately NOT here — a PO's
+    status only moves through the RFQ submit / PO approval / GRN flows, never
+    by a direct edit that could skip Purchase Head -> Director -> MD
+    (extra="allow" only so the route can name a rejected key in its error)."""
+
+    model_config = {"extra": "allow"}
+
     expected_delivery: date | None = None
     delivery_terms: str | None = None
+
+
+class P2PPurchaseOrderItemPricingPayload(BaseModel):
+    id: int
+    unit_price: float = Field(gt=0)
+    tax_rate: float | None = Field(default=None, ge=0, le=100)
+
+
+class P2PPurchaseOrderDraftUpdatePayload(BaseModel):
+    """Edits to a still-draft PO from the RFQ screen — delivery details plus
+    per-line prices, which must all be filled before the PO can be sent for
+    approval (see rfq.submit_po_draft)."""
+
+    expected_delivery: date | None = None
+    delivery_terms: str | None = None
+    items: list[P2PPurchaseOrderItemPricingPayload] | None = None
 
 
 class P2PPurchaseOrderResponse(BaseModel):

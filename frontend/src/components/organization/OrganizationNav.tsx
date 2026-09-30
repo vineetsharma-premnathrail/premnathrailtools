@@ -2,14 +2,16 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
+import { filterTabsByAccess } from '@/lib/tabAccess'
 import TourButton from '@/components/tour/TourButton'
 
 const TABS = [
-  { href: '/dashboard/organization/info', label: 'Info', icon: 'building' },
-  { href: '/dashboard/organization/plants', label: 'Branches', icon: 'map' },
-  { href: '/dashboard/organization/department', label: 'Department', icon: 'grid' },
-  { href: '/dashboard/organization/users', label: 'Users', icon: 'users' },
-  { href: '/dashboard/organization/roles', label: 'Role & Permissions', icon: 'shield' },
+  { href: '/dashboard/organization/info', label: 'Info', icon: 'building', subtabKey: 'info' },
+  { href: '/dashboard/organization/plants', label: 'Branches', icon: 'map', subtabKey: 'branches' },
+  { href: '/dashboard/organization/department', label: 'Department', icon: 'grid', subtabKey: 'department' },
+  { href: '/dashboard/organization/users', label: 'Users', icon: 'users', subtabKey: 'users' },
+  { href: '/dashboard/organization/roles', label: 'Role & Permissions', icon: 'shield', subtabKey: 'roles' },
   { href: '/dashboard/organization/audit-logs', label: 'Audit Logs', icon: 'clock' },
 ] as const
 
@@ -37,11 +39,13 @@ function TabIcon({ name }: { name: string }) {
 
 export default function OrganizationNav() {
   const pathname = usePathname()
+  const { user } = useAuth()
+  const visibleTabs = filterTabsByAccess('organization', TABS, user)
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
-        {TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`)
           return (
             <Link

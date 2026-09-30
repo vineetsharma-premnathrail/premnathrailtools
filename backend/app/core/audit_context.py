@@ -13,7 +13,12 @@ from starlette.requests import Request
 _ip_address: ContextVar[str | None] = ContextVar("audit_ip_address", default=None)
 _user_agent: ContextVar[str | None] = ContextVar("audit_user_agent", default=None)
 _refresh_token: ContextVar[str | None] = ContextVar("audit_refresh_token", default=None)
-_api_source: ContextVar[str | None] = ContextVar("audit_api_source", default=None)
+# Values set by get_current_user() (api_source, acting user id) live in a
+# per-request *mutable* dict rather than their own ContextVars: FastAPI runs
+# sync dependencies like get_current_user() in a threadpool with a *copy* of
+# the context, so a ContextVar.set() there never reaches the route that later
+# writes the AuditLog row. Mutating the dict the middleware created does.
+_request_state: ContextVar[dict | None] = ContextVar("audit_request_state", default=None)
 
 
 def get_request_ip() -> str | None:
@@ -32,15 +37,37 @@ def get_request_refresh_token() -> str | None:
     return _refresh_token.get()
 
 
+def _set_state(key: str, value) -> None:
+    state = _request_state.get()
+    if state is not None:
+        state[key] = value
+
+
+def _get_state(key: str):
+    state = _request_state.get()
+    return state.get(key) if state is not None else None
+
+
 def set_api_source(source: str) -> None:
     """Called from get_current_user() once it's determined which auth path
     this request took — "web_app" | "bearer_token" — so the AuditLog row
     this request eventually triggers knows where it came from."""
-    _api_source.set(source)
+    _set_state("api_source", source)
 
 
 def get_api_source() -> str | None:
-    return _api_source.get()
+    return _get_state("api_source")
+
+
+def set_current_user_id(user_id: int) -> None:
+    """Called from get_current_user() once the caller is authenticated, so
+    the automatic ORM-level audit trail (app/core/audit.py) can attribute
+    changes without every route passing the user through."""
+    _set_state("user_id", user_id)
+
+
+def get_current_user_id() -> int | None:
+    return _get_state("user_id")
 
 
 class AuditContextMiddleware(BaseHTTPMiddleware):
@@ -52,11 +79,11 @@ class AuditContextMiddleware(BaseHTTPMiddleware):
         ip_token = _ip_address.set(ip)
         ua_token = _user_agent.set(request.headers.get("user-agent"))
         rt_token = _refresh_token.set(request.cookies.get("refresh_token"))
-        src_token = _api_source.set(None)
+        state_token = _request_state.set({})
         try:
             return await call_next(request)
         finally:
             _ip_address.reset(ip_token)
             _user_agent.reset(ua_token)
             _refresh_token.reset(rt_token)
-            _api_source.reset(src_token)
+            _request_state.reset(state_token)

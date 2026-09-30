@@ -56,6 +56,40 @@ from app.modules.quality.models.capa import QualityCapa
 from app.modules.quality.models.customer_complaint import QualityCustomerComplaint
 from app.modules.quality.models.supplier_quality import QualitySupplierScorecard
 from app.modules.quality.models.quality_document import QualityDocument
+from app.modules.maintenance.models.asset import MaintenanceAsset
+from app.modules.maintenance.models.request import MaintenanceRequest
+from app.modules.maintenance.models.work_order import (
+    MaintenanceWorkOrder, MaintenanceWorkOrderTask, MaintenanceWorkOrderSpare, MaintenanceLabourLog,
+)
+from app.modules.maintenance.models.attachment import MaintenanceAttachment
+from app.modules.production.models.workstation import ProductionWorkstation
+from app.modules.production.models.bom import ProductionBom, ProductionBomItem, ProductionBomOperation
+from app.modules.production.models.work_order import (
+    ProductionWorkOrder, ProductionWorkOrderMaterial, ProductionWorkOrderOperation, ProductionTimeLog,
+)
+from app.modules.production.models.rrv_build import (
+    ProductionRrvBuild, ProductionRrvBuildStage, ProductionRrvTest, ProductionReworkOrder, ProductionRrvEvent,
+)
+from app.modules.hydraulic.models.system import HydSystem
+from app.modules.hydraulic.models.component import HydComponent
+from app.modules.hydraulic.models.circuit import HydCircuit
+from app.modules.hydraulic.models.bom import HydBom, HydBomItem
+from app.modules.hydraulic.models.calculation import HydCalculation
+from app.modules.hydraulic.models.testing import HydTest, HydTestReading
+from app.modules.hydraulic.models.maintenance import HydMaintenancePlan, HydServiceRecord, HydServicePart
+from app.modules.hydraulic.models.spare_part import HydSparePart
+from app.modules.hydraulic.models.document import HydDocument
+from app.modules.electrical.models.job import ElectricalJob, ElectricalJobStage
+from app.modules.electrical.models.panel import ElectricalPanel
+from app.modules.electrical.models.bom import ElectricalBomItem
+from app.modules.electrical.models.cable import ElectricalCable
+from app.modules.electrical.models.drawing import ElectricalDrawing, ElectricalDrawingRevision
+from app.modules.electrical.models.test_record import ElectricalTest
+from app.modules.electrical.models.issue import ElectricalIssue
+from app.modules.electrical.models.document import ElectricalDocument
+from app.modules.design.models.document import DesignDocument, DesignDocumentRevision, DesignRevisionFile
+from app.modules.design.models.change_notice import DesignChangeNotice, DesignChangeNoticeDocument
+from app.modules.design.models.event import DesignEvent
 from app.modules.projects.models.project import PmProject
 from app.modules.projects.models.phase import PmProjectPhase
 from app.modules.projects.models.task import PmProjectTask
@@ -100,6 +134,21 @@ from app.modules.rnd.models.tool_calculations import (
     BrakingCalculation, HydraulicCalculation, LoadDistributionCalculation, QmaxCalculation,
     SplineCalculation, TractiveEffortCalculation, VehiclePerformanceCalculation,
 )
+from app.modules.rnd.models.project import RndProject
+from app.modules.rnd.models.experiment import RndExperiment
+from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
+from app.modules.rnd.models.feasibility import RndFeasibilityStudy
+from app.modules.rnd.models.document import RndDocument
+from app.modules.hr.models.masters import HrGrade, HrDesignation, HrShift
+from app.modules.hr.models.holiday import HrHoliday
+from app.modules.hr.models.employee_profile import HrEmployeeProfile
+from app.modules.hr.models.lifecycle import HrLifecycleEvent, HrChecklistTemplate, HrChecklistItem
+from app.modules.hr.models.leave import HrLeaveType, HrLeaveBalance, HrLeaveRequest
+from app.modules.hr.models.attendance import HrAttendance, HrAttendanceRegularization
+from app.modules.hr.models.asset import HrAsset, HrAssetAssignment
+from app.modules.hr.models.visitor import HrVisitor
+from app.modules.hr.models.travel import HrTravelRequest
+from app.modules.hr.models.expense import HrExpenseClaim, HrExpenseClaimItem
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel
 
 
@@ -31,6 +31,10 @@ class StoreStockAdjustmentCreate(BaseModel):
     items: list[StoreStockAdjustmentItemPayload]
 
 
+class StoreStockAdjustmentRejectPayload(BaseModel):
+    reason: str
+
+
 class StoreStockAdjustmentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -45,4 +49,7 @@ class StoreStockAdjustmentResponse(BaseModel):
     created_by_id: int | None = None
     created_by_name: str | None = None
     remarks: str | None = None
+    status: str
+    decided_at: datetime | None = None
+    rejected_reason: str | None = None
     items: list[StoreStockAdjustmentItemResponse] = []

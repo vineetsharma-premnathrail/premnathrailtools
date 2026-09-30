@@ -10,6 +10,7 @@ import { Field, Section, Row, InfoRow, inputStyle, primaryBtnStyle, secondaryBtn
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 
 const ITEM_TYPES = [
@@ -36,6 +37,7 @@ export default function StoreItemDetailPage() {
 
   const [item, setItem] = useState<StoreItem | null>(null)
   const [categories, setCategories] = useState<StoreItemCategory[]>([])
+  const [uoms, setUoms] = useState<{ value: string; label: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [editing, setEditing] = useState(false)
@@ -61,6 +63,7 @@ export default function StoreItemDetailPage() {
     if (isAuthorized && itemId) {
       load()
       storeApi.listCategories().then(setCategories).catch(() => setCategories([]))
+      storeApi.getItemMeta().then((m) => setUoms(m.uoms)).catch(() => setUoms([]))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, itemId])
@@ -88,7 +91,7 @@ export default function StoreItemDetailPage() {
         category: form.category || undefined,
         subcategory: form.subcategory || undefined,
         description: form.description?.trim() || undefined,
-        uom: form.uom?.trim() || undefined,
+        uom: form.uom || undefined,
         hsn_sac_code: form.hsn_sac_code?.trim() || undefined,
         manufacturer: form.manufacturer?.trim() || undefined,
         batch_controlled: form.batch_controlled,
@@ -204,8 +207,10 @@ export default function StoreItemDetailPage() {
                       {ITEM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
                   </Field>
-                  <Field label="UOM">
-                    <input style={inputStyle} value={form.uom || ''} onChange={(e) => setForm({ ...form, uom: e.target.value })} />
+                  <Field label="UOM *">
+                    <SearchableSelect value={form.uom || ''} onChange={(v) => setForm({ ...form, uom: v })}
+                      options={form.uom && !uoms.some((u) => u.value === form.uom) ? [{ value: form.uom, label: `${form.uom} (not in list — pick a listed unit)` }, ...uoms] : uoms}
+                      placeholder="Select unit…" />
                   </Field>
                 </Row>
                 <Row>

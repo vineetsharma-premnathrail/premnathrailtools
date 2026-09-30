@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import String, Integer, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
-from app.db.mixins import TimestampMixin
+from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 if TYPE_CHECKING:
     from app.modules.quality.models.quality_checklist import QualityChecklistItem
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 QUALITY_CHECKLIST_STATUSES = ("active", "inactive")
 
 
-class QualityChecklist(Base, TimestampMixin):
+class QualityChecklist(Base, TimestampMixin, SoftDeleteMixin):
     """A reusable named checklist (set of parameters/methods/acceptance
     criteria) that an inspection plan can be linked to, and whose items are
     copied onto a QualityInspection's results when an inspection is raised

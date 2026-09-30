@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core.audit import record_audit
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.users import require_admin
@@ -115,9 +116,17 @@ async def add_department_member(
     user = db.query(User).filter(User.id == payload.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    before = {"department": user.department, "branch_id": user.branch_id}
     user.department = department.name
     if department.branch_id:
         user.branch_id = department.branch_id
+    # Department/Branch edits are audited automatically (app/core/audit.py),
+    # but membership lives on the users table, so log it explicitly.
+    record_audit(
+        db, entity_type="department", entity_id=department.id, action="member_added", module_key="organization",
+        summary=f"{user.name or user.email} added to department '{department.name}' (was: {before['department'] or '—'}).",
+        old_value=before, new_value={"user_id": user.id, "department": user.department, "branch_id": user.branch_id},
+    )
     db.commit()
     db.refresh(user)
     head_ids = set(_all_head_ids(department))
@@ -141,6 +150,11 @@ async def remove_department_member(
     if not user:
         raise HTTPException(status_code=404, detail="User is not a member of this department")
     user.department = None
+    record_audit(
+        db, entity_type="department", entity_id=department.id, action="member_removed", module_key="organization",
+        summary=f"{user.name or user.email} removed from department '{department.name}'.",
+        old_value={"user_id": user.id, "department": department.name}, new_value={"user_id": user.id, "department": None},
+    )
     db.commit()
 
 

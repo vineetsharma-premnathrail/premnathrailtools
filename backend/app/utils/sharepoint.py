@@ -32,6 +32,11 @@ ALLOWED_EXTENSIONS = {
     ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
     ".txt", ".csv", ".rtf", ".odt", ".png", ".jpg", ".jpeg", ".gif",
     ".bmp", ".mp4", ".mov", ".mkv", ".avi", ".wmv", ".webm",
+    # Engineering/CAD (Design module, R&D). Browsers send these as
+    # application/octet-stream, so they pass on extension alone; the ones
+    # with a fixed header are also signature-checked below.
+    ".dwg", ".dxf", ".step", ".stp", ".iges", ".igs", ".stl", ".sldprt", ".sldasm",
+    ".slddrw", ".ipt", ".iam", ".idw", ".x_t", ".zip",
 }
 ALLOWED_CONTENT_PREFIXES = {"image/", "video/"}
 ALLOWED_CONTENT_TYPES = {
@@ -81,6 +86,13 @@ _MAGIC_SIGNATURES: dict[str, tuple[bytes, ...]] = {
     ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
     ".ppt": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
     ".rtf": (b"{\\rtf",),
+    # AutoCAD DWG opens with its version string ("AC1015", "AC1032"…, or
+    # "AC1.x"/"AC2.x" for very old releases); STEP (ISO 10303-21) files with
+    # their standard header; zip archives with the PK local/empty header.
+    ".dwg": (b"AC10", b"AC1.", b"AC2."),
+    ".step": (b"ISO-10303-21",),
+    ".stp": (b"ISO-10303-21",),
+    ".zip": (b"PK\x03\x04", b"PK\x05\x06"),
 }
 
 

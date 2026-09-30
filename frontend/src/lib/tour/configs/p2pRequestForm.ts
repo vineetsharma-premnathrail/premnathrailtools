@@ -5,11 +5,18 @@ const config: TourConfig = {
   pageTitle: 'New Purchase Requisition',
   steps: [
     {
+      target: 'pr-new-project-type',
+      title: 'Project Type',
+      purpose: 'Whether this requisition is for an existing project or a new project. This choice decides who must approve the requisition and, later, which managers its Purchase Order goes to.',
+      required: true,
+      whatToEnter: 'Pick "Existing project" or "New project".',
+    },
+    {
       target: 'pr-new-project',
       title: 'Project',
-      purpose: 'Optional — links this requisition to an existing project so its spend is tracked against that project.',
-      required: false,
-      whatToEnter: 'Search and pick an existing project. Leave blank for an Inhouse/non-project requirement.',
+      purpose: 'Links this requisition to the project its spend belongs to.',
+      required: true,
+      whatToEnter: 'Existing project: search and pick it. New project: type the new project\'s name.',
     },
     {
       target: 'pr-new-category',
@@ -71,8 +78,8 @@ const config: TourConfig = {
     {
       target: 'pr-new-item-projinhouse',
       title: 'Project/Inhouse',
-      purpose: 'Marks whether this specific item is for a project or an inhouse/general requirement — independent of the Project field above, which applies to the whole requisition.',
-      required: false,
+      purpose: 'Marks whether this specific item is for a project or an inhouse/general requirement — independent of the Project field above, which applies to the whole requisition. Must be chosen for every line before the requisition can be submitted.',
+      required: true,
       options: [
         { value: 'Project', meaning: 'This item is consumed against a specific project.' },
         { value: 'Inhouse', meaning: 'This item is for general/inhouse use, not tied to a project.' },
@@ -113,23 +120,11 @@ const config: TourConfig = {
       advanceOnEnter: true,
     },
     {
-      target: 'pr-new-dept-head',
-      title: 'Department Head',
-      purpose: 'The person who must approve this requisition on behalf of your department.',
+      target: 'pr-new-approvers',
+      title: 'Approvers',
+      purpose: 'Who must approve this requisition — every slot must sign before it is approved. For an existing project the slots are Design, Production, Project and Store Manager; for a new project R&D, Production and Store Manager. Pick any user for each slot, including yourself.',
       required: true,
-      whatToEnter: 'Search by name or email.',
-    },
-    {
-      target: 'pr-new-project-head',
-      title: 'Project Head',
-      purpose: 'An additional required approver for this requisition.',
-      required: true,
-    },
-    {
-      target: 'pr-new-plant-head',
-      title: 'Plant Head',
-      purpose: 'An additional required approver for plant/site-level sign-off.',
-      required: true,
+      whatToEnter: 'Search by name or email in each role\'s picker.',
     },
     {
       target: 'pr-new-supporting-docs',

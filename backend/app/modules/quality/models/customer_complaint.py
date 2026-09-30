@@ -3,13 +3,13 @@ from datetime import date, datetime
 from sqlalchemy import String, Integer, Date, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
-from app.db.mixins import TimestampMixin
+from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 QUALITY_COMPLAINT_SEVERITIES = ("minor", "major", "critical")
 QUALITY_COMPLAINT_STATUSES = ("open", "under_investigation", "capa_assigned", "resolved", "closed", "rejected")
 
 
-class QualityCustomerComplaint(Base, TimestampMixin):
+class QualityCustomerComplaint(Base, TimestampMixin, SoftDeleteMixin):
     """A complaint raised by a customer against delivered goods/services —
     tracked through investigation to resolution/CAPA and close."""
 

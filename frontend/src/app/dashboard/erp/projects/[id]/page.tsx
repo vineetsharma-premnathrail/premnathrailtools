@@ -5,16 +5,16 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
-import { erpApi } from '@/lib/api'
+import { erpApi, productionApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { AuditEntry, Project, ServiceRequest } from '@/types'
+import { AuditEntry, ProductionScheduleEntry, Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadPreview from '@/components/FileUploadPreview'
 import { Card, InfoRow, secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 
-const TABS = ['Overview', 'Technical Specs', 'Maintenance History', 'Documents', 'Audit Trail'] as const
+const TABS = ['Overview', 'Technical Specs', 'Maintenance History', 'Production', 'Documents', 'Audit Trail'] as const
 
 export default function ProjectDetailPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('erp')
@@ -153,6 +153,7 @@ export default function ProjectDetailPage() {
       {tab === 'Overview' && <OverviewTab project={project} />}
       {tab === 'Technical Specs' && <TechnicalSpecsTab project={project} />}
       {tab === 'Maintenance History' && <MaintenanceHistoryTab projectId={project.id} />}
+      {tab === 'Production' && <ProductionTab projectId={project.id} canOpen={!!user?.apps?.includes('production')} />}
       {tab === 'Documents' && <DocumentsTab projectId={project.id} canEdit={canEdit} canDelete={canDelete} />}
       {tab === 'Audit Trail' && <AuditTab projectId={project.id} />}
 
@@ -274,6 +275,62 @@ function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
               <td style={{ padding: '10px 14px', fontSize: 12.5, textTransform: 'capitalize' }}>{sr.priority}</td>
               <td style={{ padding: '10px 14px', fontSize: 12.5, textTransform: 'capitalize' }}>{sr.status.replace('_', ' ')}</td>
               <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#78716c' }}>{formatDate(sr.created_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+    </div>
+  )
+}
+
+const WO_STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#DC2626' }
+
+// Work orders building this machine in the Production module. Readable by
+// any ERP user; the WO number links through only for Production users.
+function ProductionTab({ projectId, canOpen }: { projectId: number; canOpen: boolean }) {
+  const [orders, setOrders] = useState<ProductionScheduleEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    productionApi.getProjectWorkOrders(projectId)
+      .then(setOrders)
+      .catch((err) => setError(extractErrorMessages(err, 'Failed to load production work orders.').join(' ')))
+      .finally(() => setLoading(false))
+  }, [projectId])
+
+  if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
+  if (error) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
+  if (orders.length === 0) return <p style={{ fontSize: 13, color: '#a8a29e' }}>No production work orders are linked to this machine.</p>
+
+  return (
+    <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
+      <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+        <thead>
+          <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
+            {['Work Order', 'Product', 'Built / Planned', 'Planned End', 'Status'].map((h) => (
+              <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#a8a29e', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {orders.map((o) => (
+            <tr key={o.work_order_id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+              <td style={{ padding: '10px 14px' }}>
+                {canOpen ? (
+                  <Link href={`/dashboard/production/work-orders/${o.work_order_id}`} style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', textDecoration: 'none' }}>{o.wo_number}</Link>
+                ) : <span style={{ fontSize: 13, fontWeight: 600 }}>{o.wo_number}</span>}
+              </td>
+              <td style={{ padding: '10px 14px', fontSize: 13 }}>{o.product_name || '—'}</td>
+              <td style={{ padding: '10px 14px', fontSize: 12.5 }}>{o.quantity_completed} / {o.quantity_planned} ({o.progress_percent}%)</td>
+              <td style={{ padding: '10px 14px', fontSize: 12.5, color: o.is_overdue ? '#b91c1c' : '#78716c' }}>{o.planned_end_date ? formatDate(o.planned_end_date) : '—'}{o.is_overdue ? ' · overdue' : ''}</td>
+              <td style={{ padding: '10px 14px' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${WO_STATUS_HEX[o.status] || '#78716c'}1a`, color: WO_STATUS_HEX[o.status] || '#78716c', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
+                  {o.status.replace('_', ' ')}
+                </span>
+              </td>
             </tr>
           ))}
         </tbody>

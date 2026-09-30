@@ -7,12 +7,12 @@ const config: TourConfig = {
     {
       target: 'pr-approval-bucket-pending',
       title: 'Pending',
-      purpose: 'Requisitions currently submitted and awaiting your (or your team\'s) approval.',
+      purpose: 'Requisitions waiting on YOUR signature — this tab only appears for users named as an approver on a requisition, and it lists only the requisitions routed to you (admins see everything).',
     },
     {
       target: 'pr-approval-bucket-approved',
       title: 'Approved',
-      purpose: 'Requisitions that have been approved — including everything downstream (RFQ raised, PO raised/approved, received, closed).',
+      purpose: 'Requisitions you were an approver on that have been approved — including everything downstream (RFQ raised, PO raised/approved, received, closed).',
     },
     {
       target: 'pr-approval-bucket-rejected',

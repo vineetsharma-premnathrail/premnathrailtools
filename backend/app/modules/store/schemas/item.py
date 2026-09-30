@@ -2,7 +2,8 @@ from pydantic import BaseModel
 
 
 class StoreItemCreate(BaseModel):
-    item_code: str
+    # Leave blank to auto-generate <TYPE>-<CATEGORY>-<NNNN> (service.generate_item_code).
+    item_code: str | None = None
     item_name: str
     item_type: str | None = "raw_material"
     category: str | None = None

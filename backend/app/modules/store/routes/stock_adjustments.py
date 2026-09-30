@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
@@ -8,11 +8,35 @@ from app.modules.main.models.user import User
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_adjustment import StoreStockAdjustment, StoreStockAdjustmentItem
-from app.modules.store.schemas.stock_adjustment import StoreStockAdjustmentCreate, StoreStockAdjustmentResponse
+from app.modules.store.schemas.stock_adjustment import (
+    StoreStockAdjustmentCreate, StoreStockAdjustmentRejectPayload, StoreStockAdjustmentResponse,
+)
 from app.modules.store.service import generate_stock_adjustment_number
 from app.modules.store.services.stock_ledger import post_stock_transaction, get_locked_balance
+from app.utils.notifications import notify_user
 
 router = APIRouter(prefix="/store/stock-adjustments", tags=["Store"])
+
+
+def _get_pending_for_decision(db: Session, adjustment_id: int, user: User, verb: str) -> StoreStockAdjustment:
+    """Loads (and row-locks, so a double-click can't post it twice) an
+    adjustment that `user` is allowed to approve or reject: it must still be
+    pending, the user must be its named approver (or an admin standing in),
+    and never its creator."""
+    adjustment = db.query(StoreStockAdjustment).options(selectinload(StoreStockAdjustment.items)).filter(
+        StoreStockAdjustment.id == adjustment_id
+    ).with_for_update().first()
+    if not adjustment:
+        raise HTTPException(status_code=404, detail="Stock adjustment not found")
+    if adjustment.status != "pending_approval":
+        raise HTTPException(status_code=409, detail=f"Adjustment {adjustment.adjustment_number} has already been {adjustment.status.replace('_', ' ')} — it can't be {verb}d again.")
+    if adjustment.created_by_id == user.id:
+        raise HTTPException(status_code=403, detail=f"You created adjustment {adjustment.adjustment_number}, so you can't {verb} it — the approver named on it must.")
+    if adjustment.approved_by_id != user.id and user.role != "admin":
+        approver = db.query(User).filter(User.id == adjustment.approved_by_id).first()
+        approver_name = (approver.name or approver.email) if approver else "the named approver"
+        raise HTTPException(status_code=403, detail=f"Only {approver_name} (the approver named on {adjustment.adjustment_number}) or an admin can {verb} it.")
+    return adjustment
 
 
 def _to_response(db: Session, adjustment: StoreStockAdjustment) -> StoreStockAdjustmentResponse:
@@ -70,8 +94,13 @@ async def create_stock_adjustment(
         raise HTTPException(status_code=422, detail="At least one item is required")
     if not db.query(StoreLocation).filter(StoreLocation.id == payload.location_id).first():
         raise HTTPException(status_code=404, detail="Warehouse not found")
-    if not db.query(User).filter(User.id == payload.approved_by_id).first():
-        raise HTTPException(status_code=404, detail="Approver not found")
+    if payload.approved_by_id == user.id:
+        raise HTTPException(status_code=400, detail="You can't approve your own stock adjustment — pick a different approver.")
+    approver = db.query(User).filter(User.id == payload.approved_by_id, User.is_active == True).first()  # noqa: E712
+    if not approver:
+        raise HTTPException(status_code=400, detail="The selected approver was not found or is no longer active — pick another user.")
+    if "store" not in approver.get_apps():
+        raise HTTPException(status_code=400, detail=f"{approver.name or approver.email} doesn't have access to the Store module, so they couldn't open this adjustment to approve it — pick a Store user, or ask an admin to grant them Store access.")
 
     items_by_id = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_([p.item_id for p in payload.items])).all()}
     for p in payload.items:
@@ -88,42 +117,101 @@ async def create_stock_adjustment(
         approved_by_id=payload.approved_by_id,
         created_by_id=user.id,
         remarks=payload.remarks,
+        status="pending_approval",
     )
     db.add(adjustment)
     db.flush()
 
-    try:
-        for p in payload.items:
-            # Locks the balance row before reading it, so a concurrent
-            # transaction can't land between this read and post_stock_transaction()
-            # applying the delta below — otherwise the delta would be computed
-            # from a stale on_hand_qty and land the adjustment on the wrong
-            # absolute value instead of the physical count just recorded.
-            balance = get_locked_balance(db, p.item_id, payload.location_id)
-            existing_qty = balance.on_hand_qty
-            difference = p.actual_quantity - existing_qty
+    # Nothing is posted to stock yet — the count and the difference against
+    # the live balance are recorded now, and only the approver's approval
+    # (approve_stock_adjustment below) moves stock.
+    for p in payload.items:
+        balance = get_locked_balance(db, p.item_id, payload.location_id)
+        existing_qty = balance.on_hand_qty
+        db.add(StoreStockAdjustmentItem(
+            adjustment_id=adjustment.id, item_id=p.item_id, existing_quantity=existing_qty,
+            actual_quantity=p.actual_quantity, difference=p.actual_quantity - existing_qty, remarks=p.remarks,
+        ))
 
-            db.add(StoreStockAdjustmentItem(
-                adjustment_id=adjustment.id, item_id=p.item_id, existing_quantity=existing_qty,
-                actual_quantity=p.actual_quantity, difference=difference, remarks=p.remarks,
-            ))
-            if difference > 0:
-                post_stock_transaction(
-                    db, item_id=p.item_id, location_id=payload.location_id, transaction_type="adjustment_in",
-                    quantity=difference, reference_type="stock_adjustment", reference_number=adjustment.adjustment_number,
-                    transaction_date=adjustment.adjustment_date, created_by_id=user.id,
-                )
-            elif difference < 0:
-                post_stock_transaction(
-                    db, item_id=p.item_id, location_id=payload.location_id, transaction_type="adjustment_out",
-                    quantity=abs(difference), reference_type="stock_adjustment", reference_number=adjustment.adjustment_number,
-                    transaction_date=adjustment.adjustment_date, created_by_id=user.id,
-                )
-    except ValueError as e:
-        db.rollback()
-        raise HTTPException(status_code=409, detail=str(e))
+    notify_user(
+        db, user_id=approver.id,
+        title="Stock Adjustment Awaiting Approval",
+        message=f"Stock adjustment {adjustment.adjustment_number} was raised by {user.name or user.email} and awaits your approval before it changes stock.",
+        notification_type="stock_adjustment_pending", entity_type="stock_adjustment", entity_id=adjustment.id,
+    )
 
     db.commit()
     db.refresh(adjustment)
     adjustment = db.query(StoreStockAdjustment).options(selectinload(StoreStockAdjustment.items)).filter(StoreStockAdjustment.id == adjustment.id).first()
+    return _to_response(db, adjustment)
+
+
+@router.post("/{adjustment_id}/approve", response_model=StoreStockAdjustmentResponse)
+async def approve_stock_adjustment(
+    adjustment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("store")),
+):
+    """Posts the adjustment. Each line's stored difference (count minus the
+    balance at count time) is applied, rather than re-deriving it from the
+    balance now — any receipts/issues since the count are real movements
+    and must not be wiped out by the correction."""
+    adjustment = _get_pending_for_decision(db, adjustment_id, user, "approve")
+    try:
+        for line in adjustment.items:
+            if line.difference > 0:
+                post_stock_transaction(
+                    db, item_id=line.item_id, location_id=adjustment.location_id, transaction_type="adjustment_in",
+                    quantity=line.difference, reference_type="stock_adjustment", reference_number=adjustment.adjustment_number,
+                    transaction_date=adjustment.adjustment_date, created_by_id=user.id,
+                )
+            elif line.difference < 0:
+                post_stock_transaction(
+                    db, item_id=line.item_id, location_id=adjustment.location_id, transaction_type="adjustment_out",
+                    quantity=abs(line.difference), reference_type="stock_adjustment", reference_number=adjustment.adjustment_number,
+                    transaction_date=adjustment.adjustment_date, created_by_id=user.id,
+                )
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=f"Adjustment {adjustment.adjustment_number} can't be posted: {e}")
+
+    adjustment.status = "approved"
+    adjustment.approved_by_id = user.id
+    adjustment.decided_at = datetime.now(timezone.utc)
+    if adjustment.created_by_id:
+        notify_user(
+            db, user_id=adjustment.created_by_id,
+            title="Stock Adjustment Approved",
+            message=f"Stock adjustment {adjustment.adjustment_number} was approved by {user.name or user.email} and posted to stock.",
+            notification_type="stock_adjustment_approved", entity_type="stock_adjustment", entity_id=adjustment.id,
+        )
+    db.commit()
+    adjustment = db.query(StoreStockAdjustment).options(selectinload(StoreStockAdjustment.items)).filter(StoreStockAdjustment.id == adjustment_id).first()
+    return _to_response(db, adjustment)
+
+
+@router.post("/{adjustment_id}/reject", response_model=StoreStockAdjustmentResponse)
+async def reject_stock_adjustment(
+    adjustment_id: int,
+    payload: StoreStockAdjustmentRejectPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("store")),
+):
+    reason = payload.reason.strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="Give a reason for rejecting the adjustment, so the store keeper knows what to recount or fix.")
+    adjustment = _get_pending_for_decision(db, adjustment_id, user, "reject")
+    adjustment.status = "rejected"
+    adjustment.approved_by_id = user.id
+    adjustment.decided_at = datetime.now(timezone.utc)
+    adjustment.rejected_reason = reason
+    if adjustment.created_by_id:
+        notify_user(
+            db, user_id=adjustment.created_by_id,
+            title="Stock Adjustment Rejected",
+            message=f"Stock adjustment {adjustment.adjustment_number} was rejected by {user.name or user.email}. Reason: {reason}",
+            notification_type="stock_adjustment_rejected", entity_type="stock_adjustment", entity_id=adjustment.id,
+        )
+    db.commit()
+    adjustment = db.query(StoreStockAdjustment).options(selectinload(StoreStockAdjustment.items)).filter(StoreStockAdjustment.id == adjustment_id).first()
     return _to_response(db, adjustment)

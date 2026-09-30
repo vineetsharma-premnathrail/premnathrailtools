@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useAuth } from '@/hooks/useAuth'
 import { TEXT } from '@/lib/theme'
 import P2PNav from '@/components/p2p/P2PNav'
 import P2PRequestList from '@/components/p2p/P2PRequestList'
@@ -16,7 +16,10 @@ const BUCKETS: { key: Bucket; label: string; statuses?: string[]; emptyLabel: st
 ]
 
 export default function P2PPoApprovalPage() {
-  const { isAuthorized, isLoading } = useRequireApp('p2p')
+  // PO-role holders and admins only — the backend list endpoint enforces
+  // the same scope via the queue parameter.
+  const { user, isLoading } = useAuth()
+  const isAuthorized = !!user && (!!user.is_po_approver || user.role === 'admin')
   const router = useRouter()
   const searchParams = useSearchParams()
   const bucket: Bucket = (['pending', 'approved', 'rejected', 'all'] as Bucket[]).includes(searchParams.get('bucket') as Bucket)
@@ -30,7 +33,7 @@ export default function P2PPoApprovalPage() {
     <div>
       <P2PNav />
       <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-        Procure-to-Pay Module
+        Procurement Module
       </p>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 16px' }}>P.O Approval</h1>
 
@@ -57,7 +60,7 @@ export default function P2PPoApprovalPage() {
         ))}
       </div>
 
-      <P2PRequestList statuses={active.statuses} emptyLabel={active.emptyLabel} context="po-approval" />
+      <P2PRequestList statuses={active.statuses} emptyLabel={active.emptyLabel} context="po-approval" queue="po-approval" />
     </div>
   )
 }

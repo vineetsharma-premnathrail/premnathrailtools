@@ -11,6 +11,7 @@ import { extractErrorMessages } from '@/lib/validation'
 const ERROR_MESSAGES: Record<string, string> = {
   unauthorized: 'Your Microsoft account\'s email domain is not authorized for this portal.',
   inactive: 'Your account has been deactivated. Contact an administrator.',
+  exited: 'Your employment was closed in HR & Administration, so portal sign-in is disabled. If you have rejoined, ask HR to complete a joining event for you in HR > Lifecycle.',
 }
 
 export default function LoginPage() {

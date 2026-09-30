@@ -41,7 +41,7 @@ MODULES: dict[str, dict] = {
         },
     },
     "p2p": {
-        "label": "Procure-to-Pay",
+        "label": "Procurement",
         "subtabs": {
             "purchase_requisitions": "Purchase Requisitions",
             "pr_approval": "P.R Approval",
@@ -51,9 +51,16 @@ MODULES: dict[str, dict] = {
         },
     },
     "rnd": {
-        "label": "R&D Tools",
+        "label": "R&D",
         "subtabs": {
-            "all": "All",
+            "dashboard": "Dashboard",
+            "projects": "R&D Projects",
+            "experiments": "Experiments & Tests",
+            "prototypes": "Prototypes",
+            "documents": "Documents",
+            # "all" was the old calculator landing page — kept as the key
+            # for the Engineering Tools tab so existing grants still apply.
+            "all": "Engineering Tools",
             "braking": "Braking",
             "hydraulic": "Hydraulic",
             "qmax": "Qmax",
@@ -62,6 +69,67 @@ MODULES: dict[str, dict] = {
             "vehicle_performance": "Vehicle Performance",
             "spline": "Spline",
             "history": "History",
+        },
+    },
+    "maintenance": {
+        "label": "Maintenance",
+        "subtabs": {
+            "dashboard": "Dashboard",
+            "assets": "Assets",
+            "requests": "Requests",
+            "work_orders": "Work Orders",
+            "schedule": "PM Schedule",
+            "spares": "Spares",
+            "reports": "Maintenance Reports",
+        },
+    },
+    "production": {
+        "label": "Production",
+        "subtabs": {
+            "dashboard": "Dashboard",
+            "rrv_builds": "RRV Builds",
+            "work_orders": "Work Orders",
+            "shop_floor": "Shop Floor",
+            "planning": "Planning",
+            "bom": "BOM & Routing",
+            "workstations": "Workstations",
+            "reports": "Production Reports",
+        },
+    },
+    "design": {
+        "label": "Design",
+        "subtabs": {
+            "dashboard": "Dashboard",
+            "documents": "Documents",
+            "tasks": "My Tasks",
+            "change_notices": "Change Notices (ECN)",
+            "reports": "Reports",
+        },
+    },
+    "electrical": {
+        "label": "Electrical",
+        "subtabs": {
+            "dashboard": "Dashboard",
+            "jobs": "RRV Electrical Jobs",
+            "drawings": "Drawings",
+            "purchase": "Purchase Requirements",
+            "testing": "Testing",
+            "troubleshooting": "Troubleshooting",
+        },
+    },
+    "hydraulic": {
+        "label": "Hydraulic & Pneumatic",
+        "subtabs": {
+            "dashboard": "Dashboard",
+            "systems": "Systems",
+            "components": "Component Master",
+            "circuits": "Circuits & Diagrams",
+            "bom": "BOM",
+            "calculations": "Calculations",
+            "testing": "Testing & Inspection",
+            "maintenance": "Maintenance Plans",
+            "service_records": "Service Records",
+            "spare_parts": "Spare Parts",
         },
     },
     "store": {"label": "Store", "subtabs": {}},
@@ -96,8 +164,70 @@ MODULES: dict[str, dict] = {
             "project_history": "Project History", "closure": "Closure",
         },
     },
+    "hr": {
+        "label": "HR & Administration",
+        "subtabs": {
+            "dashboard": "Dashboard",
+            "me": "My HR",
+            "approvals": "Approvals",
+            "employees": "Employees",
+            "org_chart": "Org Chart",
+            "lifecycle": "Lifecycle",
+            "leave": "Leave",
+            "attendance": "Attendance",
+            "holidays": "Holidays",
+            "assets": "Assets",
+            "visitors": "Visitors",
+            "travel": "Travel & Claims",
+            "masters": "Masters",
+        },
+    },
 }
 
 
 def permission_id(module_key: str, subtab_key: str, action: str) -> str:
     return f"{module_key}:{subtab_key}:{action}"
+
+
+def can_view_tab(user, module_key: str, subtab_key: str) -> bool:
+    """True if `user` may view a given module's subtab under the Permission
+    Matrix. Admins always pass. A user with zero matrix grants anywhere in
+    `module_key` is unrestricted for it — the matrix is opt-in per module,
+    so a user an admin never touched in the matrix keeps today's behavior
+    (gated only by the module/app-access check, not by this)."""
+    if user.role == "admin":
+        return True
+    grants = user.granular_permissions or []
+    if not any(g.startswith(f"{module_key}:") for g in grants):
+        return True
+    return f"{module_key}:{subtab_key}:view" in grants
+
+
+
+def can_perform(user, module_key: str, subtab_key: str, action: str) -> bool:
+    """True if `user` may do `action` (create / edit / delete / approve …) in
+    a module's subtab under the Permission Matrix. Same opt-in rule as
+    can_view_tab: admins always pass, and a user with no matrix grants
+    anywhere in `module_key` is unrestricted for it."""
+    if user.role == "admin":
+        return True
+    grants = user.granular_permissions or []
+    if not any(g.startswith(f"{module_key}:") for g in grants):
+        return True
+    return permission_id(module_key, subtab_key, action) in grants
+
+def restricted_subtabs(user) -> dict[str, list[str]]:
+    """module_key -> the subtab keys `user` may view, for every module where
+    the admin has actually granted them at least one Permission Matrix entry.
+    A module absent from this dict is unrestricted for `user` (see
+    can_view_tab) — *Nav.tsx components show every one of their tabs in that
+    case, same as before the matrix existed. Powers GET /auth/me's
+    `tab_access` field."""
+    if user.role == "admin":
+        return {}
+    grants = user.granular_permissions or []
+    touched = {g.split(":", 1)[0] for g in grants if ":" in g}
+    return {
+        mk: sorted({g.split(":")[1] for g in grants if g.startswith(f"{mk}:") and g.endswith(":view")})
+        for mk in touched if mk in MODULES
+    }

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -30,7 +32,7 @@ def _to_response(db: Session, scorecard: QualitySupplierScorecard) -> QualitySup
 
 
 def _get_or_404(db: Session, scorecard_id: int) -> QualitySupplierScorecard:
-    scorecard = db.query(QualitySupplierScorecard).filter(QualitySupplierScorecard.id == scorecard_id).first()
+    scorecard = db.query(QualitySupplierScorecard).filter(QualitySupplierScorecard.is_deleted == False, QualitySupplierScorecard.id == scorecard_id).first()  # noqa: E712
     if not scorecard:
         raise HTTPException(status_code=404, detail="Supplier scorecard not found")
     return scorecard
@@ -43,7 +45,7 @@ async def list_scorecards(
     status_filter: str | None = Query(None, alias="status"),
     db: Session = Depends(get_db),
 ):
-    query = db.query(QualitySupplierScorecard)
+    query = db.query(QualitySupplierScorecard).filter(QualitySupplierScorecard.is_deleted == False)  # noqa: E712
     if vendor_id is not None:
         query = query.filter(QualitySupplierScorecard.vendor_id == vendor_id)
     if period:
@@ -111,6 +113,9 @@ async def update_scorecard(
 @router.delete("/{scorecard_id}")
 async def delete_scorecard(scorecard_id: int, db: Session = Depends(get_db)):
     scorecard = _get_or_404(db, scorecard_id)
-    db.delete(scorecard)
+    # Soft delete — quality records are retained for audit (ISO 9001 §7.5.3),
+    # and the delete itself is logged by app/core/audit.py.
+    scorecard.is_deleted = True
+    scorecard.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "Supplier scorecard deleted"}

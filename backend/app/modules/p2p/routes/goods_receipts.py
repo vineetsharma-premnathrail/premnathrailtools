@@ -7,7 +7,7 @@ from app.core.permissions import require_app_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
-from app.modules.p2p.models.p2p_request import P2PRequest
+from app.modules.p2p.models.p2p_request import P2PRequest, P2P_ROLE_LABELS
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem, P2P_GRN_QUALITY_STATUSES
 from app.modules.p2p.schemas.goods_receipt import (
@@ -33,6 +33,21 @@ _RECEIVABLE_PO_STATUSES = ("issued", "acknowledged", "partially_fulfilled")
 # having cleared that chain, or a PO could be received against before it's
 # financially approved.
 _PO_APPROVED_PR_STATUSES = ("po_approved", "partially_received")
+
+
+def _po_approval_block_reason(db: Session, po: P2PPurchaseOrder) -> str | None:
+    """Why goods can't be received against this PO yet, or None if they
+    can. Checks the actual Purchase Head / Director / MD approval stamps,
+    not just a status string, and refuses a PO with no parent PR at all —
+    such a PO never went through any approval chain."""
+    pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first() if po.p2p_request_id else None
+    if not pr:
+        return f"PO '{po.po_number}' isn't linked to a purchase requisition, so it has no Purchase Head / Director / MD approval — goods can't be received against it."
+    if pr.status not in _PO_APPROVED_PR_STATUSES or pr.pending_po_approval_roles:
+        pending = ", ".join(P2P_ROLE_LABELS.get(r, r) for r in pr.pending_po_approval_roles)
+        pending_note = f" Still waiting on: {pending}." if pending else ""
+        return f"PO '{po.po_number}' has not completed its approval yet (request status: {pr.status}).{pending_note}"
+    return None
 
 
 def _get_grn_or_404(db: Session, grn_id: int) -> P2PGoodsReceipt:
@@ -137,7 +152,16 @@ def _sync_po_and_pr_status(db: Session, po: P2PPurchaseOrder, user_id: int) -> N
     old_status = pr.status
     pr.ordered_quantity = ordered_total
     pr.received_quantity = accepted_total
-    latest_grn = max(completed_grns, key=lambda g: g.inspected_at or g.created_at, default=None)
+    # inspected_at is a naive (timestamp-without-tz) column, but
+    # inspect_goods_receipt assigns an aware datetime — and the session's
+    # identity map hands the just-inspected GRN back with that aware value
+    # while earlier GRNs load naive, so a mixed max() would raise TypeError
+    # on the second GRN of a PO. Both represent UTC; strip tzinfo to compare.
+    def _grn_ts(g: P2PGoodsReceipt) -> datetime:
+        ts = g.inspected_at or g.created_at
+        return ts.replace(tzinfo=None) if ts.tzinfo else ts
+
+    latest_grn = max(completed_grns, key=_grn_ts, default=None)
     if latest_grn:
         pr.grn_number = latest_grn.grn_number
     if accepted_total <= 0:
@@ -191,9 +215,9 @@ async def list_pending_purchase_orders(
     ).order_by(P2PPurchaseOrder.po_date.desc()).all()
     result = []
     for po in pos:
-        pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first() if po.p2p_request_id else None
-        if pr and pr.status not in _PO_APPROVED_PR_STATUSES:
+        if _po_approval_block_reason(db, po):
             continue
+        pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first()
         result.append({
             "id": po.id,
             "po_number": po.po_number,
@@ -237,13 +261,9 @@ async def create_goods_receipt(
         raise HTTPException(status_code=404, detail="Purchase order not found")
     if po.status not in _RECEIVABLE_PO_STATUSES:
         raise HTTPException(status_code=409, detail=f"Cannot record a receipt against a PO with status '{po.status}'")
-    if po.p2p_request_id:
-        pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first()
-        if pr and pr.status not in _PO_APPROVED_PR_STATUSES:
-            raise HTTPException(
-                status_code=409,
-                detail=f"PO '{po.po_number}' has not completed its Purchase Head / Director / MD approval chain yet (request status: {pr.status})",
-            )
+    block_reason = _po_approval_block_reason(db, po)
+    if block_reason:
+        raise HTTPException(status_code=409, detail=block_reason)
     if not payload.items:
         raise HTTPException(status_code=422, detail="At least one item is required")
 
@@ -364,6 +384,12 @@ async def inspect_goods_receipt(
     grn.status = "completed"
     grn.inspected_by_id = user.id
     grn.inspected_at = datetime.now(timezone.utc)
+    # SessionLocal runs with autoflush=False, and _sync_po_and_pr_status
+    # re-queries completed GRNs from the DB — without this flush the GRN
+    # completed just above is invisible to that rollup, so the PO/PR status
+    # would always lag one GRN behind and the PR could never reach
+    # 'received' (blocking /close).
+    db.flush()
 
     po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == grn.purchase_order_id).first()
     _sync_po_and_pr_status(db, po, user.id)

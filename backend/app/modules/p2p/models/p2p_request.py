@@ -9,6 +9,7 @@ from app.db.mixins import TimestampMixin
 if TYPE_CHECKING:
     from app.modules.p2p.models.p2p_request_item import P2PRequestItem
     from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
+    from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 
 # Lifecycle of a standalone P2P Request raised directly by any department —
 # including PRs raised out of an ERP Service Request's Materials tab, which
@@ -83,6 +84,64 @@ def resolve_auto_buyer_id(db, category_code: str) -> int | None:
 
 P2P_REQUIREMENT_TYPES = ("Material", "Service", "Material + Service", "Capital Equipment", "Others")
 
+# Manager-role approval matrix (in force since 2026-09). Which manager roles
+# sign a PR and a PO depends on whether the request is for an EXISTING project
+# or a NEW project — the requester picks that explicitly on the New PR form
+# (project_type below). PR approval: the requester names one user per role and
+# ALL of them must approve. PO approval: it goes to every holder of every role
+# in the set, and ANY ONE approval approves the PO.
+#
+# PRs created before this matrix have project_type = NULL and keep the legacy
+# flow (Department/Project/Plant Head columns; Purchase Head -> Director -> MD
+# PO chain) until they finish.
+P2P_PROJECT_TYPES = ("existing", "new")
+
+PR_APPROVAL_ROLE_SETS: dict[str, tuple[str, ...]] = {
+    "existing": ("design_manager", "production_manager", "project_manager", "store_manager"),
+    "new": ("rnd_manager", "production_manager", "store_manager"),
+}
+
+PO_APPROVAL_ROLE_SETS: dict[str, tuple[str, ...]] = {
+    "existing": ("production_manager", "purchase_manager", "project_manager", "director"),
+    "new": ("rnd_manager", "purchase_manager", "production_manager", "director"),
+}
+
+# Role key -> User boolean flag that marks a holder of the role.
+P2P_ROLE_FLAGS: dict[str, str] = {
+    "design_manager": "is_design_manager",
+    "rnd_manager": "is_rnd_manager",
+    "production_manager": "is_production_manager",
+    "project_manager": "is_project_manager",
+    "store_manager": "is_store_manager",
+    "purchase_manager": "is_purchase_manager",
+    "director": "is_director",
+}
+
+# Every User flag that makes someone a PO approver on SOME PR: the union of
+# both matrix role sets plus the legacy Purchase Head / MD flags carried by
+# in-flight pre-matrix PRs. Drives the P.O Approval tab visibility
+# (is_po_approver on /auth/me).
+P2P_PO_APPROVER_FLAGS: tuple[str, ...] = tuple(sorted(
+    {P2P_ROLE_FLAGS[r] for roles in PO_APPROVAL_ROLE_SETS.values() for r in roles} | {"is_purchase_head", "is_md"}
+))
+
+# Display labels for every role key that can appear on a PR — the matrix
+# roles plus the legacy ones still carried by in-flight PRs.
+P2P_ROLE_LABELS: dict[str, str] = {
+    "design_manager": "Design Manager",
+    "rnd_manager": "R&D Manager",
+    "production_manager": "Production Manager",
+    "project_manager": "Project Manager",
+    "store_manager": "Store Manager",
+    "purchase_manager": "Purchase Manager",
+    "director": "Director",
+    "department_head": "Department Head",
+    "project_head": "Project Head",
+    "plant_head": "Plant Head",
+    "purchase_head": "Purchase Head",
+    "md": "MD",
+}
+
 
 class P2PRequest(Base, TimestampMixin):
     """A standalone P2P request raised by any department, tracked and
@@ -97,6 +156,9 @@ class P2PRequest(Base, TimestampMixin):
 
     # Request Details
     project_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 'existing' | 'new' — picks the approval role sets above. NULL on PRs
+    # from before the manager-role matrix (legacy approval flow).
+    project_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
     required_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     requirement_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     request_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -135,6 +197,14 @@ class P2PRequest(Base, TimestampMixin):
     md_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     md_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     md_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Manager-matrix PO approval (project_type set): any ONE holder of the
+    # PR's PO role set approves, stamped here. The per-role columns above
+    # stay for legacy PRs only.
+    po_approved_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    po_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    po_approved_role: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    po_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    po_approval_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     rejected_by_role: Mapped[str | None] = mapped_column(String(30), nullable=True)
     rejected_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -180,6 +250,10 @@ class P2PRequest(Base, TimestampMixin):
     attachments: Mapped[list["P2PRequestAttachment"]] = relationship(
         "P2PRequestAttachment", back_populates="p2p_request", cascade="all, delete-orphan"
     )
+    approvals: Mapped[list["P2PRequestApproval"]] = relationship(
+        "P2PRequestApproval", back_populates="p2p_request", cascade="all, delete-orphan",
+        order_by="P2PRequestApproval.id",
+    )
 
     @property
     def pending_quantity(self) -> float | None:
@@ -193,6 +267,8 @@ class P2PRequest(Base, TimestampMixin):
 
     @property
     def assigned_approver_ids(self) -> dict[str, int]:
+        if self.approvals:
+            return {a.role: a.approver_id for a in self.approvals}
         return {
             role: getattr(self, "approver_id" if role == "department_head" else f"{role}_id")
             for role in self._APPROVAL_SLOTS
@@ -201,6 +277,8 @@ class P2PRequest(Base, TimestampMixin):
 
     @property
     def pending_approval_roles(self) -> list[str]:
+        if self.approvals:
+            return [a.role for a in self.approvals if a.approved_at is None]
         return [
             role for role, _id in self.assigned_approver_ids.items()
             if getattr(self, f"{role}_approved_at") is None
@@ -208,6 +286,10 @@ class P2PRequest(Base, TimestampMixin):
 
     @property
     def pending_po_approval_roles(self) -> list[str]:
+        # Manager matrix: any-one-approves, so either nothing is pending (an
+        # approval is stamped) or the whole role set is.
+        if self.project_type in PO_APPROVAL_ROLE_SETS:
+            return [] if self.po_approved_at else list(PO_APPROVAL_ROLE_SETS[self.project_type])
         return [
             role for role in ("purchase_head", "director", "md")
             if getattr(self, f"{role}_approved_at") is None

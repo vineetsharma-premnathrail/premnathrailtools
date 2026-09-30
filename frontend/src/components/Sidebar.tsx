@@ -95,11 +95,50 @@ const icons: Record<string, ReactNode> = {
       <polyline points="9 12 11 14 15 10" />
     </svg>
   ),
+  production: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 20V9l6 4V9l6 4V5h4l2 15z" />
+      <line x1="2" y1="20" x2="22" y2="20" />
+    </svg>
+  ),
+  maintenance: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
+    </svg>
+  ),
+  design: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 19l7-7 3 3-7 7-3-3z" />
+      <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+      <path d="M2 2l7.586 7.586" />
+      <circle cx="11" cy="11" r="2" />
+    </svg>
+  ),
+  electrical: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    </svg>
+  ),
+  hydraulic: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2.7l5.66 5.66a8 8 0 11-11.32 0z" />
+      <path d="M9 14a3 3 0 003 3" />
+    </svg>
+  ),
   projects: (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <line x1="9" y1="3" x2="9" y2="21" />
       <path d="M13 8l3 3-3 3" />
+    </svg>
+  ),
+  hr: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <circle cx="8" cy="11" r="2" />
+      <path d="M5 16c.6-1.5 1.7-2.2 3-2.2s2.4.7 3 2.2" />
+      <line x1="14" y1="10" x2="19" y2="10" />
+      <line x1="14" y1="14" x2="17" y2="14" />
     </svg>
   ),
   finance: (
@@ -157,13 +196,27 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
   const links = [
     { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', visible: true },
     { href: '/dashboard/erp', label: 'Service Module', icon: 'erp', visible: !!user?.apps?.includes('erp') },
-    { href: '/dashboard/rnd', label: 'R&D Tools', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
+    { href: '/dashboard/rnd', label: 'R&D', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
     { href: '/dashboard/crm', label: 'CRM Module', icon: 'crm', visible: !!user?.apps?.includes('crm') },
-    { href: '/dashboard/p2p', label: 'Procure-to-Pay', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
+    { href: '/dashboard/p2p', label: 'Procurement', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
     { href: '/dashboard/store', label: 'Store & Inventory', icon: 'store', visible: !!user?.apps?.includes('store') },
     { href: '/dashboard/quality', label: 'Quality', icon: 'quality', visible: !!user?.apps?.includes('quality') },
+    { href: '/dashboard/production', label: 'Production', icon: 'production', visible: !!user?.apps?.includes('production') },
+    // Production supervisors raise breakdowns without holding the maintenance
+    // app — they land straight on their own requests list.
+    {
+      href: user?.apps?.includes('maintenance') ? '/dashboard/maintenance' : '/dashboard/maintenance/requests',
+      label: 'Maintenance', icon: 'maintenance',
+      visible: !!user?.apps?.includes('maintenance') || !!user?.apps?.includes('production'),
+    },
+    { href: '/dashboard/design', label: 'Design', icon: 'design', visible: !!user?.apps?.includes('design') },
+    { href: '/dashboard/electrical', label: 'Electrical', icon: 'electrical', visible: !!user?.apps?.includes('electrical') },
+    { href: '/dashboard/hydraulic', label: 'Hydraulic & Pneumatic', icon: 'hydraulic', visible: !!user?.apps?.includes('hydraulic') },
     { href: '/dashboard/projects', label: 'Project Management', icon: 'projects', visible: !!user?.apps?.includes('projects') },
     { href: '/dashboard/finance', label: 'Finance & Accounting', icon: 'finance', visible: !!user?.apps?.includes('accounts') },
+    // Visible to every logged-in user: My HR (leave, attendance, travel,
+    // claims, assets) is self-service; HR-only tabs are gated inside HrNav.
+    { href: '/dashboard/hr', label: 'HR & Admin', icon: 'hr', visible: !!user },
     { href: '/dashboard/organization', label: 'Organization', icon: 'organization', visible: isAdmin },
   ].filter((link) => link.visible)
 

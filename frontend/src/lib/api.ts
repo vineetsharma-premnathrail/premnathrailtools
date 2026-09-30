@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import { useAuthStore } from '@/store/authStore'
+import { beginRequest } from '@/lib/requestActivity'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
 
@@ -21,6 +22,31 @@ apiClient.interceptors.request.use(
     return config
   },
   (error) => Promise.reject(error)
+)
+
+// Loading indicator + double-submit guard (lib/requestActivity.ts,
+// components/shared/GlobalActivity.tsx). Registered BEFORE the 401-refresh
+// interceptor below on purpose: axios runs response interceptors in
+// registration order, so each original request is ended here first — a
+// retried request after a token refresh is tracked as its own request.
+// Silent token refreshes never count as user activity.
+apiClient.interceptors.request.use((config) => {
+  const url = config.url || ''
+  if (!config.background && !url.includes('/auth/refresh')) {
+    const method = (config.method || 'get').toLowerCase()
+    config._endActivity = beginRequest(method === 'get' || method === 'head' || method === 'options' ? 'read' : 'write')
+  }
+  return config
+})
+apiClient.interceptors.response.use(
+  (response) => {
+    response.config?._endActivity?.()
+    return response
+  },
+  (error: AxiosError) => {
+    error.config?._endActivity?.()
+    return Promise.reject(error)
+  }
 )
 
 // The access token (session_token) is short-lived by design (15 min) — see
@@ -136,12 +162,9 @@ export const usersApi = {
     id: number,
     assigned_apps: string[],
     erp_permissions: string[],
-    is_purchase_head?: boolean,
-    is_director?: boolean,
-    is_md?: boolean,
-    is_finance_manager?: boolean
+    approvalRoleFlags: Record<string, boolean> = {}
   ) => {
-    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, is_purchase_head, is_director, is_md, is_finance_manager })
+    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, ...approvalRoleFlags })
     return data
   },
 
@@ -702,8 +725,8 @@ export const erpApi = {
     reason?: string
     category_code?: string
     requirement_type?: string
-    approver_id?: number
-    approver_name?: string
+    /** Manager-role approvers (role key -> user id) — the 'existing' project role set. */
+    approvers: Record<string, number>
   }) => {
     const { data } = await apiClient.post(`/erp/service-requests/${srId}/raise-pr`, payload)
     return data
@@ -1201,12 +1224,9 @@ export const purchaseOrdersApi = {
     return data
   },
 
-  create: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/p2p/purchase-orders', payload)
-    return data
-  },
-
-  update: async (id: number, payload: Record<string, unknown>) => {
+  // POs are created only via rfqApi.createPoDraft (RFQ -> draft -> submit);
+  // status changes only through submit/approval/GRN, never this update.
+  update: async (id: number, payload: { expected_delivery?: string; delivery_terms?: string }) => {
     const { data } = await apiClient.patch(`/p2p/purchase-orders/${id}`, payload)
     return data
   },
@@ -1284,6 +1304,15 @@ export const storeApi = {
   createItem: async (payload: Record<string, unknown>) => {
     const { data } = await apiClient.post('/store/items', payload)
     return data
+  },
+  getItemMeta: async (): Promise<{ item_types: { value: string; label: string; prefix: string }[]; uoms: { value: string; label: string }[] }> => {
+    const { data } = await apiClient.get('/store/items/meta')
+    return data
+  },
+  // Preview only — the real code is assigned when the item is saved.
+  previewItemCode: async (itemType: string, category?: string): Promise<string> => {
+    const { data } = await apiClient.get('/store/items/next-code', { params: { item_type: itemType, category: category || undefined }, background: true })
+    return data.item_code
   },
   updateItem: async (id: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch(`/store/items/${id}`, payload)
@@ -1367,6 +1396,14 @@ export const storeApi = {
   },
   getStockAdjustment: async (id: number) => {
     const { data } = await apiClient.get(`/store/stock-adjustments/${id}`)
+    return data
+  },
+  approveStockAdjustment: async (id: number) => {
+    const { data } = await apiClient.post(`/store/stock-adjustments/${id}/approve`)
+    return data
+  },
+  rejectStockAdjustment: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/store/stock-adjustments/${id}/reject`, { reason })
     return data
   },
   createStockAdjustment: async (payload: Record<string, unknown>) => {
@@ -1932,6 +1969,117 @@ export const rndApi = {
   },
 
   toolPath: (toolName: string) => RND_TOOL_PATHS[toolName] || toolName,
+
+  // R&D module — dashboard, projects (+ stage / feasibility), experiments, prototypes.
+  getDashboard: async () => {
+    const { data } = await apiClient.get('/rnd/dashboard')
+    return data
+  },
+  lookupStoreItems: async (search?: string) => {
+    const { data } = await apiClient.get('/rnd/lookups/store-items', { params: search ? { search } : {} })
+    return data
+  },
+
+  listProjects: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/rnd/projects', { params })
+    return data
+  },
+  getProject: async (id: number) => {
+    const { data } = await apiClient.get(`/rnd/projects/${id}`)
+    return data
+  },
+  createProject: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/rnd/projects', payload)
+    return data
+  },
+  updateProject: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/rnd/projects/${id}`, payload)
+    return data
+  },
+  changeProjectStage: async (id: number, stage: string) => {
+    const { data } = await apiClient.post(`/rnd/projects/${id}/stage`, { stage })
+    return data
+  },
+  deleteProject: async (id: number) => {
+    const { data } = await apiClient.delete(`/rnd/projects/${id}`)
+    return data
+  },
+  getFeasibility: async (projectId: number) => {
+    const { data } = await apiClient.get(`/rnd/projects/${projectId}/feasibility`)
+    return data
+  },
+  saveFeasibility: async (projectId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.put(`/rnd/projects/${projectId}/feasibility`, payload)
+    return data
+  },
+
+  listExperiments: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/rnd/experiments', { params })
+    return data
+  },
+  getExperiment: async (id: number) => {
+    const { data } = await apiClient.get(`/rnd/experiments/${id}`)
+    return data
+  },
+  createExperiment: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/rnd/experiments', payload)
+    return data
+  },
+  updateExperiment: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/rnd/experiments/${id}`, payload)
+    return data
+  },
+  deleteExperiment: async (id: number) => {
+    const { data } = await apiClient.delete(`/rnd/experiments/${id}`)
+    return data
+  },
+
+  listPrototypes: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/rnd/prototypes', { params })
+    return data
+  },
+  getPrototype: async (id: number) => {
+    const { data } = await apiClient.get(`/rnd/prototypes/${id}`)
+    return data
+  },
+  createPrototype: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/rnd/prototypes', payload)
+    return data
+  },
+  updatePrototype: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/rnd/prototypes/${id}`, payload)
+    return data
+  },
+  deletePrototype: async (id: number) => {
+    const { data } = await apiClient.delete(`/rnd/prototypes/${id}`)
+    return data
+  },
+  releasePrototypeToProduction: async (id: number, payload: { product_item_id: number; base_quantity?: number; remarks?: string }) => {
+    const { data } = await apiClient.post(`/rnd/prototypes/${id}/release-to-production`, payload)
+    return data
+  },
+
+  listDocuments: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/rnd/documents', { params })
+    return data
+  },
+  uploadDocuments: async (formData: FormData) => {
+    // SharePoint uploads routinely outlast the global 10s timeout — same
+    // reasoning as qualityApi.uploadDocuments.
+    const { data } = await apiClient.post('/rnd/documents', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+    return data
+  },
+  getDocumentContent: async (id: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/rnd/documents/${id}/content`, { responseType: 'blob' })
+    return data
+  },
+  deleteDocument: async (id: number) => {
+    const { data } = await apiClient.delete(`/rnd/documents/${id}`)
+    return data
+  },
 }
 
 export const notificationsApi = {
@@ -1986,3 +2134,719 @@ export const feedbackApi = {
   },
 }
 
+// HR & Administration. Each feature owner adds its methods directly under
+// its own marker line below (keep the marker). Backend routers live in
+// backend/app/modules/hr/routes/*, all under /api/v1/hr/...
+export const hrApi = {
+  // ── hr:employees (A) ──
+  listEmployees: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrEmployeeListResponse> => {
+    const { data } = await apiClient.get('/hr/employees', { params })
+    return data
+  },
+  getEmployee: async (userId: number): Promise<import('@/types').HrEmployeeProfile> => {
+    const { data } = await apiClient.get(`/hr/employees/${userId}`)
+    return data
+  },
+  /** Create-or-update the HR profile (partial). reporting_manager_id / date_of_joining are written to the User row. */
+  saveEmployee: async (userId: number, payload: Record<string, unknown>): Promise<import('@/types').HrEmployeeProfile> => {
+    const { data } = await apiClient.patch(`/hr/employees/${userId}`, payload)
+    return data
+  },
+  getMyProfile: async (): Promise<import('@/types').HrEmployeeProfile> => {
+    const { data } = await apiClient.get('/hr/employees/me')
+    return data
+  },
+  updateMyProfile: async (payload: Record<string, unknown>): Promise<import('@/types').HrEmployeeProfile> => {
+    const { data } = await apiClient.patch('/hr/employees/me', payload)
+    return data
+  },
+  getDirectory: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrDirectoryEntry[]> => {
+    const { data } = await apiClient.get('/hr/employees/directory', { params })
+    return data
+  },
+  getOrgChart: async (): Promise<import('@/types').HrOrgChart> => {
+    const { data } = await apiClient.get('/hr/employees/org-chart')
+    return data
+  },
+  listEmployeeDocuments: async (userId: number): Promise<import('@/types').UserDocument[]> => {
+    const { data } = await apiClient.get(`/hr/employees/${userId}/documents`)
+    return data
+  },
+  uploadEmployeeDocument: async (userId: number, file: File, meta: Record<string, string>) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    Object.entries(meta).forEach(([k, v]) => { if (v) formData.append(k, v) })
+    const { data } = await apiClient.post(`/hr/employees/${userId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+    return data
+  },
+  getEmployeeDocumentBlob: async (userId: number, documentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/hr/employees/${userId}/documents/${documentId}/content`, { responseType: 'blob', timeout: 60000 })
+    return data
+  },
+  deleteEmployeeDocument: async (userId: number, documentId: number) => {
+    await apiClient.delete(`/hr/employees/${userId}/documents/${documentId}`)
+  },
+  listMyDocuments: async (): Promise<import('@/types').UserDocument[]> => {
+    const { data } = await apiClient.get('/hr/employees/me/documents')
+    return data
+  },
+  getMyDocumentBlob: async (documentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/hr/employees/me/documents/${documentId}/content`, { responseType: 'blob', timeout: 60000 })
+    return data
+  },
+  // ── hr:masters (A) ──
+  /** Departments, plants, designations, grades, shifts and people for HR form dropdowns (hr app only). */
+  getLookups: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrLookups> => {
+    const { data } = await apiClient.get('/hr/masters/lookups', { params })
+    return data
+  },
+  listGrades: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrGrade[]> => {
+    const { data } = await apiClient.get('/hr/masters/grades', { params })
+    return data
+  },
+  createGrade: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/hr/masters/grades', payload)
+    return data
+  },
+  updateGrade: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/hr/masters/grades/${id}`, payload)
+    return data
+  },
+  deleteGrade: async (id: number) => {
+    await apiClient.delete(`/hr/masters/grades/${id}`)
+  },
+  listDesignations: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrDesignation[]> => {
+    const { data } = await apiClient.get('/hr/masters/designations', { params })
+    return data
+  },
+  createDesignation: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/hr/masters/designations', payload)
+    return data
+  },
+  updateDesignation: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/hr/masters/designations/${id}`, payload)
+    return data
+  },
+  deleteDesignation: async (id: number) => {
+    await apiClient.delete(`/hr/masters/designations/${id}`)
+  },
+  listShifts: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrShift[]> => {
+    const { data } = await apiClient.get('/hr/masters/shifts', { params })
+    return data
+  },
+  createShift: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/hr/masters/shifts', payload)
+    return data
+  },
+  updateShift: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/hr/masters/shifts/${id}`, payload)
+    return data
+  },
+  deleteShift: async (id: number) => {
+    await apiClient.delete(`/hr/masters/shifts/${id}`)
+  },
+  // ── hr:lifecycle (B) ──
+  getLifecycleMeta: async (params: { include_user_id?: number } = {}) => {
+    const { data } = await apiClient.get('/hr/lifecycle/meta', { params })
+    return data
+  },
+  listLifecycleEvents: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/hr/lifecycle/events', { params })
+    return data
+  },
+  getLifecycleCounts: async () => {
+    const { data } = await apiClient.get('/hr/lifecycle/events/counts')
+    return data
+  },
+  listUserLifecycleEvents: async (userId: number) => {
+    const { data } = await apiClient.get(`/hr/lifecycle/users/${userId}/events`)
+    return data
+  },
+  getLifecycleEvent: async (id: number) => {
+    const { data } = await apiClient.get(`/hr/lifecycle/events/${id}`)
+    return data
+  },
+  createLifecycleEvent: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/hr/lifecycle/events', payload)
+    return data
+  },
+  updateLifecycleEvent: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/hr/lifecycle/events/${id}`, payload)
+    return data
+  },
+  cancelLifecycleEvent: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/hr/lifecycle/events/${id}/cancel`, { reason })
+    return data
+  },
+  linkLifecycleUser: async (id: number, payload: { user_id?: number; email?: string } = {}) => {
+    const { data } = await apiClient.post(`/hr/lifecycle/events/${id}/link-user`, payload)
+    return data
+  },
+  getLifecycleImpact: async (id: number) => {
+    const { data } = await apiClient.get(`/hr/lifecycle/events/${id}/impact`)
+    return data
+  },
+  completeLifecycleEvent: async (id: number, payload: Record<string, unknown>) => {
+    // An exit completion reassigns everything in one transaction — give it longer than the default 10 s.
+    const { data } = await apiClient.post(`/hr/lifecycle/events/${id}/complete`, payload, { timeout: 60000 })
+    return data
+  },
+  addLifecycleItem: async (eventId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/hr/lifecycle/events/${eventId}/items`, payload)
+    return data
+  },
+  updateLifecycleItem: async (itemId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/hr/lifecycle/items/${itemId}`, payload)
+    return data
+  },
+  deleteLifecycleItem: async (itemId: number) => {
+    const { data } = await apiClient.delete(`/hr/lifecycle/items/${itemId}`)
+    return data
+  },
+  listMyChecklistTasks: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/hr/lifecycle/my-tasks', { params })
+    return data
+  },
+  listChecklistTemplates: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/hr/lifecycle/templates', { params })
+    return data
+  },
+  createChecklistTemplate: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/hr/lifecycle/templates', payload)
+    return data
+  },
+  updateChecklistTemplate: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/hr/lifecycle/templates/${id}`, payload)
+    return data
+  },
+  deleteChecklistTemplate: async (id: number) => {
+    const { data } = await apiClient.delete(`/hr/lifecycle/templates/${id}`)
+    return data
+  },
+  // ── hr:leave (C) ──
+  listLeaveTypes: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/leave/types', { params }); return data },
+  createLeaveType: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/leave/types', payload); return data },
+  updateLeaveType: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hr/leave/types/${id}`, payload); return data },
+  getMyLeaveBalances: async (year?: number) => { const { data } = await apiClient.get('/hr/leave/balances/me', { params: year ? { year } : {} }); return data },
+  listLeaveBalances: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/leave/balances', { params }); return data },
+  allotLeaveBalances: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/leave/balances/allot', payload); return data },
+  adjustLeaveBalance: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/leave/balances/adjust', payload); return data },
+  listMyLeaveRequests: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/leave/requests/me', { params }); return data },
+  listLeaveRequestsPendingForMe: async () => { const { data } = await apiClient.get('/hr/leave/requests/pending-for-me'); return data },
+  listLeaveRequests: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/leave/requests', { params }); return data },
+  getLeaveRequest: async (id: number) => { const { data } = await apiClient.get(`/hr/leave/requests/${id}`); return data },
+  previewLeaveRequest: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/leave/requests/preview', payload); return data },
+  applyLeave: async (payload: Record<string, string | number | null | undefined>, attachment?: File | null) => {
+    const formData = new FormData()
+    Object.entries(payload).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') formData.append(k, String(v)) })
+    if (attachment) formData.append('attachment', attachment)
+    const { data } = await apiClient.post('/hr/leave/requests', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  uploadLeaveAttachment: async (id: number, file: File) => {
+    const formData = new FormData()
+    formData.append('attachment', file)
+    const { data } = await apiClient.post(`/hr/leave/requests/${id}/attachment`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  getLeaveAttachmentBlob: async (id: number) => { const { data } = await apiClient.get(`/hr/leave/requests/${id}/attachment`, { responseType: 'blob' }); return data as Blob },
+  approveLeaveRequest: async (id: number, remarks?: string) => { const { data } = await apiClient.post(`/hr/leave/requests/${id}/approve`, { remarks: remarks || null }); return data },
+  rejectLeaveRequest: async (id: number, remarks: string) => { const { data } = await apiClient.post(`/hr/leave/requests/${id}/reject`, { remarks }); return data },
+  cancelLeaveRequest: async (id: number, remarks?: string) => { const { data } = await apiClient.post(`/hr/leave/requests/${id}/cancel`, { remarks: remarks || null }); return data },
+  // ── hr:attendance (C) ──
+  getAttendanceLookups: async () => { const { data } = await apiClient.get('/hr/attendance/lookups'); return data },
+  getMyAttendanceToday: async () => { const { data } = await apiClient.get('/hr/attendance/me/today'); return data },
+  checkIn: async (remarks?: string) => { const { data } = await apiClient.post('/hr/attendance/me/check-in', { remarks: remarks || null }); return data },
+  checkOut: async (remarks?: string) => { const { data } = await apiClient.post('/hr/attendance/me/check-out', { remarks: remarks || null }); return data },
+  getMyAttendanceMonth: async (year: number, month: number) => { const { data } = await apiClient.get('/hr/attendance/me/month', { params: { year, month } }); return data },
+  getEmployeeAttendanceMonth: async (userId: number, year: number, month: number) => { const { data } = await apiClient.get('/hr/attendance/month', { params: { user_id: userId, year, month } }); return data },
+  getAttendanceRegister: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/attendance/register', { params }); return data },
+  markAttendance: async (payload: Record<string, unknown>) => { const { data } = await apiClient.put('/hr/attendance/entries', payload); return data },
+  deleteAttendance: async (id: number) => { const { data } = await apiClient.delete(`/hr/attendance/entries/${id}`); return data },
+  bulkMarkAttendance: async (payload: Record<string, unknown>) => { const { data } = await apiClient.put('/hr/attendance/register/bulk', payload); return data },
+  getAttendanceImportTemplate: async () => { const { data } = await apiClient.get('/hr/attendance/import/template', { responseType: 'blob' }); return data as Blob },
+  importAttendance: async (file: File, dryRun = false) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post('/hr/attendance/import', formData, { params: { dry_run: dryRun }, headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  getAttendanceSummary: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/attendance/summary', { params }); return data },
+  exportAttendanceSummary: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/attendance/summary/export', { params, responseType: 'blob' }); return data as Blob },
+  requestRegularization: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/attendance/regularizations', payload); return data },
+  listMyRegularizations: async () => { const { data } = await apiClient.get('/hr/attendance/regularizations/me'); return data },
+  listRegularizationsPendingForMe: async () => { const { data } = await apiClient.get('/hr/attendance/regularizations/pending-for-me'); return data },
+  listRegularizations: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/attendance/regularizations', { params }); return data },
+  approveRegularization: async (id: number, remarks?: string) => { const { data } = await apiClient.post(`/hr/attendance/regularizations/${id}/approve`, { remarks: remarks || null }); return data },
+  rejectRegularization: async (id: number, remarks: string) => { const { data } = await apiClient.post(`/hr/attendance/regularizations/${id}/reject`, { remarks }); return data },
+  cancelRegularization: async (id: number) => { const { data } = await apiClient.post(`/hr/attendance/regularizations/${id}/cancel`); return data },
+  // ── hr:holidays (C) ──
+  listHolidays: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/holidays', { params }); return data },
+  listHolidayBranches: async () => { const { data } = await apiClient.get('/hr/holidays/branches'); return data },
+  createHoliday: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/holidays', payload); return data },
+  bulkCreateHolidays: async (rows: Record<string, unknown>[]) => { const { data } = await apiClient.post('/hr/holidays/bulk', { rows }); return data },
+  copyHolidays: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/holidays/copy', payload); return data },
+  updateHoliday: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hr/holidays/${id}`, payload); return data },
+  deleteHoliday: async (id: number) => { const { data } = await apiClient.delete(`/hr/holidays/${id}`); return data },
+  // ── hr:assets (D) ──
+  branchLookup: async (): Promise<import('@/types').HrBranchLookup[]> => { const { data } = await apiClient.get('/hr/assets/lookups/branches'); return data },
+  listAssets: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrAsset[]> => { const { data } = await apiClient.get('/hr/assets', { params }); return data },
+  getAsset: async (id: number): Promise<import('@/types').HrAsset> => { const { data } = await apiClient.get(`/hr/assets/${id}`); return data },
+  createAsset: async (payload: Record<string, unknown>): Promise<import('@/types').HrAsset> => { const { data } = await apiClient.post('/hr/assets', payload); return data },
+  updateAsset: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').HrAsset> => { const { data } = await apiClient.patch(`/hr/assets/${id}`, payload); return data },
+  deleteAsset: async (id: number) => { const { data } = await apiClient.delete(`/hr/assets/${id}`); return data },
+  issueAsset: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').HrAsset> => { const { data } = await apiClient.post(`/hr/assets/${id}/issue`, payload); return data },
+  returnAsset: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').HrAsset> => { const { data } = await apiClient.post(`/hr/assets/${id}/return`, payload); return data },
+  changeAssetStatus: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').HrAsset> => { const { data } = await apiClient.post(`/hr/assets/${id}/status`, payload); return data },
+  userAssetHistory: async (userId: number): Promise<import('@/types').HrAssetAssignment[]> => { const { data } = await apiClient.get(`/hr/assets/by-user/${userId}`); return data },
+  myAssets: async (): Promise<import('@/types').HrAsset[]> => { const { data } = await apiClient.get('/hr/assets/mine'); return data },
+  myAssetHistory: async (): Promise<import('@/types').HrAssetAssignment[]> => { const { data } = await apiClient.get('/hr/assets/mine/history'); return data },
+  // ── hr:visitors (D) ──
+  visitorBoard: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrVisitorBoard> => { const { data } = await apiClient.get('/hr/visitors/board', { params }); return data },
+  listVisitors: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrVisitor[]> => { const { data } = await apiClient.get('/hr/visitors', { params }); return data },
+  myVisitors: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrVisitor[]> => { const { data } = await apiClient.get('/hr/visitors/mine', { params }); return data },
+  getVisitor: async (id: number): Promise<import('@/types').HrVisitor> => { const { data } = await apiClient.get(`/hr/visitors/${id}`); return data },
+  createVisitor: async (payload: Record<string, unknown>): Promise<import('@/types').HrVisitor> => { const { data } = await apiClient.post('/hr/visitors', payload); return data },
+  updateVisitor: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').HrVisitor> => { const { data } = await apiClient.patch(`/hr/visitors/${id}`, payload); return data },
+  checkInVisitor: async (id: number, payload: Record<string, unknown> = {}): Promise<import('@/types').HrVisitor> => { const { data } = await apiClient.post(`/hr/visitors/${id}/check-in`, payload); return data },
+  checkOutVisitor: async (id: number, payload: Record<string, unknown> = {}): Promise<import('@/types').HrVisitor> => { const { data } = await apiClient.post(`/hr/visitors/${id}/check-out`, payload); return data },
+  cancelVisitor: async (id: number, payload: Record<string, unknown> = {}): Promise<import('@/types').HrVisitor> => { const { data } = await apiClient.post(`/hr/visitors/${id}/cancel`, payload); return data },
+  // ── hr:travel (D) ──
+  listTravel: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrTravelRequest[]> => { const { data } = await apiClient.get('/hr/travel', { params }); return data },
+  myTravel: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrTravelRequest[]> => { const { data } = await apiClient.get('/hr/travel/mine', { params }); return data },
+  travelApprovals: async (): Promise<import('@/types').HrTravelRequest[]> => { const { data } = await apiClient.get('/hr/travel/approvals'); return data },
+  getTravel: async (id: number): Promise<import('@/types').HrTravelRequest> => { const { data } = await apiClient.get(`/hr/travel/${id}`); return data },
+  createTravel: async (payload: Record<string, unknown>): Promise<import('@/types').HrTravelRequest> => { const { data } = await apiClient.post('/hr/travel', payload); return data },
+  updateTravel: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').HrTravelRequest> => { const { data } = await apiClient.patch(`/hr/travel/${id}`, payload); return data },
+  approveTravel: async (id: number, remarks?: string): Promise<import('@/types').HrTravelRequest> => { const { data } = await apiClient.post(`/hr/travel/${id}/approve`, { remarks: remarks || null }); return data },
+  rejectTravel: async (id: number, remarks: string): Promise<import('@/types').HrTravelRequest> => { const { data } = await apiClient.post(`/hr/travel/${id}/reject`, { remarks }); return data },
+  cancelTravel: async (id: number, remarks?: string): Promise<import('@/types').HrTravelRequest> => { const { data } = await apiClient.post(`/hr/travel/${id}/cancel`, { remarks: remarks || null }); return data },
+  completeTravel: async (id: number, remarks?: string): Promise<import('@/types').HrTravelRequest> => { const { data } = await apiClient.post(`/hr/travel/${id}/complete`, { remarks: remarks || null }); return data },
+  // ── hr:expenses (D) ──
+  listClaims: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrExpenseClaim[]> => { const { data } = await apiClient.get('/hr/expenses', { params }); return data },
+  myClaims: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrExpenseClaim[]> => { const { data } = await apiClient.get('/hr/expenses/mine', { params }); return data },
+  claimApprovals: async (): Promise<import('@/types').HrExpenseClaim[]> => { const { data } = await apiClient.get('/hr/expenses/approvals'); return data },
+  claimTravelOptions: async (): Promise<import('@/types').HrLinkableTrip[]> => { const { data } = await apiClient.get('/hr/expenses/travel-options'); return data },
+  getClaim: async (id: number): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.get(`/hr/expenses/${id}`); return data },
+  createClaim: async (payload: Record<string, unknown>): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.post('/hr/expenses', payload); return data },
+  updateClaim: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.patch(`/hr/expenses/${id}`, payload); return data },
+  addClaimItem: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.post(`/hr/expenses/${id}/items`, payload); return data },
+  updateClaimItem: async (id: number, itemId: number, payload: Record<string, unknown>): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.patch(`/hr/expenses/${id}/items/${itemId}`, payload); return data },
+  deleteClaimItem: async (id: number, itemId: number): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.delete(`/hr/expenses/${id}/items/${itemId}`); return data },
+  uploadClaimReceipt: async (id: number, itemId: number, file: File): Promise<import('@/types').HrExpenseClaim> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post(`/hr/expenses/${id}/items/${itemId}/receipt`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data
+  },
+  deleteClaimReceipt: async (id: number, itemId: number): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.delete(`/hr/expenses/${id}/items/${itemId}/receipt`); return data },
+  getClaimReceiptBlob: async (id: number, itemId: number): Promise<Blob> => { const { data } = await apiClient.get(`/hr/expenses/${id}/items/${itemId}/receipt`, { responseType: 'blob' }); return data },
+  submitClaim: async (id: number): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.post(`/hr/expenses/${id}/submit`); return data },
+  approveClaim: async (id: number, remarks?: string): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.post(`/hr/expenses/${id}/approve`, { remarks: remarks || null }); return data },
+  rejectClaim: async (id: number, remarks: string): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.post(`/hr/expenses/${id}/reject`, { remarks }); return data },
+  cancelClaim: async (id: number, remarks?: string): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.post(`/hr/expenses/${id}/cancel`, { remarks: remarks || null }); return data },
+  markClaimPaid: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').HrExpenseClaim> => { const { data } = await apiClient.post(`/hr/expenses/${id}/mark-paid`, payload); return data },
+  // ── hr:dashboard (Integration) ──
+  getDashboard: async (): Promise<import('@/types').HrDashboard> => { const { data } = await apiClient.get('/hr/dashboard'); return data },
+}
+
+export const maintenanceApi = {
+  getDashboard: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceDashboard> => { const { data } = await apiClient.get('/maintenance/dashboard', { params }); return data },
+  getLookups: async (): Promise<import('@/types').MaintenanceLookups> => { const { data } = await apiClient.get('/maintenance/lookups'); return data },
+  lookupAssets: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceAssetOption[]> => { const { data } = await apiClient.get('/maintenance/lookups/assets', { params }); return data },
+  lookupStoreItems: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceStoreItemOption[]> => { const { data } = await apiClient.get('/maintenance/lookups/store-items', { params }); return data },
+
+  // ── Assets ──
+  listAssets: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceAsset[]> => { const { data } = await apiClient.get('/maintenance/assets', { params }); return data },
+  getAsset: async (id: number): Promise<import('@/types').MaintenanceAsset> => { const { data } = await apiClient.get(`/maintenance/assets/${id}`); return data },
+  createAsset: async (payload: Record<string, unknown>): Promise<import('@/types').MaintenanceAsset> => { const { data } = await apiClient.post('/maintenance/assets', payload); return data },
+  updateAsset: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenanceAsset> => { const { data } = await apiClient.patch(`/maintenance/assets/${id}`, payload); return data },
+  deleteAsset: async (id: number) => { const { data } = await apiClient.delete(`/maintenance/assets/${id}`); return data },
+  getAssetHistory: async (id: number): Promise<import('@/types').MaintenanceAssetHistoryEntry[]> => { const { data } = await apiClient.get(`/maintenance/assets/${id}/history`); return data },
+
+  // ── Requests ──
+  listRequests: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceRequest[]> => { const { data } = await apiClient.get('/maintenance/requests', { params }); return data },
+  getRequest: async (id: number): Promise<import('@/types').MaintenanceRequest> => { const { data } = await apiClient.get(`/maintenance/requests/${id}`); return data },
+  createRequest: async (payload: Record<string, unknown>): Promise<import('@/types').MaintenanceRequest> => { const { data } = await apiClient.post('/maintenance/requests', payload); return data },
+  acknowledgeRequest: async (id: number): Promise<import('@/types').MaintenanceRequest> => { const { data } = await apiClient.post(`/maintenance/requests/${id}/acknowledge`); return data },
+  rejectRequest: async (id: number, payload: { status: 'rejected' | 'duplicate'; reason: string }): Promise<import('@/types').MaintenanceRequest> => { const { data } = await apiClient.post(`/maintenance/requests/${id}/reject`, payload); return data },
+  convertRequest: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenanceRequest> => { const { data } = await apiClient.post(`/maintenance/requests/${id}/convert`, payload); return data },
+  confirmRepair: async (id: number, payload: { ok: boolean; comment?: string }): Promise<import('@/types').MaintenanceRequest> => { const { data } = await apiClient.post(`/maintenance/requests/${id}/confirm`, payload); return data },
+
+  // ── Work orders ── (every action returns the full work order)
+  listWorkOrders: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceWorkOrder[]> => { const { data } = await apiClient.get('/maintenance/work-orders', { params }); return data },
+  getWorkOrder: async (id: number): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.get(`/maintenance/work-orders/${id}`); return data },
+  createWorkOrder: async (payload: Record<string, unknown>): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.post('/maintenance/work-orders', payload); return data },
+  updateWorkOrder: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.patch(`/maintenance/work-orders/${id}`, payload); return data },
+  workOrderAction: async (id: number, action: 'assign' | 'start' | 'hold' | 'resume' | 'complete' | 'reopen' | 'close' | 'cancel', payload?: Record<string, unknown>): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.post(`/maintenance/work-orders/${id}/${action}`, payload); return data },
+  addTask: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.post(`/maintenance/work-orders/${id}/tasks`, payload); return data },
+  updateTask: async (id: number, taskId: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.patch(`/maintenance/work-orders/${id}/tasks/${taskId}`, payload); return data },
+  deleteTask: async (id: number, taskId: number): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.delete(`/maintenance/work-orders/${id}/tasks/${taskId}`); return data },
+  planSpare: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.post(`/maintenance/work-orders/${id}/spares`, payload); return data },
+  deleteSpare: async (id: number, spareId: number): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.delete(`/maintenance/work-orders/${id}/spares/${spareId}`); return data },
+  issueSpare: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.post(`/maintenance/work-orders/${id}/spares/issue`, payload); return data },
+  returnSpare: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.post(`/maintenance/work-orders/${id}/spares/return`, payload); return data },
+  addLabour: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.post(`/maintenance/work-orders/${id}/labour`, payload); return data },
+  deleteLabour: async (id: number, logId: number): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.delete(`/maintenance/work-orders/${id}/labour/${logId}`); return data },
+
+  // ── Attachments ── (asset | request | work_order)
+  listAttachments: async (entityType: string, entityId: number): Promise<import('@/types').MaintenanceAttachment[]> => { const { data } = await apiClient.get('/maintenance/attachments', { params: { entity_type: entityType, entity_id: entityId } }); return data },
+  uploadAttachments: async (entityType: string, entityId: number, files: File[], docType = 'other'): Promise<import('@/types').MaintenanceAttachment[]> => {
+    const formData = new FormData()
+    formData.append('entity_type', entityType)
+    formData.append('entity_id', String(entityId))
+    formData.append('doc_type', docType)
+    files.forEach((f) => formData.append('files', f))
+    const { data } = await apiClient.post('/maintenance/attachments', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data
+  },
+  getAttachmentContent: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/maintenance/attachments/${id}/content`, { responseType: 'blob' }); return data },
+  deleteAttachment: async (id: number) => { const { data } = await apiClient.delete(`/maintenance/attachments/${id}`); return data },
+}
+
+export const productionApi = {
+  getDashboard: async () => { const { data } = await apiClient.get('/production/dashboard'); return data },
+  getPlanning: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/planning', { params }); return data },
+  getReport: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/reports', { params }); return data },
+
+  listWorkstations: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/workstations', { params }); return data },
+  getWorkstation: async (id: number) => { const { data } = await apiClient.get(`/production/workstations/${id}`); return data },
+  createWorkstation: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/production/workstations', payload); return data },
+  updateWorkstation: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/production/workstations/${id}`, payload); return data },
+  deleteWorkstation: async (id: number) => { const { data } = await apiClient.delete(`/production/workstations/${id}`); return data },
+
+  listBoms: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/boms', { params }); return data },
+  getBom: async (id: number) => { const { data } = await apiClient.get(`/production/boms/${id}`); return data },
+  createBom: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/production/boms', payload); return data },
+  updateBom: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/production/boms/${id}`, payload); return data },
+  deleteBom: async (id: number) => { const { data } = await apiClient.delete(`/production/boms/${id}`); return data },
+  activateBom: async (id: number) => { const { data } = await apiClient.post(`/production/boms/${id}/activate`); return data },
+  obsoleteBom: async (id: number) => { const { data } = await apiClient.post(`/production/boms/${id}/obsolete`); return data },
+  newBomVersion: async (id: number) => { const { data } = await apiClient.post(`/production/boms/${id}/new-version`); return data },
+
+  listWorkOrders: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/work-orders', { params }); return data },
+  getWorkOrder: async (id: number) => { const { data } = await apiClient.get(`/production/work-orders/${id}`); return data },
+  createWorkOrder: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/production/work-orders', payload); return data },
+  updateWorkOrder: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/production/work-orders/${id}`, payload); return data },
+  deleteWorkOrder: async (id: number) => { const { data } = await apiClient.delete(`/production/work-orders/${id}`); return data },
+  releaseWorkOrder: async (id: number) => { const { data } = await apiClient.post(`/production/work-orders/${id}/release`); return data },
+  completeWorkOrder: async (id: number) => { const { data } = await apiClient.post(`/production/work-orders/${id}/complete`); return data },
+  closeWorkOrder: async (id: number) => { const { data } = await apiClient.post(`/production/work-orders/${id}/close`); return data },
+  cancelWorkOrder: async (id: number, reason: string) => { const { data } = await apiClient.post(`/production/work-orders/${id}/cancel`, { reason }); return data },
+  issueMaterials: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/production/work-orders/${id}/issue-materials`, payload); return data },
+  returnMaterials: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/production/work-orders/${id}/return-materials`, payload); return data },
+  receiveOutput: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/production/work-orders/${id}/receive-output`, payload); return data },
+  reserveMaterials: async (id: number) => { const { data } = await apiClient.post(`/production/work-orders/${id}/reserve-materials`); return data },
+  getJobCard: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/production/work-orders/${id}/job-card`, { responseType: 'blob' }); return data },
+  getProjectWorkOrders: async (projectId: number) => { const { data } = await apiClient.get(`/production/integrations/projects/${projectId}/work-orders`); return data },
+  getStockMovements: async (id: number) => { const { data } = await apiClient.get(`/production/work-orders/${id}/stock-movements`); return data },
+  getCosting: async (id: number) => { const { data } = await apiClient.get(`/production/work-orders/${id}/costing`); return data },
+  startOperation: async (id: number, opId: number) => { const { data } = await apiClient.post(`/production/work-orders/${id}/operations/${opId}/start`); return data },
+  completeOperation: async (id: number, opId: number, remarks?: string) => { const { data } = await apiClient.post(`/production/work-orders/${id}/operations/${opId}/complete`, { remarks }); return data },
+  requestInspection: async (id: number, opId: number) => { const { data } = await apiClient.post(`/production/work-orders/${id}/operations/${opId}/request-inspection`); return data },
+
+  getShopFloorQueue: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/shop-floor/queue', { params }); return data },
+  listTimeLogs: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/time-logs', { params }); return data },
+  createTimeLog: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/production/time-logs', payload); return data },
+  deleteTimeLog: async (id: number) => { const { data } = await apiClient.delete(`/production/time-logs/${id}`); return data },
+
+  lookupItems: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/lookups/items', { params }); return data },
+  lookupLocations: async () => { const { data } = await apiClient.get('/production/lookups/locations'); return data },
+  lookupProjects: async () => { const { data } = await apiClient.get('/production/lookups/projects'); return data },
+  lookupBranches: async () => { const { data } = await apiClient.get('/production/lookups/branches'); return data },
+  lookupDepartments: async () => { const { data } = await apiClient.get('/production/lookups/departments'); return data },
+  lookupUsers: async () => { const { data } = await apiClient.get('/production/lookups/users'); return data },
+  lookupWorkstations: async () => { const { data } = await apiClient.get('/production/lookups/workstations'); return data },
+  lookupActiveBoms: async () => { const { data } = await apiClient.get('/production/lookups/active-boms'); return data },
+}
+
+// SharePoint uploads routinely outlast the global 10s timeout — same as the
+// quality / R&D document uploads.
+const ELECTRICAL_UPLOAD = { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 }
+
+export const electricalApi = {
+  getDashboard: async () => { const { data } = await apiClient.get('/electrical/dashboard'); return data },
+  getMeta: async () => { const { data } = await apiClient.get('/electrical/lookups/meta'); return data },
+
+  // Jobs + stages
+  listJobs: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/electrical/jobs', { params }); return data },
+  getJob: async (id: number) => { const { data } = await apiClient.get(`/electrical/jobs/${id}`); return data },
+  createJob: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/electrical/jobs', payload); return data },
+  updateJob: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/electrical/jobs/${id}`, payload); return data },
+  deleteJob: async (id: number) => { const { data } = await apiClient.delete(`/electrical/jobs/${id}`); return data },
+  holdJob: async (id: number, reason: string) => { const { data } = await apiClient.post(`/electrical/jobs/${id}/hold`, { reason }); return data },
+  resumeJob: async (id: number) => { const { data } = await apiClient.post(`/electrical/jobs/${id}/resume`); return data },
+  cancelJob: async (id: number, reason: string) => { const { data } = await apiClient.post(`/electrical/jobs/${id}/cancel`, { reason }); return data },
+  closeJob: async (id: number) => { const { data } = await apiClient.post(`/electrical/jobs/${id}/close`); return data },
+  requestInspection: async (id: number) => { const { data } = await apiClient.post(`/electrical/jobs/${id}/request-inspection`); return data },
+  updateStage: async (id: number, stageKey: string, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/electrical/jobs/${id}/stages/${stageKey}`, payload); return data },
+  startStage: async (id: number, stageKey: string) => { const { data } = await apiClient.post(`/electrical/jobs/${id}/stages/${stageKey}/start`); return data },
+  completeStage: async (id: number, stageKey: string, remarks?: string) => { const { data } = await apiClient.post(`/electrical/jobs/${id}/stages/${stageKey}/complete`, { remarks: remarks || null }); return data },
+  markStageNotApplicable: async (id: number, stageKey: string, reason: string) => { const { data } = await apiClient.post(`/electrical/jobs/${id}/stages/${stageKey}/not-applicable`, { reason }); return data },
+  reopenStage: async (id: number, stageKey: string) => { const { data } = await apiClient.post(`/electrical/jobs/${id}/stages/${stageKey}/reopen`); return data },
+
+  // BOM + purchase requirements
+  listBom: async (jobId: number) => { const { data } = await apiClient.get(`/electrical/jobs/${jobId}/bom`); return data },
+  createBomItem: async (jobId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/bom`, payload); return data },
+  updateBomItem: async (jobId: number, itemId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/electrical/jobs/${jobId}/bom/${itemId}`, payload); return data },
+  deleteBomItem: async (jobId: number, itemId: number) => { const { data } = await apiClient.delete(`/electrical/jobs/${jobId}/bom/${itemId}`); return data },
+  linkPr: async (jobId: number, itemId: number, p2pNumber: string) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/bom/${itemId}/link-pr`, { p2p_number: p2pNumber }); return data },
+  unlinkPr: async (jobId: number, itemId: number) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/bom/${itemId}/unlink-pr`); return data },
+  listPurchaseRequirements: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/electrical/purchase-requirements', { params }); return data },
+
+  // Panels + cables
+  listPanels: async (jobId: number) => { const { data } = await apiClient.get(`/electrical/jobs/${jobId}/panels`); return data },
+  createPanel: async (jobId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/panels`, payload); return data },
+  updatePanel: async (jobId: number, panelId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/electrical/jobs/${jobId}/panels/${panelId}`, payload); return data },
+  deletePanel: async (jobId: number, panelId: number) => { const { data } = await apiClient.delete(`/electrical/jobs/${jobId}/panels/${panelId}`); return data },
+  listCables: async (jobId: number) => { const { data } = await apiClient.get(`/electrical/jobs/${jobId}/cables`); return data },
+  createCable: async (jobId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/cables`, payload); return data },
+  updateCable: async (jobId: number, cableId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/electrical/jobs/${jobId}/cables/${cableId}`, payload); return data },
+  deleteCable: async (jobId: number, cableId: number) => { const { data } = await apiClient.delete(`/electrical/jobs/${jobId}/cables/${cableId}`); return data },
+  bulkCableStatus: async (jobId: number, cableIds: number[], status: string) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/cables/bulk-status`, { cable_ids: cableIds, status }); return data },
+
+  // Drawings + revisions
+  listDrawings: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/electrical/drawings', { params }); return data },
+  listJobDrawings: async (jobId: number) => { const { data } = await apiClient.get(`/electrical/jobs/${jobId}/drawings`); return data },
+  createDrawing: async (jobId: number, formData: FormData) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/drawings`, formData, ELECTRICAL_UPLOAD); return data },
+  updateDrawing: async (drawingId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/electrical/drawings/${drawingId}`, payload); return data },
+  deleteDrawing: async (drawingId: number) => { const { data } = await apiClient.delete(`/electrical/drawings/${drawingId}`); return data },
+  createRevision: async (drawingId: number, formData: FormData) => { const { data } = await apiClient.post(`/electrical/drawings/${drawingId}/revisions`, formData, ELECTRICAL_UPLOAD); return data },
+  uploadRevisionFile: async (revisionId: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post(`/electrical/revisions/${revisionId}/file`, formData, ELECTRICAL_UPLOAD)
+    return data
+  },
+  submitRevision: async (revisionId: number) => { const { data } = await apiClient.post(`/electrical/revisions/${revisionId}/submit`); return data },
+  approveRevision: async (revisionId: number, comment?: string) => { const { data } = await apiClient.post(`/electrical/revisions/${revisionId}/approve`, { comment: comment || null }); return data },
+  rejectRevision: async (revisionId: number, comment: string) => { const { data } = await apiClient.post(`/electrical/revisions/${revisionId}/reject`, { comment }); return data },
+  discardRevision: async (revisionId: number) => { const { data } = await apiClient.delete(`/electrical/revisions/${revisionId}`); return data },
+  getRevisionContent: async (revisionId: number): Promise<Blob> => { const { data } = await apiClient.get(`/electrical/revisions/${revisionId}/content`, { responseType: 'blob', timeout: 120000 }); return data },
+
+  // Tests + issues
+  listTests: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/electrical/tests', { params }); return data },
+  listJobTests: async (jobId: number) => { const { data } = await apiClient.get(`/electrical/jobs/${jobId}/tests`); return data },
+  createTest: async (jobId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/tests`, payload); return data },
+  updateTest: async (testId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/electrical/tests/${testId}`, payload); return data },
+  deleteTest: async (testId: number) => { const { data } = await apiClient.delete(`/electrical/tests/${testId}`); return data },
+  listIssues: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/electrical/issues', { params }); return data },
+  listJobIssues: async (jobId: number) => { const { data } = await apiClient.get(`/electrical/jobs/${jobId}/issues`); return data },
+  createIssue: async (jobId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/issues`, payload); return data },
+  updateIssue: async (issueId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/electrical/issues/${issueId}`, payload); return data },
+  resolveIssue: async (issueId: number, payload: { root_cause: string; corrective_action: string }) => { const { data } = await apiClient.post(`/electrical/issues/${issueId}/resolve`, payload); return data },
+  closeIssue: async (issueId: number) => { const { data } = await apiClient.post(`/electrical/issues/${issueId}/close`); return data },
+  reopenIssue: async (issueId: number) => { const { data } = await apiClient.post(`/electrical/issues/${issueId}/reopen`); return data },
+  deleteIssue: async (issueId: number) => { const { data } = await apiClient.delete(`/electrical/issues/${issueId}`); return data },
+
+  // Documents
+  listDocuments: async (jobId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/electrical/jobs/${jobId}/documents`, { params }); return data },
+  uploadDocuments: async (jobId: number, formData: FormData) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/documents`, formData, ELECTRICAL_UPLOAD); return data },
+  getDocumentContent: async (documentId: number): Promise<Blob> => { const { data } = await apiClient.get(`/electrical/documents/${documentId}/content`, { responseType: 'blob', timeout: 120000 }); return data },
+  deleteDocument: async (documentId: number) => { const { data } = await apiClient.delete(`/electrical/documents/${documentId}`); return data },
+
+  // Lookups
+  lookupProjects: async () => { const { data } = await apiClient.get('/electrical/lookups/projects'); return data },
+  lookupBranches: async () => { const { data } = await apiClient.get('/electrical/lookups/branches'); return data },
+  lookupUsers: async () => { const { data } = await apiClient.get('/electrical/lookups/users'); return data },
+  lookupItems: async (search?: string) => { const { data } = await apiClient.get('/electrical/lookups/items', { params: { search, limit: 500 } }); return data },
+  lookupPurchaseRequisitions: async (search?: string) => { const { data } = await apiClient.get('/electrical/lookups/purchase-requisitions', { params: { search } }); return data },
+}
+
+export const designApi = {
+  getDashboard: async (): Promise<import('@/types').DesignDashboard> => { const { data } = await apiClient.get('/design/dashboard'); return data },
+  getMyTasks: async (): Promise<import('@/types').DesignMyTasks> => { const { data } = await apiClient.get('/design/my-tasks'); return data },
+  getReportSummary: async (): Promise<import('@/types').DesignReportSummary> => { const { data } = await apiClient.get('/design/reports/summary'); return data },
+  exportMasterDocumentList: async (params: Record<string, unknown> = {}): Promise<Blob> => {
+    const { data } = await apiClient.get('/design/reports/master-document-list', { params, responseType: 'blob', timeout: 120000 })
+    return data
+  },
+
+  listDocuments: async (params: Record<string, unknown> = {}): Promise<import('@/types').DesignDocument[]> => { const { data } = await apiClient.get('/design/documents', { params }); return data },
+  getDocument: async (id: number): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.get(`/design/documents/${id}`); return data },
+  createDocument: async (payload: Record<string, unknown>): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post('/design/documents', payload); return data },
+  updateDocument: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.patch(`/design/documents/${id}`, payload); return data },
+  deleteDocument: async (id: number) => { const { data } = await apiClient.delete(`/design/documents/${id}`); return data },
+  obsoleteDocument: async (id: number, reason: string): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post(`/design/documents/${id}/obsolete`, { reason }); return data },
+  reactivateDocument: async (id: number): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post(`/design/documents/${id}/reactivate`); return data },
+  startRevision: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post(`/design/documents/${id}/revisions`, payload); return data },
+  addDocumentComment: async (id: number, comment: string, revisionId?: number | null): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post(`/design/documents/${id}/comments`, { comment, revision_id: revisionId ?? null }); return data },
+
+  updateRevision: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.patch(`/design/revisions/${id}`, payload); return data },
+  discardRevision: async (id: number): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.delete(`/design/revisions/${id}`); return data },
+  uploadRevisionFiles: async (id: number, files: File[], fileRole: string): Promise<import('@/types').DesignDocumentDetail> => {
+    const formData = new FormData()
+    formData.append('file_role', fileRole)
+    files.forEach((f) => formData.append('files', f))
+    const { data } = await apiClient.post(`/design/revisions/${id}/files`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 600000, // CAD files are large; SharePoint chunked uploads outlast the 10s default
+    })
+    return data
+  },
+  removeRevisionFile: async (revisionId: number, fileId: number): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.delete(`/design/revisions/${revisionId}/files/${fileId}`); return data },
+  getFileContent: async (fileId: number, download = false): Promise<Blob> => {
+    const { data } = await apiClient.get(`/design/revisions/files/${fileId}/content`, { params: download ? { download: true } : {}, responseType: 'blob', timeout: 300000 })
+    return data
+  },
+  submitRevision: async (id: number, payload: Record<string, unknown> = {}): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post(`/design/revisions/${id}/submit`, payload); return data },
+  recallRevision: async (id: number, comment?: string): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post(`/design/revisions/${id}/recall`, { comment }); return data },
+  reviewRevision: async (id: number, decision: 'pass' | 'return', comment?: string): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post(`/design/revisions/${id}/review`, { decision, comment }); return data },
+  approveRevision: async (id: number, decision: 'pass' | 'return', comment?: string): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post(`/design/revisions/${id}/approve`, { decision, comment }); return data },
+
+  listChangeNotices: async (params: Record<string, unknown> = {}): Promise<import('@/types').DesignChangeNotice[]> => { const { data } = await apiClient.get('/design/change-notices', { params }); return data },
+  getChangeNotice: async (id: number): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.get(`/design/change-notices/${id}`); return data },
+  createChangeNotice: async (payload: Record<string, unknown>): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.post('/design/change-notices', payload); return data },
+  updateChangeNotice: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.patch(`/design/change-notices/${id}`, payload); return data },
+  deleteChangeNotice: async (id: number) => { const { data } = await apiClient.delete(`/design/change-notices/${id}`); return data },
+  submitChangeNotice: async (id: number): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.post(`/design/change-notices/${id}/submit`); return data },
+  approveChangeNotice: async (id: number, comment?: string): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.post(`/design/change-notices/${id}/approve`, { comment }); return data },
+  rejectChangeNotice: async (id: number, comment: string): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.post(`/design/change-notices/${id}/reject`, { comment }); return data },
+  implementChangeNotice: async (id: number): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.post(`/design/change-notices/${id}/implement`); return data },
+  cancelChangeNotice: async (id: number, reason: string): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.post(`/design/change-notices/${id}/cancel`, { reason }); return data },
+  addChangeNoticeComment: async (id: number, comment: string): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.post(`/design/change-notices/${id}/comments`, { comment }); return data },
+
+  lookupUsers: async (): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/users'); return data },
+  lookupProjects: async (): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/projects'); return data },
+  lookupMachines: async (): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/machines'); return data },
+  lookupItems: async (search?: string): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/items', { params: { search, limit: 200 } }); return data },
+  lookupDepartments: async (): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/departments'); return data },
+  lookupDocuments: async (search?: string): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/documents', { params: { search, limit: 500 } }); return data },
+}
+
+export const hydraulicApi = {
+  getDashboard: async (): Promise<import('@/types').HydDashboard> => { const { data } = await apiClient.get('/hydraulic/dashboard'); return data },
+
+  listSystems: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hydraulic/systems', { params }); return data },
+  getSystem: async (id: number) => { const { data } = await apiClient.get(`/hydraulic/systems/${id}`); return data },
+  createSystem: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hydraulic/systems', payload); return data },
+  updateSystem: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hydraulic/systems/${id}`, payload); return data },
+  deleteSystem: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/systems/${id}`); return data },
+
+  listComponents: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hydraulic/components', { params }); return data },
+  getComponent: async (id: number) => { const { data } = await apiClient.get(`/hydraulic/components/${id}`); return data },
+  createComponent: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hydraulic/components', payload); return data },
+  updateComponent: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hydraulic/components/${id}`, payload); return data },
+  deleteComponent: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/components/${id}`); return data },
+
+  listCircuits: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hydraulic/circuits', { params }); return data },
+  getCircuit: async (id: number) => { const { data } = await apiClient.get(`/hydraulic/circuits/${id}`); return data },
+  createCircuit: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hydraulic/circuits', payload); return data },
+  updateCircuit: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hydraulic/circuits/${id}`, payload); return data },
+  deleteCircuit: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/circuits/${id}`); return data },
+  submitCircuit: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/circuits/${id}/submit`); return data },
+  approveCircuit: async (id: number, remarks?: string) => { const { data } = await apiClient.post(`/hydraulic/circuits/${id}/approve`, { remarks }); return data },
+  returnCircuit: async (id: number, remarks: string) => { const { data } = await apiClient.post(`/hydraulic/circuits/${id}/return`, { remarks }); return data },
+  reviseCircuit: async (id: number, change_note: string) => { const { data } = await apiClient.post(`/hydraulic/circuits/${id}/revise`, { change_note }); return data },
+
+  listBoms: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hydraulic/boms', { params }); return data },
+  getBom: async (id: number) => { const { data } = await apiClient.get(`/hydraulic/boms/${id}`); return data },
+  createBom: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hydraulic/boms', payload); return data },
+  updateBom: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hydraulic/boms/${id}`, payload); return data },
+  deleteBom: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/boms/${id}`); return data },
+  releaseBom: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/boms/${id}/release`); return data },
+  reviseBom: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/boms/${id}/revise`); return data },
+  exportBom: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/hydraulic/boms/${id}/export`, { responseType: 'blob' }); return data },
+
+  listCalcTypes: async (): Promise<import('@/types').HydCalcTypeMeta[]> => { const { data } = await apiClient.get('/hydraulic/calculations/types'); return data },
+  computeCalculation: async (calc_type: string, inputs: Record<string, unknown>): Promise<import('@/types').HydCalcComputeResult> => {
+    const { data } = await apiClient.post('/hydraulic/calculations/compute', { calc_type, inputs })
+    return data
+  },
+  listCalculations: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hydraulic/calculations', { params }); return data },
+  getCalculation: async (id: number) => { const { data } = await apiClient.get(`/hydraulic/calculations/${id}`); return data },
+  saveCalculation: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hydraulic/calculations', payload); return data },
+  updateCalculation: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hydraulic/calculations/${id}`, payload); return data },
+  deleteCalculation: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/calculations/${id}`); return data },
+
+  listTests: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hydraulic/tests', { params }); return data },
+  getTest: async (id: number) => { const { data } = await apiClient.get(`/hydraulic/tests/${id}`); return data },
+  createTest: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hydraulic/tests', payload); return data },
+  updateTest: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hydraulic/tests/${id}`, payload); return data },
+  deleteTest: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/tests/${id}`); return data },
+  startTest: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/tests/${id}/start`); return data },
+  completeTest: async (id: number, result: string, remarks?: string) => { const { data } = await apiClient.post(`/hydraulic/tests/${id}/complete`, { result, remarks }); return data },
+  retest: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/tests/${id}/retest`); return data },
+
+  listPlans: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hydraulic/maintenance-plans', { params }); return data },
+  getPlan: async (id: number) => { const { data } = await apiClient.get(`/hydraulic/maintenance-plans/${id}`); return data },
+  createPlan: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hydraulic/maintenance-plans', payload); return data },
+  updatePlan: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hydraulic/maintenance-plans/${id}`, payload); return data },
+  deletePlan: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/maintenance-plans/${id}`); return data },
+
+  listServiceRecords: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hydraulic/service-records', { params }); return data },
+  getServiceRecord: async (id: number) => { const { data } = await apiClient.get(`/hydraulic/service-records/${id}`); return data },
+  createServiceRecord: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hydraulic/service-records', payload); return data },
+  updateServiceRecord: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hydraulic/service-records/${id}`, payload); return data },
+  deleteServiceRecord: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/service-records/${id}`); return data },
+  startServiceRecord: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/service-records/${id}/start`); return data },
+  completeServiceRecord: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/hydraulic/service-records/${id}/complete`, payload); return data },
+  cancelServiceRecord: async (id: number, reason: string) => { const { data } = await apiClient.post(`/hydraulic/service-records/${id}/cancel`, { reason }); return data },
+
+  listSpares: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hydraulic/spare-parts', { params }); return data },
+  getSpare: async (id: number) => { const { data } = await apiClient.get(`/hydraulic/spare-parts/${id}`); return data },
+  createSpare: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hydraulic/spare-parts', payload); return data },
+  updateSpare: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hydraulic/spare-parts/${id}`, payload); return data },
+  deleteSpare: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/spare-parts/${id}`); return data },
+
+  listDocuments: async (entity_type: string, entity_id: number) => { const { data } = await apiClient.get('/hydraulic/documents', { params: { entity_type, entity_id } }); return data },
+  uploadDocuments: async (formData: FormData) => {
+    // SharePoint uploads routinely outlast the global 10s timeout — same
+    // reasoning as qualityApi.uploadDocuments.
+    const { data } = await apiClient.post('/hydraulic/documents', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data
+  },
+  getDocumentContent: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/hydraulic/documents/${id}/content`, { responseType: 'blob' }); return data },
+  deleteDocument: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/documents/${id}`); return data },
+
+  lookupSystems: async (system_type?: string): Promise<import('@/types').HydLookupOption[]> => { const { data } = await apiClient.get('/hydraulic/lookups/systems', { params: { system_type } }); return data },
+  lookupComponents: async (system_type?: string): Promise<import('@/types').HydLookupOption[]> => { const { data } = await apiClient.get('/hydraulic/lookups/components', { params: { system_type } }); return data },
+  lookupSpares: async (): Promise<import('@/types').HydLookupOption[]> => { const { data } = await apiClient.get('/hydraulic/lookups/spare-parts'); return data },
+  lookupCircuits: async (system_id?: number): Promise<import('@/types').HydLookupOption[]> => { const { data } = await apiClient.get('/hydraulic/lookups/circuits', { params: { system_id } }); return data },
+  lookupPlans: async (system_id?: number): Promise<import('@/types').HydLookupOption[]> => { const { data } = await apiClient.get('/hydraulic/lookups/maintenance-plans', { params: { system_id } }); return data },
+  lookupStoreItems: async (): Promise<import('@/types').HydLookupOption[]> => { const { data } = await apiClient.get('/hydraulic/lookups/store-items'); return data },
+  lookupStoreLocations: async (): Promise<import('@/types').HydLookupOption[]> => { const { data } = await apiClient.get('/hydraulic/lookups/store-locations'); return data },
+  lookupProjects: async (): Promise<import('@/types').HydLookupOption[]> => { const { data } = await apiClient.get('/hydraulic/lookups/projects'); return data },
+  lookupBranches: async (): Promise<import('@/types').HydLookupOption[]> => { const { data } = await apiClient.get('/hydraulic/lookups/branches'); return data },
+  lookupUsers: async (): Promise<import('@/types').HydLookupOption[]> => { const { data } = await apiClient.get('/hydraulic/lookups/users'); return data },
+}
+
+type RrvDetail = import('@/types').ProductionRrvBuildDetail
+
+export const rrvApi = {
+  list: async (params: Record<string, unknown> = {}): Promise<import('@/types').ProductionRrvBuild[]> => { const { data } = await apiClient.get('/production/rrv-builds', { params }); return data },
+  get: async (id: number): Promise<RrvDetail> => { const { data } = await apiClient.get(`/production/rrv-builds/${id}`); return data },
+  create: async (payload: Record<string, unknown>): Promise<RrvDetail> => { const { data } = await apiClient.post('/production/rrv-builds', payload); return data },
+  update: async (id: number, payload: Record<string, unknown>): Promise<RrvDetail> => { const { data } = await apiClient.patch(`/production/rrv-builds/${id}`, payload); return data },
+  remove: async (id: number) => { const { data } = await apiClient.delete(`/production/rrv-builds/${id}`); return data },
+  hold: async (id: number, reason: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/hold`, { reason }); return data },
+  resume: async (id: number): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/resume`); return data },
+  cancel: async (id: number, reason: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/cancel`, { reason }); return data },
+
+  linkWorkOrder: async (id: number, woId: number, buildRole: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/work-orders/${woId}`, { build_role: buildRole }); return data },
+  unlinkWorkOrder: async (id: number, woId: number): Promise<RrvDetail> => { const { data } = await apiClient.delete(`/production/rrv-builds/${id}/work-orders/${woId}`); return data },
+  getConsumption: async (id: number): Promise<import('@/types').ProductionRrvConsumption> => { const { data } = await apiClient.get(`/production/rrv-builds/${id}/material-consumption`); return data },
+
+  updateStage: async (id: number, key: string, payload: Record<string, unknown>): Promise<RrvDetail> => { const { data } = await apiClient.patch(`/production/rrv-builds/${id}/stages/${key}`, payload); return data },
+  startStage: async (id: number, key: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/stages/${key}/start`); return data },
+  completeStage: async (id: number, key: string, remarks?: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/stages/${key}/complete`, { remarks: remarks || null }); return data },
+  stageNotApplicable: async (id: number, key: string, reason: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/stages/${key}/not-applicable`, { reason }); return data },
+  reopenStage: async (id: number, key: string, reason: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/stages/${key}/reopen`, { reason }); return data },
+
+  requestFinalInspection: async (id: number): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/request-final-inspection`); return data },
+  recordTest: async (id: number, payload: Record<string, unknown>): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/tests`, payload); return data },
+  deleteTest: async (id: number, testId: number): Promise<RrvDetail> => { const { data } = await apiClient.delete(`/production/rrv-builds/${id}/tests/${testId}`); return data },
+
+  listRework: async (params: Record<string, unknown> = {}): Promise<import('@/types').ProductionReworkOrder[]> => { const { data } = await apiClient.get('/production/rrv-builds/rework', { params }); return data },
+  createRework: async (id: number, payload: Record<string, unknown>): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/${id}/rework`, payload); return data },
+  startRework: async (reworkId: number): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/rework/${reworkId}/start`); return data },
+  finishRework: async (reworkId: number, payload: Record<string, unknown>): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/rework/${reworkId}/done`, payload); return data },
+  verifyRework: async (reworkId: number, remarks?: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/rework/${reworkId}/verify`, { remarks: remarks || null }); return data },
+  rejectRework: async (reworkId: number, reason: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/rework/${reworkId}/reject-verification`, { reason }); return data },
+  cancelRework: async (reworkId: number, reason: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/rework/${reworkId}/cancel`, { reason }); return data },
+
+  getHandoverCertificate: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/production/rrv-builds/${id}/handover-certificate`, { responseType: 'blob', timeout: 60000 }); return data },
+}

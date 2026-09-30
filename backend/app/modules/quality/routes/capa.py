@@ -31,7 +31,7 @@ def _to_response(db: Session, capa: QualityCapa) -> QualityCapaResponse:
 
 
 def _get_or_404(db: Session, capa_id: int) -> QualityCapa:
-    capa = db.query(QualityCapa).filter(QualityCapa.id == capa_id).first()
+    capa = db.query(QualityCapa).filter(QualityCapa.is_deleted == False, QualityCapa.id == capa_id).first()  # noqa: E712
     if not capa:
         raise HTTPException(status_code=404, detail="CAPA not found")
     return capa
@@ -44,7 +44,7 @@ async def list_capas(
     ncr_id: int | None = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(QualityCapa)
+    query = db.query(QualityCapa).filter(QualityCapa.is_deleted == False)  # noqa: E712
     if action_type:
         query = query.filter(QualityCapa.action_type == action_type)
     if status_filter:
@@ -62,7 +62,7 @@ async def create_capa(
 ):
     if payload.action_type not in QUALITY_CAPA_ACTION_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid action_type '{payload.action_type}'")
-    if payload.ncr_id is not None and not db.query(QualityNcr).filter(QualityNcr.id == payload.ncr_id).first():
+    if payload.ncr_id is not None and not db.query(QualityNcr).filter(QualityNcr.is_deleted == False, QualityNcr.id == payload.ncr_id).first():  # noqa: E712
         raise HTTPException(status_code=404, detail=f"NCR #{payload.ncr_id} not found")
 
     capa = QualityCapa(
@@ -105,7 +105,7 @@ async def update_capa(
     if new_status and new_status not in QUALITY_CAPA_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status '{new_status}'")
     new_ncr_id = updates.get("ncr_id")
-    if new_ncr_id is not None and not db.query(QualityNcr).filter(QualityNcr.id == new_ncr_id).first():
+    if new_ncr_id is not None and not db.query(QualityNcr).filter(QualityNcr.is_deleted == False, QualityNcr.id == new_ncr_id).first():  # noqa: E712
         raise HTTPException(status_code=404, detail=f"NCR #{new_ncr_id} not found")
 
     if new_status == "closed" and capa.closed_at is None:
@@ -122,6 +122,9 @@ async def update_capa(
 @router.delete("/{capa_id}")
 async def delete_capa(capa_id: int, db: Session = Depends(get_db)):
     capa = _get_or_404(db, capa_id)
-    db.delete(capa)
+    # Soft delete — quality records are retained for audit (ISO 9001 §7.5.3),
+    # and the delete itself is logged by app/core/audit.py.
+    capa.is_deleted = True
+    capa.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "CAPA deleted"}

@@ -16,6 +16,9 @@ class P2PRequestAttachmentResponse(BaseModel):
 
 
 class P2PRequestItemPayload(BaseModel):
+    # project_inhouse must be "Project" or "Inhouse" — enforced with a
+    # per-line message in create_p2p_request (kept optional here so the route
+    # can name the offending line instead of a bare pydantic 422).
     item_name: str
     make: str | None = None
     part_code: str | None = None
@@ -39,6 +42,9 @@ class P2PRequestItemResponse(BaseModel):
     category: str | None = None
     ship_to: str | None = None
     fulfillment_status: str = "pending"
+    stock_status: str | None = None
+    stock_available_qty: float | None = None
+    stock_checked_at: datetime | None = None
     issued_from_location_id: int | None = None
     issued_qty: float | None = None
     material_issue_id: int | None = None
@@ -79,37 +85,30 @@ class P2PRequestCreate(BaseModel):
     required_date: date | None = None
     requirement_type: str | None = None
     priority: str = "medium"
-    # Department Head, Project Head, Plant Head — each picked by search-select
-    # on the New PR form from users flagged with that role; any left unpicked
-    # (e.g. no department head configured) simply isn't part of the approval
-    # chain for this PR. `approver_id`/`approver_name` is the Department Head
-    # slot's underlying column name (see P2PRequest model).
-    approver_id: int | None = None
-    approver_name: str | None = None
-    project_head_id: int | None = None
-    project_head_name: str | None = None
-    plant_head_id: int | None = None
-    plant_head_name: str | None = None
+    # 'existing' | 'new' — picks the manager-role approval sets (see
+    # PR_APPROVAL_ROLE_SETS on the model). `approvers` maps each role key in
+    # that set to the picked user's id; all roles required, none may be the
+    # requester, and each user must hold the role flag (enforced by
+    # service.resolve_pr_approvers, which gives clearer errors than bare
+    # pydantic "field required").
+    project_type: str
+    approvers: dict[str, int] = Field(default_factory=dict)
     remarks: str | None = None
     items: list[P2PRequestItemPayload] = Field(default_factory=list)
 
 
 class P2PRequestUpdate(BaseModel):
-    """Purchase-team-only free-edit of header fields, and/or a manual status
-    override."""
+    """Purchase-team-only free-edit of header fields. Status and the three
+    approver slots are deliberately NOT here — see update_p2p_request, which
+    rejects them (extra="allow" only so it can name them in the error)."""
+
+    model_config = {"extra": "allow"}
 
     project_label: str | None = None
     required_date: date | None = None
     requirement_type: str | None = None
     priority: str | None = None
-    approver_id: int | None = None
-    approver_name: str | None = None
-    project_head_id: int | None = None
-    project_head_name: str | None = None
-    plant_head_id: int | None = None
-    plant_head_name: str | None = None
     remarks: str | None = None
-    status: str | None = None
 
 
 class P2PRequestActionPayload(BaseModel):
@@ -117,6 +116,9 @@ class P2PRequestActionPayload(BaseModel):
 
 
 class P2PRequestApprovePayload(BaseModel):
+    # Required in practice: the approve routes 400 on a blank comment (kept
+    # optional here so the route can give a human message instead of a bare
+    # pydantic 422).
     comment: str | None = None
 
 
@@ -157,6 +159,18 @@ class P2PRequestCreatePOPayload(BaseModel):
     item_pricing: list[P2PRequestCreatePOItemPricing] = Field(default_factory=list)
 
 
+class P2PRequestApprovalResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    role: str
+    role_label: str | None = None
+    approver_id: int
+    approver_name: str | None = None
+    approved_at: datetime | None = None
+    comment: str | None = None
+
+
 class P2PRequestResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -165,6 +179,7 @@ class P2PRequestResponse(BaseModel):
     category_code: str
     category_label: str | None = None
     project_label: str | None = None
+    project_type: str | None = None
     required_date: date | None = None
     requirement_type: str | None = None
     request_date: date
@@ -192,6 +207,19 @@ class P2PRequestResponse(BaseModel):
     md_approved_at: datetime | None = None
     md_approved_by_name: str | None = None
     md_comment: str | None = None
+    # Manager-matrix PRs (project_type set): the per-role approver slots, and
+    # the any-one-approves PO stamp. Legacy PRs leave these empty and use the
+    # per-role columns above instead.
+    approvals: list[P2PRequestApprovalResponse] = Field(default_factory=list)
+    po_approved_by_id: int | None = None
+    po_approved_by_name: str | None = None
+    po_approved_role: str | None = None
+    po_approved_role_label: str | None = None
+    po_approved_at: datetime | None = None
+    po_approval_comment: str | None = None
+    # Labels of the roles that may approve the PO ("any one of ..."), for
+    # display; empty on legacy PRs.
+    po_approval_role_labels: list[str] = Field(default_factory=list)
     pending_approval_roles: list[str] = Field(default_factory=list)
     pending_po_approval_roles: list[str] = Field(default_factory=list)
     rejected_by_role: str | None = None

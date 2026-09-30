@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
-import { User } from '@/types'
+import { AppModule, User } from '@/types'
 
 /** Granular ERP sub-permission check (project_create, sr_edit, etc.) — admins
  * implicitly hold every permission. Mirrors the server's own
@@ -63,10 +63,27 @@ export function useRequireAdmin() {
 
 /** Guards a page to users whose `apps` list includes `appName` (admins always pass,
  * since they implicitly get every module). Redirects everyone else to /dashboard. */
-export function useRequireApp(appName: 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p' | 'store' | 'quality' | 'projects' | 'accounts') {
+export function useRequireApp(appName: 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p' | 'store' | 'quality' | 'projects' | 'accounts' | 'hr' | 'production' | 'design' | 'electrical' | 'hydraulic' | 'maintenance') {
   const router = useRouter()
   const { user, isLoading } = useAuth()
   const hasAccess = !!user?.apps?.includes(appName)
+
+  useEffect(() => {
+    if (!isLoading && user && !hasAccess) {
+      router.push('/dashboard')
+    }
+  }, [isLoading, user, hasAccess, router])
+
+  return { user, isLoading, isAuthorized: hasAccess }
+}
+
+/** Like useRequireApp, but passes a user holding *any* of `appNames` — for pages
+ * a second audience also uses (e.g. production supervisors raising maintenance
+ * requests). Mirrors the backend's require_any_app_access. */
+export function useRequireAnyApp(...appNames: AppModule[]) {
+  const router = useRouter()
+  const { user, isLoading } = useAuth()
+  const hasAccess = appNames.some((a) => !!user?.apps?.includes(a))
 
   useEffect(() => {
     if (!isLoading && user && !hasAccess) {

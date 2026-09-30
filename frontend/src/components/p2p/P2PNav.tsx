@@ -3,14 +3,15 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 
 const TABS = [
-  { href: '/dashboard/p2p', label: 'Purchase Requisitions', icon: 'file', purchaseOnly: false },
-  { href: '/dashboard/p2p/approval', label: 'P.R Approval', icon: 'check', purchaseOnly: false },
-  { href: '/dashboard/p2p/rfq', label: 'R.F.Q', icon: 'send', purchaseOnly: true },
-  { href: '/dashboard/p2p/po-approval', label: 'P.O Approval', icon: 'clipboard', purchaseOnly: false },
+  { href: '/dashboard/p2p', label: 'Purchase Requisitions', icon: 'file', purchaseOnly: false, subtabKey: 'purchase_requisitions' },
+  { href: '/dashboard/p2p/approval', label: 'P.R Approval', icon: 'check', purchaseOnly: false, subtabKey: 'pr_approval' },
+  { href: '/dashboard/p2p/rfq', label: 'R.F.Q', icon: 'send', purchaseOnly: true, subtabKey: 'rfq' },
+  { href: '/dashboard/p2p/po-approval', label: 'P.O Approval', icon: 'clipboard', purchaseOnly: false, subtabKey: 'po_approval' },
   { href: '/dashboard/p2p/po-tracking', label: 'P.O Tracking', icon: 'truck', purchaseOnly: true },
   { href: '/dashboard/p2p/mis', label: 'M.I.S Report', icon: 'chart', purchaseOnly: true },
 ] as const
@@ -41,11 +42,21 @@ export default function P2PNav() {
   const pathname = usePathname()
   const { user } = useAuth()
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
+  const isAdmin = user?.role === 'admin'
+  const visibleTabs = filterTabsByAccess('p2p', TABS.filter((tab) => {
+    if (tab.purchaseOnly && !isPurchaseTeam) return false
+    // The approval tabs are pure action queues: P.R Approval only for users
+    // named as an approver somewhere, P.O Approval only for PO-role holders
+    // (admin sees both) — see is_pr_approver/is_po_approver on /auth/me.
+    if (tab.href === '/dashboard/p2p/approval') return !!user?.is_pr_approver || isAdmin
+    if (tab.href === '/dashboard/p2p/po-approval') return !!user?.is_po_approver || isAdmin
+    return true
+  }), user)
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
-        {TABS.filter((tab) => !tab.purchaseOnly || isPurchaseTeam).map((tab) => {
+        {visibleTabs.map((tab) => {
           const isActive = tab.href === '/dashboard/p2p' ? pathname === tab.href : pathname.startsWith(tab.href)
           return (
             <Link

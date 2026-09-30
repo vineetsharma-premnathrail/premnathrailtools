@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.core.permissions import require_app_access, has_erp_permission
+from app.core.permissions import require_app_access, has_erp_permission, require_tab_access
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.erp.models.project import Project
@@ -47,6 +47,7 @@ async def list_projects(
     limit: int = 100,
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("erp")),
+    _tab: User = Depends(require_tab_access("erp", "projects")),
 ):
     """List active (non-deleted) machines/vehicles, optionally filtered by a text search
     across serial number, model, and client company, plus exact-match filters."""
@@ -228,6 +229,7 @@ async def restore_project(
 async def list_deleted_projects(
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("erp")),
+    _tab: User = Depends(require_tab_access("erp", "recycle_bin")),
 ):
     projects = db.query(Project).filter(Project.is_deleted == True).all()  # noqa: E712
     return [

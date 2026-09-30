@@ -3,13 +3,13 @@ from datetime import date
 from sqlalchemy import String, Integer, Float, Date, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
-from app.db.mixins import TimestampMixin
+from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 QUALITY_REJECTION_DISPOSITIONS = ("return_to_vendor", "scrap", "rework", "use_as_is")
 QUALITY_REJECTION_STATUSES = ("open", "in_progress", "closed")
 
 
-class QualityRejection(Base, TimestampMixin):
+class QualityRejection(Base, TimestampMixin, SoftDeleteMixin):
     """A rejected batch/item — optionally linked to an NCR and/or the
     inspection that flagged it — tracked through to its disposition."""
 

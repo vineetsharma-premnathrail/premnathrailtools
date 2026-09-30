@@ -2,11 +2,11 @@
 
 import { useEffect, useState, Fragment } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useAuth } from '@/hooks/useAuth'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 
 import { p2pApi, rfqApi, purchaseOrdersApi } from '@/lib/api'
-import { formatDate } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { P2PRequest, RFQ, P2PPurchaseOrder, P2PRequestItemStockCheck } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
@@ -14,6 +14,7 @@ import PromptDialog from '@/components/erp/PromptDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { userPoRoles, p2pRoleLabel } from '@/lib/p2pRoles'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 
@@ -35,12 +36,13 @@ const STATUS_HEX: Record<string, string> = {
   rejected: '#dc2626', cancelled: '#94a3b8',
 }
 
-// A submitted PR where some (but not all) assigned heads have signed off
+// A submitted PR where some (but not all) assigned approvers have signed off
 // gets its own purple "Partially Approved" display — distinct from the
 // blue "Submitted" (nobody's approved yet) and green "Approved" (all done).
 function displayStatus(pr: P2PRequest): { label: string; hex: string } {
   if (pr.status === 'submitted') {
-    const assignedCount = [pr.approver_id, pr.project_head_id, pr.plant_head_id].filter((v) => v != null).length
+    const assignedCount = pr.approvals?.length
+      || [pr.approver_id, pr.project_head_id, pr.plant_head_id].filter((v) => v != null).length
     const pendingCount = pr.pending_approval_roles?.length ?? assignedCount
     if (assignedCount > 0 && pendingCount > 0 && pendingCount < assignedCount) {
       return { label: 'Partially Approved', hex: '#8b5cf6' }
@@ -63,13 +65,20 @@ const primaryBtn: React.CSSProperties = {
   padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
   background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
 }
+const STOCK_LABELS: Record<string, string> = { in_stock: 'In Stock', partial: 'Partial', not_in_stock: 'Not in Stock', no_match: 'Not in Item Master' }
+const STOCK_HEX: Record<string, string> = { in_stock: '#16a34a', partial: '#f59e0b', not_in_stock: '#dc2626', no_match: '#94a3b8' }
+
 const dangerBtn: React.CSSProperties = {
   fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10,
   border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: 'pointer',
 }
 
 export default function MyP2PRequestDetailPage() {
-  const { isAuthorized, isLoading, user } = useRequireApp('p2p')
+  // Deliberately NOT useRequireApp('p2p'): PR approvers are picked from the
+  // whole user directory and usually lack the p2p app — being named on the
+  // PR is their access. The backend still 403s anyone not entitled to it.
+  const { user, isLoading } = useAuth()
+  const isAuthorized = !!user
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -210,16 +219,23 @@ export default function MyP2PRequestDetailPage() {
   const status = displayStatus(pr)
   const statusColor = status.hex
   const isAdmin = user?.role === 'admin'
-  const approvalRoles = [
-    { role: 'department_head', label: 'Department Head', id: pr.approver_id, name: pr.approver_name, approvedAt: pr.department_head_approved_at, comment: pr.department_head_comment },
-    { role: 'project_head', label: 'Project Head', id: pr.project_head_id, name: pr.project_head_name, approvedAt: pr.project_head_approved_at, comment: pr.project_head_comment },
-    { role: 'plant_head', label: 'Plant Head', id: pr.plant_head_id, name: pr.plant_head_name, approvedAt: pr.plant_head_approved_at, comment: pr.plant_head_comment },
-  ]
+  // Manager-matrix PRs carry their approver slots in `approvals`; PRs from
+  // before the matrix still use the legacy head columns.
+  const approvalRoles = pr.approvals?.length
+    ? pr.approvals.map((a) => ({ role: a.role, label: a.role_label || p2pRoleLabel(a.role), id: a.approver_id, name: a.approver_name, approvedAt: a.approved_at, comment: a.comment }))
+    : [
+        { role: 'department_head', label: 'Department Head', id: pr.approver_id, name: pr.approver_name, approvedAt: pr.department_head_approved_at, comment: pr.department_head_comment },
+        { role: 'project_head', label: 'Project Head', id: pr.project_head_id, name: pr.project_head_name, approvedAt: pr.project_head_approved_at, comment: pr.project_head_comment },
+        { role: 'plant_head', label: 'Plant Head', id: pr.plant_head_id, name: pr.plant_head_name, approvedAt: pr.plant_head_approved_at, comment: pr.plant_head_comment },
+      ]
+  // Legacy PO chain rows (all three must sign). Matrix PRs render the
+  // any-one-approves panel instead — see the PO Approval section below.
   const poApprovalRoles = [
     { role: 'purchase_head', label: 'Purchase Head', name: pr.purchase_head_approved_by_name, approvedAt: pr.purchase_head_approved_at, comment: pr.purchase_head_comment },
     { role: 'director', label: 'Director', name: pr.director_approved_by_name, approvedAt: pr.director_approved_at, comment: pr.director_comment },
     { role: 'md', label: 'MD', name: pr.md_approved_by_name, approvedAt: pr.md_approved_at, comment: pr.md_comment },
   ]
+  const isMatrixPr = !!pr.project_type
   // The PO Approval chain (Purchase Head → Director → MD) is always shown, so
   // the full six-step chain is visible in one place from the start — its rows
   // just read "PO not raised yet" until a PO actually exists. Hiding the whole
@@ -237,7 +253,7 @@ export default function MyP2PRequestDetailPage() {
   // Rejections by an admin or the purchase team at large belong to no role
   // row above, and a cancellation records no role at all — both get their own
   // cell at the end of the Approval grid instead, in that same shape.
-  const roleRows = ['department_head', 'project_head', 'plant_head', 'purchase_head', 'director', 'md']
+  const roleRows = [...approvalRoles.map((r) => r.role), 'purchase_head', 'director', 'md']
   const terminalNote = pr.status === 'cancelled'
     ? { label: 'Cancelled', bg: 'rgba(148,163,184,0.15)', color: '#64748b', reason: pr.cancelled_reason, name: undefined }
     : pr.status === 'rejected' && !roleRows.includes(rejectedByRole || '')
@@ -250,9 +266,13 @@ export default function MyP2PRequestDetailPage() {
   const canRejectAccess = pr.status === 'submitted' && (hasAssignedHeads ? (approvalRoles.some((r) => r.id != null && r.id === user?.id) || isAdmin) : isPurchaseTeam)
   const canApproveReject = fromApproval && canApproveOrReject
   const canRejectStill = fromApproval && canRejectAccess
-  const poRole = user?.is_purchase_head ? 'purchase_head' : user?.is_director ? 'director' : user?.is_md ? 'md' : null
-  const canApprovePo = fromPoApproval && pr.status === 'po_raised' && poRole != null && (pr.pending_po_approval_roles || []).includes(poRole)
-  const canRejectPo = fromPoApproval && pr.status === 'po_raised' && (poRole != null || isAdmin)
+  // Which of this PR's PO-approval roles the viewer holds (matrix or legacy).
+  const myPoRoles = userPoRoles(user, pr).filter((r) => (pr.pending_po_approval_roles || []).includes(r))
+  // Matrix SoD: the requester can't approve their own PR's PO (the backend
+  // refuses it too — this just hides a button that would be refused).
+  const poSelfBlocked = isMatrixPr && pr.requested_by_id === user?.id
+  const canApprovePo = fromPoApproval && pr.status === 'po_raised' && myPoRoles.length > 0 && !poSelfBlocked
+  const canRejectPo = fromPoApproval && pr.status === 'po_raised' && ((userPoRoles(user, pr).length > 0 && !poSelfBlocked) || isAdmin)
   // Once a PR is approved, the buyer can check store stock per item and
   // decide item-by-item whether to issue it from stock or send it to
   // procurement — not available once the request has been rejected/cancelled
@@ -385,6 +405,32 @@ export default function MyP2PRequestDetailPage() {
 
       <div data-tour="pr-detail-po-approval" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>PO Approval</h2>
+        {isMatrixPr ? (
+          !poRaised ? (
+            <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— PO not raised yet. It will go to {(pr.po_approval_role_labels || []).join(', ')}; any one approval approves it.</p>
+          ) : pr.po_approved_at ? (
+            <div>
+              <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: TEXT.body, flexWrap: 'wrap' }}>
+                {pr.po_approved_by_name || '—'}
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(34,197,94,0.12)', color: '#16a34a' }}>
+                  Approved as {pr.po_approved_role_label || p2pRoleLabel(pr.po_approved_role)}
+                </span>
+              </p>
+              {pr.po_approval_comment && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{pr.po_approval_comment}&quot;</p>}
+            </div>
+          ) : pr.status === 'rejected' ? (
+            <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: TEXT.body, flexWrap: 'wrap' }}>
+              {pr.rejected_by_name || '—'}
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#dc2626' }}>
+                Rejected{pr.rejected_by_role ? ` as ${p2pRoleLabel(pr.rejected_by_role)}` : ''}
+              </span>
+            </p>
+          ) : (
+            <p style={{ fontSize: 13.5, color: TEXT.body, margin: 0 }}>
+              Awaiting approval — sent to every {(pr.po_approval_role_labels || []).join(', ')}. Any one approval approves the PO.
+            </p>
+          )
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
           {poApprovalRoles.map((r) => {
             const pill = rowPill(r.role, r.approvedAt)
@@ -410,6 +456,7 @@ export default function MyP2PRequestDetailPage() {
             )
           })}
         </div>
+        )}
       </div>
 
       <div data-tour="pr-detail-approval" style={sectionStyle}>
@@ -453,12 +500,19 @@ export default function MyP2PRequestDetailPage() {
       </div>
 
       <div data-tour="pr-detail-items" style={{ ...sectionStyle, overflow: 'hidden' }}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Item Details</h2>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Item Details</h2>
+        {pr.items.some((it) => it.stock_status) && (
+          <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>
+            {pr.items.filter((it) => it.stock_status === 'in_stock').length} of {pr.items.length} line(s) available in store stock
+            {(() => { const t = pr.items.map((it) => it.stock_checked_at).filter(Boolean).sort().pop(); return t ? ` · checked ${formatDateTime(t)}` : '' })()}
+            {pr.status === 'submitted' ? ' — re-checked automatically at approval.' : '.'}
+          </p>
+        )}
         <div style={{ overflow: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
           <thead>
             <tr>
-              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', 'Attachments', 'Fulfillment'].map((h) => (
+              {['SL', 'Item Description', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse', 'Category', 'Ship To', 'Stock', 'Attachments', 'Fulfillment'].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
@@ -480,6 +534,20 @@ export default function MyP2PRequestDetailPage() {
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.project_inhouse || '—'}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.category || '—'}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.ship_to || '—'}</td>
+                <td style={{ padding: '8px 10px', fontSize: 12.5 }}>
+                  {it.stock_status ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${STOCK_HEX[it.stock_status]}1a`, color: STOCK_HEX[it.stock_status], whiteSpace: 'nowrap' }}>
+                        {STOCK_LABELS[it.stock_status] || it.stock_status}
+                      </span>
+                      {it.stock_status === 'partial' && it.stock_available_qty != null && (
+                        <span style={{ fontSize: 11, color: TEXT.muted }}>{it.stock_available_qty} of {it.quantity} available</span>
+                      )}
+                    </div>
+                  ) : (
+                    <span style={{ color: TEXT.muted }}>—</span>
+                  )}
+                </td>
                 <td style={{ padding: '8px 10px', fontSize: 12.5 }}>
                   {it.attachments.length === 0 && <span style={{ color: TEXT.muted }}>—</span>}
                   {it.attachments.map((a) => (
@@ -610,16 +678,22 @@ export default function MyP2PRequestDetailPage() {
       <PromptDialog
         open={promptAction === 'approve'}
         title="Approve this Purchase Requisition?"
-        placeholder="Comment (optional)"
+        message="Your comment is recorded on the approval trail."
+        placeholder="Comment (required)"
         confirmLabel="Approve"
+        danger={false}
+        requireValue
         onConfirm={promptActionDo}
         onCancel={() => setPromptAction('')}
       />
       <PromptDialog
         open={promptAction === 'approve-po'}
         title="Approve this PO?"
-        placeholder="Comment (optional)"
+        message="Your comment is recorded on the approval trail."
+        placeholder="Comment (required)"
         confirmLabel="Approve PO"
+        danger={false}
+        requireValue
         onConfirm={promptActionDo}
         onCancel={() => setPromptAction('')}
       />

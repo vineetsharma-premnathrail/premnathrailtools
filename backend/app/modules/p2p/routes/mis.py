@@ -72,7 +72,7 @@ def _in_range(value: datetime | date | None, start: date, end: date) -> bool:
 
 
 def _po_last_approved_at(pr: P2PRequest) -> datetime | None:
-    dates = [d for d in (pr.purchase_head_approved_at, pr.director_approved_at, pr.md_approved_at) if d]
+    dates = [d for d in (pr.purchase_head_approved_at, pr.director_approved_at, pr.md_approved_at, pr.po_approved_at) if d]
     return max(dates) if dates else None
 
 
@@ -108,6 +108,7 @@ def _gather(
         and_(P2PRequest.status == "rejected", P2PRequest.updated_at >= start_dt, P2PRequest.updated_at <= end_dt),
         and_(P2PRequest.purchase_head_approved_at.isnot(None), P2PRequest.purchase_head_approved_at >= start_dt, P2PRequest.purchase_head_approved_at <= end_dt),
         and_(P2PRequest.director_approved_at.isnot(None), P2PRequest.director_approved_at >= start_dt, P2PRequest.director_approved_at <= end_dt),
+        and_(P2PRequest.po_approved_at.isnot(None), P2PRequest.po_approved_at >= start_dt, P2PRequest.po_approved_at <= end_dt),
         and_(P2PRequest.md_approved_at.isnot(None), P2PRequest.md_approved_at >= start_dt, P2PRequest.md_approved_at <= end_dt),
     ]
     query = db.query(P2PRequest).options(selectinload(P2PRequest.items)).filter(or_(*date_filters))

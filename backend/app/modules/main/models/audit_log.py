@@ -56,32 +56,42 @@ class AuditLog(Base):
     api_source: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
-@event.listens_for(AuditLog, "before_insert")
-def _populate_request_context(mapper, connection, target: AuditLog) -> None:
+def request_context_fields(connection) -> dict:
+    """ip_address/user_agent/api_source/session_id for the current request
+    (all None outside one, e.g. background jobs, seed scripts). Shared by the
+    before_insert listener below and by the automatic ORM-level audit trail
+    in app/core/audit.py, which inserts rows through Core and so bypasses
+    that listener."""
     # Local imports avoid a cross-module cycle at startup (this model is
     # imported very early, before app.core.audit_context's own imports
-    # would be safe to resolve) and avoid the cost when no request is active
-    # (e.g. background jobs, seed scripts) — get_request_ip() etc. just
-    # return None in that case.
+    # would be safe to resolve).
     from app.core.audit_context import get_request_ip, get_request_user_agent, get_request_refresh_token, get_api_source
 
-    if target.ip_address is None:
-        target.ip_address = get_request_ip()
-    if target.user_agent is None:
-        target.user_agent = get_request_user_agent()
-    if target.api_source is None:
-        target.api_source = get_api_source()
-    if target.session_id is None:
-        raw = get_request_refresh_token()
-        if raw:
-            from app.auth.jwt_handler import hash_refresh_token
-            from app.modules.main.models.user_session import UserSession
+    fields = {
+        "ip_address": get_request_ip(),
+        "user_agent": (get_request_user_agent() or "")[:255] or None,
+        "api_source": get_api_source(),
+        "session_id": None,
+    }
+    raw = get_request_refresh_token()
+    if raw:
+        from app.auth.jwt_handler import hash_refresh_token
+        from app.modules.main.models.user_session import UserSession
 
-            # Raw Core query against the same `connection` the flush is
-            # already using — deliberately not an ORM Session.query(), which
-            # would risk re-entrant flush/autoflush issues mid-insert.
-            row = connection.execute(
-                UserSession.__table__.select().where(UserSession.token_hash == hash_refresh_token(raw))
-            ).first()
-            if row:
-                target.session_id = row.id
+        # Raw Core query against the same `connection` the flush is
+        # already using — deliberately not an ORM Session.query(), which
+        # would risk re-entrant flush/autoflush issues mid-insert.
+        row = connection.execute(
+            UserSession.__table__.select().where(UserSession.token_hash == hash_refresh_token(raw))
+        ).first()
+        if row:
+            fields["session_id"] = row.id
+    return fields
+
+
+@event.listens_for(AuditLog, "before_insert")
+def _populate_request_context(mapper, connection, target: AuditLog) -> None:
+    fields = request_context_fields(connection)
+    for key, value in fields.items():
+        if getattr(target, key) is None:
+            setattr(target, key, value)

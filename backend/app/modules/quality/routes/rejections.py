@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -30,7 +32,7 @@ def _to_response(db: Session, rejection: QualityRejection) -> QualityRejectionRe
 
 
 def _get_or_404(db: Session, rejection_id: int) -> QualityRejection:
-    rejection = db.query(QualityRejection).filter(QualityRejection.id == rejection_id).first()
+    rejection = db.query(QualityRejection).filter(QualityRejection.is_deleted == False, QualityRejection.id == rejection_id).first()  # noqa: E712
     if not rejection:
         raise HTTPException(status_code=404, detail="Rejection not found")
     return rejection
@@ -42,7 +44,7 @@ async def list_rejections(
     ncr_id: int | None = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(QualityRejection)
+    query = db.query(QualityRejection).filter(QualityRejection.is_deleted == False)  # noqa: E712
     if status_filter:
         query = query.filter(QualityRejection.status == status_filter)
     if ncr_id:
@@ -58,10 +60,10 @@ async def create_rejection(
 ):
     if payload.disposition not in QUALITY_REJECTION_DISPOSITIONS:
         raise HTTPException(status_code=400, detail=f"Invalid disposition '{payload.disposition}'")
-    if payload.ncr_id is not None and not db.query(QualityNcr).filter(QualityNcr.id == payload.ncr_id).first():
+    if payload.ncr_id is not None and not db.query(QualityNcr).filter(QualityNcr.is_deleted == False, QualityNcr.id == payload.ncr_id).first():  # noqa: E712
         raise HTTPException(status_code=404, detail=f"NCR #{payload.ncr_id} not found")
     if payload.inspection_id is not None and not db.query(QualityInspection).filter(
-        QualityInspection.id == payload.inspection_id
+        QualityInspection.id == payload.inspection_id, QualityInspection.is_deleted == False  # noqa: E712
     ).first():
         raise HTTPException(status_code=404, detail=f"Inspection #{payload.inspection_id} not found")
 
@@ -107,11 +109,11 @@ async def update_rejection(
     if new_status and new_status not in QUALITY_REJECTION_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status '{new_status}'")
     new_ncr_id = updates.get("ncr_id")
-    if new_ncr_id is not None and not db.query(QualityNcr).filter(QualityNcr.id == new_ncr_id).first():
+    if new_ncr_id is not None and not db.query(QualityNcr).filter(QualityNcr.is_deleted == False, QualityNcr.id == new_ncr_id).first():  # noqa: E712
         raise HTTPException(status_code=404, detail=f"NCR #{new_ncr_id} not found")
     new_inspection_id = updates.get("inspection_id")
     if new_inspection_id is not None and not db.query(QualityInspection).filter(
-        QualityInspection.id == new_inspection_id
+        QualityInspection.id == new_inspection_id, QualityInspection.is_deleted == False  # noqa: E712
     ).first():
         raise HTTPException(status_code=404, detail=f"Inspection #{new_inspection_id} not found")
 
@@ -126,6 +128,9 @@ async def update_rejection(
 @router.delete("/{rejection_id}")
 async def delete_rejection(rejection_id: int, db: Session = Depends(get_db)):
     rejection = _get_or_404(db, rejection_id)
-    db.delete(rejection)
+    # Soft delete — quality records are retained for audit (ISO 9001 §7.5.3),
+    # and the delete itself is logged by app/core/audit.py.
+    rejection.is_deleted = True
+    rejection.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "Rejection deleted"}

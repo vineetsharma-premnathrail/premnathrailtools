@@ -42,7 +42,7 @@ const steps: TourStep[] = [
   {
     target: 'rfq-detail-po-send-approval-btn',
     title: 'Send for Approval',
-    purpose: 'Sends this PO into the Purchase Head → Director → MD approval chain.',
+    purpose: 'Sends this PO for approval — it goes to every holder of the requisition\'s PO approval roles, and any one of them approving approves it.',
     why: 'Once submitted, the PO can no longer be edited from this page.',
   },
   {

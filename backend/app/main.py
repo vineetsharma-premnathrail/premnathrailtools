@@ -9,6 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.core.config import settings
 from app.tasks.followup_reminders import send_activity_followup_reminders
 from app.tasks.po_overdue_reminders import send_po_overdue_reminders
+from app.tasks.hr_reminders import send_hr_reminders
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.notification import Notification
@@ -35,6 +36,7 @@ from app.modules.erp.models.service_material_attachment import ServiceMaterialAt
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
+from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
@@ -50,6 +52,40 @@ from app.modules.quality.models.capa import QualityCapa
 from app.modules.quality.models.customer_complaint import QualityCustomerComplaint
 from app.modules.quality.models.supplier_quality import QualitySupplierScorecard
 from app.modules.quality.models.quality_document import QualityDocument
+from app.modules.maintenance.models.asset import MaintenanceAsset
+from app.modules.maintenance.models.request import MaintenanceRequest
+from app.modules.maintenance.models.work_order import (
+    MaintenanceWorkOrder, MaintenanceWorkOrderTask, MaintenanceWorkOrderSpare, MaintenanceLabourLog,
+)
+from app.modules.maintenance.models.attachment import MaintenanceAttachment
+from app.modules.production.models.workstation import ProductionWorkstation
+from app.modules.production.models.bom import ProductionBom, ProductionBomItem, ProductionBomOperation
+from app.modules.production.models.work_order import (
+    ProductionWorkOrder, ProductionWorkOrderMaterial, ProductionWorkOrderOperation, ProductionTimeLog,
+)
+from app.modules.production.models.rrv_build import (
+    ProductionRrvBuild, ProductionRrvBuildStage, ProductionRrvTest, ProductionReworkOrder, ProductionRrvEvent,
+)
+from app.modules.hydraulic.models.system import HydSystem
+from app.modules.hydraulic.models.component import HydComponent
+from app.modules.hydraulic.models.circuit import HydCircuit
+from app.modules.hydraulic.models.bom import HydBom, HydBomItem
+from app.modules.hydraulic.models.calculation import HydCalculation
+from app.modules.hydraulic.models.testing import HydTest, HydTestReading
+from app.modules.hydraulic.models.maintenance import HydMaintenancePlan, HydServiceRecord, HydServicePart
+from app.modules.hydraulic.models.spare_part import HydSparePart
+from app.modules.hydraulic.models.document import HydDocument
+from app.modules.electrical.models.job import ElectricalJob, ElectricalJobStage
+from app.modules.electrical.models.panel import ElectricalPanel
+from app.modules.electrical.models.bom import ElectricalBomItem
+from app.modules.electrical.models.cable import ElectricalCable
+from app.modules.electrical.models.drawing import ElectricalDrawing, ElectricalDrawingRevision
+from app.modules.electrical.models.test_record import ElectricalTest
+from app.modules.electrical.models.issue import ElectricalIssue
+from app.modules.electrical.models.document import ElectricalDocument
+from app.modules.design.models.document import DesignDocument, DesignDocumentRevision, DesignRevisionFile
+from app.modules.design.models.change_notice import DesignChangeNotice, DesignChangeNoticeDocument
+from app.modules.design.models.event import DesignEvent
 from app.modules.projects.models.project import PmProject
 from app.modules.projects.models.phase import PmProjectPhase
 from app.modules.projects.models.task import PmProjectTask
@@ -94,6 +130,21 @@ from app.modules.rnd.models.tool_calculations import (
     BrakingCalculation, HydraulicCalculation, LoadDistributionCalculation, QmaxCalculation,
     SplineCalculation, TractiveEffortCalculation, VehiclePerformanceCalculation,
 )
+from app.modules.rnd.models.project import RndProject
+from app.modules.rnd.models.experiment import RndExperiment
+from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
+from app.modules.rnd.models.feasibility import RndFeasibilityStudy
+from app.modules.rnd.models.document import RndDocument
+from app.modules.hr.models.masters import HrGrade, HrDesignation, HrShift
+from app.modules.hr.models.holiday import HrHoliday
+from app.modules.hr.models.employee_profile import HrEmployeeProfile
+from app.modules.hr.models.lifecycle import HrLifecycleEvent, HrChecklistTemplate, HrChecklistItem
+from app.modules.hr.models.leave import HrLeaveType, HrLeaveBalance, HrLeaveRequest
+from app.modules.hr.models.attendance import HrAttendance, HrAttendanceRegularization
+from app.modules.hr.models.asset import HrAsset, HrAssetAssignment
+from app.modules.hr.models.visitor import HrVisitor
+from app.modules.hr.models.travel import HrTravelRequest
+from app.modules.hr.models.expense import HrExpenseClaim, HrExpenseClaimItem
 from app.modules.main.routes import auth as auth_routes
 from app.modules.main.routes import users as users_routes
 from app.modules.main.routes import notifications as notifications_routes
@@ -130,6 +181,49 @@ from app.modules.quality.routes import complaints as quality_complaints_routes
 from app.modules.quality.routes import supplier_quality as quality_supplier_quality_routes
 from app.modules.quality.routes import documents as quality_documents_routes
 from app.modules.quality.routes import dashboard as quality_dashboard_routes
+from app.modules.maintenance.routes import assets as maintenance_assets_routes
+from app.modules.maintenance.routes import requests as maintenance_requests_routes
+from app.modules.maintenance.routes import work_orders as maintenance_work_orders_routes
+from app.modules.maintenance.routes import documents as maintenance_documents_routes
+from app.modules.maintenance.routes import dashboard as maintenance_dashboard_routes
+from app.modules.production.routes import workstations as production_workstations_routes
+from app.modules.production.routes import boms as production_boms_routes
+from app.modules.production.routes import work_orders as production_work_orders_routes
+from app.modules.production.routes import shop_floor as production_shop_floor_routes
+from app.modules.production.routes import planning as production_planning_routes
+from app.modules.production.routes import dashboard as production_dashboard_routes
+from app.modules.production.routes import reports as production_reports_routes
+from app.modules.production.routes import lookups as production_lookups_routes
+from app.modules.production.routes import integrations as production_integrations_routes
+from app.modules.production.routes import rrv_builds as production_rrv_builds_routes
+from app.modules.hydraulic.routes import systems as hydraulic_systems_routes
+from app.modules.hydraulic.routes import components as hydraulic_components_routes
+from app.modules.hydraulic.routes import circuits as hydraulic_circuits_routes
+from app.modules.hydraulic.routes import boms as hydraulic_boms_routes
+from app.modules.hydraulic.routes import calculations as hydraulic_calculations_routes
+from app.modules.hydraulic.routes import testing as hydraulic_testing_routes
+from app.modules.hydraulic.routes import maintenance as hydraulic_maintenance_routes
+from app.modules.hydraulic.routes import service_records as hydraulic_service_records_routes
+from app.modules.hydraulic.routes import spare_parts as hydraulic_spare_parts_routes
+from app.modules.hydraulic.routes import documents as hydraulic_documents_routes
+from app.modules.hydraulic.routes import dashboard as hydraulic_dashboard_routes
+from app.modules.hydraulic.routes import lookups as hydraulic_lookups_routes
+from app.modules.electrical.routes import jobs as electrical_jobs_routes
+from app.modules.electrical.routes import bom as electrical_bom_routes
+from app.modules.electrical.routes import panels as electrical_panels_routes
+from app.modules.electrical.routes import cables as electrical_cables_routes
+from app.modules.electrical.routes import drawings as electrical_drawings_routes
+from app.modules.electrical.routes import testing as electrical_testing_routes
+from app.modules.electrical.routes import issues as electrical_issues_routes
+from app.modules.electrical.routes import documents as electrical_documents_routes
+from app.modules.electrical.routes import dashboard as electrical_dashboard_routes
+from app.modules.electrical.routes import lookups as electrical_lookups_routes
+from app.modules.design.routes import documents as design_documents_routes
+from app.modules.design.routes import revisions as design_revisions_routes
+from app.modules.design.routes import change_notices as design_change_notices_routes
+from app.modules.design.routes import dashboard as design_dashboard_routes
+from app.modules.design.routes import reports as design_reports_routes
+from app.modules.design.routes import lookups as design_lookups_routes
 from app.modules.projects.routes import project as pm_project_routes
 from app.modules.projects.routes import phases as pm_phases_routes
 from app.modules.projects.routes import tasks as pm_tasks_routes
@@ -165,14 +259,33 @@ from app.modules.crm.routes import product_categories as crm_product_categories_
 from app.modules.crm.routes import bulk_import as crm_bulk_import_routes
 from app.modules.rnd.routes import calculations as rnd_calculations_routes
 from app.modules.rnd.routes import history as rnd_history_routes
+from app.modules.rnd.routes import projects as rnd_projects_routes
+from app.modules.rnd.routes import experiments as rnd_experiments_routes
+from app.modules.rnd.routes import prototypes as rnd_prototypes_routes
+from app.modules.rnd.routes import dashboard as rnd_dashboard_routes
+from app.modules.rnd.routes import documents as rnd_documents_routes
 from app.modules.organization.routes import company as organization_company_routes
 from app.modules.organization.routes import branch as organization_branch_routes
 from app.modules.organization.routes import department as organization_department_routes
 from app.modules.organization.routes import cost_center as organization_cost_center_routes
 from app.modules.organization.routes import audit_log as organization_audit_log_routes
+from app.modules.hr.routes import employees as hr_employees_routes
+from app.modules.hr.routes import masters as hr_masters_routes
+from app.modules.hr.routes import lifecycle as hr_lifecycle_routes
+from app.modules.hr.routes import leave as hr_leave_routes
+from app.modules.hr.routes import attendance as hr_attendance_routes
+from app.modules.hr.routes import holidays as hr_holidays_routes
+from app.modules.hr.routes import assets as hr_assets_routes
+from app.modules.hr.routes import visitors as hr_visitors_routes
+from app.modules.hr.routes import travel as hr_travel_routes
+from app.modules.hr.routes import expenses as hr_expenses_routes
+from app.modules.hr.routes import dashboard as hr_dashboard_routes
 from app.middleware.error_handler import setup_error_handlers, LoggingMiddleware
 from app.middleware.owasp import OWASPMiddleware
 from app.core.audit_context import AuditContextMiddleware
+# Registers the Quality/Store/Organization models with the automatic audit
+# trail (app/core/audit.py) — import for side effects only.
+import app.core.audit_registry  # noqa: F401
 
 # Schema is managed by Alembic now (see backend/alembic/) — run
 # `alembic upgrade head` after pulling new migrations or on first setup.
@@ -244,6 +357,49 @@ app.include_router(quality_complaints_routes.router, prefix="/api/v1")
 app.include_router(quality_supplier_quality_routes.router, prefix="/api/v1")
 app.include_router(quality_documents_routes.router, prefix="/api/v1")
 app.include_router(quality_dashboard_routes.router, prefix="/api/v1")
+app.include_router(maintenance_assets_routes.router, prefix="/api/v1")
+app.include_router(maintenance_requests_routes.router, prefix="/api/v1")
+app.include_router(maintenance_work_orders_routes.router, prefix="/api/v1")
+app.include_router(maintenance_documents_routes.router, prefix="/api/v1")
+app.include_router(maintenance_dashboard_routes.router, prefix="/api/v1")
+app.include_router(production_workstations_routes.router, prefix="/api/v1")
+app.include_router(production_boms_routes.router, prefix="/api/v1")
+app.include_router(production_work_orders_routes.router, prefix="/api/v1")
+app.include_router(production_shop_floor_routes.router, prefix="/api/v1")
+app.include_router(production_planning_routes.router, prefix="/api/v1")
+app.include_router(production_dashboard_routes.router, prefix="/api/v1")
+app.include_router(production_reports_routes.router, prefix="/api/v1")
+app.include_router(production_lookups_routes.router, prefix="/api/v1")
+app.include_router(production_integrations_routes.router, prefix="/api/v1")
+app.include_router(production_rrv_builds_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_systems_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_components_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_circuits_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_boms_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_calculations_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_testing_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_maintenance_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_service_records_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_spare_parts_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_documents_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_dashboard_routes.router, prefix="/api/v1")
+app.include_router(hydraulic_lookups_routes.router, prefix="/api/v1")
+app.include_router(electrical_jobs_routes.router, prefix="/api/v1")
+app.include_router(electrical_bom_routes.router, prefix="/api/v1")
+app.include_router(electrical_panels_routes.router, prefix="/api/v1")
+app.include_router(electrical_cables_routes.router, prefix="/api/v1")
+app.include_router(electrical_drawings_routes.router, prefix="/api/v1")
+app.include_router(electrical_testing_routes.router, prefix="/api/v1")
+app.include_router(electrical_issues_routes.router, prefix="/api/v1")
+app.include_router(electrical_documents_routes.router, prefix="/api/v1")
+app.include_router(electrical_dashboard_routes.router, prefix="/api/v1")
+app.include_router(electrical_lookups_routes.router, prefix="/api/v1")
+app.include_router(design_documents_routes.router, prefix="/api/v1")
+app.include_router(design_revisions_routes.router, prefix="/api/v1")
+app.include_router(design_change_notices_routes.router, prefix="/api/v1")
+app.include_router(design_dashboard_routes.router, prefix="/api/v1")
+app.include_router(design_reports_routes.router, prefix="/api/v1")
+app.include_router(design_lookups_routes.router, prefix="/api/v1")
 app.include_router(pm_project_routes.router, prefix="/api/v1")
 app.include_router(pm_phases_routes.router, prefix="/api/v1")
 app.include_router(pm_tasks_routes.router, prefix="/api/v1")
@@ -295,11 +451,27 @@ app.include_router(accounts_liquidity_forecast_routes.router, prefix="/api/v1")
 app.include_router(accounts_reports_routes.router, prefix="/api/v1")
 app.include_router(rnd_calculations_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_history_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_projects_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_experiments_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_prototypes_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_dashboard_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_documents_routes.router, prefix="/api/v1/rnd")
 app.include_router(organization_company_routes.router, prefix="/api/v1")
 app.include_router(organization_branch_routes.router, prefix="/api/v1")
 app.include_router(organization_department_routes.router, prefix="/api/v1")
 app.include_router(organization_cost_center_routes.router, prefix="/api/v1")
 app.include_router(organization_audit_log_routes.router, prefix="/api/v1")
+app.include_router(hr_employees_routes.router, prefix="/api/v1")
+app.include_router(hr_masters_routes.router, prefix="/api/v1")
+app.include_router(hr_lifecycle_routes.router, prefix="/api/v1")
+app.include_router(hr_leave_routes.router, prefix="/api/v1")
+app.include_router(hr_attendance_routes.router, prefix="/api/v1")
+app.include_router(hr_holidays_routes.router, prefix="/api/v1")
+app.include_router(hr_assets_routes.router, prefix="/api/v1")
+app.include_router(hr_visitors_routes.router, prefix="/api/v1")
+app.include_router(hr_travel_routes.router, prefix="/api/v1")
+app.include_router(hr_expenses_routes.router, prefix="/api/v1")
+app.include_router(hr_dashboard_routes.router, prefix="/api/v1")
 
 
 @app.get("/health")
@@ -345,6 +517,12 @@ async def startup():
         send_po_overdue_reminders,
         CronTrigger(hour=8, minute=30),
         id="po_overdue_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_hr_reminders,
+        CronTrigger(hour=9, minute=0),
+        id="hr_reminders",
         replace_existing=True,
     )
     scheduler.start()

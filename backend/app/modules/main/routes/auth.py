@@ -22,7 +22,10 @@ from app.modules.main.models.user_session import UserSession
 from datetime import datetime, timedelta, timezone
 from app.auth.microsoft import get_auth_url, exchange_code_for_token, get_microsoft_user_profile, get_microsoft_manager_profile
 from app.modules.organization.services.provisioning import sync_user_org_links
+from app.modules.hr.services.employee_sync import is_org_locked
+from app.modules.hr.services.exit_guard import is_exited, exited_login_message
 from app.core.config import settings
+from app.core.permission_registry import restricted_subtabs
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +138,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     the job of POST /auth/refresh (called by the frontend on a 401), backed
     by a revocable `user_sessions` row. See that route's docstring for why
     silently re-minting the JWT here instead would be the wrong fix."""
-    from app.core.audit_context import set_api_source
+    from app.core.audit_context import set_api_source, set_current_user_id
 
     token = request.cookies.get("session_token")
     if token:
@@ -157,6 +160,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = db.query(User).filter(User.id == int(user_id)).first()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
+    set_current_user_id(user.id)
     return user
 
 
@@ -224,10 +228,21 @@ async def oauth_callback(request: Request, code: str, state: str, db: Session = 
             db.commit()
             db.refresh(user)
         else:
+            # An employee HR has exited stays out even though their Entra
+            # account may still be enabled (handover period) — only a new
+            # HR joining event re-activates them (security finding S-10).
+            if is_exited(db, user.id):
+                if user.is_active:
+                    user.is_active = False
+                    db.commit()
+                return RedirectResponse(url=f"{frontend_url}/login?error=exited", status_code=302)
             user.name = name
             user.azure_id = azure_id
-            user.designation = designation
-            user.department = department
+            # HR & Administration owns these once an employee profile locks
+            # them (see app/modules/hr/services/employee_sync.py).
+            if not is_org_locked(db, user.id):
+                user.designation = designation
+                user.department = department
             user.phone = phone
             user.office_location = office_location
             db.commit()
@@ -243,7 +258,8 @@ async def oauth_callback(request: Request, code: str, state: str, db: Session = 
             if manager_profile:
                 manager_email = manager_profile.get("mail") or manager_profile.get("userPrincipalName")
                 manager_user = db.query(User).filter(User.email == manager_email).first() if manager_email else None
-                user.reporting_manager_id = manager_user.id if manager_user else user.reporting_manager_id
+                if not is_org_locked(db, user.id):
+                    user.reporting_manager_id = manager_user.id if manager_user else user.reporting_manager_id
                 db.commit()
         except Exception:
             # Best-effort per the comment above — a 403 here is the expected,
@@ -379,6 +395,9 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
 
+    if is_exited(db, user.id):
+        raise HTTPException(status_code=403, detail=exited_login_message(db, user.id))
+
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account deactivated")
 
@@ -429,9 +448,32 @@ async def teams_exchange(request: Request):
     return response
 
 
+def _p2p_approver_flags(db: Session, user: User) -> tuple[bool, bool]:
+    """(is_pr_approver, is_po_approver) for the P2P approval-queue tabs:
+    a PR approver is anyone named in an approver slot on at least one PR
+    (matrix approval rows or the legacy head columns); a PO approver is any
+    holder of a PO-approval role flag. Admins count as both."""
+    from app.modules.p2p.models.p2p_request import P2PRequest, P2P_PO_APPROVER_FLAGS
+    from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
+
+    if user.role == "admin":
+        return True, True
+    is_pr_approver = (
+        db.query(P2PRequestApproval.id).filter(P2PRequestApproval.approver_id == user.id).first() is not None
+        or db.query(P2PRequest.id).filter(
+            (P2PRequest.approver_id == user.id)
+            | (P2PRequest.project_head_id == user.id)
+            | (P2PRequest.plant_head_id == user.id)
+        ).first() is not None
+    )
+    is_po_approver = any(getattr(user, flag, False) for flag in P2P_PO_APPROVER_FLAGS)
+    return is_pr_approver, is_po_approver
+
+
 @router.get("/me", response_model=CurrentUserResponse)
-async def get_current_user_info(user: User = Depends(get_current_user)):
+async def get_current_user_info(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Get current logged-in user info."""
+    is_pr_approver, is_po_approver = _p2p_approver_flags(db, user)
     return CurrentUserResponse(
         id=user.id,
         email=user.email,
@@ -450,7 +492,17 @@ async def get_current_user_info(user: User = Depends(get_current_user)):
         is_purchase_head=user.is_purchase_head,
         is_director=user.is_director,
         is_md=user.is_md,
+        is_finance_manager=user.is_finance_manager,
+        is_design_manager=user.is_design_manager,
+        is_rnd_manager=user.is_rnd_manager,
+        is_production_manager=user.is_production_manager,
+        is_project_manager=user.is_project_manager,
+        is_store_manager=user.is_store_manager,
+        is_purchase_manager=user.is_purchase_manager,
+        is_pr_approver=is_pr_approver,
+        is_po_approver=is_po_approver,
         notifications_enabled=user.notifications_enabled,
+        tab_access=restricted_subtabs(user),
     )
 
 

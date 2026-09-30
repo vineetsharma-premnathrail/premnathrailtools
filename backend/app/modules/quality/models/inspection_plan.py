@@ -2,7 +2,7 @@ from __future__ import annotations
 from sqlalchemy import String, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
-from app.db.mixins import TimestampMixin
+from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
 # Which stage of the material/production flow a plan or inspection applies
 # to. Shared between QualityInspectionPlan.inspection_type and
@@ -12,7 +12,7 @@ QUALITY_INSPECTION_TYPES = ("incoming", "in_process", "final")
 QUALITY_INSPECTION_PLAN_STATUSES = ("active", "inactive")
 
 
-class QualityInspectionPlan(Base, TimestampMixin):
+class QualityInspectionPlan(Base, TimestampMixin, SoftDeleteMixin):
     """A reusable inspection plan for a given item, defining which checklist
     and standard to inspect against and what sampling plan to use — actual
     QualityInspection records are raised against a plan."""

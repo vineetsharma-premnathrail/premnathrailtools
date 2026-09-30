@@ -1,6 +1,7 @@
 from __future__ import annotations
+from datetime import datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Integer, Float, Text, ForeignKey
+from sqlalchemy import String, Integer, Float, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -32,6 +33,16 @@ class P2PRequestItem(Base, TimestampMixin):
     # create_po in p2p/routes/p2p_requests.py) since they were already
     # fulfilled out of existing store stock instead of being purchased.
     fulfillment_status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
+    # Automatic store-stock snapshot (see _refresh_stock_snapshot in
+    # routes/p2p_requests.py): taken at PR creation so approvers see what is
+    # already in store, refreshed at final PR approval when out-of-stock
+    # lines are auto-routed to procurement. stock_status is one of
+    # in_stock / partial / not_in_stock / no_match (no Item Master match);
+    # stock_available_qty is the summed available (on hand minus reserved)
+    # across all warehouses at stock_checked_at.
+    stock_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    stock_available_qty: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stock_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     issued_from_location_id: Mapped[int | None] = mapped_column(ForeignKey("store_locations.id"), nullable=True)
     issued_qty: Mapped[float | None] = mapped_column(Float, nullable=True)
     material_issue_id: Mapped[int | None] = mapped_column(ForeignKey("store_material_issues.id"), nullable=True)

@@ -20,8 +20,13 @@ def generate_pdf_report(data: Dict[str, Any], template_name: str) -> io.BytesIO:
     This implementation is based on the hydraulic tool's generator. It uses Jinja2
     to render the specified template (located in app/services/templates) and then
     attempts to compile it using one of the available LaTeX engines (pdflatex,
-    xelatex, lualatex). If compilation succeeds the resulting PDF bytes are
+    xelatex). If compilation succeeds the resulting PDF bytes are
     returned in an io.BytesIO buffer; otherwise a descriptive exception is raised.
+
+    SECURITY: this does NOT escape `data`. Callers must pass every user-supplied
+    string through app.modules.rnd.tools.latex_utils.escape_latex first, or a
+    value like `\\input{/app/.env}` becomes a real LaTeX command. The compiler
+    below is sandboxed as defense in depth only.
     """
     try:
         from jinja2 import Environment, FileSystemLoader
@@ -58,17 +63,24 @@ def generate_pdf_report(data: Dict[str, Any], template_name: str) -> io.BytesIO:
             if src.exists():
                 shutil.copy(src, tmp / img)
 
-        def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-            return subprocess.run(cmd, cwd=td, capture_output=True, text=True, timeout=300)
+        # openin_any/openout_any=p restrict file reads/writes to the temp
+        # working directory, so \input{/app/.env} and friends can't reach
+        # server files even if a caller forgets to escape.
+        tex_env = {**os.environ, "openin_any": "p", "openout_any": "p"}
 
-        engines = ['pdflatex', 'xelatex', 'lualatex']
+        def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(cmd, cwd=td, capture_output=True, text=True, timeout=300, env=tex_env)
+
+        # lualatex is deliberately excluded: its \directlua gives Lua io/os
+        # access that -no-shell-escape and openin_any do not fully restrict.
+        engines = ['pdflatex', 'xelatex']
         last_res: subprocess.CompletedProcess[str] | None = None
         pdf_path = tmp / 'report.pdf'
 
         # try each engine until a PDF appears
         for engine in engines:
             try:
-                last_res = _run([engine, '-interaction=nonstopmode', 'report.tex'])
+                last_res = _run([engine, '-interaction=nonstopmode', '-no-shell-escape', 'report.tex'])
             except FileNotFoundError:
                 last_res = None
                 continue

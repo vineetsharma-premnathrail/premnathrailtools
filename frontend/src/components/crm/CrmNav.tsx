@@ -3,14 +3,15 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 import { BRAND } from '@/lib/theme'
 
 const TABS = [
-  { href: '/dashboard/crm', label: 'Dashboard', icon: 'grid' },
-  { href: '/dashboard/crm/organizations', label: 'Organizations', icon: 'building' },
-  { href: '/dashboard/crm/inquiries', label: 'Inquiries & Tenders', icon: 'file' },
+  { href: '/dashboard/crm', label: 'Dashboard', icon: 'grid', subtabKey: 'dashboard' },
+  { href: '/dashboard/crm/organizations', label: 'Organizations', icon: 'building', subtabKey: 'organizations' },
+  { href: '/dashboard/crm/inquiries', label: 'Inquiries & Tenders', icon: 'file', subtabKey: 'inquiries_tenders' },
 ] as const
 
 const ADMIN_TABS = [
@@ -38,7 +39,7 @@ function TabIcon({ name }: { name: string }) {
 export default function CrmNav() {
   const pathname = usePathname()
   const { user } = useAuth()
-  const tabs = user?.role === 'admin' ? [...TABS, ...ADMIN_TABS] : TABS
+  const tabs = filterTabsByAccess('crm', user?.role === 'admin' ? [...TABS, ...ADMIN_TABS] : TABS, user)
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>

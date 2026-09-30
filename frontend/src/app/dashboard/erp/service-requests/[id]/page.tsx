@@ -4,9 +4,9 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
-import { erpApi } from '@/lib/api'
+import { erpApi, usersApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { AuditEntry, Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment } from '@/types'
+import { AuditEntry, DirectoryUser, Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadPreview from '@/components/FileUploadPreview'
@@ -14,6 +14,8 @@ import CameraCapture from '@/components/CameraCapture'
 import Link from 'next/link'
 import { inputStyle, Field, Card, InfoRow } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
+import SearchableSelect from '@/components/erp/SearchableSelect'
+import { PR_APPROVAL_ROLE_SETS, P2P_ROLE_LABELS } from '@/lib/p2pRoles'
 import { extractErrorMessages } from '@/lib/validation'
 
 // Every non-terminal-branch SRStatus, in the order they normally happen —
@@ -155,7 +157,7 @@ export default function ServiceRequestDetailPage() {
 
       {tab === 'Overview' && <OverviewTab sr={sr} project={project} canModify={canEdit} onPatch={patch} />}
       {tab === 'Diagnostics & RCA' && <RcaTab sr={sr} canModify={canEdit} onPatch={patch} />}
-      {tab === 'Materials' && <MaterialsTab srId={sr.id} canEdit={canEdit} canDelete={canDelete} />}
+      {tab === 'Materials' && <MaterialsTab srId={sr.id} canEdit={canEdit} canDelete={canDelete} currentUserId={user?.id} />}
       {tab === 'Attachments' && <AttachmentsTab sr={sr} canEdit={canEdit} canDelete={canDelete} onRefresh={load} />}
       {tab === 'Audit Trail' && <AuditTab srId={sr.id} />}
 
@@ -410,13 +412,24 @@ const PR_STATUS_BADGE: Record<string, { bg: string; fg: string; label: string }>
   cancelled: { bg: '#94a3b81a', fg: '#94a3b8', label: 'Cancelled' },
 }
 
-function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boolean; canDelete: boolean }) {
+// An SR always belongs to an existing project, so the 'existing' PR approval
+// role set applies — one picker per role slot. Any user can be picked (the
+// role labels the slot; the is_*_manager flags don't restrict it).
+const PR_APPROVER_ROLES = PR_APPROVAL_ROLE_SETS.existing
+
+function MaterialsTab({ srId, canEdit, canDelete, currentUserId }: { srId: number; canEdit: boolean; canDelete: boolean; currentUserId?: number }) {
   const [materials, setMaterials] = useState<ServiceRequest['materials']>([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({ material_name: '', part_number: '', quantity: '1', remarks: '' })
   const [raisingPR, setRaisingPR] = useState(false)
   const [prMessage, setPrMessage] = useState('')
   const [prError, setPrError] = useState('')
+  // Raising a PR needs the same three approvers as the P2P New PR form — the
+  // requester can't be any of them (no self-approval), so they're left out.
+  const [headsOpen, setHeadsOpen] = useState(false)
+  const [headsError, setHeadsError] = useState('')
+  const [directory, setDirectory] = useState<DirectoryUser[]>([])
+  const [heads, setHeads] = useState<Record<string, string>>({})
   const [receiveInputs, setReceiveInputs] = useState<Record<number, string>>({})
   const [savingReceive, setSavingReceive] = useState<number | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -462,19 +475,37 @@ function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boo
     }
   }
 
+  const openHeads = async () => {
+    setHeadsError('')
+    setHeadsOpen(true)
+    if (directory.length) return
+    try {
+      setDirectory(await usersApi.directory())
+    } catch (err) {
+      setHeadsError(extractErrorMessages(err, 'Could not load the user list to pick approvers from.').join(' '))
+    }
+  }
+
   const raisePR = async () => {
+    const missing = PR_APPROVER_ROLES.filter((role) => !heads[role]).map((role) => P2P_ROLE_LABELS[role])
+    if (missing.length) { setHeadsError(`Please select: ${missing.join(', ')}.`); return }
+    setHeadsOpen(false)
     setRaisingPR(true)
     setPrError('')
     setPrMessage('')
     try {
-      const pr = await erpApi.raisePurchaseRequisition(srId, { priority: 'medium' })
+      const pr = await erpApi.raisePurchaseRequisition(srId, {
+        priority: 'medium',
+        approvers: Object.fromEntries(PR_APPROVER_ROLES.map((role) => [role, Number(heads[role])])),
+      })
+      setHeads({})
       setPrMessage(`Purchase requisition ${pr.p2p_number} raised — the Purchase department has been notified.`)
     } catch (err: any) {
       // The request can fail on the client (network drop, dev-server reload,
       // timeout) even after the server already committed the PR — re-fetch
       // regardless of outcome so the page never shows a stale "still
       // unlinked" materials list when the PR was actually raised.
-      setPrError(err?.response?.data?.detail || 'Failed to raise purchase requisition — refreshing to confirm current status…')
+      setPrError(extractErrorMessages(err, 'Failed to raise purchase requisition — refreshing to confirm current status…').join(' '))
     } finally {
       setRaisingPR(false)
       load()
@@ -496,16 +527,57 @@ function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boo
   }
 
   const hasUnlinkedMaterials = materials.some((m) => !m.pr_id)
+  const approverOptions = directory
+    .map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})${u.department ? ` — ${u.department}` : ''}${u.id === currentUserId ? ' — you' : ''}` }))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {headsOpen && (
+        <div
+          onClick={() => setHeadsOpen(false)}
+          className="dialog-backdrop"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="dialog-panel"
+            style={{ width: '100%', maxWidth: 460, background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}
+          >
+            <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px' }}>Raise Purchase Requisition</p>
+            <p style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 16px', lineHeight: 1.6 }}>
+              Pick who acts as each approver for this requisition — every slot is required. You may pick yourself for a slot.
+            </p>
+            {headsError && (
+              <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                {headsError}
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
+              {PR_APPROVER_ROLES.map((role) => (
+                <Field key={role} label={`${P2P_ROLE_LABELS[role]} *`}>
+                  <SearchableSelect
+                    value={heads[role] || ''}
+                    onChange={(v) => setHeads((prev) => ({ ...prev, [role]: v }))}
+                    options={approverOptions}
+                    placeholder={`Search ${P2P_ROLE_LABELS[role].toLowerCase()}…`}
+                  />
+                </Field>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => setHeadsOpen(false)} style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button type="button" onClick={raisePR} style={primaryBtnStyle}>Raise Requisition</button>
+            </div>
+          </div>
+        </div>
+      )}
       {materialsError && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: 0 }}>{materialsError}</p>}
       {canEdit && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           {prMessage && <span style={{ fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{prMessage}</span>}
           {prError && <span style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{prError}</span>}
           <button
-            onClick={raisePR}
+            onClick={openHeads}
             disabled={raisingPR || !hasUnlinkedMaterials}
             style={{ ...primaryBtnStyle, opacity: raisingPR || !hasUnlinkedMaterials ? 0.55 : 1, cursor: raisingPR || !hasUnlinkedMaterials ? 'not-allowed' : 'pointer' }}
             title={!hasUnlinkedMaterials ? 'Every material already belongs to a purchase requisition' : ''}
