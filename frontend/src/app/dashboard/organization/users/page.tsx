@@ -10,6 +10,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 
 const APPROVAL_ROLE_FLAGS: { key: keyof User; label: string }[] = [
   { key: 'is_director', label: 'Director' },
+  { key: 'is_store_manager', label: 'Store Manager' },
 ]
 
 // Read-only: this tab only shows who has what module access and approval

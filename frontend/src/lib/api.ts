@@ -890,7 +890,7 @@ export const p2pApi = {
     return data
   },
 
-  issueItemFromStock: async (id: number, itemId: number, payload: { location_id: number; quantity?: number }) => {
+  issueItemFromStock: async (id: number, itemId: number, payload: { location_id: number; quantity?: number; comment: string }) => {
     const { data } = await apiClient.post(`/p2p/requests/${id}/items/${itemId}/issue-from-stock`, payload)
     return data
   },

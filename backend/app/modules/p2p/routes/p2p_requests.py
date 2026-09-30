@@ -968,12 +968,26 @@ def _route_lines_on_approval(db: Session, pr: P2PRequest, user: User) -> None:
         )
 
 
+def _store_manager(user: User = Depends(get_current_user)) -> User:
+    """Issuing from store stock is the Store Manager's job — the store holds
+    and hands over the material. Admins may too."""
+    if user.role == "admin" or user.is_store_manager:
+        return user
+    raise HTTPException(status_code=403, detail="Only a Store Manager can issue items from store stock. Ask an admin to tick 'Store Manager' on your user if you run the store.")
+
+
+def _purchase_or_store(user: User = Depends(get_current_user)) -> User:
+    if user.role == "admin" or user.is_store_manager or "purchase" in user.get_apps():
+        return user
+    raise HTTPException(status_code=403, detail="Only the Purchase team or a Store Manager can check store stock on a requisition.")
+
+
 @router.get("/{pr_id}/items/{item_id}/stock-check", response_model=P2PRequestItemStockCheckResponse)
 async def check_item_stock(
     pr_id: int,
     item_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("purchase")),
+    _user: User = Depends(_purchase_or_store),
 ):
     """Manual, per-item lookup a buyer runs on an approved PR to see whether
     the requested item is already sitting in store stock before deciding to
@@ -1030,8 +1044,11 @@ async def issue_item_from_stock(
     item_id: int,
     payload: P2PRequestIssueFromStockPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_store_manager),
 ):
+    comment = (payload.comment or "").strip()
+    if not comment:
+        raise HTTPException(status_code=400, detail="Add a comment before issuing — e.g. who received it or where it was handed over. It is recorded on the material issue and the requisition history.")
     pr = _get_pr_or_404(db, pr_id)
     if pr.status == "submitted" or pr.status in ("rejected", "cancelled"):
         raise HTTPException(status_code=409, detail=f"An item can only be issued from stock on an approved PR (current status: {pr.status})")
@@ -1066,7 +1083,7 @@ async def issue_item_from_stock(
         project_or_work_order=pr.project_label,
         issue_date=date.today(),
         issued_by_id=user.id,
-        remarks=f"Issued against P2P request {pr.p2p_number}, item '{item.item_name}'.",
+        remarks=f"Issued against P2P request {pr.p2p_number}, item '{item.item_name}'. {comment}",
         p2p_request_id=pr.id,
     )
     db.add(issue)
@@ -1094,7 +1111,7 @@ async def issue_item_from_stock(
 
     split_note = f" The remaining {shortfall:g} goes to procurement." if shortfall > 0 else " instead of purchasing it."
     _write_audit(db, pr.id, "item_issued_from_stock", user,
-                 summary=f"{user.name or user.email} issued '{item.item_name}' (qty {quantity:g}) from store stock for {pr.p2p_number}.{split_note}")
+                 summary=f"{user.name or user.email} issued '{item.item_name}' (qty {quantity:g}) from store stock for {pr.p2p_number}.{split_note} Comment: {comment}")
 
     # A PR whose every line came out of store stock has nothing left to buy —
     # close it instead of leaving it waiting for an RFQ that will never come.

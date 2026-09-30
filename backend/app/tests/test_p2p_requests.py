@@ -905,3 +905,52 @@ def test_delete_attachment_unknown_404s(client, db):
 
     response = client.delete(f"{BASE}/{pr['id']}/attachments/999999", headers=auth_header(requester))
     assert response.status_code == 404
+
+
+# ── Issue from stock (Store Manager only, comment required) ─────────────────
+
+def _approved_pr_with_stock(client, db, tag, on_hand, qty):
+    from app.modules.store.models.item import StoreItem
+    from app.modules.store.models.location import StoreLocation
+    from app.modules.store.services.stock_ledger import post_stock_transaction
+    loc = StoreLocation(name=f"Store {tag}", code=f"S{tag}")
+    it = StoreItem(item_code=f"RM-{tag}", item_name=f"Item {tag}", uom="NOS", status="active")
+    db.add_all([loc, it])
+    db.commit()
+    post_stock_transaction(db, item_id=it.id, location_id=loc.id, transaction_type="receipt", quantity=on_hand, reference_type="manual")
+    db.commit()
+    requester = _requester(db, f"req{tag}@premnathrail.com")
+    pr = _create_pr(client, requester, items=[{"item_name": f"Item {tag}", "quantity": qty, "unit": "NOS", "project_inhouse": "Project"}])
+    approved = _approve_pr(client, pr).json()
+    return approved, approved["items"][0]["id"], loc.id
+
+
+def test_only_store_manager_can_issue_and_comment_is_required(client, db):
+    pr, item_id, loc_id = _approved_pr_with_stock(client, db, "I1", on_hand=20, qty=1)
+    url = f"{BASE}/{pr['id']}/items/{item_id}/issue-from-stock"
+
+    buyer = _purchaser(db, "buyer.i1@premnathrail.com")
+    assert client.post(url, json={"location_id": loc_id, "comment": "x"}, headers=auth_header(buyer)).status_code == 403
+
+    store = make_user(db, "store.i1@premnathrail.com", assigned_apps=("store",), is_store_manager=True)
+    assert client.post(url, json={"location_id": loc_id}, headers=auth_header(store)).status_code == 400
+
+    ok = client.post(url, json={"location_id": loc_id, "comment": "Handed to site"}, headers=auth_header(store))
+    assert ok.status_code == 200
+    assert ok.json()["items"][0]["fulfillment_status"] == "stock_issued"
+    assert ok.json()["status"] == "closed"
+
+
+def test_partial_issue_sends_only_shortfall_to_procurement(client, db):
+    pr, item_id, loc_id = _approved_pr_with_stock(client, db, "I2", on_hand=200, qty=400)
+    store = make_user(db, "store.i2@premnathrail.com", assigned_apps=("store",), is_store_manager=True)
+    resp = client.post(
+        f"{BASE}/{pr['id']}/items/{item_id}/issue-from-stock",
+        json={"location_id": loc_id, "quantity": 200, "comment": "Partial from Plant store"},
+        headers=auth_header(store),
+    )
+    assert resp.status_code == 200
+    line = resp.json()["items"][0]
+    assert line["fulfillment_status"] == "sent_to_procurement"
+    assert line["issued_qty"] == 200
+    assert resp.json()["status"] == "approved"

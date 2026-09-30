@@ -80,6 +80,7 @@ class P2PRequestItemStockCheckResponse(BaseModel):
 class P2PRequestIssueFromStockPayload(BaseModel):
     location_id: int
     quantity: float | None = None
+    comment: str | None = None
 
 
 class P2PRequestCreate(BaseModel):

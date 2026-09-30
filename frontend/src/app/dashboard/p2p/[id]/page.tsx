@@ -112,6 +112,10 @@ export default function MyP2PRequestDetailPage() {
   const [confirmProcurementItemId, setConfirmProcurementItemId] = useState<number | null>(null)
 
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
+  // Issuing from store stock is the Store Manager's job (admins too); the
+  // Purchase team sees the stock result and decides what to procure.
+  const canIssueStock = user?.role === 'admin' || !!user?.is_store_manager
+  const [issuePrompt, setIssuePrompt] = useState<{ itemId: number; locationId: number; qty: number } | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -191,7 +195,7 @@ export default function MyP2PRequestDetailPage() {
   // per-line "Check Stock" button to click.
   useEffect(() => {
     if (!pr || !user) return
-    const canManage = !!user.apps?.includes('purchase')
+    const canManage = (!!user.apps?.includes('purchase') || user.role === 'admin' || !!user.is_store_manager)
       && pr.status !== 'submitted' && pr.status !== 'rejected' && pr.status !== 'cancelled'
     if (!canManage) return
     for (const it of pr.items) {
@@ -211,8 +215,8 @@ export default function MyP2PRequestDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pr, user])
 
-  const issueFromStock = (itemId: number, locationId: number, qty: number) => runAction(async () => {
-    await p2pApi.issueItemFromStock(prId, itemId, { location_id: locationId, quantity: qty > 0 ? qty : undefined })
+  const issueFromStock = (itemId: number, locationId: number, qty: number, comment: string) => runAction(async () => {
+    await p2pApi.issueItemFromStock(prId, itemId, { location_id: locationId, quantity: qty > 0 ? qty : undefined, comment })
   })
 
   const sendToProcurement = (itemId: number) => runAction(async () => {
@@ -288,7 +292,7 @@ export default function MyP2PRequestDetailPage() {
   // decide item-by-item whether to issue it from stock or send it to
   // procurement — not available once the request has been rejected/cancelled
   // (nothing left to decide) or before it's even approved (submitted).
-  const canManageStock = isPurchaseTeam && pr.status !== 'submitted' && pr.status !== 'rejected' && pr.status !== 'cancelled'
+  const canManageStock = (isPurchaseTeam || canIssueStock) && pr.status !== 'submitted' && pr.status !== 'rejected' && pr.status !== 'cancelled'
 
   return (
     <div>
@@ -632,7 +636,7 @@ export default function MyP2PRequestDetailPage() {
                             const buyQty = check.requested_qty - (issueQty > 0 ? issueQty : 0)
                             return (
                               <>
-                                {locs.length > 0 && (
+                                {locs.length > 0 && canIssueStock && (
                                   <>
                                     <div>
                                       <label style={{ ...labelStyle, marginBottom: 4 }}>Issue From</label>
@@ -660,17 +664,20 @@ export default function MyP2PRequestDetailPage() {
                                   </>
                                 )}
                                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                                  {selectedLocId != null && (
+                                  {selectedLocId != null && !canIssueStock && (
+                                    <span style={{ fontSize: 12, color: TEXT.secondary }}>Waiting for the Store Manager to issue from stock{!fullyCovered ? ' — or send it to procurement' : ''}.</span>
+                                  )}
+                                  {selectedLocId != null && canIssueStock && (
                                     <button
                                       type="button"
                                       disabled={busy}
-                                      onClick={() => issueFromStock(it.id, selectedLocId, issueQty)}
+                                      onClick={() => setIssuePrompt({ itemId: it.id, locationId: selectedLocId, qty: issueQty })}
                                       style={{ ...primaryBtn, padding: '8px 14px', fontSize: 12.5 }}
                                     >
                                       {buyQty > 0 ? `Issue ${issueQty} & Buy ${buyQty}` : 'Issue from Stock'}
                                     </button>
                                   )}
-                                  {!fullyCovered && (
+                                  {!fullyCovered && (isPurchaseTeam || isAdmin) && (
                                     <button
                                       type="button"
                                       disabled={busy}
@@ -754,6 +761,17 @@ export default function MyP2PRequestDetailPage() {
         confirmLabel="Reject"
         onConfirm={promptActionDo}
         onCancel={() => setPromptAction('')}
+      />
+      <PromptDialog
+        open={!!issuePrompt}
+        title="Issue from Store Stock?"
+        message="Stock is deducted from the selected warehouse. Your comment is recorded on the material issue and the requisition history."
+        placeholder="Comment (required) — e.g. handed to whom / where"
+        confirmLabel="Issue"
+        danger={false}
+        requireValue
+        onConfirm={(value) => { const p = issuePrompt; setIssuePrompt(null); if (p) issueFromStock(p.itemId, p.locationId, p.qty, value) }}
+        onCancel={() => setIssuePrompt(null)}
       />
       <ConfirmDialog
         open={confirmProcurementItemId != null}
