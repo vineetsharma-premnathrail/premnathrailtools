@@ -224,6 +224,8 @@ class P2PRequestResponse(BaseModel):
     # Labels of the roles that may approve the PO ("any one of ..."), for
     # display; empty on legacy PRs.
     po_approval_role_labels: list[str] = Field(default_factory=list)
+    # Who actually holds each PO-approval role, so the panel can name them.
+    po_approvers: list[dict] = Field(default_factory=list)
     pending_approval_roles: list[str] = Field(default_factory=list)
     pending_po_approval_roles: list[str] = Field(default_factory=list)
     rejected_by_role: str | None = None

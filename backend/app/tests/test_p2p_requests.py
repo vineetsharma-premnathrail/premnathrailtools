@@ -571,7 +571,7 @@ def test_po_approval_by_any_one_role_holder(client, db):
     assert body["po_approved_by_name"].startswith("purchase.manager")
 
 
-def test_po_approval_refuses_outsiders_requester_and_buyer(client, db):
+def test_po_approval_refuses_non_role_holders_but_allows_own_po(client, db):
     requester = _requester(db, "reqpo2@premnathrail.com")
     pr = _create_pr(client, requester)
     buyer = make_user(db, "buyerpo2@premnathrail.com", assigned_apps=("purchase",), is_director=True)
@@ -579,9 +579,10 @@ def test_po_approval_refuses_outsiders_requester_and_buyer(client, db):
 
     store_mgr = make_user(db, "storepo2@premnathrail.com", assigned_apps=("p2p",), is_store_manager=True)
     assert client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "Checked and OK"}, headers=auth_header(store_mgr)).status_code == 403  # not a PO role
-    assert client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "Checked and OK"}, headers=auth_header(requester)).status_code == 403
+    assert client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "Checked and OK"}, headers=auth_header(requester)).status_code == 403  # no PO role
+    # Holding a PO role is enough — even for whoever raised the PO.
     own = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "Checked and OK"}, headers=auth_header(buyer))
-    assert own.status_code == 403 and "raised this PO" in own.json()["detail"]
+    assert own.status_code == 200 and own.json()["status"] == "po_approved"
 
 
 def test_po_approval_requires_a_comment(client, db):
@@ -624,8 +625,8 @@ def test_po_approval_queue_shows_only_pos_i_can_approve(client, db):
     queue = client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(approver)).json()
     assert [p["id"] for p in queue] == [pr["id"]]
     assert client.get("/api/v1/auth/me", headers=auth_header(approver)).json()["is_po_approver"] is True
-    # The buyer holds the flag too, but raised this PO, so it isn't in their queue.
-    assert client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(buyer)).json() == []
+    # The buyer raised this PO but holds a PO role, so it's in their queue too.
+    assert [p["id"] for p in client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(buyer)).json()] == [pr["id"]]
     store_mgr = make_user(db, "storeq3@premnathrail.com", assigned_apps=("p2p",), is_store_manager=True)
     assert client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(store_mgr)).json() == []
 

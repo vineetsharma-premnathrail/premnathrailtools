@@ -449,9 +449,22 @@ export default function MyP2PRequestDetailPage() {
               </span>
             </p>
           ) : (
-            <p style={{ fontSize: 13.5, color: TEXT.body, margin: 0 }}>
-              Awaiting approval — sent to every {(pr.po_approval_role_labels || []).join(', ')}. Any one approval approves the PO.
-            </p>
+            <div>
+              <p style={{ fontSize: 13.5, color: TEXT.body, margin: '0 0 12px' }}>Awaiting approval — any one of these approves the PO.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+                {(pr.po_approvers || []).map((a) => (
+                  <div key={a.role}>
+                    <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{a.role_label}</p>
+                    {a.names.length ? a.names.map((n) => (
+                      <p key={n} style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                        {n}
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(148,163,184,0.15)', color: '#64748b' }}>Pending</span>
+                      </p>
+                    )) : <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— nobody holds this role</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
           )
         ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
