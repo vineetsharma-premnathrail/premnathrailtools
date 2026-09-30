@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
@@ -83,7 +82,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
           <button onClick={() => router.push('/dashboard/crm/organizations')} type="button" style={secondaryBtnStyle}>
             ← Back
           </button>
-          {canModify && showEditLink && <Link href={`/dashboard/crm/organizations/${org.id}/edit`} data-tour="orgdetail-edit-link" style={{ ...secondaryBtnStyle, textDecoration: 'none', display: 'inline-block' }}>Edit</Link>}
+          {canModify && showEditLink && <button type="button" onClick={() => router.push(`/dashboard/crm/organizations/${org.id}/edit`)} data-tour="orgdetail-edit-link" style={secondaryBtnStyle}>Edit</button>}
           {canModify && <button onClick={() => setShowDeleteConfirm(true)} data-tour="orgdetail-delete-btn" style={dangerBtnStyle}>Delete</button>}
         </div>
       </div>

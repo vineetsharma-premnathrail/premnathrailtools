@@ -38,6 +38,7 @@ export default function NewP2PRequestPage() {
 
   const [categories, setCategories] = useState<PRCategoryMeta[]>([])
   const [requirementTypes, setRequirementTypes] = useState<string[]>([])
+  const [uoms, setUoms] = useState<{ value: string; label: string }[]>([])
   const [projects, setProjects] = useState<{ id: number; label: string }[]>([])
   const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([])
 
@@ -89,6 +90,7 @@ export default function NewP2PRequestPage() {
         const [meta, projectList, directory] = await Promise.all([p2pApi.getMeta(), p2pApi.listProjects(), usersApi.directory()])
         setCategories(meta.categories)
         setRequirementTypes(meta.requirement_types)
+        setUoms(meta.uoms || [])
         setProjects(projectList)
         setDirectoryUsers(directory)
       } catch (err: any) {
@@ -275,8 +277,15 @@ export default function NewP2PRequestPage() {
                   <td style={{ padding: '6px 8px', minWidth: 110 }}>
                     <input data-tour="pr-new-item-partcode" style={inputStyle} value={item.part_code} onChange={(e) => updateItem(idx, 'part_code', e.target.value)} />
                   </td>
-                  <td style={{ padding: '6px 8px', minWidth: 90 }}>
-                    <input data-tour="pr-new-item-unit" style={inputStyle} value={item.unit} onChange={(e) => updateItem(idx, 'unit', e.target.value)} placeholder="pcs / kg" />
+                  <td data-tour="pr-new-item-unit" style={{ padding: '6px 8px', minWidth: 130 }}>
+                    <SearchableSelect
+                      value={item.unit || ''}
+                      onChange={(v) => updateItem(idx, 'unit', v)}
+                      options={item.unit && !uoms.some((u) => u.value === item.unit)
+                        ? [{ value: item.unit, label: `${item.unit} (not in list — pick a listed unit)` }, ...uoms]
+                        : uoms}
+                      placeholder="Select unit…"
+                    />
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 70 }}>
                     <input data-tour="pr-new-item-qty" type="number" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />

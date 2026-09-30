@@ -65,9 +65,9 @@ const config: TourConfig = {
     {
       target: 'pr-new-item-unit',
       title: 'UOM',
-      purpose: 'Unit of measure for the quantity below.',
+      purpose: 'Unit of measure for the quantity — a searchable dropdown of the same fixed unit list the Store item master uses, so PR lines match store stock exactly.',
       required: false,
-      validExample: 'pcs, kg, mtr',
+      validExample: 'NOS, KG, MTR',
     },
     {
       target: 'pr-new-item-qty',

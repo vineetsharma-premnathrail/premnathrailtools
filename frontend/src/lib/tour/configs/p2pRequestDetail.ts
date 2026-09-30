@@ -22,7 +22,7 @@ const config: TourConfig = {
     {
       target: 'pr-detail-po-approval',
       title: 'PO Approval',
-      purpose: 'The second approval: once a PO is raised it goes to the requisition\'s PO approval roles (based on project type — e.g. Production, Purchase and Project Managers plus the Director for an existing project), and any ONE of them approving approves it. Shows who approved, as which role, and their comment. Requisitions from before this matrix still show the old Purchase Head → Director → MD chain.',
+      purpose: 'The second approval — only shown once this requisition has reached the RFQ stage (before that it may still be fulfilled entirely from store stock and never need a PO). Once a PO is raised it goes to the requisition\'s PO approval roles (based on project type — e.g. Production, Purchase and Project Managers plus the Director for an existing project), and any ONE of them approving approves it. Shows who approved, as which role, and their comment. Requisitions from before this matrix still show the old Purchase Head → Director → MD chain.',
     },
     {
       target: 'pr-detail-approval',
@@ -48,7 +48,7 @@ const config: TourConfig = {
     {
       target: 'pr-detail-items',
       title: 'Item Details',
-      purpose: 'Every line item on this requisition — description, make, part code, unit, quantity, and any per-item attachments.',
+      purpose: 'Every line item on this requisition — description, make, part code, unit, quantity, and any per-item attachments. For the purchase team, each still-undecided line runs its store stock check automatically and shows the result inline, with the Issue from Stock / Send to Procurement decision right there.',
     },
     {
       target: 'pr-detail-attachments',

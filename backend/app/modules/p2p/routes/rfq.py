@@ -107,6 +107,23 @@ async def create_rfq(
     if pr.status != "approved":
         raise HTTPException(status_code=409, detail=f"An RFQ can only be raised on an approved PR (current status: {pr.status})")
 
+    # An RFQ only makes sense once the buyer has decided every line: lines
+    # still 'pending' may yet be issued from store stock (no purchase), and
+    # if nothing was sent to procurement there is nothing to quote for.
+    pending = [i for i in pr.items if i.fulfillment_status == "pending"]
+    if pending:
+        names = ", ".join(f"'{i.item_name}'" for i in pending)
+        raise HTTPException(
+            status_code=409,
+            detail=f"{len(pending)} line(s) on {pr.p2p_number} still await the stock decision ({names}). "
+                   "Open the PR and either issue each from store stock or send it to procurement — the RFQ can be raised once every line is decided.",
+        )
+    if not any(i.fulfillment_status == "sent_to_procurement" for i in pr.items):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Every line on {pr.p2p_number} was issued from store stock — there is nothing left to purchase, so no RFQ is needed.",
+        )
+
     # Reuse an already-started draft RFQ for this PR instead of minting a
     # duplicate one. The PR's status doesn't change until the RFQ is
     # submitted/locked, so nothing else here stops a retried/duplicate

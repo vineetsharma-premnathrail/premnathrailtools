@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, Fragment } from 'react'
+import { useEffect, useRef, useState, Fragment } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
@@ -103,9 +103,10 @@ export default function MyP2PRequestDetailPage() {
   const [rfq, setRfq] = useState<RFQ | null>(null)
   const [po, setPo] = useState<P2PPurchaseOrder | null>(null)
 
-  const [stockCheckOpenId, setStockCheckOpenId] = useState<number | null>(null)
-  const [stockCheckLoadingId, setStockCheckLoadingId] = useState<number | null>(null)
+  const [stockCheckLoading, setStockCheckLoading] = useState<Record<number, boolean>>({})
+  const [stockCheckErrors, setStockCheckErrors] = useState<Record<number, string>>({})
   const [stockCheckResults, setStockCheckResults] = useState<Record<number, P2PRequestItemStockCheck>>({})
+  const stockCheckFetched = useRef<Set<number>>(new Set())
   const [issueQtyByItem, setIssueQtyByItem] = useState<Record<number, string>>({})
   const [confirmProcurementItemId, setConfirmProcurementItemId] = useState<number | null>(null)
 
@@ -116,6 +117,11 @@ export default function MyP2PRequestDetailPage() {
     setError('')
     try {
       const data = await p2pApi.get(prId)
+      // Stock may have moved since the last look (e.g. a line was just
+      // issued) — drop cached checks so remaining pending lines re-check.
+      stockCheckFetched.current = new Set()
+      setStockCheckResults({})
+      setStockCheckErrors({})
       setPr(data)
       setEditProjectLabel(data.project_label || '')
       setEditRequiredDate(data.required_date || '')
@@ -179,33 +185,38 @@ export default function MyP2PRequestDetailPage() {
     })
   )
 
-  const checkStock = async (itemId: number) => {
-    if (stockCheckOpenId === itemId) { setStockCheckOpenId(null); return }
-    setStockCheckOpenId(itemId)
-    if (stockCheckResults[itemId]) return
-    setStockCheckLoadingId(itemId)
-    setError('')
-    try {
-      const result = await p2pApi.checkItemStock(prId, itemId)
-      setStockCheckResults((prev) => ({ ...prev, [itemId]: result }))
-      setIssueQtyByItem((prev) => ({ ...prev, [itemId]: String(result.requested_qty) }))
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Stock check failed.'))
-      setStockCheckOpenId(null)
-    } finally {
-      setStockCheckLoadingId(null)
+  // The stock check runs automatically for every still-undecided line the
+  // buyer can act on — availability is visible immediately, with no
+  // per-line "Check Stock" button to click.
+  useEffect(() => {
+    if (!pr || !user) return
+    const canManage = !!user.apps?.includes('purchase')
+      && pr.status !== 'submitted' && pr.status !== 'rejected' && pr.status !== 'cancelled'
+    if (!canManage) return
+    for (const it of pr.items) {
+      if (it.fulfillment_status !== 'pending' || stockCheckFetched.current.has(it.id)) continue
+      stockCheckFetched.current.add(it.id)
+      setStockCheckLoading((prev) => ({ ...prev, [it.id]: true }))
+      p2pApi.checkItemStock(prId, it.id)
+        .then((result) => {
+          setStockCheckResults((prev) => ({ ...prev, [it.id]: result }))
+          setIssueQtyByItem((prev) => ({ ...prev, [it.id]: String(result.requested_qty) }))
+        })
+        .catch((err: any) => {
+          setStockCheckErrors((prev) => ({ ...prev, [it.id]: extractErrorMessages(err, 'Stock check failed.').join(' ') }))
+        })
+        .finally(() => setStockCheckLoading((prev) => ({ ...prev, [it.id]: false })))
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pr, user])
 
   const issueFromStock = (itemId: number, locationId: number) => runAction(async () => {
     const qty = Number(issueQtyByItem[itemId])
     await p2pApi.issueItemFromStock(prId, itemId, { location_id: locationId, quantity: qty > 0 ? qty : undefined })
-    setStockCheckOpenId(null)
   })
 
   const sendToProcurement = (itemId: number) => runAction(async () => {
     await p2pApi.sendItemToProcurement(prId, itemId)
-    setStockCheckOpenId(null)
     setConfirmProcurementItemId(null)
   })
 
@@ -236,11 +247,11 @@ export default function MyP2PRequestDetailPage() {
     { role: 'md', label: 'MD', name: pr.md_approved_by_name, approvedAt: pr.md_approved_at, comment: pr.md_comment },
   ]
   const isMatrixPr = !!pr.project_type
-  // The PO Approval chain (Purchase Head → Director → MD) is always shown, so
-  // the full six-step chain is visible in one place from the start — its rows
-  // just read "PO not raised yet" until a PO actually exists. Hiding the whole
-  // panel until then made those three roles look like they'd gone missing.
+  // The PO Approval panel only appears once the PR has reached the RFQ
+  // stage (2026-09-30) — before that it's pure noise on a requisition that
+  // may yet be fulfilled entirely from store stock and never need a PO.
   const poRaised = pr.status === 'po_raised' || pr.status === 'po_approved' || !!pr.po_number
+  const showPoApproval = !!rfq || poRaised
   // A rejection is shown on the rejecting role's own row — same shape as an
   // approval (pill + quoted note) — rather than as a separate banner.
   const rejectedByRole = pr.status === 'rejected' ? pr.rejected_by_role : null
@@ -403,6 +414,7 @@ export default function MyP2PRequestDetailPage() {
         </div>
       )}
 
+      {showPoApproval && (
       <div data-tour="pr-detail-po-approval" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>PO Approval</h2>
         {isMatrixPr ? (
@@ -458,6 +470,7 @@ export default function MyP2PRequestDetailPage() {
         </div>
         )}
       </div>
+      )}
 
       <div data-tour="pr-detail-approval" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Approval</h2>
@@ -569,24 +582,16 @@ export default function MyP2PRequestDetailPage() {
                     {it.fulfillment_status === 'stock_issued' && (
                       <span style={{ fontSize: 11, color: TEXT.muted }}>{it.issued_qty} {it.unit || ''} @ {it.issued_from_location_name || '—'}</span>
                     )}
-                    {showActions && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => checkStock(it.id)}
-                        style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', color: TEXT.heading, cursor: 'pointer' }}
-                      >
-                        {stockCheckOpenId === it.id ? 'Hide Stock Check' : 'Check Stock'}
-                      </button>
-                    )}
                   </div>
                 </td>
                 </tr>
-                {stockCheckOpenId === it.id && (
+                {showActions && (
                   <tr key={`${it.id}-stock`} style={{ borderTop: `1px solid ${BORDER.light}` }}>
-                    <td colSpan={11} style={{ padding: '10px 14px', background: 'rgba(148,163,184,0.06)' }}>
-                      {stockCheckLoadingId === it.id ? (
+                    <td colSpan={12} style={{ padding: '10px 14px', background: 'rgba(148,163,184,0.06)' }}>
+                      {stockCheckLoading[it.id] ? (
                         <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>Checking store stock…</p>
+                      ) : stockCheckErrors[it.id] ? (
+                        <p style={{ fontSize: 12.5, color: '#b91c1c', margin: 0 }}>{stockCheckErrors[it.id]}</p>
                       ) : !check ? null : !check.matched ? (
                         <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{check.message || 'No matching store item found.'}</p>
                       ) : (

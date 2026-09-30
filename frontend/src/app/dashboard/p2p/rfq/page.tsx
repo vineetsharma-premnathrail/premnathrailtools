@@ -60,7 +60,15 @@ export default function P2PRfqPage() {
   if (isLoading || !isAuthorized) return null
 
   const rfqPrIds = new Set(rfqs.map((r) => r.p2p_request_id))
-  const prsAwaitingRfq = prs.filter((pr) => !rfqPrIds.has(pr.id))
+  // A PR is only ready for an RFQ once every line has been decided (nothing
+  // left 'pending' — those may still be issued from store stock) and at
+  // least one line was actually sent to procurement. The backend enforces
+  // the same rule on RFQ creation.
+  const prsAwaitingRfq = prs.filter((pr) =>
+    !rfqPrIds.has(pr.id)
+    && !pr.items.some((it) => it.fulfillment_status === 'pending')
+    && pr.items.some((it) => it.fulfillment_status === 'sent_to_procurement')
+  )
 
   return (
     <div>
@@ -84,7 +92,7 @@ export default function P2PRfqPage() {
           <tbody>
             {loading && <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && prsAwaitingRfq.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No approved Purchase Requisitions awaiting an RFQ.</td></tr>
+              <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No Purchase Requisitions ready for an RFQ — a PR appears here once every line&apos;s stock decision is made and at least one line is sent to procurement.</td></tr>
             )}
             {prsAwaitingRfq.map((pr) => (
               <tr

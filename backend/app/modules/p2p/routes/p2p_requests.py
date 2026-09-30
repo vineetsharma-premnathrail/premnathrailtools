@@ -304,10 +304,15 @@ def _check_po_approve_access(pr: P2PRequest, user: User) -> list[str]:
 
 @router.get("/meta")
 async def get_meta(_user: User = Depends(_requester_or_purchase)):
+    # UOMs come from the Store item master's fixed list so a PR line's unit
+    # matches store stock exactly — requesters usually lack the `store` app,
+    # so the list is served here rather than from /store/items/meta.
+    from app.modules.store.models.item import STORE_UOMS
     return {
         "categories": [{"code": k, "label": v} for k, v in P2P_CATEGORIES.items()],
         "requirement_types": list(P2P_REQUIREMENT_TYPES),
         "statuses": list(P2P_REQUEST_STATUSES),
+        "uoms": [{"value": code, "label": f"{code} — {label}"} for code, label in STORE_UOMS.items()],
     }
 
 
