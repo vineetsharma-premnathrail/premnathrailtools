@@ -1083,13 +1083,18 @@ async def issue_item_from_stock(
         db.rollback()
         raise HTTPException(status_code=409, detail=str(e))
 
-    item.fulfillment_status = "stock_issued"
+    # A partial issue splits the line: the issued part is fulfilled from
+    # stock and only the shortfall goes to procurement (the PO draft orders
+    # quantity - issued_qty).
+    shortfall = item.quantity - quantity
+    item.fulfillment_status = "sent_to_procurement" if shortfall > 0 else "stock_issued"
     item.issued_from_location_id = payload.location_id
     item.issued_qty = quantity
     item.material_issue_id = issue.id
 
+    split_note = f" The remaining {shortfall:g} goes to procurement." if shortfall > 0 else " instead of purchasing it."
     _write_audit(db, pr.id, "item_issued_from_stock", user,
-                 summary=f"{user.name or user.email} issued '{item.item_name}' (qty {quantity}) from store stock for {pr.p2p_number} instead of purchasing it.")
+                 summary=f"{user.name or user.email} issued '{item.item_name}' (qty {quantity:g}) from store stock for {pr.p2p_number}.{split_note}")
 
     # A PR whose every line came out of store stock has nothing left to buy —
     # close it instead of leaving it waiting for an RFQ that will never come.

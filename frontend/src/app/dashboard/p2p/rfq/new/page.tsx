@@ -89,7 +89,15 @@ export default function NewRfqPage() {
   if (isLoading || !isAuthorized) return null
   if (!isPurchaseTeam) return <p style={{ fontSize: 13, color: '#b91c1c' }}>Only the Purchase team can raise an RFQ.</p>
 
+  // Same readiness rule as the RFQ queue and the backend: no line still
+  // awaiting its stock decision, and at least one line needs buying.
+  const readyPrs = prs.filter((pr) =>
+    !pr.items.some((it) => it.fulfillment_status === 'pending')
+    && pr.items.some((it) => it.fulfillment_status === 'sent_to_procurement'))
   const selectedPr = prs.find((pr) => String(pr.id) === prId)
+  const procureLines = (selectedPr?.items || [])
+    .filter((it) => it.fulfillment_status === 'sent_to_procurement')
+    .map((it) => ({ ...it, buyQty: it.quantity - (it.issued_qty || 0) }))
   const usedTiers = VENDOR_SLOTS.filter((s) => vendors[s.tier].file)
   const onlyL1 = usedTiers.length === 1 && !!vendors.L1.file
   const noAttachments = usedTiers.length === 0
@@ -175,19 +183,36 @@ export default function NewRfqPage() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
           <div data-tour="rfq-new-pr" style={{ flex: '1 1 320px', minWidth: 260 }}>
-            <SearchableSelect
-              value={prId}
-              onChange={setPrId}
-              options={prs.map((pr) => ({ value: String(pr.id), label: `${pr.p2p_number} — ${pr.category_label || pr.category_code}` }))}
-              placeholder="Search approved Purchase Requisition…"
-            />
+            {initialPrId ? (
+              <p style={{ fontSize: 14, fontWeight: 600, color: TEXT.heading, margin: 0 }}>
+                {selectedPr ? `${selectedPr.p2p_number} — ${selectedPr.category_label || selectedPr.category_code}` : 'Loading…'}
+              </p>
+            ) : (
+              <SearchableSelect
+                value={prId}
+                onChange={setPrId}
+                options={readyPrs.map((pr) => ({ value: String(pr.id), label: `${pr.p2p_number} — ${pr.category_label || pr.category_code}` }))}
+                placeholder="Search Purchase Requisitions ready for RFQ…"
+              />
+            )}
           </div>
           {selectedPr && (
             <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
-              {selectedPr.project_label || 'No project specified'} · {selectedPr.items.length} item(s)
+              {selectedPr.project_label || 'No project specified'}
             </p>
           )}
         </div>
+        {procureLines.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>To Be Quoted</p>
+            {procureLines.map((it) => (
+              <p key={it.id} style={{ fontSize: 13, color: TEXT.body, margin: '0 0 3px' }}>
+                {it.item_name} — <strong>{it.buyQty} {it.unit || ''}</strong>
+                {(it.issued_qty || 0) > 0 && <span style={{ color: TEXT.muted }}> (of {it.quantity}; {it.issued_qty} issued from stock)</span>}
+              </p>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Step 2 — Supplier / Vendor Quotations */}

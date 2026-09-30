@@ -211,8 +211,7 @@ export default function MyP2PRequestDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pr, user])
 
-  const issueFromStock = (itemId: number, locationId: number) => runAction(async () => {
-    const qty = Number(issueQtyByItem[itemId])
+  const issueFromStock = (itemId: number, locationId: number, qty: number) => runAction(async () => {
     await p2pApi.issueItemFromStock(prId, itemId, { location_id: locationId, quantity: qty > 0 ? qty : undefined })
   })
 
@@ -580,6 +579,9 @@ export default function MyP2PRequestDetailPage() {
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: `${fulfillmentHex}1a`, color: fulfillmentHex, whiteSpace: 'nowrap' }}>
                       {FULFILLMENT_LABELS[it.fulfillment_status] || it.fulfillment_status}
                     </span>
+                    {it.fulfillment_status === 'sent_to_procurement' && (it.issued_qty || 0) > 0 && (
+                      <span style={{ fontSize: 11, color: TEXT.muted }}>{it.issued_qty} issued from stock · buying {it.quantity - (it.issued_qty || 0)}</span>
+                    )}
                     {it.fulfillment_status === 'stock_issued' && (
                       <span style={{ fontSize: 11, color: TEXT.muted }}>{it.issued_qty} {it.unit || ''} @ {it.issued_from_location_name || '—'}</span>
                     )}
@@ -625,6 +627,9 @@ export default function MyP2PRequestDetailPage() {
                             const selectedLocId = issueLocByItem[it.id] ? Number(issueLocByItem[it.id]) : defaultLoc
                             const selectedLoc = locs.find((l) => l.location_id === selectedLocId)
                             const fullyCovered = locs.some((l) => l.available_qty >= check.requested_qty)
+                            const maxIssue = Math.min(check.requested_qty, selectedLoc?.available_qty ?? 0)
+                            const issueQty = issueQtyByItem[it.id] != null ? Number(issueQtyByItem[it.id]) : maxIssue
+                            const buyQty = check.requested_qty - (issueQty > 0 ? issueQty : 0)
                             return (
                               <>
                                 {locs.length > 0 && (
@@ -646,8 +651,8 @@ export default function MyP2PRequestDetailPage() {
                                       <input
                                         type="number"
                                         min={0}
-                                        max={Math.min(check.requested_qty, selectedLoc?.available_qty ?? check.requested_qty)}
-                                        value={issueQtyByItem[it.id] ?? String(check.requested_qty)}
+                                        max={maxIssue}
+                                        value={issueQtyByItem[it.id] ?? String(maxIssue)}
                                         onChange={(e) => setIssueQtyByItem((prev) => ({ ...prev, [it.id]: e.target.value }))}
                                         style={{ ...inputStyle, width: 90, padding: '7px 10px' }}
                                       />
@@ -659,21 +664,13 @@ export default function MyP2PRequestDetailPage() {
                                     <button
                                       type="button"
                                       disabled={busy}
-                                      onClick={() => issueFromStock(it.id, selectedLocId)}
+                                      onClick={() => issueFromStock(it.id, selectedLocId, issueQty)}
                                       style={{ ...primaryBtn, padding: '8px 14px', fontSize: 12.5 }}
                                     >
-                                      Issue from Stock
+                                      {buyQty > 0 ? `Issue ${issueQty} & Buy ${buyQty}` : 'Issue from Stock'}
                                     </button>
                                   )}
-                                  {fullyCovered ? (
-                                    <span
-                                      onClick={() => !busy && setConfirmProcurementItemId(it.id)}
-                                      title="Stock covers this request — only purchase if the store stock can't be used"
-                                      style={{ fontSize: 11.5, fontWeight: 600, color: TEXT.muted, cursor: 'pointer', textDecoration: 'underline' }}
-                                    >
-                                      Purchase instead
-                                    </span>
-                                  ) : (
+                                  {!fullyCovered && (
                                     <button
                                       type="button"
                                       disabled={busy}

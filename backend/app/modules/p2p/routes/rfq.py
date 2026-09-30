@@ -642,9 +642,10 @@ async def create_po_draft(
     source_items = payload.items if payload.items else [
         type("Item", (), {
             "item_name": i.item_name, "make": i.make, "part_code": i.part_code,
-            "unit": i.unit, "quantity": i.quantity, "unit_price": None, "tax_rate": None,
+            "unit": i.unit, "quantity": i.quantity - (i.issued_qty or 0), "unit_price": None, "tax_rate": None,
         })()
-        for i in pr.items if i.fulfillment_status != "stock_issued"
+        for i in pr.items
+        if i.fulfillment_status != "stock_issued" and i.quantity - (i.issued_qty or 0) > 0
     ]
 
     po_items: list[P2PPurchaseOrderItem] = []
