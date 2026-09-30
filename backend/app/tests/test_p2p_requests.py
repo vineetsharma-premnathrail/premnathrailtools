@@ -555,7 +555,7 @@ def _approve_and_raise_po(client, db, pr, buyer):
     role for "new" projects who is neither requester nor buyer) approve it,
     so the PR reaches 'po_approved' and goods can be received."""
     _raise_po(client, db, pr, buyer)
-    approver = make_user(db, f"purchase.manager.{pr['id']}@premnathrail.com", assigned_apps=("p2p",), is_purchase_manager=True)
+    approver = make_user(db, f"purchase.manager.{pr['id']}@premnathrail.com", assigned_apps=("p2p",), is_director=True)
     resp = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "Checked and OK"}, headers=auth_header(approver))
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "po_approved"
@@ -567,14 +567,14 @@ def test_po_approval_by_any_one_role_holder(client, db):
     pr = _create_pr(client, requester)
     buyer = _purchaser(db, "buyerpo1@premnathrail.com")
     body = _approve_and_raise_po(client, db, pr, buyer)
-    assert body["po_approved_role"] == "purchase_manager"
+    assert body["po_approved_role"] == "director"
     assert body["po_approved_by_name"].startswith("purchase.manager")
 
 
 def test_po_approval_refuses_outsiders_requester_and_buyer(client, db):
     requester = _requester(db, "reqpo2@premnathrail.com")
     pr = _create_pr(client, requester)
-    buyer = make_user(db, "buyerpo2@premnathrail.com", assigned_apps=("purchase",), is_purchase_manager=True)
+    buyer = make_user(db, "buyerpo2@premnathrail.com", assigned_apps=("purchase",), is_director=True)
     _raise_po(client, db, pr, buyer)
 
     store_mgr = make_user(db, "storepo2@premnathrail.com", assigned_apps=("p2p",), is_store_manager=True)
@@ -589,7 +589,7 @@ def test_po_approval_requires_a_comment(client, db):
     pr = _create_pr(client, requester)
     buyer = _purchaser(db, "buyerpo3@premnathrail.com")
     _raise_po(client, db, pr, buyer)
-    approver = make_user(db, "purchase.manager.po3@premnathrail.com", assigned_apps=("p2p",), is_purchase_manager=True)
+    approver = make_user(db, "purchase.manager.po3@premnathrail.com", assigned_apps=("p2p",), is_director=True)
     response = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": ""}, headers=auth_header(approver))
     assert response.status_code == 400
     assert "Add a comment before approving" in response.json()["detail"]
@@ -617,10 +617,10 @@ def test_pr_approval_queue_shows_only_my_slots(client, db):
 def test_po_approval_queue_shows_only_pos_i_can_approve(client, db):
     requester = _requester(db, "reqq3@premnathrail.com")
     pr = _create_pr(client, requester)
-    buyer = make_user(db, "buyerq3@premnathrail.com", assigned_apps=("purchase",), is_purchase_manager=True)
+    buyer = make_user(db, "buyerq3@premnathrail.com", assigned_apps=("purchase",), is_director=True)
     _raise_po(client, db, pr, buyer)
 
-    approver = make_user(db, "pmq3@premnathrail.com", assigned_apps=("p2p",), is_purchase_manager=True)
+    approver = make_user(db, "pmq3@premnathrail.com", assigned_apps=("p2p",), is_director=True)
     queue = client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(approver)).json()
     assert [p["id"] for p in queue] == [pr["id"]]
     assert client.get("/api/v1/auth/me", headers=auth_header(approver)).json()["is_po_approver"] is True

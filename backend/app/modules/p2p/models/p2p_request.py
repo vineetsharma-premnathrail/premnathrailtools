@@ -102,8 +102,8 @@ PR_APPROVAL_ROLE_SETS: dict[str, tuple[str, ...]] = {
 }
 
 PO_APPROVAL_ROLE_SETS: dict[str, tuple[str, ...]] = {
-    "existing": ("production_manager", "purchase_manager", "project_manager", "director"),
-    "new": ("rnd_manager", "purchase_manager", "production_manager", "director"),
+    "existing": ("director",),
+    "new": ("director",),
 }
 
 # Role key -> User boolean flag that marks a holder of the role.

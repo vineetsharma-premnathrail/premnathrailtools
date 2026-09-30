@@ -360,16 +360,7 @@ const P2P_PERMISSION_GROUPS: { label: string; icon: string; perms: { id: string;
 // and MD only matter for PRs raised before the matrix and are kept so those
 // can still finish their old Purchase Head → Director → MD chain.
 const APPROVAL_ROLE_FLAGS: { key: string; label: string; hex: string }[] = [
-  { key: 'is_design_manager', label: 'Design Manager', hex: '#0369a1' },
-  { key: 'is_rnd_manager', label: 'R&D Manager', hex: '#9333ea' },
-  { key: 'is_production_manager', label: 'Production Manager', hex: '#b45309' },
-  { key: 'is_project_manager', label: 'Project Manager', hex: '#0f766e' },
-  { key: 'is_store_manager', label: 'Store Manager', hex: '#4d7c0f' },
-  { key: 'is_purchase_manager', label: 'Purchase Manager', hex: '#c2410c' },
   { key: 'is_director', label: 'Director', hex: '#7c3aed' },
-  { key: 'is_finance_manager', label: 'Finance Manager', hex: '#0f766e' },
-  { key: 'is_purchase_head', label: 'Purchase Head (legacy)', hex: '#78716c' },
-  { key: 'is_md', label: 'MD (legacy)', hex: '#78716c' },
 ]
 
 function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id: string; label: string }[]; onRefresh: () => void }) {
