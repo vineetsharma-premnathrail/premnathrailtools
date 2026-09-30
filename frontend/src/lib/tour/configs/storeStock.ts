@@ -56,7 +56,7 @@ const config: TourConfig = {
     {
       target: 'stock-transactions-table',
       title: 'Recent Movements',
-      purpose: 'The full stock ledger — every receipt, issue, return, transfer, and adjustment ever posted, most recent first (up to the latest 500).',
+      purpose: 'The full stock ledger — every receipt, issue, return, transfer, and adjustment ever posted, most recent first (up to the latest 500). The Reference column is tagged with what it points to — PR, GRN, Issue, Return, Adjustment, Transfer or Work Order.',
     },
   ],
 }

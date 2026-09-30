@@ -13,7 +13,7 @@ const config: TourConfig = {
     {
       target: 'issues-table',
       title: 'Issue rows',
-      purpose: 'Click anywhere on a row to open that issue\'s detail page. Shows "No material issues yet" until one is created.',
+      purpose: 'Every material issue with its Purchase Requisition (click the PR number to open it), warehouse, department, project, who requested and who issued it. Click anywhere else on a row to open that issue\'s detail page. Shows "No material issues yet" until one is created.',
     },
   ],
 }

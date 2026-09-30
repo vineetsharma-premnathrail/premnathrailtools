@@ -1829,6 +1829,8 @@ export interface StoreMaterialIssue {
   issued_by_id?: number | null
   issued_by_name?: string | null
   remarks?: string | null
+  p2p_request_id?: number | null
+  p2p_number?: string | null
   items: StoreMaterialIssueItem[]
 }
 

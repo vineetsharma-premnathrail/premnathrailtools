@@ -26,6 +26,12 @@ def _to_response(db: Session, issue: StoreMaterialIssue) -> StoreMaterialIssueRe
     resp = StoreMaterialIssueResponse.model_validate(issue)
     resp.location_name = location.name if location else None
     resp.department_name = department.name if department else None
+    if issue.p2p_request_id:
+        from app.modules.p2p.models.p2p_request import P2PRequest
+        pr = db.query(P2PRequest).filter(P2PRequest.id == issue.p2p_request_id).first()
+        if pr:
+            resp.p2p_number = pr.p2p_number
+            resp.department_name = resp.department_name or pr.department
     if issue.requested_by_id and issue.requested_by_id in users:
         resp.requested_by_name = users[issue.requested_by_id].name or users[issue.requested_by_id].email
     if issue.issued_by_id and issue.issued_by_id in users:

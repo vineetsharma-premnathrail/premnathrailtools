@@ -30,6 +30,12 @@ const TXN_TYPE_LABELS: Record<string, string> = {
   damage: 'Damage',
 }
 
+// Tells the reader what kind of document the reference number is.
+const REF_TYPE_LABELS: Record<string, string> = {
+  p2p_request: 'PR', grn: 'GRN', material_issue: 'Issue', material_return: 'Return',
+  stock_adjustment: 'Adjustment', stock_transfer: 'Transfer', maintenance_work_order: 'Work Order',
+}
+
 export default function StoreStockPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
   const [balances, setBalances] = useState<StoreStockBalance[]>([])
@@ -249,7 +255,16 @@ export default function StoreStockPage() {
                   </span>
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{t.quantity}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{t.reference_number || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>
+                  {t.reference_number ? (
+                    <>
+                      {t.reference_type && REF_TYPE_LABELS[t.reference_type] && (
+                        <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 9999, background: 'rgba(59,130,246,0.1)', color: '#2563eb', marginRight: 6 }}>{REF_TYPE_LABELS[t.reference_type]}</span>
+                      )}
+                      {t.reference_number}
+                    </>
+                  ) : '—'}
+                </td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{t.created_by_name || '—'}</td>
               </tr>
             ))}

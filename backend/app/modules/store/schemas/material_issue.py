@@ -48,4 +48,7 @@ class StoreMaterialIssueResponse(BaseModel):
     issued_by_id: int | None = None
     issued_by_name: str | None = None
     remarks: str | None = None
+    # Set when the issue fulfils a Purchase Requisition line.
+    p2p_request_id: int | None = None
+    p2p_number: str | None = None
     items: list[StoreMaterialIssueItemResponse] = []

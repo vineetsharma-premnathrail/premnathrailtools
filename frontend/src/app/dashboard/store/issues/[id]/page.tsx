@@ -59,6 +59,12 @@ export default function StoreMaterialIssueDetailPage() {
                 <InfoRow label="Requested By" value={issue.requested_by_name || '—'} />
                 <InfoRow label="Issued By" value={issue.issued_by_name || '—'} />
               </Row>
+              {issue.p2p_number && (
+                <div>
+                  <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>Purchase Requisition</p>
+                  <span onClick={() => router.push(`/dashboard/p2p/${issue.p2p_request_id}`)} style={{ fontSize: 13, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>{issue.p2p_number}</span>
+                </div>
+              )}
               <InfoRow label="Remarks" value={issue.remarks || '—'} />
             </div>
           </div>

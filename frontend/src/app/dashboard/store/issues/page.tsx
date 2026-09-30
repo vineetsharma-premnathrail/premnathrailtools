@@ -44,25 +44,30 @@ export default function StoreMaterialIssuesPage() {
       <MessageDialog open={!!error} variant="error" title="Failed to Load Material Issues" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 
       <div data-tour="issues-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Issue #', 'Warehouse', 'Department', 'Project / WO', 'Date', 'Items', ''].map((h) => (
+              {['Issue #', 'Purchase Requisition', 'Warehouse', 'Department', 'Project / WO', 'Requested By', 'Issued By', 'Date', 'Items', ''].map((h) => (
                 <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && issues.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material issues yet.</td></tr>
+              <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material issues yet.</td></tr>
             )}
             {issues.map((i) => (
               <tr key={i.id} onClick={() => router.push(`/dashboard/store/issues/${i.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{i.issue_number}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13 }} onClick={(e) => { if (i.p2p_request_id) { e.stopPropagation(); router.push(`/dashboard/p2p/${i.p2p_request_id}`) } }}>
+                  {i.p2p_number ? <span style={{ color: '#2563eb', fontWeight: 600, cursor: 'pointer' }}>{i.p2p_number}</span> : <span style={{ color: TEXT.muted }}>—</span>}
+                </td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.location_name}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.department_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.project_or_work_order || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.requested_by_name || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.issued_by_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.issue_date}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.items.length}</td>
                 <td onClick={(e) => e.stopPropagation()}>
