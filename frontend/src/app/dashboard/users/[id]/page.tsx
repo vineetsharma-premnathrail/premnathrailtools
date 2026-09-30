@@ -376,6 +376,12 @@ function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id:
   const toggleRole = (key: string) => setRoleFlags((prev) => ({ ...prev, [key]: !prev[key] }))
 
   const toggle = (app: string) => setSelected((prev) => (prev.includes(app) ? prev.filter((a) => a !== app) : [...prev, app]))
+  // Unticking Procurement also drops its Purchase Team access level.
+  const toggleModule = (app: string) => setSelected((prev) => (
+    prev.includes(app)
+      ? prev.filter((a) => a !== app && !(app === 'p2p' && a === 'purchase'))
+      : [...prev, app]
+  ))
   const togglePerm = (perm: string) => setErpPerms((prev) => (prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm]))
 
   const save = async () => {
@@ -398,14 +404,28 @@ function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id:
 
       <p style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 10px' }}>Module Access</p>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {apps.map((a) => (
+        {/* 'purchase' is not a module of its own — it's the Purchase Team
+            access level inside Procurement (p2p), shown below that module. */}
+        {apps.filter((a) => a.id !== 'purchase').map((a) => (
           <span key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, opacity: isAdminRole ? 0.5 : 1, fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-            <Checkbox disabled={isAdminRole} checked={isAdminRole || selected.includes(a.id)} onChange={() => toggle(a.id)} />
-            {a.label}
+            <Checkbox disabled={isAdminRole} checked={isAdminRole || selected.includes(a.id)} onChange={() => toggleModule(a.id)} />
+            {a.id === 'p2p' ? 'Procurement' : a.label}
           </span>
         ))}
       </div>
       <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '10px 0 0' }}>Admins have access to all modules automatically.</p>
+
+      {!isAdminRole && selected.includes('p2p') && (
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: selected.includes('purchase') ? '1px solid #FF7A45' : `1px solid ${BORDER.normal}`, background: selected.includes('purchase') ? 'rgba(244,113,59,0.05)' : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
+            <Checkbox checked={selected.includes('purchase')} onChange={() => toggle('purchase')} />
+            Purchase Team
+          </span>
+          <span style={{ fontSize: 11.5, color: TEXT.muted }}>
+            Procurement alone lets this user raise and track their own PRs. Purchase Team also lets them process every PR — RFQ, PO and GRN.
+          </span>
+        </div>
+      )}
 
       <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)' }}>
         <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 6px' }}>Approval Roles</p>
