@@ -330,3 +330,90 @@ def test_upload_attachment_requires_sr_edit_permission(client, db):
         headers=auth_header(user),
     )
     assert response.status_code == 403
+
+
+def _make_sr(client, user, project):
+    return client.post(
+        "/api/v1/erp/service-requests",
+        json={"project_id": project.id, "issue_title": "Cooling fan dead"},
+        headers=auth_header(user),
+    ).json()
+
+
+def test_pr_form_meta_available_to_erp_user_without_p2p(client, db):
+    user = make_user(db, "srmeta@premnathrail.com", erp_permissions=["sr_create"])
+    response = client.get("/api/v1/erp/service-requests/pr-form-meta", headers=auth_header(user))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["categories"] and body["uoms"] and "requirement_types" in body
+
+
+def test_raise_pr_from_form_items_skips_approval(client, db):
+    from app.modules.p2p.models.p2p_request import P2PRequest
+
+    user = make_user(db, "srpr1@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    project = make_project(db, "SN-SR-PR1")
+    sr = _make_sr(client, user, project)
+
+    response = client.post(
+        f"/api/v1/erp/service-requests/{sr['id']}/raise-pr",
+        json={
+            "priority": "high",
+            "category_code": "OTH",
+            "reason": "Fan controller faulty",
+            "items": [
+                {"item_name": "Compressor controller", "make": "Danfoss", "part_code": "CC-01",
+                 "unit": "NOS", "quantity": 2, "project_inhouse": "Project", "category": "Elec", "ship_to": "Site"},
+                {"item_name": "", "quantity": 1, "project_inhouse": "Project"},
+            ],
+        },
+        headers=auth_header(user),
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "approved"
+
+    pr = db.query(P2PRequest).filter(P2PRequest.id == body["id"]).first()
+    assert pr.approvals == []
+    assert len(pr.items) == 1
+    item = pr.items[0]
+    assert (item.item_name, item.make, item.part_code, item.quantity, item.ship_to) == ("Compressor controller", "Danfoss", "CC-01", 2, "Site")
+
+    mats = client.get(f"/api/v1/erp/service-requests/{sr['id']}/materials", headers=auth_header(user)).json()
+    assert len(mats) == 1 and mats[0]["pr_id"] == pr.id and mats[0]["material_name"] == "Compressor controller"
+
+
+def test_raise_pr_rejects_missing_project_inhouse(client, db):
+    user = make_user(db, "srpr2@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    sr = _make_sr(client, user, make_project(db, "SN-SR-PR2"))
+    response = client.post(
+        f"/api/v1/erp/service-requests/{sr['id']}/raise-pr",
+        json={"category_code": "OTH", "items": [{"item_name": "Bolt", "quantity": 1, "project_inhouse": ""}]},
+        headers=auth_header(user),
+    )
+    assert response.status_code == 400
+    assert "Project or Inhouse" in response.json()["detail"]
+
+
+def test_raise_pr_requires_creator(client, db):
+    creator = make_user(db, "srpr3@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    other = make_user(db, "srpr4@premnathrail.com", erp_permissions=["sr_edit"])
+    sr = _make_sr(client, creator, make_project(db, "SN-SR-PR3"))
+    response = client.post(
+        f"/api/v1/erp/service-requests/{sr['id']}/raise-pr",
+        json={"category_code": "OTH", "items": [{"item_name": "Bolt", "quantity": 1, "project_inhouse": "Project"}]},
+        headers=auth_header(other),
+    )
+    assert response.status_code == 403
+
+
+def test_pr_attachments_reject_pr_not_from_this_sr(client, db):
+    user = make_user(db, "srpr5@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    sr = _make_sr(client, user, make_project(db, "SN-SR-PR5"))
+    response = client.post(
+        f"/api/v1/erp/service-requests/{sr['id']}/raise-pr/999/attachments",
+        data={"doc_type": "supporting"},
+        files={"files": ("a.txt", b"hi", "text/plain")},
+        headers=auth_header(user),
+    )
+    assert response.status_code == 404

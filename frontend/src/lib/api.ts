@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios'
 import { useAuthStore } from '@/store/authStore'
 import { beginRequest } from '@/lib/requestActivity'
 import { DIRECT_UPLOAD_THRESHOLD, uploadToSession } from '@/lib/largeUpload'
+import type { P2PRequestLineItemInput, PRCategoryMeta } from '@/types'
 
 // Files above this open through a direct SharePoint link rather than the API.
 const LARGE_DOWNLOAD_BYTES = 50 * 1024 * 1024
@@ -760,10 +761,24 @@ export const erpApi = {
     reason?: string
     category_code?: string
     requirement_type?: string
-    /** Manager-role approvers (role key -> user id) — the 'existing' project role set. */
-    approvers: Record<string, number>
+    /** Lines from the New-PR-style form — each becomes an SR material on the PR. */
+    items?: P2PRequestLineItemInput[]
   }) => {
     const { data } = await apiClient.post(`/erp/service-requests/${srId}/raise-pr`, payload)
+    return data
+  },
+  getPrFormMeta: async (): Promise<{ categories: PRCategoryMeta[]; requirement_types: string[]; uoms: { value: string; label: string }[] }> => {
+    const { data } = await apiClient.get('/erp/service-requests/pr-form-meta')
+    return data
+  },
+  uploadPrAttachments: async (srId: number, prId: number, files: File[], docType: 'supporting' | 'specification') => {
+    const formData = new FormData()
+    files.forEach((f) => formData.append('files', f))
+    formData.append('doc_type', docType)
+    const { data } = await apiClient.post(`/erp/service-requests/${srId}/raise-pr/${prId}/attachments`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
     return data
   },
 

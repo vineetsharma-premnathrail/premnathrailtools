@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone, timedelta
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Query, Request, UploadFile, File
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
@@ -28,10 +28,10 @@ from app.modules.p2p.models.p2p_request import (
     P2PRequest, resolve_auto_buyer_id, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, P2P_REQUEST_PRIORITIES,
 )
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
-from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
+from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment, P2P_ATTACHMENT_DOC_TYPES
 from app.modules.p2p.schemas.p2p_request import P2PRequestResponse
-from app.modules.p2p.routes.p2p_requests import _send_p2p_pr_approval_emails_background, _refresh_stock_snapshot
-from app.modules.p2p.service import generate_p2p_number, _lock_number_series, resolve_pr_approvers
+from app.modules.p2p.routes.p2p_requests import _refresh_stock_snapshot, _route_lines_on_approval
+from app.modules.p2p.service import generate_p2p_number, _lock_number_series
 from pydantic import BaseModel
 from fastapi.responses import Response
 from app.utils.sharepoint import (
@@ -45,6 +45,19 @@ from app.auth.microsoft import get_app_graph_token
 router = APIRouter(prefix="/erp/service-requests", tags=["ERP - Service Requests"])
 
 
+class RaisePurchaseRequestItem(BaseModel):
+    """One line of the New-PR-style form on the SR Materials tab — same
+    columns as the P2P New PR item table."""
+    item_name: str
+    make: str | None = None
+    part_code: str | None = None
+    unit: str | None = None
+    quantity: float = 1
+    project_inhouse: str | None = None
+    category: str | None = None
+    ship_to: str | None = None
+
+
 class RaisePurchaseRequestPayload(BaseModel):
     """Payload for raising a P2P request out of this SR's Materials tab. Field
     shape kept identical to the old (now-deleted) purchase module's
@@ -54,11 +67,12 @@ class RaisePurchaseRequestPayload(BaseModel):
     reason: str | None = None
     category_code: str | None = None
     requirement_type: str | None = None
-    # Manager-role approvers, role key -> user id. An SR always belongs to an
-    # existing project, so the 'existing' PR role set applies (Design /
-    # Production / Project / Store Manager) — every role required, none may
-    # be the requester, each must hold the role flag, same rule as the P2P
-    # New PR form (resolve_pr_approvers).
+    # Line items from the New-PR-style form. Each becomes an SR material
+    # linked to the new PR. Empty = legacy behaviour (use the SR's existing
+    # unlinked materials).
+    items: list[RaisePurchaseRequestItem] = []
+    # Ignored — service PRs need no PR approval. Kept so older clients that
+    # still send it don't fail validation.
     approvers: dict[str, int] = {}
 
 # Fields tracked in the audit log on PATCH, with a human-readable label
@@ -333,6 +347,19 @@ async def list_deleted_service_requests(
             "days_remaining": days_remaining,
         })
     return items
+
+
+@router.get("/pr-form-meta")
+async def get_pr_form_meta(_user: User = Depends(require_app_access("erp"))):
+    """Dropdown options for the New-PR-style form on the Materials tab —
+    same lists as /p2p/requests/meta, served here because service users
+    usually don't hold the p2p app."""
+    from app.modules.store.models.item import STORE_UOMS
+    return {
+        "categories": [{"code": k, "label": v} for k, v in P2P_CATEGORIES.items()],
+        "requirement_types": list(P2P_REQUIREMENT_TYPES),
+        "uoms": [{"value": code, "label": f"{code} — {label}"} for code, label in STORE_UOMS.items()],
+    }
 
 
 @router.get("/{sr_id}", response_model=ServiceRequestResponse)
@@ -919,6 +946,7 @@ def _create_p2p_request_for_sr(
     project_label: str,
     user: User,
     payload: "RaisePurchaseRequestPayload",
+    line_extras: list["RaisePurchaseRequestItem | None"] | None = None,
 ) -> P2PRequest:
     """Create a standalone P2PRequest directly from this ERP-raised SR's
     unlinked materials, so Purchase's P2P team sees it in their own queue.
@@ -926,10 +954,8 @@ def _create_p2p_request_for_sr(
     Materials tab — there is no separate `purchase_requisitions` row."""
     category_code = payload.category_code or "OTH"
     auto_buyer_id = resolve_auto_buyer_id(db, category_code)
-    try:
-        approvers = resolve_pr_approvers(db, user, "existing", payload.approvers)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    # Service PRs skip the PR approval stage entirely (2026-10-01): the
+    # requisition is created already 'approved' and goes straight to Purchase.
 
     request = P2PRequest(
         p2p_number=generate_p2p_number(db, category_code),
@@ -946,53 +972,38 @@ def _create_p2p_request_for_sr(
         assignment_date=date.today() if auto_buyer_id else None,
         remarks=f"Raised from ERP Service Request {sr.request_number}."
         + (f" Reason: {payload.reason}" if payload.reason else ""),
-        status="submitted",
+        status="approved",
+        approved_by_id=user.id,
+        approved_at=datetime.now(timezone.utc),
     )
     db.add(request)
     db.flush()
 
-    created_items: list[P2PRequestItem] = []
-
-    for role, approver in approvers.items():
-        db.add(P2PRequestApproval(
-            p2p_request_id=request.id, role=role, approver_id=approver.id,
-            approver_name=approver.name or approver.email,
-        ))
-
-    for mat in materials:
+    for idx, mat in enumerate(materials):
+        extra = line_extras[idx] if line_extras else None
         item_row = P2PRequestItem(
             p2p_request_id=request.id,
             item_name=mat.material_name,
+            make=extra.make if extra else None,
             part_code=mat.part_number,
             unit=mat.unit,
             quantity=mat.quantity,
-            # SR materials always belong to the customer's machine/project, so
-            # the mandatory Project/Inhouse split is fixed to "Project" here —
-            # the manual New PR form asks per line instead.
-            project_inhouse="Project",
+            # Legacy path (no form line): SR materials belong to the customer's
+            # machine/project, so Project/Inhouse defaults to "Project".
+            project_inhouse=(extra.project_inhouse if extra else None) or "Project",
+            category=extra.category if extra else None,
+            ship_to=extra.ship_to if extra else None,
         )
         db.add(item_row)
-        created_items.append(item_row)
         mat.pr_id = request.id
         mat.pr_number = request.p2p_number
         mat.pr_status = request.status
 
-    _refresh_stock_snapshot(db, created_items)
-
-    if auto_buyer_id:
-        notify_user(
-            db, user_id=auto_buyer_id,
-            title="New P2P Request for Review",
-            message=f"P2P request '{request.p2p_number}' was raised from ERP SR '{sr.request_number}' ({project_label}).",
-            notification_type="p2p_request_submitted", entity_type="p2p_request", entity_id=request.id,
-        )
-    for head in {h.id: h for h in approvers.values()}.values():
-        notify_user(
-            db, user_id=head.id,
-            title="New P2P Request for Review",
-            message=f"PR '{request.p2p_number}' was raised by {user.name or user.email} from ERP SR '{sr.request_number}' and awaits your review.",
-            notification_type="p2p_request_submitted", entity_type="p2p_request", entity_id=request.id,
-        )
+    db.flush()
+    db.expire(request, ["items"])
+    # Same stock check + line routing a normal PR gets on final approval;
+    # it also notifies the assigned buyer with the outcome.
+    _route_lines_on_approval(db, request, user)
     return request
 
 
@@ -1024,11 +1035,36 @@ async def raise_purchase_requisition(
     if not _can_edit(sr, user):
         raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can raise a purchase requisition for this service request.")
 
-    materials = db.query(ServiceMaterial).filter(
-        ServiceMaterial.service_request_id == sr_id,
-        ServiceMaterial.is_deleted == False,  # noqa: E712
-        ServiceMaterial.pr_id.is_(None),
-    ).all()
+    line_extras: list[RaisePurchaseRequestItem] | None = None
+    if payload.items:
+        lines = [it for it in payload.items if it.item_name.strip()]
+        if not lines:
+            raise HTTPException(status_code=400, detail="At least one item is required — fill in the Item Description of a line.")
+        for i, it in enumerate(lines, 1):
+            if it.project_inhouse not in ("Project", "Inhouse"):
+                raise HTTPException(status_code=400, detail=f"Line {i} ({it.item_name}): choose Project or Inhouse.")
+            if not it.quantity or it.quantity <= 0:
+                raise HTTPException(status_code=400, detail=f"Line {i} ({it.item_name}): quantity must be more than 0.")
+        materials = []
+        for it in lines:
+            mat = ServiceMaterial(
+                service_request_id=sr_id,
+                material_name=it.item_name.strip(),
+                part_number=it.part_code or None,
+                unit=it.unit or "pcs",
+                quantity=it.quantity,
+                description=payload.reason or None,
+            )
+            db.add(mat)
+            materials.append(mat)
+        db.flush()
+        line_extras = lines
+    else:
+        materials = db.query(ServiceMaterial).filter(
+            ServiceMaterial.service_request_id == sr_id,
+            ServiceMaterial.is_deleted == False,  # noqa: E712
+            ServiceMaterial.pr_id.is_(None),
+        ).all()
     if not materials:
         raise HTTPException(
             status_code=400,
@@ -1038,7 +1074,7 @@ async def raise_purchase_requisition(
     project = db.query(Project).filter(Project.id == sr.project_id).first()
     proj_name = f"{project.serial_number} — {project.model_name}" if project and project.model_name else (project.serial_number if project else f"Project #{sr.project_id}")
 
-    pr = _create_p2p_request_for_sr(db, sr, materials, proj_name, user, payload)
+    pr = _create_p2p_request_for_sr(db, sr, materials, proj_name, user, payload, line_extras)
 
     detail_notes = [f"Priority: {payload.priority.title()}."]
     if payload.required_by_date:
@@ -1063,7 +1099,6 @@ async def raise_purchase_requisition(
     db.commit()
     db.refresh(pr)
     background_tasks.add_task(_send_purchase_requisition_email_background, pr.id, sr.id)
-    background_tasks.add_task(_send_p2p_pr_approval_emails_background, pr.id)
 
     resp = P2PRequestResponse.model_validate(pr)
     if pr.category_code:
@@ -1190,3 +1225,43 @@ async def test_email(user: User = Depends(require_app_access("erp"))):
     if resp.status_code in (200, 202):
         return {"status": "ok", "message": f"Test email sent from {sender} to {recipient}."}
     return {"status": "error", "graph_status": resp.status_code, "detail": resp.text[:500]}
+
+
+@router.post("/{sr_id}/raise-pr/{pr_id}/attachments", status_code=201)
+async def upload_sr_pr_attachments(
+    sr_id: int,
+    pr_id: int,
+    doc_type: str = Form("supporting"),
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("erp")),
+):
+    """Documents for a PR raised from this SR's Materials tab. Lives on the SR
+    side because the service user usually doesn't hold the p2p app, so the
+    P2P attachments route would refuse them."""
+    sr = db.query(ServiceRequest).filter(ServiceRequest.id == sr_id, ServiceRequest.is_deleted == False).first()  # noqa: E712
+    if not sr:
+        raise HTTPException(status_code=404, detail="Service request not found")
+    if not _can_edit(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can add documents to this service request's purchase requisition.")
+    linked = db.query(ServiceMaterial.id).filter(ServiceMaterial.service_request_id == sr_id, ServiceMaterial.pr_id == pr_id).first()
+    pr = db.query(P2PRequest).filter(P2PRequest.id == pr_id).first()
+    if not pr or not linked:
+        raise HTTPException(status_code=404, detail="That purchase requisition was not raised from this service request.")
+    if doc_type not in P2P_ATTACHMENT_DOC_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid doc_type '{doc_type}' — must be one of {', '.join(P2P_ATTACHMENT_DOC_TYPES)}")
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="File storage (SharePoint) is not configured on the server — ask an admin to set SHAREPOINT_SITE_ID.")
+
+    folder_path = build_sharepoint_folder_path(user.name or user.email or "", "p2p", pr.p2p_number)
+    count = 0
+    for f in files:
+        result = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder_path, f)
+        db.add(P2PRequestAttachment(
+            p2p_request_id=pr.id, doc_type=doc_type, filename=result["name"], content_type=f.content_type,
+            size=result["size"], sharepoint_path=result["path"], sharepoint_url=result.get("webUrl"),
+            created_by_id=user.id,
+        ))
+        count += 1
+    db.commit()
+    return {"uploaded": count}

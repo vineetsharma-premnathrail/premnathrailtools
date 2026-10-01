@@ -4,9 +4,10 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
-import { erpApi, usersApi } from '@/lib/api'
+import { erpApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { AuditEntry, DirectoryUser, Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment } from '@/types'
+import { AuditEntry, Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment, PRCategoryMeta, P2PRequestLineItemInput } from '@/types'
+import DateField from '@/components/erp/DateField'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadPreview from '@/components/FileUploadPreview'
@@ -15,7 +16,6 @@ import Link from 'next/link'
 import { inputStyle, Field, Card, InfoRow } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { PR_APPROVAL_ROLE_SETS, P2P_ROLE_LABELS } from '@/lib/p2pRoles'
 import { extractErrorMessages } from '@/lib/validation'
 
 // Every non-terminal-branch SRStatus, in the order they normally happen —
@@ -157,7 +157,7 @@ export default function ServiceRequestDetailPage() {
 
       {tab === 'Overview' && <OverviewTab sr={sr} project={project} canModify={canEdit} onPatch={patch} />}
       {tab === 'Diagnostics & RCA' && <RcaTab sr={sr} canModify={canEdit} onPatch={patch} />}
-      {tab === 'Materials' && <MaterialsTab srId={sr.id} canEdit={canEdit} canDelete={canDelete} currentUserId={user?.id} />}
+      {tab === 'Materials' && <MaterialsTab srId={sr.id} canEdit={canEdit} canDelete={canDelete} />}
       {tab === 'Attachments' && <AttachmentsTab sr={sr} canEdit={canEdit} canDelete={canDelete} onRefresh={load} />}
       {tab === 'Audit Trail' && <AuditTab srId={sr.id} />}
 
@@ -412,24 +412,31 @@ const PR_STATUS_BADGE: Record<string, { bg: string; fg: string; label: string }>
   cancelled: { bg: '#94a3b81a', fg: '#94a3b8', label: 'Cancelled' },
 }
 
-// An SR always belongs to an existing project, so the 'existing' PR approval
-// role set applies — one picker per role slot. Any user can be picked (the
-// role labels the slot; the is_*_manager flags don't restrict it).
-const PR_APPROVER_ROLES = PR_APPROVAL_ROLE_SETS.existing
+function emptyPrItem(): P2PRequestLineItemInput {
+  return { item_name: '', make: '', part_code: '', unit: '', quantity: 1, project_inhouse: 'Project', category: '', ship_to: '' }
+}
+const prSectionTitle: React.CSSProperties = { fontSize: 14, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }
+const prLabel: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#57534e', marginBottom: 6, display: 'block' }
 
-function MaterialsTab({ srId, canEdit, canDelete, currentUserId }: { srId: number; canEdit: boolean; canDelete: boolean; currentUserId?: number }) {
+function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boolean; canDelete: boolean }) {
   const [materials, setMaterials] = useState<ServiceRequest['materials']>([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ material_name: '', part_number: '', quantity: '1', remarks: '' })
+  // Same fields as the P2P New PR form, minus Project (fixed to this SR's
+  // project) and Approval (service PRs need none).
+  const [prMeta, setPrMeta] = useState<{ categories: PRCategoryMeta[]; requirement_types: string[]; uoms: { value: string; label: string }[] }>({ categories: [], requirement_types: [], uoms: [] })
+  const [categoryCode, setCategoryCode] = useState('')
+  const [requiredDate, setRequiredDate] = useState('')
+  // Service-module PRs default to the 'Service' requirement type.
+  const [requirementType, setRequirementType] = useState('Service')
+  const [priority, setPriority] = useState('medium')
+  const [remarks, setRemarks] = useState('')
+  const [items, setItems] = useState<P2PRequestLineItemInput[]>([emptyPrItem()])
+  const [supportingFiles, setSupportingFiles] = useState<File[]>([])
+  const [specFiles, setSpecFiles] = useState<File[]>([])
+  const [fileInputKey, setFileInputKey] = useState(0)
   const [raisingPR, setRaisingPR] = useState(false)
   const [prMessage, setPrMessage] = useState('')
   const [prError, setPrError] = useState('')
-  // Raising a PR needs the same three approvers as the P2P New PR form — the
-  // requester can't be any of them (no self-approval), so they're left out.
-  const [headsOpen, setHeadsOpen] = useState(false)
-  const [headsError, setHeadsError] = useState('')
-  const [directory, setDirectory] = useState<DirectoryUser[]>([])
-  const [heads, setHeads] = useState<Record<string, string>>({})
   const [receiveInputs, setReceiveInputs] = useState<Record<number, string>>({})
   const [savingReceive, setSavingReceive] = useState<number | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -445,25 +452,18 @@ function MaterialsTab({ srId, canEdit, canDelete, currentUserId }: { srId: numbe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srId])
 
-  const [materialsError, setMaterialsError] = useState('')
+  useEffect(() => {
+    if (!canEdit) return
+    erpApi.getPrFormMeta().then(setPrMeta).catch((err) => {
+      setPrError(extractErrorMessages(err, 'Could not load the requisition form options (categories, units).').join(' '))
+    })
+  }, [canEdit])
 
-  const addMaterial = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.material_name.trim()) return
-    setMaterialsError('')
-    try {
-      await erpApi.addMaterial(srId, {
-        material_name: form.material_name,
-        part_number: form.part_number || undefined,
-        description: form.remarks || undefined,
-        quantity: Number(form.quantity) || 1,
-      })
-      setForm({ material_name: '', part_number: '', quantity: '1', remarks: '' })
-      load()
-    } catch (err: any) {
-      setMaterialsError(err?.response?.data?.detail || 'Failed to add material.')
-    }
+  const updateItem = (idx: number, field: keyof P2PRequestLineItemInput, value: string | number | null) => {
+    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)))
   }
+
+  const [materialsError, setMaterialsError] = useState('')
 
   const removeMaterial = async (matId: number) => {
     setMaterialsError('')
@@ -475,36 +475,44 @@ function MaterialsTab({ srId, canEdit, canDelete, currentUserId }: { srId: numbe
     }
   }
 
-  const openHeads = async () => {
-    setHeadsError('')
-    setHeadsOpen(true)
-    if (directory.length) return
-    try {
-      setDirectory(await usersApi.directory())
-    } catch (err) {
-      setHeadsError(extractErrorMessages(err, 'Could not load the user list to pick approvers from.').join(' '))
-    }
-  }
-
+  // Service PRs need no PR approval — raised straight to Purchase as approved.
   const raisePR = async () => {
-    const missing = PR_APPROVER_ROLES.filter((role) => !heads[role]).map((role) => P2P_ROLE_LABELS[role])
-    if (missing.length) { setHeadsError(`Please select: ${missing.join(', ')}.`); return }
-    setHeadsOpen(false)
-    setRaisingPR(true)
     setPrError('')
     setPrMessage('')
+    if (!categoryCode) { setPrError('Please select a Purchase Requisition category.'); return }
+    const filled = items.filter((it) => it.item_name.trim())
+    if (!filled.length) { setPrError('At least one item is required — fill in the Item Description.'); return }
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].item_name.trim() && !['Project', 'Inhouse'].includes(items[i].project_inhouse || '')) {
+        setPrError(`Line ${i + 1} (${items[i].item_name}): choose Project or Inhouse.`)
+        return
+      }
+    }
+    setRaisingPR(true)
     try {
       const pr = await erpApi.raisePurchaseRequisition(srId, {
-        priority: 'medium',
-        approvers: Object.fromEntries(PR_APPROVER_ROLES.map((role) => [role, Number(heads[role])])),
+        priority,
+        category_code: categoryCode,
+        required_by_date: requiredDate || undefined,
+        requirement_type: requirementType || undefined,
+        reason: remarks || undefined,
+        items: filled.map((it) => ({ ...it, quantity: Number(it.quantity) || 1 })),
       })
-      setHeads({})
+      const uploadFailures: string[] = []
+      for (const [files, doc] of [[supportingFiles, 'supporting'], [specFiles, 'specification']] as const) {
+        if (!files.length) continue
+        try { await erpApi.uploadPrAttachments(srId, pr.id, files, doc) } catch (err) {
+          uploadFailures.push(`${doc} documents: ${extractErrorMessages(err, 'upload failed').join(' ')}`)
+        }
+      }
+      setCategoryCode(''); setRequiredDate(''); setRequirementType('Service'); setPriority('medium'); setRemarks('')
+      setItems([emptyPrItem()]); setSupportingFiles([]); setSpecFiles([]); setFileInputKey((k) => k + 1)
       setPrMessage(`Purchase requisition ${pr.p2p_number} raised — the Purchase department has been notified.`)
-    } catch (err: any) {
+      if (uploadFailures.length) setPrError(`PR was raised, but some files did not upload — ${uploadFailures.join('; ')}. Ask Purchase to attach them on the PR.`)
+    } catch (err) {
       // The request can fail on the client (network drop, dev-server reload,
       // timeout) even after the server already committed the PR — re-fetch
-      // regardless of outcome so the page never shows a stale "still
-      // unlinked" materials list when the PR was actually raised.
+      // regardless of outcome so the page never shows a stale materials list.
       setPrError(extractErrorMessages(err, 'Failed to raise purchase requisition — refreshing to confirm current status…').join(' '))
     } finally {
       setRaisingPR(false)
@@ -526,75 +534,121 @@ function MaterialsTab({ srId, canEdit, canDelete, currentUserId }: { srId: numbe
     }
   }
 
-  const hasUnlinkedMaterials = materials.some((m) => !m.pr_id)
-  const approverOptions = directory
-    .map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})${u.department ? ` — ${u.department}` : ''}${u.id === currentUserId ? ' — you' : ''}` }))
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {headsOpen && (
-        <div
-          onClick={() => setHeadsOpen(false)}
-          className="dialog-backdrop"
-          style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="dialog-panel"
-            style={{ width: '100%', maxWidth: 460, background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}
-          >
-            <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px' }}>Raise Purchase Requisition</p>
-            <p style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 16px', lineHeight: 1.6 }}>
-              Pick who acts as each approver for this requisition — every slot is required. You may pick yourself for a slot.
-            </p>
-            {headsError && (
-              <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-                {headsError}
-              </div>
-            )}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
-              {PR_APPROVER_ROLES.map((role) => (
-                <Field key={role} label={`${P2P_ROLE_LABELS[role]} *`}>
-                  <SearchableSelect
-                    value={heads[role] || ''}
-                    onChange={(v) => setHeads((prev) => ({ ...prev, [role]: v }))}
-                    options={approverOptions}
-                    placeholder={`Search ${P2P_ROLE_LABELS[role].toLowerCase()}…`}
-                  />
-                </Field>
-              ))}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" onClick={() => setHeadsOpen(false)} style={{ padding: '9px 16px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button type="button" onClick={raisePR} style={primaryBtnStyle}>Raise Requisition</button>
-            </div>
-          </div>
-        </div>
-      )}
       {materialsError && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: 0 }}>{materialsError}</p>}
       {canEdit && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          {prMessage && <span style={{ fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{prMessage}</span>}
-          {prError && <span style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{prError}</span>}
-          <button
-            onClick={openHeads}
-            disabled={raisingPR || !hasUnlinkedMaterials}
-            style={{ ...primaryBtnStyle, opacity: raisingPR || !hasUnlinkedMaterials ? 0.55 : 1, cursor: raisingPR || !hasUnlinkedMaterials ? 'not-allowed' : 'pointer' }}
-            title={!hasUnlinkedMaterials ? 'Every material already belongs to a purchase requisition' : ''}
-          >
-            {raisingPR ? 'Raising…' : 'Raise Purchase Requisition'}
-          </button>
-        </div>
-      )}
+        <div style={{ padding: 18, borderRadius: 16, background: '#faf9f7', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div>
+            <p style={prSectionTitle}>New Purchase Requisition</p>
+            <p style={{ fontSize: 12, color: '#78716c', margin: 0 }}>Project is taken from this service request. No approval needed — it goes straight to Purchase.</p>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+            <div style={{ flex: '1 1 200px', minWidth: 180 }}>
+              <label style={prLabel}>Purchase Requisition Category *</label>
+              <select style={inputStyle} value={categoryCode} onChange={(e) => setCategoryCode(e.target.value)}>
+                <option value="">Select category…</option>
+                {prMeta.categories.map((c) => <option key={c.code} value={c.code}>{c.label} ({c.code})</option>)}
+              </select>
+            </div>
+            <div style={{ flex: '0 1 170px', minWidth: 150 }}>
+              <label style={prLabel}>Required Date</label>
+              <DateField value={requiredDate} onChange={setRequiredDate} />
+            </div>
+            <div style={{ flex: '1 1 180px', minWidth: 160 }}>
+              <label style={prLabel}>Requirement Type</label>
+              <select style={inputStyle} value={requirementType} onChange={(e) => setRequirementType(e.target.value)}>
+                <option value="">Select type…</option>
+                {prMeta.requirement_types.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
 
-      {canEdit && (
-        <form onSubmit={addMaterial} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: 14, borderRadius: 14, background: '#faf9f7' }}>
-          <input placeholder="Material name" value={form.material_name} onChange={(e) => setForm((f) => ({ ...f, material_name: e.target.value }))} style={{ ...inputStyle, flex: '1 1 180px' }} />
-          <input placeholder="Part number" value={form.part_number} onChange={(e) => setForm((f) => ({ ...f, part_number: e.target.value }))} style={{ ...inputStyle, flex: '1 1 120px' }} />
-          <input type="number" min="0" step="0.01" placeholder="Qty" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} style={{ ...inputStyle, width: 90 }} />
-          <input placeholder="Remarks" value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} style={{ ...inputStyle, flex: '1 1 160px' }} />
-          <button type="submit" style={primaryBtnStyle}>Add</button>
-        </form>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <p style={{ ...prSectionTitle, margin: 0 }}>Item Details</p>
+              <button type="button" onClick={() => setItems((prev) => [...prev, emptyPrItem()])} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(249,115,22,0.35)', background: 'rgba(249,115,22,0.08)', color: '#c2410c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>+ Add Item</button>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
+                <thead>
+                  <tr>
+                    {['SL', 'Item Description *', 'Make', 'Part Code', 'UOM', 'Qty', 'Project/Inhouse *', 'Category', 'Ship To', ''].map((h) => (
+                      <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, idx) => (
+                    <tr key={idx}>
+                      <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 600, color: '#a8a29e' }}>{idx + 1}</td>
+                      <td style={{ padding: '6px 8px', minWidth: 160 }}><input style={inputStyle} value={item.item_name} onChange={(e) => updateItem(idx, 'item_name', e.target.value)} /></td>
+                      <td style={{ padding: '6px 8px', minWidth: 110 }}><input style={inputStyle} value={item.make} onChange={(e) => updateItem(idx, 'make', e.target.value)} /></td>
+                      <td style={{ padding: '6px 8px', minWidth: 110 }}><input style={inputStyle} value={item.part_code} onChange={(e) => updateItem(idx, 'part_code', e.target.value)} /></td>
+                      <td style={{ padding: '6px 8px', minWidth: 130 }}>
+                        <SearchableSelect value={item.unit || ''} onChange={(v) => updateItem(idx, 'unit', v)} options={prMeta.uoms} placeholder="Select unit…" />
+                      </td>
+                      <td style={{ padding: '6px 8px', minWidth: 70 }}><input type="number" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} /></td>
+                      <td style={{ padding: '6px 8px', minWidth: 130 }}>
+                        <select style={inputStyle} value={item.project_inhouse} onChange={(e) => updateItem(idx, 'project_inhouse', e.target.value)}>
+                          <option value="">Select…</option>
+                          <option value="Project">Project</option>
+                          <option value="Inhouse">Inhouse</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: '6px 8px', minWidth: 130 }}><input style={inputStyle} value={item.category} onChange={(e) => updateItem(idx, 'category', e.target.value)} /></td>
+                      <td style={{ padding: '6px 8px', minWidth: 140 }}><input style={inputStyle} value={item.ship_to} onChange={(e) => updateItem(idx, 'ship_to', e.target.value)} /></td>
+                      <td style={{ padding: '6px 8px' }}>
+                        {items.length > 1 && (
+                          <span onClick={() => setItems((prev) => prev.filter((_, i) => i !== idx))} style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+            <div style={{ flex: '0 1 180px', minWidth: 160 }}>
+              <label style={prLabel}>Priority</label>
+              <select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value)}>
+                {['low', 'medium', 'high'].map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: '1 1 320px' }}>
+              <label style={prLabel}>Remarks</label>
+              <textarea style={{ ...inputStyle, minHeight: 42 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+            <div style={{ flex: '0 1 280px', minWidth: 240 }}>
+              <label style={prLabel}>Supporting Documents</label>
+              <input key={`sup-${fileInputKey}`} type="file" multiple onChange={(e) => setSupportingFiles(Array.from(e.target.files || []))} style={inputStyle} />
+            </div>
+            <div style={{ flex: '0 1 280px', minWidth: 240 }}>
+              <label style={prLabel}>Specification / Reference File</label>
+              <input key={`spec-${fileInputKey}`} type="file" multiple onChange={(e) => setSpecFiles(Array.from(e.target.files || []))} style={inputStyle} />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {prMessage && <span style={{ fontSize: 12.5, color: '#047857', fontWeight: 600 }}>{prMessage}</span>}
+            {prError && <span style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600 }}>{prError}</span>}
+            <button
+              type="button"
+              onClick={raisePR}
+              disabled={raisingPR}
+              style={{ ...primaryBtnStyle, opacity: raisingPR ? 0.55 : 1, cursor: raisingPR ? 'not-allowed' : 'pointer' }}
+            >
+              {raisingPR ? 'Submitting…' : 'Submit Purchase Requisition'}
+            </button>
+          </div>
+        </div>
       )}
 
       <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
