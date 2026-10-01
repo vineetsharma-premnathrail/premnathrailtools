@@ -21,8 +21,10 @@ router = APIRouter(prefix="/store/stock", tags=["Store"])
 # Manual entries via this endpoint are limited to correction-style types —
 # receipt/issue/transfer/return should normally be posted by their owning
 # doc type (GRN, Material Issue, ...) once those exist, not typed in free-
-# hand here. adjustment_in/out and damage are legitimately manual-only.
-_MANUAL_ALLOWED_TYPES = ("receipt", "issue", "adjustment_in", "adjustment_out", "damage")
+# hand here. Damage is legitimately manual-only. adjustment_in/out are NOT
+# allowed (2026-10-01): adjustments must go through Store → Adjustments so
+# they get an approval and an adjustment number and show in that list.
+_MANUAL_ALLOWED_TYPES = ("receipt", "issue", "damage")
 
 
 def _txn_to_response(db: Session, txn: StoreStockTransaction) -> StoreStockTransactionResponse:
@@ -94,6 +96,11 @@ async def create_transaction(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("store")),
 ):
+    if payload.transaction_type in ("adjustment_in", "adjustment_out"):
+        raise HTTPException(
+            status_code=422,
+            detail="Stock adjustments can't be recorded here — use Store → Adjustments → New, so the adjustment gets an approver and shows in the Adjustments list.",
+        )
     if payload.transaction_type not in _MANUAL_ALLOWED_TYPES:
         raise HTTPException(
             status_code=422,

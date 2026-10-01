@@ -10,11 +10,11 @@ import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 
+// Adjustments are not posted here — they go through Store → Adjustments
+// (approval + adjustment number) so every one shows in that list.
 const MANUAL_TXN_TYPES = [
   { value: 'receipt', label: 'Receipt — stock coming in' },
   { value: 'issue', label: 'Issue — stock going out' },
-  { value: 'adjustment_in', label: 'Adjustment (increase)' },
-  { value: 'adjustment_out', label: 'Adjustment (decrease)' },
   { value: 'damage', label: 'Damage / write-off' },
 ]
 
