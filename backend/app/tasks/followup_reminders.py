@@ -90,6 +90,7 @@ def _send_activity_followup_reminders(db: Session) -> None:
                 notification_type=notification_type,
                 entity_type="activity",
                 entity_id=activity.id,
+                teams=True,
             )
         else:
             when = "today" if notification_type == DUE_TODAY else "tomorrow"
@@ -101,6 +102,7 @@ def _send_activity_followup_reminders(db: Session) -> None:
                 notification_type=notification_type,
                 entity_type="activity",
                 entity_id=activity.id,
+                teams=True,
             )
 
     db.commit()

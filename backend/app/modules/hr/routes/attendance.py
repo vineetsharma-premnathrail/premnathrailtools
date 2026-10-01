@@ -621,7 +621,7 @@ async def request_regularization(payload: HrAttendanceRegularizationCreate, db: 
         notify_user(
             db, reg.approver_id, "Attendance correction waiting for you",
             f"{user.name} asked to mark {fmt_date(d)} as {STATUS_LABELS[payload.requested_status]} ({reg.request_no}).",
-            NOTIFY_TYPE, REG_ENTITY, reg.id,
+            NOTIFY_TYPE, REG_ENTITY, reg.id, teams=True,
         )
     db.commit()
     db.refresh(reg)

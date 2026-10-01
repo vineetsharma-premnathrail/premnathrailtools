@@ -67,6 +67,7 @@ def _send_po_overdue_reminders(db: Session) -> None:
             title="Purchase Order Overdue",
             message=f"PO '{po.po_number}' ({po.vendor_name or 'vendor not set'}) was due {po.expected_delivery.isoformat()} — {days_overdue} {day_word} overdue.",
             notification_type=OVERDUE, entity_type="p2p_purchase_order", entity_id=po.id,
+            teams=True,
         )
 
         buyer = db.query(User).filter(User.id == buyer_id).first()

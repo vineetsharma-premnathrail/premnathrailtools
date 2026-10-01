@@ -458,6 +458,7 @@ async def create_p2p_request(
             title="New P2P Request for Review",
             message=f"PR '{pr.p2p_number}' was raised by {user.name or user.email} and awaits your review.",
             notification_type="p2p_request_submitted", entity_type="p2p_request", entity_id=pr.id,
+            teams=True,
         )
 
     db.commit()
@@ -1372,6 +1373,7 @@ async def create_po(
             title="Purchase Order Awaiting Approval",
             message=f"PO '{payload.po_number}' for PR '{pr.p2p_number}' awaits your approval as {P2P_ROLE_LABELS.get(role, role)}.",
             notification_type="p2p_po_approval_pending", entity_type="p2p_request", entity_id=pr.id,
+            teams=True,
         )
 
     db.commit()

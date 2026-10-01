@@ -97,7 +97,7 @@ def _notify_approvers(db: Session, tr: HrTravelRequest, requester: User) -> None
     )
     if tr.approver_id:
         notify_user(db, tr.approver_id, "Travel request awaiting your approval", msg,
-                    "hr_travel_submitted", entity_type="hr_travel_request", entity_id=tr.id)
+                    "hr_travel_submitted", entity_type="hr_travel_request", entity_id=tr.id, teams=True)
 
 
 # ── self-service ────────────────────────────────────────────────────────────

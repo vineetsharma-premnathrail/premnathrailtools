@@ -338,6 +338,7 @@ async def submit_revision(revision_id: int, db: Session = Depends(get_db), user:
             db, job.lead_engineer_id, title="Electrical Drawing Awaiting Approval",
             message=f"{drawing.drawing_number} {revision.revision_label} ({drawing.title}) on {job.job_number} was submitted for approval.",
             notification_type="electrical_drawing_submitted", entity_type="electrical_job", entity_id=job.id,
+            teams=True,
         )
     db.commit()
     db.refresh(drawing)

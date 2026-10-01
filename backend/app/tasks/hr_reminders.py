@@ -73,7 +73,7 @@ def _send_document_reminders(db: Session, today: date, hr_ids: list[int]) -> int
                 title = "Employee document expiring"
                 msg = f"{owner.name}'s {doc.document_type} '{doc.document_name}' expires {when}. Collect the renewed copy and upload it under HR > Employees > {owner.name} > Documents."
             notify_user(db, user_id=rid, title=title, message=msg, notification_type=DOC_EXPIRING,
-                        entity_type="user_document", entity_id=doc.id)
+                        entity_type="user_document", entity_id=doc.id, teams=True)
             sent += 1
     return sent
 
@@ -114,7 +114,7 @@ def _send_probation_reminders(db: Session, today: date, hr_ids: list[int]) -> in
                 title = "Probation ending"
                 msg = f"{emp.name}'s probation ends {when} ({_fmt(end)}). Record the confirmation under HR > Lifecycle (New > Confirmation) or extend the probation end date."
             notify_user(db, user_id=rid, title=title, message=msg, notification_type=PROBATION_ENDING,
-                        entity_type="hr_employee_profile", entity_id=profile.id)
+                        entity_type="hr_employee_profile", entity_id=profile.id, teams=True)
             sent += 1
     return sent
 

@@ -443,7 +443,7 @@ async def apply_leave(
             raise
     msg = f"{applicant.name} applied for {fmt_days(ev.days)} of {lt.name} ({fmt_date(from_date)} to {fmt_date(to_date)}), {req.request_no}."
     if req.approver_id:
-        notify_user(db, req.approver_id, "Leave request waiting for you", msg, NOTIFY_TYPE, ENTITY, req.id)
+        notify_user(db, req.approver_id, "Leave request waiting for you", msg, NOTIFY_TYPE, ENTITY, req.id, teams=True)
     if applicant.id != user.id:
         notify_user(db, applicant.id, "Leave applied on your behalf", f"{user.name} applied {req.request_no} for you. {msg}", NOTIFY_TYPE, ENTITY, req.id)
     db.commit()

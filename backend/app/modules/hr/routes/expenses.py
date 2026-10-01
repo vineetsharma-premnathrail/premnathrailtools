@@ -470,7 +470,7 @@ async def submit_claim(
             db, claim.approver_id,
             "Expense claim resubmitted for your approval" if resubmission else "Expense claim awaiting your approval",
             f"{display_name(user)} submitted {claim.claim_no} '{claim.title}' for {fmt_inr(claim.total_amount)}. Open HR → Approvals to decide.",
-            "hr_expense_submitted", entity_type="hr_expense_claim", entity_id=claim.id,
+            "hr_expense_submitted", entity_type="hr_expense_claim", entity_id=claim.id, teams=True,
         )
     db.commit()
     return _one(db, user, claim)

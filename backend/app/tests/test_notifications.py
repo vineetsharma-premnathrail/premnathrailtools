@@ -84,3 +84,26 @@ def test_project_creation_and_deletion_send_no_notification(client, db):
 
     types = {n["notification_type"] for n in client.get("/api/v1/notifications", headers=auth_header(other)).json()}
     assert not types & {"project_created", "project_deleted"}
+
+
+def test_teams_push_only_for_opted_in_notifications(db, monkeypatch):
+    """Teams gets only approval requests / reminders (teams=True); every other
+    notice stays in the bell only."""
+    from app.modules.main.models.user import User
+    from app.utils import notifications
+
+    pushed = []
+    monkeypatch.setattr(notifications, "_notify_teams", lambda u, t, m: pushed.append(t))
+    user = User(email="teamsgate@premnathrail.com", name="tg", role="user", is_active=True,
+                assigned_apps=["p2p"], azure_id="azure-1")
+    db.add(user)
+    db.commit()
+
+    notifications.notify_user(db, user.id, "PR Approved", "m", "p2p_request_approved")
+    notifications.broadcast_notification(db, "New Purchase Requisition", "m", "pr_raised", app_name="p2p")
+    notifications.notify_user(db, user.id, "PO Awaiting Approval", "m", "p2p_po_approval_pending", teams=True)
+    db.commit()
+
+    assert pushed == ["PO Awaiting Approval"]
+    from app.modules.main.models.notification import Notification
+    assert db.query(Notification).filter(Notification.user_id == user.id).count() == 3

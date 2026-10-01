@@ -870,6 +870,7 @@ async def submit_po_draft(
             title="Purchase Order Awaiting Approval",
             message=f"PO '{po.po_number}' for PR '{pr.p2p_number}' awaits your approval as {P2P_ROLE_LABELS.get(role, role)}.",
             notification_type="p2p_po_approval_pending", entity_type="p2p_request", entity_id=pr.id,
+            teams=True,
         )
 
     db.commit()

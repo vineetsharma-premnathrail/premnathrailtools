@@ -101,8 +101,10 @@ def broadcast_notification(
     entity_id: int | None = None,
     exclude_user_id: int | None = None,
     app_name: str = "erp",
+    teams: bool = False,
 ) -> None:
-    """Notify every user with access to `app_name` (except the actor)."""
+    """Notify every user with access to `app_name` (except the actor).
+    Bell only unless `teams=True` — see notify_user."""
     if _is_suppressed(notification_type):
         return
     try:
@@ -117,7 +119,8 @@ def broadcast_notification(
                 user_id=u.id, title=title, message=message, notification_type=notification_type,
                 entity_type=entity_type, entity_id=entity_id,
             ))
-            _notify_teams(u, title, message)
+            if teams:
+                _notify_teams(u, title, message)
     except Exception:
         logger.exception("Failed to broadcast notification '%s'", title)
 
@@ -130,7 +133,11 @@ def notify_user(
     notification_type: str,
     entity_type: str | None = None,
     entity_id: int | None = None,
+    teams: bool = False,
 ) -> None:
+    """In-app bell notification. Teams gets ONLY approval requests and
+    reminders (2026-10-01) — callers opt in with `teams=True`; raised /
+    review / issued / approved / result notices stay bell-only."""
     if _is_suppressed(notification_type):
         return
     try:
@@ -141,7 +148,7 @@ def notify_user(
             user_id=user_id, title=title, message=message, notification_type=notification_type,
             entity_type=entity_type, entity_id=entity_id,
         ))
-        if user:
+        if user and teams:
             _notify_teams(user, title, message)
     except Exception:
         logger.exception("Failed to notify user %s: '%s'", user_id, title)

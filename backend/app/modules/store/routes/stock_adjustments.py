@@ -138,6 +138,7 @@ async def create_stock_adjustment(
         title="Stock Adjustment Awaiting Approval",
         message=f"Stock adjustment {adjustment.adjustment_number} was raised by {user.name or user.email} and awaits your approval before it changes stock.",
         notification_type="stock_adjustment_pending", entity_type="stock_adjustment", entity_id=adjustment.id,
+        teams=True,
     )
 
     db.commit()
