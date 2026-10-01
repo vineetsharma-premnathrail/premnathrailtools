@@ -13,6 +13,20 @@ from app.middleware.owasp import get_rate_store
 
 
 @pytest.fixture(autouse=True)
+def _unlock_restricted_modules():
+    """The production module lock (app/core/module_visibility.py) would 403
+    every module test whose users aren't allow-listed — switch it off for the
+    suite; test_module_visibility.py turns it back on to test the lock."""
+    from app.core import module_visibility
+    saved = dict(module_visibility.RESTRICTED_APPS)
+    module_visibility.RESTRICTED_APPS.clear()
+    module_visibility._PACKAGE_TO_APP.clear()
+    yield
+    module_visibility.RESTRICTED_APPS.update(saved)
+    module_visibility._PACKAGE_TO_APP.update({k: k for k in saved})
+
+
+@pytest.fixture(autouse=True)
 def _reset_rate_store():
     """The OWASP middleware's rate limiter is a module-level singleton shared
     by every test in the session — without resetting it, tests run later in

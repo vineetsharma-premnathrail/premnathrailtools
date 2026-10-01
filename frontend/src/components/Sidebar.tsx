@@ -216,7 +216,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
     { href: '/dashboard/finance', label: 'Finance & Accounting', icon: 'finance', visible: !!user?.apps?.includes('accounts') },
     // Visible to every logged-in user: My HR (leave, attendance, travel,
     // claims, assets) is self-service; HR-only tabs are gated inside HrNav.
-    { href: '/dashboard/hr', label: 'HR & Admin', icon: 'hr', visible: !!user },
+    { href: '/dashboard/hr', label: 'HR & Admin', icon: 'hr', visible: !!user?.apps?.includes('hr') },
     { href: '/dashboard/organization', label: 'Organization', icon: 'organization', visible: isAdmin },
   ].filter((link) => link.visible)
 

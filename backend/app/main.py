@@ -293,10 +293,16 @@ import app.core.audit_registry  # noqa: F401
 # create_all() is no longer called here since it can't apply ALTER TABLE
 # changes to existing tables, only CREATE TABLE for brand-new ones.
 
+# Global gate for modules locked in app/core/module_visibility.py — applies
+# to every route registered below, so it must be set on the app itself.
+from app.core.module_visibility import module_visibility_gate
+from fastapi import Depends as _Depends
+
 app = FastAPI(
     title=settings.app_name,
     description="Premnathrail Portal - CRM, ERP, and R&D tools API",
     version="1.0.0",
+    dependencies=[_Depends(module_visibility_gate)],
 )
 
 # ============ MIDDLEWARE ============

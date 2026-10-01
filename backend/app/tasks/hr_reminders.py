@@ -121,6 +121,12 @@ def _send_probation_reminders(db: Session, today: date, hr_ids: list[int]) -> in
 
 def run_hr_reminders(db: Session, today: date | None = None) -> dict[str, int]:
     """Pure logic over an open session (tests call this directly)."""
+    from app.core.module_visibility import RESTRICTED_APPS
+
+    # HR locked (core/module_visibility.py): nobody can open HR to act on a
+    # reminder, so don't send any (bell or Teams).
+    if "hr" in RESTRICTED_APPS:
+        return {"documents": 0, "probation": 0}
     today = today or date.today()
     hr_ids = _hr_user_ids(db)
     docs = _send_document_reminders(db, today, hr_ids)

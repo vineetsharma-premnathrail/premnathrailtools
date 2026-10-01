@@ -353,7 +353,8 @@ export default function DashboardPage() {
 
   const visibleModules = [
     ...modules.filter((module) => user?.apps?.includes(module.app)),
-    ...(user ? [hrModule] : []),
+    // `hr` drops out of user.apps while HR is locked (backend module_visibility.py).
+    ...(user?.apps?.includes('hr') ? [hrModule] : []),
     ...(user?.role === 'admin' ? [adminModule] : []),
   ]
 
