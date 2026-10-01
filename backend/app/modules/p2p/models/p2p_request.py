@@ -203,9 +203,16 @@ class P2PRequest(Base, TimestampMixin):
     md_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     md_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     md_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Manager-matrix PO approval (project_type set): any ONE holder of the
-    # PR's PO role set approves, stamped here. The per-role columns above
-    # stay for legacy PRs only.
+    # Manager-matrix PO approval (project_type set): ALL roles must approve
+    # (production_manager, purchase_manager, project_manager, director).
+    # Named roles: tracked in po_approvers.approved_at. Director role:
+    # tracked here since it's automatic (any ONE director approves).
+    director_po_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    director_po_approved_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    director_po_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    director_po_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Legacy field (deprecated): kept for backward compatibility with
+    # reporting/audit; new matrix PRs use po_approvers + director fields above.
     po_approved_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     po_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     po_approved_role: Mapped[str | None] = mapped_column(String(30), nullable=True)
@@ -296,10 +303,20 @@ class P2PRequest(Base, TimestampMixin):
 
     @property
     def pending_po_approval_roles(self) -> list[str]:
-        # Manager matrix: any-one-approves, so either nothing is pending (an
-        # approval is stamped) or the whole role set is.
+        # Manager matrix: ALL roles must approve (production_manager,
+        # purchase_manager, project_manager, director). Check which are still pending.
         if self.project_type in PO_APPROVAL_ROLE_SETS:
-            return [] if self.po_approved_at else list(PO_APPROVAL_ROLE_SETS[self.project_type])
+            pending = []
+            role_set = PO_APPROVAL_ROLE_SETS[self.project_type]
+            for role in role_set:
+                if role == "director":
+                    if not self.director_po_approved_at:
+                        pending.append(role)
+                else:
+                    approver_row = next((a for a in self.po_approvers if a.role == role), None)
+                    if not approver_row or not approver_row.approved_at:
+                        pending.append(role)
+            return pending
         return [
             role for role in ("purchase_head", "director", "md")
             if getattr(self, f"{role}_approved_at") is None

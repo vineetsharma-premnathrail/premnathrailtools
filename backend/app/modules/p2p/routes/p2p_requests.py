@@ -1,6 +1,7 @@
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, selectinload
 
@@ -391,7 +392,7 @@ async def create_p2p_request(
         raise HTTPException(status_code=400, detail="Project is required — pick the existing project, or give the new project's name.")
     try:
         approvers = resolve_pr_approvers(db, user, payload.project_type, payload.approvers)
-        po_approvers = resolve_po_approvers(db, payload.project_type, payload.po_approvers)
+        po_approvers = resolve_po_approvers(db, payload.project_type, payload.po_approvers) if payload.po_approvers else {}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -730,32 +731,48 @@ async def approve_po(
     now = datetime.now(timezone.utc)
 
     if pr.project_type in PO_APPROVAL_ROLE_SETS:
-        # Manager matrix: the PO goes to every holder of every role in the
-        # set, and any ONE of them approves it.
-        named = next((a.role for a in pr.po_approvers if a.approver_id == user.id), None)
-        eligible = [named] if named else (["director"] if user.is_director else [])
-        if not eligible:
+        # Manager matrix: ALL roles must approve (production_manager,
+        # purchase_manager, project_manager, director). Named roles are
+        # picked persons; director is any ONE of the directors.
+        named_role = next((a.role for a in pr.po_approvers if a.approver_id == user.id), None)
+        is_director = user.is_director
+
+        if not named_role and not is_director:
             names = ", ".join(f"{a.approver_name} ({P2P_ROLE_LABELS.get(a.role, a.role)})" for a in pr.po_approvers)
             who = f" ({names})" if names else ""
             raise HTTPException(status_code=403, detail=f"Only the PO approvers picked on this requisition{who} or a Director can approve this PO.")
 
-        role = eligible[0]
-        pr.po_approved_by_id = user.id
-        pr.po_approved_by_name = user.name or user.email
-        pr.po_approved_role = role
-        pr.po_approved_at = now
-        pr.po_approval_comment = payload.comment
-        pr.status = "po_approved"
-        _write_audit(db, pr.id, "po_approved", user,
-                     summary=f"{user.name or user.email} approved PO for {pr.p2p_number} as {P2P_ROLE_LABELS[role]}.",
-                     old_status="po_raised", new_status="po_approved")
-        if pr.requested_by_id:
-            notify_user(
-                db, user_id=pr.requested_by_id,
-                title="Purchase Order Approved",
-                message=f"The PO for your PR '{pr.p2p_number}' was approved by {user.name or user.email} ({P2P_ROLE_LABELS[role]}).",
-                notification_type="p2p_po_approved", entity_type="p2p_request", entity_id=pr.id,
-            )
+        # Stamp the appropriate role approval
+        if named_role:
+            approver_row = next(a for a in pr.po_approvers if a.role == named_role)
+            approver_row.approved_at = now
+            approver_row.approved_by_id = user.id
+            approver_row.approved_by_name = user.name or user.email
+            approver_row.comment = payload.comment
+            role_label = P2P_ROLE_LABELS.get(named_role, named_role)
+        else:
+            pr.director_po_approved_at = now
+            pr.director_po_approved_by_id = user.id
+            pr.director_po_approved_by_name = user.name or user.email
+            pr.director_po_comment = payload.comment
+            role_label = "Director"
+
+        _write_audit(db, pr.id, "po_role_approved", user,
+                     summary=f"{user.name or user.email} approved PO for {pr.p2p_number} as {role_label}.")
+
+        # Check if ALL roles are now approved
+        if not pr.pending_po_approval_roles:
+            pr.status = "po_approved"
+            _write_audit(db, pr.id, "po_fully_approved", user,
+                         summary=f"PO for {pr.p2p_number} received all required approvals (final approval by {user.name or user.email} as {role_label}).",
+                         old_status="po_raised", new_status="po_approved")
+            if pr.requested_by_id:
+                notify_user(
+                    db, user_id=pr.requested_by_id,
+                    title="Purchase Order Fully Approved",
+                    message=f"The PO for your PR '{pr.p2p_number}' has received all required approvals and is now active.",
+                    notification_type="p2p_po_approved", entity_type="p2p_request", entity_id=pr.id,
+                )
     else:
         # Legacy chain (pre-matrix PRs): every one of Purchase Head, Director
         # and MD must stamp their own slot.
@@ -1188,6 +1205,44 @@ async def request_quotations(
         setattr(pr, field, val)
     _write_audit(db, pr.id, "quotation_recorded", user,
                  summary=f"{user.name or user.email} recorded vendor/RFQ details for {pr.p2p_number}.")
+    db.commit()
+    db.refresh(pr)
+    return _to_response(db, pr)
+
+
+class P2PRequestSetPOApproversPayload(BaseModel):
+    po_approvers: dict[str, int] = Field(default_factory=dict)
+
+
+@router.post("/{pr_id}/set-po-approvers", response_model=P2PRequestResponse)
+async def set_po_approvers(
+    pr_id: int,
+    payload: P2PRequestSetPOApproversPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("purchase")),
+):
+    """Set PO approvers before raising the PO — called from RFQ page."""
+    pr = _get_pr_or_404(db, pr_id)
+    if pr.status not in ("approved", "vendor_quotations", "technical_evaluation", "commercial_evaluation", "vendor_selected", "po_drafted"):
+        raise HTTPException(status_code=409, detail=f"PO approvers can only be set before the PO is raised (current status: {pr.status})")
+
+    try:
+        po_approvers = resolve_po_approvers(db, pr.project_type, payload.po_approvers) if payload.po_approvers else {}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Clear existing PO approvers
+    db.query(P2PRequestPOApprover).filter(P2PRequestPOApprover.p2p_request_id == pr.id).delete()
+
+    # Add new ones
+    for role, approver in po_approvers.items():
+        db.add(P2PRequestPOApprover(
+            p2p_request_id=pr.id, role=role, approver_id=approver.id,
+            approver_name=approver.name or approver.email,
+        ))
+
+    _write_audit(db, pr.id, "po_approvers_set", user,
+                 summary=f"{user.name or user.email} set PO approvers for {pr.p2p_number}.")
     db.commit()
     db.refresh(pr)
     return _to_response(db, pr)

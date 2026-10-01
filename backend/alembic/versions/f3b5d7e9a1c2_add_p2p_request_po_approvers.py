@@ -20,14 +20,29 @@ def upgrade() -> None:
         sa.Column("role", sa.String(30), nullable=False),
         sa.Column("approver_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("approver_name", sa.String(150), nullable=True),
+        sa.Column("approved_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("approved_by_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True),
+        sa.Column("approved_by_name", sa.String(150), nullable=True),
+        sa.Column("comment", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
     op.create_index("ix_p2p_request_po_approvers_p2p_request_id", "p2p_request_po_approvers", ["p2p_request_id"])
     op.create_index("ix_p2p_request_po_approvers_approver_id", "p2p_request_po_approvers", ["approver_id"])
 
+    # Add director approval tracking columns to p2p_requests (for matrix PRs)
+    op.add_column("p2p_requests", sa.Column("director_po_approved_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column("p2p_requests", sa.Column("director_po_approved_by_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True))
+    op.add_column("p2p_requests", sa.Column("director_po_approved_by_name", sa.String(150), nullable=True))
+    op.add_column("p2p_requests", sa.Column("director_po_comment", sa.Text(), nullable=True))
+
 
 def downgrade() -> None:
+    op.drop_column("p2p_requests", "director_po_comment")
+    op.drop_column("p2p_requests", "director_po_approved_by_name")
+    op.drop_column("p2p_requests", "director_po_approved_by_id")
+    op.drop_column("p2p_requests", "director_po_approved_at")
+
     op.drop_index("ix_p2p_request_po_approvers_approver_id", table_name="p2p_request_po_approvers")
     op.drop_index("ix_p2p_request_po_approvers_p2p_request_id", table_name="p2p_request_po_approvers")
     op.drop_table("p2p_request_po_approvers")
