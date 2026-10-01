@@ -28,7 +28,7 @@ from app.modules.p2p.service import generate_rfq_number, generate_po_number, com
 from app.modules.p2p.routes.p2p_requests import (
     _write_audit as _write_pr_audit, _send_p2p_po_approval_emails_background, po_approver_users,
 )
-from app.modules.p2p.models.p2p_request import P2P_ROLE_LABELS
+from app.modules.p2p.models.p2p_request import P2P_ROLE_LABELS, PO_PICKED_ROLE_SETS
 from app.utils.notifications import notify_user
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
 
@@ -841,6 +841,14 @@ async def submit_po_draft(
             status_code=400,
             detail=f"Enter a unit price for every line before sending the PO for approval — missing: {', '.join(unpriced)}.",
         )
+    if pr.project_type in PO_PICKED_ROLE_SETS:
+        picked = {a.role for a in pr.po_approvers}
+        missing = [P2P_ROLE_LABELS.get(r, r) for r in PO_PICKED_ROLE_SETS[pr.project_type] if r not in picked]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Pick the PO approvers before sending the PO for approval — missing: {', '.join(missing)}.",
+            )
     po.total_value = _derive_po_total(po.items)
 
     old_status = pr.status

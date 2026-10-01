@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
-import { rfqApi, purchaseOrdersApi } from '@/lib/api'
+import { rfqApi, purchaseOrdersApi, p2pApi, usersApi } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
-import { RFQ, P2PPurchaseOrder } from '@/types'
+import { RFQ, P2PPurchaseOrder, DirectoryUser } from '@/types'
+import SearchableSelect from '@/components/erp/SearchableSelect'
+import { PO_PICKED_ROLE_SETS, P2P_ROLE_LABELS, P2PProjectType } from '@/lib/p2pRoles'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
@@ -88,6 +90,10 @@ export default function RfqDetailPage() {
   // the PO can go for approval — the approvers sign off on this value and
   // Finance's 3-way match pays against it.
   const [linePrices, setLinePrices] = useState<Record<number, { unitPrice: string; taxRate: string }>>({})
+  // PO approvers are picked here, right before the PO goes for approval.
+  const [prProjectType, setPrProjectType] = useState<P2PProjectType | null>(null)
+  const [poApproverIds, setPoApproverIds] = useState<Record<string, string>>({})
+  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([])
 
   const load = async () => {
     setLoading(true)
@@ -109,6 +115,7 @@ export default function RfqDetailPage() {
       } else {
         setPoDraft(null)
       }
+      if (data.p2p_status === 'po_drafted') loadPoApproverPicker(data.p2p_request_id)
     } catch (err) {
       setError(extractErrorMessages(err, 'RFQ not found, or you do not have access to it.').join(' '))
     } finally {
@@ -132,6 +139,25 @@ export default function RfqDetailPage() {
       setPoDraftLoading(false)
     }
   }
+
+  const loadPoApproverPicker = async (p2pRequestId: number) => {
+    try {
+      const [pr, directory] = await Promise.all([p2pApi.get(p2pRequestId), usersApi.directory()])
+      setDirectoryUsers(directory)
+      setPrProjectType(pr.project_type || null)
+      const picked: Record<string, string> = {}
+      for (const slot of pr.po_approval_panel || []) {
+        if (slot.role !== 'director' && slot.people?.[0]) picked[slot.role] = String(slot.people[0].id)
+      }
+      setPoApproverIds(picked)
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not load the PO approver list for this requisition.'))
+    }
+  }
+
+  const poApprovalRoles = prProjectType ? PO_PICKED_ROLE_SETS[prProjectType] : []
+  const missingPoApprovers = poApprovalRoles.filter((role) => !poApproverIds[role])
+  const approverOptions = directoryUsers.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})${u.department ? ` — ${u.department}` : ''}` }))
 
   useEffect(() => {
     if (isAuthorized && rfqId) load()
@@ -200,6 +226,7 @@ export default function RfqDetailPage() {
 
   const requestSubmitPo = () => {
     if (unpricedLines.length) { setError(`Enter a unit price for every line before sending the PO for approval — missing: ${unpricedLines.map((i) => i.item_name).join(', ')}.`); return }
+    if (missingPoApprovers.length) { setError(`Pick the PO approvers before sending the PO for approval — missing: ${missingPoApprovers.map((r) => P2P_ROLE_LABELS[r]).join(', ')}.`); return }
     setConfirmSubmitPo(true)
   }
 
@@ -209,6 +236,9 @@ export default function RfqDetailPage() {
     // Save the prices on screen first, so what's approved is what was entered.
     runPoAction(async () => {
       await rfqApi.updatePoDraft(rfq.id, poDraft.id, pricingPayload())
+      if (poApprovalRoles.length) {
+        await p2pApi.setPoApprovers(rfq.p2p_request_id, Object.fromEntries(poApprovalRoles.map((r) => [r, Number(poApproverIds[r])])))
+      }
       await rfqApi.submitPoDraft(rfq.id, poDraft.id)
     })
   }
@@ -394,6 +424,32 @@ export default function RfqDetailPage() {
                     </div>
                   )}
                 </div>
+
+                {poApprovalRoles.length > 0 && (
+                  <div data-tour="rfq-detail-po-approvers" style={{ marginBottom: 16 }}>
+                    <p style={{ ...labelStyle, marginBottom: 2 }}>PO Approvers *</p>
+                    <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 10px' }}>
+                      The PO goes to the people picked below and to every Director once you send it for approval.
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                      {poApprovalRoles.map((role) => (
+                        <div key={role} style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 340 }}>
+                          <label style={labelStyle}>{P2P_ROLE_LABELS[role]} *</label>
+                          <SearchableSelect
+                            value={poApproverIds[role] || ''}
+                            onChange={(v) => setPoApproverIds((prev) => ({ ...prev, [role]: v }))}
+                            options={approverOptions}
+                            placeholder={`Search ${P2P_ROLE_LABELS[role].toLowerCase()}…`}
+                          />
+                        </div>
+                      ))}
+                      <div style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 340 }}>
+                        <label style={labelStyle}>Director</label>
+                        <p style={{ fontSize: 13, color: TEXT.secondary, margin: '10px 0 0' }}>Every Director — set on the user</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <button data-tour="rfq-detail-po-send-approval-btn" disabled={busy} onClick={requestSubmitPo} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>Send for Approval</button>
               </>

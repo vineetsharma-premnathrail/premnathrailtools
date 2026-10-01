@@ -1227,14 +1227,11 @@ async def set_po_approvers(
         raise HTTPException(status_code=409, detail=f"PO approvers can only be set before the PO is raised (current status: {pr.status})")
 
     try:
-        po_approvers = resolve_po_approvers(db, pr.project_type, payload.po_approvers) if payload.po_approvers else {}
+        po_approvers = resolve_po_approvers(db, pr.project_type, payload.po_approvers)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Clear existing PO approvers
     db.query(P2PRequestPOApprover).filter(P2PRequestPOApprover.p2p_request_id == pr.id).delete()
-
-    # Add new ones
     for role, approver in po_approvers.items():
         db.add(P2PRequestPOApprover(
             p2p_request_id=pr.id, role=role, approver_id=approver.id,

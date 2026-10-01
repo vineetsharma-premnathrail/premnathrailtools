@@ -830,6 +830,11 @@ export const p2pApi = {
     return data
   },
 
+  setPoApprovers: async (id: number, poApprovers: Record<string, number>) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/set-po-approvers`, { po_approvers: poApprovers })
+    return data
+  },
+
   update: async (id: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch(`/p2p/requests/${id}`, payload)
     return data

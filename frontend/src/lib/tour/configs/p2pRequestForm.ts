@@ -127,13 +127,6 @@ const config: TourConfig = {
       whatToEnter: 'Search by name or email in each role\'s picker.',
     },
     {
-      target: 'pr-new-po-approvers',
-      title: 'PO Approval',
-      purpose: 'Who approves this requisition\'s PO once it is raised. Existing project: pick a Production, Purchase and Project Manager; new project: an R&D, Purchase and Production Manager. The PO also goes to every Director. Any ONE of them approving approves the PO.',
-      required: true,
-      whatToEnter: 'Search by name or email in each role\'s picker. Directors are added automatically.',
-    },
-    {
       target: 'pr-new-supporting-docs',
       title: 'Supporting Documents',
       purpose: 'Any general supporting files for this requisition — quotes, approvals received offline, photos, etc.',

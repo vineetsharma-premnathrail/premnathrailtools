@@ -35,9 +35,16 @@ const steps: TourStep[] = [
     purpose: 'Attaches the PO document if it wasn\'t uploaded in the previous step.',
   },
   {
+    target: 'rfq-detail-po-approvers',
+    title: 'PO Approvers',
+    purpose: 'Who approves this PO. Existing project: a Production, Purchase and Project Manager; new project: an R&D, Purchase and Production Manager. Every Director also gets the PO.',
+    required: true,
+    whatToEnter: 'Search by name or email in each role\'s picker. Directors are added automatically.',
+  },
+  {
     target: 'rfq-detail-po-send-approval-btn',
     title: 'Send for Approval',
-    purpose: 'Sends this PO for approval — it goes to every holder of the requisition\'s PO approval roles, and any one of them approving approves it.',
+    purpose: 'Saves the PO approvers picked above and sends this PO to them and to every Director for approval.',
     why: 'Once submitted, the PO can no longer be edited from this page.',
   },
   {
