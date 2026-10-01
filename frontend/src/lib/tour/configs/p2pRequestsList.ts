@@ -11,6 +11,12 @@ const config: TourConfig = {
       after: 'Takes you to a separate New Purchase Requisition page — its own guided tour covers every field there.',
     },
     {
+      target: 'p2p-list-filters',
+      title: 'Category / Buyer Filters',
+      purpose: 'Narrow the list to one Purchase Requisition category, or to the requisitions handled by one buyer (or those with no buyer assigned).',
+      required: false,
+    },
+    {
       target: 'p2p-list-table',
       title: 'Purchase Requisition Number / Category / Project / Required Date / Priority / Status',
       purpose: 'Every PR you have raised, with its category, linked project, required date, priority, and current status at a glance.',

@@ -37,7 +37,7 @@ export default function P2PHomePage() {
         </button>
       </div>
 
-      <P2PRequestList emptyLabel="You haven't raised any Purchase Requisitions yet." />
+      <P2PRequestList showFilters emptyLabel="You haven't raised any Purchase Requisitions yet." />
     </div>
   )
 }

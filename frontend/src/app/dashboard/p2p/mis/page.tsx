@@ -9,15 +9,17 @@ import { P2PMisSummary } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
 import P2PNav from '@/components/p2p/P2PNav'
 import { extractErrorMessages } from '@/lib/validation'
+import DateField from '@/components/erp/DateField'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
 
-type Period = 'daily' | 'weekly' | 'monthly' | 'yearly'
+type Period = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
 const PERIODS: { key: Period; label: string }[] = [
   { key: 'daily', label: 'Daily' },
   { key: 'weekly', label: 'Weekly' },
   { key: 'monthly', label: 'Monthly' },
   { key: 'yearly', label: 'Yearly' },
+  { key: 'custom', label: 'Custom' },
 ]
 
 // Fixed categorical order — see dataviz palette, slots assigned by position, never re-cycled.
@@ -56,22 +58,30 @@ export default function P2PMisPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
+  const customIncomplete = period === 'custom' && (!dateFrom || !dateTo)
+  const customInvalid = period === 'custom' && !!dateFrom && !!dateTo && dateFrom > dateTo
+  const reportParams = period === 'custom' ? { period, date_from: dateFrom, date_to: dateTo } : { period }
 
   useEffect(() => {
     if (!isAuthorized) return
+    if (customIncomplete || customInvalid) { setSummary(null); setLoading(false); return }
     setLoading(true)
     setError('')
-    p2pApi.getMisSummary({ period })
+    p2pApi.getMisSummary(reportParams)
       .then(setSummary)
-      .catch(() => setError('Could not load the MIS report. Purchase module or PO approver access is required.'))
+      .catch((err) => setError(extractErrorMessages(err, 'Could not load the MIS report. Purchase module or PO approver access is required.').join(' ')))
       .finally(() => setLoading(false))
-  }, [isAuthorized, period])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthorized, period, dateFrom, dateTo])
 
   const handleExport = async () => {
     setExporting(true)
     setError('')
     try {
-      const blob = await p2pApi.exportMisReport({ period })
+      const blob = await p2pApi.exportMisReport(reportParams)
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -142,6 +152,22 @@ export default function P2PMisPage() {
           </button>
         ))}
       </div>
+
+      {period === 'custom' && (
+        <div data-tour="mis-custom-range" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 20 }}>
+          <div style={{ width: 180 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>From</label>
+            <DateField value={dateFrom} onChange={setDateFrom} />
+          </div>
+          <div style={{ width: 180 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>To</label>
+            <DateField value={dateTo} onChange={setDateTo} />
+          </div>
+          <p style={{ fontSize: 12.5, color: customInvalid ? '#b91c1c' : TEXT.muted, margin: '0 0 10px' }}>
+            {customInvalid ? 'The From date must be on or before the To date.' : customIncomplete ? 'Pick both dates to load the report.' : ''}
+          </p>
+        </div>
+      )}
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

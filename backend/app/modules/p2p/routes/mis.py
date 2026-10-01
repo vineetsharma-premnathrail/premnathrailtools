@@ -17,10 +17,11 @@ from openpyxl.utils import get_column_letter
 from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.formatting.rule import DataBarRule
 
+from app.core.config import settings
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
-from app.modules.p2p.models.p2p_request import P2PRequest, P2P_CATEGORIES
+from app.modules.p2p.models.p2p_request import P2PRequest, P2P_CATEGORIES, P2P_ROLE_LABELS, PO_APPROVAL_ROLE_SETS
 from app.modules.p2p.schemas.mis import (
     P2PMisApproverPending, P2PMisCategoryBreakdown, P2PMisKpis, P2PMisSummaryResponse, P2PMisTrendPoint,
 )
@@ -111,7 +112,10 @@ def _gather(
         and_(P2PRequest.po_approved_at.isnot(None), P2PRequest.po_approved_at >= start_dt, P2PRequest.po_approved_at <= end_dt),
         and_(P2PRequest.md_approved_at.isnot(None), P2PRequest.md_approved_at >= start_dt, P2PRequest.md_approved_at <= end_dt),
     ]
-    query = db.query(P2PRequest).options(selectinload(P2PRequest.items)).filter(or_(*date_filters))
+    query = db.query(P2PRequest).options(
+        selectinload(P2PRequest.items), selectinload(P2PRequest.approvals),
+        selectinload(P2PRequest.po_approvers), selectinload(P2PRequest.attachments),
+    ).filter(or_(*date_filters))
     if category_code:
         query = query.filter(P2PRequest.category_code == category_code)
     if department:
@@ -422,8 +426,9 @@ async def export_mis_report(
     data = _gather(db, period, date_param or date.today(), date_from, date_to, category_code, department)
     start, end, prs = data["start"], data["end"], data["prs"]
 
-    requester_ids = {pr.requested_by_id for pr in prs} - {None}
-    requesters = {u.id: (u.name or u.email) for u in db.query(User).filter(User.id.in_(requester_ids)).all()} if requester_ids else {}
+    person_ids = {pr.requested_by_id for pr in prs} | {pr.assigned_buyer_id for pr in prs}
+    person_ids.discard(None)
+    people = {u.id: (u.name or u.email) for u in db.query(User).filter(User.id.in_(person_ids)).all()} if person_ids else {}
 
     subtitle = f"{period.title()} report — {start.strftime('%d %b %Y')} to {end.strftime('%d %b %Y')} — generated {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M UTC')}"
 
@@ -441,18 +446,93 @@ async def export_mis_report(
             return ""
         return d.strftime("%d-%m-%Y") if isinstance(d, date) else d.strftime("%d-%m-%Y %H:%M")
 
+    def _stamp(name: str | None, at) -> str:
+        return f"{name or '—'} — Approved {_fmt(at)}" if at else f"{name or '—'} — Pending"
+
+    def _pr_approvers(pr: P2PRequest) -> str:
+        if pr.approvals:
+            return "\n".join(f"{P2P_ROLE_LABELS.get(a.role, a.role)}: {_stamp(a.approver_name, a.approved_at)}" for a in pr.approvals)
+        legacy = [
+            ("Department Head", getattr(pr, "approver_name", None), pr.approver_id, pr.department_head_approved_at),
+            ("Project Head", getattr(pr, "project_head_name", None), pr.project_head_id, pr.project_head_approved_at),
+            ("Plant Head", getattr(pr, "plant_head_name", None), pr.plant_head_id, pr.plant_head_approved_at),
+        ]
+        return "\n".join(f"{label}: {_stamp(name, at)}" for label, name, uid, at in legacy if uid)
+
+    def _po_approvers(pr: P2PRequest) -> str:
+        if pr.project_type in PO_APPROVAL_ROLE_SETS:
+            lines = [f"{P2P_ROLE_LABELS.get(a.role, a.role)}: {_stamp(a.approver_name, a.approved_at)}" for a in pr.po_approvers]
+            if not lines:
+                return "Not picked yet"
+            director = _stamp(pr.director_po_approved_by_name, pr.director_po_approved_at) if pr.director_po_approved_at else "Any Director — Pending"
+            return "\n".join(lines + [f"Director: {director}"])
+        if not pr.po_number:
+            return ""
+        return "\n".join(
+            f"{label}: {_stamp(getattr(pr, f'{role}_approved_by_name', None), getattr(pr, f'{role}_approved_at', None))}"
+            for role, label in _PO_ROLE_LABELS.items()
+        )
+
+    def _items_text(pr: P2PRequest) -> str:
+        return "\n".join(
+            f"{n}. {i.item_name} — {i.quantity:g} {i.unit or ''}".rstrip()
+            + (f" ({', '.join(x for x in (i.make, i.part_code) if x)})" if (i.make or i.part_code) else "")
+            for n, i in enumerate(pr.items, start=1)
+        )
+
+    def _pr_link(pr: P2PRequest) -> str:
+        return f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/p2p/{pr.id}"
+
+    report_prs = [pr for pr in prs if _in_range(pr.created_at, start, end)]
+    status_label = {k: k.replace("_", " ").title().replace("Po ", "PO ") for k in _STATUS_COLORS}
+    label_colors = {status_label[k]: v for k, v in _STATUS_COLORS.items()}
+    pr_headers = [
+        "PR Number", "Request Date", "Required Date", "Project Type", "Project", "Category", "Department",
+        "Requested By", "Buyer", "Priority", "Status", "Items", "PR Approvers", "PO Approvers",
+        "PO Number", "Vendor", "PO Value", "Documents", "PR Link",
+    ]
     pr_rows = [
         [
-            pr.p2p_number, _fmt(pr.request_date), pr.department or "—", P2P_CATEGORIES.get(pr.category_code, pr.category_code),
-            requesters.get(pr.requested_by_id, "—"), (pr.priority or "medium").title(), pr.status,
-            _fmt(pr.department_head_approved_at), _fmt(pr.project_head_approved_at), _fmt(pr.plant_head_approved_at),
+            pr.p2p_number, _fmt(pr.request_date), _fmt(pr.required_date),
+            {"existing": "Existing project", "new": "New project"}.get(pr.project_type or "", "—"),
+            pr.project_label or "—", P2P_CATEGORIES.get(pr.category_code, pr.category_code), pr.department or "—",
+            people.get(pr.requested_by_id, "—"), people.get(pr.assigned_buyer_id, "Not assigned"),
+            (pr.priority or "medium").title(), status_label.get(pr.status, pr.status),
+            _items_text(pr), _pr_approvers(pr), _po_approvers(pr),
+            pr.po_number or "", pr.selected_vendor or "", pr.po_value if pr.po_value is not None else "",
+            "\n".join(a.filename for a in pr.attachments) or "—", "Open PR",
         ]
-        for pr in prs if _in_range(pr.created_at, start, end)
+        for pr in report_prs
     ]
-    _write_sheet(wb, "PR Details", subtitle, [
-        "PR Number", "Request Date", "Department", "Category", "Requested By", "Priority", "Status",
-        "Dept Head Approved", "Project Head Approved", "Plant Head Approved",
-    ], pr_rows, badge_cols={"Status": _STATUS_COLORS, "Priority": _PRIORITY_COLORS})
+    pr_ws, pr_header_row, _, _ = _write_sheet(
+        wb, "PR Details", subtitle, pr_headers, pr_rows,
+        badge_cols={"Status": label_colors, "Priority": _PRIORITY_COLORS},
+    )
+    wrap_widths = {"Items": 50, "PR Approvers": 48, "PO Approvers": 48, "Documents": 36}
+    for header, width in wrap_widths.items():
+        col = pr_headers.index(header) + 1
+        pr_ws.column_dimensions[get_column_letter(col)].width = width
+        for r in range(pr_header_row + 1, pr_header_row + 1 + len(pr_rows)):
+            pr_ws.cell(row=r, column=col).alignment = Alignment(wrap_text=True, vertical="top")
+    link_col = pr_headers.index("PR Link") + 1
+    for r, pr in enumerate(report_prs, start=pr_header_row + 1):
+        cell = pr_ws.cell(row=r, column=link_col)
+        cell.hyperlink = _pr_link(pr)
+        cell.font = Font(size=10.5, color=_argb("2563EB"), underline="single")
+
+    item_rows = [
+        [
+            pr.p2p_number, _fmt(pr.request_date), pr.project_label or "—", P2P_CATEGORIES.get(pr.category_code, pr.category_code),
+            people.get(pr.requested_by_id, "—"), people.get(pr.assigned_buyer_id, "Not assigned"), n,
+            i.item_name, i.make or "", i.part_code or "", i.unit or "", i.quantity, i.project_inhouse or "",
+            (i.fulfillment_status or "pending").replace("_", " ").title(), status_label.get(pr.status, pr.status),
+        ]
+        for pr in report_prs for n, i in enumerate(pr.items, start=1)
+    ]
+    _write_sheet(wb, "PR Items", subtitle, [
+        "PR Number", "Request Date", "Project", "Category", "Requested By", "Buyer", "Line",
+        "Item", "Make", "Part Code", "UOM", "Qty", "Project/Inhouse", "Line Status", "PR Status",
+    ], item_rows, badge_cols={"PR Status": label_colors})
 
     po_rows = [
         [

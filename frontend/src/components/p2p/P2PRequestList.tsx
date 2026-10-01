@@ -51,7 +51,12 @@ function displayStatus(pr: P2PRequest): { label: string; hex: string } {
   return { label: STATUS_LABELS[pr.status] || pr.status, hex: STATUS_HEX[pr.status] || '#64748b' }
 }
 
-export default function P2PRequestList({ statuses, emptyLabel, context, queue, onlyPendingForViewer }: { statuses?: string[]; emptyLabel: string; context?: string; queue?: string; onlyPendingForViewer?: boolean }) {
+const filterSelectStyle: React.CSSProperties = {
+  padding: '8px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)',
+  background: 'rgba(255,255,255,.7)', fontSize: 13, color: TEXT.body, outline: 'none', minWidth: 200,
+}
+
+export default function P2PRequestList({ statuses, emptyLabel, context, queue, onlyPendingForViewer, showFilters }: { statuses?: string[]; emptyLabel: string; context?: string; queue?: string; onlyPendingForViewer?: boolean; showFilters?: boolean }) {
   const router = useRouter()
   const { user } = useAuth()
   const [prs, setPrs] = useState<P2PRequest[]>([])
@@ -61,6 +66,8 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
   const [approvingId, setApprovingId] = useState<number | null>(null)
   const [rejectingId, setRejectingId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [buyerFilter, setBuyerFilter] = useState('')
   const detailHref = (id: number) => (context ? `/dashboard/p2p/${id}?from=${context}` : `/dashboard/p2p/${id}`)
 
   const load = async () => {
@@ -92,6 +99,16 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
     if (pr.plant_head_id === user?.id && !pr.plant_head_approved_at) return true
     return false
   }
+
+  const categoryOptions = Array.from(new Map(prs.map((pr) => [pr.category_code, pr.category_label || pr.category_code])).entries())
+    .sort((a, b) => a[1].localeCompare(b[1]))
+  const buyerOptions = Array.from(new Map(prs.filter((pr) => pr.assigned_buyer_id != null)
+    .map((pr) => [String(pr.assigned_buyer_id), pr.assigned_buyer_name || `User #${pr.assigned_buyer_id}`])).entries())
+    .sort((a, b) => a[1].localeCompare(b[1]))
+  const visiblePrs = prs.filter(pendingOnViewer).filter((pr) =>
+    (!categoryFilter || pr.category_code === categoryFilter)
+    && (!buyerFilter || (buyerFilter === 'none' ? pr.assigned_buyer_id == null : String(pr.assigned_buyer_id) === buyerFilter)))
+  const filtersActive = !!(categoryFilter || buyerFilter)
 
   const isAdmin = user?.role === 'admin'
   // Matrix PRs: the PO goes to the PR's role set and any one holder approves;
@@ -157,6 +174,22 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
         onConfirm={confirmRejectPo}
         onCancel={() => (busy ? null : setRejectingId(null))}
       />
+      {showFilters && (
+        <div data-tour="p2p-list-filters" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 14 }}>
+          <select aria-label="Filter by category" style={filterSelectStyle} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <option value="">All categories</option>
+            {categoryOptions.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+          </select>
+          <select aria-label="Filter by buyer" style={filterSelectStyle} value={buyerFilter} onChange={(e) => setBuyerFilter(e.target.value)}>
+            <option value="">All buyers</option>
+            {buyerOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            <option value="none">No buyer assigned</option>
+          </select>
+          {filtersActive && (
+            <span onClick={() => { setCategoryFilter(''); setBuyerFilter('') }} style={{ fontSize: 12.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>Clear filters</span>
+          )}
+        </div>
+      )}
       <div data-tour="p2p-list-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
@@ -171,10 +204,12 @@ export default function P2PRequestList({ statuses, emptyLabel, context, queue, o
           </thead>
           <tbody>
             {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && prs.filter(pendingOnViewer).length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{emptyLabel}</td></tr>
+            {!loading && visiblePrs.length === 0 && (
+              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>
+                {filtersActive ? 'No requisitions match the selected category / buyer.' : emptyLabel}
+              </td></tr>
             )}
-            {prs.filter(pendingOnViewer).map((pr) => {
+            {visiblePrs.map((pr) => {
               const status = displayStatus(pr)
               return (
               <tr key={pr.id} onClick={() => router.push(detailHref(pr.id))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
