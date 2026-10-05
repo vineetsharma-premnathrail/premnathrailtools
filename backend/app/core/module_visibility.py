@@ -30,7 +30,8 @@ RESTRICTED_APPS: dict[str, str] = {
     "hr": "HR & Admin",
 }
 
-# Lower-case emails that see EVERY module (restricted or not), whatever
+# Lower-case emails that see EVERY module (restricted or not) and are always
+# admin (promoted on their next request, see get_current_user), whatever
 # their role or assigned_apps — see User.get_apps().
 RESTRICTED_APPS_ALLOWED_EMAILS: set[str] = {
     "vineet.sharma@premnathrail.com",

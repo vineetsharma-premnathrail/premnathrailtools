@@ -161,6 +161,14 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
     set_current_user_id(user.id)
+    # The portal owner(s) in RESTRICTED_APPS_ALLOWED_EMAILS are always admin,
+    # so Organization / Users & Roles and every admin-only check open for
+    # them even if their row was created (or reset) as a plain user.
+    from app.core.module_visibility import can_see_restricted_apps
+    if user.role != "admin" and can_see_restricted_apps(user.email):
+        user.role = "admin"
+        db.commit()
+        db.refresh(user)
     return user
 
 

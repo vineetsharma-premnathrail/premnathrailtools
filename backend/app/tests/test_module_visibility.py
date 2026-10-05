@@ -55,3 +55,13 @@ def test_unrestricted_module_still_works(client, db, locked):
     r = client.get("/api/v1/auth/me", headers=_h(normal))
     assert r.status_code == 200
     assert "hr" not in r.json()["apps"]
+
+
+def test_allow_listed_user_is_promoted_to_admin(client, db, locked):
+    vineet = _user(db, "vineet.sharma@premnathrail.com", role="user", apps=())
+    me = client.get("/api/v1/auth/me", headers=_h(vineet))
+    assert me.status_code == 200 and me.json()["role"] == "admin"
+    db.refresh(vineet)
+    assert vineet.role == "admin"
+    other = _user(db, "plain@premnathrail.com", role="user")
+    assert client.get("/api/v1/auth/me", headers=_h(other)).json()["role"] == "user"
