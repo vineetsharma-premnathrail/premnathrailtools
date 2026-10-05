@@ -9,6 +9,7 @@ import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
 import { primaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 export default function StoreMaterialIssuesPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
@@ -20,7 +21,7 @@ export default function StoreMaterialIssuesPage() {
   useEffect(() => {
     if (!isAuthorized) return
     setLoading(true)
-    storeApi.listMaterialIssues().then(setIssues).catch(() => setError('Failed to load material issues.')).finally(() => setLoading(false))
+    storeApi.listMaterialIssues().then(setIssues).catch((err) => setError(extractErrorMessages(err, 'Failed to load material issues.').join(' '))).finally(() => setLoading(false))
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
@@ -47,15 +48,15 @@ export default function StoreMaterialIssuesPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
           <thead>
             <tr>
-              {['Issue #', 'Purchase Requisition', 'Warehouse', 'Department', 'Project / WO', 'Requested By', 'Issued By', 'Date', 'Items', ''].map((h) => (
+              {['Issue #', 'Purchase Requisition', 'Store', 'Issue Type', 'Challan No.', 'Vendor', 'Department', 'Project / WO', 'Requested By', 'Issued By', 'Date', 'Items', ''].map((h) => (
                 <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={13} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && issues.length === 0 && (
-              <tr><td colSpan={10} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material issues yet.</td></tr>
+              <tr><td colSpan={13} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material issues yet.</td></tr>
             )}
             {issues.map((i) => (
               <tr key={i.id} onClick={() => router.push(`/dashboard/store/issues/${i.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
@@ -64,6 +65,9 @@ export default function StoreMaterialIssuesPage() {
                   {i.p2p_number ? <span style={{ color: '#2563eb', fontWeight: 600, cursor: 'pointer' }}>{i.p2p_number}</span> : <span style={{ color: TEXT.muted }}>—</span>}
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.location_name}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.issue_type_label || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.challan_number || '—'}</td>
+                <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.vendor_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.department_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.project_or_work_order || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.requested_by_name || '—'}</td>

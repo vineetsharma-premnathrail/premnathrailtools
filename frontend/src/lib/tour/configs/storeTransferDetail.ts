@@ -12,12 +12,12 @@ const config: TourConfig = {
     {
       target: 'transfer-detail-summary',
       title: 'Transfer Summary',
-      purpose: 'From/To warehouse, reason, and who recorded it.',
+      purpose: 'From/To store, reason, and who recorded it.',
     },
     {
       target: 'transfer-detail-items',
       title: 'Items',
-      purpose: 'Every item and quantity moved. Each line already decreased the From Warehouse and increased the To Warehouse at the time this transfer was created.',
+      purpose: 'Every item and quantity moved. Each line already decreased the From Store and increased the To Store at the time this transfer was created.',
     },
   ],
 }

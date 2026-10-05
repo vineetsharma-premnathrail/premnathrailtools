@@ -361,7 +361,7 @@ export default function OrganizationInfoPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
                 <div><div style={labelStyle}>Default Tax</div><div style={valueStyle}>{company.default_tax || '—'}</div></div>
                 <div><div style={labelStyle}>Default Plant</div><div style={valueStyle}>{company.default_plant_id ? `#${company.default_plant_id}` : '—'}</div></div>
-                <div><div style={labelStyle}>Default Warehouse</div><div style={valueStyle}>{company.default_warehouse_id ? `#${company.default_warehouse_id}` : '—'}</div></div>
+                <div><div style={labelStyle}>Default Store</div><div style={valueStyle}>{company.default_warehouse_id ? `#${company.default_warehouse_id}` : '—'}</div></div>
                 <div><div style={labelStyle}>Default Cost Center</div><div style={valueStyle}>{company.default_cost_center || '—'}</div></div>
                 <div><div style={labelStyle}>Default Profit Center</div><div style={valueStyle}>{company.default_profit_center || '—'}</div></div>
               </div>

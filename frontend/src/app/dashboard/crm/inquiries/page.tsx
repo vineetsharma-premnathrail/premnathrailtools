@@ -196,12 +196,10 @@ export default function InquiriesPage() {
   }
 
   const columns: { label: string; key: SortKey | ColFilterKey | 'kind' | 'org_name' | 'secondary' | 'product'; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
-    { label: 'Type', key: 'kind', type: 'filter' },
-    { label: 'ID', key: 'universal_id', type: 'sort', sortLabels: ['Old', 'Latest'] },
+    { label: 'ID', key: 'universal_id', type: 'none' },
     { label: 'Organization', key: 'org_name', type: 'none' },
     { label: 'Product', key: 'product', type: 'none' },
     { label: 'Stage', key: 'stage', type: 'filter' },
-    { label: 'Value / Priority', key: 'secondary', type: 'none' },
     { label: 'Created Date', key: 'created_at', type: 'sort', sortLabels: ['Old', 'Latest'] },
     { label: 'Created By', key: 'created_by_name', type: 'filter' },
   ]
@@ -248,7 +246,6 @@ export default function InquiriesPage() {
           >
             <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> New Record
           </Link>
-          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{sortedRows.length} Records Found</p>
         </div>
       </div>
 
@@ -273,42 +270,41 @@ export default function InquiriesPage() {
         placeholder="Search ID, organization, product, owner, zone, stage..."
         style={{ flex: '1 1 auto', minWidth: 0, padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 12.5, outline: 'none' }}
       />
+      <div data-tour="iq-col-type" role="radiogroup" aria-label="Show" style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto', padding: '0 10px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff' }}>
+        {([['inquiry', 'Inquiry'], ['tender', 'Tender']] as const).map(([value, label]) => (
+          <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12.5, fontWeight: 600, color: typeFilter === value ? '#FF7A45' : '#57534e', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <input
+              type="radio"
+              name="iq-type-filter"
+              value={value}
+              checked={typeFilter === value}
+              onChange={() => setTypeFilter(value)}
+              style={{ accentColor: '#FF7A45', margin: 0, cursor: 'pointer' }}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
       <button onClick={clearFilters} data-tour="iq-clear-btn" style={{ ...secondaryBtnStyle, flex: '0 0 auto', padding: '8px 10px', fontSize: 11.5 }}>Clear</button>
     </div>
-  )
-
-  const typeBadge = (kind: Kind) => (
-    <span style={{
-      fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.03em', padding: '2px 8px', borderRadius: 999,
-      background: kind === 'tender' ? 'rgba(59,130,246,0.1)' : 'rgba(250,155,155,0.15)',
-      color: kind === 'tender' ? '#2563eb' : '#FF7A45',
-    }}>
-      {kind}
-    </span>
   )
 
   const fullTable = (
     <>
       <div style={{ ...panelOuterStyle, height: 'auto', overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000, tableLayout: 'fixed' }}>
+          {/* Fixed widths so headers don't shift when the Inquiry/Tender filter changes the rows. */}
+          <colgroup>
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '25%' }} />
+            <col style={{ width: '17%' }} />
+            <col style={{ width: '16%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '14%' }} />
+          </colgroup>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
               {columns.map((col) => {
-                if (col.key === 'kind') {
-                  return (
-                    <th key={col.key} data-tour="iq-col-type" style={{ textAlign: 'left', padding: '5px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: typeFilter !== 'all' ? '#FF7A45' : '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                      <select
-                        value={typeFilter}
-                        onChange={(e) => setTypeFilter(e.target.value as 'all' | Kind)}
-                        style={{ font: 'inherit', color: 'inherit', background: 'transparent', border: 'none', outline: 'none', cursor: 'pointer' }}
-                      >
-                        <option value="all">{col.label}</option>
-                        <option value="inquiry" style={{ textTransform: 'none', color: '#1f1108' }}>Inquiry</option>
-                        <option value="tender" style={{ textTransform: 'none', color: '#1f1108' }}>Tender</option>
-                      </select>
-                    </th>
-                  )
-                }
                 if (col.type === 'filter') {
                   const key = col.key as ColFilterKey
                   return (
@@ -358,13 +354,12 @@ export default function InquiriesPage() {
             </tr>
           </thead>
           <tbody data-tour="iq-table-rows">
-            {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
+            {loading && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No records found.</td></tr>}
             {paged.map((r, idx) => {
               const pinned = pinnedKeys.includes(r.key)
               return (
               <tr key={r.key} onClick={() => openRow(r)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '7px 16px' }}>{typeBadge(r.kind)}</td>
                 <td style={{ padding: '7px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button
@@ -377,15 +372,23 @@ export default function InquiriesPage() {
                         <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z" />
                       </svg>
                     </button>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>{r.universal_id}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', whiteSpace: 'nowrap', lineHeight: 1.35 }}>
+                      {/* INQ-20260917- on line 1, the serial on line 2 */}
+                      {r.universal_id.includes('-') ? (
+                        <>
+                          {r.universal_id.slice(0, r.universal_id.lastIndexOf('-') + 1)}
+                          <br />
+                          {r.universal_id.slice(r.universal_id.lastIndexOf('-') + 1)}
+                        </>
+                      ) : r.universal_id}
+                    </span>
                   </div>
                 </td>
-                <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'nowrap' }}>{orgById.get(r.org_id)?.name || 'Not provided'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.product}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap' }}>{r.stage}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.secondary}</td>
+                <td style={{ padding: '7px 16px', fontSize: 13, fontWeight: 600, color: '#1f1108', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.35 }}>{orgById.get(r.org_id)?.name || 'Not provided'}</td>
+                <td title={r.product} style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.product}</td>
+                <td title={r.stage} style={{ padding: '7px 16px', fontSize: 12.5, color: '#1f1108', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.stage}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_at === 'Not provided' ? r.created_at : formatDate(r.created_at)}</td>
-                <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{r.created_by_name}</td>
+                <td title={r.created_by_name} style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.created_by_name}</td>
               </tr>
               )
             })}

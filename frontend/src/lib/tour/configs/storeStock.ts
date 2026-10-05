@@ -12,12 +12,11 @@ const config: TourConfig = {
     {
       target: 'stock-txn-type',
       title: 'Entry Type',
+      purpose: 'Maintained under Store → Settings → Stock Entry Types. Each type is fixed as stock in or stock out when it is created.',
       options: [
-        { value: 'Receipt', meaning: 'Stock coming in — e.g. initial stock, or a receipt not yet linked to a GRN.' },
-        { value: 'Issue', meaning: 'Stock going out manually, outside the normal Material Issue flow.' },
-        { value: 'Adjustment (increase)', meaning: 'Correction — actual count is higher than system.' },
-        { value: 'Adjustment (decrease)', meaning: 'Correction — actual count is lower than system.' },
-        { value: 'Damage / write-off', meaning: 'Existing good stock written off as damaged.' },
+        { value: 'Receipt', meaning: 'Stock in — e.g. initial stock, or a receipt not yet linked to a GRN.' },
+        { value: 'Issue', meaning: 'Stock out manually, outside the normal Material Issue flow.' },
+        { value: 'Damage / write-off', meaning: 'Stock out — existing good stock written off as damaged.' },
       ],
     },
     {
@@ -28,9 +27,9 @@ const config: TourConfig = {
     },
     {
       target: 'stock-location',
-      title: 'Warehouse',
+      title: 'Store',
       required: true,
-      purpose: 'Which warehouse this entry affects.',
+      purpose: 'Which store this entry affects.',
     },
     {
       target: 'stock-quantity',
@@ -40,23 +39,18 @@ const config: TourConfig = {
     },
     {
       target: 'stock-reference',
-      title: 'Reference Number',
-      purpose: 'Free-text reference back to a source document, if any — a GRN number, issue number, etc.',
+      title: 'Invoice Number',
+      purpose: 'The supplier invoice (or delivery challan) number this stock came in on, so the entry can be matched to the bill later.',
     },
     {
       target: 'stock-save-btn',
       title: 'Post Entry',
-      purpose: 'Writes this movement to the stock ledger and updates the item\'s on-hand balance at this warehouse immediately.',
+      purpose: 'Writes this movement to the stock ledger and updates the item\'s on-hand balance at this store immediately.',
     },
     {
       target: 'stock-balances-table',
       title: 'Current Balances',
-      purpose: 'On Hand, Reserved, and Available (On Hand minus Reserved) quantity per item and warehouse.',
-    },
-    {
-      target: 'stock-transactions-table',
-      title: 'Recent Movements',
-      purpose: 'The full stock ledger — every receipt, issue, return, transfer, and adjustment ever posted, most recent first (up to the latest 500). The Reference column is tagged with what it points to — PR, GRN, Issue, Return, Adjustment, Transfer or Work Order.',
+      purpose: 'On Hand, Reserved, and Available (On Hand minus Reserved) quantity per item and store. Quarantine is damaged/rejected returned material held apart — use Clear to record it as scrapped, returned to vendor, or released to usable stock.',
     },
   ],
 }

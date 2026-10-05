@@ -23,13 +23,8 @@ const config: TourConfig = {
     },
     {
       target: 'iq-col-type',
-      title: 'Type (filterable)',
-      purpose: 'This list combines both Inquiries and Tenders into one table. Use this filter to show only one kind, or leave it on the default to see both together.',
-    },
-    {
-      target: 'iq-col-universal_id',
-      title: 'ID (sortable)',
-      purpose: 'Click to sort by the record\'s ID (which also reflects creation order); click again to reverse.',
+      title: 'Show: Inquiry / Tender',
+      purpose: 'This list combines both Inquiries and Tenders into one table. Pick Inquiry or Tender to show only that kind. With neither picked (or after Clear) both are shown together.',
     },
     {
       target: 'iq-col-product',

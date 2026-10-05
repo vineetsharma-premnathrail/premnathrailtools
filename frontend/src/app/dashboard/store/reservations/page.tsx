@@ -70,7 +70,7 @@ export default function StoreStockReservationsPage() {
   const handleCreate = async () => {
     const problems: string[] = []
     if (!itemId) problems.push('Item is required.')
-    if (!locationId) problems.push('Warehouse is required.')
+    if (!locationId) problems.push('Store is required.')
     if (!quantity || Number(quantity) <= 0) problems.push('Quantity must be greater than zero.')
     if (problems.length) {
       setFormErrors(problems)
@@ -156,7 +156,7 @@ export default function StoreStockReservationsPage() {
                   {items.map((i) => <option key={i.id} value={i.id}>{i.item_code} — {i.item_name}</option>)}
                 </select>
               </Field>
-              <Field label="Warehouse *">
+              <Field label="Store *">
                 <select data-tour="res-location" style={inputStyle} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
                   <option value="">— Select —</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -197,7 +197,7 @@ export default function StoreStockReservationsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['Reservation #', 'Item', 'Warehouse', 'Quantity', 'Project / PO', 'Required Date', 'Status', ''].map((h) => (
+              {['Reservation #', 'Item', 'Store', 'Quantity', 'Project / PO', 'Required Date', 'Status', ''].map((h) => (
                 <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>

@@ -50,8 +50,8 @@ export default function StoreStockTransferDetailPage() {
           <div data-tour="transfer-detail-summary" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Row>
-                <InfoRow label="From Warehouse" value={transfer.from_location_name || '—'} />
-                <InfoRow label="To Warehouse" value={transfer.to_location_name || '—'} />
+                <InfoRow label="From Store" value={transfer.from_location_name || '—'} />
+                <InfoRow label="To Store" value={transfer.to_location_name || '—'} />
                 <InfoRow label="Transfer Date" value={transfer.transfer_date} />
               </Row>
               <Row>

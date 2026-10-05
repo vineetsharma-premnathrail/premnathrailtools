@@ -93,7 +93,7 @@ async def create_stock_adjustment(
     if not payload.items:
         raise HTTPException(status_code=422, detail="At least one item is required")
     if not db.query(StoreLocation).filter(StoreLocation.id == payload.location_id).first():
-        raise HTTPException(status_code=404, detail="Warehouse not found")
+        raise HTTPException(status_code=404, detail="Store not found")
     if payload.approved_by_id == user.id:
         raise HTTPException(status_code=400, detail="You can't approve your own stock adjustment — pick a different approver.")
     approver = db.query(User).filter(User.id == payload.approved_by_id, User.is_active == True).first()  # noqa: E712
@@ -103,7 +103,14 @@ async def create_stock_adjustment(
         raise HTTPException(status_code=400, detail=f"{approver.name or approver.email} doesn't have access to the Store module, so they couldn't open this adjustment to approve it — pick a Store user, or ask an admin to grant them Store access.")
 
     items_by_id = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_([p.item_id for p in payload.items])).all()}
+    seen: set[int] = set()
     for p in payload.items:
+        # Each line's difference is taken against the same live balance, so a
+        # repeated item would post its correction twice.
+        if p.item_id in seen:
+            name = items_by_id[p.item_id].item_name if p.item_id in items_by_id else f"Item {p.item_id}"
+            raise HTTPException(status_code=422, detail=f"'{name}' is listed more than once — enter its counted quantity on one line only.")
+        seen.add(p.item_id)
         if p.item_id not in items_by_id:
             raise HTTPException(status_code=422, detail=f"Item {p.item_id} not found")
         if p.actual_quantity < 0:

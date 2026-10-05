@@ -10,6 +10,7 @@ from app.modules.organization.models.department import Department
 from app.modules.organization.schemas.department import (
     DepartmentCreate, DepartmentUpdate, DepartmentResponse, DepartmentMemberResponse, DepartmentAddMemberPayload,
 )
+from app.modules.organization.services.department_heads import cross_unit_head_error
 from app.modules.organization.services.provisioning import unique_code
 
 router = APIRouter(prefix="/organization/departments", tags=["Organization"])
@@ -56,6 +57,10 @@ async def create_department(
     # Department code is just its full name — not a separate abbreviation —
     # deduplicated with a numeric suffix since `code` is globally unique but
     # the same department name can legitimately repeat across branches.
+    head_ids = [i for i in [payload.head_user_id, payload.secondary_head_user_id, *(payload.additional_head_user_ids or [])] if i]
+    error = cross_unit_head_error(db, payload.branch_id, head_ids)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
     code = unique_code(db, Department, payload.name.strip())
     department = Department(**payload.model_dump(), code=code)
     db.add(department)
@@ -73,11 +78,10 @@ async def list_department_members(
     """Users belonging to this department for the tree view — matched by
     the free-text `User.department` string (case-insensitive) scoped to the
     same branch, since a department name can repeat across branches (see
-    Department.code docstring/unique_code). The head(s) are always included
-    even if they don't match that filter — a manager's own `department`/
-    `branch_id` commonly differs from the team they head (e.g. a Unit 1
-    manager heading a Unit 2 department), so head_user_id/
-    secondary_head_user_id is the source of truth for who the head is."""
+    Department.code docstring/unique_code). Heads of the same unit are
+    included even if their own `department` string differs (e.g. a plant
+    manager heading Stores); heads from another unit are never shown — a
+    department is only headed from its own unit (services/department_heads.py)."""
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=404, detail="Department not found")
@@ -91,7 +95,7 @@ async def list_department_members(
     member_ids = {u.id for u in members}
     for head_id in head_ids - member_ids:
         head_user = db.query(User).filter(User.id == head_id).first()
-        if head_user:
+        if head_user and (not department.branch_id or head_user.branch_id == department.branch_id):
             members.append(head_user)
     return [
         DepartmentMemberResponse(id=u.id, name=u.name, email=u.email, designation=u.designation, is_head=u.id in head_ids)
@@ -168,8 +172,14 @@ async def update_department(
     department = db.query(Department).filter(Department.id == department_id).first()
     if not department:
         raise HTTPException(status_code=404, detail="Department not found")
-    for field, val in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    for field, val in changes.items():
         setattr(department, field, val)
+    if changes.keys() & {"branch_id", "head_user_id", "secondary_head_user_id", "additional_head_user_ids"}:
+        error = cross_unit_head_error(db, department.branch_id, _all_head_ids(department))
+        if error:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=error)
     db.commit()
     db.refresh(department)
     return _to_response(department, db)

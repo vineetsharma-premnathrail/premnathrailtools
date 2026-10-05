@@ -134,6 +134,9 @@ async def list_user_directory(
     return [
         {
             "id": u.id, "name": u.name, "email": u.email, "department": u.department, "designation": u.designation,
+            # Unit — the Add Department head picker only offers people from
+            # the department's own unit (organization/services/department_heads.py).
+            "branch_id": u.branch_id,
             "is_department_head": u.is_department_head, "is_project_head": u.is_project_head, "is_plant_head": u.is_plant_head,
             # Manager-role flags for the P2P approval matrix — the New PR
             # form's approver pickers filter the directory by these.

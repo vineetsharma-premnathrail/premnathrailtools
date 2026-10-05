@@ -50,7 +50,7 @@ export default function StoreStockAdjustmentsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr>
-              {['Adjustment #', 'Warehouse', 'Date', 'Status', 'Approver', 'Items', ''].map((h) => (
+              {['Adjustment #', 'Store', 'Date', 'Status', 'Approver', 'Items', ''].map((h) => (
                 <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>

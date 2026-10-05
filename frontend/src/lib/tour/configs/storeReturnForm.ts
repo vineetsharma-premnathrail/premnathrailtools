@@ -11,22 +11,29 @@ const config: TourConfig = {
     },
     {
       target: 'return-location',
-      title: 'Warehouse',
+      title: 'Store',
       required: true,
-      purpose: 'Which warehouse the material is coming back into.',
+      purpose: 'Which store the material is coming back into.',
     },
     {
       target: 'return-source-type',
       title: 'Source',
+      required: true,
+      purpose: 'Where the material comes from. Each source decides whether a Material Issue reference is required and who must approve.',
       options: [
-        { value: 'Against a Material Issue', meaning: 'Links this return to a prior Material Issue — the default.' },
-        { value: 'Other', meaning: 'Any other source, described in free text (e.g. a site returning surplus directly).' },
+        { value: 'Against a Material Issue', meaning: 'Links to a prior issue; quantity can\'t exceed what was issued. No approval by default.' },
+        { value: 'Other (no issue reference)', meaning: 'Free-text source (e.g. site surplus). Needs the store in-charge\'s approval by default, since nothing proves where it came from.' },
       ],
+    },
+    {
+      target: 'return-department',
+      title: 'Department',
+      purpose: 'Whose material this was. Filled in from the Material Issue when you pick one. Required when a condition needs the department head\'s approval (e.g. Damaged).',
     },
     {
       target: 'return-source-issue',
       title: 'Material Issue',
-      purpose: 'Which prior issue this material is being returned against. Only shown when Source is "Against a Material Issue".',
+      purpose: 'Which prior issue this material is being returned against. Only shown when the Source requires an issue reference.',
     },
     {
       target: 'return-item',
@@ -42,11 +49,11 @@ const config: TourConfig = {
       target: 'return-condition',
       title: 'Condition',
       options: [
-        { value: 'Good', meaning: 'Rejoins usable stock — posts a receipt-like transaction back into the warehouse.' },
-        { value: 'Damaged', meaning: 'Recorded on the return, but does NOT rejoin usable on-hand stock.' },
-        { value: 'Rejected', meaning: 'Same as Damaged — recorded, but excluded from usable stock.' },
+        { value: 'Good', meaning: 'Goes back to usable on-hand stock. No approval by default.' },
+        { value: 'Damaged', meaning: 'Goes to the store\'s Quarantine, not usable stock. Needs the department head\'s approval by default.' },
+        { value: 'Rejected (quality)', meaning: 'Goes to Quarantine. Needs the designated QC approver by default.' },
       ],
-      why: 'Only Good-condition material actually increases the stock ledger — Damaged/Rejected material is tracked on the return record but isn\'t available to issue again.',
+      why: 'Quarantined material is physically in the store but can\'t be issued or reserved. It stays visible in the Quarantine column on the Stock page until it is scrapped, returned to the vendor, or released.',
     },
     {
       target: 'return-add-item-btn',
@@ -55,8 +62,8 @@ const config: TourConfig = {
     },
     {
       target: 'return-save-btn',
-      title: 'Record Return',
-      purpose: 'Creates the return. Good-condition lines update stock immediately.',
+      title: 'Record Return / Submit for Approval',
+      purpose: 'The box above shows who must approve before stock changes. With no approval needed, stock updates immediately; otherwise the approvers are notified and stock posts only after all of them approve. You can never approve your own return.',
       after: 'Takes you to the new return\'s detail page.',
     },
   ],

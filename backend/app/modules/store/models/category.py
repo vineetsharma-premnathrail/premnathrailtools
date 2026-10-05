@@ -15,5 +15,14 @@ class StoreItemCategory(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     code: Mapped[str] = mapped_column(String(30), unique=True, nullable=False)
+    # Item type this top-level category belongs to (filters the item form's
+    # Category dropdown). NULL = shown for every type. Unused on subcategories.
+    item_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("store_item_categories.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Unused (2026-10-05): Part Code is now always an optional field on the
+    # item form, not switched per category. Column kept only so the migration
+    # chain (d4e5f6a7b8c0 -> e5f6a7b8c9d1) stays intact; nothing reads it.
+    part_code_mode: Mapped[str] = mapped_column(String(20), default="off", server_default="off", nullable=False)
+
+

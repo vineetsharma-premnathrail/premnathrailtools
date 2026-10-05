@@ -72,7 +72,7 @@ export default function StoreStockAdjustmentDetailPage() {
       <ConfirmDialog
         open={confirmApprove}
         title="Approve and post this adjustment?"
-        message="Each line's difference will be posted to stock at this warehouse. This can't be undone from here."
+        message="Each line's difference will be posted to stock at this store. This can't be undone from here."
         confirmLabel="Approve & Post"
         danger={false}
         onConfirm={doApprove}
@@ -128,7 +128,7 @@ export default function StoreStockAdjustmentDetailPage() {
           <div data-tour="adjustment-detail-summary" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Row>
-                <InfoRow label="Warehouse" value={adjustment.location_name || '—'} />
+                <InfoRow label="Store" value={adjustment.location_name || '—'} />
                 <InfoRow label="Adjustment Date" value={adjustment.adjustment_date} />
                 <InfoRow label={adjustment.status === 'pending_approval' ? 'Approver' : adjustment.status === 'rejected' ? 'Rejected By' : 'Approved By'} value={adjustment.approved_by_name || '—'} />
               </Row>

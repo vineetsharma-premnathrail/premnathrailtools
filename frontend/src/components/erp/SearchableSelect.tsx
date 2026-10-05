@@ -15,12 +15,20 @@ export default function SearchableSelect({
   options,
   placeholder = 'Select...',
   disabled = false,
+  onAdd,
+  addLabel = '+ Add new',
+  onEdit,
 }: {
   value: string
   onChange: (v: string) => void
   options: SearchableOption[]
   placeholder?: string
   disabled?: boolean
+  /** Shows a pinned "add" row at the bottom of the list; gets the current search text. */
+  onAdd?: (query: string) => void
+  addLabel?: string
+  /** Shows a pencil on each option to edit it. */
+  onEdit?: (value: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -73,6 +81,12 @@ export default function SearchableSelect({
     onChange(v)
     setOpen(false)
     setQuery('')
+  }
+
+  const closeThen = (fn: () => void) => {
+    setOpen(false)
+    setQuery('')
+    fn()
   }
 
   return (
@@ -135,6 +149,10 @@ export default function SearchableSelect({
                   key={o.value}
                   onClick={() => pick(o.value)}
                   style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
                     padding: '9px 14px',
                     fontSize: 13,
                     cursor: 'pointer',
@@ -145,11 +163,35 @@ export default function SearchableSelect({
                   onMouseEnter={(e) => { if (o.value !== value) e.currentTarget.style.background = '#faf9f7' }}
                   onMouseLeave={(e) => { if (o.value !== value) e.currentTarget.style.background = 'transparent' }}
                 >
-                  {o.label}
+                  <span>{o.label}</span>
+                  {onEdit && (
+                    <button
+                      type="button"
+                      title={`Edit ${o.value}`}
+                      onClick={(e) => { e.stopPropagation(); closeThen(() => onEdit(o.value)) }}
+                      style={{ flex: 'none', background: 'none', border: 'none', padding: 2, cursor: 'pointer', color: '#a8a29e', display: 'flex' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#FF7A45' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = '#a8a29e' }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               ))
             )}
           </div>
+          {onAdd && (
+            <div
+              onClick={() => { const q = query; closeThen(() => onAdd(q)) }}
+              style={{ padding: '10px 14px', fontSize: 13, fontWeight: 700, color: '#FF7A45', cursor: 'pointer', borderTop: '1px solid rgba(0,0,0,0.06)', flex: 'none' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#faf9f7' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+            >
+              {addLabel}{query.trim() ? ` "${query.trim()}"` : ''}
+            </div>
+          )}
         </div>,
         document.body
       )}

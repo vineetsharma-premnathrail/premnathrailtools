@@ -124,7 +124,7 @@ async def create_project(
         end_date=payload.end_date,
         status="planning",
         priority=payload.priority,
-        project_manager_id=payload.project_manager_id,
+        project_manager_id=payload.project_manager_id or user.id,
         sponsor_id=payload.sponsor_id,
         created_by_id=user.id,
     )

@@ -11,26 +11,26 @@ const config: TourConfig = {
     },
     {
       target: 'adjustment-location',
-      title: 'Warehouse',
+      title: 'Store',
       required: true,
-      purpose: 'Which warehouse this physical count applies to. Selecting it loads the current system quantity for every item below.',
+      purpose: 'Which store this physical count applies to. Selecting it loads the current system quantity for every item below.',
     },
     {
       target: 'adjustment-approver',
-      title: 'Approved By',
+      title: 'Approver',
       required: true,
-      purpose: 'Who approved this correction — searchable by name or email.',
+      purpose: 'Who must approve this correction before it changes stock. Any user with Store access can be picked, except yourself.',
     },
     {
       target: 'adjustment-item',
       title: 'Item',
       required: true,
-      why: 'Only enabled once a Warehouse is selected above.',
+      why: 'Only enabled once a Store is selected above.',
     },
     {
       target: 'adjustment-existing-qty',
       title: 'Existing Qty',
-      purpose: 'The system\'s current on-hand quantity for this item at this warehouse — read-only, filled in automatically once the item is picked.',
+      purpose: 'The system\'s current on-hand quantity for this item at this store — read-only, filled in automatically once the item is picked.',
     },
     {
       target: 'adjustment-actual-qty',

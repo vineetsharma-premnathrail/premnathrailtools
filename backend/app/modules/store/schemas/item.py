@@ -5,7 +5,7 @@ class StoreItemCreate(BaseModel):
     # Leave blank to auto-generate <TYPE>-<CATEGORY>-<NNNN> (service.generate_item_code).
     item_code: str | None = None
     item_name: str
-    item_type: str | None = "raw_material"
+    item_type: str | None = "material"
     category: str | None = None
     subcategory: str | None = None
     description: str | None = None
@@ -104,6 +104,7 @@ class StoreItemResponse(BaseModel):
     standard_cost: float | None = None
     moving_average_cost: float | None = None
     status: str
+    has_photo: bool = False
     plant: str | None = None
     preferred_warehouse_id: int | None = None
     preferred_warehouse_name: str | None = None

@@ -12,7 +12,7 @@ const config: TourConfig = {
     {
       target: 'adjustment-detail-summary',
       title: 'Adjustment Summary',
-      purpose: 'Warehouse, date, who approved it, and who recorded it.',
+      purpose: 'Store, date, who approved it, and who recorded it.',
     },
     {
       target: 'adjustment-detail-items',

@@ -1,5 +1,10 @@
 'use client'
 
+import UomSelect from '@/components/erp/UomSelect'
+import ItemPhoto from '@/components/store/ItemPhoto'
+import ItemTypeSelect, { ItemTypeOption } from '@/components/store/ItemTypeSelect'
+import CategorySelect from '@/components/store/CategorySelect'
+import SubcategorySelect from '@/components/store/SubcategorySelect'
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -10,18 +15,7 @@ import { Field, Section, Row, InfoRow, inputStyle, primaryBtnStyle, secondaryBtn
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
-
-const ITEM_TYPES = [
-  { value: 'raw_material', label: 'Raw Material' },
-  { value: 'consumable', label: 'Consumable' },
-  { value: 'spare_part', label: 'Spare Part' },
-  { value: 'finished_good', label: 'Finished Good' },
-  { value: 'semi_finished', label: 'Semi-Finished' },
-  { value: 'asset', label: 'Asset' },
-  { value: 'other', label: 'Other' },
-]
 
 const STATUSES = [
   { value: 'active', label: 'Active' },
@@ -37,6 +31,7 @@ export default function StoreItemDetailPage() {
 
   const [item, setItem] = useState<StoreItem | null>(null)
   const [categories, setCategories] = useState<StoreItemCategory[]>([])
+  const [itemTypes, setItemTypes] = useState<ItemTypeOption[]>([])
   const [uoms, setUoms] = useState<{ value: string; label: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -63,13 +58,15 @@ export default function StoreItemDetailPage() {
     if (isAuthorized && itemId) {
       load()
       storeApi.listCategories().then(setCategories).catch(() => setCategories([]))
-      storeApi.getItemMeta().then((m) => setUoms(m.uoms)).catch(() => setUoms([]))
+      storeApi.getItemMeta().then((m) => { setUoms(m.uoms); setItemTypes(m.item_types) }).catch(() => setUoms([]))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, itemId])
 
-  const topLevelCategories = categories.filter((c) => !c.parent_id)
-  const subcategories = form.category ? categories.filter((c) => c.parent_name === form.category) : []
+  // Only the standard categories for the item type (plus its current one, if older).
+  const typeLabel = (v?: string | null) => itemTypes.find((t) => t.value === v)?.label || v || '—'
+  const topLevelCategories = categories.filter((c) => !c.parent_id && (c.item_type === form.item_type || c.name === form.category))
+  const selectedCategory = topLevelCategories.find((c) => c.name === form.category)
 
   const startEdit = () => {
     if (!item) return
@@ -91,6 +88,7 @@ export default function StoreItemDetailPage() {
         category: form.category || undefined,
         subcategory: form.subcategory || undefined,
         description: form.description?.trim() || undefined,
+        part_number: form.part_number?.trim() || null,
         uom: form.uom || undefined,
         hsn_sac_code: form.hsn_sac_code?.trim() || undefined,
         manufacturer: form.manufacturer?.trim() || undefined,
@@ -166,65 +164,54 @@ export default function StoreItemDetailPage() {
             </div>
           </div>
 
+          <Section title="Photo" style={{ marginBottom: 20 }}>
+            <ItemPhoto itemId={item.id} hasPhoto={!!item.has_photo} onChanged={(has) => setItem({ ...item, has_photo: has })} />
+          </Section>
+
           {!editing ? (
             <Section title="Item Details" style={{ marginBottom: 20 }}>
               <Row>
                 <InfoRow label="Item Code" value={item.item_code} />
-                <InfoRow label="Item Type" value={ITEM_TYPES.find((t) => t.value === item.item_type)?.label || item.item_type || '—'} />
-                <InfoRow label="UOM" value={item.uom || '—'} />
-              </Row>
-              <Row>
+                <InfoRow label="Item Type" value={typeLabel(item.item_type)} />
                 <InfoRow label="Category" value={item.category || '—'} />
                 <InfoRow label="Subcategory" value={item.subcategory || '—'} />
+              </Row>
+              <Row>
+                <InfoRow label="Item Name" value={item.item_name} />
+                <InfoRow label="UOM" value={item.uom || '—'} />
+                <InfoRow label="Part Code" value={item.part_number || '—'} />
                 <InfoRow label="Status" value={STATUSES.find((s) => s.value === item.status)?.label || item.status} />
               </Row>
-              <InfoRow label="Description" value={item.description || '—'} />
-              <Row>
-                <InfoRow label="HSN / SAC Code" value={item.hsn_sac_code || '—'} />
-                <InfoRow label="Manufacturer" value={item.manufacturer || '—'} />
-              </Row>
-              <Row>
-                <InfoRow label="Batch Controlled" value={item.batch_controlled ? 'Yes' : 'No'} />
-                <InfoRow label="Serial Controlled" value={item.serial_controlled ? 'Yes' : 'No'} />
-                <InfoRow label="Expiry Controlled" value={item.expiry_controlled ? 'Yes' : 'No'} />
-              </Row>
-              <Row>
-                <InfoRow label="Minimum Stock" value={item.minimum_stock != null ? String(item.minimum_stock) : '—'} />
-                <InfoRow label="Maximum Stock" value={item.maximum_stock != null ? String(item.maximum_stock) : '—'} />
-                <InfoRow label="Reorder Level" value={item.reorder_level != null ? String(item.reorder_level) : '—'} />
-                <InfoRow label="Standard Cost" value={item.standard_cost != null ? String(item.standard_cost) : '—'} />
-              </Row>
+              <InfoRow label="Technical Specification" value={item.description || '—'} />
             </Section>
           ) : (
             <>
               <Section title="Item Details" style={{ marginBottom: 20 }}>
                 <Row>
-                  <Field label="Item Name *">
-                    <input style={inputStyle} value={form.item_name || ''} onChange={(e) => setForm({ ...form, item_name: e.target.value })} />
+                  <Field label="Item Code">
+                    <input style={{ ...inputStyle, background: 'rgba(0,0,0,0.04)', color: TEXT.secondary, fontWeight: 600 }} value={item.item_code} readOnly />
                   </Field>
                   <Field label="Item Type">
-                    <select style={inputStyle} value={form.item_type || ''} onChange={(e) => setForm({ ...form, item_type: e.target.value as StoreItem['item_type'] })}>
-                      {ITEM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                    </select>
+                    <ItemTypeSelect value={form.item_type || ''} types={itemTypes}
+                      onChange={(v) => { if (v !== form.item_type) setForm({ ...form, item_type: v, category: null, subcategory: null }) }} />
                   </Field>
-                  <Field label="UOM *">
-                    <SearchableSelect value={form.uom || ''} onChange={(v) => setForm({ ...form, uom: v })}
-                      options={form.uom && !uoms.some((u) => u.value === form.uom) ? [{ value: form.uom, label: `${form.uom} (not in list — pick a listed unit)` }, ...uoms] : uoms}
-                      placeholder="Select unit…" />
+                  <Field label="Category">
+                    <CategorySelect itemType={form.item_type || ''} value={form.category || ''}
+                      onChange={(v) => { if (v !== (form.category || '')) setForm({ ...form, category: v || null, subcategory: null }) }} categories={categories} />
+                  </Field>
+                  <Field label="Subcategory">
+                    <SubcategorySelect category={selectedCategory} value={form.subcategory || ''} onChange={(v) => setForm({ ...form, subcategory: v || null })} categories={categories} />
                   </Field>
                 </Row>
                 <Row>
-                  <Field label="Category">
-                    <select style={inputStyle} value={form.category || ''} onChange={(e) => setForm({ ...form, category: e.target.value || null, subcategory: null })}>
-                      <option value="">— None —</option>
-                      {topLevelCategories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                    </select>
+                  <Field label="Item Name *">
+                    <input style={inputStyle} value={form.item_name || ''} onChange={(e) => setForm({ ...form, item_name: e.target.value })} />
                   </Field>
-                  <Field label="Subcategory">
-                    <select style={inputStyle} value={form.subcategory || ''} onChange={(e) => setForm({ ...form, subcategory: e.target.value || null })} disabled={!subcategories.length}>
-                      <option value="">— None —</option>
-                      {subcategories.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-                    </select>
+                  <Field label="UOM *">
+                    <UomSelect value={form.uom || ''} onChange={(v) => setForm({ ...form, uom: v })} options={uoms} onOptionsChange={setUoms} manage={false} />
+                  </Field>
+                  <Field label="Part Code (optional)">
+                    <input style={inputStyle} value={form.part_number || ''} onChange={(e) => setForm({ ...form, part_number: e.target.value })} placeholder="Part code" />
                   </Field>
                   <Field label="Status">
                     <select style={inputStyle} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as StoreItem['status'] })}>
@@ -232,48 +219,9 @@ export default function StoreItemDetailPage() {
                     </select>
                   </Field>
                 </Row>
-                <Field label="Description">
+                <Field label="Technical Specification">
                   <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
                 </Field>
-                <Row>
-                  <Field label="HSN / SAC Code">
-                    <input style={inputStyle} value={form.hsn_sac_code || ''} onChange={(e) => setForm({ ...form, hsn_sac_code: e.target.value })} />
-                  </Field>
-                  <Field label="Manufacturer">
-                    <input style={inputStyle} value={form.manufacturer || ''} onChange={(e) => setForm({ ...form, manufacturer: e.target.value })} />
-                  </Field>
-                </Row>
-              </Section>
-
-              <Section title="Serial / Batch / Expiry Control" style={{ marginBottom: 20 }}>
-                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.body }}>
-                    <input type="checkbox" checked={!!form.batch_controlled} onChange={(e) => setForm({ ...form, batch_controlled: e.target.checked })} /> Batch Controlled
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.body }}>
-                    <input type="checkbox" checked={!!form.serial_controlled} onChange={(e) => setForm({ ...form, serial_controlled: e.target.checked })} /> Serial Controlled
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.body }}>
-                    <input type="checkbox" checked={!!form.expiry_controlled} onChange={(e) => setForm({ ...form, expiry_controlled: e.target.checked })} /> Expiry Controlled
-                  </label>
-                </div>
-              </Section>
-
-              <Section title="Stock Levels" style={{ marginBottom: 20 }}>
-                <Row>
-                  <Field label="Minimum Stock">
-                    <input type="number" style={inputStyle} value={form.minimum_stock ?? ''} onChange={(e) => setForm({ ...form, minimum_stock: e.target.value ? Number(e.target.value) : null })} />
-                  </Field>
-                  <Field label="Maximum Stock">
-                    <input type="number" style={inputStyle} value={form.maximum_stock ?? ''} onChange={(e) => setForm({ ...form, maximum_stock: e.target.value ? Number(e.target.value) : null })} />
-                  </Field>
-                  <Field label="Reorder Level">
-                    <input type="number" style={inputStyle} value={form.reorder_level ?? ''} onChange={(e) => setForm({ ...form, reorder_level: e.target.value ? Number(e.target.value) : null })} />
-                  </Field>
-                  <Field label="Standard Cost">
-                    <input type="number" style={inputStyle} value={form.standard_cost ?? ''} onChange={(e) => setForm({ ...form, standard_cost: e.target.value ? Number(e.target.value) : null })} />
-                  </Field>
-                </Row>
               </Section>
 
               <div style={{ display: 'flex', gap: 10 }}>

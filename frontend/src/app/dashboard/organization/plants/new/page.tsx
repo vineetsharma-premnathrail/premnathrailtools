@@ -8,7 +8,7 @@ import { TEXT, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import PlantForm from '@/components/organization/PlantForm'
 
-const TABS = ['Basic', 'Address', 'Operational Configuration', 'Branch Users', 'Branch Departments', 'Branch Warehouses', 'Branch Cost Centers', 'Branch Documents'] as const
+const TABS = ['Basic', 'Address', 'Operational Configuration', 'Branch Users', 'Branch Departments', 'Branch Stores', 'Branch Cost Centers', 'Branch Documents'] as const
 
 export default function NewPlantPage() {
   const { isAuthorized, isLoading } = useRequireAdmin()
@@ -42,7 +42,7 @@ export default function NewPlantPage() {
       </div>
       {showSaveFirst && (
         <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 16px' }}>
-          Save this branch first — Address, Users, Warehouses, Cost Centers, and Documents can be added from the Edit page once the branch exists.
+          Save this branch first — Address, Users, Stores, Cost Centers, and Documents can be added from the Edit page once the branch exists.
         </p>
       )}
     </div>

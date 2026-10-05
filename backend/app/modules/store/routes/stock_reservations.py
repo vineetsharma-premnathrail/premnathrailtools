@@ -70,7 +70,7 @@ async def create_stock_reservation(
     if not db.query(StoreItem).filter(StoreItem.id == payload.item_id).first():
         raise HTTPException(status_code=404, detail="Item not found")
     if not db.query(StoreLocation).filter(StoreLocation.id == payload.location_id).first():
-        raise HTTPException(status_code=404, detail="Warehouse not found")
+        raise HTTPException(status_code=404, detail="Store not found")
 
     try:
         adjust_reserved_qty(db, item_id=payload.item_id, location_id=payload.location_id, delta=payload.quantity)
@@ -116,7 +116,9 @@ async def cancel_stock_reservation(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("store")),
 ):
-    reservation = db.query(StoreStockReservation).filter(StoreStockReservation.id == reservation_id).first()
+    # Locked so a double-click can't release the same hold twice (the second
+    # release would eat into another reservation's reserved quantity).
+    reservation = db.query(StoreStockReservation).filter(StoreStockReservation.id == reservation_id).with_for_update().first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Stock reservation not found")
     return _release_reservation(db, reservation, "cancelled", user)
@@ -132,7 +134,9 @@ async def fulfill_stock_reservation(
     itself reduce on-hand stock — issue the material through a Material
     Issue as normal; this only stops the reservation from blocking
     available stock once that's been done."""
-    reservation = db.query(StoreStockReservation).filter(StoreStockReservation.id == reservation_id).first()
+    # Locked so a double-click can't release the same hold twice (the second
+    # release would eat into another reservation's reserved quantity).
+    reservation = db.query(StoreStockReservation).filter(StoreStockReservation.id == reservation_id).with_for_update().first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Stock reservation not found")
     return _release_reservation(db, reservation, "fulfilled", user)

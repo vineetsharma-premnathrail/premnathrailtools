@@ -630,7 +630,7 @@ export default function MyP2PRequestDetailPage() {
                           <div>
                             <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>At Ship-To ({it.ship_to || '—'})</p>
                             <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
-                              {check.ship_to_location ? `${check.ship_to_location.available_qty} available` : it.ship_to ? 'Not a store warehouse — pick one below' : 'Not set — pick a warehouse below'}
+                              {check.ship_to_location ? `${check.ship_to_location.available_qty} available` : it.ship_to ? 'Not a store — pick one below' : 'Not set — pick a store below'}
                             </p>
                           </div>
                           <div>
@@ -642,7 +642,7 @@ export default function MyP2PRequestDetailPage() {
                             <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>{check.requested_qty}</p>
                           </div>
                           {(() => {
-                            // Issue from whichever warehouse actually holds the
+                            // Issue from whichever store actually holds the
                             // stock — the line's Ship To is often blank or not a
                             // store location, and that must not force a purchase.
                             const locs = check.locations || []
@@ -785,7 +785,7 @@ export default function MyP2PRequestDetailPage() {
       <PromptDialog
         open={!!issuePrompt}
         title="Issue from Store Stock?"
-        message="Stock is deducted from the selected warehouse. Your comment is recorded on the material issue and the requisition history."
+        message="Stock is deducted from the selected store. Your comment is recorded on the material issue and the requisition history."
         placeholder="Comment (required) — e.g. handed to whom / where"
         confirmLabel="Issue"
         danger={false}

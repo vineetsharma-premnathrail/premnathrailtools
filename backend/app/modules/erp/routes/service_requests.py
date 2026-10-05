@@ -350,15 +350,15 @@ async def list_deleted_service_requests(
 
 
 @router.get("/pr-form-meta")
-async def get_pr_form_meta(_user: User = Depends(require_app_access("erp"))):
+async def get_pr_form_meta(db: Session = Depends(get_db), _user: User = Depends(require_app_access("erp"))):
     """Dropdown options for the New-PR-style form on the Materials tab —
     same lists as /p2p/requests/meta, served here because service users
     usually don't hold the p2p app."""
-    from app.modules.store.models.item import STORE_UOMS
+    from app.modules.store.routes.uoms import uom_options
     return {
         "categories": [{"code": k, "label": v} for k, v in P2P_CATEGORIES.items()],
         "requirement_types": list(P2P_REQUIREMENT_TYPES),
-        "uoms": [{"value": code, "label": f"{code} — {label}"} for code, label in STORE_UOMS.items()],
+        "uoms": uom_options(db),
     }
 
 

@@ -300,7 +300,7 @@ const config: TourConfig = {
     {
       target: 'org-edit-tab-defaults',
       title: 'Defaults & Controls',
-      purpose: 'The default plant, warehouse, cost center, and profit center pre-filled on new transactions raised for this company.',
+      purpose: 'The default plant, store, cost center, and profit center pre-filled on new transactions raised for this company.',
       autoActivate: true,
     },
     {
@@ -310,8 +310,8 @@ const config: TourConfig = {
     },
     {
       target: 'org-edit-default-warehouse',
-      title: 'Default Warehouse',
-      purpose: 'Pre-selected as the warehouse on new Store transactions, unless overridden.',
+      title: 'Default Store',
+      purpose: 'Pre-selected as the store on new Store transactions, unless overridden.',
     },
     {
       target: 'org-edit-cancel',

@@ -530,7 +530,7 @@ def _item_and_location(db: Session, item_id: int, location_id: int) -> tuple[Sto
         raise HTTPException(status_code=404, detail=f"Store item #{item_id} not found — pick the spare again.")
     loc = db.query(StoreLocation).filter(StoreLocation.id == location_id).first()
     if not loc or not loc.is_active:
-        raise HTTPException(status_code=404, detail=f"Store location #{location_id} not found or inactive — pick the warehouse again.")
+        raise HTTPException(status_code=404, detail=f"Store location #{location_id} not found or inactive — pick the store again.")
     return item, loc
 
 

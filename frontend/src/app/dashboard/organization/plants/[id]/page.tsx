@@ -21,7 +21,7 @@ const cardRowStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.normal}`,
 }
 
-const TABS = ['Basic', 'Address', 'Operational Configuration', 'Branch Users', 'Branch Departments', 'Branch Warehouses', 'Branch Cost Centers', 'Branch Documents'] as const
+const TABS = ['Basic', 'Address', 'Operational Configuration', 'Branch Users', 'Branch Departments', 'Branch Stores', 'Branch Cost Centers', 'Branch Documents'] as const
 
 const DETAIL_TAB_TOUR_IDS: Record<typeof TABS[number], string> = {
   'Basic': 'org-plant-detail-tab-basic',
@@ -29,7 +29,7 @@ const DETAIL_TAB_TOUR_IDS: Record<typeof TABS[number], string> = {
   'Operational Configuration': 'org-plant-detail-tab-operational',
   'Branch Users': 'org-plant-detail-tab-users',
   'Branch Departments': 'org-plant-detail-tab-departments',
-  'Branch Warehouses': 'org-plant-detail-tab-warehouses',
+  'Branch Stores': 'org-plant-detail-tab-warehouses',
   'Branch Cost Centers': 'org-plant-detail-tab-costcenters',
   'Branch Documents': 'org-plant-detail-tab-documents',
 }
@@ -182,7 +182,7 @@ export default function PlantDetailPage() {
               <div><div style={labelStyle}>Working Days</div><div style={valueStyle}>{plant.working_days || '—'}</div></div>
               <div><div style={labelStyle}>Working Hours</div><div style={valueStyle}>{plant.working_hours || '—'}</div></div>
               <div><div style={labelStyle}>Time Zone</div><div style={valueStyle}>{plant.timezone || '—'}</div></div>
-              <div><div style={labelStyle}>Default Warehouse</div><div style={valueStyle}>{plant.default_warehouse_name || '—'}</div></div>
+              <div><div style={labelStyle}>Default Store</div><div style={valueStyle}>{plant.default_warehouse_name || '—'}</div></div>
               <div><div style={labelStyle}>Default Cost Center</div><div style={valueStyle}>{plant.default_cost_center_name || '—'}</div></div>
               <div><div style={labelStyle}>Default Profit Center</div><div style={valueStyle}>{plant.default_profit_center || '—'}</div></div>
               <div><div style={labelStyle}>Currency</div><div style={valueStyle}>{plant.currency || '—'}</div></div>
@@ -233,11 +233,11 @@ export default function PlantDetailPage() {
           </div>
         )}
 
-        {tab === 'Branch Warehouses' && (
+        {tab === 'Branch Stores' && (
           <div style={sectionStyle}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branch Warehouses</h2>
+            <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branch Stores</h2>
             {warehouses.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted }}>No warehouses added yet.</p>
+              <p style={{ fontSize: 13, color: TEXT.muted }}>No stores added yet.</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {warehouses.map((w) => (

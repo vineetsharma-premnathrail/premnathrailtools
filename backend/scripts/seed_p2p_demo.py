@@ -7,17 +7,24 @@ Run from backend/:
     venv/Scripts/python.exe scripts/seed_p2p_demo.py --me you@premnathrail.com   # who gets the PO-approver flag
 
 What it creates (everything labelled "DEMO", users on @example.invalid):
-  * 7 demo users — requester, the 4 PR approvers for an "existing project"
-    PR (Design / Production / Project / Store Manager), a buyer, and a
-    Purchase Manager. They can't log in (SSO only); the script acts for them.
+  * 8 demo users — requester, the 4 PR approvers for an "existing project"
+    PR (Design / Production / Project / Store Manager), a buyer, a Purchase
+    Manager and a Director. They can't log in (SSO only); the script acts
+    for them.
   * 5 demo PRs, one parked at each stage so every screen can be tested:
       A  submitted        — 2 of 4 approvals done, 2 pending
       B  approved         — ready for the buyer to start the RFQ
       C  vendor_quotations — RFQ locked, 3 vendor quotations recorded
-      D  po_raised        — PO priced & submitted, waiting for PO approval
-      E  po_approved      — the complete reference case
-  * `--me` (default: first admin) is given is_purchase_manager so they can
-    approve PR D's PO in the UI — they are neither its requester nor its buyer.
+      D  po_raised        — PO priced & submitted; Production Manager,
+                            Project Manager and Director have approved, only
+                            the Purchase Manager (`--me`) is left
+      E  po_approved      — all 4 PO approvals done, ready for GRN
+  * PO approval for an "existing project" PR needs ALL of Production Manager,
+    Purchase Manager, Project Manager (picked on the RFQ page) + any one
+    Director — the same rule the GRN screen checks before it lists a PO.
+  * `--me` (default: first admin) is given is_purchase_manager and picked as
+    PR D's Purchase Manager PO approver, so their approval in the UI is the
+    final one — they are neither its requester nor its buyer.
 
 Side effects are stubbed: no Teams pushes, no approval emails, and RFQ
 quotation files are recorded as placeholders instead of being uploaded to
@@ -123,6 +130,7 @@ def _run(args, db, app, text, User, TestClient, create_access_token) -> None:
         "store": mk("store.manager", "Store Manager", ["p2p"], is_store_manager=True),
         "buyer": mk("buyer", "Buyer (Purchase Team)", ["p2p", "purchase"]),
         "purchase_mgr": mk("purchase.manager", "Purchase Manager", ["p2p"], is_purchase_manager=True),
+        "director": mk("director", "Director", ["p2p"], is_director=True),
     }
     me.is_purchase_manager = True
     db.commit()
@@ -174,7 +182,7 @@ def _run(args, db, app, text, User, TestClient, create_access_token) -> None:
         ]
         return rfq, quotes
 
-    def to_po_raised(pr, po_no):
+    def to_po_raised(pr, po_no, purchase_mgr):
         rfq, quotes = to_quotations(pr)
         buyer = people["buyer"]
         call("POST", f"/p2p/rfqs/{rfq['id']}/start-commercial-evaluation", buyer)
@@ -189,16 +197,25 @@ def _run(args, db, app, text, User, TestClient, create_access_token) -> None:
         call("PATCH", f"/p2p/rfqs/{rfq['id']}/po-draft/{po['id']}", buyer, json={
             "items": [{"id": it["id"], "unit_price": prices[i % len(prices)], "tax_rate": 18} for i, it in enumerate(po["items"])],
         })
+        # PO approvers are picked on the RFQ page, before the PO is raised.
+        call("POST", f"/p2p/requests/{pr['id']}/set-po-approvers", buyer, json={"po_approvers": {
+            "production_manager": people["production"].id, "purchase_manager": purchase_mgr.id, "project_manager": people["project"].id,
+        }})
         call("POST", f"/p2p/rfqs/{rfq['id']}/po-draft/{po['id']}/submit", buyer)
         return call("GET", f"/p2p/requests/{pr['id']}", buyer)
 
+    def approve_po(pr, roles):
+        for key in roles:
+            row = call("POST", f"/p2p/requests/{pr['id']}/approve-po", people[key], json={"comment": "Approved (demo)"})
+        return row
+
     hyd_items = [
-        {"item_name": "DEMO Hydraulic hose assembly 1/2in x 1.5m", "make": "Parker", "part_code": "DEMO-HH-12-150", "unit": "Nos", "quantity": 12, "ship_to": "Faridabad plant"},
-        {"item_name": "DEMO O-ring kit (NBR, metric)", "make": "Trelleborg", "part_code": "DEMO-OR-KIT", "unit": "Set", "quantity": 4, "ship_to": "Faridabad plant"},
+        {"item_name": "DEMO Hydraulic hose assembly 1/2in x 1.5m", "make": "Parker", "part_code": "DEMO-HH-12-150", "unit": "Nos", "quantity": 12, "ship_to": "Faridabad plant", "project_inhouse": "Project"},
+        {"item_name": "DEMO O-ring kit (NBR, metric)", "make": "Trelleborg", "part_code": "DEMO-OR-KIT", "unit": "Set", "quantity": 4, "ship_to": "Faridabad plant", "project_inhouse": "Project"},
     ]
     elec_items = [
-        {"item_name": "DEMO Proximity sensor M18 PNP", "make": "Pepperl+Fuchs", "part_code": "DEMO-PX-M18", "unit": "Nos", "quantity": 6, "ship_to": "Faridabad plant"},
-        {"item_name": "DEMO Relay 24VDC 2CO", "make": "Finder", "part_code": "DEMO-RL-24", "unit": "Nos", "quantity": 20, "ship_to": "Faridabad plant"},
+        {"item_name": "DEMO Proximity sensor M18 PNP", "make": "Pepperl+Fuchs", "part_code": "DEMO-PX-M18", "unit": "Nos", "quantity": 6, "ship_to": "Faridabad plant", "project_inhouse": "Project"},
+        {"item_name": "DEMO Relay 24VDC 2CO", "make": "Finder", "part_code": "DEMO-RL-24", "unit": "Nos", "quantity": 20, "ship_to": "Faridabad plant", "project_inhouse": "Project"},
     ]
 
     created = {}
@@ -209,15 +226,16 @@ def _run(args, db, app, text, User, TestClient, create_access_token) -> None:
     to_quotations(pr)
     created["C"] = call("GET", f"/p2p/requests/{pr['id']}", people["buyer"])
     pr = approve_all(new_pr("D", "PO raised, awaiting PO approval", hyd_items))
-    created["D"] = to_po_raised(pr, f"DEMO-PO-{today:%y%m%d}-D")
+    to_po_raised(pr, f"DEMO-PO-{today:%y%m%d}-D", me)
+    created["D"] = approve_po(pr, ("production", "project", "director"))
     pr = approve_all(new_pr("E", "PO approved (complete reference)", elec_items))
-    to_po_raised(pr, f"DEMO-PO-{today:%y%m%d}-E")
-    created["E"] = call("POST", f"/p2p/requests/{pr['id']}/approve-po", people["purchase_mgr"], json={"comment": "Approved (demo)"})
+    to_po_raised(pr, f"DEMO-PO-{today:%y%m%d}-E", people["purchase_mgr"])
+    created["E"] = approve_po(pr, ("production", "purchase_mgr", "project", "director"))
 
     print("\nDemo P2P data created:")
     for letter, row in created.items():
         print(f"  {letter}  {row['p2p_number']:<22} status={row['status']:<18} {row['project_label']}")
-    print(f"\n{me.email} now has is_purchase_manager = True (to approve PR D's PO).")
+    print(f"\n{me.email} now has is_purchase_manager = True and is PR D's Purchase Manager PO approver (the last approval left).")
     print("Remove everything with: venv/Scripts/python.exe scripts/seed_p2p_demo.py --cleanup")
     if args.dry_run:
         # Prove the teardown works too, inside the same rolled-back transaction.
@@ -263,6 +281,7 @@ def cleanup(db, text) -> None:
     q("DELETE FROM rfq_attachments WHERE rfq_id IN :rfqs", rfqs=rfqs)
     q("DELETE FROM rfqs WHERE id IN :rfqs", rfqs=rfqs)
     q("DELETE FROM p2p_request_approvals WHERE p2p_request_id IN :ids", ids=ids)
+    q("DELETE FROM p2p_request_po_approvers WHERE p2p_request_id IN :ids", ids=ids)
     q("DELETE FROM p2p_request_attachments WHERE p2p_request_id IN :ids", ids=ids)
     q("DELETE FROM p2p_request_items WHERE p2p_request_id IN :ids", ids=ids)
     q("DELETE FROM audit_logs WHERE (entity_type = 'p2p_request' AND entity_id IN :ids) OR (entity_type = 'rfq' AND entity_id IN :rfqs)", ids=ids, rfqs=rfqs)

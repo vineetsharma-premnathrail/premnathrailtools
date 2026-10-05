@@ -16,14 +16,14 @@ const config: TourConfig = {
     },
     {
       target: 'res-location',
-      title: 'Warehouse',
+      title: 'Store',
       required: true,
     },
     {
       target: 'res-quantity',
       title: 'Quantity',
       required: true,
-      why: 'Rejected if it exceeds what\'s currently available (on-hand minus already-reserved) at that warehouse.',
+      why: 'Rejected if it exceeds what\'s currently available (on-hand minus already-reserved) at that store.',
     },
     {
       target: 'res-required-date',

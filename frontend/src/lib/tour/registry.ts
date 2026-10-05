@@ -166,6 +166,10 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/storeStock'),
   },
   {
+    pattern: /^\/dashboard\/store\/movements$/,
+    load: () => import('./configs/storeMovements'),
+  },
+  {
     pattern: /^\/dashboard\/store\/issues$/,
     load: () => import('./configs/storeIssuesList'),
   },

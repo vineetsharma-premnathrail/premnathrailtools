@@ -2,7 +2,7 @@ import axios, { AxiosInstance, AxiosError } from 'axios'
 import { useAuthStore } from '@/store/authStore'
 import { beginRequest } from '@/lib/requestActivity'
 import { DIRECT_UPLOAD_THRESHOLD, uploadToSession } from '@/lib/largeUpload'
-import type { P2PRequestLineItemInput, PRCategoryMeta } from '@/types'
+import type { P2PRequestLineItemInput, PRCategoryMeta, StoreDocType, StoreDocTypeKind, StoreDocTypePayload, StoreIssueRules } from '@/types'
 
 // Files above this open through a direct SharePoint link rather than the API.
 const LARGE_DOWNLOAD_BYTES = 50 * 1024 * 1024
@@ -184,7 +184,9 @@ export const usersApi = {
   },
 
   syncAzure: async () => {
-    const { data } = await apiClient.post('/users/sync-azure')
+    // One Graph /manager call per tenant user plus branch/department
+    // provisioning per user — routinely outlasts the global 10s timeout.
+    const { data } = await apiClient.post('/users/sync-azure', undefined, { timeout: 120000 })
     return data
   },
 
@@ -1360,6 +1362,64 @@ export const storeApi = {
     const { data } = await apiClient.post('/store/items', payload)
     return data
   },
+  downloadItemImportTemplate: async () => {
+    const { data } = await apiClient.get('/store/items/import/template', { responseType: 'blob' })
+    return data as Blob
+  },
+  exportItems: async (params: { search?: string; item_type?: string; category?: string; subcategory?: string }) => {
+    const { data } = await apiClient.get('/store/items/export', { params, responseType: 'blob', timeout: 120000 })
+    return data as Blob
+  },
+  importItems: async (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post('/store/items/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000,
+    })
+    return data
+  },
+  getItemPhoto: async (id: number) => {
+    const { data } = await apiClient.get(`/store/items/${id}/photo`, { responseType: 'blob' })
+    return data as Blob
+  },
+  uploadItemPhoto: async (id: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post(`/store/items/${id}/photo`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+    return data
+  },
+  deleteItemPhoto: async (id: number) => {
+    const { data } = await apiClient.delete(`/store/items/${id}/photo`)
+    return data
+  },
+  createItemType: async (payload: { label: string; prefix: string }): Promise<{ value: string; label: string; prefix: string }[]> => {
+    const { data } = await apiClient.post('/store/item-types', payload)
+    return data
+  },
+  updateItemType: async (value: string, payload: { label: string; prefix: string }): Promise<{ value: string; label: string; prefix: string }[]> => {
+    const { data } = await apiClient.put(`/store/item-types/${encodeURIComponent(value)}`, payload)
+    return data
+  },
+  deleteItemType: async (value: string): Promise<{ value: string; label: string; prefix: string }[]> => {
+    const { data } = await apiClient.delete(`/store/item-types/${encodeURIComponent(value)}`)
+    return data
+  },
+  deleteUom: async (code: string): Promise<{ value: string; label: string }[]> => {
+    const { data } = await apiClient.delete(`/store/uoms/${encodeURIComponent(code)}`)
+    return data
+  },
+  createUom: async (payload: { code: string; label: string }): Promise<{ value: string; label: string }[]> => {
+    const { data } = await apiClient.post('/store/uoms', payload)
+    return data
+  },
+  updateUom: async (code: string, payload: { code: string; label: string }): Promise<{ value: string; label: string }[]> => {
+    const { data } = await apiClient.put(`/store/uoms/${encodeURIComponent(code)}`, payload)
+    return data
+  },
   getItemMeta: async (): Promise<{ item_types: { value: string; label: string; prefix: string }[]; uoms: { value: string; label: string }[] }> => {
     const { data } = await apiClient.get('/store/items/meta')
     return data
@@ -1405,6 +1465,27 @@ export const storeApi = {
     const { data } = await apiClient.post('/store/stock/transactions', payload)
     return data
   },
+  listStockVendorOptions: async () => {
+    const { data } = await apiClient.get('/store/stock/vendor-options')
+    return data as string[]
+  },
+  downloadStockImportTemplate: async () => {
+    const { data } = await apiClient.get('/store/stock/import/template', { responseType: 'blob' })
+    return data as Blob
+  },
+  exportStock: async (params: { search?: string; location_id?: number; category?: string; subcategory?: string }) => {
+    const { data } = await apiClient.get('/store/stock/export', { params, responseType: 'blob', timeout: 120000 })
+    return data as Blob
+  },
+  importStock: async (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post('/store/stock/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000,
+    })
+    return data
+  },
 
   listMaterialIssues: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/store/material-issues', { params })
@@ -1430,6 +1511,45 @@ export const storeApi = {
   createMaterialReturn: async (payload: Record<string, unknown>) => {
     const { data } = await apiClient.post('/store/material-returns', payload)
     return data
+  },
+  approveMaterialReturn: async (id: number) => {
+    const { data } = await apiClient.post(`/store/material-returns/${id}/approve`)
+    return data
+  },
+  rejectMaterialReturn: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/store/material-returns/${id}/reject`, { reason })
+    return data
+  },
+  clearQuarantine: async (payload: { item_id: number; location_id: number; quantity: number; disposition: string; remarks?: string }) => {
+    const { data } = await apiClient.post('/store/stock/quarantine/clear', payload)
+    return data
+  },
+
+
+  getIssueRules: async (): Promise<StoreIssueRules> => {
+    const { data } = await apiClient.get('/store/settings/issue-rules')
+    return data
+  },
+  setIssueRules: async (rules: StoreIssueRules): Promise<StoreIssueRules> => {
+    const { data } = await apiClient.put('/store/settings/issue-rules', rules)
+    return data
+  },
+
+  // Store → Settings configurable types (stock_entry | issue | return_source | return_condition)
+  listDocTypes: async (kind: StoreDocTypeKind, includeInactive = false): Promise<StoreDocType[]> => {
+    const { data } = await apiClient.get(`/store/doc-types/${kind}`, { params: includeInactive ? { include_inactive: true } : undefined })
+    return data
+  },
+  createDocType: async (kind: StoreDocTypeKind, payload: StoreDocTypePayload): Promise<StoreDocType> => {
+    const { data } = await apiClient.post(`/store/doc-types/${kind}`, payload)
+    return data
+  },
+  updateDocType: async (kind: StoreDocTypeKind, value: string, payload: StoreDocTypePayload): Promise<StoreDocType> => {
+    const { data } = await apiClient.put(`/store/doc-types/${kind}/${encodeURIComponent(value)}`, payload)
+    return data
+  },
+  deleteDocType: async (kind: StoreDocTypeKind, value: string) => {
+    await apiClient.delete(`/store/doc-types/${kind}/${encodeURIComponent(value)}`)
   },
 
   listStockTransfers: async (params: Record<string, unknown> = {}) => {

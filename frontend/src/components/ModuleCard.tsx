@@ -62,8 +62,10 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
         </div>
 
         <div className="module-card-body">
-          <div className="module-card-icon">{icon}</div>
-          <h3 className="module-card-title">{title}</h3>
+          <div className="module-card-head">
+            <div className="module-card-icon">{icon}</div>
+            <h3 className="module-card-title">{title}</h3>
+          </div>
           <p className="module-card-desc">{description}</p>
 
           <span className="module-card-arrow">
@@ -163,8 +165,8 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
           align-items: center;
           justify-content: center;
           background: var(--accent-bg);
+          flex-shrink: 0;
           color: var(--accent);
-          margin-bottom: 8px;
           box-shadow: -1px 1px 0px color-mix(in srgb, var(--accent) 35%, transparent),
             -3px 4px 3px color-mix(in srgb, var(--accent) 30%, transparent),
             -8px 11px 10px -3px color-mix(in srgb, var(--accent) 50%, transparent);
@@ -174,12 +176,21 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
           transform: scale(1.08) translateY(-2px);
         }
 
+        .module-card-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 6px;
+        }
+
         .module-card-title {
           position: relative;
           font-size: 13.5px;
           font-weight: 700;
           color: #000;
-          margin: 0 0 3px;
+          margin: 0;
+          text-align: right;
         }
 
         .module-card-desc {

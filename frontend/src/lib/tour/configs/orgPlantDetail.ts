@@ -12,7 +12,7 @@ const config: TourConfig = {
     {
       target: 'org-plant-detail-edit-btn',
       title: 'Edit',
-      purpose: 'Opens this branch\'s Edit page, where every field on this page — plus its Address, Users, Warehouses, Cost Centers, and Documents — can be changed.',
+      purpose: 'Opens this branch\'s Edit page, where every field on this page — plus its Address, Users, Stores, Cost Centers, and Documents — can be changed.',
     },
     {
       target: 'org-plant-detail-tab-basic',
@@ -30,7 +30,7 @@ const config: TourConfig = {
     {
       target: 'org-plant-detail-tab-operational',
       title: 'Operational Configuration tab',
-      purpose: 'Working calendar, working days/hours, time zone, default warehouse, default cost center, default profit center, and currency for this branch.',
+      purpose: 'Working calendar, working days/hours, time zone, default store, default cost center, default profit center, and currency for this branch.',
       autoActivate: true,
     },
     {
@@ -48,8 +48,8 @@ const config: TourConfig = {
     },
     {
       target: 'org-plant-detail-tab-warehouses',
-      title: 'Branch Warehouses tab',
-      purpose: 'Warehouses under this branch, with the one matching the branch\'s Default Warehouse setting marked DEFAULT.',
+      title: 'Branch Stores tab',
+      purpose: 'Stores under this branch, with the one matching the branch\'s Default Store setting marked DEFAULT.',
       autoActivate: true,
     },
     {

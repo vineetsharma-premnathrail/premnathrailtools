@@ -188,7 +188,7 @@ async def lookup_store_items(
         like = f"%{search}%"
         q = q.filter((StoreItem.item_name.ilike(like)) | (StoreItem.item_code.ilike(like)) | (StoreItem.part_number.ilike(like)))
     items = q.limit(200).all()
-    items.sort(key=lambda i: (i.item_type != "spare_part", i.item_name))
+    items.sort(key=lambda i: (i.item_type != "material", i.item_name))
     items = items[:50]
     avail = {}
     if location_id and items:

@@ -10,44 +10,24 @@ const config: TourConfig = {
       purpose: 'The Item Master — every raw material, consumable, spare part, or finished good the company tracks in stock.',
     },
     {
-      target: 'store-nav-tag',
-      title: 'Categories',
-      purpose: 'Manage item categories and subcategories — used to organize the Item Master and filter lists.',
-    },
-    {
-      target: 'store-nav-warehouse',
-      title: 'Warehouses',
-      purpose: 'Manage warehouse locations and their racks/shelves/bins.',
-    },
-    {
       target: 'store-nav-chart',
       title: 'Stock',
-      purpose: 'Current on-hand/reserved/available balances per item and warehouse, plus the full movement history.',
+      purpose: 'Current on-hand/reserved/available balances per item and store, plus the full movement history.',
     },
     {
       target: 'store-nav-send',
       title: 'Issues',
-      purpose: 'Material issued out of a warehouse to a department or project.',
-    },
-    {
-      target: 'store-nav-undo',
-      title: 'Returns',
-      purpose: 'Unused or rejected material returned back into a warehouse.',
-    },
-    {
-      target: 'store-nav-transfer',
-      title: 'Transfers',
-      purpose: 'Stock moved between two warehouses.',
-    },
-    {
-      target: 'store-nav-adjust',
-      title: 'Adjustments',
-      purpose: 'Corrections to system stock after a physical count.',
+      purpose: 'Material issued out of a store to a department or project.',
     },
     {
       target: 'store-nav-lock',
       title: 'Reservations',
       purpose: 'Stock earmarked for a project or production order, blocking it from other allocation.',
+    },
+    {
+      target: 'store-nav-settings',
+      title: 'Settings',
+      purpose: 'Store master data — Item Types, Units of Measure, Categories and Stores. Set these up once; every item and transaction picks from them.',
     },
     {
       target: 'items-add-btn',

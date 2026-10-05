@@ -7,13 +7,13 @@ const config: TourConfig = {
     {
       target: 'org-plant-form-tabs',
       title: 'Branch tabs',
-      purpose: 'Address, Operational Configuration, Branch Users, Branch Departments, Branch Warehouses, Branch Cost Centers, and Branch Documents are all repeatable child records that need a real branch to attach to.',
+      purpose: 'Address, Operational Configuration, Branch Users, Branch Departments, Branch Stores, Branch Cost Centers, and Branch Documents are all repeatable child records that need a real branch to attach to.',
       after: 'On a brand-new branch, only Basic is open — the rest stay disabled with a note to save first. Once the branch exists (i.e. from its Edit page), every tab opens its own Add/Edit list for that kind of record.',
     },
     {
       target: 'org-plant-name',
       title: 'Branch Name',
-      purpose: 'The branch\'s display name, shown everywhere it is referenced — the Branches list, departments, warehouses, cost centers, and user assignments.',
+      purpose: 'The branch\'s display name, shown everywhere it is referenced — the Branches list, departments, stores, cost centers, and user assignments.',
       required: true,
       validExample: 'Unit 3',
     },
@@ -93,7 +93,7 @@ const config: TourConfig = {
       target: 'org-plant-save',
       title: 'Save Branch / Save Changes',
       purpose: 'Validates the required fields (Name, Code, Company, Branch Type) and saves the branch.',
-      after: 'When creating a new branch, this takes you straight to its Edit page, where the Address, Users, Warehouses, Cost Centers, and Documents tabs become available.',
+      after: 'When creating a new branch, this takes you straight to its Edit page, where the Address, Users, Stores, Cost Centers, and Documents tabs become available.',
     },
     {
       target: 'org-plant-cancel',

@@ -183,10 +183,10 @@ const modules = [
   {
     title: 'Store & Inventory',
     app: 'store' as const,
-    description: 'Item master, warehouses, stock ledger, issues, returns, transfers, and reservations.',
+    description: 'Item master, stores, stock ledger, issues, returns, transfers, and reservations.',
     icon: WarehouseIcon,
     href: '/dashboard/store',
-    features: ['Items', 'Warehouses', 'Stock', 'Issues', '+3 more'],
+    features: ['Items', 'Stores', 'Stock', 'Issues', '+3 more'],
     barColor: 'linear-gradient(90deg,#a855f7,#c084fc)',
     iconBg: 'rgba(168,85,247,0.12)',
     iconColor: '#9333ea',

@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
-import { COLORS, RADII, BORDERS, GLASS, SHADOWS, TEXT } from '@/lib/theme'
+import { COLORS, RADII, BORDER, BORDERS, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import { CrmActivityAttachment } from '@/types'
 import { crmApi } from '@/lib/api'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
@@ -10,7 +10,7 @@ export const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
   borderRadius: RADII.lg,
-  border: BORDERS.default,
+  border: `1px solid ${BORDER.normal}`,
   background: COLORS.surface,
   fontSize: 13,
   outline: 'none',
@@ -33,7 +33,7 @@ export const secondaryBtnStyle: React.CSSProperties = {
   fontWeight: 600,
   padding: '9px 18px',
   borderRadius: RADII.lg,
-  border: BORDERS.default,
+  border: `1px solid ${BORDER.normal}`,
   background: COLORS.surface,
   color: '#57534e',
   cursor: 'pointer',
@@ -131,7 +131,7 @@ export function pageBtnStyle(disabled: boolean): React.CSSProperties {
     fontWeight: 600,
     padding: '6px 11px',
     borderRadius: RADII.md,
-    border: BORDERS.default,
+    border: `1px solid ${BORDER.normal}`,
     background: COLORS.surface,
     color: '#57534e',
     cursor: disabled ? 'not-allowed' : 'pointer',

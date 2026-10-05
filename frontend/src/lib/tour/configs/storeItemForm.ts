@@ -18,6 +18,27 @@ const config: TourConfig = {
       why: 'Used to identify this item everywhere else in Store & Inventory (issues, transfers, stock ledger). Cannot be changed after creation.',
     },
     {
+      target: 'item-type',
+      title: 'Item Type',
+      options: [
+        { value: 'Material', meaning: 'Raw, production, electrical, hydraulic, mechanical, hardware, paint and packaging material.' },
+        { value: 'Service', meaning: 'Job work, maintenance, professional services and consultancy.' },
+        { value: 'Asset', meaning: 'Machinery, equipment, vehicles, IT assets and furniture.' },
+        { value: 'Consumable', meaning: 'Office, cleaning, PPE, workshop and production consumables.' },
+        { value: 'Tool & Equipment', meaning: 'Hand/power tools, measuring instruments, testing equipment and engineering tools.' },
+      ],
+    },
+    {
+      target: 'item-category',
+      title: 'Category',
+      purpose: 'Groups this item for filtering and reporting. Only categories for the picked Item Type are listed. New categories are added under Store → Settings → Categories.',
+    },
+    {
+      target: 'item-subcategory',
+      title: 'Subcategory',
+      purpose: 'Pick a Category first, then one of its subcategories. Subcategories are added under Store → Settings → Categories.',
+    },
+    {
       target: 'item-name',
       title: 'Item Name',
       required: true,
@@ -32,73 +53,9 @@ const config: TourConfig = {
       validExample: 'KG, NOS, MTR',
     },
     {
-      target: 'item-type',
-      title: 'Item Type',
-      options: [
-        { value: 'Raw Material', meaning: 'Input material consumed in manufacturing.' },
-        { value: 'Consumable', meaning: 'Used up during operations, not tracked as a finished asset.' },
-        { value: 'Spare Part', meaning: 'Maintenance/replacement part for equipment.' },
-        { value: 'Finished Good', meaning: 'Completed product ready for dispatch/sale.' },
-        { value: 'Semi-Finished', meaning: 'Partially completed, still in production.' },
-        { value: 'Asset', meaning: 'Equipment/tooling tracked as a stock item.' },
-        { value: 'Other', meaning: 'Anything not covered above.' },
-      ],
-    },
-    {
-      target: 'item-category',
-      title: 'Category',
-      purpose: 'Groups this item for filtering and reporting. Pulled from the Categories tab — add one there first if the one you need doesn\'t exist yet.',
-    },
-    {
-      target: 'item-subcategory',
-      title: 'Subcategory',
-      purpose: 'Only enabled once a Category with subcategories is selected above.',
-    },
-    {
       target: 'item-description',
-      title: 'Description',
+      title: 'Technical Specification',
       purpose: 'Free-text notes about the item — specification, usage, anything worth recording.',
-    },
-    {
-      target: 'item-hsn',
-      title: 'HSN / SAC Code',
-      purpose: 'The tax classification code for this item, if applicable.',
-    },
-    {
-      target: 'item-manufacturer',
-      title: 'Manufacturer',
-      purpose: 'Who makes this item, for sourcing reference.',
-    },
-    {
-      target: 'item-tracking-flags',
-      title: 'Serial / Batch / Expiry Control',
-      purpose: 'Marks how individual units of this item should be traced.',
-      options: [
-        { value: 'Batch Controlled', meaning: 'One lot number per receipt — the batch, not the individual unit, is tracked.' },
-        { value: 'Serial Controlled', meaning: 'Every unit gets its own serial number, tracked individually.' },
-        { value: 'Expiry Controlled', meaning: 'This item has a shelf life that matters for stock rotation.' },
-      ],
-      after: 'These are informational flags right now — batch numbers can be entered on receipts/issues/transfers regardless of this setting.',
-    },
-    {
-      target: 'item-min-stock',
-      title: 'Minimum Stock',
-      purpose: 'The lowest quantity this item should ever fall to — a planning reference, not an enforced limit.',
-    },
-    {
-      target: 'item-max-stock',
-      title: 'Maximum Stock',
-      purpose: 'The highest quantity this item should be stocked up to.',
-    },
-    {
-      target: 'item-reorder-level',
-      title: 'Reorder Level',
-      purpose: 'The quantity at which a fresh purchase/replenishment should be triggered.',
-    },
-    {
-      target: 'item-standard-cost',
-      title: 'Standard Cost',
-      purpose: 'The reference unit cost used for valuation.',
     },
     {
       target: 'item-save-btn',

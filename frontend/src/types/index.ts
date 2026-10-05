@@ -243,6 +243,7 @@ export interface DirectoryUser {
   email: string
   department?: string | null
   designation?: string | null
+  branch_id?: number | null
   is_department_head?: boolean
   is_project_head?: boolean
   is_plant_head?: boolean
@@ -1731,6 +1732,7 @@ export interface StoreItemCategory {
   code: string
   parent_id?: number | null
   parent_name?: string | null
+  item_type?: string | null
   is_active: boolean
 }
 
@@ -1738,7 +1740,7 @@ export interface StoreItem {
   id: number
   item_code: string
   item_name: string
-  item_type?: 'raw_material' | 'consumable' | 'spare_part' | 'finished_good' | 'semi_finished' | 'asset' | 'other' | null
+  item_type?: string | null  // value from the store_item_types master
   category?: string | null
   subcategory?: string | null
   description?: string | null
@@ -1765,6 +1767,7 @@ export interface StoreItem {
   standard_cost?: number | null
   moving_average_cost?: number | null
   status: 'active' | 'inactive' | 'discontinued'
+  has_photo?: boolean
   plant?: string | null
   preferred_warehouse_id?: number | null
   preferred_warehouse_name?: string | null
@@ -1782,10 +1785,13 @@ export interface StoreStockTransaction {
   bin_id?: number | null
   bin_code?: string | null
   transaction_type: string
+  entry_type?: string | null
+  entry_type_label?: string | null
   quantity: number
   batch_number?: string | null
   reference_type?: string | null
   reference_number?: string | null
+  vendor_name?: string | null
   transaction_date: string
   remarks?: string | null
   created_by_id?: number | null
@@ -1803,6 +1809,7 @@ export interface StoreStockBalance {
   on_hand_qty: number
   reserved_qty: number
   available_qty: number
+  quarantine_qty: number
 }
 
 export interface StoreMaterialIssueItem {
@@ -1826,6 +1833,11 @@ export interface StoreMaterialIssue {
   department_id?: number | null
   department_name?: string | null
   project_or_work_order?: string | null
+  issue_type?: string | null
+  issue_type_label?: string | null
+  challan_number?: string | null
+  vendor_name?: string | null
+  expected_return_date?: string | null
   issue_date: string
   issued_by_id?: number | null
   issued_by_name?: string | null
@@ -1842,9 +1854,55 @@ export interface StoreMaterialReturnItem {
   item_name?: string | null
   uom?: string | null
   quantity: number
-  condition: 'good' | 'damaged' | 'rejected'
+  condition: string
+  condition_label?: string | null
   batch_number?: string | null
   remarks?: string | null
+}
+
+export interface StoreMaterialReturnApproval {
+  id: number
+  rule: string
+  label: string
+  approver_user_ids: number[]
+  approver_names: string[]
+  status: 'pending' | 'approved' | 'rejected'
+  acted_by_id?: number | null
+  acted_by_name?: string | null
+  acted_at?: string | null
+  comment?: string | null
+}
+
+/** Store → Settings → Issue Rules. Challan No. is mandatory when the issue
+ *  type OR store is listed; Vendor is mandatory for vendor_issue_types;
+ *  Date (expected_return_date) is mandatory for return_date_issue_types. */
+export interface StoreIssueRules {
+  challan_issue_types: string[]
+  challan_location_ids: number[]
+  vendor_issue_types: string[]
+  return_date_issue_types: string[]
+}
+
+export type StoreDocTypeKind = 'stock_entry' | 'issue' | 'return_source' | 'return_condition'
+
+export interface StoreDocType {
+  value: string
+  label: string
+  stock_effect: string | null
+  requires_issue: boolean
+  approver_rule: 'none' | 'warehouse_manager' | 'department_head' | 'specific_users'
+  approver_user_ids: number[]
+  approver_names: string[]
+  is_active: boolean
+}
+
+export interface StoreDocTypePayload {
+  label: string
+  stock_effect?: string | null
+  requires_issue?: boolean
+  approver_rule?: string
+  approver_user_ids?: number[]
+  is_active?: boolean
 }
 
 export interface StoreMaterialReturn {
@@ -1852,7 +1910,8 @@ export interface StoreMaterialReturn {
   return_number: string
   location_id: number
   location_name?: string | null
-  source_type: 'issue' | 'other'
+  source_type: string
+  source_type_label?: string | null
   source_issue_id?: number | null
   source_issue_number?: string | null
   source_description?: string | null
@@ -1861,7 +1920,14 @@ export interface StoreMaterialReturn {
   returned_by_id?: number | null
   returned_by_name?: string | null
   remarks?: string | null
+  department_id?: number | null
+  department_name?: string | null
+  status: 'pending_approval' | 'approved' | 'rejected'
+  decided_at?: string | null
+  rejected_reason?: string | null
+  can_act: boolean
   items: StoreMaterialReturnItem[]
+  approvals: StoreMaterialReturnApproval[]
 }
 
 export interface StoreStockTransferItem {
@@ -1999,6 +2065,7 @@ export interface P2PGoodsReceipt {
   grn_number: string
   purchase_order_id: number
   po_number?: string
+  po_date?: string
   p2p_request_id?: number
   p2p_number?: string
   vendor_name?: string
@@ -2026,7 +2093,9 @@ export interface P2PReceivablePurchaseOrder {
   vendor_name?: string
   p2p_number?: string
   status: string
-  items: { id: number; item_name: string; unit?: string; quantity: number }[]
+  po_date?: string | null
+  expected_delivery?: string | null
+  items: { id: number; item_name: string; unit?: string; quantity: number; received_quantity: number; pending_quantity: number }[]
 }
 
 // ---- Quality ----

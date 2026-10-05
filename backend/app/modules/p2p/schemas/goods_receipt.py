@@ -62,6 +62,7 @@ class P2PGoodsReceiptResponse(BaseModel):
 
     # Denormalized display fields, filled in by the route.
     po_number: str | None = None
+    po_date: date | None = None
     p2p_request_id: int | None = None
     p2p_number: str | None = None
     vendor_name: str | None = None

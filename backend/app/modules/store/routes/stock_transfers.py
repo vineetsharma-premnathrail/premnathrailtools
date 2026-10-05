@@ -70,11 +70,11 @@ async def create_stock_transfer(
     if not payload.items:
         raise HTTPException(status_code=422, detail="At least one item is required")
     if payload.from_location_id == payload.to_location_id:
-        raise HTTPException(status_code=422, detail="Source and destination warehouse must be different")
+        raise HTTPException(status_code=422, detail="Source and destination store must be different")
     if not db.query(StoreLocation).filter(StoreLocation.id == payload.from_location_id).first():
-        raise HTTPException(status_code=404, detail="Source warehouse not found")
+        raise HTTPException(status_code=404, detail="Source store not found")
     if not db.query(StoreLocation).filter(StoreLocation.id == payload.to_location_id).first():
-        raise HTTPException(status_code=404, detail="Destination warehouse not found")
+        raise HTTPException(status_code=404, detail="Destination store not found")
 
     items_by_id = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_([p.item_id for p in payload.items])).all()}
     for p in payload.items:
@@ -95,20 +95,23 @@ async def create_stock_transfer(
     db.add(transfer)
     db.flush()
 
+    for p in payload.items:
+        db.add(StoreStockTransferItem(
+            transfer_id=transfer.id, item_id=p.item_id, quantity=p.quantity,
+            batch_number=p.batch_number, remarks=p.remarks,
+        ))
+    # Post in one global (store, item) order so balance rows are always
+    # locked in the same sequence — an A→B and a B→A transfer running at
+    # once would otherwise deadlock.
+    postings = sorted(
+        [(payload.from_location_id, p.item_id, i, "transfer_out", p) for i, p in enumerate(payload.items)]
+        + [(payload.to_location_id, p.item_id, i, "transfer_in", p) for i, p in enumerate(payload.items)],
+        key=lambda x: (x[0], x[1], x[2]),
+    )
     try:
-        for p in payload.items:
-            db.add(StoreStockTransferItem(
-                transfer_id=transfer.id, item_id=p.item_id, quantity=p.quantity,
-                batch_number=p.batch_number, remarks=p.remarks,
-            ))
+        for location_id, _item_id, _i, txn_type, p in postings:
             post_stock_transaction(
-                db, item_id=p.item_id, location_id=payload.from_location_id, transaction_type="transfer_out",
-                quantity=p.quantity, batch_number=p.batch_number, reference_type="stock_transfer",
-                reference_number=transfer.transfer_number, transaction_date=transfer.transfer_date,
-                created_by_id=user.id,
-            )
-            post_stock_transaction(
-                db, item_id=p.item_id, location_id=payload.to_location_id, transaction_type="transfer_in",
+                db, item_id=p.item_id, location_id=location_id, transaction_type=txn_type,
                 quantity=p.quantity, batch_number=p.batch_number, reference_type="stock_transfer",
                 reference_number=transfer.transfer_number, transaction_date=transfer.transfer_date,
                 created_by_id=user.id,

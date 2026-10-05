@@ -11,13 +11,13 @@ const config: TourConfig = {
     },
     {
       target: 'transfer-from',
-      title: 'From Warehouse',
+      title: 'From Store',
       required: true,
-      purpose: 'Where stock is moved out of. Must be different from To Warehouse.',
+      purpose: 'Where stock is moved out of. Must be different from To Store.',
     },
     {
       target: 'transfer-to',
-      title: 'To Warehouse',
+      title: 'To Store',
       required: true,
       purpose: 'Where stock arrives.',
     },
@@ -30,7 +30,7 @@ const config: TourConfig = {
       target: 'transfer-quantity',
       title: 'Quantity',
       required: true,
-      why: 'Rejected if it exceeds what\'s currently available at the From Warehouse.',
+      why: 'Rejected if it exceeds what\'s currently available at the From Store.',
     },
     {
       target: 'transfer-add-item-btn',
@@ -40,7 +40,7 @@ const config: TourConfig = {
     {
       target: 'transfer-save-btn',
       title: 'Transfer Stock',
-      purpose: 'Creates the transfer and posts a paired out/in movement immediately — From Warehouse\'s stock decreases, To Warehouse\'s increases, in the same step.',
+      purpose: 'Creates the transfer and posts a paired out/in movement immediately — From Store\'s stock decreases, To Store\'s increases, in the same step.',
       after: 'Takes you to the new transfer\'s detail page.',
     },
   ],

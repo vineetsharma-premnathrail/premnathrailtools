@@ -505,7 +505,7 @@ export default function EditOrganizationInfoPage() {
               </div>
               <div style={gridStyle}>
                 <div>
-                  <label style={labelStyle}>Default Warehouse</label>
+                  <label style={labelStyle}>Default Store</label>
                   <select data-tour="org-edit-default-warehouse" style={inputStyle} value={form.default_warehouse_id || ''} onChange={(e) => setField('default_warehouse_id', e.target.value ? Number(e.target.value) : null)}>
                     <option value="">— Select —</option>
                     {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}

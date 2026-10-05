@@ -1,13 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { projectsApi, usersApi } from '@/lib/api'
-import { DirectoryUser, PmProjectPriority } from '@/types'
+import { projectsApi } from '@/lib/api'
+import { PmProjectPriority } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
-import SearchableSelect from '@/components/erp/SearchableSelect'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import ProjectsNav from '@/components/projects/ProjectsNav'
 import { extractErrorMessages } from '@/lib/validation'
@@ -26,30 +25,17 @@ export default function NewProjectPage() {
   const { isAuthorized, isLoading } = useRequireApp('projects')
   const router = useRouter()
 
-  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([])
-
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [scopeStatement, setScopeStatement] = useState('')
-  const [objectives, setObjectives] = useState('')
   const [clientName, setClientName] = useState('')
   const [projectType, setProjectType] = useState('')
   const [category, setCategory] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [priority, setPriority] = useState<PmProjectPriority>('medium')
-  const [projectManagerId, setProjectManagerId] = useState('')
-  const [sponsorId, setSponsorId] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | string[]>('')
-
-  useEffect(() => {
-    if (!isAuthorized) return
-    usersApi.directory()
-      .then((data) => setDirectoryUsers(Array.isArray(data) ? data : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load users.')))
-  }, [isAuthorized])
 
   const handleSubmit = async () => {
     setError('')
@@ -60,16 +46,12 @@ export default function NewProjectPage() {
       const project = await projectsApi.create({
         name: name.trim(),
         description: description.trim() || undefined,
-        scope_statement: scopeStatement.trim() || undefined,
-        objectives: objectives.trim() || undefined,
         client_name: clientName.trim() || undefined,
         project_type: projectType.trim() || undefined,
         category: category.trim() || undefined,
         start_date: startDate || undefined,
         end_date: endDate || undefined,
         priority,
-        project_manager_id: projectManagerId ? Number(projectManagerId) : undefined,
-        sponsor_id: sponsorId ? Number(sponsorId) : undefined,
       })
       router.push(`/dashboard/projects/${project.id}`)
     } catch (err: any) {
@@ -137,36 +119,10 @@ export default function NewProjectPage() {
               <option value="critical">Critical</option>
             </select>
           </div>
-          <div style={{ flex: '1 1 240px', minWidth: 220 }}>
-            <label style={labelStyle}>Project Manager</label>
-            <SearchableSelect
-              value={projectManagerId}
-              onChange={setProjectManagerId}
-              options={directoryUsers.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
-              placeholder="Search user…"
-            />
-          </div>
-          <div style={{ flex: '1 1 240px', minWidth: 220 }}>
-            <label style={labelStyle}>Sponsor</label>
-            <SearchableSelect
-              value={sponsorId}
-              onChange={setSponsorId}
-              options={directoryUsers.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
-              placeholder="Search user…"
-            />
-          </div>
-        </div>
-        <div style={{ marginBottom: 18 }}>
-          <label style={labelStyle}>Description</label>
-          <textarea style={{ ...inputStyle, minHeight: 80 }} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
-        <div style={{ marginBottom: 18 }}>
-          <label style={labelStyle}>Scope Statement</label>
-          <textarea style={{ ...inputStyle, minHeight: 80 }} value={scopeStatement} onChange={(e) => setScopeStatement(e.target.value)} />
         </div>
         <div>
-          <label style={labelStyle}>Objectives</label>
-          <textarea style={{ ...inputStyle, minHeight: 80 }} value={objectives} onChange={(e) => setObjectives(e.target.value)} />
+          <label style={labelStyle}>Description</label>
+          <textarea style={{ ...inputStyle, minHeight: 80 }} value={description} onChange={(e) => setDescription(e.target.value)} />
         </div>
       </div>
 

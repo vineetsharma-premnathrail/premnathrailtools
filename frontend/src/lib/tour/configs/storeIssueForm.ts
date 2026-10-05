@@ -11,14 +11,15 @@ const config: TourConfig = {
     },
     {
       target: 'issue-location',
-      title: 'Warehouse',
+      title: 'Store',
       required: true,
-      purpose: 'Which warehouse the material is issued out of.',
+      purpose: 'Which store the material is issued out of.',
     },
     {
-      target: 'issue-department',
-      title: 'Department',
-      purpose: 'Which department requested/received this material.',
+      target: 'issue-type',
+      title: 'Issue Type',
+      required: true,
+      purpose: 'Why the material is going out — Production, Maintenance, Project/Site… Maintained under Store → Settings → Issue Types and used for consumption reports.',
     },
     {
       target: 'issue-project',
@@ -35,7 +36,7 @@ const config: TourConfig = {
       target: 'issue-quantity',
       title: 'Quantity',
       required: true,
-      why: 'Rejected if it exceeds what\'s currently available at the selected warehouse.',
+      why: 'Rejected if it exceeds what\'s currently available at the selected store.',
     },
     {
       target: 'issue-add-item-btn',
@@ -45,7 +46,7 @@ const config: TourConfig = {
     {
       target: 'issue-save-btn',
       title: 'Issue Material',
-      purpose: 'Creates the issue and deducts stock from the warehouse immediately — no separate approval step.',
+      purpose: 'Creates the issue and deducts stock from the store immediately — no separate approval step.',
       after: 'Takes you to the new issue\'s detail page.',
     },
   ],

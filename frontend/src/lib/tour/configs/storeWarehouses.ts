@@ -2,12 +2,12 @@ import { TourConfig } from '../types'
 
 const config: TourConfig = {
   id: 'store-warehouses',
-  pageTitle: 'Warehouses',
+  pageTitle: 'Stores',
   steps: [
     {
       target: 'wh-add-btn',
-      title: '+ Add Warehouse',
-      purpose: 'Creates a new warehouse location — everything else in Store & Inventory (stock, issues, transfers) happens against a warehouse.',
+      title: '+ Add Store',
+      purpose: 'Creates a new store location — everything else in Store & Inventory (stock, issues, transfers) happens against a store.',
     },
     {
       target: 'wh-name',
@@ -24,30 +24,23 @@ const config: TourConfig = {
     {
       target: 'wh-branch',
       title: 'Branch',
-      purpose: 'Which company branch this warehouse belongs to.',
+      purpose: 'Which company branch this store belongs to.',
     },
     {
       target: 'wh-type',
-      title: 'Warehouse Type',
-      whatToEnter: 'A free-text label for what this warehouse holds.',
+      title: 'Store Type',
+      whatToEnter: 'A free-text label for what this store holds.',
       validExample: 'Raw Material, Finished Goods',
     },
     {
       target: 'wh-save-btn',
-      title: 'Save Warehouse',
-      purpose: 'Creates the warehouse. Name and Code are required.',
+      title: 'Save Store',
+      purpose: 'Creates the store. Name and Code are required.',
     },
     {
       target: 'wh-table',
-      title: 'Warehouse rows',
-      purpose: 'Click anywhere on a row to expand it and manage that warehouse\'s racks, shelves, and bins.',
-    },
-    {
-      target: 'wh-bin-add-row',
-      title: 'Add Rack / Shelf / Bin',
-      purpose: 'Appears once a warehouse row is expanded. Picks a level (Rack, Shelf, or Bin) and gives it a code — the physical breakdown inside this warehouse.',
-      whatToEnter: 'A short code for this level.',
-      validExample: 'R1, S1-A, B1-A-01',
+      title: 'Store rows',
+      purpose: 'Each store with its code, branch, type and status.',
     },
   ],
 }

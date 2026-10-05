@@ -45,7 +45,7 @@ interface PlantFormProps {
 }
 
 /** Basic-Information-only form, used for creating a new branch. Address,
- * Operational Configuration, Users, Warehouses, Cost Centers, and Documents
+ * Operational Configuration, Users, Stores, Cost Centers, and Documents
  * are managed from the branch's Edit page once it exists (those are
  * repeatable child records that need a real branch_id to attach to). */
 export default function PlantForm({ title, breadcrumb, tabBar, initial, submitLabel, onCancel, onSubmit, onSaved }: PlantFormProps) {

@@ -12,7 +12,7 @@ const config: TourConfig = {
     {
       target: 'issue-detail-summary',
       title: 'Issue Summary',
-      purpose: 'Warehouse, department, project/work order, dates, and who requested/issued it. A Material Issue is final once created — there\'s no edit here; use a Material Return to reverse part of it.',
+      purpose: 'Store, department, project/work order, dates, and who requested/issued it. A Material Issue is final once created — there\'s no edit here; use a Material Return to reverse part of it.',
     },
     {
       target: 'issue-detail-items',

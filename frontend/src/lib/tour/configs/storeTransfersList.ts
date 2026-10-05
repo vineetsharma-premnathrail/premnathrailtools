@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'transfers-add-btn',
       title: '+ New Transfer',
-      purpose: 'Moves stock between two warehouses — posts a paired out/in movement immediately.',
+      purpose: 'Moves stock between two stores — posts a paired out/in movement immediately.',
       after: 'Takes you to a separate Create Transfer page — its own guided tour covers every field there.',
     },
     {

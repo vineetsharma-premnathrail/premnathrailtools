@@ -131,33 +131,57 @@ export default function NewStoreGrnPage() {
 
       {selectedPo && (
         <div style={sectionStyle}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Line Items</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', margin: '0 0 14px' }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Line Items</h2>
+            <button
+              type="button"
+              onClick={() => setReceivedQty(Object.fromEntries(selectedPo.items.filter((it) => it.pending_quantity > 0).map((it) => [it.id, String(it.pending_quantity)])))}
+              style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }}
+            >
+              Fill pending qty
+            </button>
+          </div>
           <div style={{ overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
               <thead>
                 <tr>
-                  {['Item', 'Unit', 'Ordered Qty', 'Received Qty *'].map((h) => (
+                  {['Item', 'Unit', 'Ordered Qty', 'Already Received', 'Pending', 'Received Now *'].map((h) => (
                     <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, borderBottom: `1px solid ${BORDER.normal}` }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {selectedPo.items.map((it) => (
-                  <tr key={it.id}>
+                {selectedPo.items.map((it) => {
+                  const now = Number(receivedQty[it.id] || 0)
+                  const balance = it.pending_quantity - now
+                  return (
+                  <tr key={it.id} style={{ opacity: it.pending_quantity <= 0 ? 0.5 : 1 }}>
                     <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.item_name}</td>
                     <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.unit || '—'}</td>
                     <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.quantity}</td>
+                    <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.received_quantity}</td>
+                    <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 600, color: it.pending_quantity > 0 ? '#d97706' : '#16a34a', borderBottom: `1px solid ${BORDER.normal}` }}>
+                      {it.pending_quantity > 0 ? it.pending_quantity : 'Received'}
+                    </td>
                     <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
                       <input
-                        type="number" min={0} max={it.quantity} step="any"
+                        type="number" min={0} max={it.pending_quantity} step="any"
+                        disabled={it.pending_quantity <= 0}
                         value={receivedQty[it.id] || ''}
                         onChange={(e) => setReceivedQty((q) => ({ ...q, [it.id]: e.target.value }))}
                         style={{ ...inputStyle, width: 110 }}
                         placeholder="0"
                       />
+                      {now > 0 && balance > 1e-9 && (
+                        <div style={{ fontSize: 11, color: '#d97706', marginTop: 4 }}>Short by {+balance.toFixed(3)} — stays pending from vendor</div>
+                      )}
+                      {now > it.pending_quantity + 1e-9 && (
+                        <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4 }}>More than pending ({it.pending_quantity})</div>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -168,6 +192,7 @@ export default function NewStoreGrnPage() {
           </div>
 
           <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '14px 0 0' }}>
+            Enter only what actually arrived. Anything less than pending stays open on the PO and Purchase is notified of the balance due from the vendor.
             Quality inspection (accepted/rejected quantities) is recorded as a separate step after this receipt is saved.
           </p>
         </div>

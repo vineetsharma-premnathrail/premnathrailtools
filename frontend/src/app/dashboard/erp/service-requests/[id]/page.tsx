@@ -1,5 +1,6 @@
 'use client'
 
+import UomSelect from '@/components/erp/UomSelect'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
@@ -588,7 +589,7 @@ function MaterialsTab({ srId, canEdit, canDelete }: { srId: number; canEdit: boo
                       <td style={{ padding: '6px 8px', minWidth: 110 }}><input style={inputStyle} value={item.make} onChange={(e) => updateItem(idx, 'make', e.target.value)} /></td>
                       <td style={{ padding: '6px 8px', minWidth: 110 }}><input style={inputStyle} value={item.part_code} onChange={(e) => updateItem(idx, 'part_code', e.target.value)} /></td>
                       <td style={{ padding: '6px 8px', minWidth: 130 }}>
-                        <SearchableSelect value={item.unit || ''} onChange={(v) => updateItem(idx, 'unit', v)} options={prMeta.uoms} placeholder="Select unit…" />
+                        <UomSelect value={item.unit || ''} onChange={(v) => updateItem(idx, 'unit', v)} options={prMeta.uoms} onOptionsChange={(uoms) => setPrMeta((m) => ({ ...m, uoms }))} />
                       </td>
                       <td style={{ padding: '6px 8px', minWidth: 70 }}><input type="number" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} /></td>
                       <td style={{ padding: '6px 8px', minWidth: 130 }}>

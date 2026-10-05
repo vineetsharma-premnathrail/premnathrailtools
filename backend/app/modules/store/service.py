@@ -97,9 +97,10 @@ def generate_item_code(db: Session, item_type: str | None, category_name: str | 
     Serialized with the same advisory lock as the other Store numbers on
     Postgres (skipped on SQLite, which has no advisory locks)."""
     from app.modules.store.models.category import StoreItemCategory
-    from app.modules.store.models.item import StoreItem, STORE_ITEM_TYPE_PREFIXES, STORE_ITEM_NO_CATEGORY_CODE
+    from app.modules.store.models.item import StoreItem, StoreItemType, STORE_ITEM_TYPE_PREFIXES, STORE_ITEM_NO_CATEGORY_CODE
 
-    type_code = STORE_ITEM_TYPE_PREFIXES.get(item_type or "other", "OT")
+    row = db.query(StoreItemType).filter(StoreItemType.value == (item_type or "material")).first()
+    type_code = row.prefix if row else STORE_ITEM_TYPE_PREFIXES.get(item_type or "material", "MT")
     cat_code = STORE_ITEM_NO_CATEGORY_CODE
     if category_name:
         cat = db.query(StoreItemCategory).filter(

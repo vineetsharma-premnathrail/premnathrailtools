@@ -125,7 +125,7 @@ register_audited(QualityDocument, entity_type="quality_document", module_key="qu
 # ---------------------------------------------------------------------------
 register_audited(StoreItem, entity_type="store_item", module_key="store", label="Item", ref=lambda o: o.item_code)
 register_audited(StoreItemCategory, entity_type="store_item_category", module_key="store", label="Item category", ref=lambda o: o.code)
-register_audited(StoreLocation, entity_type="store_location", module_key="store", label="Warehouse", ref=lambda o: o.code)
+register_audited(StoreLocation, entity_type="store_location", module_key="store", label="Store", ref=lambda o: o.code)
 register_audited(StoreBin, entity_type="store_bin", module_key="store", label="Bin", ref=lambda o: o.code)
 
 register_audited(StoreMaterialIssue, entity_type="store_material_issue", module_key="store", label="Material issue", ref=lambda o: o.issue_number)

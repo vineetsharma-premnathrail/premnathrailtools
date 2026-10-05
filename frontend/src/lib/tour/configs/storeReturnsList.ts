@@ -7,7 +7,7 @@ const config: TourConfig = {
     {
       target: 'returns-add-btn',
       title: '+ New Return',
-      purpose: 'Records material coming back into a warehouse — unused/rejected material, optionally against a prior Material Issue.',
+      purpose: 'Records material coming back into a store — unused/rejected material, optionally against a prior Material Issue.',
       after: 'Takes you to a separate Create Return page — its own guided tour covers every field there.',
     },
     {

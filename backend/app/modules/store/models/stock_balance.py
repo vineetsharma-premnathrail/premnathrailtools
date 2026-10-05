@@ -20,3 +20,7 @@ class StoreStockBalance(Base, TimestampMixin):
 
     on_hand_qty: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     reserved_qty: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    # Damaged/rejected returned material physically in the store but NOT
+    # usable — kept out of on_hand_qty (so it can't be issued/reserved)
+    # until cleared via quarantine_out (scrap, vendor return, or release).
+    quarantine_qty: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")

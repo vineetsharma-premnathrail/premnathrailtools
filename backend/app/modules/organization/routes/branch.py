@@ -57,28 +57,6 @@ def _to_response(branch: Branch, db: Session) -> BranchResponse:
     )
 
 
-def ensure_branch_warehouse(db: Session, branch: Branch) -> None:
-    """Every branch gets a default warehouse: reuse one already under the
-    branch, otherwise create '<Branch> Warehouse'. Needs branch.id (flush first)."""
-    if branch.default_warehouse_id:
-        return
-    from app.modules.store.models.location import StoreLocation  # local import avoids a cross-module cycle at startup
-    warehouse = db.query(StoreLocation).filter(StoreLocation.branch_id == branch.id).order_by(StoreLocation.id).first()
-    if not warehouse:
-        base = f"WH-{branch.code}"[:30]
-        code, n = base, 2
-        while db.query(StoreLocation.id).filter(StoreLocation.code == code).first():
-            suffix = f"-{n}"
-            code, n = base[:30 - len(suffix)] + suffix, n + 1
-        warehouse = StoreLocation(
-            branch_id=branch.id, name=f"{branch.name} Warehouse"[:150], code=code,
-            manager_user_id=branch.manager_user_id, status="active", is_active=True,
-        )
-        db.add(warehouse)
-        db.flush()
-    branch.default_warehouse_id = warehouse.id
-
-
 def _get_branch_or_404(branch_id: int, db: Session) -> Branch:
     branch = db.query(Branch).filter(Branch.id == branch_id).first()
     if not branch:
@@ -115,8 +93,6 @@ async def create_branch(
         raise HTTPException(status_code=409, detail=f"Plant code '{payload.code}' already exists")
     branch = Branch(**payload.model_dump())
     db.add(branch)
-    db.flush()
-    ensure_branch_warehouse(db, branch)
     db.commit()
     db.refresh(branch)
     return _to_response(branch, db)

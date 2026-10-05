@@ -25,6 +25,19 @@ class StoreMaterialIssue(Base, TimestampMixin):
     # on an approved PR, instead of the standalone Material Issue form.
     p2p_request_id: Mapped[int | None] = mapped_column(ForeignKey("p2p_requests.id"), nullable=True)
 
+    # StoreDocType kind "issue" (Store → Settings → Issue Types).
+    issue_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # Delivery challan accompanying the material. Mandatory only when the
+    # issue type or warehouse is listed under Store → Settings → Challan Rules.
+    challan_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Outside party the material goes to (job work / rework vendor).
+    # Mandatory only for issue types ticked under Store → Settings → Issue Rules.
+    vendor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # When the material is due back (sent out for machining / rework etc.).
+    # Mandatory only for issue types ticked under Store → Settings → Issue Rules.
+    expected_return_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
     issue_date: Mapped[date] = mapped_column(Date, nullable=False)
     issued_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -9,6 +9,7 @@ import { TEXT } from '@/lib/theme'
 import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
+import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface Line { itemId: string; quantity: string; batchNumber: string }
@@ -41,9 +42,9 @@ export default function NewStockTransferPage() {
 
   const save = async () => {
     const problems: string[] = []
-    if (!fromLocationId) problems.push('Source warehouse is required.')
-    if (!toLocationId) problems.push('Destination warehouse is required.')
-    if (fromLocationId && toLocationId && fromLocationId === toLocationId) problems.push('Source and destination warehouse must be different.')
+    if (!fromLocationId) problems.push('Source store is required.')
+    if (!toLocationId) problems.push('Destination store is required.')
+    if (fromLocationId && toLocationId && fromLocationId === toLocationId) problems.push('Source and destination store must be different.')
     const validLines = lines.filter((l) => l.itemId && l.quantity)
     if (!validLines.length) problems.push('At least one item is required.')
     for (const l of validLines) {
@@ -95,13 +96,13 @@ export default function NewStockTransferPage() {
 
       <Section title="Transfer Details" style={{ marginBottom: 20 }}>
         <Row>
-          <Field label="From Warehouse *">
+          <Field label="From Store *">
             <select data-tour="transfer-from" style={inputStyle} value={fromLocationId} onChange={(e) => setFromLocationId(e.target.value)}>
               <option value="">— Select —</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </Field>
-          <Field label="To Warehouse *">
+          <Field label="To Store *">
             <select data-tour="transfer-to" style={inputStyle} value={toLocationId} onChange={(e) => setToLocationId(e.target.value)}>
               <option value="">— Select —</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -121,10 +122,10 @@ export default function NewStockTransferPage() {
           <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 4 }}>
             <div style={{ flex: '1 1 260px' }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Item</label>
-              <select {...(idx === 0 ? { 'data-tour': 'transfer-item' } : {})} style={inputStyle} value={line.itemId} onChange={(e) => updateLine(idx, { itemId: e.target.value })}>
-                <option value="">— Select —</option>
-                {items.map((i) => <option key={i.id} value={i.id}>{i.item_code} — {i.item_name}</option>)}
-              </select>
+              <div {...(idx === 0 ? { 'data-tour': 'transfer-item' } : {})}>
+                <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search item code or name…"
+                  options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+              </div>
             </div>
             <div style={{ flex: '0 0 120px' }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Quantity</label>

@@ -50,9 +50,13 @@ export default function StoreMaterialIssueDetailPage() {
           <div data-tour="issue-detail-summary" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Row>
-                <InfoRow label="Warehouse" value={issue.location_name || '—'} />
+                <InfoRow label="Store" value={issue.location_name || '—'} />
+                <InfoRow label="Issue Type" value={issue.issue_type_label || '—'} />
                 <InfoRow label="Department" value={issue.department_name || '—'} />
                 <InfoRow label="Project / Work Order" value={issue.project_or_work_order || '—'} />
+                <InfoRow label="Challan No." value={issue.challan_number || '—'} />
+                <InfoRow label="Vendor" value={issue.vendor_name || '—'} />
+                {issue.expected_return_date && <InfoRow label="Date" value={issue.expected_return_date} />}
               </Row>
               <Row>
                 <InfoRow label="Issue Date" value={issue.issue_date} />

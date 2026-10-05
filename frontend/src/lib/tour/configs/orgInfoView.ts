@@ -98,7 +98,7 @@ const config: TourConfig = {
     {
       target: 'org-info-tab-defaults',
       title: 'Defaults & Controls',
-      purpose: 'The default plant, warehouse, cost center, and profit center pre-filled on new transactions for this company.',
+      purpose: 'The default plant, store, cost center, and profit center pre-filled on new transactions for this company.',
       autoActivate: true,
     },
     {

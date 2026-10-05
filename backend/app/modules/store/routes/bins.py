@@ -33,7 +33,7 @@ async def create_bin(
     _user: User = Depends(require_app_access("store")),
 ):
     if db.query(StoreBin).filter(StoreBin.location_id == payload.location_id, StoreBin.code == payload.code).first():
-        raise HTTPException(status_code=409, detail=f"Bin code '{payload.code}' already exists in this warehouse")
+        raise HTTPException(status_code=409, detail=f"Bin code '{payload.code}' already exists in this store")
     bin_ = StoreBin(**payload.model_dump())
     db.add(bin_)
     db.commit()
@@ -69,6 +69,10 @@ async def delete_bin(
         raise HTTPException(status_code=404, detail="Bin not found")
     if db.query(StoreBin).filter(StoreBin.parent_id == bin_id).first():
         raise HTTPException(status_code=409, detail="Cannot delete — this bin has child bins under it.")
+    from app.modules.store.models.stock_transaction import StoreStockTransaction
+    moves = db.query(StoreStockTransaction.id).filter(StoreStockTransaction.bin_id == bin_id).count()
+    if moves:
+        raise HTTPException(status_code=409, detail=f"Bin '{bin_.name or bin_.code}' can't be deleted — {moves} stock movement(s) were posted to it and still point at it.")
     db.delete(bin_)
     db.commit()
     return {"ok": True}

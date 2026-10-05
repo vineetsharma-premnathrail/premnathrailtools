@@ -50,10 +50,32 @@ def _po_approval_block_reason(db: Session, po: P2PPurchaseOrder) -> str | None:
     return None
 
 
-def _get_grn_or_404(db: Session, grn_id: int) -> P2PGoodsReceipt:
-    grn = db.query(P2PGoodsReceipt).options(
+def _received_by_po_item(db: Session, po_id: int) -> dict[int, float]:
+    """Quantity already received per PO item, i.e. what's no longer pending
+    from the vendor. A completed GRN's rejected quantity doesn't count — the
+    vendor still owes a replacement for it, so only its accepted quantity is
+    "used up". A draft GRN hasn't been inspected yet, so its full
+    received_quantity counts until that's resolved."""
+    received: dict[int, float] = {}
+    grns = db.query(P2PGoodsReceipt).filter(P2PGoodsReceipt.purchase_order_id == po_id).options(
+        selectinload(P2PGoodsReceipt.items)
+    ).all()
+    for g in grns:
+        for it in g.items:
+            qty = it.accepted_quantity if g.status == "completed" else it.received_quantity
+            received[it.po_item_id] = received.get(it.po_item_id, 0) + (qty or 0)
+    return received
+
+
+def _fmt_qty(q: float) -> str:
+    return f"{q:g}"
+
+
+def _get_grn_or_404(db: Session, grn_id: int, for_update: bool = False) -> P2PGoodsReceipt:
+    q = db.query(P2PGoodsReceipt).options(
         selectinload(P2PGoodsReceipt.items),
-    ).filter(P2PGoodsReceipt.id == grn_id).first()
+    ).filter(P2PGoodsReceipt.id == grn_id)
+    grn = (q.with_for_update() if for_update else q).first()
     if not grn:
         raise HTTPException(status_code=404, detail="Goods receipt not found")
     return grn
@@ -96,6 +118,7 @@ def _to_response(db: Session, grn: P2PGoodsReceipt) -> P2PGoodsReceiptResponse:
     resp = P2PGoodsReceiptResponse.model_validate(grn)
     po = grn.purchase_order
     resp.po_number = po.po_number
+    resp.po_date = po.po_date
     resp.p2p_request_id = po.p2p_request_id
     resp.vendor_name = po.vendor_name
     if po.p2p_request_id:
@@ -218,14 +241,18 @@ async def list_pending_purchase_orders(
         if _po_approval_block_reason(db, po):
             continue
         pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first()
+        received = _received_by_po_item(db, po.id)
         result.append({
             "id": po.id,
             "po_number": po.po_number,
             "vendor_name": po.vendor_name,
             "p2p_number": pr.p2p_number if pr else None,
             "status": po.status,
+            "po_date": po.po_date,
+            "expected_delivery": po.expected_delivery,
             "items": [
-                {"id": i.id, "item_name": i.item_name, "unit": i.unit, "quantity": i.quantity}
+                {"id": i.id, "item_name": i.item_name, "unit": i.unit, "quantity": i.quantity,
+                 "received_quantity": received.get(i.id, 0), "pending_quantity": max(0.0, i.quantity - received.get(i.id, 0))}
                 for i in po.items
             ],
         })
@@ -270,19 +297,8 @@ async def create_goods_receipt(
     po_items_by_id = {i.id: i for i in po.items}
 
     # Already-received quantity per PO item, so a new GRN can't push the
-    # total past what was actually ordered. A completed GRN's rejected
-    # quantity doesn't count — it never fulfilled the order and the vendor
-    # still owes a replacement delivery for it, so only its accepted
-    # quantity stays "used up". A draft GRN hasn't been inspected yet, so
-    # its full received_quantity counts until that's resolved.
-    already_received: dict[int, float] = {}
-    existing_grns = db.query(P2PGoodsReceipt).filter(P2PGoodsReceipt.purchase_order_id == po.id).options(
-        selectinload(P2PGoodsReceipt.items)
-    ).all()
-    for g in existing_grns:
-        for it in g.items:
-            qty = it.accepted_quantity if g.status == "completed" else it.received_quantity
-            already_received[it.po_item_id] = already_received.get(it.po_item_id, 0) + (qty or 0)
+    # total past what was actually ordered.
+    already_received = _received_by_po_item(db, po.id)
 
     for item_payload in payload.items:
         po_item = po_items_by_id.get(item_payload.po_item_id)
@@ -325,11 +341,23 @@ async def create_goods_receipt(
     if po.p2p_request_id:
         _write_audit(db, po.p2p_request_id, "grn_recorded", user,
                      summary=f"{user.name or user.email} recorded goods receipt '{grn.grn_number}' against PO '{po.po_number}'.")
+        # Short receipt: tell Purchase what the vendor still owes on this PO,
+        # so they can follow up — the PO stays open for the balance.
+        db.flush()
+        received_now = _received_by_po_item(db, po.id)
+        short_lines = [
+            f"{i.item_name}: {_fmt_qty(i.quantity - received_now.get(i.id, 0))} {i.unit or ''}".strip()
+            for i in po.items if i.quantity - received_now.get(i.id, 0) > 1e-9
+        ]
+        if short_lines:
+            _write_audit(db, po.p2p_request_id, "grn_short_receipt", user,
+                         summary=f"GRN '{grn.grn_number}' received less than ordered on PO '{po.po_number}'. Pending from {po.vendor_name or 'vendor'}: " + "; ".join(short_lines) + ".")
         if po.created_by_id:
+            pending_note = (f" Received less than ordered — still pending from {po.vendor_name or 'the vendor'}: " + "; ".join(short_lines) + ".") if short_lines else ""
             notify_user(
                 db, user_id=po.created_by_id,
-                title="Goods Receipt Recorded",
-                message=f"Goods receipt '{grn.grn_number}' was recorded against PO '{po.po_number}' — pending quality inspection.",
+                title="Goods Receipt Recorded — Short Supply" if short_lines else "Goods Receipt Recorded",
+                message=f"Goods receipt '{grn.grn_number}' was recorded against PO '{po.po_number}' — pending quality inspection.{pending_note}",
                 notification_type="p2p_grn_recorded", entity_type="p2p_goods_receipt", entity_id=grn.id,
             )
 
@@ -349,7 +377,9 @@ async def inspect_goods_receipt(
     split) and completes the GRN once every item has been inspected — which
     then rolls up into the PO's fulfilment status and the PR's receipt
     status (see _sync_po_and_pr_status)."""
-    grn = _get_grn_or_404(db, grn_id)
+    # Locked so a double-submitted inspection can't see 'draft' twice and
+    # post the same receipt to stock twice.
+    grn = _get_grn_or_404(db, grn_id, for_update=True)
     if grn.status == "completed":
         raise HTTPException(status_code=409, detail="This goods receipt has already been completed")
     if not payload.items:
@@ -367,11 +397,19 @@ async def inspect_goods_receipt(
             )
         if entry.accepted_quantity < 0 or entry.rejected_quantity < 0:
             raise HTTPException(status_code=422, detail=f"Accepted/rejected quantity for '{item.item_name}' cannot be negative")
-        if entry.accepted_quantity + entry.rejected_quantity > item.received_quantity + 1e-9:
+        # Every received unit must end up accepted or rejected — otherwise the
+        # gap disappears from both stock and the vendor's pending balance.
+        if abs(entry.accepted_quantity + entry.rejected_quantity - item.received_quantity) > 1e-9:
             raise HTTPException(
                 status_code=422,
-                detail=f"Accepted + rejected for '{item.item_name}' exceeds the {item.received_quantity} received",
+                detail=f"Accepted ({entry.accepted_quantity:g}) + rejected ({entry.rejected_quantity:g}) for '{item.item_name}' must equal the {item.received_quantity:g} received — adjust the split.",
             )
+        if entry.quality_status == "passed" and entry.rejected_quantity > 1e-9:
+            raise HTTPException(status_code=422, detail=f"'{item.item_name}' is marked Passed but has {entry.rejected_quantity:g} rejected — choose Partial, or set rejected to 0.")
+        if entry.quality_status == "failed" and entry.accepted_quantity > 1e-9:
+            raise HTTPException(status_code=422, detail=f"'{item.item_name}' is marked Failed but has {entry.accepted_quantity:g} accepted — choose Partial, or set accepted to 0.")
+        if entry.quality_status == "partial" and (entry.accepted_quantity <= 1e-9 or entry.rejected_quantity <= 1e-9):
+            raise HTTPException(status_code=422, detail=f"'{item.item_name}' is marked Partial — it needs both an accepted and a rejected quantity. Otherwise choose Passed or Failed.")
         item.accepted_quantity = entry.accepted_quantity
         item.rejected_quantity = entry.rejected_quantity
         item.quality_status = entry.quality_status

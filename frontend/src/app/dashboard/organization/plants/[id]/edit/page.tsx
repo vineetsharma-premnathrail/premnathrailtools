@@ -44,8 +44,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 type FormState = Partial<Branch>
 
-const TABS = ['Basic', 'Address', 'Operational Configuration', 'Branch Users', 'Branch Departments', 'Branch Warehouses', 'Branch Cost Centers', 'Branch Documents'] as const
-const LIST_TABS = new Set(['Address', 'Branch Users', 'Branch Departments', 'Branch Warehouses', 'Branch Cost Centers', 'Branch Documents'])
+const TABS = ['Basic', 'Address', 'Operational Configuration', 'Branch Users', 'Branch Departments', 'Branch Stores', 'Branch Cost Centers', 'Branch Documents'] as const
+const LIST_TABS = new Set(['Address', 'Branch Users', 'Branch Departments', 'Branch Stores', 'Branch Cost Centers', 'Branch Documents'])
 
 export default function EditPlantPage() {
   const { isAuthorized, isLoading } = useRequireAdmin()
@@ -247,7 +247,7 @@ export default function EditPlantPage() {
                 </div>
                 <div style={gridStyle}>
                   <div>
-                    <label style={labelStyle}>Default Warehouse</label>
+                    <label style={labelStyle}>Default Store</label>
                     <select style={inputStyle} value={form.default_warehouse_id || ''} onChange={(e) => setField('default_warehouse_id', e.target.value ? Number(e.target.value) : null)}>
                       <option value="">— Select —</option>
                       {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -271,7 +271,7 @@ export default function EditPlantPage() {
                     <input style={inputStyle} value={form.currency || ''} onChange={(e) => setField('currency', e.target.value || null)} placeholder="INR" />
                   </div>
                 </div>
-                <p style={{ fontSize: 11.5, color: TEXT.muted, margin: 0 }}>Warehouses and cost centers are managed from their own tabs on this page, then chosen as defaults here.</p>
+                <p style={{ fontSize: 11.5, color: TEXT.muted, margin: 0 }}>Stores and cost centers are managed from their own tabs on this page, then chosen as defaults here.</p>
               </div>
             )}
 
@@ -296,7 +296,7 @@ export default function EditPlantPage() {
               </div>
             )}
 
-            {tab === 'Branch Warehouses' && <WarehousesEditor branchId={plantId} warehouses={warehouses} directory={directory} onRefresh={loadLists} />}
+            {tab === 'Branch Stores' && <WarehousesEditor branchId={plantId} warehouses={warehouses} directory={directory} onRefresh={loadLists} />}
 
             {tab === 'Branch Cost Centers' && <CostCentersEditor branchId={plantId} costCenters={costCenters} directory={directory} departments={departments} onRefresh={loadLists} />}
 
@@ -585,7 +585,7 @@ function UserAssignmentsEditor({ branchId, assignments, directory, departments, 
 }
 
 // ---------------------------------------------------------------------------
-// Branch Warehouses
+// Branch Stores
 // ---------------------------------------------------------------------------
 
 function emptyWarehouse() {
@@ -610,7 +610,7 @@ function WarehousesEditor({ branchId, warehouses, directory, onRefresh }: { bran
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.name.trim() || !form.code.trim()) { setError('Warehouse Name and Code are required'); return }
+    if (!form.name.trim() || !form.code.trim()) { setError('Store Name and Code are required'); return }
     setSaving(true)
     setError('')
     try {
@@ -621,7 +621,7 @@ function WarehousesEditor({ branchId, warehouses, directory, onRefresh }: { bran
       onRefresh()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to save warehouse.')
+      setError(detail || 'Failed to save store.')
     } finally {
       setSaving(false)
     }
@@ -635,7 +635,7 @@ function WarehousesEditor({ branchId, warehouses, directory, onRefresh }: { bran
       onRefresh()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to delete warehouse.')
+      setError(detail || 'Failed to delete store.')
       setDeleteTarget(null)
     }
   }
@@ -643,18 +643,18 @@ function WarehousesEditor({ branchId, warehouses, directory, onRefresh }: { bran
   return (
     <div style={sectionStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{editingId ? 'Edit Warehouse' : 'Add Warehouse'}</h2>
+        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{editingId ? 'Edit Store' : 'Add Store'}</h2>
         {editingId && <button type="button" style={linkBtnStyle} onClick={cancel}>Cancel edit</button>}
       </div>
 
-      <MessageDialog open={!!error} variant="error" title="Warehouse Error" message={error} onClose={() => setError('')} />
-      <ConfirmDialog open={!!deleteTarget} title="Delete this warehouse?" message={`Delete "${deleteTarget?.name}"? This cannot be undone.`} onConfirm={doDelete} onCancel={() => setDeleteTarget(null)} />
+      <MessageDialog open={!!error} variant="error" title="Store Error" message={error} onClose={() => setError('')} />
+      <ConfirmDialog open={!!deleteTarget} title="Delete this store?" message={`Delete "${deleteTarget?.name}"? This cannot be undone.`} onConfirm={doDelete} onCancel={() => setDeleteTarget(null)} />
 
       <form onSubmit={submit} style={{ marginBottom: 20, padding: 16, borderRadius: 12, background: 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.normal}`, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-        <Field label="Warehouse Name *"><input style={inputStyle} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
-        <Field label="Warehouse Code *"><input style={inputStyle} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} /></Field>
-        <Field label="Warehouse Type *"><input style={inputStyle} value={form.warehouse_type} onChange={(e) => setForm((f) => ({ ...f, warehouse_type: e.target.value }))} placeholder="Raw Material" /></Field>
-        <Field label="Warehouse Manager">
+        <Field label="Store Name *"><input style={inputStyle} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
+        <Field label="Store Code *"><input style={inputStyle} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))} /></Field>
+        <Field label="Store Type *"><input style={inputStyle} value={form.warehouse_type} onChange={(e) => setForm((f) => ({ ...f, warehouse_type: e.target.value }))} placeholder="Raw Material" /></Field>
+        <Field label="Store Manager">
           <select style={inputStyle} value={form.manager_user_id} onChange={(e) => setForm((f) => ({ ...f, manager_user_id: e.target.value }))}>
             <option value="">— Select —</option>
             {directory.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -672,11 +672,11 @@ function WarehousesEditor({ branchId, warehouses, directory, onRefresh }: { bran
           </select>
         </Field>
         <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Warehouse'}</button>
+          <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Store'}</button>
         </div>
       </form>
 
-      {warehouses.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No warehouses added yet.</p> : (
+      {warehouses.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No stores added yet.</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {warehouses.map((w) => (
             <div key={w.id} style={cardRowStyle}>

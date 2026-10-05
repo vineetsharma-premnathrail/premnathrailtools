@@ -20,6 +20,10 @@ STORE_STOCK_TXN_TYPES = (
     "adjustment_in",       # in  — stock adjustment, actual > system
     "adjustment_out",      # out — stock adjustment, actual < system
     "damage",            # out — stock written off as damaged
+    "manual_in",         # in  — a custom Stock Entry Type (Settings) with effect "in"
+    "manual_out",        # out — a custom Stock Entry Type (Settings) with effect "out"
+    "quarantine_in",     # quarantine bucket in  — damaged/rejected return, not usable
+    "quarantine_out",    # quarantine bucket out — scrapped / returned to vendor / released
 )
 
 # Where a transaction's quantity came from, for traceability back to the
@@ -38,11 +42,16 @@ class StoreStockTransaction(Base, TimestampMixin):
     bin_id: Mapped[int | None] = mapped_column(ForeignKey("store_bins.id"), nullable=True)
 
     transaction_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Manual entries only: the StoreDocType "stock_entry" value picked on
+    # Record Stock Entry, so custom types show their own label in history.
+    entry_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     batch_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     reference_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     reference_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Supplier on manual stock-in entries (free text, suggested from the vendor master).
+    vendor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -1,5 +1,6 @@
 'use client'
 
+import UomSelect from '@/components/erp/UomSelect'
 import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -278,14 +279,7 @@ export default function NewP2PRequestPage() {
                     <input data-tour="pr-new-item-partcode" style={inputStyle} value={item.part_code} onChange={(e) => updateItem(idx, 'part_code', e.target.value)} />
                   </td>
                   <td data-tour="pr-new-item-unit" style={{ padding: '6px 8px', minWidth: 130 }}>
-                    <SearchableSelect
-                      value={item.unit || ''}
-                      onChange={(v) => updateItem(idx, 'unit', v)}
-                      options={item.unit && !uoms.some((u) => u.value === item.unit)
-                        ? [{ value: item.unit, label: `${item.unit} (not in list — pick a listed unit)` }, ...uoms]
-                        : uoms}
-                      placeholder="Select unit…"
-                    />
+                    <UomSelect value={item.unit || ''} onChange={(v) => updateItem(idx, 'unit', v)} options={uoms} onOptionsChange={setUoms} />
                   </td>
                   <td style={{ padding: '6px 8px', minWidth: 70 }}>
                     <input data-tour="pr-new-item-qty" type="number" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />

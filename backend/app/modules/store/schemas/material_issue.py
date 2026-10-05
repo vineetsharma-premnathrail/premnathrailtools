@@ -27,6 +27,10 @@ class StoreMaterialIssueCreate(BaseModel):
     requested_by_id: int | None = None
     department_id: int | None = None
     project_or_work_order: str | None = None
+    issue_type: str | None = None
+    challan_number: str | None = None
+    vendor_name: str | None = None
+    expected_return_date: date | None = None
     issue_date: date | None = None
     remarks: str | None = None
     items: list[StoreMaterialIssueItemPayload]
@@ -44,6 +48,11 @@ class StoreMaterialIssueResponse(BaseModel):
     department_id: int | None = None
     department_name: str | None = None
     project_or_work_order: str | None = None
+    issue_type: str | None = None
+    issue_type_label: str | None = None
+    challan_number: str | None = None
+    vendor_name: str | None = None
+    expected_return_date: date | None = None
     issue_date: date
     issued_by_id: int | None = None
     issued_by_name: str | None = None

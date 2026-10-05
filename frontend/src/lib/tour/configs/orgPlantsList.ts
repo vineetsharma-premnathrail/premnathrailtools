@@ -7,8 +7,8 @@ const config: TourConfig = {
     {
       target: 'org-plants-add-btn',
       title: '+ Add Branch',
-      purpose: 'Creates a new branch/plant — a physical Indian Railways location (a workshop, depot, unit, or office) that departments, warehouses, cost centers, and users are attached to.',
-      after: 'Opens a form for the branch\'s Basic Information. Address, Operational Configuration, Users, Warehouses, Cost Centers, and Documents can only be added once the branch is saved, from its Edit page.',
+      purpose: 'Creates a new branch/plant — a physical Indian Railways location (a workshop, depot, unit, or office) that departments, stores, cost centers, and users are attached to.',
+      after: 'Opens a form for the branch\'s Basic Information. Address, Operational Configuration, Users, Stores, Cost Centers, and Documents can only be added once the branch is saved, from its Edit page.',
     },
     {
       target: 'org-plants-search',
@@ -31,7 +31,7 @@ const config: TourConfig = {
       target: 'org-plants-delete-btn',
       title: 'Delete',
       purpose: 'Permanently removes a branch record.',
-      after: 'You are asked to confirm first. If the branch has linked departments, warehouses, cost centers, or users, deletion may be blocked — deactivate it instead in that case.',
+      after: 'You are asked to confirm first. If the branch has linked departments, stores, cost centers, or users, deletion may be blocked — deactivate it instead in that case.',
     },
   ],
 }

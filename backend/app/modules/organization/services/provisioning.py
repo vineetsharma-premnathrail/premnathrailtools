@@ -11,8 +11,9 @@ app/modules/main/routes/users.py) right after a user's `office_location`,
     branch. A newly-created Department's `head_user_id` is seeded from the
     user's `reporting_manager_id` (their Azure manager becomes the
     department head) — an existing Department's head is only backfilled if
-    it doesn't have one yet, never overwritten, so admin edits made via the
-    Organization > Department screen stick.
+    it has no head at all; once any head exists, sync never adds or swaps
+    heads, so admin edits made via the Organization > Department screen
+    stick.
   - A Department's `code` is just its full name (not an abbreviation) per
     product decision; since `code` is globally unique but two branches can
     have same-named departments, a numeric suffix is appended on collision.
@@ -52,15 +53,14 @@ def _get_or_create_department(db: Session, branch_id: int, department_name: str,
         .first()
     )
     if department:
-        if not head_user_id:
-            return department
-        if not department.head_user_id:
+        # Only seed a head into a department that has none at all. Once any
+        # head is on record the admin owns the list (Organization > Department)
+        # — sync must never add, swap or re-add heads, otherwise whichever
+        # user syncs last decides the secondary head and admin removals
+        # come back on the next sync.
+        has_head = department.head_user_id or department.secondary_head_user_id or department.additional_head_user_ids
+        if head_user_id and not has_head:
             department.head_user_id = head_user_id
-        elif department.head_user_id != head_user_id and department.secondary_head_user_id != head_user_id:
-            # Same department, but this person's Azure manager differs from
-            # the head already on record — keep both rather than silently
-            # dropping one (see Department.secondary_head_user_id docstring).
-            department.secondary_head_user_id = head_user_id
         return department
     code = unique_code(db, Department, name)
     department = Department(branch_id=branch_id, name=name, code=code, head_user_id=head_user_id)
@@ -101,6 +101,23 @@ def _ensure_branch_assignment(db: Session, user: User, branch_id: int, departmen
     ))
 
 
+def _user_branch_id(db: Session, user_id: int | None) -> int | None:
+    """The unit a user is posted in, as this sync will leave it: HR-locked
+    users keep their branch_id; everyone else is (re)linked from their Azure
+    office location, which may not be applied to their row yet during a bulk
+    sync."""
+    from app.modules.hr.services.employee_sync import is_org_locked
+    if not user_id:
+        return None
+    other = db.get(User, user_id)
+    if not other:
+        return None
+    if is_org_locked(db, other.id) or not other.office_location:
+        return other.branch_id
+    branch = db.query(Branch).filter(Branch.name.ilike(other.office_location.strip())).first()
+    return branch.id if branch else other.branch_id
+
+
 def sync_user_org_links(db: Session, user: User) -> None:
     """Best-effort: link `user` to a Branch (from office_location) and a
     Department (from department)."""
@@ -116,7 +133,11 @@ def sync_user_org_links(db: Session, user: User) -> None:
 
     department = None
     if user.department and branch:
-        department = _get_or_create_department(db, branch.id, user.department, user.reporting_manager_id)
+        # The Azure manager only seeds the head when posted in the same unit
+        # (services/department_heads.py) — a Unit 1 reportee of a Unit 2
+        # manager must not make that manager head of a Unit 1 department.
+        head_id = user.reporting_manager_id if _user_branch_id(db, user.reporting_manager_id) == branch.id else None
+        department = _get_or_create_department(db, branch.id, user.department, head_id)
 
     if branch:
         _ensure_branch_assignment(db, user, branch.id, department.id if department else None)

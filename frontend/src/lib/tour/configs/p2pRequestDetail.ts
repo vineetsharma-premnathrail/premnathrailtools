@@ -48,7 +48,7 @@ const config: TourConfig = {
     {
       target: 'pr-detail-items',
       title: 'Item Details',
-      purpose: 'Every line item on this requisition — description, make, part code, unit, quantity, and any per-item attachments. Each still-undecided line runs its store stock check automatically and shows the result inline. Only the Store Manager picked on this requisition (or an admin) can issue from stock: pick the warehouse to Issue From (defaults to the Ship To warehouse, else the one with the most stock) and a comment is required. If stock covers only part of the quantity, the button issues what is available and only the shortfall goes to procurement on this same requisition. The Purchase team sends lines with no or too little stock to procurement.',
+      purpose: 'Every line item on this requisition — description, make, part code, unit, quantity, and any per-item attachments. Each still-undecided line runs its store stock check automatically and shows the result inline. Only the Store Manager picked on this requisition (or an admin) can issue from stock: pick the store to Issue From (defaults to the Ship To store, else the one with the most stock) and a comment is required. If stock covers only part of the quantity, the button issues what is available and only the shortfall goes to procurement on this same requisition. The Purchase team sends lines with no or too little stock to procurement.',
     },
     {
       target: 'pr-detail-attachments',

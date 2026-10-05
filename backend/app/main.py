@@ -240,8 +240,15 @@ from app.modules.projects.routes import approvals as pm_approvals_routes
 from app.modules.store.routes import locations as store_locations_routes
 from app.modules.store.routes import categories as store_categories_routes
 from app.modules.store.routes import items as store_items_routes
+from app.modules.store.routes import item_import as store_item_import_routes
+from app.modules.store.routes import uoms as store_uoms_routes
+from app.modules.store.routes import item_types as store_item_types_routes
+from app.modules.store.routes import doc_types as store_doc_types_routes
+from app.modules.store.routes import settings as store_settings_routes
+from app.modules.store.routes import item_photo as store_item_photo_routes
 from app.modules.store.routes import bins as store_bins_routes
 from app.modules.store.routes import stock as store_stock_routes
+from app.modules.store.routes import stock_import as store_stock_import_routes
 from app.modules.store.routes import material_issues as store_material_issues_routes
 from app.modules.store.routes import material_returns as store_material_returns_routes
 from app.modules.store.routes import stock_transfers as store_stock_transfers_routes
@@ -421,9 +428,16 @@ app.include_router(pm_change_requests_routes.router, prefix="/api/v1")
 app.include_router(pm_approvals_routes.router, prefix="/api/v1")
 app.include_router(store_locations_routes.router, prefix="/api/v1")
 app.include_router(store_categories_routes.router, prefix="/api/v1")
+app.include_router(store_item_import_routes.router, prefix="/api/v1")  # before /store/items/{id}
 app.include_router(store_items_routes.router, prefix="/api/v1")
+app.include_router(store_uoms_routes.router, prefix="/api/v1")
+app.include_router(store_item_types_routes.router, prefix="/api/v1")
+app.include_router(store_doc_types_routes.router, prefix="/api/v1")
+app.include_router(store_settings_routes.router, prefix="/api/v1")
+app.include_router(store_item_photo_routes.router, prefix="/api/v1")
 app.include_router(store_bins_routes.router, prefix="/api/v1")
 app.include_router(store_stock_routes.router, prefix="/api/v1")
+app.include_router(store_stock_import_routes.router, prefix="/api/v1")
 app.include_router(store_material_issues_routes.router, prefix="/api/v1")
 app.include_router(store_material_returns_routes.router, prefix="/api/v1")
 app.include_router(store_stock_transfers_routes.router, prefix="/api/v1")

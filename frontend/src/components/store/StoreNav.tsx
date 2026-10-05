@@ -7,19 +7,20 @@ import TourButton from '@/components/tour/TourButton'
 
 const TABS = [
   { href: '/dashboard/store', label: 'Items', icon: 'box' },
-  { href: '/dashboard/store/categories', label: 'Categories', icon: 'tag' },
-  { href: '/dashboard/store/locations', label: 'Warehouses', icon: 'warehouse' },
   { href: '/dashboard/store/stock', label: 'Stock', icon: 'chart' },
+  { href: '/dashboard/store/movements', label: 'Movements', icon: 'transfer' },
   { href: '/dashboard/store/issues', label: 'Issues', icon: 'send' },
-  { href: '/dashboard/store/returns', label: 'Returns', icon: 'undo' },
-  { href: '/dashboard/store/transfers', label: 'Transfers', icon: 'transfer' },
-  { href: '/dashboard/store/adjustments', label: 'Adjustments', icon: 'adjust' },
   { href: '/dashboard/store/reservations', label: 'Reservations', icon: 'lock' },
   // Own page under Store (not a link out to P2P) — same goods-receipts API
   // and 'purchase' app-access requirement as the P2P GRN pages, just
   // presented natively inside the Store nav since goods physically land here.
   { href: '/dashboard/store/grn', label: 'GRN & Inspection', icon: 'grn' },
+  // Master data (item types, UOMs, categories, stores) — kept out of the
+  // daily-transaction tabs. Categories/Stores keep their old URLs.
+  { href: '/dashboard/store/settings', label: 'Settings', icon: 'settings' },
 ] as const
+
+const SETTINGS_PATHS = ['/dashboard/store/settings', '/dashboard/store/categories', '/dashboard/store/locations']
 
 function TabIcon({ name }: { name: string }) {
   const common = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
@@ -44,6 +45,8 @@ function TabIcon({ name }: { name: string }) {
       return <svg {...common}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0110 0v4" /></svg>
     case 'grn':
       return <svg {...common}><path d="M21 8l-9-5-9 5 9 5 9-5z" /><path d="M3 8v8l9 5 9-5V8" /><polyline points="8 12 11 15 16 9" /></svg>
+    case 'settings':
+      return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" /></svg>
     default:
       return null
   }
@@ -56,7 +59,11 @@ export default function StoreNav() {
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
         {TABS.map((tab) => {
-          const isActive = tab.href === '/dashboard/store' ? pathname === tab.href : pathname.startsWith(tab.href)
+          const isActive = tab.href === '/dashboard/store'
+            ? pathname === tab.href
+            : tab.icon === 'settings'
+              ? SETTINGS_PATHS.some((p) => pathname.startsWith(p))
+              : pathname.startsWith(tab.href)
           return (
             <Link
               key={tab.href}

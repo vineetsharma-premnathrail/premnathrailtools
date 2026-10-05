@@ -59,7 +59,7 @@ export default function NewStockAdjustmentPage() {
 
   const save = async () => {
     const problems: string[] = []
-    if (!locationId) problems.push('Warehouse is required.')
+    if (!locationId) problems.push('Store is required.')
     if (!approvedById) problems.push('Approver is required — pick who must approve this adjustment before it changes stock.')
     const validLines = lines.filter((l) => l.itemId && l.actualQuantity !== '')
     if (!validLines.length) problems.push('At least one item is required.')
@@ -112,7 +112,7 @@ export default function NewStockAdjustmentPage() {
 
       <Section title="Adjustment Details" style={{ marginBottom: 20 }}>
         <Row>
-          <Field label="Warehouse *">
+          <Field label="Store *">
             <select data-tour="adjustment-location" style={inputStyle} value={locationId} onChange={(e) => { setLocationId(e.target.value); setLines([{ itemId: '', actualQuantity: '', remarks: '' }]) }}>
               <option value="">— Select —</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -140,7 +140,7 @@ export default function NewStockAdjustmentPage() {
       </Section>
 
       <Section title="Items" style={{ marginBottom: 20 }}>
-        {!locationId && <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Select a warehouse first to see current system quantities.</p>}
+        {!locationId && <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Select a store first to see current system quantities.</p>}
         {lines.map((line, idx) => {
           const existingQty = existingQtyFor(line.itemId)
           return (

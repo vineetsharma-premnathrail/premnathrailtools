@@ -107,8 +107,11 @@ export default function OrganizationDepartmentPage() {
   }
   const removeHead = (id: number) => setHeadIds((prev) => prev.filter((h) => h !== id))
 
+  // A department is only headed from its own unit — the backend rejects
+  // anyone else, so only offer people posted in the selected branch.
   const headMatches = headSearch.trim()
     ? directory
+        .filter((u) => !newBranchId || String(u.branch_id) === newBranchId)
         .filter((u) => !headIds.includes(u.id))
         .filter((u) => u.name.toLowerCase().includes(headSearch.toLowerCase()) || u.email.toLowerCase().includes(headSearch.toLowerCase()))
         .slice(0, 8)
@@ -251,7 +254,12 @@ export default function OrganizationDepartmentPage() {
 
             <div style={{ marginBottom: 14 }}>
               <label style={labelStyle}>Branch</label>
-              <select data-tour="org-dept-branch" style={inputStyle} value={newBranchId} onChange={(e) => setNewBranchId(e.target.value)}>
+              <select data-tour="org-dept-branch" style={inputStyle} value={newBranchId} onChange={(e) => {
+                const next = e.target.value
+                setNewBranchId(next)
+                // Heads picked for the old unit don't belong to the new one.
+                if (next) setHeadIds((prev) => prev.filter((id) => String(directory.find((u) => u.id === id)?.branch_id) === next))
+              }}>
                 <option value="">— Select —</option>
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>

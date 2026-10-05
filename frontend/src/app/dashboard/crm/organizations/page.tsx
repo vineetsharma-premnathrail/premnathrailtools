@@ -163,7 +163,6 @@ export default function OrganizationsPage() {
     { label: 'Type', key: 'org_type', type: 'filter' },
     { label: 'Railway Zone', key: 'railway_zone', type: 'filter' },
     { label: 'City', key: 'city', type: 'filter' },
-    { label: 'State', key: 'state', type: 'filter' },
     { label: 'Created Date', key: 'created_at', type: 'sort', sortLabels: ['Old', 'New'] },
     { label: 'Created By', key: 'created_by_name', type: 'filter' },
   ]
@@ -347,8 +346,8 @@ export default function OrganizationsPage() {
             </tr>
           </thead>
           <tbody data-tour="orgs-table-rows" style={{ opacity: loading && hasLoadedOnce ? 0.5 : 1, transition: 'opacity .15s' }}>
-            {loading && !hasLoadedOnce && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No organizations found.</td></tr>}
+            {loading && !hasLoadedOnce && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No organizations found.</td></tr>}
             {(!loading || hasLoadedOnce) && paged.map((o, idx) => {
               const pinned = pinnedIds.includes(o.id)
               return (
@@ -374,7 +373,6 @@ export default function OrganizationsPage() {
                 <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.org_type || undefined}>{o.org_type || '—'}</td>
                 <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.railway_zone || undefined}>{o.railway_zone || '—'}</td>
                 <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.city || undefined}>{o.city || '—'}</td>
-                <td style={{ padding: '7px 16px', fontSize: 13, color: '#57534e', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.state || undefined}>{o.state || '—'}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{formatDate(o.created_at)}</td>
                 <td style={{ padding: '7px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{o.created_by_name || '—'}</td>
               </tr>

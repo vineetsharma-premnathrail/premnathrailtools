@@ -32,6 +32,7 @@ from app.modules.hr.services.exit_guard import revoke_user_sessions
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.department import Department
+from app.modules.organization.services.department_heads import is_same_unit
 from app.modules.p2p.models.p2p_request import P2PRequest, P2P_CATEGORY_AUTO_BUYERS
 from app.utils.notifications import broadcast_notification, notify_user
 
@@ -683,6 +684,9 @@ def complete_move(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
         dept = db.get(Department, event.from_department_id)
         if dept and user.id in ([dept.head_user_id, dept.secondary_head_user_id] + list(dept.additional_head_user_ids or [])):
             new_head = handover.id if payload.department_head_slots == "reassign" and handover else None
+            if new_head and not is_same_unit(db, dept, new_head):
+                new_head = None
+                changes.append(f"{user_label(handover)} is in another unit, so not made head of {dept.name} — set a head from that unit")
             replace_department_head(dept, user.id, new_head)
             changes.append(
                 f"Head of {dept.name}: {user_label(user)} → {user_label(handover)}" if new_head
@@ -768,11 +772,16 @@ def complete_exit(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
 
     # 2. Department head slots -> handover
     dept_names = []
+    headless = []
     for dept, _slots in departments_headed(db, user.id):
-        replace_department_head(dept, user.id, handover.id if handover else None)
-        dept_names.append(dept.name)
+        # A head is only handed over within the department's own unit.
+        new_head = handover.id if handover and is_same_unit(db, dept, handover.id) else None
+        replace_department_head(dept, user.id, new_head)
+        (dept_names if new_head else headless).append(dept.name)
     if dept_names:
         changes.append(f"Head of {', '.join(dept_names)} → {user_label(handover)}")
+    if headless:
+        changes.append(f"Removed as head of {', '.join(headless)} — handover person is in another unit; set a head from that unit")
     summary["departments"] = dept_names
 
     # 3. HR approvals waiting on the leaver -> handover (or HR queue when the
