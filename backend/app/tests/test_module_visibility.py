@@ -2,7 +2,7 @@ import pytest
 
 from app.auth.jwt_handler import create_access_token
 from app.core import module_visibility
-from app.modules.main.models.user import User
+from app.modules.main.models.user import AVAILABLE_APPS, User
 
 
 @pytest.fixture
@@ -32,7 +32,9 @@ def test_restricted_apps_hidden_from_everyone_but_allow_list(db, locked):
     vineet = _user(db, "Vineet.Sharma@premnathrail.com", apps=())
     assert normal.get_apps() == ["crm"]
     assert "quality" not in admin.get_apps() and "hr" not in admin.get_apps() and "crm" in admin.get_apps()
-    assert {"quality", "hr", "production"} <= set(vineet.get_apps())
+    # Allow-listed sees the WHOLE portal (store, p2p, crm…), not just the
+    # locked modules — even as a plain user with nothing assigned.
+    assert set(vineet.get_apps()) == AVAILABLE_APPS
 
 
 def test_restricted_module_routes_403_even_for_admin(client, db, locked):

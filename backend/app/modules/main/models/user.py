@@ -112,15 +112,15 @@ class User(Base, TimestampMixin):
     data_access_scopes: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
 
     def get_apps(self) -> list[str]:
-        """Modules this user can see: admins get all of them, everyone else
-        gets whatever was explicitly assigned to them. Modules locked in
-        app/core/module_visibility.py are stripped for everyone except the
-        allow-listed emails, who always get them."""
+        """Modules this user can see: admins and the allow-listed emails in
+        app/core/module_visibility.py get every module; everyone else gets
+        whatever was explicitly assigned to them, minus the modules locked
+        there."""
         from app.core.module_visibility import RESTRICTED_APPS, can_see_restricted_apps
 
-        apps = set(AVAILABLE_APPS) if self.role == "admin" else set(self.assigned_apps or [])
         if can_see_restricted_apps(self.email):
-            apps |= set(RESTRICTED_APPS)
-        else:
-            apps -= set(RESTRICTED_APPS)
-        return sorted(apps)
+            # Allow-listed = sees the whole portal, whatever their role or
+            # assigned_apps say (not just the locked modules).
+            return sorted(AVAILABLE_APPS)
+        apps = set(AVAILABLE_APPS) if self.role == "admin" else set(self.assigned_apps or [])
+        return sorted(apps - set(RESTRICTED_APPS))
