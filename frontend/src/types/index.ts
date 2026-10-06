@@ -1836,6 +1836,8 @@ export interface StoreMaterialIssue {
   department_id?: number | null
   department_name?: string | null
   project_or_work_order?: string | null
+  erp_project_id?: number | null
+  erp_project_label?: string | null
   issue_type?: string | null
   issue_type_label?: string | null
   challan_number?: string | null
@@ -2250,7 +2252,7 @@ export interface QualityInspectionLot {
   lot_number: string
   inspection_type: QualityInspectionType
   status: QualityLotStatus
-  source_type: 'grn' | 'work_order' | 'ncr' | 'manual'
+  source_type: 'grn' | 'work_order' | 'ncr' | 'manual' | 'work_order_operation' | 'material_return'
   source_reference?: string | null
   ncr_id?: number | null
   item_id: number
@@ -2290,6 +2292,93 @@ export interface QualityInspectionLot {
   critical_failed: boolean
   results: QualityLotResult[]
   ncrs: { id: number; ncr_number: string; status: string; severity: string; quantity?: number | null }[]
+  photos?: QualityLotPhoto[]
+  first_article?: { id: number; fai_number: string; status: QualityFaiStatus; trigger: string } | null
+  gate?: { work_order_id: number; wo_number: string; operation: string } | null
+}
+
+export interface QualityLotPhoto {
+  id: number
+  result_id?: number | null
+  file_name: string
+  caption?: string | null
+  uploaded_by_name?: string | null
+  created_at?: string | null
+}
+
+export type QualityFaiStatus = 'open' | 'approved' | 'rejected' | 'cancelled'
+
+export interface QualityFirstArticle {
+  id: number
+  fai_number: string
+  item_id: number
+  item_code?: string | null
+  item_name: string
+  vendor_name?: string | null
+  drawing_ref?: string | null
+  trigger: 'new_item' | 'new_revision' | 'new_vendor' | 'manual'
+  status: QualityFaiStatus
+  source_type: string
+  source_reference?: string | null
+  lot_id?: number | null
+  lot_number?: string | null
+  lot_status?: QualityLotStatus | null
+  lot_decision?: string | null
+  current_drawing_ref?: string | null
+  decided_by_name?: string | null
+  decided_at?: string | null
+  decision_remarks?: string | null
+  remarks?: string | null
+  created_by_name?: string | null
+  created_at?: string | null
+}
+
+export type QualityCallStatus = 'requested' | 'scheduled' | 'accepted' | 'partially_accepted' | 'rejected' | 'cancelled'
+
+export interface QualityInspectionCall {
+  id: number
+  call_number: string
+  status: QualityCallStatus
+  erp_project_id?: number | null
+  project_label?: string | null
+  order_reference?: string | null
+  customer_name?: string | null
+  item_id: number
+  item_code?: string | null
+  item_name: string
+  uom?: string | null
+  quantity: number
+  batch_number?: string | null
+  lot_id?: number | null
+  lot_number?: string | null
+  agency: string
+  agency_label?: string | null
+  requested_date: string
+  call_date?: string | null
+  inspector_name?: string | null
+  result_date?: string | null
+  accepted_qty?: number | null
+  rejected_qty?: number | null
+  certificate_number?: string | null
+  certificate_file_name?: string | null
+  result_remarks?: string | null
+  ncr_id?: number | null
+  ncr_number?: string | null
+  remarks?: string | null
+  created_by_name?: string | null
+  result_recorded_by_name?: string | null
+  days_to_call?: number | null
+}
+
+export interface QualityContract {
+  id: number
+  label: string
+  po_number?: string | null
+  client_company?: string | null
+  delivery_date?: string | null
+  third_party_inspection_required: boolean
+  inspection_agency?: string | null
+  inspection_agency_label?: string | null
 }
 
 export type QualityInspectionResultValue = 'pass' | 'fail' | 'na'
@@ -2568,6 +2657,8 @@ export interface QualityDashboardKpis {
   overdue_capas: number
   open_complaints: number
   gate_inspections_pending: number
+  open_first_articles?: number
+  inspection_calls_next_7_days?: number
   month_lots_decided: number
   month_received_qty: number
   month_rejected_qty: number

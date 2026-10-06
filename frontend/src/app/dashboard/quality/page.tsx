@@ -23,7 +23,9 @@ const KPI_CARDS: { key: keyof QualityDashboardKpis; label: string; tone: KpiTone
   { key: 'open_capas', label: 'Open CAPAs', tone: 'warn', href: '/dashboard/quality/capa' },
   { key: 'overdue_capas', label: 'Overdue CAPAs', tone: 'bad', href: '/dashboard/quality/capa' },
   { key: 'open_complaints', label: 'Open Complaints', tone: 'warn', href: '/dashboard/quality/complaints' },
-  { key: 'gate_inspections_pending', label: 'Gate inspections pending', tone: 'neutral', href: '/dashboard/quality/in-process-inspection' },
+  { key: 'gate_inspections_pending', label: 'In-process gates pending', tone: 'neutral', href: '/dashboard/quality/in-process-inspection' },
+  { key: 'open_first_articles', label: 'First articles open', tone: 'warn', href: '/dashboard/quality/first-articles' },
+  { key: 'inspection_calls_next_7_days', label: 'Inspection calls (7 days)', tone: 'neutral', href: '/dashboard/quality/inspection-calls' },
 ]
 
 function cardTone(tone: KpiTone) {

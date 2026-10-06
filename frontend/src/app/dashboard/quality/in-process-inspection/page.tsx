@@ -7,6 +7,7 @@ import { qualityApi } from '@/lib/api'
 import { QualityInspection } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
+import LotList from '@/components/quality/LotList'
 import { extractErrorMessages } from '@/lib/validation'
 
 const STATUS_LABELS: Record<string, string> = { pending: 'Pending', in_progress: 'In Progress', passed: 'Passed', failed: 'Failed', conditionally_passed: 'Conditionally Passed' }
@@ -50,19 +51,29 @@ export default function InProcessInspectionListPage() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Quality Module
           </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}> Inspection</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>In-process Inspections</h1>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>
+            Production routing steps marked &ldquo;inspection required&rdquo; raise an in-process lot when the shop floor clicks Request Inspection. The next operation stays on hold until the lot&rsquo;s usage decision.
+          </p>
         </div>
         <button
-          onClick={() => router.push('/dashboard/quality/in-process-inspection/new')}
+          onClick={() => router.push('/dashboard/quality/lots/new')}
           style={{
             padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
             background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
             boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
           }}
         >
-          + New Inspection
+          + Manual Lot
         </button>
       </div>
+
+      <LotList initialType="in_process" />
+
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '28px 0 4px' }}>Earlier gate inspections</h2>
+      <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 12px' }}>
+        Free-text gate inspections raised before inspection lots existed. Kept for history; any still pending can be finished here and still release their production step.
+      </p>
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

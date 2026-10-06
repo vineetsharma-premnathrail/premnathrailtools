@@ -1054,6 +1054,42 @@ export const qualityApi = {
   deleteDocument: async (id: number) => { const { data } = await apiClient.delete(`/quality/documents/${id}`); return data },
 
   // Dashboard
+  // Phase 2 — lot photos, documents of record, first articles, inspection calls, dispatch check
+  uploadLotPhotos: async (id: number, files: File[], resultId?: number | null, caption?: string) => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    if (resultId) form.append('result_id', String(resultId))
+    if (caption) form.append('caption', caption)
+    const { data } = await apiClient.post(`/quality/inspection-lots/${id}/photos`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  lotPhotoBlob: async (id: number, photoId: number): Promise<Blob> => { const { data } = await apiClient.get(`/quality/inspection-lots/${id}/photos/${photoId}`, { responseType: 'blob' }); return data },
+  deleteLotPhoto: async (id: number, photoId: number) => { const { data } = await apiClient.delete(`/quality/inspection-lots/${id}/photos/${photoId}`); return data },
+  recordPdf: async (kind: 'inspection-report' | 'test-certificate' | 'deviation-approval', id: number): Promise<Blob> => {
+    const url = kind === 'deviation-approval' ? `/quality/records/ncr/${id}/deviation-approval.pdf` : `/quality/records/lots/${id}/${kind}.pdf`
+    const { data } = await apiClient.get(url, { responseType: 'blob' })
+    return data
+  },
+  listFirstArticles: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/first-articles', { params }); return data },
+  getFirstArticle: async (id: number) => { const { data } = await apiClient.get(`/quality/first-articles/${id}`); return data },
+  firstArticleRequirement: async (itemId: number, vendorName = '') => { const { data } = await apiClient.get('/quality/first-articles/requirement', { params: { item_id: itemId, vendor_name: vendorName || undefined } }); return data },
+  createFirstArticle: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/first-articles', payload); return data },
+  decideFirstArticle: async (id: number, approve: boolean, remarks: string) => { const { data } = await apiClient.post(`/quality/first-articles/${id}/decision`, { approve, remarks }); return data },
+  getInspectionCallMeta: async () => { const { data } = await apiClient.get('/quality/inspection-calls/meta'); return data },
+  listInspectionCalls: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/inspection-calls', { params }); return data },
+  getInspectionCall: async (id: number) => { const { data } = await apiClient.get(`/quality/inspection-calls/${id}`); return data },
+  createInspectionCall: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/inspection-calls', payload); return data },
+  inspectionCallAction: async (id: number, action: 'schedule' | 'result' | 'cancel', payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/quality/inspection-calls/${id}/${action}`, payload); return data },
+  uploadCallCertificate: async (id: number, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await apiClient.post(`/quality/inspection-calls/${id}/certificate`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  callCertificateBlob: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/quality/inspection-calls/${id}/certificate`, { responseType: 'blob' }); return data },
+  listContracts: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/inspection-calls/contracts', { params }); return data },
+  setContractRequirement: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.put(`/quality/inspection-calls/contracts/${projectId}`, payload); return data },
+  dispatchCheck: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/inspection-calls/dispatch-check', payload); return data },
   getDashboard: async () => { const { data } = await apiClient.get('/quality/dashboard'); return data },
 }
 
@@ -1522,6 +1558,11 @@ export const storeApi = {
   createMaterialIssue: async (payload: Record<string, unknown>) => {
     const { data } = await apiClient.post('/store/material-issues', payload)
     return data
+  },
+  // Customer machines / orders a "Dispatch to customer" issue can go against (Quality rule 8).
+  listDispatchProjects: async () => {
+    const { data } = await apiClient.get('/store/material-issues/dispatch-projects')
+    return data as { id: number; label: string; third_party_inspection_required: boolean; inspection_agency?: string | null }[]
   },
 
   listMaterialReturns: async (params: Record<string, unknown> = {}) => {

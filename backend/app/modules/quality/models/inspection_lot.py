@@ -15,7 +15,9 @@ QUALITY_LOT_OPEN_STATUSES = ("created", "in_inspection", "results_recorded")
 # What created the lot. grn / work_order are automatic (store receipts of
 # items flagged inspection_on_receipt), ncr = re-inspection after rework /
 # repair, manual = raised by hand from Quality → Inspection Lots.
-QUALITY_LOT_SOURCES = ("grn", "work_order", "ncr", "manual")
+# work_order_operation = in-process gate on a routing step (Phase 2; no
+# stock behind it), material_return = job work receipt back from a vendor.
+QUALITY_LOT_SOURCES = ("grn", "work_order", "ncr", "manual", "work_order_operation", "material_return")
 
 # Usage decision. partial = part accepted (→ Free), part rejected (→ Blocked).
 QUALITY_LOT_DECISIONS = ("accept", "accept_with_deviation", "reject", "partial")

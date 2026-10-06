@@ -38,6 +38,11 @@ class StoreMaterialIssue(Base, TimestampMixin):
     # Mandatory only for issue types ticked under Store → Settings → Issue Rules.
     expected_return_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # Dispatch to a customer (issue type "dispatch"): the ERP machine /
+    # order it goes against — Quality's dispatch release checks its
+    # third-party inspection requirement (rule 8).
+    erp_project_id: Mapped[int | None] = mapped_column(ForeignKey("erp_projects.id"), nullable=True)
+
     issue_date: Mapped[date] = mapped_column(Date, nullable=False)
     issued_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)

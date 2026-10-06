@@ -52,6 +52,17 @@ async def get_dashboard(
     ).filter(
         live, ProductionWorkOrder.status.in_(("released", "in_progress")),
         QualityInspection.status.in_(("pending", "in_progress")),
+        ProductionWorkOrderOperation.quality_lot_id.is_(None),
+    ).count()
+    # Phase 2 gates: in-process lots still waiting for a usage decision.
+    from app.modules.quality.models.inspection_lot import QualityInspectionLot, QUALITY_LOT_OPEN_STATUSES
+    pending_inspections += db.query(ProductionWorkOrderOperation).join(
+        ProductionWorkOrder, ProductionWorkOrder.id == ProductionWorkOrderOperation.work_order_id
+    ).join(
+        QualityInspectionLot, QualityInspectionLot.id == ProductionWorkOrderOperation.quality_lot_id
+    ).filter(
+        live, ProductionWorkOrder.status.in_(("released", "in_progress")),
+        QualityInspectionLot.status.in_(QUALITY_LOT_OPEN_STATUSES),
     ).count()
 
     open_orders = db.query(ProductionWorkOrder).filter(live, ProductionWorkOrder.status.in_(OPEN_WORK_ORDER_STATUSES)).all()

@@ -12,6 +12,9 @@ from app.modules.quality.models.inspection_plan import QualityInspectionPlan, Qu
 from app.modules.quality.models.characteristic import QualityCharacteristic
 from app.modules.quality.models.masters import QualityDefectCode, QualityDispositionCode, QualityMasterValue, QualitySetting
 from app.modules.quality.models.inspection_lot import QualityInspectionLot, QualityLotResult
+from app.modules.quality.models.first_article import QualityFirstArticle
+from app.modules.quality.models.inspection_call import QualityInspectionCall
+from app.modules.quality.models.lot_attachment import QualityLotPhoto
 from app.modules.quality.models.ncr import QualityNcrApproval
 from app.modules.quality.models.rejection import QualityRejection
 from app.modules.quality.models.quality_standard import QualityStandard
@@ -133,6 +136,8 @@ register_audited(QualityDispositionCode, entity_type="quality_disposition_code",
 register_audited(QualityMasterValue, entity_type="quality_master_value", module_key="quality", label="Quality master list value", ref=lambda o: f"{o.list_key}: {o.value}")
 register_audited(QualitySetting, entity_type="quality_setting", module_key="quality", label="Quality setting", ref=lambda o: o.key)
 register_audited(QualityInspectionLot, entity_type="quality_inspection_lot", module_key="quality", label="Inspection lot", ref=lambda o: o.lot_number)
+register_audited(QualityFirstArticle, entity_type="quality_first_article", module_key="quality", label="First article (FAI)", ref=lambda o: o.fai_number)
+register_audited(QualityInspectionCall, entity_type="quality_inspection_call", module_key="quality", label="Inspection call", ref=lambda o: o.call_number)
 register_audited(
     QualityLotResult, entity_type="quality_lot_result", module_key="quality", label="Lot result",
     ref=lambda o: f"'{o.characteristic_name}'", parent_attr="lot_id", parent_entity_type="quality_inspection_lot", child_action="result",

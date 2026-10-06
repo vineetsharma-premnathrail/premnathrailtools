@@ -32,6 +32,8 @@ export default function NewMaterialIssuePage() {
   const [expectedReturnDate, setExpectedReturnDate] = useState('')
   const [vendorOptions, setVendorOptions] = useState<string[]>([])
   const [remarks, setRemarks] = useState('')
+  const [dispatchProjects, setDispatchProjects] = useState<{ id: number; label: string; third_party_inspection_required: boolean; inspection_agency?: string | null }[]>([])
+  const [erpProjectId, setErpProjectId] = useState('')
   const [lines, setLines] = useState<Line[]>([{ itemId: '', quantity: '', batchNumber: '' }])
 
   const [busy, setBusy] = useState(false)
@@ -44,7 +46,13 @@ export default function NewMaterialIssuePage() {
     storeApi.listDocTypes('issue').then(setIssueTypes).catch(() => setIssueTypes([]))
     storeApi.getIssueRules().then(setIssueRules).catch(() => {})
     storeApi.listStockVendorOptions().then(setVendorOptions).catch(() => setVendorOptions([]))
+    storeApi.listDispatchProjects().then(setDispatchProjects).catch(() => setDispatchProjects([]))
   }, [isAuthorized])
+
+  // Finished goods to a customer: Quality checks the final inspection and the
+  // contract's third-party certificate before the issue posts (rule 8).
+  const isDispatch = issueType === 'dispatch'
+  const dispatchProject = dispatchProjects.find((p) => String(p.id) === erpProjectId)
 
   // Store → Settings → Issue Rules: each field is shown (and mandatory) only
   // when the picked issue type / store is ticked for it.
@@ -62,6 +70,7 @@ export default function NewMaterialIssuePage() {
     if (!issueType) problems.push('Issue Type is required.')
     if (challanRequired && !challanNumber.trim()) problems.push('Challan Number is required for this issue type / store.')
     if (vendorRequired && !vendorName.trim()) problems.push('Vendor is required — this issue type sends material to an outside vendor.')
+    if (isDispatch && !erpProjectId) problems.push('Customer machine / order is required for a dispatch — Quality checks its inspection requirement.')
     if (returnDateRequired && !expectedReturnDate) problems.push('Date is required for this issue type.')
     else if (returnDateRequired && expectedReturnDate < new Date().toLocaleDateString('en-CA')) problems.push('Date cannot be before today (the issue date).')
     const validLines = lines.filter((l) => l.itemId && l.quantity)
@@ -83,6 +92,7 @@ export default function NewMaterialIssuePage() {
         vendor_name: vendorRequired ? vendorName.trim() : undefined,
         expected_return_date: returnDateRequired ? expectedReturnDate : undefined,
         project_or_work_order: projectOrWO.trim() || undefined,
+        erp_project_id: isDispatch && erpProjectId ? Number(erpProjectId) : undefined,
         remarks: remarks.trim() || undefined,
         items: validLines.map((l) => ({
           item_id: Number(l.itemId),
@@ -133,6 +143,12 @@ export default function NewMaterialIssuePage() {
           <Field label="Project / Work Order">
             <input data-tour="issue-project" style={inputStyle} value={projectOrWO} onChange={(e) => setProjectOrWO(e.target.value)} />
           </Field>
+          {isDispatch && (
+            <Field label="Customer machine / order *">
+              <SearchableSelect value={erpProjectId} onChange={setErpProjectId} placeholder="Search serial, PO, customer…"
+                options={dispatchProjects.map((p) => ({ value: String(p.id), label: `${p.label}${p.third_party_inspection_required ? ' · inspection required' : ''}` }))} />
+            </Field>
+          )}
           {challanRequired && (
             <Field label="Challan No. *">
               <input data-tour="issue-challan" style={inputStyle} value={challanNumber} maxLength={50} onChange={(e) => setChallanNumber(e.target.value)} placeholder="Delivery challan number" />
@@ -154,6 +170,12 @@ export default function NewMaterialIssuePage() {
             </Field>
           )}
         </Row>
+        {isDispatch && (
+          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
+            Dispatch checks (Quality rule 8): each finished-goods line needs its batch / serial and an accepted final inspection
+            {dispatchProject?.third_party_inspection_required ? `, and this order needs an accepted ${(dispatchProject.inspection_agency || 'third-party').toUpperCase()} inspection certificate` : ''}.
+          </p>
+        )}
         <Field label="Remarks">
           <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
         </Field>

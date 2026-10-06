@@ -32,6 +32,12 @@ class Project(Base, TimestampMixin, SoftDeleteMixin):
     po_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     po_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Contract inspection requirement (Quality rule 8): when set, finished
+    # goods for this order can't be dispatched until a customer / third-party
+    # inspection call is accepted with its certificate. inspection_agency is
+    # a Quality master value (RITES / RDSO / Customer / Other).
+    third_party_inspection_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    inspection_agency: Mapped[str | None] = mapped_column(String(50), nullable=True)
     commissioning_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     handover_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 

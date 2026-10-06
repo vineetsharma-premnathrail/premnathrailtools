@@ -30,7 +30,6 @@ TODAY = date.today()
 def _sqlite_numbers(monkeypatch):
     seq = count(1)
     fake = lambda db, code: f"{code}-TEST-{next(seq):04d}"  # noqa: E731
-    monkeypatch.setattr("app.modules.production.routes.work_orders.generate_inspection_number", fake)
     monkeypatch.setattr("app.modules.production.routes.rrv_builds.generate_inspection_number", fake)
     monkeypatch.setattr("app.modules.production.service.generate_stock_reservation_number", lambda db: f"RES-TEST-{next(seq):04d}")
     # A whole vehicle build is well over the 40 writes/min an IP may make.
@@ -311,10 +310,12 @@ def test_operation_inspection_failure_on_build_wo_raises_rework(client, db, plan
     wo = raise_wo(client, plant, b, bom, "main")
     wo = client.post(f"{API}/work-orders/{wo['id']}/release", headers=h).json()
     wo = client.post(f"{API}/work-orders/{wo['id']}/operations/{wo['operations'][0]['id']}/request-inspection", headers=h).json()
-    insp = db.get(QualityInspection, wo["operations"][0]["quality_inspection_id"])
-    insp.status = "failed"
-    notify_inspection_result(db, insp, None)
-    notify_inspection_result(db, insp, None)  # idempotent — one rework per inspection
+    # Quality Phase 2: the gate is an in-process lot; a rejecting decision raises the rework.
+    from app.modules.quality.models.inspection_lot import QualityInspectionLot
+    from app.modules.quality.services.production_gates import on_gate_lot_decided
+    lot = db.get(QualityInspectionLot, wo["operations"][0]["quality_lot_id"])
+    lot.status, lot.decision, lot.accepted_qty = "decision_made", "reject", 0
+    on_gate_lot_decided(db, lot, [], plant["user"] if "user" in plant else db.query(User).first())
     db.commit()
     reworks = client.get(f"{API}/rrv-builds/rework", headers=h).json()
     assert len(reworks) == 1 and reworks[0]["source"] == "operation_inspection" and reworks[0]["wo_number"] == wo["wo_number"]

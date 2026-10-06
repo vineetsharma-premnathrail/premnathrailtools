@@ -451,5 +451,16 @@ def cancel(db: Session, ncr: QualityNcr, *, reason: str, user: User) -> QualityN
     return ncr
 
 
+def held_in_blocked(db: Session, item_id: int, location_id: int) -> tuple[float, list[str]]:
+    """Blocked stock that open NCRs hold at a store — only the NCR's
+    disposition may move it. Used by Store's "clear quarantine" so a store
+    user can't release / scrap it outside the NCR workflow."""
+    rows = db.query(QualityNcr).filter(
+        QualityNcr.item_id == item_id, QualityNcr.location_id == location_id, QualityNcr.stock_blocked.is_(True),
+        QualityNcr.is_deleted == False,  # noqa: E712
+    ).all()
+    return round(sum(r.quantity or 0 for r in rows), 6), [r.ncr_number for r in rows]
+
+
 def cost_of_non_quality(ncr: QualityNcr) -> float:
     return round((ncr.material_cost or 0) + (ncr.rework_cost or 0) + (ncr.other_cost or 0), 2)

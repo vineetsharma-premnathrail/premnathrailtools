@@ -55,6 +55,9 @@ from app.modules.quality.models.characteristic import QualityCharacteristic
 from app.modules.quality.models.sampling import QualitySampleSizeCode, QualityAqlPlan
 from app.modules.quality.models.masters import QualityDefectCode, QualityDispositionCode, QualityMasterValue, QualitySetting
 from app.modules.quality.models.inspection_lot import QualityInspectionLot, QualityLotResult
+from app.modules.quality.models.first_article import QualityFirstArticle
+from app.modules.quality.models.inspection_call import QualityInspectionCall
+from app.modules.quality.models.lot_attachment import QualityLotPhoto
 from app.modules.quality.models.inspection import QualityInspection, QualityInspectionResult, QualityInspectionAttachment
 from app.modules.quality.models.ncr import QualityNcr, QualityNcrApproval
 from app.modules.quality.models.rejection import QualityRejection

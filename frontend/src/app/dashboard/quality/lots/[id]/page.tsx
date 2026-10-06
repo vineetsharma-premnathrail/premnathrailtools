@@ -15,10 +15,18 @@ import {
   DECISION_LABELS, SEVERITY_HEX, NCR_STATUS_LABELS, NCR_STATUS_HEX,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import LotPhotos from '@/components/quality/LotPhotos'
+import QualityRecordDoc from '@/components/quality/QualityRecordDoc'
 
 interface Draft { values: string; defects: string; defect_code_id: string; gauge_reference: string; remarks: string }
 
 const cell: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
+const FAI_STATUS_HEX: Record<string, string> = { open: '#F59E0B', approved: '#16A34A', rejected: '#DC2626', cancelled: '#a8a29e' }
+const SOURCE_LABELS: Record<string, string> = {
+  grn: 'GRN', work_order: 'Work order output', ncr: 'NCR re-inspection', manual: 'Manual',
+  work_order_operation: 'Production gate', material_return: 'Job work receipt',
+}
+
 const head: React.CSSProperties = { ...cell, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, borderTop: 'none', whiteSpace: 'nowrap' }
 
 function limits(r: QualityLotResult) {
@@ -158,7 +166,7 @@ export default function LotDetailPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
           <InfoRow label="Item" value={`${lot.item_code ? `${lot.item_code} — ` : ''}${lot.item_name}`} />
           <InfoRow label="Quantity" value={fmtQty(lot.quantity, lot.uom)} />
-          <InfoRow label="Source" value={`${lot.source_type.toUpperCase()} ${lot.source_reference || ''}`} />
+          <InfoRow label="Source" value={`${SOURCE_LABELS[lot.source_type] || lot.source_type} ${lot.source_reference || ''}`} />
           <InfoRow label="Lot date" value={`${fmtDate(lot.lot_date)} (${lot.age_days} d)`} />
           <InfoRow label="Stock" value={lot.stock_in_quality ? `Held in Quality stock at ${lot.location_name || 'store'}` : 'No stock behind this lot'} />
           <InfoRow label="Batch / serial" value={lot.batch_number || '—'} />
@@ -166,6 +174,25 @@ export default function LotDetailPage() {
           <InfoRow label="Plan" value={lot.plan_number ? `${lot.plan_number} rev ${lot.plan_revision}` : 'No approved plan yet'} />
           <InfoRow label="Sample size (max)" value={lot.sample_size != null ? String(lot.sample_size) : '—'} />
         </div>
+        {(lot.first_article || lot.gate) && (
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
+            {lot.first_article && (
+              <span onClick={() => router.push(`/dashboard/quality/first-articles/${lot.first_article!.id}`)} style={{ cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ color: TEXT.muted }}>First article</span>
+                <strong style={{ color: '#FF6A2A' }}>{lot.first_article.fai_number}</strong>
+                <Pill text={lot.first_article.status} hex={FAI_STATUS_HEX[lot.first_article.status]} />
+                <span style={{ color: TEXT.muted, fontSize: 12 }}>— full drawing check; approve the FAI after the decision</span>
+              </span>
+            )}
+            {lot.gate && (
+              <span onClick={() => router.push(`/dashboard/production/work-orders/${lot.gate!.work_order_id}`)} style={{ cursor: 'pointer', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ color: TEXT.muted }}>Production gate</span>
+                <strong style={{ color: '#FF6A2A' }}>{lot.gate.wo_number}</strong>
+                <span style={{ color: TEXT.muted, fontSize: 12 }}>op {lot.gate.operation} — the next operation is held until this lot is decided</span>
+              </span>
+            )}
+          </div>
+        )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
           <div style={{ flex: '0 1 200px', minWidth: 170 }}>
             <Field label="Sampling state">
@@ -284,6 +311,10 @@ export default function LotDetailPage() {
         {lot.results_recorded_by_name && <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>Results submitted by {lot.results_recorded_by_name}.</p>}
       </Section>
 
+      <Section title={`Photos (${(lot.photos || []).length})`} style={{ marginBottom: 20 }}>
+        <LotPhotos lot={lot} onChange={apply} />
+      </Section>
+
       {lot.status === 'results_recorded' && (
         <Section title="Usage decision" style={{ marginBottom: 20 }}>
           {lot.failed_count > 0 && (
@@ -335,6 +366,19 @@ export default function LotDetailPage() {
                 </span>
               ))}
             </div>
+          )}
+        </Section>
+      )}
+
+      {lot.decision && (
+        <Section title="Documents" style={{ marginBottom: 20 }}>
+          <QualityRecordDoc title="Inspection report" hint="Results per characteristic, usage decision and NCRs, on the company letterhead."
+            entityType="quality_inspection_report" entityId={lot.id} pdfKind="inspection-report" canModify
+            downloadName={`Inspection-Report-${lot.lot_number}`} />
+          {(lot.accepted_qty || 0) > 0 && (
+            <QualityRecordDoc title="Test certificate" hint={`Certifies the ${fmtQty(lot.accepted_qty, lot.uom)} accepted — goes to the customer with the material.`}
+              entityType="quality_test_certificate" entityId={lot.id} pdfKind="test-certificate" canModify
+              downloadName={`Test-Certificate-${lot.lot_number}`} />
           )}
         </Section>
       )}

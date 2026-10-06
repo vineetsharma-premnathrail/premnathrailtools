@@ -41,6 +41,9 @@ STORE_DOC_TYPE_DEFAULTS: dict[str, list[dict]] = {
         {"value": "maintenance", "label": "Maintenance"},
         {"value": "project", "label": "Project / Site"},
         {"value": "general", "label": "General / Office"},
+        # Finished goods leaving for a customer — Quality's dispatch release
+        # (final inspection + third-party certificate, rule 8) applies.
+        {"value": "dispatch", "label": "Dispatch to customer"},
     ],
     "return_source": [
         {"value": "issue", "label": "Against a Material Issue", "requires_issue": True, "approver_rule": "none"},

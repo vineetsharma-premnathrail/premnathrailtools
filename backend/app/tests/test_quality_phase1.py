@@ -52,6 +52,15 @@ def setup_item(db, name="Brake block", flagged=True, cert=False, cost=1000.0):
     return item, loc
 
 
+def release_fai(db, item, vendor=None):
+    """Phase 2 rule 9: mark the item + source as released (approved first
+    article) so these Phase 1 tests exercise regular lots."""
+    from app.modules.quality.models.first_article import QualityFirstArticle
+    db.add(QualityFirstArticle(fai_number=f"FAI-T-{item.id}-{vendor or 'IH'}", item_id=item.id, item_name=item.item_name,
+                               vendor_name=vendor, trigger="manual", status="approved", source_type="manual"))
+    db.commit()
+
+
 def balance(db, item, loc):
     db.expire_all()
     return db.query(StoreStockBalance).filter_by(item_id=item.id, location_id=loc.id).one()
@@ -265,6 +274,7 @@ def test_missing_test_certificate_blocks_acceptance(client, db):
     eng = make_user(db, "eng5@x.com", quality_role="engineer")
     head = make_user(db, "head5@x.com", quality_role="head")
     item, loc = setup_item(db, cert=True)
+    release_fai(db, item)
     approved_plan(client, db, item, eng, head)
     from app.modules.quality.services.lots import create_lot
     lot = create_lot(db, inspection_type="incoming", source_type="manual", item=item, quantity=5, location_id=loc.id,
@@ -389,6 +399,7 @@ def test_production_output_of_flagged_item_goes_to_final_lot(db):
     from app.modules.quality.services.lots import create_lot_for_production_output, needs_inspection_on_receipt
     eng = make_user(db, "eng10@x.com", quality_role="engineer")
     item, loc = setup_item(db)
+    release_fai(db, item)
     assert needs_inspection_on_receipt(db, item, "final")
     lot = create_lot_for_production_output(db, work_order=SimpleNamespace(id=1, wo_number="WO-1"), item=item, quantity=2,
                                            location_id=loc.id, batch_number="WO-1", user_id=eng.id)

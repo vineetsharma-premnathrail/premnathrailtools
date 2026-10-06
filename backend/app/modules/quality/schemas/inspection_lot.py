@@ -146,3 +146,8 @@ class QualityInspectionLotResponse(BaseModel):
     failed_count: int = 0
     critical_failed: bool = False
     ncrs: list[dict] = []
+    # Phase 2: photos taken during inspection, the FAI this lot is the first
+    # article of, and the production gate it decides.
+    photos: list[dict] = []
+    first_article: dict | None = None
+    gate: dict | None = None

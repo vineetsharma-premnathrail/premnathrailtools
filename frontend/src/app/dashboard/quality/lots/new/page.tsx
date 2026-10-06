@@ -13,7 +13,8 @@ import { extractErrorMessages } from '@/lib/validation'
 interface ItemOpt { id: number; item_code: string; item_name: string; uom?: string }
 
 // Incoming lots come only from GRNs; final lots from production output.
-const MANUAL_TYPES = ['stock_reinspection', 'sales_return', 'first_article', 'in_process', 'job_work', 'final', 'third_party']
+// First articles are raised from Quality → First Article (they open the FAI record).
+const MANUAL_TYPES = ['stock_reinspection', 'sales_return', 'in_process', 'job_work', 'final', 'third_party']
 
 export default function NewManualLotPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')

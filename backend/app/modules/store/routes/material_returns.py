@@ -116,7 +116,23 @@ def _post_return(db: Session, ret: StoreMaterialReturn, user: User) -> None:
     """Posts every line: usable conditions back to on-hand stock, quarantine
     conditions to the warehouse's quarantine bucket."""
     effects = {t.value: t.stock_effect for t in doc_types(db, "return_condition")}
+    # Job work receipt (Quality Phase 2): usable material coming back against
+    # an issue to an outside vendor goes to QUALITY stock under a job work
+    # inspection lot when the item is inspection-controlled.
+    from app.modules.quality.services.lots import needs_job_work_inspection, create_lot_for_job_work_receipt, LotError
+    source_issue = db.query(StoreMaterialIssue).filter(StoreMaterialIssue.id == ret.source_issue_id).first() if ret.source_issue_id else None
+    job_work_vendor = source_issue.vendor_name if source_issue and source_issue.vendor_name else None
     for line in ret.items:
+        if job_work_vendor and effects.get(line.condition) != "quarantine":
+            item = db.query(StoreItem).filter(StoreItem.id == line.item_id).first()
+            if needs_job_work_inspection(db, item):
+                try:
+                    create_lot_for_job_work_receipt(
+                        db, material_return=ret, line=line, item=item, vendor_name=job_work_vendor,
+                        issue_number=source_issue.issue_number, user_id=user.id)
+                except LotError as e:
+                    raise ValueError(str(e))
+                continue
         post_stock_transaction(
             db, item_id=line.item_id, location_id=ret.location_id,
             transaction_type="quarantine_in" if effects.get(line.condition) == "quarantine" else "return_in",

@@ -33,6 +33,8 @@ class StoreMaterialIssueCreate(BaseModel):
     expected_return_date: date | None = None
     issue_date: date | None = None
     remarks: str | None = None
+    # Dispatch to customer: the ERP machine / order it goes against (rule 8).
+    erp_project_id: int | None = None
     items: list[StoreMaterialIssueItemPayload]
 
 
@@ -53,6 +55,8 @@ class StoreMaterialIssueResponse(BaseModel):
     challan_number: str | None = None
     vendor_name: str | None = None
     expected_return_date: date | None = None
+    erp_project_id: int | None = None
+    erp_project_label: str | None = None
     issue_date: date
     issued_by_id: int | None = None
     issued_by_name: str | None = None

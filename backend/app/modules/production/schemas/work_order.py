@@ -38,6 +38,7 @@ class ProductionWorkOrderOperationResponse(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     quality_inspection_id: int | None = None
+    quality_lot_id: int | None = None
     instructions: str | None = None
     remarks: str | None = None
 

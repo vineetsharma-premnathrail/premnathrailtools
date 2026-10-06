@@ -51,6 +51,9 @@ from app.modules.quality.models.characteristic import QualityCharacteristic
 from app.modules.quality.models.sampling import QualitySampleSizeCode, QualityAqlPlan
 from app.modules.quality.models.masters import QualityDefectCode, QualityDispositionCode, QualityMasterValue, QualitySetting
 from app.modules.quality.models.inspection_lot import QualityInspectionLot, QualityLotResult
+from app.modules.quality.models.first_article import QualityFirstArticle
+from app.modules.quality.models.inspection_call import QualityInspectionCall
+from app.modules.quality.models.lot_attachment import QualityLotPhoto
 from app.modules.quality.models.inspection import QualityInspection, QualityInspectionResult, QualityInspectionAttachment
 from app.modules.quality.models.ncr import QualityNcr, QualityNcrApproval
 from app.modules.quality.models.rejection import QualityRejection
@@ -188,6 +191,9 @@ from app.modules.quality.routes import complaints as quality_complaints_routes
 from app.modules.quality.routes import supplier_quality as quality_supplier_quality_routes
 from app.modules.quality.routes import documents as quality_documents_routes
 from app.modules.quality.routes import dashboard as quality_dashboard_routes
+from app.modules.quality.routes import first_articles as quality_first_articles_routes
+from app.modules.quality.routes import inspection_calls as quality_inspection_calls_routes
+from app.modules.quality.routes import records as quality_records_routes
 from app.modules.maintenance.routes import assets as maintenance_assets_routes
 from app.modules.maintenance.routes import requests as maintenance_requests_routes
 from app.modules.maintenance.routes import work_orders as maintenance_work_orders_routes
@@ -378,6 +384,9 @@ app.include_router(quality_complaints_routes.router, prefix="/api/v1")
 app.include_router(quality_supplier_quality_routes.router, prefix="/api/v1")
 app.include_router(quality_documents_routes.router, prefix="/api/v1")
 app.include_router(quality_dashboard_routes.router, prefix="/api/v1")
+app.include_router(quality_first_articles_routes.router, prefix="/api/v1")
+app.include_router(quality_inspection_calls_routes.router, prefix="/api/v1")
+app.include_router(quality_records_routes.router, prefix="/api/v1")
 app.include_router(maintenance_assets_routes.router, prefix="/api/v1")
 app.include_router(maintenance_requests_routes.router, prefix="/api/v1")
 app.include_router(maintenance_work_orders_routes.router, prefix="/api/v1")

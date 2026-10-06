@@ -43,8 +43,16 @@ async def get_dashboard(db: Session = Depends(get_db)):
         QualityCustomerComplaint.is_deleted == False,  # noqa: E712
         QualityCustomerComplaint.status.in_(["open", "under_investigation", "capa_assigned"]),
     ).count()
+    # Legacy free-text gate inspections still open + Phase 2 in-process lots.
     gate_pending = db.query(QualityInspection).filter(
         QualityInspection.is_deleted == False, QualityInspection.status.in_(["pending", "in_progress"])  # noqa: E712
+    ).count() + open_lots.filter(QualityInspectionLot.inspection_type == "in_process").count()
+    from app.modules.quality.models.first_article import QualityFirstArticle
+    from app.modules.quality.models.inspection_call import QualityInspectionCall
+    open_fais = db.query(QualityFirstArticle).filter(QualityFirstArticle.status == "open").count()
+    calls_next_7 = db.query(QualityInspectionCall).filter(
+        QualityInspectionCall.status == "scheduled", QualityInspectionCall.call_date.isnot(None),
+        QualityInspectionCall.call_date <= today + timedelta(days=7),
     ).count()
 
     month_start = today.replace(day=1)
@@ -60,6 +68,7 @@ async def get_dashboard(db: Session = Depends(get_db)):
         open_ncrs=sum(by_sev.values()), critical_ncrs=by_sev.get("critical", 0), major_ncrs=by_sev.get("major", 0),
         minor_ncrs=by_sev.get("minor", 0), ncrs_awaiting_approval=awaiting, open_capas=open_capas,
         overdue_capas=overdue_capas, open_complaints=open_complaints, gate_inspections_pending=gate_pending,
+        open_first_articles=open_fais, inspection_calls_next_7_days=calls_next_7,
         month_lots_decided=len(decided), month_received_qty=received, month_rejected_qty=rejected,
         month_rejection_rate=round(rejected * 100 / received, 2) if received else 0,
     ))

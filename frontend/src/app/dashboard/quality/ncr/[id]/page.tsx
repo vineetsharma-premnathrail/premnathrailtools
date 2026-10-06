@@ -14,6 +14,7 @@ import {
   APPROVAL_ROLE_LABELS, DISPOSITION_TYPE_LABELS,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import QualityRecordDoc from '@/components/quality/QualityRecordDoc'
 
 const STEPS = ['open', 'disposition_decided', 'action_done', 'verified', 'closed']
 const ACTION_HINT: Record<string, string> = {
@@ -184,6 +185,14 @@ export default function NcrDetailPage() {
           </div>
         )}
       </Section>
+
+      {ncr.disposition_status === 'approved' && ncr.disposition_type && ['use_as_is', 'repair'].includes(ncr.disposition_type) && (
+        <Section title="Deviation approval" style={{ marginBottom: 20 }}>
+          <QualityRecordDoc title="Deviation approval" hint="Concession record with the approving authorities, on the company letterhead (attach to the material / send to the customer where required)."
+            entityType="quality_deviation_approval" entityId={ncr.id} pdfKind="deviation-approval" canModify
+            downloadName={`Deviation-Approval-${ncr.ncr_number}`} />
+        </Section>
+      )}
 
       {(ncr.status === 'disposition_decided' || ncr.action_done_at) && (
         <Section title="Action" style={{ marginBottom: 20 }}>

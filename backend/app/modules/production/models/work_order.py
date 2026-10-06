@@ -106,6 +106,10 @@ class ProductionWorkOrderOperation(Base, TimestampMixin):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # The in-process/final inspection raised in Quality for this step's gate.
     quality_inspection_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("quality_inspections.id"), nullable=True)
+    # Quality Phase 2: the gate is an in-process inspection lot. Older steps
+    # keep quality_inspection_id (legacy free-text inspection) and are still
+    # read through it; new requests only set this.
+    quality_lot_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("quality_inspection_lots.id"), nullable=True)
     instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 

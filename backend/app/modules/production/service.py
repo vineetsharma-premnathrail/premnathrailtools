@@ -669,6 +669,15 @@ def rework_verification_problem(db: Session, rw: ProductionReworkOrder, build: P
             if not retest:
                 label = PRODUCTION_RRV_TEST_TYPES.get(failed.test_type, failed.test_type)
                 return f"Record a passing retest of “{label}” before verifying {rw.rework_number}."
+    if rw.source == "operation_inspection" and not rw.quality_inspection_id and rw.work_order_id:
+        # Phase 2 gate lots: every gate on the work order must be accepted again.
+        from app.modules.quality.services.production_gates import gate_state
+        ops = db.query(ProductionWorkOrderOperation).filter(
+            ProductionWorkOrderOperation.work_order_id == rw.work_order_id,
+            ProductionWorkOrderOperation.requires_inspection == True,  # noqa: E712
+        ).all()
+        if any(not gate_state(db, op).passed for op in ops if op.quality_lot_id):
+            return f"Request a fresh in-process inspection and get it accepted by Quality before verifying {rw.rework_number}."
     if rw.source in ("final_inspection", "operation_inspection") and rw.quality_inspection_id:
         from app.modules.quality.models.inspection import QualityInspection
         failed = db.query(QualityInspection).filter(QualityInspection.id == rw.quality_inspection_id).first()

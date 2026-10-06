@@ -54,6 +54,7 @@ export default function StoreMaterialIssueDetailPage() {
                 <InfoRow label="Issue Type" value={issue.issue_type_label || '—'} />
                 <InfoRow label="Department" value={issue.department_name || '—'} />
                 <InfoRow label="Project / Work Order" value={issue.project_or_work_order || '—'} />
+                {issue.erp_project_label && <InfoRow label="Dispatched against" value={issue.erp_project_label} />}
                 <InfoRow label="Challan No." value={issue.challan_number || '—'} />
                 <InfoRow label="Vendor" value={issue.vendor_name || '—'} />
                 {issue.expected_return_date && <InfoRow label="Date" value={issue.expected_return_date} />}

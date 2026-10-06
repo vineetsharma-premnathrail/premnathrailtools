@@ -8,7 +8,15 @@ Hooks for other modules (call inside their transaction; they flush, never commit
       split back onto the GRN line (p2p goods_receipts.apply_quality_decision).
   create_lot_for_production_output(db, work_order, item, quantity, location_id, batch_number, user_id) -> lot
       Production "Receive Output": FG to QUALITY stock + final lot.
+  create_lot_for_job_work_receipt(db, material_return=, line=, item=, vendor_name=, issue_number=, user_id=)
+      Store material return against a job-work issue (material back from
+      the vendor): stock to QUALITY + job work lot (Phase 2).
   create_lot(...) — generic (manual lots, NCR re-inspection, later phases).
+
+GRN / job work / production output first ask services.first_article whether
+the lot is a first article (rule 9) — then the lot type is first_article
+and an FAI record is opened. In-process gate lots live in
+services/production_gates.py.
 """
 import math
 from datetime import date, datetime, timezone
@@ -32,6 +40,9 @@ from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.utils.notifications import notify_user, broadcast_notification
 
 LOT_REFERENCE_TYPE = "inspection_lot"
+# First-article lots without their own plan borrow the regular plan of the
+# inspection point they replace.
+_FAI_BASE_TYPE = {"grn": "incoming", "material_return": "job_work", "work_order": "final"}
 _CLASS_RANK = {"minor": 1, "major": 2, "critical": 3}
 
 
@@ -77,6 +88,13 @@ def attach_plan(db: Session, lot: QualityInspectionLot) -> bool:
     with the sample size worked out per characteristic. Returns False when
     no approved plan exists (rule 2 — the lot can't be inspected yet)."""
     plan = current_plan(db, lot.item_id, lot.inspection_type)
+    sampling_type, fixed_n = (plan.sampling_type, plan.fixed_sample_size) if plan else (None, None)
+    if not plan and lot.inspection_type == "first_article":
+        # No own FAI plan: full drawing check against the item's regular plan —
+        # every characteristic on the first-article sample, accept 0.
+        base = _FAI_BASE_TYPE.get(lot.source_type) or ("incoming" if lot.vendor_name else "final")
+        plan = current_plan(db, lot.item_id, base) or current_plan(db, lot.item_id, "final" if base != "final" else "incoming")
+        sampling_type, fixed_n = "fixed", int(get_setting(db, "fai_sample_size"))
     if not plan:
         return False
     for r in list(lot.results):
@@ -90,9 +108,9 @@ def attach_plan(db: Session, lot: QualityInspectionLot) -> bool:
         aql = line.aql if line.aql is not None else plan.aql
         try:
             s = sampling_for_line(
-                db, lot_size=lot.quantity, classification=classification, sampling_type=plan.sampling_type,
+                db, lot_size=lot.quantity, classification=classification, sampling_type=sampling_type,
                 aql=aql, level=plan.inspection_level, severity=lot.sampling_severity,
-                fixed_sample_size=plan.fixed_sample_size,
+                fixed_sample_size=fixed_n,
             )
         except ValueError as e:
             raise LotError(f"Plan {plan.plan_number}: {e}")
@@ -159,7 +177,8 @@ def create_lot(
         quantity=quantity, batch_number=batch_number, vendor_name=vendor_name, location_id=location_id,
         stock_in_quality=bool(location_id) and (receive_into_quality or stock_already_in_quality or take_from_free),
         sampling_severity=get_setting(db, "default_sampling_severity"),
-        test_certificate_required=bool(item.test_certificate_required) and inspection_type == "incoming",
+        test_certificate_required=bool(item.test_certificate_required) and (
+            inspection_type == "incoming" or (inspection_type == "first_article" and source_type == "grn")),
         assigned_to_id=assigned_to_id, created_by_id=user_id, lot_date=lot_date or date.today(), remarks=remarks,
     )
     db.add(lot)
@@ -180,20 +199,62 @@ def create_lot_for_grn_line(db: Session, grn, line, item: StoreItem, vendor_name
         raise LotError(
             f"'{item.item_name}' needs incoming inspection, so it must be received into a store's Quality stock — "
             "pick the receiving store on the GRN.", 422)
-    return create_lot(
-        db, inspection_type="incoming", source_type="grn", item=item, quantity=line.received_quantity,
+    from app.modules.quality.services import first_article
+    lot_type, fai = first_article.start_for_receipt(
+        db, item=item, vendor_name=vendor_name, base_type="incoming", source_type="grn",
+        source_reference=grn.grn_number, user_id=user_id)
+    lot = create_lot(
+        db, inspection_type=lot_type, source_type="grn", item=item, quantity=line.received_quantity,
         location_id=grn.store_location_id, user_id=user_id, source_id=grn.id, source_reference=grn.grn_number,
         vendor_name=vendor_name, grn_item_id=line.id, receive_into_quality=True, lot_date=grn.received_date,
+        remarks=f"First article {fai.fai_number} — full drawing check" if fai else None,
     )
+    first_article.link_lot(fai, lot)
+    return lot
 
 
 def create_lot_for_production_output(db: Session, *, work_order, item: StoreItem, quantity: float, location_id: int,
                                      batch_number: str | None, user_id: int) -> QualityInspectionLot:
-    return create_lot(
-        db, inspection_type="final", source_type="work_order", item=item, quantity=quantity, location_id=location_id,
+    from app.modules.quality.services import first_article
+    lot_type, fai = first_article.start_for_receipt(
+        db, item=item, vendor_name=None, base_type="final", source_type="work_order",
+        source_reference=work_order.wo_number, user_id=user_id)
+    lot = create_lot(
+        db, inspection_type=lot_type, source_type="work_order", item=item, quantity=quantity, location_id=location_id,
         user_id=user_id, source_id=work_order.id, source_reference=work_order.wo_number, batch_number=batch_number,
-        receive_into_quality=True,
+        receive_into_quality=True, remarks=f"First article {fai.fai_number} — full drawing check" if fai else None,
     )
+    first_article.link_lot(fai, lot)
+    return lot
+
+
+def needs_job_work_inspection(db: Session, item: StoreItem | None) -> bool:
+    """Job work receipt: the item is inspection-controlled, or has an approved
+    job work plan."""
+    if not item:
+        return False
+    return bool(item.inspection_on_receipt) or current_plan(db, item.id, "job_work") is not None
+
+
+def create_lot_for_job_work_receipt(db: Session, *, material_return, line, item: StoreItem, vendor_name: str | None,
+                                    issue_number: str | None, user_id: int | None) -> QualityInspectionLot:
+    """Store: material coming back from a job-work vendor (a material return
+    against an issue made to an outside vendor). The quantity goes to QUALITY
+    stock under a job work lot instead of straight back to Free."""
+    from app.modules.quality.services import first_article
+    lot_type, fai = first_article.start_for_receipt(
+        db, item=item, vendor_name=vendor_name, base_type="job_work", source_type="material_return",
+        source_reference=material_return.return_number, user_id=user_id)
+    lot = create_lot(
+        db, inspection_type=lot_type, source_type="material_return", item=item, quantity=line.quantity,
+        location_id=material_return.location_id, user_id=user_id, source_id=material_return.id,
+        source_reference=material_return.return_number + (f" (job work {issue_number})" if issue_number else ""),
+        batch_number=line.batch_number, vendor_name=vendor_name, receive_into_quality=True,
+        lot_date=material_return.return_date,
+        remarks=f"First article {fai.fai_number} — full drawing check" if fai else None,
+    )
+    first_article.link_lot(fai, lot)
+    return lot
 
 
 # ---------------------------------------------------------------------------
@@ -385,6 +446,13 @@ def decide(db: Session, lot: QualityInspectionLot, *, decision: str, user: User,
             raise LotError(f"Accepted ({accepted_qty:g}) + rejected ({rejected_qty:g}) must equal the lot quantity {qty:g}.", 422)
         accepted, rejected = accepted_qty, rejected_qty
 
+    if accepted > 0:
+        from app.modules.quality.services.first_article import ensure_released, FaiError
+        try:
+            ensure_released(db, lot)
+        except FaiError as e:
+            raise LotError(str(e), e.status)
+
     if accepted > 0 and lot.test_certificate_required and not lot.test_certificate_received:
         raise LotError(f"{lot.item_name} needs a test certificate / MTC before it can be accepted. Mark the certificate "
                        "received (with its number) on this lot, or reject the lot.")
@@ -418,6 +486,9 @@ def decide(db: Session, lot: QualityInspectionLot, *, decision: str, user: User,
         ncrs.append(ncr_service.raise_from_lot(db, lot, quantity=accepted, user=user, deviation=True))
     if lot.ncr_id:
         ncr_service.on_reinspection_decided(db, lot)
+    if lot.source_type == "work_order_operation":
+        from app.modules.quality.services.production_gates import on_gate_lot_decided
+        on_gate_lot_decided(db, lot, ncrs, user)
     return lot, ncrs
 
 

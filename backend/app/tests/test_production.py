@@ -1,8 +1,8 @@
 """End-to-end tests for the Production module: BOM → work order → Store
 issue → shop floor → Quality gate → finished-goods receipt → costing.
 
-Quality's inspection-number generator takes a Postgres advisory lock that
-SQLite can't run, so it's replaced with a plain counter here."""
+Quality gates are in-process inspection lots (Quality Phase 2); tests
+decide them directly via decide_gate()."""
 from datetime import date
 from itertools import count
 
@@ -10,7 +10,7 @@ import pytest
 
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
-from app.modules.quality.models.inspection import QualityInspection
+from app.modules.quality.models.inspection_lot import QualityInspectionLot
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_balance import StoreStockBalance
@@ -21,16 +21,22 @@ API = "/api/v1/production"
 
 @pytest.fixture(autouse=True)
 def _sqlite_document_numbers(monkeypatch):
-    """Quality's and Store's number generators take Postgres advisory locks."""
+    """Store's number generator takes a Postgres advisory lock."""
     seq = count(1)
-    monkeypatch.setattr(
-        "app.modules.production.routes.work_orders.generate_inspection_number",
-        lambda db, code: f"INSP-{code}-TEST-{next(seq):04d}",
-    )
     monkeypatch.setattr(
         "app.modules.production.service.generate_stock_reservation_number",
         lambda db: f"RES-TEST-{next(seq):04d}",
     )
+
+
+def decide_gate(db, lot_id, decision):
+    """Stand-in for Quality's usage decision on an in-process gate lot (the
+    real decision flow is covered in test_quality_phase2)."""
+    lot = db.get(QualityInspectionLot, lot_id)
+    lot.status, lot.decision = "decision_made", decision
+    lot.accepted_qty = 0 if decision == "reject" else lot.quantity
+    db.commit()
+    return lot
 
 
 def make_user(db, email, apps=("production", "quality")):
@@ -177,19 +183,18 @@ def test_work_order_full_lifecycle(client, db, setup):
     wo = client.post(f"{API}/work-orders/{wo['id']}/operations/{test_op['id']}/request-inspection", headers=h).json()
     op = wo["operations"][1]
     assert op["inspection_status"] == "pending"
-    insp = db.get(QualityInspection, op["quality_inspection_id"])
-    assert insp.inspection_type == "final" and insp.batch_number == wo["wo_number"]
+    lot = db.get(QualityInspectionLot, op["quality_lot_id"])
+    assert lot.inspection_type == "in_process" and lot.batch_number == wo["wo_number"] and not lot.stock_in_quality
+    assert client.post(f"{API}/work-orders/{wo['id']}/operations/{test_op['id']}/request-inspection", headers=h).status_code == 409
 
-    insp.status = "failed"
-    db.commit()
+    decide_gate(db, lot.id, "reject")
     failed = client.post(f"{API}/work-orders/{wo['id']}/operations/{test_op['id']}/complete", json={}, headers=h)
     assert "Rework" in failed.json()["detail"]
     # Re-inspection after rework.
     wo = client.post(f"{API}/work-orders/{wo['id']}/operations/{test_op['id']}/request-inspection", headers=h).json()
-    new_insp = db.get(QualityInspection, wo["operations"][1]["quality_inspection_id"])
-    assert new_insp.id != insp.id
-    new_insp.status = "passed"
-    db.commit()
+    new_lot_id = wo["operations"][1]["quality_lot_id"]
+    assert new_lot_id != lot.id
+    decide_gate(db, new_lot_id, "accept")
 
     client.post(f"{API}/time-logs", json={
         "work_order_id": wo["id"], "operation_id": test_op["id"], "log_date": str(date.today()), "hours": 2, "qty_good": 2,
@@ -317,9 +322,7 @@ def test_serial_numbered_output_needs_whole_units_and_a_serial(client, db, setup
     for op in wo["operations"]:
         if op["requires_inspection"]:
             wo = client.post(f"{API}/work-orders/{wo['id']}/operations/{op['id']}/request-inspection", headers=h).json()
-    insp = db.get(QualityInspection, wo["operations"][1]["quality_inspection_id"])
-    insp.status = "passed"
-    db.commit()
+    decide_gate(db, wo["operations"][1]["quality_lot_id"], "accept")
     client.post(f"{API}/work-orders/{wo['id']}/operations/{wo['operations'][0]['id']}/start", headers=h)
 
     half = client.post(f"{API}/work-orders/{wo['id']}/receive-output", json={"quantity": 1.5}, headers=h)
@@ -337,11 +340,13 @@ def test_quality_result_notifies_the_work_order_supervisor(client, db, setup):
     client.patch(f"{API}/work-orders/{wo['id']}", json={"supervisor_id": supervisor.id}, headers=setup["h"])
     gate = next(op for op in wo["operations"] if op["requires_inspection"])
     wo = client.post(f"{API}/work-orders/{wo['id']}/operations/{gate['id']}/request-inspection", headers=setup["h"]).json()
-    inspection_id = next(op for op in wo["operations"] if op["requires_inspection"])["quality_inspection_id"]
+    lot_id = next(op for op in wo["operations"] if op["requires_inspection"])["quality_lot_id"]
 
     inspector = make_user(db, "inspector@premnathrail.com", apps=("quality",))
-    resp = client.patch(f"/api/v1/quality/inspections/{inspection_id}", json={"status": "failed"}, headers=auth(inspector))
-    assert resp.status_code == 200, resp.text
+    from app.modules.quality.services.production_gates import on_gate_lot_decided
+    lot = decide_gate(db, lot_id, "reject")
+    on_gate_lot_decided(db, lot, [], inspector)
+    db.commit()
     note = db.query(Notification).filter_by(user_id=supervisor.id, notification_type="production_inspection_result").one()
     assert "Rework" in note.title and wo["wo_number"] in note.message
 

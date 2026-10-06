@@ -44,7 +44,15 @@ def _to_response(db: Session, issue: StoreMaterialIssue) -> StoreMaterialIssueRe
         item_resp.item_code = item.item_code if item else None
         item_resp.item_name = item.item_name if item else None
         item_resp.uom = item.uom if item else None
+    if issue.erp_project_id:
+        from app.modules.erp.models.project import Project
+        project = db.query(Project).filter(Project.id == issue.erp_project_id).first()
+        resp.erp_project_label = _project_label(project) if project else None
     return resp
+
+
+def _project_label(p) -> str:
+    return " — ".join(x for x in (p.serial_number, p.model_name, p.client_company, f"PO {p.po_number}" if p.po_number else None) if x)
 
 
 @router.get("", response_model=list[StoreMaterialIssueResponse])
@@ -61,6 +69,19 @@ async def list_material_issues(
         query = query.filter(StoreMaterialIssue.department_id == department_id)
     issues = query.order_by(StoreMaterialIssue.created_at.desc()).all()
     return [_to_response(db, i) for i in issues]
+
+
+@router.get("/dispatch-projects")
+async def dispatch_project_options(
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("store")),
+):
+    """Customer machines / orders (ERP) a dispatch issue can go against,
+    with their Quality inspection requirement (rule 8)."""
+    from app.modules.erp.models.project import Project
+    rows = db.query(Project).filter(Project.is_deleted == False).order_by(Project.id.desc()).limit(1000).all()  # noqa: E712
+    return [{"id": p.id, "label": _project_label(p), "third_party_inspection_required": bool(p.third_party_inspection_required),
+             "inspection_agency": p.inspection_agency} for p in rows]
 
 
 @router.get("/{issue_id}", response_model=StoreMaterialIssueResponse)
@@ -133,6 +154,21 @@ async def create_material_issue(
             detail=f"Date ({expected_return_date:%d-%m-%Y}) is before the issue date ({issue_date:%d-%m-%Y}) — pick a date on or after the issue date.",
         )
 
+    erp_project_id = payload.erp_project_id
+    if issue_type_row and issue_type_row.value == "dispatch":
+        # Quality rule 8: FG leave only with a decided final inspection and,
+        # where the contract needs it, an accepted third-party certificate.
+        from app.modules.erp.models.project import Project
+        from app.modules.quality.services.dispatch import ensure_dispatch_allowed, DispatchBlocked
+        if not erp_project_id:
+            raise HTTPException(status_code=422, detail="Pick the customer machine / order (ERP) this dispatch is against — Quality checks its inspection requirement before material can leave.")
+        if not db.query(Project.id).filter(Project.id == erp_project_id, Project.is_deleted == False).first():  # noqa: E712
+            raise HTTPException(status_code=404, detail=f"ERP machine / order #{erp_project_id} not found — pick it again.")
+        try:
+            ensure_dispatch_allowed(db, lines=[p.model_dump() for p in payload.items], erp_project_id=erp_project_id)
+        except DispatchBlocked as e:
+            raise HTTPException(status_code=409, detail=f"Dispatch blocked by Quality — {e}")
+
     issue = StoreMaterialIssue(
         issue_number=generate_material_issue_number(db),
         location_id=payload.location_id,
@@ -143,6 +179,7 @@ async def create_material_issue(
         challan_number=challan_number,
         vendor_name=vendor_name,
         expected_return_date=expected_return_date,
+        erp_project_id=erp_project_id,
         issue_date=issue_date,
         issued_by_id=user.id,
         remarks=payload.remarks,

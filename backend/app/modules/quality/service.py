@@ -132,3 +132,23 @@ def generate_lot_number(db: Session) -> str:
         last_num = int(last.rsplit("-", 1)[-1])
         return f"{prefix}{last_num + 1:04d}"
     return f"{prefix}0001"
+
+
+def _next_in_series(db: Session, column, prefix: str) -> str:
+    _lock_number_series(db, prefix)
+    last = db.query(func.max(column)).filter(column.like(f"{prefix}%")).scalar()
+    return f"{prefix}{int(last.rsplit('-', 1)[-1]) + 1:04d}" if last else f"{prefix}0001"
+
+
+def generate_fai_number(db: Session) -> str:
+    """<prefix>-[YEAR]-[NUMBER] first article number (prefix from Quality → Settings, default FAI)."""
+    from app.modules.quality.models.first_article import QualityFirstArticle
+    from app.modules.quality.services.settings import get_setting
+    return _next_in_series(db, QualityFirstArticle.fai_number, f"{get_setting(db, 'fai_number_prefix')}-{date.today().year}-")
+
+
+def generate_call_number(db: Session) -> str:
+    """<prefix>-[YEAR]-[NUMBER] inspection call number (prefix from Quality → Settings, default IC)."""
+    from app.modules.quality.models.inspection_call import QualityInspectionCall
+    from app.modules.quality.services.settings import get_setting
+    return _next_in_series(db, QualityInspectionCall.call_number, f"{get_setting(db, 'call_number_prefix')}-{date.today().year}-")

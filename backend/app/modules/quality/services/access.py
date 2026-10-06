@@ -22,16 +22,18 @@ _INSPECTOR = _grants(
     ("dashboard", "view"), ("my_inspections", "view,edit"), ("inspection_lots", "view,edit"),
     ("ncr", "view,create"), ("inspection_plans", "view"), ("masters", "view"),
     ("in_process_inspection", "view,edit"), ("final_inspection", "view,edit"),
+    ("first_article", "view,edit"), ("inspection_calls", "view"),
 )
 _ENGINEER = sorted(set(_INSPECTOR + _grants(
     ("inspection_lots", "create,approve"), ("ncr", "edit"), ("inspection_plans", "create,edit"),
     ("masters", "create,edit"), ("settings", "view"), ("capa", "view,create,edit"), ("reports", "view"),
     ("standards", "view"), ("documents", "view"),
+    ("first_article", "create,approve"), ("inspection_calls", "create,edit"),
 )))
 _HEAD = sorted(set(_ENGINEER + _grants(
     ("ncr", "approve"), ("inspection_plans", "approve"), ("settings", "edit"), ("capa", "approve"),
     ("complaints", "view,create,edit"), ("supplier_quality", "view,edit"), ("standards", "create,edit"),
-    ("documents", "create,edit"), ("project_work", "view"),
+    ("documents", "create,edit"), ("project_work", "view"), ("inspection_calls", "approve"),
 )))
 _CALIBRATION = _grants(("dashboard", "view"), ("masters", "view"), ("reports", "view"))
 
@@ -58,6 +60,17 @@ def is_quality_engineer(user: User) -> bool:
 
 def can_decide_lot(user: User) -> bool:
     return _explicit(user, "inspection_lots", "approve")
+
+
+def can_approve_fai(user: User) -> bool:
+    """First article approval releases an item / revision / vendor for
+    regular use (rule 9) — a Quality engineer's authority."""
+    return _explicit(user, "first_article", "approve")
+
+
+def can_record_call_result(user: User) -> bool:
+    """Recording a third-party inspection result (it releases dispatch)."""
+    return _explicit(user, "inspection_calls", "edit")
 
 
 def can_approve_plan(user: User) -> bool:

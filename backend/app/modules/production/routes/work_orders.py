@@ -27,13 +27,15 @@ from app.modules.production.service import (
 )
 from app.modules.production.models.rrv_build import ProductionRrvBuild
 from app.modules.quality.models.inspection import QualityInspection
-from app.modules.quality.service import generate_inspection_number
+from app.modules.quality.models.inspection_lot import QualityInspectionLot
+from app.modules.quality.services import production_gates
+from app.modules.quality.services.first_article import check_production_release, FaiError
 from app.modules.quality.services.lots import needs_inspection_on_receipt, create_lot_for_production_output, LotError
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_transaction import StoreStockTransaction
 from app.modules.store.services.stock_ledger import post_stock_transaction
-from app.utils.notifications import notify_user, broadcast_notification
+from app.utils.notifications import notify_user
 
 router = APIRouter(
     prefix="/production/work-orders", tags=["Production"],
@@ -49,8 +51,6 @@ _CAN_DELETE = require_tab_action("production", "work_orders", "delete")
 _CAN_APPROVE = require_tab_action("production", "work_orders", "approve")
 _CAN_RUN_FLOOR = require_tab_action("production", "shop_floor", "edit")
 _EXECUTING_STATUSES = ("released", "in_progress")
-_PASSED_INSPECTION = ("passed", "conditionally_passed")
-_OPEN_INSPECTION = ("pending", "in_progress")
 
 
 # ---------------------------------------------------------------------------
@@ -113,15 +113,19 @@ def _to_responses(db: Session, orders: list[ProductionWorkOrder], detail: bool =
                 QualityInspection.id.in_({op.quality_inspection_id for op in wo.operations if op.quality_inspection_id}),
                 QualityInspection.is_deleted == False,  # noqa: E712
             ).all()}
+            gate_lots = {lot.id: lot for lot in db.query(QualityInspectionLot).filter(
+                QualityInspectionLot.id.in_({op.quality_lot_id for op in wo.operations if op.quality_lot_id})).all()}
+            ops_by_id = {op.id: op for op in wo.operations}
             hours: dict[int, float] = {}
             for log in db.query(ProductionTimeLog).filter(ProductionTimeLog.work_order_id == wo.id).all():
                 hours[log.operation_id] = hours.get(log.operation_id, 0.0) + log.hours
             for op in resp.operations:
                 op.workstation_name = ws_names.get(op.workstation_id)
                 op.actual_hours = round(hours.get(op.id, 0.0), 2)
-                insp = inspections.get(op.quality_inspection_id)
-                if insp:
-                    op.inspection_number, op.inspection_status = insp.inspection_number, insp.status
+                # In-process lot (Phase 2) or the legacy free-text inspection.
+                g = production_gates.gate_state(db, ops_by_id[op.id], lots=gate_lots, legacy=inspections)
+                if g.requested:
+                    op.inspection_number, op.inspection_status = g.number, g.status
         else:
             resp.materials, resp.operations = [], []
         out.append(resp)
@@ -374,6 +378,10 @@ async def release_work_order(
         raise HTTPException(status_code=400, detail=f"Set the '{' and '.join(missing)}' store location(s) on {wo.wo_number} before releasing it to the shop floor.")
     if not wo.operations:
         raise HTTPException(status_code=400, detail=f"{wo.wo_number} has no routing operations, so there is nothing for the shop floor to do. Add operations to the BOM and raise a new work order.")
+    try:
+        check_production_release(db, db.query(StoreItem).filter(StoreItem.id == wo.product_item_id).first(), wo.wo_number)
+    except FaiError as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
     wo.status = "released"
     try:
         reserve_materials(db, wo, user.id)
@@ -586,17 +594,13 @@ async def receive_output(
 
     # Quality gate: every inspection-controlled step must have a passed
     # inspection before anything built on this order goes into stock.
-    ungated = []
-    inspection_ids = {op.quality_inspection_id for op in wo.operations if op.quality_inspection_id}
-    statuses = {i.id: i.status for i in db.query(QualityInspection).filter(QualityInspection.id.in_(inspection_ids), QualityInspection.is_deleted == False).all()}  # noqa: E712 if inspection_ids else {}
-    for op in wo.operations:
-        if op.requires_inspection and statuses.get(op.quality_inspection_id) not in _PASSED_INSPECTION:
-            ungated.append(f"{op.sequence} {op.operation_name}")
+    ungated = [f"{op.sequence} {op.operation_name}" for op in wo.operations
+               if op.requires_inspection and not production_gates.gate_state(db, op).passed]
     if ungated:
         raise HTTPException(
             status_code=409,
-            detail=f"Quality hasn't passed the inspection for operation(s) {', '.join(ungated)} yet. "
-                   "Request the inspection from the Operations tab and have Quality mark it passed before receiving output.",
+            detail=f"Quality hasn't accepted the in-process inspection for operation(s) {', '.join(ungated)} yet. "
+                   "Request the inspection from the Operations tab and have Quality make the usage decision before receiving output.",
         )
 
     if needs_inspection_on_receipt(db, product, "final"):
@@ -698,6 +702,9 @@ async def start_operation(wo_id: int, op_id: int, db: Session = Depends(get_db),
     op = _get_operation(wo, op_id)
     if op.status != "pending":
         raise HTTPException(status_code=409, detail=f"Operation {op.sequence} {op.operation_name} is already {op.status.replace('_', ' ')}.")
+    held = production_gates.start_problem(db, wo, op)
+    if held:
+        raise HTTPException(status_code=409, detail=held)
     ensure_workstation_available(db, op)
     op.status = "in_progress"
     op.started_at = datetime.now(timezone.utc)
@@ -714,17 +721,9 @@ async def complete_operation(wo_id: int, op_id: int, payload: ProductionOperatio
     op = _get_operation(wo, op_id)
     if op.status == "completed":
         raise HTTPException(status_code=409, detail=f"Operation {op.sequence} {op.operation_name} is already completed.")
-    if op.requires_inspection:
-        # A deleted inspection no longer counts as a sign-off.
-        insp = db.query(QualityInspection).filter(
-            QualityInspection.id == op.quality_inspection_id, QualityInspection.is_deleted == False  # noqa: E712
-        ).first() if op.quality_inspection_id else None
-        if not insp:
-            raise HTTPException(status_code=409, detail=f"Operation {op.sequence} {op.operation_name} is a quality gate. Click 'Request Inspection' and have Quality pass it before completing this step.")
-        if insp.status not in _PASSED_INSPECTION:
-            hint = ("Rework the parts, then request a fresh inspection." if insp.status == "failed"
-                    else "Wait for Quality to finish it.")
-            raise HTTPException(status_code=409, detail=f"Inspection {insp.inspection_number} for operation {op.sequence} {op.operation_name} is {insp.status.replace('_', ' ')}. {hint}")
+    gate_problem = production_gates.completion_problem(db, op)
+    if gate_problem:
+        raise HTTPException(status_code=409, detail=gate_problem)
     if op.started_at is None:
         op.started_at = datetime.now(timezone.utc)
     op.status = "completed"
@@ -749,38 +748,14 @@ async def request_inspection(
     op = _get_operation(wo, op_id)
     if op.status == "completed":
         raise HTTPException(status_code=409, detail=f"Operation {op.sequence} {op.operation_name} is already completed.")
-    if op.quality_inspection_id:
-        current = db.query(QualityInspection).filter(QualityInspection.id == op.quality_inspection_id).first()
-        # A failed inspection can be re-requested after rework; anything else is still live.
-        if current and not current.is_deleted and current.status != "failed":
-            raise HTTPException(status_code=409, detail=f"Inspection {current.inspection_number} is already {current.status.replace('_', ' ')} for this operation.")
-
-    is_final = op.sequence == max(o.sequence for o in wo.operations)
-    inspection_type = "final" if is_final else "in_process"
-    product = db.query(StoreItem).filter(StoreItem.id == wo.product_item_id).first()
-    project = db.query(Project).filter(Project.id == wo.erp_project_id).first() if wo.erp_project_id else None
-    inspection = QualityInspection(
-        inspection_number=generate_inspection_number(db, "FIN" if is_final else "PROC"),
-        inspection_type=inspection_type,
-        item_name=product.item_name if product else f"Item #{wo.product_item_id}",
-        item_code=product.item_code if product else None,
-        batch_number=wo.wo_number,
-        quantity_inspected=op.qty_good or wo.quantity_planned,
-        project_label=f"{wo.wo_number} · Op {op.sequence} {op.operation_name}" + (f" · {project.serial_number}" if project else ""),
-        inspection_date=date.today(),
-        status="pending",
-        remarks=f"Requested from Production by {user.name or user.email} for work order {wo.wo_number}, operation {op.sequence} {op.operation_name}.",
-    )
-    db.add(inspection)
-    db.flush()
-    op.quality_inspection_id = inspection.id
-    broadcast_notification(
-        db,
-        title=f"{'Final' if is_final else 'In-Process'} Inspection Requested",
-        message=f"{wo.wo_number} · operation {op.sequence} {op.operation_name} is waiting for inspection {inspection.inspection_number}.",
-        notification_type="production_inspection_requested", entity_type="quality_inspection", entity_id=inspection.id,
-        exclude_user_id=user.id, app_name="quality",
-    )
+    # Phase 2: the gate is an in-process inspection lot (Quality → Inspection
+    # Lots / My Inspections notifies the inspectors). Next operation is held
+    # until the lot is decided.
+    try:
+        production_gates.request_gate_lot(db, wo, op, user)
+    except (production_gates.GateError, LotError) as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=str(e))
     db.commit()
     db.refresh(wo)
     return _to_response(db, wo)

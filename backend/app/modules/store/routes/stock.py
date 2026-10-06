@@ -179,6 +179,20 @@ async def clear_quarantine(
         raise HTTPException(status_code=404, detail="Item not found")
     if not db.query(StoreLocation).filter(StoreLocation.id == payload.location_id).first():
         raise HTTPException(status_code=404, detail="Store not found")
+    # Quality: Blocked stock held by an open NCR (or a usage decision) moves
+    # only through that NCR's disposition — never through a store clear.
+    from app.modules.quality.services.ncr import held_in_blocked
+    held, ncr_numbers = held_in_blocked(db, payload.item_id, payload.location_id)
+    if held > 0:
+        bal = db.query(StoreStockBalance).filter(StoreStockBalance.item_id == payload.item_id, StoreStockBalance.location_id == payload.location_id).first()
+        free_quarantine = max((bal.quarantine_qty or 0) - held, 0) if bal else 0
+        if payload.quantity > free_quarantine + 1e-9:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{held:g} of '{item.item_name}' in quarantine is blocked by Quality under {', '.join(ncr_numbers)} — it can only be "
+                       f"released, scrapped or returned through that NCR's disposition (Quality → NCR). "
+                       + (f"Only {free_quarantine:g} can be cleared here." if free_quarantine > 0 else "Nothing else is in quarantine to clear here."),
+            )
     remarks = f"{QUARANTINE_DISPOSITIONS[payload.disposition]}" + (f" — {payload.remarks.strip()}" if payload.remarks and payload.remarks.strip() else "")
     common = dict(item_id=payload.item_id, location_id=payload.location_id, quantity=payload.quantity,
                   reference_type="quarantine", reference_number=payload.disposition, remarks=remarks, created_by_id=user.id)

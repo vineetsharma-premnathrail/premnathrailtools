@@ -79,6 +79,10 @@ async def create_inspection(
         # Retired (Quality Phase 1): incoming inspection is an inspection lot
         # created automatically from the GRN, with stock held in Quality.
         raise HTTPException(status_code=410, detail="Free-text incoming inspections are retired — incoming lots are created automatically from the GRN for items flagged 'inspection on receipt'. Use Quality → Inspection Lots.")
+    if payload.inspection_type == "in_process":
+        # Retired (Quality Phase 2): in-process inspection is an inspection lot
+        # raised by Production's "Request Inspection" on a gated step.
+        raise HTTPException(status_code=410, detail="Free-text in-process inspections are retired — Production's 'Request Inspection' on a gated routing step raises an in-process inspection lot (Quality → In-process Inspections), or create a manual lot in Quality → Inspection Lots.")
     if payload.inspection_plan_id is not None and not db.query(QualityInspectionPlan).filter(
         QualityInspectionPlan.id == payload.inspection_plan_id, QualityInspectionPlan.is_deleted == False  # noqa: E712
     ).first():

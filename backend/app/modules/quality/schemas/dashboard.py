@@ -14,6 +14,8 @@ class QualityDashboardKpis(BaseModel):
     overdue_capas: int = 0
     open_complaints: int = 0
     gate_inspections_pending: int = 0
+    open_first_articles: int = 0
+    inspection_calls_next_7_days: int = 0
     month_lots_decided: int = 0
     month_received_qty: float = 0
     month_rejected_qty: float = 0

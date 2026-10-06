@@ -1,7 +1,12 @@
 """Inspection lots: list / My Inspections, manual creation, results,
 usage decision, close. All rules live in services/lots.py."""
-from fastapi import APIRouter, Depends, HTTPException, Query
+import os
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.orm import Session, selectinload
+
+from app.core.config import settings
 
 from app.core.permissions import require_app_access, require_tab_action
 from app.db.session import get_db
@@ -10,6 +15,8 @@ from app.modules.quality.models.inspection_lot import (
     QualityInspectionLot, QUALITY_LOT_STATUSES, QUALITY_LOT_OPEN_STATUSES, QUALITY_LOT_DECISION_LABELS,
 )
 from app.modules.quality.models.inspection_plan import QualityInspectionPlan, QUALITY_INSPECTION_TYPES
+from app.modules.quality.models.first_article import QualityFirstArticle
+from app.modules.quality.models.lot_attachment import QualityLotPhoto
 from app.modules.quality.models.masters import QualityDefectCode
 from app.modules.quality.models.ncr import QualityNcr
 from app.modules.quality.schemas.inspection_lot import (
@@ -57,6 +64,21 @@ def _to_responses(db: Session, lots: list[QualityInspectionLot], detail: bool = 
                 r.recorded_by_name = users.get(r.recorded_by_id)
             resp.ncrs = [{"id": n.id, "ncr_number": n.ncr_number, "status": n.status, "severity": n.severity, "quantity": n.quantity}
                          for n in db.query(QualityNcr).filter(QualityNcr.lot_id == l.id, QualityNcr.is_deleted == False).all()]  # noqa: E712
+            photo_users = {}
+            photos = db.query(QualityLotPhoto).filter(QualityLotPhoto.lot_id == l.id).order_by(QualityLotPhoto.id).all()
+            for ph in photos:
+                if ph.uploaded_by_id and ph.uploaded_by_id not in photo_users:
+                    photo_users[ph.uploaded_by_id] = users.get(ph.uploaded_by_id) or next(
+                        (u.name or u.email for u in db.query(User).filter(User.id == ph.uploaded_by_id)), None)
+            resp.photos = [{"id": ph.id, "result_id": ph.result_id, "file_name": ph.file_name, "caption": ph.caption,
+                            "uploaded_by_name": photo_users.get(ph.uploaded_by_id), "created_at": ph.created_at} for ph in photos]
+            fai = db.query(QualityFirstArticle).filter(QualityFirstArticle.lot_id == l.id).first()
+            resp.first_article = {"id": fai.id, "fai_number": fai.fai_number, "status": fai.status, "trigger": fai.trigger} if fai else None
+            if l.source_type == "work_order_operation":
+                from app.modules.production.models.work_order import ProductionWorkOrder, ProductionWorkOrderOperation
+                op = db.query(ProductionWorkOrderOperation).filter(ProductionWorkOrderOperation.quality_lot_id == l.id).first()
+                wo = db.query(ProductionWorkOrder).filter(ProductionWorkOrder.id == op.work_order_id).first() if op else None
+                resp.gate = {"work_order_id": wo.id, "wo_number": wo.wo_number, "operation": f"{op.sequence} {op.operation_name}"} if wo else None
         else:
             resp.results = []
         out.append(resp)
@@ -122,6 +144,8 @@ async def create_manual_lot(payload: QualityInspectionLotCreate, db: Session = D
         raise HTTPException(status_code=422, detail=f"Invalid inspection type '{payload.inspection_type}'.")
     if payload.inspection_type in ("incoming",):
         raise HTTPException(status_code=422, detail="Incoming lots are created automatically by the GRN for items flagged 'inspection on receipt' — record the GRN in Store instead.")
+    if payload.inspection_type == "first_article":
+        raise HTTPException(status_code=422, detail="Raise a first article from Quality → First Article — it opens the FAI record (rule 9) together with its lot.")
     item = db.query(StoreItem).filter(StoreItem.id == payload.item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail=f"Item #{payload.item_id} isn't in the Item Master.")
@@ -213,4 +237,82 @@ async def close_lot(lot_id: int, db: Session = Depends(get_db), user: User = Dep
 async def cancel_lot(lot_id: int, payload: QualityLotCancelPayload, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
     lot = _get_or_404(db, lot_id, lock=True)
     _run(db, lambda: lot_service.cancel(db, lot, user, payload.reason))
+    return _detail(db, lot_id)
+
+
+# ---------------------------------------------------------------------------
+# Photos (Phase 2) — SharePoint, served back through the app
+# ---------------------------------------------------------------------------
+
+MAX_PHOTO_BYTES = 8 * 1024 * 1024
+
+
+def _require_sharepoint() -> None:
+    if not settings.SHAREPOINT_SITE_ID:
+        raise HTTPException(status_code=503, detail="Photo storage (SharePoint) isn't configured on the server — ask the admin to set SHAREPOINT_SITE_ID.")
+
+
+@router.post("/{lot_id}/photos", response_model=QualityInspectionLotResponse)
+async def upload_photos(
+    lot_id: int, files: list[UploadFile] = File(...), result_id: int | None = Form(None), caption: str | None = Form(None),
+    db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT),
+):
+    from app.utils.sharepoint import upload_file_to_sharepoint, sanitize_folder_name
+    lot = _get_or_404(db, lot_id)
+    if lot.status not in QUALITY_LOT_OPEN_STATUSES:
+        raise HTTPException(status_code=409, detail=f"Lot {lot.lot_number} is {lot.status.replace('_', ' ')} — photos are part of the record "
+                                                    "once the usage decision is made, so they can only be added while the lot is open.")
+    if result_id is not None and result_id not in {r.id for r in lot.results}:
+        raise HTTPException(status_code=422, detail=f"Result row #{result_id} doesn't belong to lot {lot.lot_number}.")
+    for f in files:
+        if not f.content_type or not f.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail=f"'{f.filename}' isn't an image — upload JPG, PNG or WEBP photos.")
+        f.file.seek(0, os.SEEK_END)
+        size = f.file.tell()
+        f.file.seek(0)
+        if size > MAX_PHOTO_BYTES:
+            raise HTTPException(status_code=400, detail=f"'{f.filename}' is {size / 1024 / 1024:.1f} MB — keep photos under 8 MB (resize and try again).")
+    _require_sharepoint()
+    folder = f"{sanitize_folder_name(settings.SHAREPOINT_FOLDER or 'ERP-media')}/Quality/Inspection-Lots/{sanitize_folder_name(lot.lot_number)}"
+    for f in files:
+        f.file.seek(0, os.SEEK_END)
+        size = f.file.tell()
+        f.file.seek(0)
+        uploaded = await upload_file_to_sharepoint(settings.SHAREPOINT_SITE_ID, folder, f)
+        db.add(QualityLotPhoto(lot_id=lot.id, result_id=result_id, file_name=f.filename or "photo", file_path=uploaded["path"],
+                               content_type=f.content_type, file_size=size, caption=(caption or "").strip() or None,
+                               uploaded_by_id=user.id))
+    db.commit()
+    return _detail(db, lot_id)
+
+
+@router.get("/{lot_id}/photos/{photo_id}")
+async def get_photo(lot_id: int, photo_id: int, db: Session = Depends(get_db)):
+    from app.utils.sharepoint import download_file_content
+    ph = db.query(QualityLotPhoto).filter(QualityLotPhoto.id == photo_id, QualityLotPhoto.lot_id == lot_id).first()
+    if not ph:
+        raise HTTPException(status_code=404, detail="Photo not found — it may have been removed. Refresh the page.")
+    _require_sharepoint()
+    content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, ph.file_path)
+    return Response(content=content, media_type=ph.content_type or content_type,
+                    headers={"Content-Disposition": f'inline; filename="{ph.file_name}"', "Cache-Control": "private, max-age=3600"})
+
+
+@router.delete("/{lot_id}/photos/{photo_id}", response_model=QualityInspectionLotResponse)
+async def delete_photo(lot_id: int, photo_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
+    lot = _get_or_404(db, lot_id)
+    ph = db.query(QualityLotPhoto).filter(QualityLotPhoto.id == photo_id, QualityLotPhoto.lot_id == lot_id).first()
+    if not ph:
+        raise HTTPException(status_code=404, detail="Photo not found — it may have been removed already. Refresh the page.")
+    if lot.status not in QUALITY_LOT_OPEN_STATUSES:
+        raise HTTPException(status_code=409, detail=f"Lot {lot.lot_number} is decided — its photos are part of the record and can't be removed.")
+    if ph.uploaded_by_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only the person who added the photo (or an admin) can remove it.")
+    db.delete(ph)
+    db.commit()
+    try:
+        from app.utils.sharepoint import delete_file_from_sharepoint
+        await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, ph.file_path)
+    except HTTPException:
+        pass  # record is gone; a stray file in SharePoint is harmless
     return _detail(db, lot_id)

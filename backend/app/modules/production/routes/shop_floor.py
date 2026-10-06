@@ -55,6 +55,10 @@ async def shop_floor_queue(
     ws_names = {w.id: f"{w.code} — {w.name}" for w in db.query(ProductionWorkstation).filter(ProductionWorkstation.id.in_(ws_ids)).all()} if ws_ids else {}
     insp_ids = {op.quality_inspection_id for op, _ in rows if op.quality_inspection_id}
     inspections = {i.id: i for i in db.query(QualityInspection).filter(QualityInspection.id.in_(insp_ids), QualityInspection.is_deleted == False).all()}  # noqa: E712 if insp_ids else {}
+    from app.modules.quality.models.inspection_lot import QualityInspectionLot
+    from app.modules.quality.services.production_gates import gate_state
+    lot_ids = {op.quality_lot_id for op, _ in rows if op.quality_lot_id}
+    gate_lots = {lot.id: lot for lot in db.query(QualityInspectionLot).filter(QualityInspectionLot.id.in_(lot_ids)).all()} if lot_ids else {}
     hours: dict[int, float] = {}
     for log in db.query(ProductionTimeLog).filter(ProductionTimeLog.operation_id.in_({op.id for op, _ in rows})).all():
         hours[log.operation_id] = hours.get(log.operation_id, 0.0) + log.hours
@@ -63,7 +67,7 @@ async def shop_floor_queue(
     out = []
     for op, wo in rows:
         product = items.get(wo.product_item_id)
-        insp = inspections.get(op.quality_inspection_id)
+        gate = gate_state(db, op, lots=gate_lots, legacy=inspections)
         out.append(ProductionQueueEntry(
             operation_id=op.id, work_order_id=wo.id, wo_number=wo.wo_number, wo_status=wo.status, priority=wo.priority,
             product_code=product.item_code if product else None, product_name=product.item_name if product else None,
@@ -72,7 +76,7 @@ async def shop_floor_queue(
             workstation_id=op.workstation_id, workstation_name=ws_names.get(op.workstation_id),
             planned_hours=op.planned_hours, actual_hours=round(hours.get(op.id, 0.0), 2),
             qty_good=op.qty_good, qty_scrap=op.qty_scrap, requires_inspection=op.requires_inspection,
-            inspection_number=insp.inspection_number if insp else None, inspection_status=insp.status if insp else None,
+            inspection_number=gate.number, inspection_status=gate.status if gate.requested else None,
             planned_end_date=wo.planned_end_date, is_overdue=bool(wo.planned_end_date and wo.planned_end_date < today),
             instructions=op.instructions,
         ))
