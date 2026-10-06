@@ -45,9 +45,11 @@ def generate_inspection_plan_number(db: Session) -> str:
 
 
 def generate_ncr_number(db: Session) -> str:
-    """NCR-[YEAR]-[NUMBER], sequence scoped per year."""
+    """<prefix>-[YEAR]-[NUMBER], sequence scoped per year. Prefix from
+    Quality → Settings (default NCR)."""
+    from app.modules.quality.services.settings import get_setting
     year = date.today().year
-    prefix = f"NCR-{year}-"
+    prefix = f"{get_setting(db, 'ncr_number_prefix')}-{year}-"
     _lock_number_series(db, prefix)
     last = db.query(func.max(QualityNcr.ncr_number)).filter(
         QualityNcr.ncr_number.like(f"{prefix}%")
@@ -108,6 +110,23 @@ def generate_inspection_number(db: Session, type_code: str) -> str:
     _lock_number_series(db, prefix)
     last = db.query(func.max(QualityInspection.inspection_number)).filter(
         QualityInspection.inspection_number.like(f"{prefix}%")
+    ).scalar()
+    if last:
+        last_num = int(last.rsplit("-", 1)[-1])
+        return f"{prefix}{last_num + 1:04d}"
+    return f"{prefix}0001"
+
+
+def generate_lot_number(db: Session) -> str:
+    """<prefix>-[YEAR]-[NUMBER] inspection lot number, sequence scoped per
+    year. Prefix from Quality → Settings (default IL)."""
+    from app.modules.quality.models.inspection_lot import QualityInspectionLot
+    from app.modules.quality.services.settings import get_setting
+    year = date.today().year
+    prefix = f"{get_setting(db, 'lot_number_prefix')}-{year}-"
+    _lock_number_series(db, prefix)
+    last = db.query(func.max(QualityInspectionLot.lot_number)).filter(
+        QualityInspectionLot.lot_number.like(f"{prefix}%")
     ).scalar()
     if last:
         last_num = int(last.rsplit("-", 1)[-1])

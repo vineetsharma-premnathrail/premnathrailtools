@@ -29,6 +29,10 @@ const QUALITY_OPTIONS = [
   { value: 'failed', label: 'Failed' },
   { value: 'partial', label: 'Partially Accepted' },
 ]
+// Lines for items flagged "inspection on receipt" are inspected by Quality
+// (an inspection lot holds them in Quality stock); the lot's usage decision
+// fills in their accepted / rejected split.
+const QUALITY_LOT_LABEL = 'In Quality inspection'
 
 interface InspectionRow {
   accepted_quantity: string
@@ -95,7 +99,7 @@ export default function StoreGrnDetailPage() {
     setError('')
     setBusy(true)
     try {
-      const items = grn.items.map((it) => {
+      const items = grn.items.filter((it) => it.quality_status === 'pending').map((it) => {
         const r = rows[it.id]
         return {
           item_id: it.id,
@@ -180,13 +184,14 @@ export default function StoreGrnDetailPage() {
             <tbody>
               {grn.items.map((it) => {
                 const r = rows[it.id]
+                const editable = isDraft && it.quality_status === 'pending'
                 return (
                   <tr key={it.id}>
                     <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.item_name}{it.unit ? ` (${it.unit})` : ''}</td>
                     <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.ordered_quantity}</td>
                     <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}` }}>{it.received_quantity}</td>
                     <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
-                      {isDraft ? (
+                      {editable ? (
                         <input type="number" min={0} max={it.received_quantity} step="any" value={r.accepted_quantity}
                           onChange={(e) => setRow(it.id, { accepted_quantity: e.target.value })} style={{ ...inputStyle, width: 80 }} />
                       ) : (
@@ -194,7 +199,7 @@ export default function StoreGrnDetailPage() {
                       )}
                     </td>
                     <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
-                      {isDraft ? (
+                      {editable ? (
                         <input type="number" min={0} max={it.received_quantity} step="any" value={r.rejected_quantity}
                           onChange={(e) => setRow(it.id, { rejected_quantity: e.target.value })} style={{ ...inputStyle, width: 80 }} />
                       ) : (
@@ -202,21 +207,21 @@ export default function StoreGrnDetailPage() {
                       )}
                     </td>
                     <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
-                      {isDraft ? (
+                      {editable ? (
                         <select value={r.quality_status} onChange={(e) => setRow(it.id, { quality_status: e.target.value })} style={{ ...inputStyle, width: 150 }}>
                           {QUALITY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       ) : (
                         <span style={{ fontSize: 12, fontWeight: 600, color: it.quality_status === 'passed' ? SUCCESS.text : it.quality_status === 'failed' ? DANGER.text : TEXT.body }}>
-                          {QUALITY_OPTIONS.find((o) => o.value === it.quality_status)?.label || it.quality_status}
+                          {it.quality_status === 'in_quality' ? QUALITY_LOT_LABEL : QUALITY_OPTIONS.find((o) => o.value === it.quality_status)?.label || it.quality_status}
                         </span>
                       )}
                     </td>
                     <td style={{ padding: '8px 10px', borderBottom: `1px solid ${BORDER.normal}` }}>
-                      {isDraft && r.quality_status !== 'passed' ? (
+                      {editable && r.quality_status !== 'passed' ? (
                         <input value={r.rejection_reason} onChange={(e) => setRow(it.id, { rejection_reason: e.target.value })} style={{ ...inputStyle, width: 180 }} placeholder="Reason" />
                       ) : (
-                        <span style={{ fontSize: 12.5, color: TEXT.muted }}>{it.rejection_reason || '—'}</span>
+                        <span style={{ fontSize: 12.5, color: TEXT.muted }}>{it.rejection_reason || (it.quality_status === 'in_quality' ? it.remarks : null) || '—'}</span>
                       )}
                     </td>
                   </tr>
@@ -226,7 +231,12 @@ export default function StoreGrnDetailPage() {
           </table>
         </div>
 
-        {isDraft && (
+        {isDraft && grn.items.some((it) => it.quality_status === 'in_quality') && (
+          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '12px 0 0' }}>
+            Lines marked &ldquo;{QUALITY_LOT_LABEL}&rdquo; are held in Quality stock; the GRN completes once Quality makes the usage decision on their inspection lots.
+          </p>
+        )}
+        {isDraft && grn.items.some((it) => it.quality_status === 'pending') && (
           <div style={{ marginTop: 16 }}>
             <button disabled={busy} onClick={complete} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>{busy ? 'Completing…' : 'Complete Inspection'}</button>
           </div>

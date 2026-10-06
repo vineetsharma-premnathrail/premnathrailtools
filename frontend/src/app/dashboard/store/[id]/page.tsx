@@ -95,6 +95,8 @@ export default function StoreItemDetailPage() {
         batch_controlled: form.batch_controlled,
         serial_controlled: form.serial_controlled,
         expiry_controlled: form.expiry_controlled,
+        inspection_on_receipt: !!form.inspection_on_receipt,
+        test_certificate_required: !!form.test_certificate_required,
         minimum_stock: form.minimum_stock ?? undefined,
         maximum_stock: form.maximum_stock ?? undefined,
         reorder_level: form.reorder_level ?? undefined,
@@ -184,6 +186,14 @@ export default function StoreItemDetailPage() {
               </Row>
               <InfoRow label="Technical Specification" value={item.description || '—'} />
             </Section>
+          ) : null}
+          {!editing ? (
+            <Section title="Quality" style={{ marginBottom: 20 }}>
+              <Row>
+                <InfoRow label="Inspection on receipt" value={item.inspection_on_receipt ? 'Yes — GRN / production receipts go to Quality stock and get an inspection lot' : 'No — receipts go straight to Free stock'} />
+                <InfoRow label="Test certificate required" value={item.test_certificate_required ? "Yes — an incoming lot can't be accepted without the MTC / test certificate" : 'No'} />
+              </Row>
+            </Section>
           ) : (
             <>
               <Section title="Item Details" style={{ marginBottom: 20 }}>
@@ -222,6 +232,17 @@ export default function StoreItemDetailPage() {
                 <Field label="Technical Specification">
                   <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
                 </Field>
+              </Section>
+
+              <Section title="Quality" style={{ marginBottom: 20 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!form.inspection_on_receipt} onChange={(e) => setForm({ ...form, inspection_on_receipt: e.target.checked })} />
+                  Inspection on receipt — receipts go to Quality stock with an inspection lot instead of straight to Free stock
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!form.test_certificate_required} onChange={(e) => setForm({ ...form, test_certificate_required: e.target.checked })} />
+                  Test certificate (MTC) required — an incoming lot can&apos;t be accepted until the certificate is marked received
+                </label>
               </Section>
 
               <div style={{ display: 'flex', gap: 10 }}>

@@ -1758,6 +1758,8 @@ export interface StoreItem {
   batch_controlled: boolean
   serial_controlled: boolean
   expiry_controlled: boolean
+  inspection_on_receipt?: boolean
+  test_certificate_required?: boolean
   shelf_life_days?: number | null
   minimum_stock?: number | null
   maximum_stock?: number | null
@@ -1810,6 +1812,7 @@ export interface StoreStockBalance {
   reserved_qty: number
   available_qty: number
   quarantine_qty: number
+  quality_qty?: number
 }
 
 export interface StoreMaterialIssueItem {
@@ -2050,7 +2053,7 @@ export interface P2PGoodsReceiptItem {
   received_quantity: number
   accepted_quantity?: number
   rejected_quantity?: number
-  quality_status: 'pending' | 'passed' | 'failed' | 'partial'
+  quality_status: 'pending' | 'passed' | 'failed' | 'partial' | 'in_quality'
   rejection_reason?: string
   remarks?: string
 }
@@ -2125,68 +2128,168 @@ export interface QualityStandardInput {
   status: QualityStandardStatus
 }
 
-export type QualityChecklistStatus = 'active' | 'inactive'
+export type QualityInspectionType =
+  | 'incoming' | 'job_work' | 'first_article' | 'in_process' | 'final' | 'third_party' | 'sales_return' | 'stock_reinspection'
+export type QualityInspectionPlanStatus = 'draft' | 'approved' | 'obsolete'
+export type QualityClassification = 'critical' | 'major' | 'minor'
 
-export interface QualityChecklistItem {
+export interface QualityCharacteristic {
   id: number
-  parameter: string
-  method?: string
-  acceptance_criteria?: string
-  sort_order: number
+  code: string
+  name: string
+  char_type: 'variable' | 'attribute'
+  unit?: string | null
+  method?: string | null
+  gauge_type?: string | null
+  classification: QualityClassification
+  description?: string | null
+  is_active: boolean
 }
 
-export interface QualityChecklistItemInput {
-  parameter: string
-  method?: string
-  acceptance_criteria?: string
-  sort_order: number
-}
-
-export interface QualityChecklist {
+export interface QualityDefectCode {
   id: number
+  code: string
   name: string
-  description?: string
-  category?: string
-  status: QualityChecklistStatus
-  items: QualityChecklistItem[]
-  created_at?: string
-  updated_at?: string
+  category: string
+  description?: string | null
+  is_active: boolean
 }
 
-export interface QualityChecklistInput {
+export interface QualityDispositionCode {
+  id: number
+  code: string
   name: string
-  description?: string
-  category?: string
-  status: QualityChecklistStatus
-  items: QualityChecklistItemInput[]
+  disposition_type: 'use_as_is' | 'rework' | 'repair' | 'return_to_vendor' | 'scrap'
+  description?: string | null
+  is_active: boolean
 }
 
-export type QualityInspectionType = 'incoming' | 'in_process' | 'final'
-export type QualityInspectionPlanStatus = 'active' | 'inactive'
+export interface QualityMasterValue {
+  id: number
+  list_key: string
+  value: string
+  label: string
+  sort_order: number
+  is_active: boolean
+}
+
+export interface QualityInspectionPlanLine {
+  id?: number
+  characteristic_id: number
+  sequence: number
+  nominal?: number | null
+  min_value?: number | null
+  max_value?: number | null
+  classification?: QualityClassification | null
+  method?: string | null
+  aql?: number | null
+  remarks?: string | null
+  characteristic_code?: string | null
+  characteristic_name?: string | null
+  char_type?: string | null
+  unit?: string | null
+  effective_classification?: QualityClassification | null
+}
 
 export interface QualityInspectionPlan {
   id: number
   plan_number: string
+  item_id?: number | null
   item_name: string
-  item_code?: string
+  item_code?: string | null
   inspection_type: QualityInspectionType
-  checklist_id?: number
-  checklist_name?: string
-  standard_id?: number
-  standard_code?: string
-  sampling_plan?: string
+  revision: number
+  supersedes_id?: number | null
+  title?: string | null
+  sampling_type: 'aql' | 'full' | 'fixed'
+  aql?: number | null
+  inspection_level: string
+  fixed_sample_size?: number | null
+  sampling_plan?: string | null
   status: QualityInspectionPlanStatus
+  remarks?: string | null
+  approved_at?: string | null
+  approved_by_name?: string | null
+  created_by_name?: string | null
   created_at?: string
+  line_count: number
+  lines: QualityInspectionPlanLine[]
 }
 
-export interface QualityInspectionPlanInput {
-  item_name: string
-  item_code?: string
+export type QualityLotStatus = 'created' | 'in_inspection' | 'results_recorded' | 'decision_made' | 'closed' | 'cancelled'
+
+export interface QualityLotResult {
+  id: number
+  characteristic_id: number
+  sequence: number
+  characteristic_name: string
+  char_type: 'variable' | 'attribute'
+  classification: QualityClassification
+  unit?: string | null
+  method?: string | null
+  nominal?: number | null
+  min_value?: number | null
+  max_value?: number | null
+  aql?: number | null
+  sample_size: number
+  accept_number: number
+  reject_number: number
+  measured_values?: number[] | null
+  defects_found?: number | null
+  result?: 'pass' | 'fail' | null
+  defect_code_id?: number | null
+  defect_code_label?: string | null
+  gauge_reference?: string | null
+  remarks?: string | null
+  recorded_by_name?: string | null
+  recorded_at?: string | null
+}
+
+export interface QualityInspectionLot {
+  id: number
+  lot_number: string
   inspection_type: QualityInspectionType
-  checklist_id?: number
-  standard_id?: number
-  sampling_plan?: string
-  status: QualityInspectionPlanStatus
+  status: QualityLotStatus
+  source_type: 'grn' | 'work_order' | 'ncr' | 'manual'
+  source_reference?: string | null
+  ncr_id?: number | null
+  item_id: number
+  item_code?: string | null
+  item_name: string
+  uom?: string | null
+  quantity: number
+  batch_number?: string | null
+  vendor_name?: string | null
+  location_id?: number | null
+  location_name?: string | null
+  stock_in_quality: boolean
+  plan_id?: number | null
+  plan_number?: string | null
+  plan_revision?: number | null
+  sampling_severity: 'normal' | 'tightened' | 'reduced'
+  sample_size?: number | null
+  test_certificate_required: boolean
+  test_certificate_received: boolean
+  test_certificate_reference?: string | null
+  assigned_to_id?: number | null
+  assigned_to_name?: string | null
+  results_recorded_by_name?: string | null
+  results_recorded_at?: string | null
+  decision?: 'accept' | 'accept_with_deviation' | 'reject' | 'partial' | null
+  accepted_qty?: number | null
+  rejected_qty?: number | null
+  deviation_reference?: string | null
+  decision_remarks?: string | null
+  decided_by_name?: string | null
+  decided_at?: string | null
+  closed_at?: string | null
+  lot_date: string
+  remarks?: string | null
+  age_days: number
+  failed_count: number
+  critical_failed: boolean
+  results: QualityLotResult[]
+  ncrs: { id: number; ncr_number: string; status: string; severity: string; quantity?: number | null }[]
 }
 
 export type QualityInspectionResultValue = 'pass' | 'fail' | 'na'
@@ -2264,9 +2367,20 @@ export interface QualityInspectionInput {
   results: QualityInspectionResultInput[]
 }
 
-export type QualityNcrSource = 'inspection' | 'complaint' | 'internal'
+export type QualityNcrSource = string
 export type QualityNcrSeverity = 'minor' | 'major' | 'critical'
-export type QualityNcrStatus = 'open' | 'under_review' | 'capa_assigned' | 'closed' | 'rejected' | 'cancelled'
+export type QualityNcrStatus = 'open' | 'disposition_decided' | 'action_done' | 'verified' | 'closed' | 'cancelled'
+
+export interface QualityNcrApproval {
+  id: number
+  role: string
+  decision: 'approved' | 'rejected'
+  disposition_type: string
+  approved_by_name?: string | null
+  remarks?: string | null
+  superseded: boolean
+  created_at?: string
+}
 
 export interface QualityNcr {
   id: number
@@ -2274,66 +2388,53 @@ export interface QualityNcr {
   source: QualityNcrSource
   severity: QualityNcrSeverity
   status: QualityNcrStatus
-  inspection_id?: number
-  inspection_number?: string
+  auto_raised: boolean
+  inspection_id?: number | null
+  inspection_number?: string | null
+  lot_id?: number | null
+  lot_number?: string | null
+  source_reference?: string | null
+  item_id?: number | null
   item_name: string
-  item_code?: string
+  item_code?: string | null
+  quantity?: number | null
+  uom?: string | null
+  batch_number?: string | null
+  vendor_name?: string | null
+  location_name?: string | null
+  stock_blocked: boolean
+  defect_code_id?: number | null
+  defect_code_label?: string | null
   description: string
-  root_cause?: string
-  raised_by_id?: number
-  raised_by_name?: string
+  root_cause?: string | null
+  raised_by_name?: string | null
   ncr_date?: string
-  closed_at?: string
-  remarks?: string
+  disposition_type?: string | null
+  disposition_label?: string | null
+  disposition_status: 'none' | 'pending_approval' | 'approved'
+  disposition_remarks?: string | null
+  customer_approval_required: boolean
+  customer_approval_reference?: string | null
+  estimated_value?: number | null
+  scrap_value_limit?: number | null
+  action_reference?: string | null
+  action_remarks?: string | null
+  action_done_at?: string | null
+  reinspection_lot_id?: number | null
+  reinspection_lot_number?: string | null
+  verified_at?: string | null
+  verification_remarks?: string | null
+  material_cost?: number | null
+  rework_cost?: number | null
+  other_cost?: number | null
+  cost_of_non_quality: number
+  closed_at?: string | null
+  remarks?: string | null
   created_at?: string
-}
-
-export interface QualityNcrInput {
-  source: QualityNcrSource
-  severity: QualityNcrSeverity
-  status?: QualityNcrStatus
-  inspection_id?: number
-  item_name: string
-  item_code?: string
-  description: string
-  root_cause?: string
-  ncr_date?: string
-  closed_at?: string
-  remarks?: string
-}
-
-export type QualityRejectionDisposition = 'return_to_vendor' | 'scrap' | 'rework' | 'use_as_is'
-export type QualityRejectionStatus = 'open' | 'in_progress' | 'closed'
-
-export interface QualityRejection {
-  id: number
-  rejection_number: string
-  ncr_id?: number
-  ncr_number?: string
-  inspection_id?: number
-  item_name: string
-  item_code?: string
-  quantity?: number
-  disposition: QualityRejectionDisposition
-  status: QualityRejectionStatus
-  vendor_id?: number
-  vendor_name?: string
-  rejection_date?: string
-  remarks?: string
-  created_at?: string
-}
-
-export interface QualityRejectionInput {
-  ncr_id?: number
-  inspection_id?: number
-  item_name: string
-  item_code?: string
-  quantity?: number
-  disposition: QualityRejectionDisposition
-  status?: QualityRejectionStatus
-  vendor_name?: string
-  rejection_date?: string
-  remarks?: string
+  approvals: QualityNcrApproval[]
+  required_roles: string[]
+  pending_roles: string[]
+  capa_ids: number[]
 }
 
 export type QualityCapaActionType = 'corrective' | 'preventive'
@@ -2455,15 +2556,22 @@ export interface QualityDocument {
 }
 
 export interface QualityDashboardKpis {
+  lots_waiting: number
+  lots_overdue: number
+  lot_waiting_days: number
   open_ncrs: number
   critical_ncrs: number
+  major_ncrs: number
+  minor_ncrs: number
+  ncrs_awaiting_approval: number
   open_capas: number
   overdue_capas: number
-  pending_inspections: number
-  failed_inspections_30d: number
   open_complaints: number
-  open_rejections: number
-  active_standards: number
+  gate_inspections_pending: number
+  month_lots_decided: number
+  month_received_qty: number
+  month_rejected_qty: number
+  month_rejection_rate: number
 }
 
 // ---- Project Management ----

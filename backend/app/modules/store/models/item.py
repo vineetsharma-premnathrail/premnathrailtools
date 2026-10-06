@@ -87,6 +87,13 @@ class StoreItem(Base, TimestampMixin):
     expiry_controlled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     shelf_life_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Quality: receipts of this item (GRN, production output) go to QUALITY
+    # stock and get an inspection lot instead of landing straight in FREE
+    # stock; test_certificate_required blocks acceptance of an incoming lot
+    # until the vendor's MTC / test certificate is marked received.
+    inspection_on_receipt: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    test_certificate_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+
     minimum_stock: Mapped[float | None] = mapped_column(Float, nullable=True)
     maximum_stock: Mapped[float | None] = mapped_column(Float, nullable=True)
     reorder_level: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -20,7 +20,10 @@ P2P_GRN_STATUSES = ("draft", "completed")
 # A line item's quality-inspection result. "pending" is the pre-inspection
 # default; the frontend's inspection dropdown only ever submits one of the
 # other three (see grn/[id]/page.tsx QUALITY_OPTIONS).
-P2P_GRN_QUALITY_STATUSES = ("pending", "passed", "failed", "partial")
+# "in_quality": the item is flagged inspection-on-receipt, so the line sits in
+# QUALITY stock under a Quality inspection lot; the lot's usage decision sets
+# passed/failed/partial and the accepted/rejected split.
+P2P_GRN_QUALITY_STATUSES = ("pending", "passed", "failed", "partial", "in_quality")
 
 
 class P2PGoodsReceipt(Base, TimestampMixin):

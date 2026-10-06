@@ -24,6 +24,8 @@ class StoreItemCreate(BaseModel):
     serial_controlled: bool = False
     expiry_controlled: bool = False
     shelf_life_days: int | None = None
+    inspection_on_receipt: bool = False
+    test_certificate_required: bool = False
     minimum_stock: float | None = None
     maximum_stock: float | None = None
     reorder_level: float | None = None
@@ -57,6 +59,8 @@ class StoreItemUpdate(BaseModel):
     serial_controlled: bool | None = None
     expiry_controlled: bool | None = None
     shelf_life_days: int | None = None
+    inspection_on_receipt: bool | None = None
+    test_certificate_required: bool | None = None
     minimum_stock: float | None = None
     maximum_stock: float | None = None
     reorder_level: float | None = None
@@ -96,6 +100,8 @@ class StoreItemResponse(BaseModel):
     serial_controlled: bool
     expiry_controlled: bool
     shelf_life_days: int | None = None
+    inspection_on_receipt: bool = False
+    test_certificate_required: bool = False
     minimum_stock: float | None = None
     maximum_stock: float | None = None
     reorder_level: float | None = None

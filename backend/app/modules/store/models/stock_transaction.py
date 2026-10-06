@@ -24,13 +24,36 @@ STORE_STOCK_TXN_TYPES = (
     "manual_out",        # out — a custom Stock Entry Type (Settings) with effect "out"
     "quarantine_in",     # quarantine bucket in  — damaged/rejected return, not usable
     "quarantine_out",    # quarantine bucket out — scrapped / returned to vendor / released
+    # Stock-type moves (Quality module). "Blocked" is the quarantine bucket.
+    "quality_in",        # in  — received into QUALITY stock (inspection lot pending)
+    "quality_release",   # QUALITY -> FREE    — inspection lot accepted
+    "quality_block",     # QUALITY -> BLOCKED — inspection lot rejected
+    "blocked_release",   # BLOCKED -> FREE    — NCR disposition "use as is"
+    "blocked_to_quality",  # BLOCKED -> QUALITY — reworked/repaired, back for re-inspection
+    "free_block",        # FREE -> BLOCKED    — non-conformance found in usable stock (manual NCR)
+    "quality_hold",      # FREE -> QUALITY    — stock pulled back for re-inspection (manual lot)
 )
+
+# Stock type(s) each transaction type touches: (from, to). None = outside the
+# store (a receipt comes from nowhere, an issue goes nowhere). Free = usable
+# on-hand, Quality = awaiting inspection, Blocked = quarantine.
+STORE_STOCK_TYPE_EFFECT: dict[str, tuple[str | None, str | None]] = {
+    "receipt": (None, "free"), "return_in": (None, "free"), "transfer_in": (None, "free"),
+    "adjustment_in": (None, "free"), "manual_in": (None, "free"),
+    "issue": ("free", None), "return_out": ("free", None), "transfer_out": ("free", None),
+    "adjustment_out": ("free", None), "damage": ("free", None), "manual_out": ("free", None),
+    "quarantine_in": (None, "blocked"), "quarantine_out": ("blocked", None),
+    "quality_in": (None, "quality"), "quality_release": ("quality", "free"),
+    "quality_block": ("quality", "blocked"), "blocked_release": ("blocked", "free"),
+    "blocked_to_quality": ("blocked", "quality"), "free_block": ("free", "blocked"),
+    "quality_hold": ("free", "quality"),
+}
 
 # Where a transaction's quantity came from, for traceability back to the
 # source document (a GRN number, an Issue number, ...). reference_number is
 # free text rather than a hard FK, since the source can be in another module
 # (P2P) or not exist yet (a manual correction has no source doc).
-STORE_STOCK_TXN_REFERENCE_TYPES = ("grn", "material_issue", "material_return", "stock_transfer", "stock_adjustment", "work_order", "manual", "maintenance_work_order")
+STORE_STOCK_TXN_REFERENCE_TYPES = ("grn", "material_issue", "material_return", "stock_transfer", "stock_adjustment", "work_order", "manual", "maintenance_work_order", "inspection_lot", "ncr")
 
 
 class StoreStockTransaction(Base, TimestampMixin):

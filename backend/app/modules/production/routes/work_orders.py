@@ -28,6 +28,7 @@ from app.modules.production.service import (
 from app.modules.production.models.rrv_build import ProductionRrvBuild
 from app.modules.quality.models.inspection import QualityInspection
 from app.modules.quality.service import generate_inspection_number
+from app.modules.quality.services.lots import needs_inspection_on_receipt, create_lot_for_production_output, LotError
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_transaction import StoreStockTransaction
@@ -598,12 +599,23 @@ async def receive_output(
                    "Request the inspection from the Operations tab and have Quality mark it passed before receiving output.",
         )
 
-    post_stock_transaction(
-        db, item_id=wo.product_item_id, location_id=location_id, transaction_type="receipt", quantity=payload.quantity,
-        batch_number=payload.batch_number or wo.wo_number, reference_type=WORK_ORDER_REFERENCE_TYPE,
-        reference_number=wo.wo_number, transaction_date=date.today(),
-        remarks=payload.remarks or f"Finished goods from work order {wo.wo_number}", created_by_id=user.id,
-    )
+    if needs_inspection_on_receipt(db, product, "final"):
+        # Final inspection: FG goes to QUALITY stock under a final inspection
+        # lot; the lot's usage decision releases it to FREE (or BLOCKED + NCR).
+        try:
+            create_lot_for_production_output(
+                db, work_order=wo, item=product, quantity=payload.quantity, location_id=location_id,
+                batch_number=payload.batch_number or wo.wo_number, user_id=user.id,
+            )
+        except LotError as e:
+            raise HTTPException(status_code=e.status, detail=str(e))
+    else:
+        post_stock_transaction(
+            db, item_id=wo.product_item_id, location_id=location_id, transaction_type="receipt", quantity=payload.quantity,
+            batch_number=payload.batch_number or wo.wo_number, reference_type=WORK_ORDER_REFERENCE_TYPE,
+            reference_number=wo.wo_number, transaction_date=date.today(),
+            remarks=payload.remarks or f"Finished goods from work order {wo.wo_number}", created_by_id=user.id,
+        )
     wo.quantity_completed = round(wo.quantity_completed + payload.quantity, 4)
     db.commit()
     db.refresh(wo)

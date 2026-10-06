@@ -20,6 +20,7 @@ from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.utils.notifications import notify_user
+from app.modules.quality.services.lots import needs_inspection_on_receipt, create_lot_for_grn_line, LotError
 
 router = APIRouter(prefix="/p2p/goods-receipts", tags=["P2P"])
 
@@ -62,9 +63,18 @@ def _received_by_po_item(db: Session, po_id: int) -> dict[int, float]:
     ).all()
     for g in grns:
         for it in g.items:
-            qty = it.accepted_quantity if g.status == "completed" else it.received_quantity
+            # Per line: once a line has its accept/reject split (GRN inspection
+            # or a Quality lot decision), only the accepted part is used up.
+            qty = it.accepted_quantity if it.quality_status in _DECIDED_LINE_STATUSES else it.received_quantity
             received[it.po_item_id] = received.get(it.po_item_id, 0) + (qty or 0)
     return received
+
+
+_DECIDED_LINE_STATUSES = ("passed", "failed", "partial")
+
+
+def _match_store_item(db: Session, item_name: str) -> StoreItem | None:
+    return db.query(StoreItem).filter(func.lower(StoreItem.item_name) == item_name.strip().lower()).first()
 
 
 def _fmt_qty(q: float) -> str:
@@ -85,7 +95,7 @@ def _write_audit(db: Session, pr_id: int, action: str, user: User, summary: str)
     db.add(AuditLog(entity_type="p2p_request", entity_id=pr_id, action=action, performed_by_id=user.id, summary=summary))
 
 
-def _sync_stock_for_grn(db: Session, grn: P2PGoodsReceipt, user_id: int) -> list[str]:
+def _sync_stock_for_grn(db: Session, grn: P2PGoodsReceipt, user_id: int, items: list | None = None) -> list[str]:
     """Posts each accepted line item onto the Store stock ledger at
     grn.store_location_id, matched to an Item Master row by exact
     (case-insensitive) item_name — GRN lines only carry a name snapshot, not
@@ -94,14 +104,15 @@ def _sync_stock_for_grn(db: Session, grn: P2PGoodsReceipt, user_id: int) -> list
     Master entry) so the Store team knows exactly what to fix; never raises —
     a stock-sync gap must not block completing the quality inspection itself."""
     notes: list[str] = []
+    lines = grn.items if items is None else items
     if not grn.store_location_id:
-        return [f"'{it.item_name}': GRN has no store location set — stock was not updated." for it in grn.items if (it.accepted_quantity or 0) > 0]
+        return [f"'{it.item_name}': GRN has no store location set — stock was not updated." for it in lines if (it.accepted_quantity or 0) > 0]
 
-    for it in grn.items:
+    for it in lines:
         qty = it.accepted_quantity or 0
         if qty <= 0:
             continue
-        store_item = db.query(StoreItem).filter(func.lower(StoreItem.item_name) == it.item_name.strip().lower()).first()
+        store_item = _match_store_item(db, it.item_name)
         if not store_item:
             notes.append(f"'{it.item_name}': not found in Store Item Master — add it there, then adjust stock in manually for this GRN.")
             continue
@@ -337,6 +348,21 @@ async def create_goods_receipt(
             received_quantity=item_payload.received_quantity,
             quality_status="pending",
         ))
+    db.flush()
+
+    # Items flagged "inspection on receipt" in the Item Master go to QUALITY
+    # stock now and get an incoming inspection lot; Quality's usage decision
+    # later writes the accepted/rejected split back onto the line
+    # (apply_quality_decision below) — the lot is the single source of truth.
+    for line in db.query(P2PGoodsReceiptItem).filter(P2PGoodsReceiptItem.goods_receipt_id == grn.id).all():
+        store_item = _match_store_item(db, line.item_name)
+        if needs_inspection_on_receipt(db, store_item, "incoming"):
+            try:
+                lot = create_lot_for_grn_line(db, grn, line, store_item, po.vendor_name, user.id)
+            except LotError as e:
+                raise HTTPException(status_code=e.status, detail=str(e))
+            line.quality_status = "in_quality"
+            line.remarks = f"Incoming inspection lot {lot.lot_number}"
 
     if po.p2p_request_id:
         _write_audit(db, po.p2p_request_id, "grn_recorded", user,
@@ -386,14 +412,19 @@ async def inspect_goods_receipt(
         raise HTTPException(status_code=422, detail="At least one item inspection result is required")
 
     items_by_id = {i.id: i for i in grn.items}
+    inspected_now = []
     for entry in payload.items:
         item = items_by_id.get(entry.item_id)
         if not item:
             raise HTTPException(status_code=422, detail=f"Item {entry.item_id} does not belong to this goods receipt")
-        if entry.quality_status not in P2P_GRN_QUALITY_STATUSES or entry.quality_status == "pending":
+        if item.quality_status == "in_quality":
+            raise HTTPException(status_code=409, detail=f"'{item.item_name}' is under Quality inspection ({item.remarks or 'inspection lot'}) — its accepted/rejected split comes from the lot's usage decision in Quality → Inspection Lots, not from the GRN.")
+        if item.quality_status in _DECIDED_LINE_STATUSES:
+            raise HTTPException(status_code=409, detail=f"'{item.item_name}' was already inspected on this GRN — it can't be inspected twice.")
+        if entry.quality_status not in _DECIDED_LINE_STATUSES:
             raise HTTPException(
                 status_code=422,
-                detail=f"Invalid quality_status '{entry.quality_status}' — must be one of {P2P_GRN_QUALITY_STATUSES[1:]}",
+                detail=f"Invalid quality_status '{entry.quality_status}' — must be one of {_DECIDED_LINE_STATUSES}",
             )
         if entry.accepted_quantity < 0 or entry.rejected_quantity < 0:
             raise HTTPException(status_code=422, detail=f"Accepted/rejected quantity for '{item.item_name}' cannot be negative")
@@ -415,9 +446,24 @@ async def inspect_goods_receipt(
         item.quality_status = entry.quality_status
         item.rejection_reason = entry.rejection_reason
         item.remarks = entry.remarks
+        inspected_now.append(item)
 
-    if any(i.quality_status == "pending" for i in grn.items):
-        raise HTTPException(status_code=422, detail="Every line item must be inspected before the goods receipt can be completed")
+    pending = [i.item_name for i in grn.items if i.quality_status == "pending"]
+    if pending:
+        raise HTTPException(status_code=422, detail="Every line item must be inspected before the goods receipt can be completed — still pending: " + ", ".join(pending))
+
+    in_quality = [i for i in grn.items if i.quality_status == "in_quality"]
+    if in_quality:
+        # Lines with a Quality lot complete the GRN later, when their lot
+        # gets its usage decision. Post the store-inspected lines now.
+        stock_sync_notes = _sync_stock_for_grn(db, grn, user.id, inspected_now)
+        db.commit()
+        db.refresh(grn)
+        resp = _to_response(db, grn)
+        resp.stock_sync_notes = stock_sync_notes + [
+            f"'{i.item_name}' is in Quality stock under {i.remarks or 'an inspection lot'} — the GRN completes once Quality decides it."
+            for i in in_quality]
+        return resp
 
     grn.status = "completed"
     grn.inspected_by_id = user.id
@@ -431,7 +477,7 @@ async def inspect_goods_receipt(
 
     po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == grn.purchase_order_id).first()
     _sync_po_and_pr_status(db, po, user.id)
-    stock_sync_notes = _sync_stock_for_grn(db, grn, user.id)
+    stock_sync_notes = _sync_stock_for_grn(db, grn, user.id, inspected_now)
 
     if po.p2p_request_id:
         _write_audit(db, po.p2p_request_id, "grn_inspected", user,
@@ -442,3 +488,33 @@ async def inspect_goods_receipt(
     resp = _to_response(db, grn)
     resp.stock_sync_notes = stock_sync_notes
     return resp
+
+
+def apply_quality_decision(db: Session, *, grn_item_id: int, accepted: float, rejected: float, user_id: int, reason: str) -> None:
+    """Hook called by Quality (services/lots.decide) when an incoming
+    inspection lot raised from this GRN line gets its usage decision: writes
+    the accepted/rejected split onto the line (stock was already moved
+    QUALITY->FREE/BLOCKED by the lot) and completes the GRN — rolling up the
+    PO / PR receipt status — once no line is waiting any more. Flushes only;
+    the caller commits."""
+    line = db.query(P2PGoodsReceiptItem).filter(P2PGoodsReceiptItem.id == grn_item_id).first()
+    if not line:
+        return
+    line.accepted_quantity = accepted
+    line.rejected_quantity = rejected
+    line.quality_status = "passed" if rejected <= 1e-9 else "failed" if accepted <= 1e-9 else "partial"
+    line.rejection_reason = reason if rejected > 1e-9 else None
+    line.remarks = reason
+    db.flush()
+    grn = _get_grn_or_404(db, line.goods_receipt_id)
+    if grn.status == "completed" or any(i.quality_status in ("pending", "in_quality") for i in grn.items):
+        return
+    grn.status = "completed"
+    grn.inspected_by_id = user_id
+    grn.inspected_at = datetime.now(timezone.utc)
+    db.flush()
+    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.id == grn.purchase_order_id).first()
+    _sync_po_and_pr_status(db, po, user_id)
+    if po.p2p_request_id:
+        db.add(AuditLog(entity_type="p2p_request", entity_id=po.p2p_request_id, action="grn_inspected", performed_by_id=user_id,
+                        summary=f"Goods receipt '{grn.grn_number}' completed by Quality inspection lot decisions."))

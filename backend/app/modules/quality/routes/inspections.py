@@ -9,7 +9,7 @@ from app.modules.main.models.user import User
 from app.modules.quality.models.inspection import (
     QualityInspection, QualityInspectionResult, QUALITY_INSPECTION_STATUSES, QUALITY_INSPECTION_RESULT_VALUES,
 )
-from app.modules.quality.models.inspection_plan import QUALITY_INSPECTION_TYPES, QualityInspectionPlan
+from app.modules.quality.models.inspection_plan import QualityInspectionPlan
 from app.modules.quality.schemas.inspection import (
     QualityInspectionCreate, QualityInspectionUpdate, QualityInspectionResponse,
 )
@@ -73,8 +73,12 @@ async def create_inspection(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("quality")),
 ):
-    if payload.inspection_type not in QUALITY_INSPECTION_TYPES:
+    if payload.inspection_type not in _TYPE_CODES:
         raise HTTPException(status_code=400, detail=f"Invalid inspection_type '{payload.inspection_type}'")
+    if payload.inspection_type == "incoming":
+        # Retired (Quality Phase 1): incoming inspection is an inspection lot
+        # created automatically from the GRN, with stock held in Quality.
+        raise HTTPException(status_code=410, detail="Free-text incoming inspections are retired — incoming lots are created automatically from the GRN for items flagged 'inspection on receipt'. Use Quality → Inspection Lots.")
     if payload.inspection_plan_id is not None and not db.query(QualityInspectionPlan).filter(
         QualityInspectionPlan.id == payload.inspection_plan_id, QualityInspectionPlan.is_deleted == False  # noqa: E712
     ).first():

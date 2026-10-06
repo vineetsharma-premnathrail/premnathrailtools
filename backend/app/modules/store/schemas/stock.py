@@ -60,7 +60,10 @@ class StoreStockBalanceResponse(BaseModel):
     # the route right after model_validate(); the default here only exists
     # so model_validate() itself doesn't reject the object for lacking it.
     available_qty: float = 0
+    # Stock types: available/on_hand = Free, quarantine_qty = Blocked,
+    # quality_qty = Quality (awaiting an inspection lot decision).
     quarantine_qty: float = 0
+    quality_qty: float = 0
 
 
 class StoreQuarantineClear(BaseModel):

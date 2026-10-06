@@ -50,9 +50,13 @@ from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.quality.models.quality_standard import QualityStandard
 from app.modules.quality.models.quality_checklist import QualityChecklist, QualityChecklistItem
-from app.modules.quality.models.inspection_plan import QualityInspectionPlan
+from app.modules.quality.models.inspection_plan import QualityInspectionPlan, QualityInspectionPlanLine
+from app.modules.quality.models.characteristic import QualityCharacteristic
+from app.modules.quality.models.sampling import QualitySampleSizeCode, QualityAqlPlan
+from app.modules.quality.models.masters import QualityDefectCode, QualityDispositionCode, QualityMasterValue, QualitySetting
+from app.modules.quality.models.inspection_lot import QualityInspectionLot, QualityLotResult
 from app.modules.quality.models.inspection import QualityInspection, QualityInspectionResult, QualityInspectionAttachment
-from app.modules.quality.models.ncr import QualityNcr
+from app.modules.quality.models.ncr import QualityNcr, QualityNcrApproval
 from app.modules.quality.models.rejection import QualityRejection
 from app.modules.quality.models.capa import QualityCapa
 from app.modules.quality.models.customer_complaint import QualityCustomerComplaint

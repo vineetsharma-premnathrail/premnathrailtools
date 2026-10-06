@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
 import { QualityDashboardKpis } from '@/types'
@@ -10,16 +11,19 @@ import { extractErrorMessages } from '@/lib/validation'
 
 type KpiTone = 'bad' | 'warn' | 'neutral'
 
-const KPI_CARDS: { key: keyof QualityDashboardKpis; label: string; tone: KpiTone }[] = [
-  { key: 'open_ncrs', label: 'Open NCRs', tone: 'warn' },
-  { key: 'critical_ncrs', label: 'Critical NCRs', tone: 'bad' },
-  { key: 'open_capas', label: 'Open CAPAs', tone: 'warn' },
-  { key: 'overdue_capas', label: 'Overdue CAPAs', tone: 'bad' },
-  { key: 'pending_inspections', label: 'Pending Inspections', tone: 'neutral' },
-  { key: 'failed_inspections_30d', label: 'Failed Inspections (30d)', tone: 'bad' },
-  { key: 'open_complaints', label: 'Open Complaints', tone: 'warn' },
-  { key: 'open_rejections', label: 'Open Rejections', tone: 'warn' },
-  { key: 'active_standards', label: 'Active Standards', tone: 'neutral' },
+const KPI_CARDS: { key: keyof QualityDashboardKpis; label: string; tone: KpiTone; href?: string; pct?: boolean }[] = [
+  { key: 'lots_waiting', label: 'Lots waiting', tone: 'neutral', href: '/dashboard/quality/my-inspections' },
+  { key: 'lots_overdue', label: 'Lots waiting too long', tone: 'bad', href: '/dashboard/quality/lots' },
+  { key: 'open_ncrs', label: 'Open NCRs', tone: 'warn', href: '/dashboard/quality/ncr' },
+  { key: 'critical_ncrs', label: 'Critical NCRs', tone: 'bad', href: '/dashboard/quality/ncr' },
+  { key: 'major_ncrs', label: 'Major NCRs', tone: 'warn', href: '/dashboard/quality/ncr' },
+  { key: 'minor_ncrs', label: 'Minor NCRs', tone: 'neutral', href: '/dashboard/quality/ncr' },
+  { key: 'ncrs_awaiting_approval', label: 'Dispositions awaiting approval', tone: 'warn', href: '/dashboard/quality/ncr' },
+  { key: 'month_rejection_rate', label: 'Rejection rate (this month)', tone: 'neutral', pct: true },
+  { key: 'open_capas', label: 'Open CAPAs', tone: 'warn', href: '/dashboard/quality/capa' },
+  { key: 'overdue_capas', label: 'Overdue CAPAs', tone: 'bad', href: '/dashboard/quality/capa' },
+  { key: 'open_complaints', label: 'Open Complaints', tone: 'warn', href: '/dashboard/quality/complaints' },
+  { key: 'gate_inspections_pending', label: 'Gate inspections pending', tone: 'neutral', href: '/dashboard/quality/in-process-inspection' },
 ]
 
 function cardTone(tone: KpiTone) {
@@ -30,6 +34,7 @@ function cardTone(tone: KpiTone) {
 
 export default function QualityDashboardPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('quality')
+  const router = useRouter()
 
   const [kpis, setKpis] = useState<QualityDashboardKpis | null>(null)
   const [loading, setLoading] = useState(true)
@@ -55,7 +60,7 @@ export default function QualityDashboardPage() {
           Quality Module
         </p>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Quality</h1>
-        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>{user?.department ? `${user.department} — ` : ''}Standards, inspections, NCRs, CAPA, complaints, and supplier quality.</p>
+        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>{user?.department ? `${user.department} — ` : ''}Inspection lots, NCRs and their dispositions, CAPA, complaints and supplier quality.</p>
       </div>
 
       {error && (
@@ -71,7 +76,9 @@ export default function QualityDashboardPage() {
           return (
             <div
               key={c.key}
+              onClick={() => c.href && router.push(c.href)}
               style={{
+                cursor: c.href ? 'pointer' : 'default',
                 borderRadius: 18, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
                 boxShadow: SHADOWS.glass(), padding: 18, background: tone.background, border: tone.border,
               }}
@@ -80,7 +87,7 @@ export default function QualityDashboardPage() {
                 {c.label}
               </p>
               <p style={{ fontSize: 28, fontWeight: 700, color: tone.valueColor, margin: 0 }}>
-                {loading ? '…' : value ?? '—'}
+                {loading ? '…' : value === null || value === undefined ? '—' : c.pct ? `${value}%` : value}
               </p>
             </div>
           )

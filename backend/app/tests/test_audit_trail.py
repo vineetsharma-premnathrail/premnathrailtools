@@ -60,7 +60,7 @@ def test_ncr_update_records_field_level_old_and_new_values(client, db):
     user = make_user(db, "qa@premnathrail.com", name="QA Engineer")
     ncr = make_ncr(db)
 
-    resp = client.patch(f"/api/v1/quality/ncr/{ncr.id}", json={"status": "closed", "severity": "major"}, headers=auth_header(user))
+    resp = client.patch(f"/api/v1/quality/ncr/{ncr.id}", json={"root_cause": "Die wear", "severity": "major"}, headers=auth_header(user))
     assert resp.status_code == 200
 
     logs = logs_for(db, "quality_ncr", ncr.id)
@@ -70,9 +70,9 @@ def test_ncr_update_records_field_level_old_and_new_values(client, db):
     assert update.performed_by_id == user.id
     assert update.api_source == "bearer_token"
     old, new = json.loads(update.old_value), json.loads(update.new_value)
-    assert old["status"] == "open" and new["status"] == "closed"
+    assert old["root_cause"] is None and new["root_cause"] == "Die wear"
     assert old["severity"] == "minor" and new["severity"] == "major"
-    assert "NCR-2026-0001" in update.summary and "status (open → closed)" in update.summary
+    assert "NCR-2026-0001" in update.summary and "severity (minor → major)" in update.summary
 
 
 def test_ncr_delete_is_soft_and_keeps_a_full_snapshot(client, db):
@@ -97,20 +97,13 @@ def test_ncr_delete_is_soft_and_keeps_a_full_snapshot(client, db):
     assert "record retained" in delete_log.summary
 
 
-def test_deleted_ncr_cannot_be_linked_from_a_rejection(client, db):
+def test_deleted_ncr_cannot_get_a_disposition(client, db):
     user = make_user(db, "qa3@premnathrail.com")
     ncr = make_ncr(db)
     client.delete(f"/api/v1/quality/ncr/{ncr.id}", headers=auth_header(user))
 
-    # A soft-deleted NCR must behave as missing for new links, not silently accept them.
-    from app.modules.quality.models.rejection import QualityRejection
-    rejection = QualityRejection(
-        rejection_number="REJ-2026-0001", item_name="Brake shoe", disposition="scrap",
-        status="open", rejection_date=date(2026, 9, 2),
-    )
-    db.add(rejection)
-    db.commit()
-    resp = client.patch(f"/api/v1/quality/rejections/{rejection.id}", json={"ncr_id": ncr.id}, headers=auth_header(user))
+    # A soft-deleted NCR must behave as missing for every workflow action.
+    resp = client.post(f"/api/v1/quality/ncr/{ncr.id}/propose-disposition", json={"disposition_code_id": 1}, headers=auth_header(user))
     assert resp.status_code == 404
 
 

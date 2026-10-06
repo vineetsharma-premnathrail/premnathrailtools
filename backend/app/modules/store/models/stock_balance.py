@@ -23,4 +23,12 @@ class StoreStockBalance(Base, TimestampMixin):
     # Damaged/rejected returned material physically in the store but NOT
     # usable — kept out of on_hand_qty (so it can't be issued/reserved)
     # until cleared via quarantine_out (scrap, vendor return, or release).
+    #
+    # Stock types (Quality module): on_hand_qty is FREE stock (usable —
+    # the only bucket issue / transfer / reservation / dispatch can draw on),
+    # quality_qty is QUALITY stock (received, waiting for an inspection lot's
+    # usage decision), quarantine_qty is BLOCKED stock (rejected / damaged —
+    # waiting for an NCR disposition). Moves between the three go through
+    # post_stock_transaction's quality_* / blocked_* types.
     quarantine_qty: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    quality_qty: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")

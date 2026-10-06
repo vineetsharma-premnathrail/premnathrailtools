@@ -15,6 +15,23 @@ _OUTBOUND_TYPES = {"issue", "return_out", "transfer_out", "adjustment_out", "dam
 # is physically present but not usable) — never on_hand/reserved.
 _QUARANTINE_IN_TYPES = {"quarantine_in"}
 _QUARANTINE_OUT_TYPES = {"quarantine_out"}
+# Stock-type moves (Quality module): (bucket taken from, bucket added to).
+# "quality" = quality_qty, "blocked" = quarantine_qty, "free" = on_hand_qty,
+# None = outside the store. Quality and Blocked stock are never part of
+# on_hand_qty, so issue / transfer / reservation / dispatch (which only draw
+# on on_hand_qty) can't touch material that is still in inspection or
+# rejected — that is how "Quality / Blocked stock can't be issued" is enforced.
+_STOCK_TYPE_MOVES: dict[str, tuple[str | None, str]] = {
+    "quality_in": (None, "quality"),
+    "quality_release": ("quality", "free"),
+    "quality_block": ("quality", "blocked"),
+    "blocked_release": ("blocked", "free"),
+    "blocked_to_quality": ("blocked", "quality"),
+    "free_block": ("free", "blocked"),
+    "quality_hold": ("free", "quality"),
+}
+_BUCKET_ATTR = {"free": "on_hand_qty", "quality": "quality_qty", "blocked": "quarantine_qty"}
+_BUCKET_LABEL = {"free": "Free", "quality": "Quality (awaiting inspection)", "blocked": "Blocked"}
 
 # Outbound types that represent allocating stock to a new consumer — these
 # must not draw down stock another reservation has already earmarked, or the
@@ -47,7 +64,7 @@ def _get_or_create_balance(db: Session, item_id: int, location_id: int) -> Store
     # (locked) instead of failing the whole request on the unique key.
     try:
         with db.begin_nested():
-            balance = StoreStockBalance(item_id=item_id, location_id=location_id, on_hand_qty=0, reserved_qty=0, quarantine_qty=0)
+            balance = StoreStockBalance(item_id=item_id, location_id=location_id, on_hand_qty=0, reserved_qty=0, quarantine_qty=0, quality_qty=0)
             db.add(balance)
             db.flush()
         return balance
@@ -87,12 +104,36 @@ def post_stock_transaction(
         loc = db.query(StoreLocation.name).filter(StoreLocation.id == location_id).scalar()
         return f"'{item or f'Item {item_id}'}' in {loc or f'store {location_id}'}"
 
-    if transaction_type in _INBOUND_TYPES and db.query(StoreLocation.is_active).filter(StoreLocation.id == location_id).scalar() is False:
+    def held_note() -> str:
+        # Tells the user why stock they can see physically isn't usable.
+        parts = []
+        if (balance.quality_qty or 0) > 1e-9:
+            parts.append(f"{balance.quality_qty:g} is in Quality stock waiting for inspection")
+        if (balance.quarantine_qty or 0) > 1e-9:
+            parts.append(f"{balance.quarantine_qty:g} is Blocked (rejected / damaged)")
+        if not parts:
+            return ""
+        return " Also " + " and ".join(parts) + " — that can't be issued or dispatched until Quality releases it to Free stock (Quality → Inspection Lots / NCR)."
+
+    if transaction_type in (_INBOUND_TYPES | {"quality_in"}) and db.query(StoreLocation.is_active).filter(StoreLocation.id == location_id).scalar() is False:
         loc = db.query(StoreLocation.name).filter(StoreLocation.id == location_id).scalar()
         raise ValueError(f"Store '{loc}' is inactive, so stock can't be received into it — reactivate it under Store → Settings → Stores, or pick another store.")
 
     balance = _get_or_create_balance(db, item_id, location_id)
-    if transaction_type in _QUARANTINE_IN_TYPES:
+    if transaction_type in _STOCK_TYPE_MOVES:
+        src, dst = _STOCK_TYPE_MOVES[transaction_type]
+        if src:
+            held = getattr(balance, _BUCKET_ATTR[src]) or 0
+            if src == "free":
+                held -= balance.reserved_qty or 0
+            if held - quantity < -1e-9:
+                raise ValueError(
+                    f"Only {held:g} of {where()} is in {_BUCKET_LABEL[src]} stock, {quantity:g} requested to move to "
+                    f"{_BUCKET_LABEL[dst]} — check the stock-type columns on Store → Stock."
+                )
+            setattr(balance, _BUCKET_ATTR[src], (getattr(balance, _BUCKET_ATTR[src]) or 0) - quantity)
+        setattr(balance, _BUCKET_ATTR[dst], (getattr(balance, _BUCKET_ATTR[dst]) or 0) + quantity)
+    elif transaction_type in _QUARANTINE_IN_TYPES:
         balance.quarantine_qty = (balance.quarantine_qty or 0) + quantity
     elif transaction_type in _QUARANTINE_OUT_TYPES:
         held = balance.quarantine_qty or 0
@@ -107,10 +148,10 @@ def post_stock_transaction(
             if available - quantity < -1e-9:
                 raise ValueError(
                     f"Not enough stock of {where()} — {balance.on_hand_qty:g} on hand, "
-                    f"{balance.reserved_qty:g} reserved ({available:g} available), {quantity:g} requested"
+                    f"{balance.reserved_qty:g} reserved ({available:g} available), {quantity:g} requested.{held_note()}"
                 )
         elif balance.on_hand_qty - quantity < -1e-9:
-            raise ValueError(f"Not enough stock of {where()} — {balance.on_hand_qty:g} on hand, {quantity:g} requested")
+            raise ValueError(f"Not enough stock of {where()} — {balance.on_hand_qty:g} on hand, {quantity:g} requested.{held_note()}")
         balance.on_hand_qty -= quantity
     else:
         raise ValueError(f"Unknown stock transaction type '{transaction_type}'")

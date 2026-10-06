@@ -8,7 +8,11 @@ from app.modules.quality.models.ncr import QualityNcr
 from app.modules.quality.models.capa import QualityCapa
 from app.modules.quality.models.customer_complaint import QualityCustomerComplaint
 from app.modules.quality.models.inspection import QualityInspection, QualityInspectionResult, QualityInspectionAttachment
-from app.modules.quality.models.inspection_plan import QualityInspectionPlan
+from app.modules.quality.models.inspection_plan import QualityInspectionPlan, QualityInspectionPlanLine
+from app.modules.quality.models.characteristic import QualityCharacteristic
+from app.modules.quality.models.masters import QualityDefectCode, QualityDispositionCode, QualityMasterValue, QualitySetting
+from app.modules.quality.models.inspection_lot import QualityInspectionLot, QualityLotResult
+from app.modules.quality.models.ncr import QualityNcrApproval
 from app.modules.quality.models.rejection import QualityRejection
 from app.modules.quality.models.quality_standard import QualityStandard
 from app.modules.quality.models.quality_checklist import QualityChecklist, QualityChecklistItem
@@ -119,6 +123,24 @@ register_audited(
     ref=lambda o: f"{o.vendor_name} ({o.period})",
 )
 register_audited(QualityDocument, entity_type="quality_document", module_key="quality", label="Quality document", ref=lambda o: f"'{o.title}' ({o.file_name})")
+register_audited(
+    QualityInspectionPlanLine, entity_type="quality_inspection_plan_line", module_key="quality", label="Plan line",
+    ref=lambda o: f"#{o.characteristic_id}", parent_attr="plan_id", parent_entity_type="quality_inspection_plan", child_action="line",
+)
+register_audited(QualityCharacteristic, entity_type="quality_characteristic", module_key="quality", label="Inspection characteristic", ref=lambda o: o.code)
+register_audited(QualityDefectCode, entity_type="quality_defect_code", module_key="quality", label="Defect code", ref=lambda o: o.code)
+register_audited(QualityDispositionCode, entity_type="quality_disposition_code", module_key="quality", label="Disposition code", ref=lambda o: o.code)
+register_audited(QualityMasterValue, entity_type="quality_master_value", module_key="quality", label="Quality master list value", ref=lambda o: f"{o.list_key}: {o.value}")
+register_audited(QualitySetting, entity_type="quality_setting", module_key="quality", label="Quality setting", ref=lambda o: o.key)
+register_audited(QualityInspectionLot, entity_type="quality_inspection_lot", module_key="quality", label="Inspection lot", ref=lambda o: o.lot_number)
+register_audited(
+    QualityLotResult, entity_type="quality_lot_result", module_key="quality", label="Lot result",
+    ref=lambda o: f"'{o.characteristic_name}'", parent_attr="lot_id", parent_entity_type="quality_inspection_lot", child_action="result",
+)
+register_audited(
+    QualityNcrApproval, entity_type="quality_ncr_approval", module_key="quality", label="NCR approval",
+    ref=lambda o: f"{o.role} {o.decision}", parent_attr="ncr_id", parent_entity_type="quality_ncr", child_action="approval",
+)
 
 # ---------------------------------------------------------------------------
 # Store

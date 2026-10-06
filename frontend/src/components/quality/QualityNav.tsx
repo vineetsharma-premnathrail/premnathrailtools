@@ -8,19 +8,20 @@ import NotificationBell from '@/components/erp/NotificationBell'
 
 const TABS = [
   { href: '/dashboard/quality', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
-  { href: '/dashboard/quality/standards', label: 'Standards', icon: 'file', subtabKey: 'standards' },
-  { href: '/dashboard/quality/inspection-plans', label: 'Inspection Plans', icon: 'clipboard', subtabKey: 'inspection_plans' },
-  { href: '/dashboard/quality/incoming-inspection', label: 'Incoming Inspection', icon: 'inbox', subtabKey: 'incoming_inspection' },
-  { href: '/dashboard/quality/in-process-inspection', label: 'In-Process Inspection', icon: 'gear', subtabKey: 'in_process_inspection' },
-  { href: '/dashboard/quality/final-inspection', label: 'Final Inspection', icon: 'check', subtabKey: 'final_inspection' },
-  { href: '/dashboard/quality/checklists', label: 'Checklists', icon: 'list', subtabKey: 'checklists' },
+  { href: '/dashboard/quality/my-inspections', label: 'My Inspections', icon: 'inbox', subtabKey: 'my_inspections' },
+  { href: '/dashboard/quality/lots', label: 'Inspection Lots', icon: 'check', subtabKey: 'inspection_lots' },
   { href: '/dashboard/quality/ncr', label: 'NCR', icon: 'alert', subtabKey: 'ncr' },
-  { href: '/dashboard/quality/rejections', label: 'Rejections', icon: 'x-circle', subtabKey: 'rejections' },
+  { href: '/dashboard/quality/inspection-plans', label: 'Inspection Plans', icon: 'clipboard', subtabKey: 'inspection_plans' },
+  { href: '/dashboard/quality/masters', label: 'Masters', icon: 'list', subtabKey: 'masters' },
+  { href: '/dashboard/quality/in-process-inspection', label: 'Op. Gate Inspections', icon: 'gear', subtabKey: 'in_process_inspection' },
+  { href: '/dashboard/quality/final-inspection', label: 'RRV Final Inspections', icon: 'x-circle', subtabKey: 'final_inspection' },
   { href: '/dashboard/quality/capa', label: 'CAPA', icon: 'tool', subtabKey: 'capa' },
   { href: '/dashboard/quality/complaints', label: 'Complaints', icon: 'message', subtabKey: 'complaints' },
   { href: '/dashboard/quality/supplier-quality', label: 'Supplier Quality', icon: 'truck', subtabKey: 'supplier_quality' },
+  { href: '/dashboard/quality/standards', label: 'Standards', icon: 'file', subtabKey: 'standards' },
   { href: '/dashboard/quality/documents', label: 'Documents', icon: 'folder', subtabKey: 'documents' },
   { href: '/dashboard/quality/reports', label: 'Reports', icon: 'bar-chart', subtabKey: 'reports' },
+  { href: '/dashboard/quality/settings', label: 'Settings', icon: 'settings', subtabKey: 'settings' },
 ] as const
 
 function TabIcon({ name }: { name: string }) {
@@ -54,6 +55,8 @@ function TabIcon({ name }: { name: string }) {
       return <svg {...common}><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" /></svg>
     case 'bar-chart':
       return <svg {...common}><line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" /></svg>
+    case 'settings':
+      return <svg {...common}><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg>
     default:
       return null
   }

@@ -371,15 +371,15 @@ export default function StoreStockPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr>
-              {['Item', 'Store', 'On Hand', 'Reserved', 'Available', 'Quarantine'].map((h) => (
+              {['Item', 'Store', 'On Hand (Free)', 'Reserved', 'Available', 'Quality', 'Blocked'].map((h) => (
                 <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && filteredBalances.length === 0 && (
-              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No balances match the filters.' : 'No stock recorded yet.'}</td></tr>
+              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No balances match the filters.' : 'No stock recorded yet.'}</td></tr>
             )}
             {!loading && filteredBalances.map((b) => (
               <tr key={b.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
@@ -388,6 +388,9 @@ export default function StoreStockPage() {
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{b.on_hand_qty} {b.uom}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{b.reserved_qty} {b.uom}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: BRAND.primaryActive }}>{b.available_qty} {b.uom}</td>
+                <td title="Received, waiting for a Quality inspection lot decision — can't be issued" style={{ padding: '12px 16px', fontSize: 13, color: (b.quality_qty || 0) > 0 ? '#2563EB' : TEXT.muted, whiteSpace: 'nowrap' }}>
+                  {(b.quality_qty || 0) > 0 ? `${b.quality_qty} ${b.uom || ''}` : '—'}
+                </td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: b.quarantine_qty > 0 ? '#d97706' : TEXT.muted, whiteSpace: 'nowrap' }}>
                   {b.quarantine_qty > 0 ? (
                     <>

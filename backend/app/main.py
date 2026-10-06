@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.tasks.followup_reminders import send_activity_followup_reminders
 from app.tasks.po_overdue_reminders import send_po_overdue_reminders
 from app.tasks.hr_reminders import send_hr_reminders
+from app.tasks.quality_reminders import send_quality_reminders
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.notification import Notification
@@ -45,9 +46,13 @@ from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.quality.models.quality_standard import QualityStandard
 from app.modules.quality.models.quality_checklist import QualityChecklist, QualityChecklistItem
-from app.modules.quality.models.inspection_plan import QualityInspectionPlan
+from app.modules.quality.models.inspection_plan import QualityInspectionPlan, QualityInspectionPlanLine
+from app.modules.quality.models.characteristic import QualityCharacteristic
+from app.modules.quality.models.sampling import QualitySampleSizeCode, QualityAqlPlan
+from app.modules.quality.models.masters import QualityDefectCode, QualityDispositionCode, QualityMasterValue, QualitySetting
+from app.modules.quality.models.inspection_lot import QualityInspectionLot, QualityLotResult
 from app.modules.quality.models.inspection import QualityInspection, QualityInspectionResult, QualityInspectionAttachment
-from app.modules.quality.models.ncr import QualityNcr
+from app.modules.quality.models.ncr import QualityNcr, QualityNcrApproval
 from app.modules.quality.models.rejection import QualityRejection
 from app.modules.quality.models.capa import QualityCapa
 from app.modules.quality.models.customer_complaint import QualityCustomerComplaint
@@ -172,11 +177,12 @@ from app.modules.p2p.routes import rfq as p2p_rfq_routes
 from app.modules.p2p.routes import goods_receipts as p2p_goods_receipts_routes
 from app.modules.p2p.routes import mis as p2p_mis_routes
 from app.modules.quality.routes import standards as quality_standards_routes
-from app.modules.quality.routes import checklists as quality_checklists_routes
 from app.modules.quality.routes import inspection_plans as quality_inspection_plans_routes
 from app.modules.quality.routes import inspections as quality_inspections_routes
 from app.modules.quality.routes import ncr as quality_ncr_routes
-from app.modules.quality.routes import rejections as quality_rejections_routes
+from app.modules.quality.routes import inspection_lots as quality_inspection_lots_routes
+from app.modules.quality.routes import masters as quality_masters_routes
+from app.modules.quality.routes import settings as quality_settings_routes
 from app.modules.quality.routes import capa as quality_capa_routes
 from app.modules.quality.routes import complaints as quality_complaints_routes
 from app.modules.quality.routes import supplier_quality as quality_supplier_quality_routes
@@ -361,11 +367,12 @@ app.include_router(p2p_rfq_routes.router, prefix="/api/v1")
 app.include_router(p2p_goods_receipts_routes.router, prefix="/api/v1")
 app.include_router(p2p_mis_routes.router, prefix="/api/v1")
 app.include_router(quality_standards_routes.router, prefix="/api/v1")
-app.include_router(quality_checklists_routes.router, prefix="/api/v1")
 app.include_router(quality_inspection_plans_routes.router, prefix="/api/v1")
 app.include_router(quality_inspections_routes.router, prefix="/api/v1")
 app.include_router(quality_ncr_routes.router, prefix="/api/v1")
-app.include_router(quality_rejections_routes.router, prefix="/api/v1")
+app.include_router(quality_inspection_lots_routes.router, prefix="/api/v1")
+app.include_router(quality_masters_routes.router, prefix="/api/v1")
+app.include_router(quality_settings_routes.router, prefix="/api/v1")
 app.include_router(quality_capa_routes.router, prefix="/api/v1")
 app.include_router(quality_complaints_routes.router, prefix="/api/v1")
 app.include_router(quality_supplier_quality_routes.router, prefix="/api/v1")
@@ -544,6 +551,12 @@ async def startup():
         send_hr_reminders,
         CronTrigger(hour=9, minute=0),
         id="hr_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_quality_reminders,
+        CronTrigger(hour=9, minute=45),
+        id="quality_reminders",
         replace_existing=True,
     )
     scheduler.start()
