@@ -285,6 +285,130 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _is_fresh_database(connection) -> bool:
+    """True when no migration has ever run here (no / empty alembic_version)."""
+    from sqlalchemy import inspect, text
+
+    if "alembic_version" not in inspect(connection).get_table_names():
+        return True
+    return connection.execute(text("SELECT count(*) FROM alembic_version")).scalar() == 0
+
+
+def _give_python_defaults_a_server_default() -> None:
+    """Fresh install only. Baseline's create_all() makes today's NOT NULL
+    columns, but older data steps insert rows without columns added later
+    (e.g. roles.data_scopes); those columns' defaults live only in Python.
+    Give such columns the same value as a database default before the tables
+    are created, so the old inserts work."""
+    import datetime as _dt
+    import json as _json
+
+    from sqlalchemy import JSON, text
+    from sqlalchemy.schema import DefaultClause
+
+    for table in target_metadata.tables.values():
+        for col in table.columns:
+            if col.nullable or col.server_default is not None or col.default is None or col.primary_key:
+                continue
+            d = col.default
+            if getattr(d, "is_scalar", False):
+                value = d.arg
+            elif getattr(d, "is_callable", False):
+                try:
+                    value = d.arg(None)
+                except Exception:
+                    continue
+            else:
+                continue
+            if isinstance(col.type, JSON) or isinstance(value, (dict, list)):
+                literal = "'" + _json.dumps(value).replace("'", "''") + "'"
+            elif isinstance(value, bool):
+                literal = "true" if value else "false"
+            elif isinstance(value, (int, float)):
+                literal = str(value)
+            elif isinstance(value, str):
+                literal = "'" + value.replace("'", "''") + "'"
+            elif isinstance(value, (_dt.datetime, _dt.date)):
+                literal = "now()" if isinstance(value, _dt.datetime) else "CURRENT_DATE"
+            else:
+                continue
+            col.server_default = DefaultClause(text(literal))
+            col.server_default._set_parent(col)
+
+
+def _make_schema_ops_idempotent() -> None:
+    """Fresh install only. The baseline migration runs Base.metadata.create_all()
+    against today's models, so on an empty database every later table / column /
+    index already exists in its final shape and things later migrations drop
+    were never created. Skip those schema ops instead of failing on
+    "already exists" / "does not exist"; data steps still run. Never used on a
+    database that has migration history, where such an error is real."""
+    from alembic.ddl.impl import DefaultImpl
+    from sqlalchemy import inspect
+
+    def insp(impl):
+        return inspect(impl.connection)
+
+    def has_table(impl, name, schema=None):
+        return insp(impl).has_table(name, schema=schema)
+
+    def cols(impl, table, schema=None):
+        return {c["name"] for c in insp(impl).get_columns(table, schema=schema)} if has_table(impl, table, schema) else set()
+
+    def index_names(impl, table, schema=None):
+        return {i["name"] for i in insp(impl).get_indexes(table, schema=schema)} if has_table(impl, table, schema) else set()
+
+    def constraint_names(impl, table, schema=None):
+        if not has_table(impl, table, schema):
+            return set()
+        i = insp(impl)
+        names = {fk["name"] for fk in i.get_foreign_keys(table, schema=schema)}
+        names |= {u["name"] for u in i.get_unique_constraints(table, schema=schema)}
+        names |= {c["name"] for c in i.get_check_constraints(table, schema=schema)}
+        pk = i.get_pk_constraint(table, schema=schema)
+        if pk and pk.get("name"):
+            names.add(pk["name"])
+        return names | index_names(impl, table, schema)
+
+    def table_of(obj):
+        return obj.table.name, obj.table.schema
+
+    # op name -> guard(impl, *args, **kw): run the real op only when True.
+    guards = {
+        "create_table": lambda self, table, **kw: not has_table(self, table.name, table.schema),
+        "drop_table": lambda self, table, **kw: has_table(self, table.name, table.schema),
+        "add_column": lambda self, table_name, column, *, schema=None, **kw:
+            has_table(self, table_name, schema) and column.name not in cols(self, table_name, schema),
+        "drop_column": lambda self, table_name, column, *, schema=None, **kw: column.name in cols(self, table_name, schema),
+        "alter_column": lambda self, table_name, column_name, *a, schema=None, **kw: column_name in cols(self, table_name, schema),
+        "create_index": lambda self, index, **kw:
+            has_table(self, *table_of(index)) and index.name not in index_names(self, *table_of(index)),
+        "drop_index": lambda self, index, **kw: index.name in index_names(self, *table_of(index)),
+        "add_constraint": lambda self, const, **kw:
+            const.name is None or const.name not in constraint_names(self, *table_of(const)),
+        "drop_constraint": lambda self, const, **kw: const.name in constraint_names(self, *table_of(const)),
+    }
+
+    def subclasses(cls):
+        out = [cls]
+        for sub in cls.__subclasses__():
+            out += subclasses(sub)
+        return out
+
+    def wrap(real, guard):
+        def op_if_needed(self, *a, **kw):
+            if guard(self, *a, **kw):
+                return real(self, *a, **kw)
+        return op_if_needed
+
+    # Wrap each impl class's own method: dialect impls override some
+    # (PostgresqlImpl.create_index / alter_column).
+    for cls in subclasses(DefaultImpl):
+        for name, guard in guards.items():
+            if name in cls.__dict__:
+                setattr(cls, name, wrap(cls.__dict__[name], guard))
+
+
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
 
@@ -299,6 +423,13 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        fresh = _is_fresh_database(connection)
+        # End the check's implicit transaction, or Alembic would treat it as
+        # an outer transaction and never commit the migrations.
+        connection.rollback()
+        if fresh:
+            _make_schema_ops_idempotent()
+            _give_python_defaults_a_server_default()
         context.configure(
             connection=connection, target_metadata=target_metadata
         )

@@ -96,6 +96,17 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @model_validator(mode="after")
+    def _use_installed_postgres_driver(self) -> "Settings":
+        # Only psycopg (v3) is installed (requirements.txt). A plain
+        # postgresql:// / postgres:// URL (as hosting panels usually give it)
+        # makes SQLAlchemy load psycopg2, which isn't there, and the deploy's
+        # `alembic upgrade head` dies with "No module named 'psycopg2'".
+        for prefix in ("postgresql://", "postgres://"):
+            if self.database_url.startswith(prefix):
+                self.database_url = "postgresql+psycopg://" + self.database_url[len(prefix):]
+        return self
+
+    @model_validator(mode="after")
     def _reject_placeholder_secret_in_production(self) -> "Settings":
         if self.environment == "production" and (
             not self.SECRET_KEY or self.SECRET_KEY == "..." or len(self.SECRET_KEY) < 32
