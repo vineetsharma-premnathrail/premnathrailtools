@@ -1,0 +1,704 @@
+[
+ {
+  "label": "flow:core",
+  "fixes": [],
+  "needs_decision": [
+   {
+    "module": "sales / store / production (Dispatch -> Sales Order)",
+    "issue": "Sales Order delivery status never moves. SalesOrderSchedule.dispatched_on, delivered_on and commissioned_on are only read, by derive_row_status in backend/app/modules/sales/service.py:705. No code path writes them. SalesOrderScheduleUpdate (sales/schemas/order.py:84) only allows consignee contact and committed_date. The Store dispatch issue (store/routes/material_issues.py:294) does not touch the SO. RRV handover (production/service.py:752 apply_rrv_handover, called from production/routes/rrv_builds.py:709) writes the machine's delivery and handover dates but not the SO schedule. Result: qty_dispatched and qty_delivered stay 0, and the SO never reaches partially_delivered, delivered or closed. LD keeps accruing on vehicles that were already handed over (ld_accrued in refresh_order), and the at_risk/overdue boards stay red.",
+    "sap_standard": "In SAP, the delivery (VL01N) and the post goods issue (PGI) update the SO's delivery status (VBUP-LFSTA). The SO is never set to delivered by hand.",
+    "options": "Recommended: (1) RRV handover: in _complete_stage for 'handover', find the SalesOrderSchedule with rrv_build_id == build.id. Set dispatched_on and delivered_on to build.handover_date, set commissioned_on to build.commissioning_date if one is given, then call sales.service.refresh_order. (2) Store dispatch issue: pass an optional sales schedule (or SO line) id with the issue, validate the items and quantity against the open schedule rows, and set dispatched_on when it posts. (3) Delivery and commissioning acknowledgement: add a Sales action 'Mark delivered / commissioned' with date and reference, gated by the delivery approve permission."
+   },
+   {
+    "module": "accounts (AR) <- sales (billing)",
+    "issue": "Sales invoices are not linked to the Sales Order. ARTransaction (accounts/models/ar_transaction.py:66) has only free-text reference_type and reference_id ('purely informational'), and the Finance UI never sets them. No AR invoice validates quantity against delivered quantity or amount against the SO and its billing milestone. SalesOrderLine.qty_invoiced, SalesBillingPlanLine.invoiced_amount and the billing status (not_due -> due -> invoiced -> settled) are never written anywhere in the code. So a delivered order can be billed twice, or never billed, and nothing shows it.",
+    "sap_standard": "In SAP, a billing document (VF01) is created with reference to the delivery or billing-plan milestone (FPLT). Quantity and amount are copied and capped at the open quantity. The SO billing status (FKSTA) and the milestone status are updated, and cancelling the invoice reverses them.",
+    "options": "Recommended: 'Create invoice from SO / milestone' in Finance \u203a Sales invoices. Copy the customer, GSTIN, place of supply, lines (store_item_id, HSN, rate, GST) and customer PO from the SO. Block quantity beyond (qty_delivered - qty_invoiced) for delivery-based milestones, and block amount beyond (milestone.amount - invoiced_amount). On posting, update qty_invoiced, invoiced_amount and the milestone status; on cancellation, roll them back. Needs the real FK columns listed in schema_changes_needed."
+   },
+   {
+    "module": "sales (billing plan)",
+    "issue": "Billing milestones never fall due. SalesBillingPlanLine.status stays 'not_due' forever, because no trigger sets 'due' or triggered_at (sales/models/order.py:276-277), even when the triggering event happens (advance on order acceptance, a percentage on dispatch or delivery, retention on commissioning). Finance gets no prompt to invoice, and receivables forecasting from the SO is impossible.",
+    "sap_standard": "In SAP, billing-plan dates (FPLT) are released by milestones (network or delivery events). Due milestones show up in the billing due list (VF04).",
+    "options": "Recommended: in refresh_order, after the schedule status is derived, set milestones to 'due' and stamp triggered_at when their milestone_type event has happened (confirmed -> advance; dispatched or delivered -> on-delivery; commissioned -> retention). Show a 'Billing due' list in Finance."
+   },
+   {
+    "module": "production (RRV handover) / store",
+    "issue": "Handing over a finished RRV has no stock effect and no Quality dispatch release. receive_output (production/routes/work_orders.py:645) posts the vehicle into Store stock (or Quality stock via a final lot). The 'handover' stage gate (production/service.py rrv_stage_gate_problems, key 'handover') only checks the date and the recipient name. It does not post a goods issue, so the delivered vehicle stays in finished-goods stock (inventory overstated in Store and in periodic valuation). It also skips quality/services/dispatch.check, so a machine with third_party_inspection_required can be handed over without an accepted RITES/RDSO certificate. Store's own dispatch issue enforces both.",
+    "sap_standard": "Goods can leave only through a PGI against a delivery, which relieves stock. The quality release (inspection lot usage decision, or a TPI certificate where required) is a hard precondition.",
+    "options": "Recommended: make the RRV handover stage require a posted Store dispatch issue (issue_type 'dispatch', erp_project_id = build.erp_project_id, batch = the vehicle serial or WO number), or create that issue automatically at handover. Either way, run quality.services.dispatch.ensure_dispatch_allowed in the 'handover' gate."
+   },
+   {
+    "module": "erp (service) / store",
+    "issue": "Service spares are consumed without a stock movement. A service PR's material is bought through PO and GRN, and the GRN posts it into Store stock. The SR 'mark received' endpoint (erp/routes/service_requests.py around lines 1470-1510) then sets the material to received or issued on the SR without any Store material issue. Store stock is never relieved, so stock and valuation are overstated, and the material can be issued again to someone else.",
+    "sap_standard": "Consumption against a service order is a goods issue (movement type 261 against the order). The order's material status comes from that posting, not from a manual flag.",
+    "options": "Recommended: change 'mark received at site' to a Store material issue of type 'project' (or a new 'service') against the SR's machine (erp_project_id), with store_item_id from the PR line. Derive received_quantity from posted issues. Short term: block marking a material 'issued' when its PR line has GRN stock that was never issued."
+   },
+   {
+    "module": "erp (service billing)",
+    "issue": "Service billing has two problems. (a) _recompute_billing (erp/routes/service_requests.py:134) adds every material's estimated_budget into total_material_cost and total_bill, including materials with is_warranty_covered=True, so warranty parts are billed to the customer. It also bills estimates, not actual PO or issue cost. (b) payment_status 'invoiced' or 'paid' and invoice_number are free text set by hand (_SR_POST_CLOSE_EDITABLE). There is no AR invoice behind them, so service revenue never reaches the GL or customer receivables. An SR can show 'paid' with no receipt.",
+    "sap_standard": "In SAP Service (resource-related billing, DP90), the billing request is built from actual costs posted on the service order, and warranty items are excluded through the warranty check. The AR invoice is the only source of the billed and paid status.",
+    "options": "Recommended: (a) exclude is_warranty_covered materials from total_material_cost now (a one-line fix in _recompute_billing). I didn't make it because this agent was report-only. (b) Replace the free-text invoice_number and payment_status with a 'Raise sales invoice' action that creates an ARTransaction for the machine's customer, and take the paid status from the AR collection_status. Needs a customer FK on the machine (see schema_changes_needed)."
+   },
+   {
+    "module": "design -> production (BOM)",
+    "issue": "There is no link from the engineering BOM to the manufacturing BOM. ProductionBom (production/models/bom.py) has no reference to a released DesignBomRevision, and activate_bom (production/routes/boms.py:307) never checks one. Production can activate a BOM that differs from Design's released revision, and a Design ECN that supersedes a revision doesn't flag the production BOM. Components are retyped by hand.",
+    "sap_standard": "In SAP, an EBOM is converted to an MBOM (BOM usage 1 from usage 2), or the BOM is copied with change-number (ECM) control. A change number makes the old version invalid from its valid-from date.",
+    "options": "Recommended: 'Create production BOM from released Design BOM revision' (copy lines with store_item_id and quantities). Store design_bom_revision_id on the production BOM, warn on activation if the product has a newer released Design revision, and notify Production when an ECN supersedes the source revision."
+   },
+   {
+    "module": "production <- sales (make-to-order)",
+    "issue": "Work orders are not pegged to sales demand. ProductionWorkOrder (production/models/work_order.py) has erp_project_id and rrv_build_id but no sales order, line or schedule reference. For anything other than an RRV build, nobody can see which SO a WO is building for, and SO risk (build_reached_final_inspection) only works through RRV builds. Material shortages on a WO also cannot raise a PR: P2P requests have no WO or machine reference, only free-text project_label and project_inhouse.",
+    "sap_standard": "Make-to-order: the production order carries the sales order and item as account assignment (KDAUF/KDPOS). MRP converts shortages to purchase requisitions that keep the reference to the requirement (order or reservation).",
+    "options": "Recommended: add optional sales_order_line_id / sales_schedule_id on the WO, validated against an open, confirmed SO line with the same product_item_id. Add a 'Raise PR for shortages' action on the WO that creates PR lines with store_item_id and a WO back-reference."
+   },
+   {
+    "module": "rnd -> design (requirement handoff)",
+    "issue": "A Design request is not linked to the R&D requirement or TOR. DesignRequest (design/models/request.py:30-33) has crm_source, crm_record_id (no FK) and a free-text crm_reference. 'requirement' is retyped text, and there is no rnd_project_id or requirement link. The R&D feasibility and technical-offer output therefore doesn't flow into Design's input, and the requirement can drift from what R&D actually validated.",
+    "sap_standard": "Follow-on documents are created with reference to their predecessor (document flow, VBFA-style), and the document chain is visible from each step.",
+    "options": "Recommended: a 'Send to Design' action from the R&D requirement or project that creates the DesignRequest with the CRM inquiry, customer and R&D project ids filled in and the TOR document attached. Show the chain both ways."
+   },
+   {
+    "module": "design (PM links)",
+    "issue": "Design still has hard foreign keys into PM: pm_project_id on design_requests, design_boms, design_documents, design_change_requests, design_change_notices and design_submissions, plus pm_milestone_id and pm_task_id. This contradicts the decision that the PM module is standalone with no links to other modules (2026-10-10).",
+    "sap_standard": "Not an SAP rule, it's a project decision. Either keep the PM link as the one exception or remove it.",
+    "options": "Confirm whether Design's PM linkage stays (and update the decision note), or hide and stop writing the pm_* fields in Design and rely on erp_project_id / CRM references."
+   },
+   {
+    "module": "erp (service) / p2p",
+    "issue": "Service PRs skip PR approval. _create_p2p_request_for_sr (erp/routes/service_requests.py ~1310-1347) creates the PR with status='approved' and approved_by_id = the SR user. The comment says this was intentional on 2026-10-01, but it conflicts with the standing rule that all configured PR approvers approve and with the central approval engine. Any SR creator with edit rights can push spend to Purchase unapproved.",
+    "sap_standard": "Every purchase requisition goes through its release strategy (ME54N), whatever its source. Service-order PRs (order-generated) follow the same strategy.",
+    "options": "Either keep the exception and make it a Settings toggle, or route service PRs through the normal PR approval engine (possibly with a single approver role such as the service manager)."
+   },
+   {
+    "module": "accounts (3-way match)",
+    "issue": "The 3-way match works at header level and adds up quantities across different items. check_three_way_match (accounts/service.py:467) sums qty_po and qty_gr over all PO lines (_po_grn_rollup, accounts/service.py:431) and compares them with one invoice_qty. A PO for 100 bolts plus 2 motors 'matches' an invoice for 102 units of anything, and an over-billed line can be hidden by an under-billed one, as long as the totals stay inside tolerance.",
+    "sap_standard": "In SAP, MIRO matches each PO item (and each GR line for GR-based IV) against its own received-but-not-invoiced quantity and price. Price and quantity tolerances (keys PP and DQ) apply per item.",
+    "options": "Recommended: match each VendorInvoiceLine by po_item_id (the column already exists) against that item's accepted-minus-returned-minus-previously-invoiced quantity, and against the PO unit price. Set matching_status to 'variance' if any line is out of tolerance, and keep the header PO-value cap."
+   },
+   {
+    "module": "store (dispatch)",
+    "issue": "A dispatch must name a machine and has no Sales Order link. ISSUE_FORMS['dispatch'] (store/issue_forms.py:74) requires erp_project_id, and the options list (store/routes/material_issues.py:152) is every ERP machine. Spares or items sold without a registered machine can't be dispatched, so staff create a fake machine or use another issue type, which skips the Quality dispatch release. Dispatched items and quantities are not checked against any SO line, and e-way bill, vehicle and LR numbers are retyped again on the AR invoice.",
+    "sap_standard": "An outbound delivery references the SO item (customer, material, open quantity). The billing document copies transport and e-way data from the delivery.",
+    "options": "Recommended: make the dispatch issue reference an SO (schedule or line), with the machine optional and taken from the schedule's erp_project_id. Validate items and quantity against the open SO quantity. Prefill the AR invoice from the dispatch (vehicle_no, eway, consignee)."
+   },
+   {
+    "module": "products / crm / sales (product master)",
+    "issue": "The customer-facing product is stored in three masters. SalesOrderLine carries both crm_product_id (crm_products) and product_item_id (store_items), and the products module (products -> store_items) is the intended master. CRM quotations still use crm_products or free text, so the CRM -> SO -> WO -> dispatch handoff can lose the item identity. This is already flagged as pending in the Product Management decision (2026-10-08).",
+    "sap_standard": "A single material master is used from inquiry through quotation, SO, production, delivery and billing.",
+    "options": "Finish the planned merge: quotation lines and SO lines reference products.id (and from it store_item_id), with crm_products kept read-only for history."
+   }
+  ],
+  "schema_changes_needed": [
+   {
+    "module": "accounts (AR)",
+    "change": "Add FK columns: ar_transactions.sales_order_id (FK sales_orders.id), ar_transactions.billing_plan_line_id (FK sales_billing_plan_lines.id), ar_transactions.service_request_id (FK erp_service_requests.id), ar_transactions.material_issue_id (FK store_material_issues.id, for the dispatch); and ar_transaction_lines.sales_order_line_id (FK sales_order_lines.id).",
+    "why": "Only free-text reference_type/reference_id exist today. They are needed to cap invoiced quantity and amount at delivered or milestone values, to update qty_invoiced and invoiced_amount on the SO, and to bill service requests through AR."
+   },
+   {
+    "module": "erp (machine registry)",
+    "change": "Add erp_projects.customer_id (FK crm_organizations.id) and erp_projects.sales_order_id (FK sales_orders.id). Backfill customer_id from client_company where it matches exactly, otherwise leave it for manual linking.",
+    "why": "Today the installed machine's customer is free text (client_company, client_gst), copied from build.customer_name. Service billing, warranty claims and complaints cannot reach the CRM customer or AR without retyping it."
+   },
+   {
+    "module": "store (dispatch)",
+    "change": "Add store_material_issues.sales_order_id (FK sales_orders.id) and store_material_issue_items.sales_schedule_id (FK sales_order_schedules.id), or sales_order_line_id.",
+    "why": "Lets the dispatch PGI set SalesOrderSchedule.dispatched_on and qty_dispatched and validate quantity against the open SO quantity."
+   },
+   {
+    "module": "production",
+    "change": "Add production_work_orders.sales_order_line_id (FK sales_order_lines.id) and production_boms.design_bom_revision_id (FK design_bom_revisions.id).",
+    "why": "Make-to-order pegging of a WO to its SO line, and an EBOM -> MBOM reference so ECNs flag the production BOM that's out of date."
+   },
+   {
+    "module": "design",
+    "change": "Add design_requests.rnd_project_id (FK rnd_projects.id) and turn design_requests.crm_record_id into a real FK (split it into crm_inquiry_id / crm_tender_id).",
+    "why": "Document flow from CRM and R&D into Design. Today it's a soft integer id plus free text."
+   },
+   {
+    "module": "erp (service materials)",
+    "change": "Add erp_service_materials.store_item_id (FK store_items.id) and erp_service_materials.material_issue_id (FK store_material_issues.id).",
+    "why": "Service materials are free text (material_name). Consumption at site must be a Store issue tied to the Item Master, under the rule that items are never matched by name."
+   },
+   {
+    "module": "p2p",
+    "change": "Add p2p_request_items.production_work_order_id (FK production_work_orders.id) and p2p_requests.erp_project_id (FK erp_projects.id).",
+    "why": "A PR raised for a WO shortage or for a machine or project keeps its demand reference instead of free-text project_label / project_inhouse."
+   }
+  ],
+  "tests": "No tests run. This was a report-only audit, so no files were changed. Findings come from reading the code (models, routes and services in sales, production, store, quality, accounts, erp, design, p2p and rnd) and grepping for who writes the key fields: no code path writes dispatched_on, delivered_on, commissioned_on, qty_invoiced, invoiced_amount or billing milestone status."
+ },
+ {
+  "label": "fix:eng",
+  "fixes": [
+   {
+    "module": "R&D (requirement tasks + project tasks)",
+    "file": "backend/app/modules/rnd/routes/requirement_work.py, backend/app/modules/rnd/routes/project_tasks.py, backend/app/modules/rnd/services/task_approvals.py",
+    "problem": "Cancelling a task (or its parent, which cascades to sub-tasks) left its pending approval request in 'pending'. The request then stayed in the reviewer's queue forever, and the task kept showing pending_approval=true. The reviewer could also still approve or reject it on a cancelled or closed task, so an approval was recorded against a task that no longer exists in the workflow.",
+    "kind": "bug",
+    "fix": "Added task_approvals.withdraw_pending(), which marks pending requests 'withdrawn' with an automatic remark. cancel_task now calls it for the task and every sub-task it cascades to. Added task_approvals.ensure_task_open(), which decide_approval calls in both routers; deciding on a non-open task now returns 409 with the reason and the fix (reopen the task).",
+    "verified": "New test test_cancel_withdraws_pending_approval_and_blocks_decision in app/tests/test_rnd_requirement_work.py passes"
+   },
+   {
+    "module": "R&D (requirement tasks + project tasks)",
+    "file": "backend/app/modules/rnd/routes/requirement_work.py, backend/app/modules/rnd/routes/project_tasks.py",
+    "problem": "A completed sub-task could be reopened while its main task was closed or cancelled. That leaves an open sub-task under a finished parent, which breaks the rule that a parent can't complete while sub-tasks are open.",
+    "kind": "bug",
+    "fix": "reopen_task now returns 409 when the sub-task's main task isn't open: \"Its main task ... is closed \u2014 reopen the main task first, then this sub-task.\"",
+    "verified": "New test test_subtask_cannot_reopen_under_closed_main_task passes"
+   },
+   {
+    "module": "R&D (requirement tasks + project tasks)",
+    "file": "backend/app/modules/rnd/routes/requirement_work.py, backend/app/modules/rnd/routes/project_tasks.py",
+    "problem": "Creating or editing a sub-task already blocks a due date later than its main task. But editing the main task's due date to before an open sub-task's due date was allowed, which leaves the sub-task due after its parent.",
+    "kind": "bug",
+    "fix": "edit_task on a main task now returns 422 when an open sub-task is due after the new date. The error names those sub-tasks with their dates and says how to fix it.",
+    "verified": "Assertion added to test_subtask_cannot_reopen_under_closed_main_task (PATCH returns 422 naming the sub-task); passes"
+   },
+   {
+    "module": "Electrical",
+    "file": "backend/app/modules/electrical/routes/jobs.py",
+    "problem": "Cancelling an electrical job left its submitted drawing revisions and BOM component-selection requests pending in the approval engine. Approvers kept seeing them in My Approvals, and deciding them failed with 409 'Job is cancelled'. Standard practice is that cancelling the header withdraws its open workflow items.",
+    "kind": "standard",
+    "fix": "Added _withdraw_open_approvals(), which cancel_job calls. It force-cancels the live engine requests of the job's submitted revisions and BOM lines, with reason 'Job X was cancelled: <reason>'. The engine's on_decided puts the revision back to draft.",
+    "verified": "New test test_cancelling_job_withdraws_pending_drawing_approval in app/tests/test_electrical_central_authz.py passes; test_electrical.py and test_electrical_access_gates.py pass (19 passed)"
+   },
+   {
+    "module": "Design",
+    "file": "backend/app/modules/design/routes/requests.py",
+    "problem": "Resume on a held design request always set it to 'in_progress'. A request held while still 'open' therefore skipped acceptance and the lead-designer check when resumed. A request held while 'accepted' also jumped to in_progress without 'start'.",
+    "kind": "bug",
+    "fix": "Added _status_before_hold(), which replays the request's status events (accept/start/reopen/hold/resume) and resumes to the state that was put on hold. If there is no hold event on record (legacy data), it falls back to the old behaviour (in_progress).",
+    "verified": "New test test_request_resume_returns_to_held_status in app/tests/test_design_phases.py passes (hold from open \u2192 open, from accepted \u2192 accepted, from in_progress \u2192 in_progress)"
+   },
+   {
+    "module": "R&D (technical offers)",
+    "file": "backend/app/modules/rnd/routes/technical_offers.py",
+    "problem": "Revising a released Technical Offer accepted a reason of only spaces. Field(min_length=1) passes '   ', and it is then stripped to an empty string, so a new offer revision had no reason on record.",
+    "kind": "standard",
+    "fix": "The revise route now returns 422 after stripping when the reason is blank, with an example of a proper reason.",
+    "verified": "Assertion added in app/tests/test_rnd_technical_offers.py (blank reason returns 422); 3 passed"
+   },
+   {
+    "module": "Hydraulic",
+    "file": "backend/app/modules/hydraulic/routes/circuits.py",
+    "problem": "Raising a new circuit revision accepted a change note of only spaces (min_length=1 before strip), so the revision had an empty change record.",
+    "kind": "standard",
+    "fix": "revise_circuit now returns 422 when the stripped change_note is empty.",
+    "verified": "Assertion added in app/tests/test_hydraulic.py; 16 passed"
+   }
+  ],
+  "needs_decision": [
+   {
+    "module": "Design (E/H/P drawings)",
+    "issue": "The 2026-10-07 decision says the Electrical/Hydraulic/Pneumatic department head, or a user that head assigns, releases E/H/P drawings in the Design register. The code does not do this. check_signatory_role (backend/app/modules/design/access.py) still requires the approver of any revision to be the Design head once a Design team is set up, whatever the document's discipline.",
+    "sap_standard": "Release authority per discipline (responsible engineering group), with four-eyes check then release.",
+    "options": "(a) Add a per-discipline releaser setting in Design \u203a Settings (head user + assignees for electrical/hydraulic/pneumatic) and let check_signatory_role accept them for documents of that discipline; (b) derive the discipline head from the Electrical/Hydraulic module (app access + approve permission). Needs the owner to say who counts as 'department head' (an HR department head, or a named user in a setting)."
+   },
+   {
+    "module": "Hydraulic",
+    "issue": "The hydraulic BOM release workflow is registered with allow_self_approval=True. A user with bom:approve can create, submit and release their own BOM in one step through /release, with no second person.",
+    "sap_standard": "A released BOM drives purchase and production, so release is normally four-eyes: the creator does not approve their own BOM.",
+    "options": "Keep (fits the E/H/P release by dept head/assignee decision if the head is also the author), or set allow_self_approval=False and block the one-step release for the BOM's creator."
+   },
+   {
+    "module": "Design (ECR)",
+    "issue": "The Design head can decide 'approved' on an ECR even when the change board voted to reject. Votes are advisory only; the code only checks that everyone has voted.",
+    "sap_standard": "In SAP ECM / CCB practice the board decision is usually binding, or an override needs a recorded justification.",
+    "options": "Keep advisory, or require a justification comment when the head's decision goes against the majority vote."
+   },
+   {
+    "module": "Design (ECR \u2192 ECN)",
+    "issue": "An ECN created from an approved ECR whose items list no documents or BOMs starts 'approved' with nothing affected. It can then be marked implemented without any controlled revision.",
+    "sap_standard": "A change number must reference at least one affected object.",
+    "options": "Refuse ECN creation when the ECR lists no affected document/BOM, or require the head to add affected objects on the ECN before implementation."
+   },
+   {
+    "module": "R&D (prototypes)",
+    "issue": "After a prototype is released to Production, only its BOM is frozen. Its status and version can still be edited, so the traceability text on the Production BOM ('Released from R&D PROTO (version)') can stop matching the prototype record.",
+    "sap_standard": "A released source record is frozen. Changes go through a new version.",
+    "options": "Freeze version/status after release (new prototype version for changes), or allow it and log the change in the audit trail."
+   }
+  ],
+  "schema_changes_needed": [],
+  "tests": "Ran, with -p no:cacheprovider -W ignore:\n- test_rnd_requirement_work.py: 11 passed, plus 2 new tests.\n- test_rnd_projects.py + test_rnd_review_fixes.py + test_rnd_requirement_departments.py + test_rnd_requirement_work.py: 37 passed, 1 failed. The failure is test_rnd_projects.py::test_documents_upload_list_delete, which expects 'created yourself' in the delete-forbidden message but gets 'Only a project lead ... can delete its files'. It already fails without my changes: rnd/routes/documents.py and test_rnd_projects.py both carry another session's uncommitted edits, and I did not touch either file.\n- test_rnd_technical_offers.py: 3 passed.\n- test_electrical_central_authz.py + test_electrical.py + test_electrical_access_gates.py: 19 passed, including 1 new test.\n- test_design.py, test_design_central_approvals.py, test_design_phases.py, test_design_review_fixes.py, test_design_review_fixes_2.py, test_hydraulic.py, test_hydraulic_access_rules.py, test_hydraulic_central_authz.py, test_idor_design_hydraulic.py, test_idor_rnd_electrical.py, test_rnd.py: 110 passed (run before the design-request and circuit fixes).\n- After those fixes: test_design_phases.py 9 passed (1 new test), test_hydraulic.py 16 passed.\n- No frontend files were changed, so tsc was not run."
+ },
+ {
+  "label": "fix:mfg",
+  "fixes": [
+   {
+    "module": "production",
+    "file": "backend/app/modules/production/routes/shop_floor.py",
+    "problem": "A shop-floor confirmation (time log) could book any amount of good quantity on an operation, with no limit from the work order quantity. Example: on a WO for 3 units, two logs of 2 + 1.5 good were accepted, giving 3.5 good on the operation. This inflates output and the gate lot quantity (request_gate_lot uses op.qty_good). SAP treats over-delivery on a confirmation as an error.",
+    "kind": "standard",
+    "fix": "create_time_log now rejects a log when the operation's total good quantity would go above quantity_planned. It returns a 400 that says how much good can still be booked, and tells the user to book the extra as scrap or raise a second work order. Scrap is not capped, because scrapped units can be remade.",
+    "verified": "Updated test_cov_production_execution.py::test_time_log_accumulates_good_and_scrap_and_starts_the_order (second log now 0.5 good, plus a new over-booking assertion: 400 'at most 0.5 more good'). All production tests pass."
+   },
+   {
+    "module": "quality",
+    "file": "backend/app/modules/quality/services/inspection_calls.py",
+    "problem": "A customer or third-party inspection call (RITES/RDSO) linked to an internally accepted final lot could offer more than the lot passed, and the same lot could be offered again on several calls. Example: a lot accepts 5, calls are raised for 6, or for 3 + 3. Material that never passed internal final inspection could then be cleared by the agency and released for dispatch under rule 8.",
+    "kind": "bug",
+    "fix": "When lot_id is given, create() caps the offered quantity. The cap is the lot's accepted_qty minus what is already on other calls for that lot: the full quantity for open or accepted calls, and accepted_qty for partially accepted calls. Material from rejected calls can be offered again after rework. The 422 error states the lot, what passed, what is already offered and the maximum still allowed.",
+    "verified": "New test test_quality_phase2.py::test_inspection_call_offer_capped_by_internally_accepted_lot (6 of 5 rejected; 3 accepted; another 3 rejected with 'at most 2'; 2 accepted). The phase 2 suite passes."
+   },
+   {
+    "module": "quality",
+    "file": "backend/app/modules/quality/routes/inspections.py",
+    "problem": "Legacy single inspections stayed fully editable and deletable after a decision. These are still used as the RRV final vehicle inspection and as old operation gates. A passed inspection could be flipped to failed or back, have its results rewritten, its batch number or project label changed (the rework verification matches on these), or be soft-deleted after it had released a production or RRV gate. A decided quality record should never be changed silently.",
+    "kind": "standard",
+    "fix": "PATCH on a passed, failed or conditionally_passed inspection now returns 409 if any field other than remarks actually changes, including the results list. Unchanged values are allowed because the edit form re-sends every field, so adding remarks still works. DELETE of a decided inspection returns 409. Both messages explain why and point to requesting a fresh inspection instead.",
+    "verified": "New test test_idor_quality_main_products.py::test_decided_inspection_is_frozen_except_remarks (status change, results change and delete are blocked; re-saving unchanged fields plus remarks is allowed). The RRV and production review tests still pass."
+   }
+  ],
+  "needs_decision": [
+   {
+    "module": "production",
+    "issue": "Receive Output (the finished-goods receipt) only checks against quantity_planned minus quantity_completed. It does not check the good quantity confirmed on the last operation, so finished goods can be received before any yield is confirmed on the routing.",
+    "sap_standard": "In SAP the goods receipt is often tied to the final milestone confirmation, so the receipt quantity is at most the confirmed yield of the last operation. Some plants allow an independent goods receipt with a tolerance.",
+    "options": "(a) Cap the receipt at the last operation's qty_good. (b) Keep the current behaviour (the receipt is independent and only capped at the order quantity)."
+   },
+   {
+    "module": "production",
+    "issue": "Deleting a time log is a hard db.delete. It reverses the good and scrap quantities but leaves no reversal document, apart from the generic audit log.",
+    "sap_standard": "In SAP a confirmation is cancelled with a reversal (CO13), and the original and the cancellation both stay on record.",
+    "options": "(a) Change to a soft delete or cancellation with a reason, which needs is_cancelled and cancel_reason columns. (b) Keep the hard delete and rely on the audit log."
+   },
+   {
+    "module": "production",
+    "issue": "Issuing material to a work order has no tolerance check against the BOM requirement (required_qty), and extra off-BOM items can be issued freely with no reason.",
+    "sap_standard": "In SAP, over-withdrawal against a reservation is allowed only within a tolerance, or flagged. Unplanned issues need a reason or movement type.",
+    "options": "(a) Add an over-issue tolerance setting and require a remark for off-BOM or excess issues. (b) Leave as it is."
+   },
+   {
+    "module": "quality",
+    "issue": "A manual inspection lot of type 'final' with no stock behind it (take_from_free=false), once accepted, counts toward the dispatch release check (rule 8a) for that batch. This could release dispatch of a batch that never went through Production Receive Output.",
+    "sap_standard": "The usage decision on the lot created at goods receipt from the production order (origin 04) releases the stock. A manual lot (origin 89) does not stand in for it.",
+    "options": "(a) Count only lots with source_type work_order/ncr, or lots holding stock, in dispatch.check. (b) Keep the current behaviour, where a manual final lot is accepted proof."
+   },
+   {
+    "module": "production",
+    "issue": "An RRV build can unlink a work order that is in progress with material issued, including the main WO, until the build is completed.",
+    "sap_standard": "A reference document link should not be removed once goods movements have been posted against it.",
+    "options": "Block unlinking when the WO is released or in progress, or when it has issued material."
+   }
+  ],
+  "schema_changes_needed": [
+   {
+    "module": "production",
+    "change": "Add is_cancelled, cancelled_by_id, cancelled_at and cancel_reason to production_time_logs, and replace the hard delete with a cancellation.",
+    "why": "A confirmation should be reversed, not removed, so the shop-floor history stays auditable (SAP CO13 behaviour). This only matters if the needs_decision item about time-log deletion is approved."
+   }
+  ],
+  "tests": "Ran: python -m pytest app/tests -q -k \"production or quality or rrv or idor_quality\" with result 178 passed, 0 failed. Also ran test_quality_phase2.py + test_cov_production_execution.py (68 passed) and test_idor_quality_main_products.py + test_rrv_builds.py + test_production_review_fixes.py (20 passed). No pre-existing failures were seen in these suites. No frontend files were changed, so tsc was not run."
+ },
+ {
+  "label": "fix:svc",
+  "fixes": [
+   {
+    "module": "ERP / Service Requests",
+    "file": "frontend/src/app/dashboard/erp/service-requests/[id]/page.tsx",
+    "problem": "Users could not cancel or reopen an SR from its page. The backend requires status_reason for cancel and for reopening a closed or cancelled SR, but the status ConfirmDialog only sent {status}, so every Cancel or Reopen came back 422 and the error told users to 'use the status steps', which was the same dialog.",
+    "kind": "bug",
+    "fix": "Added a PromptDialog (portal, reason required) that opens for cancel and reopen moves and sends {status, status_reason}. The plain ConfirmDialog is still used for normal forward steps. A needsStatusReason() helper matches the backend rule.",
+    "verified": "tsc --noEmit shows no errors in the touched files; backend tests test_full_status_lifecycle_and_reopen_clears_closed_date (updated: no reason gives 422, with reason gives 200) pass"
+   },
+   {
+    "module": "ERP / Service Requests",
+    "file": "backend/app/modules/erp/schemas/service_request.py",
+    "problem": "An SR could be created directly as 'review', 'work_completed' or 'cancelled' (only 'closed' was blocked). Created as Review it skipped submit_sr_closure, so no closure approval request existed in the central engine. Created as Cancelled it skipped the mandatory cancel reason. Both skip steps in the status flow.",
+    "kind": "standard",
+    "fix": "Added SR_CREATE_STATUSES (open, acknowledged, assigned, scheduled, in_progress, pending_parts, on_hold). Create now rejects any other status with a message saying to create it as Open and move it forward with the status steps. The bulk importer is not affected because it does not pass status to the schema. ServiceRequestForm.tsx (create mode) now hides work_completed, review, closed and cancelled.",
+    "verified": "new test test_sr_cannot_be_created_past_the_opening_steps passes"
+   },
+   {
+    "module": "ERP / Service Requests",
+    "file": "backend/app/modules/erp/routes/service_requests.py",
+    "problem": "On a closed or cancelled SR, the technical record (issue, root cause, corrective action, dates, assignment, notes) could still be changed through PATCH or the Edit page without reopening it. Only materials were frozen. Standard practice is that a completed notification can't be changed until it is reopened with a reason.",
+    "kind": "standard",
+    "fix": "update_service_request now returns 409 if a closed or cancelled SR (status unchanged) gets a real change to any field outside _SR_POST_CLOSE_EDITABLE. Billing fields stay editable because invoicing happens after closure: service, transport, accommodation and misc costs, tax %, payment status and invoice no. The message lists the frozen fields and says to reopen with a reason. Re-saving with unchanged values still works.",
+    "verified": "new test test_closed_sr_freezes_technical_record_but_allows_billing; updated test_already_closed_sr_can_be_re_saved_without_corrective_action_check; all 83 SR tests pass"
+   },
+   {
+    "module": "ERP / Service Requests",
+    "file": "backend/app/modules/erp/routes/service_requests.py",
+    "problem": "Deleting an SR whose material lines are on a live purchase requisition (approved, ordered or received) left that PR pointing at an SR in the Recycle Bin. Single-line material delete already blocked this case, but deleting the whole SR did not.",
+    "kind": "bug",
+    "fix": "delete_service_request now checks every live material that has a pr_id (using _live_pr_for_material) and returns 409 naming the PR and its status. The message says to ask Purchase to reject or cancel the PR, or to cancel the SR with a reason instead.",
+    "verified": "new test test_sr_and_machine_delete_blocked_while_material_on_live_pr"
+   },
+   {
+    "module": "ERP / Machines",
+    "file": "backend/app/modules/erp/routes/projects.py",
+    "problem": "Deleting a machine soft-deletes all its SRs, so the same orphaned-PR problem happened when any of the machine's SRs had materials on a live purchase requisition.",
+    "kind": "bug",
+    "fix": "_machine_links now also lists live purchase requisitions raised from the machine's SR materials, so the machine delete is blocked with the PR numbers. The message now mentions Purchase as well as Production and Sales.",
+    "verified": "test_sr_and_machine_delete_blocked_while_material_on_live_pr (blocked while PR is approved, allowed after it is cancelled); test_erp_service_hardening suite passes"
+   },
+   {
+    "module": "ERP / Service Requests",
+    "file": "backend/app/modules/erp/routes/service_requests.py",
+    "problem": "Material receipts could still be posted on a closed or cancelled SR. Add, edit and delete of materials were already blocked there, but receive was not.",
+    "kind": "standard",
+    "fix": "Added _ensure_open_for_materials(sr) to receive_material, so it returns 409 with the existing 'reopen it first' message.",
+    "verified": "new test test_receive_blocked_on_closed_sr"
+   },
+   {
+    "module": "Maintenance",
+    "file": "backend/app/modules/maintenance/routes/requests.py",
+    "problem": "A maintenance request raised before its asset was decommissioned or deleted could still be converted into a work order on that retired asset. Direct work order create already blocks this.",
+    "kind": "bug",
+    "fix": "convert_request now returns 409 if the asset is missing, deleted or decommissioned, and tells the user to reject the request or mark it duplicate instead.",
+    "verified": "new test test_request_on_decommissioned_asset_cannot_be_converted; test_maintenance, test_maintenance_pm, test_maintenance_spares and test_maintenance_central_authz all pass"
+   },
+   {
+    "module": "Projects (PM)",
+    "file": "backend/app/modules/projects/routes/project.py",
+    "problem": "Since WBS was removed from the UI, projects stay in 'planning' while departments work their tasks. Delete only checked milestones, so a Planning project with department tasks or documents could be deleted. PmProjectTask and PmProjectDocument have project_id FKs with no cascade, so on PostgreSQL db.delete(project) raises an IntegrityError (500). On SQLite it would silently orphan the work history.",
+    "kind": "bug",
+    "fix": "delete_project now counts the project's tasks and documents. If there are any it returns 409 ('already has N task(s) ... Use Cancel project (with a reason)'). Projects with neither can still be deleted.",
+    "verified": "extended test_delete_only_empty_planning_projects in test_cov_projects_lifecycle.py; that suite passes"
+   }
+  ],
+  "needs_decision": [
+   {
+    "module": "ERP / Machines",
+    "issue": "Warranty start and end dates are typed in by hand. Nothing derives them from the commissioning date plus the product's warranty months, because the machine record has no link to the Product Management master.",
+    "sap_standard": "In SAP (IB/IE warranty), warranty starts from the commissioning date (or delivery date) and the end date is calculated from the warranty term on the product master.",
+    "options": "(a) Add product_id to erp_projects and auto-fill warranty_start = commissioning_date and warranty_end = +warranty months when commissioning is set, still overridable with a reason; (b) keep manual entry and only warn when warranty_start differs from commissioning_date."
+   },
+   {
+    "module": "ERP / Service Requests",
+    "issue": "A closed SR (customer emailed, possibly invoiced) can still be soft-deleted by its creator who has Delete permission.",
+    "sap_standard": "A completed or billed notification is not deleted. It is cancelled or kept, and only open, unbilled documents can be deleted.",
+    "options": "(a) Block delete when status is closed or payment_status is invoiced/paid, so the user cancels or reopens instead; (b) allow delete only for admins on closed SRs; (c) keep as is."
+   },
+   {
+    "module": "Projects (PM)",
+    "issue": "The project workspace still shows the Delete button for a Planning project that has tasks or documents. The backend now refuses with a clear 409, but the button could be hidden if the API returned a tasks or documents count.",
+    "sap_standard": "A UI action should only be offered when it is allowed.",
+    "options": "Add tasks_total to PmProjectResponse and hide Delete when it is above 0, or leave the backend message as the guard."
+   },
+   {
+    "module": "ERP / Service Requests",
+    "issue": "After closure, only billing fields (costs, tax, payment status, invoice no.) stay editable. Service report notes are now frozen too. If the business wants notes added after closure, they would need an addendum-style field.",
+    "sap_standard": "A closed notification's long text can only be added to, not overwritten.",
+    "options": "(a) Keep notes frozen (current); (b) add service_report_notes to the post-close editable set."
+   }
+  ],
+  "schema_changes_needed": [
+   {
+    "module": "ERP / Machines",
+    "change": "Optional product_id FK on erp_projects pointing to the products master, which carries the warranty months",
+    "why": "Needed to derive warranty start and end from commissioning date plus the product's warranty term (see needs_decision). No schema change was made."
+   }
+  ],
+  "tests": "Ran: python -m pytest on test_cov_erp_service_requests, test_erp_service_hardening, test_erp_service_requests: 83 passed. test_maintenance, test_maintenance_pm, test_maintenance_spares, test_maintenance_central_authz, test_cov_projects_lifecycle, test_idor_erp_maintenance, test_rbac_erp, test_erp_pm_central_authz: 70 passed, 3 failed, 1 xfailed. Frontend: npx tsc --noEmit shows no errors in the service-requests page or ServiceRequestForm. Failures not caused by my changes (in code I did not touch): test_erp_pm_central_authz x3 and test_pm_department_workflow::test_full_workflow (POST /projects/{id}/milestones and /pm-work/milestones/{id}/tasks return 422); test_pm_review_fixes x4 (project is already Active or milestone routes changed); test_erp_projects::test_project_letter_lifecycle_numbers_and_renders and test_cov_erp_machines_letters x6 (POST /erp/projects/{id}/letters returns 422). test_cov_erp_service_requests::test_full_status_lifecycle_and_reopen_clears_closed_date was also failing before (reopen without the required reason). I updated it to send a reason and it now passes."
+ },
+ {
+  "label": "fix:p2p",
+  "fixes": [
+   {
+    "module": "P2P GRN",
+    "file": "backend/app/modules/p2p/routes/goods_receipts.py",
+    "problem": "The over-receipt check looked at each GRN line by itself. Example: a PO line of 10 sent as two lines of 8 on one GRN passed both checks, so 16 were received against an order of 10.",
+    "kind": "bug",
+    "fix": "Quantities for the same PO line are now added up across the GRN before checking what is still open.",
+    "verified": "test_p2p_store_sap_review::test_grn_cannot_over_receive_by_repeating_a_po_line"
+   },
+   {
+    "module": "P2P GRN",
+    "file": "backend/app/modules/p2p/routes/goods_receipts.py",
+    "problem": "A GRN accepted a received_date in the future, or earlier than the PO date. The stock ledger was then posted with impossible dates.",
+    "kind": "standard",
+    "fix": "Returns 422 for a future received date and for a date before the PO date, with the real reason.",
+    "verified": "test_grn_refuses_a_future_received_date"
+   },
+   {
+    "module": "P2P GRN",
+    "file": "backend/app/modules/p2p/routes/goods_receipts.py",
+    "problem": "During inspection, stock posting raised an uncaught ValueError when the ledger refused it (store made inactive, items frozen by a physical count, or a rate required). The result was a 500 error. On the partial in-quality path, some lines could be left half-posted. GRN create also did not check that the store exists or is active.",
+    "kind": "bug",
+    "fix": "Added _post_grn_stock_or_409: it rolls back the whole inspection and returns 409 with the ledger's reason. GRN create now checks that the store exists (404) and is active (422).",
+    "verified": "test_inspection_into_a_store_that_cannot_take_stock_is_refused_cleanly"
+   },
+   {
+    "module": "P2P requisition to Store",
+    "file": "backend/app/modules/p2p/routes/p2p_requests.py",
+    "problem": "Stock-check, issue-from-stock and send-to-procurement only blocked submitted, returned, rejected and cancelled PRs. Draft PRs (added 2026-10-13) and closed PRs got through. A store manager or admin could issue real stock against a draft requisition that was never approved.",
+    "kind": "bug",
+    "fix": "Added a shared _NOT_APPROVED_PR_STATUSES (draft, submitted, returned, rejected, cancelled, closed) and used it in all three endpoints. The PR detail page's canManageStock now uses the same list.",
+    "verified": "test_no_issue_from_stock_against_a_draft_requisition; tsc shows no errors in dashboard/p2p/[id]"
+   },
+   {
+    "module": "P2P PO",
+    "file": "backend/app/modules/p2p/routes/rfq.py",
+    "problem": "A PO draft could be created and submitted for approval to a vendor marked Blocked or Inactive in the shared vendor master. The status was only checked when an RFQ quote was attached, so a vendor blocked later could still get a PO.",
+    "kind": "standard",
+    "fix": "Added _ensure_vendor_can_get_po, called in create_po_draft and in submit_po_draft. It returns 409 saying how to fix it (set the vendor Active or pick another quoted vendor).",
+    "verified": "test_no_po_draft_to_a_blocked_vendor"
+   },
+   {
+    "module": "Store reorder",
+    "file": "backend/app/modules/store/services/reorder.py",
+    "problem": "A short-closed PR leaves its PO 'partially_fulfilled'. Reorder planning kept counting the unsupplied balance as on order forever, so items below their reorder point were never shown as due.",
+    "kind": "bug",
+    "fix": "Open PO lines are left out of on-order when their PR is closed, cancelled or rejected.",
+    "verified": "test_short_closed_po_balance_is_not_on_order_for_reorder; test_store_reorder passes"
+   },
+   {
+    "module": "Store issues",
+    "file": "backend/app/modules/store/routes/material_issues.py",
+    "problem": "A material issue accepted a future issue_date, unlike transfers, adjustments and returns.",
+    "kind": "standard",
+    "fix": "Returns 422 for a future issue date.",
+    "verified": "test_material_issue_refuses_a_future_date"
+   },
+   {
+    "module": "P2P RTV",
+    "file": "backend/app/modules/p2p/routes/vendor_returns.py",
+    "problem": "A return to vendor accepted a future return_date, so stock left the store with a future posting date.",
+    "kind": "standard",
+    "fix": "Returns 422 for a future return date.",
+    "verified": "Reasoning (same pattern as the tested GRN check); existing RTV tests pass"
+   },
+   {
+    "module": "Store returns",
+    "file": "backend/app/modules/store/routes/material_returns.py",
+    "problem": "A material return against an issue could be dated before that issue was made.",
+    "kind": "standard",
+    "fix": "Returns 422 when the return date is before the source issue's date.",
+    "verified": "Reasoning; existing material-return tests pass"
+   }
+  ],
+  "needs_decision": [
+   {
+    "module": "P2P GRN",
+    "issue": "store_location_id is optional on GRN create, in both the API and the store/grn/new UI. A GRN with no store is accepted and counts toward PO/PR fulfilment, but its accepted stock never reaches the ledger; it only shows a stock_sync_notes warning.",
+    "sap_standard": "In SAP a goods receipt (101) always posts to a plant/storage location. Receiving with no stock effect is not allowed.",
+    "options": "(a) Make the store mandatory on GRN create in the backend and UI; older tests that create GRNs without a store would need updating. (b) Keep it optional but don't count a store-less GRN as received until a store is set."
+   },
+   {
+    "module": "P2P PO",
+    "issue": "A short-closed requisition leaves its PO at 'partially_fulfilled'. There is no PO 'closed' or 'short_closed' status, so PO Tracking and Finance still see it as open. Reorder now ignores these POs.",
+    "sap_standard": "Short-closing sets the 'delivery completed' flag on the PO line, and the open quantity drops to 0 everywhere.",
+    "options": "Add a PO status (e.g. 'closed') set by /close, or derive it in the PO response."
+   },
+   {
+    "module": "Vendors",
+    "issue": "A vendor can be set Blocked or Inactive without a reason. The audit only says 'updated vendor X: status', with no old or new value.",
+    "sap_standard": "A purchasing or posting block on a vendor is recorded with a reason and who set it.",
+    "options": "Require a reason when status changes to blocked or inactive and record old\u2192new in the audit. This needs a payload field; no schema change is needed if the reason goes in the AuditLog only."
+   },
+   {
+    "module": "Store quarantine",
+    "issue": "The 'release' disposition in POST /store/stock/quarantine/clear moves quarantined stock to usable stock with only a Store adjustments 'create' grant. There is no QC or approval step (for stock not held by an NCR).",
+    "sap_standard": "Releasing blocked stock to unrestricted needs a Quality usage decision or an authorised transfer posting (343).",
+    "options": "Route release through Quality, or require approval or the Store Manager flag."
+   }
+  ],
+  "schema_changes_needed": [],
+  "tests": "Ran: python -m pytest app/tests -q -k \"p2p or store or grn or vendor_return or reorder\" \u2192 333 passed, 6 xfailed, 1 failed. The failure is test_pm_team_sequence_chat.py::test_reorder_only_unstarted_steps, which is in the PM module. It only matched the 'reorder' keyword; none of its files were touched in this work. New file app/tests/test_p2p_store_sap_review.py has 7 tests, all passing. Ran npx tsc --noEmit: no errors in frontend/src/app/dashboard/p2p/[id]/page.tsx."
+ },
+ {
+  "label": "fix:hr",
+  "fixes": [
+   {
+    "module": "HR / Lifecycle",
+    "file": "backend/app/modules/hr/routes/lifecycle.py",
+    "problem": "There was a data-scope leak in create_event and link_user: neither checked whether the subject employee was inside the HR user's data access. Because the event's creator becomes an owner (created_by_id), an HR user scoped to 'own' or 'department' could raise an exit or transfer for any employee. That set the employee's status to 'notice', and the same user could later complete the event, which deactivates the account and reassigns the employee's approvals.",
+    "kind": "bug",
+    "fix": "Added ensure_employee_in_scope(db, user, subject) to create_event and ensure_employee_in_scope(db, user, target) to link_user. Both return a 403 with the real reason and how to widen access.",
+    "verified": "New test test_scoped_hr_cannot_raise_exit_for_employee_outside_scope; the existing lifecycle suites still pass"
+   },
+   {
+    "module": "HR / Lifecycle (exit)",
+    "file": "backend/app/modules/hr/services/lifecycle.py",
+    "problem": "Completing an exit cancelled only PENDING leave. APPROVED leave dated after the last working day stayed approved, so the days stayed deducted from the balance and 'on leave' attendance rows stayed for dates after the employee had left. Example: a leaver with LWD 31-10 and approved CL on 09/10-11 ends with used=2 and attendance in November.",
+    "kind": "standard",
+    "fix": "Exit completion now also cancels approved leave whose from_date is after the LWD (event.last_working_day, falling back to effective_date). It locks the balance row and gives back `used`, removes the leave attendance rows, and lists each cancellation in the completion summary. Leave that starts on or before the LWD is not touched.",
+    "verified": "New test test_exit_cancels_approved_leave_after_last_working_day_and_restores_balance"
+   },
+   {
+    "module": "HR / Attendance regularization",
+    "file": "backend/app/modules/hr/routes/attendance.py",
+    "problem": "The guard against regularizing a leave day only looked at full-day leave (status on_leave). On a day with an approved HALF-day leave (a source='leave' row with status half_day), an employee could ask for 'present' or 'absent', and approving it overwrote the leave row while the 0.5 day stayed deducted. The register and the balance then disagreed.",
+    "kind": "bug",
+    "fix": "Both request_regularization and _approve_reg now refuse any status other than 'half_day' when the day has a leave row. The message tells the employee or approver to ask HR to correct the leave instead.",
+    "verified": "New test test_half_day_leave_day_can_only_be_regularized_as_half_day"
+   },
+   {
+    "module": "Core RBAC (roles/users)",
+    "file": "backend/app/modules/main/routes/roles.py",
+    "problem": "Privilege escalation through data scope: validate_grants stopped a non-admin from handing out permissions they don't hold, but data_scopes had no such check. A role manager with 'department' HR scope could create, edit or copy a role with HR = 'Entire organization' and assign it, including to a role they hold themselves. set_role_members also let a non-admin add themselves to a role or change an admin's role membership, which bypassed the self-promotion and admin protections that /users/{id}/roles enforces.",
+    "kind": "bug",
+    "fix": "Added validate_scope_escalation(scopes, actor, old). For a non-admin it rejects any level that is set or widened beyond the actor's own user_scope for that module; levels left unchanged are not re-checked. It is called in create_role, update_role and copy_role, and in set_role_members when members are added. set_role_members now also refuses a non-admin adding or removing themselves, or changing an admin's membership.",
+    "verified": "New tests test_non_admin_cannot_create_role_with_wider_data_access and test_non_admin_cannot_add_self_or_change_admin_role_membership; test_roles_permissions and test_org_rbac pass"
+   },
+   {
+    "module": "Core RBAC (users)",
+    "file": "backend/app/modules/main/routes/users.py",
+    "problem": "PUT /users/{id}/data-scopes let a non-admin with roles:edit give any user an 'Entire organization' personal override for any module, wider than their own. PUT /users/{id}/roles checked a role's grants but not its data scopes.",
+    "kind": "bug",
+    "fix": "Both routes now call roles.validate_scope_escalation (for data-scopes, only levels that changed are checked).",
+    "verified": "New test test_non_admin_cannot_widen_a_users_personal_data_access; test_users passes"
+   },
+   {
+    "module": "Auth",
+    "file": "backend/app/modules/main/routes/auth.py",
+    "problem": "Document-share and upload JWTs are signed with the same SECRET_KEY. When one was sent as a Bearer token, get_current_user did int(payload.get('sub')) on None and crashed with a 500 instead of returning a clean 401. Nothing rejected tokens that carry a 'purpose'.",
+    "kind": "bug",
+    "fix": "get_current_user now returns a 401 with a clear message when the payload has a 'purpose' claim or a 'sub' that isn't numeric.",
+    "verified": "New test test_document_share_token_is_rejected_as_bearer; test_auth passes"
+   },
+   {
+    "module": "Organization / Departments",
+    "file": "backend/app/modules/organization/routes/department.py",
+    "problem": "Adding or removing a department member changed only User.department_id and branch_id. Once an HR employee profile exists it owns department and plant, and the next HR profile save mirrors profile.department_id back onto the user (employee_sync.apply_org_fields), quietly undoing the Organization change. Department membership by id drifted between User and the HR profile.",
+    "kind": "bug",
+    "fix": "Added _sync_hr_profile. When the user has an HR profile, it updates profile.department_id (and branch_id from the department) on add, and clears department_id on remove. The change is audited automatically through the registered profile model.",
+    "verified": "Reasoning plus test_cov_org_structure and the HR suites passing; no dedicated new test"
+   }
+  ],
+  "needs_decision": [
+   {
+    "module": "HR / Leave",
+    "issue": "An employee can cancel their own APPROVED future leave directly, with no approver step and no mandatory reason. HR can cancel someone else's approved leave without a reason too; the remarks are optional.",
+    "sap_standard": "In SAP ESS/MSS, cancelling an approved absence is itself a request that goes back to the approver, and the reason is recorded.",
+    "options": "(a) Route self-cancellation of approved leave through the approval engine as a 'leave cancellation' request; (b) at least make a reason mandatory when status=approved; (c) keep as is (the balance is restored, and the change is audited and notified)."
+   },
+   {
+    "module": "Auth / sessions",
+    "issue": "get_current_user accepts access tokens without a 'sid' claim, which no longer get revoke-on-logout. Every real sign-in carries a sid, but tests mint tokens without one. Refresh-token reuse (replay of a 'rotated' token) is refused, but it does not revoke the user's other sessions.",
+    "sap_standard": "OAuth 2.0 best practice: every access token is tied to a revocable session, and refresh-token reuse should revoke the whole token family.",
+    "options": "(a) Require a sid in production (settings flag) and update the test helpers; (b) on replay of a token with revoked_reason='rotated', revoke all of that user's sessions; (c) leave as is."
+   },
+   {
+    "module": "HR / Lifecycle (exit)",
+    "issue": "Approved leave that SPANS the last working day (starts before it, ends after it) is left unchanged by the exit. Only leave starting after the LWD is now auto-cancelled.",
+    "sap_standard": "The absence should be cut at the leaving date and the days after it given back.",
+    "options": "(a) Split or trim the request and recount the days up to the LWD; (b) report it in the exit impact so HR corrects it by hand; (c) leave as is."
+   }
+  ],
+  "schema_changes_needed": [],
+  "tests": "Command: cd backend && python -m pytest -q app/tests/test_hr_org_review_2026_10_13.py app/tests/test_auth.py app/tests/test_central_authorization.py app/tests/test_cov_hr_attendance.py app/tests/test_cov_hr_leave.py app/tests/test_cov_hr_lifecycle.py app/tests/test_cov_org_structure.py app/tests/test_default_data_scope.py app/tests/test_hr_central_approvals.py app/tests/test_hr_review_fixes.py app/tests/test_hr_tab_scope.py app/tests/test_idor_hr_org_accounts.py app/tests/test_org_rbac.py app/tests/test_rbac_hr.py app/tests/test_roles_permissions.py app/tests/test_users.py. Result: 217 passed, 10 xfailed, 1 failed. The new file test_hr_org_review_2026_10_13.py has 7 tests and all pass. An earlier broader run, which also included test_auth_logout_csrf, test_cov_hr_support, test_cov_org_company and test_microsoft_oauth, gave 244 passed and the same 1 failure. That failure, test_hr_review_fixes.py::test_pending_approval_reminders (run_hr_reminders on TODAY+1 returns 0 approvals), is in app/tasks/hr_reminders and is very likely not caused by these changes: none of them touch that code. Because git stash and checkout are off-limits here, I could not confirm that by running it against the code without my edits. No frontend files were touched, so no tsc run was needed."
+ },
+ {
+  "label": "fix:fin",
+  "fixes": [
+   {
+    "module": "Accounts / Bank reconciliation",
+    "file": "D:\\Desktop\\PremnathrailPortal-Ideal\\backend\\app\\modules\\accounts\\service.py",
+    "problem": "An in-progress reconciliation could never be completed once a bank charge or interest voucher was booked to clear the difference. book_balance was a snapshot taken when the reconciliation was created, so the back-dated voucher showed up as outstanding (or, once ticked, as cleared) while the book balance never included it. Example: statement 99,750, books 1,00,000. The user books a 250 bank charge dated the statement date and ticks it, and the difference stays at -250. The error message itself tells the user to do exactly this.",
+    "kind": "bug",
+    "fix": "compute_reconciliation_summary now reads the book balance live (GL as of the statement date) while the reconciliation is in progress and returns it in the summary. complete_bank_reconciliation freezes that value into recon.book_balance and row-locks the reconciliation.",
+    "verified": "New test test_bank_reconciliation_counts_bank_charges_booked_during_it; full accounts suite passes"
+   },
+   {
+    "module": "Accounts / Bank reconciliation",
+    "file": "D:\\Desktop\\PremnathrailPortal-Ideal\\backend\\app\\modules\\accounts\\service.py",
+    "problem": "A completed reconciliation's figures changed later. Outstanding cheques were worked out from vouchers that are still pending today. Once the June statement cleared a cheque that was outstanding in May, the completed May reconciliation showed outstanding 0 and a difference of -4,000.",
+    "kind": "bug",
+    "fix": "A voucher side now counts as outstanding at a statement if it is still pending or was cleared after that statement date (cleared_date > statement_date). Completed reconciliations therefore stay fixed.",
+    "verified": "Extended test_bank_reconciliation_uses_clearing_dates: May still shows outstanding 4,000 and difference 0 after June clears the cheque"
+   },
+   {
+    "module": "Accounts / Bank reconciliation",
+    "file": "D:\\Desktop\\PremnathrailPortal-Ideal\\backend\\app\\modules\\accounts\\service.py",
+    "problem": "mark_payments_reconciled accepted cancelled vouchers and vouchers dated after the statement. A cancelled voucher, which never went through the bank, could be marked reconciled with a cleared date.",
+    "kind": "bug",
+    "fix": "It now refuses any voucher whose status is not posted, and any voucher dated after the statement date. Both errors give the real reason and say what to do instead.",
+    "verified": "New test test_cancelled_voucher_cannot_be_ticked_as_cleared"
+   },
+   {
+    "module": "Accounts / Year-end close",
+    "file": "D:\\Desktop\\PremnathrailPortal-Ideal\\backend\\app\\modules\\accounts\\services\\closing.py",
+    "problem": "After Reopen, a financial year could never be closed again. _existing_close matched the reopen's reversal entry, because the reversal keeps posting_type 'year_end' and is dated the FY end. Close then raised 'already been closed', a second reopen tried to reverse a reversal, and the year-end preview showed the reversal as the closing entry.",
+    "kind": "bug",
+    "fix": "_existing_close now excludes reversal entries (reverses_journal_entry_id IS NULL). This is the same rule as the DB index uq_je_one_year_end_per_fy.",
+    "verified": "Extended test_statements_balance_and_year_end_moves_profit_to_reserves: close, reopen, close again; retained earnings correct"
+   },
+   {
+    "module": "Accounts / GST set-off",
+    "file": "D:\\Desktop\\PremnathrailPortal-Ideal\\backend\\app\\modules\\accounts\\services\\gst_returns.py",
+    "problem": "A reversed GST set-off could not be redone in the same month. _existing_setoff found the reversal entry (posting_type 'gst_setoff') and post_setoff refused with 'already posted. Reverse it first', which the user had already done.",
+    "kind": "bug",
+    "fix": "_existing_setoff now excludes reversal entries, matching index uq_je_one_gst_setoff_per_period.",
+    "verified": "Extended test_gst_setoff_follows_rule_88a_order: reverse, redo, and the new set-off is the live one"
+   },
+   {
+    "module": "Accounts / Opening balances",
+    "file": "D:\\Desktop\\PremnathrailPortal-Ideal\\backend\\app\\modules\\accounts\\services\\opening.py",
+    "problem": "Re-entering wrong opening balances was impossible, and reversing them corrupted the party ledgers. (1) The 'already posted' check matched the reversal of the opening voucher, so a corrected opening could never be posted, even though the error tells the user to reverse first. (2) Reversing the opening voucher from Journals left its opening vendor bills and customer invoices posted with amounts due. AR/AP outstanding then showed dues that no longer existed in the GL, and the same bill numbers could not be entered again (unique keys).",
+    "kind": "bug",
+    "fix": "The opening-exists check now ignores reversals (same rule as index uq_je_one_opening). New release_opening_documents() runs from the journal reverse route (routes/journal_entries.py) when an opening voucher is reversed. It refuses if any opening bill is already settled, saying which allocation to remove. Otherwise it cancels the opening bills, sets amount_due to 0, keeps the original number and reason in cancelled_reason, and adds a '~REV<id>' suffix to the number so the corrected opening can reuse it.",
+    "verified": "New test test_reversing_opening_voucher_releases_its_open_bills: reverse, no open items left, re-post with the same bill numbers gives OB/2026-27/0002"
+   },
+   {
+    "module": "Accounts / Purchase invoice (3-way match)",
+    "file": "D:\\Desktop\\PremnathrailPortal-Ideal\\backend\\app\\modules\\accounts\\service.py",
+    "problem": "Vendor invoice lines accepted a po_item_id from any PO, or on a direct invoice, without checking it. Store items were also not taken from the PO line, which breaks the 'lines carry store_item_id, never name-match' rule. Example: a bill against PO-A could carry a line pointing at PO-B's line.",
+    "kind": "standard",
+    "fix": "In create_vendor_invoice, a line naming po_item_id must belong to the invoice's own PO, and a direct invoice can't name one. The PO line's store_item_id is copied onto the invoice line, and a different store_item_id is refused.",
+    "verified": "New test test_c04_invoice_line_must_reference_a_line_of_its_own_po"
+   },
+   {
+    "module": "Accounts / Chart of accounts",
+    "file": "D:\\Desktop\\PremnathrailPortal-Ideal\\backend\\app\\modules\\accounts\\routes\\gl_accounts.py",
+    "problem": "A ledger that already had postings could be switched to a group (non-posting) account, or have its party-control flag toggled. A group then holds a balance, and a control account's balance no longer equals the sum of its party ledgers. SAP does not allow either change once postings exist.",
+    "kind": "standard",
+    "fix": "PATCH now returns 409 if is_posting_account or is_control_account changes on a ledger with journal lines. The message explains why and says to create a new ledger and move the balance with a journal.",
+    "verified": "Code review plus the accounts suite (86 passed). No dedicated test because route permission fixtures for the ledgers tab weren't set up."
+   },
+   {
+    "module": "Accounts / Vendor master",
+    "file": "D:\\Desktop\\PremnathrailPortal-Ideal\\backend\\app\\modules\\accounts\\routes\\vendors.py",
+    "problem": "A vendor used on a purchase order but with no invoice yet could be deleted. P2PPurchaseOrder.vendor_id has no foreign key, so the PO was left pointing at nothing, and its later invoice would fall back to matching the vendor by name.",
+    "kind": "bug",
+    "fix": "Delete is refused with 409 when any PO references the vendor; the message names the PO and says to set the vendor inactive or blocked instead.",
+    "verified": "Code review plus the accounts suite"
+   },
+   {
+    "module": "Accounts / Purchase and sales invoices",
+    "file": "D:\\Desktop\\PremnathrailPortal-Ideal\\backend\\app\\modules\\accounts\\service.py",
+    "problem": "cancel_vendor_invoice and cancel_ar_transaction read the document without a row lock. A cancel arriving at the same moment as the approver's post could mark a document cancelled after (or while) it was posted.",
+    "kind": "bug",
+    "fix": "Both now use lock_row (SELECT ... FOR UPDATE with populate_existing), like the post functions, so the second request sees the first one's status.",
+    "verified": "Reasoning (same pattern as post_vendor_invoice); suite passes"
+   }
+  ],
+  "needs_decision": [
+   {
+    "module": "Accounts / Purchase invoice",
+    "issue": "The duplicate-bill rule (unique vendor_id + invoice_number) also counts cancelled pending invoices. A bill keyed wrongly and cancelled before posting can never be re-entered under its real number.",
+    "sap_standard": "The MIRO duplicate-invoice check ignores reversed or cancelled documents.",
+    "options": "(a) Leave the duplicate check in place to keep the DB constraint. (b) Make it a partial unique index WHERE status != 'cancelled' (schema change). (c) On cancel, add a suffix to the cancelled bill's number, as is now done for reversed opening bills."
+   },
+   {
+    "module": "Accounts / Fixed assets",
+    "issue": "Asset disposal debits the proceeds ledger directly. If that ledger is a bank, the bank movement has no payment voucher, so it never appears in bank reconciliation or the cash book.",
+    "sap_standard": "Asset retirement with revenue goes to a clearing account or the customer; the money is then received through a receipt voucher.",
+    "options": "Restrict proceeds_gl_account_id to a non-bank clearing or receivable ledger, or create a receipt voucher automatically."
+   },
+   {
+    "module": "Accounts / Debit and credit notes",
+    "issue": "Notes accept any GST rate (allowed_rates=None), and the line rate isn't checked against the original invoice's rate.",
+    "sap_standard": "The tax code on a credit memo follows the reference invoice.",
+    "options": "Validate each note line's GST rate against the referenced invoice's rates, or at least against active GST rates."
+   },
+   {
+    "module": "Accounts / Purchase invoice",
+    "issue": "The cumulative PO invoicing cap counts invoices only and ignores posted debit notes (purchase returns). After a debit note, re-invoicing the replacement goods can be blocked as 'above approved PO value'.",
+    "sap_standard": "PO history nets returns and credit memos against the invoiced quantity and value.",
+    "options": "Subtract posted debit notes linked to the PO's invoices from prior_amount and prior_qty."
+   }
+  ],
+  "schema_changes_needed": [
+   {
+    "module": "Accounts / Purchase invoice",
+    "change": "Replace UniqueConstraint uq_vendor_invoice_number (vendor_id, invoice_number) with a partial unique index WHERE status != 'cancelled'.",
+    "why": "So a wrongly keyed and cancelled vendor bill can be re-entered under its real number (only needed if option (b) above is chosen)."
+   }
+  ],
+  "tests": "From backend: python -m pytest on test_accounts_finance.py, test_accounts_finance_gates.py, test_accounts_central_approvals.py, test_accounts_rbac.py, test_cov_controls_finance.py, test_gl_posting_idempotency.py, test_idor_hr_org_accounts.py, test_p2p_settings_vendors.py and test_p2p_vendor_returns.py: 86 passed, 2 xfailed, 0 failed. Tests added: test_bank_reconciliation_counts_bank_charges_booked_during_it, test_cancelled_voucher_cannot_be_ticked_as_cleared, test_reversing_opening_voucher_releases_its_open_bills and test_c04_invoice_line_must_reference_a_line_of_its_own_po. Tests extended: bank reconciliation clearing dates, GST set-off reverse and redo, and year-end reopen and re-close. Existing failure not caused by this work: the broad -k run stops at a collection ERROR in app/tests/test_p2p_store_sap_review.py (another session's P2P/Store file), so the accounts files were run explicitly. No frontend files changed, so tsc was not run; all finance API endpoints the frontend calls exist in the backend routes."
+ }
+]

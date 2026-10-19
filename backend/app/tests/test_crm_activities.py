@@ -55,7 +55,14 @@ def test_org_activities_include_inquiry_activities_with_stale_org_id(client, db)
 
     # Reassign the inquiry to Org B without touching the activity row —
     # simulates the drift that causes the bug.
-    client.patch(f"/api/v1/crm/inquiries/{inquiry['id']}", json={"org_id": org_b["id"]}, headers=auth_header(user))
+    # Moving to another org needs a contact of that org (PATCH validates it like create).
+    org_b_contact = make_contact(client, user, org_b["id"])
+    moved = client.patch(
+        f"/api/v1/crm/inquiries/{inquiry['id']}",
+        json={"org_id": org_b["id"], "org_contact_id": org_b_contact["id"]},
+        headers=auth_header(user),
+    )
+    assert moved.status_code == 200, moved.text
 
     # Org A's Activities tab (activity.org_id still points here) still finds it.
     org_a_activities = client.get("/api/v1/crm/activities", params={"org_id": org_a["id"]}, headers=auth_header(user)).json()

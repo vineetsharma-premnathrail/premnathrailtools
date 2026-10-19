@@ -29,6 +29,9 @@ class Activity(Base, TimestampMixin, SoftDeleteMixin):
     # lets one activity expand into a full multi-row MOM table on its own,
     # instead of needing one Activity record per MOM row.
     mom_items: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True)
+    # Bumped whenever content printed on the MoM changes, so a Word MoM made
+    # from an older version of this follow-up is flagged as out of date.
+    mom_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     # Additional contacts present alongside org_contact_id (kept for backward
     # compatibility as the "primary" contact) — lets one activity record
     # multiple client attendees instead of just one.

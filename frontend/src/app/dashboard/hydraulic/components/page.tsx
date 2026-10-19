@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { HydComponent } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
-import { COMPONENT_CATEGORY_LABELS, MEDIA_TYPE_LABELS, SYSTEM_TYPE_HEX } from '@/components/hydraulic/labels'
+import { COMPONENT_CATEGORY_LABELS, MEDIA_TYPE_LABELS, SYSTEM_TYPE_HEX, useHydCosts } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', obsolete: 'Obsolete' }
@@ -33,6 +35,8 @@ function ratingSummary(c: HydComponent): string {
 export default function HydComponentsPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
+  const { can } = useCan()
+  const seeCosts = useHydCosts()  // Hydraulic › BOM › Prices & costs
 
   const [components, setComponents] = useState<HydComponent[]>([])
   const [loading, setLoading] = useState(true)
@@ -68,16 +72,19 @@ export default function HydComponentsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Component Master</h1>
         </div>
-        <button
-          onClick={() => router.push('/dashboard/hydraulic/components/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New Component
-        </button>
+        {can('hydraulic', 'components', 'create') && (
+          <button
+            data-tour="hyd-comp-new-btn"
+            onClick={() => router.push('/dashboard/hydraulic/components/new')}
+            style={{
+              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
+              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
+            }}
+          >
+            + New Component
+          </button>
+        )}
       </div>
 
       {error && (
@@ -87,30 +94,30 @@ export default function HydComponentsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search code, name, make, model or part no…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 210px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
+        <input data-tour="hyd-comp-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search code, name, make, model or part no…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="hyd-comp-category-filter" style={{ ...inputStyle, flex: '0 1 210px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">All categories</option>
           {Object.entries(COMPONENT_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 150px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+        <select data-tour="hyd-comp-medium-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
           <option value="">Hydraulic + Pneumatic</option>
           <option value="hydraulic">Hydraulic</option>
           <option value="pneumatic">Pneumatic</option>
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 140px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="hyd-comp-status-filter" style={{ ...inputStyle, flex: '0 1 140px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
-      <div style={{
+      <div data-tour="hyd-comp-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['Code', 'Name', 'Category', 'Medium', 'Make / Model', 'Rating', 'Unit Cost', 'Used In', 'Status', ''].map((h) => (
+              {['Code', 'Name', 'Category', 'Medium', 'Make / Model', 'Rating', ...(seeCosts ? ['Unit Cost'] : []), 'Used In', 'Status', ''].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
@@ -119,12 +126,12 @@ export default function HydComponentsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={seeCosts ? 10 : 9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : components.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No components match. Add the pumps, valves, cylinders and fittings your circuits and BOMs use.</td></tr>
+              <tr><td colSpan={seeCosts ? 10 : 9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No components match. Add the pumps, valves, cylinders and fittings your circuits and BOMs use.</td></tr>
             ) : (
               components.map((c) => (
-                <tr key={c.id} onClick={() => router.push(`/dashboard/hydraulic/components/${c.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/components', c))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.code}</td>
                   <td style={cellStyle}>{c.name}</td>
                   <td style={cellStyle}>{COMPONENT_CATEGORY_LABELS[c.category] || c.category}</td>
@@ -135,7 +142,7 @@ export default function HydComponentsPage() {
                   </td>
                   <td style={cellStyle}>{[c.manufacturer, c.model_number].filter(Boolean).join(' ') || '—'}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{ratingSummary(c)}</td>
-                  <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>₹{c.unit_cost.toLocaleString('en-IN')}</td>
+                  {seeCosts && <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{c.unit_cost == null ? '—' : `₹${c.unit_cost.toLocaleString('en-IN')}`}</td>}
                   <td style={cellStyle}>{c.bom_usage_count ? `${c.bom_usage_count} BOM${c.bom_usage_count > 1 ? 's' : ''}` : '—'}</td>
                   <td style={cellStyle}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[c.status]}1a`, color: STATUS_HEX[c.status], whiteSpace: 'nowrap' }}>
@@ -143,7 +150,7 @@ export default function HydComponentsPage() {
                     </span>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/hydraulic/components/${c.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/components', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

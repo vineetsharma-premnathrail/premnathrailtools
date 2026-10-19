@@ -93,3 +93,5 @@ class HrAttendanceRegularizationResponse(BaseModel):
     current_status: str | None = None
     can_decide: bool = False
     can_cancel: bool = False
+    # Central approval engine request (None = submitted before the cut-over).
+    approval_request_id: int | None = None

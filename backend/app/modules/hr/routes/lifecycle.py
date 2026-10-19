@@ -12,9 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.core import assignee_rules
 from app.core.audit import record_audit
 from app.db.session import get_db
-from app.modules.hr.models.employee_profile import HrEmployeeProfile, EMPLOYMENT_TYPES
+from app.modules.hr.models.employee_profile import HrEmployeeProfile, EMPLOYMENT_TYPES, PII_FIELDS
 from app.modules.hr.models.lifecycle import (
     HrChecklistItem, HrChecklistTemplate, HrLifecycleEvent,
     LIFECYCLE_EVENT_TYPES, LIFECYCLE_STATUSES, EXIT_TYPES, CHECKLIST_CATEGORIES, CHECKLIST_ITEM_STATUSES,
@@ -29,7 +30,12 @@ from app.modules.hr.schemas.lifecycle import (
     HrLifecycleEventLinkUserPayload, HrLifecycleEventCompletePayload, HrLifecycleEventResponse,
 )
 from app.modules.hr.services import lifecycle as svc
-from app.modules.hr.services.access import is_hr, require_hr
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permission_registry import can_feature
+from app.core.permissions import ensure_can_delete, ensure_tab_action, require_feature_action
+from app.modules.hr.services import approvals as _hr_scope  # noqa: F401 — registers HR data-scope tables
+from app.modules.hr.services.access import is_hr_for, require_hr_tab, require_me_view
+from app.modules.hr.services.access import require_hr as require_hr_app
 from app.modules.hr.services.exit_guard import is_exited
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
@@ -39,16 +45,81 @@ from app.utils.notifications import notify_user
 
 router = APIRouter(prefix="/hr/lifecycle", tags=["HR"])
 
+# HR-team gate for this file: hr app + Permission Matrix › HR › lifecycle.
+require_hr = require_hr_tab("lifecycle")
+require_hr_create = require_hr_tab("lifecycle", "create")
+# edit = change / cancel / link a user / add or remove checklist lines (a line
+# is part of the event, so removing one is an edit of the event, not a delete).
+require_hr_edit = require_hr_tab("lifecycle", "edit")
+# Lifecycle › Manage checklist items feature (core/features/hr.py)
+require_checklist_edit = require_feature_action("hr", "lifecycle", "checklist", "edit")
+OWNER_RULE_KEY = "hr:lifecycle.checklist"  # "Assign to" rule for the checklist task owner picker
+# Completing an event applies it (promotion, transfer, exit …) — the sign-off.
+require_hr_approve = require_hr_tab("lifecycle", "approve")
+# Read-only per-employee history, also shown on Employees › profile › Lifecycle.
+require_hr_lifecycle_read = require_hr_tab(("lifecycle", "employees"))
+# Checklist templates are maintained on HR › Masters; Lifecycle forms read them.
+require_hr_templates = require_hr_tab("masters")
+require_hr_templates_create = require_hr_tab("masters", "create")
+require_hr_templates_edit = require_hr_tab("masters", "edit")
+require_hr_templates_read = require_hr_tab(("masters", "lifecycle"))
+
 OPEN_STATUSES = ("draft", "in_progress")
 CATEGORY_LABELS = {"hr": "HR", "it": "IT", "admin": "Admin", "finance": "Finance", "manager": "Manager", "store": "Store"}
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 
-def _get_event(db: Session, event_id: int) -> HrLifecycleEvent:
+def _ensure_onboarding_profile(db: Session, target: User, actor: User) -> None:
+    """A joiner gets an 'onboarding' HR profile as soon as the joining is
+    raised for (or linked to) their portal user, so HR screens show them as
+    onboarding instead of 'No HR profile'. org_fields_locked stays False
+    until the joining completes, so Azure sync keeps owning their org fields."""
+    if svc.get_profile(db, target.id) is not None:
+        return
+    from app.modules.hr.services.employees import prefill_new_profile
+
+    profile = HrEmployeeProfile(
+        user_id=target.id, employment_status="onboarding", org_fields_locked=False,
+        created_by_id=actor.id, updated_by_id=actor.id,
+    )
+    prefill_new_profile(db, target, profile)
+    db.add(profile)
+    db.flush()
+
+
+# Profile fields HR fills in by hand; prefill_new_profile never sets these.
+_HR_ENTERED_FIELDS = (
+    "employee_code", "grade_id", "shift_id", "employment_type", "probation_end_date", "confirmation_date",
+    "work_location", "notes", *PII_FIELDS,
+)
+
+
+def _onboarding_profile_has_hr_data(db: Session, profile: HrEmployeeProfile, target: User | None) -> bool:
+    """True when HR has put anything into an 'onboarding' profile beyond what
+    `_ensure_onboarding_profile` seeded: a hand-entered field, an org field
+    that differs from the prefill, or an edit by someone other than whoever
+    created it."""
+    if any(getattr(profile, f) not in (None, "") for f in _HR_ENTERED_FIELDS):
+        return True
+    if target is not None:
+        from app.modules.hr.services.employees import prefill_new_profile
+
+        seed = HrEmployeeProfile(user_id=target.id)
+        prefill_new_profile(db, target, seed)
+        if any(getattr(profile, f) != getattr(seed, f) for f in ("department_id", "designation_id", "branch_id")):
+            return True
+    if profile.updated_by_id and profile.updated_by_id != profile.created_by_id:
+        return True
+    return False
+
+
+def _get_event(db: Session, event_id: int, user: User | None = None) -> HrLifecycleEvent:
     ev = db.get(HrLifecycleEvent, event_id)
     if not ev:
         raise HTTPException(status_code=404, detail=f"Lifecycle event #{event_id} doesn't exist — it may have been removed. Go back to HR > Lifecycle and open it from the list.")
+    if user is not None:
+        ensure_in_scope(db, user, ev)  # HR data access (Organization › Role & Permissions)
     return ev
 
 
@@ -102,7 +173,7 @@ def _lookup_names(db: Session, events: list[HrLifecycleEvent]) -> dict[str, dict
 
 def _event_response(db: Session, ev: HrLifecycleEvent, user: User, *, with_items: bool, names: dict | None = None) -> HrLifecycleEventResponse:
     names = names or _lookup_names(db, [ev])
-    hr = is_hr(user)
+    hr = is_hr_for(user, "lifecycle")
     resp = HrLifecycleEventResponse.model_validate(ev)
     u, n = names["users"], names
     resp.user_name = u.get(ev.user_id)
@@ -130,7 +201,8 @@ def _event_response(db: Session, ev: HrLifecycleEvent, user: User, *, with_items
         item_user_ids.discard(None)
         item_names = {x.id: (x.name or x.email) for x in db.query(User).filter(User.id.in_(item_user_ids)).all()} if item_user_ids else {}
         event_open = ev.status in OPEN_STATUSES
-        resp.items = [_item_response(i, item_names, user, hr, event_open) for i in ev.items]
+        item_hr = hr and can_feature(user, "hr", "lifecycle", "checklist", "edit")
+        resp.items = [_item_response(i, item_names, user, item_hr, event_open) for i in ev.items]
     resp.is_hr_view = hr
     if not hr:
         # Task owners outside HR see the checklist, not the HR case notes.
@@ -149,7 +221,7 @@ def _event_response(db: Session, ev: HrLifecycleEvent, user: User, *, with_items
 async def lifecycle_meta(
     include_user_id: int | None = None,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_hr),
+    _user: User = Depends(require_hr_app),  # also used by Masters › Checklist Templates
 ):
     """Enumerations plus the lookup lists the lifecycle forms need. Pickers
     list active users only; `include_user_id` adds one more (e.g. an exited
@@ -190,7 +262,7 @@ async def lifecycle_meta(
 async def my_checklist_tasks(
     status_filter: str | None = Query("pending", alias="status"),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_view),
 ):
     """Checklist items assigned to me on open lifecycle events."""
     q = (
@@ -217,8 +289,8 @@ async def my_checklist_tasks(
 
 @router.get("/events/counts")
 async def lifecycle_counts(db: Session = Depends(get_db), _user: User = Depends(require_hr)):
-    by_type = dict(db.query(HrLifecycleEvent.event_type, func.count()).filter(HrLifecycleEvent.status.in_(OPEN_STATUSES)).group_by(HrLifecycleEvent.event_type).all())
-    by_status = dict(db.query(HrLifecycleEvent.status, func.count()).group_by(HrLifecycleEvent.status).all())
+    by_type = dict(apply_scope(db.query(HrLifecycleEvent.event_type, func.count()), _user, HrLifecycleEvent).filter(HrLifecycleEvent.status.in_(OPEN_STATUSES)).group_by(HrLifecycleEvent.event_type).all())
+    by_status = dict(apply_scope(db.query(HrLifecycleEvent.status, func.count()), _user, HrLifecycleEvent).group_by(HrLifecycleEvent.status).all())
     return {
         "open_by_type": {t: by_type.get(t, 0) for t in LIFECYCLE_EVENT_TYPES},
         "by_status": {s: by_status.get(s, 0) for s in LIFECYCLE_STATUSES},
@@ -239,7 +311,7 @@ async def list_events(
 ):
     _validate_choice(event_type, LIFECYCLE_EVENT_TYPES, "event type")
     _validate_choice(status_filter, LIFECYCLE_STATUSES, "status")
-    query = db.query(HrLifecycleEvent)
+    query = apply_scope(db.query(HrLifecycleEvent), user, HrLifecycleEvent)
     if event_type:
         query = query.filter(HrLifecycleEvent.event_type == event_type)
     if status_filter:
@@ -263,10 +335,10 @@ async def list_events(
 
 
 @router.get("/users/{user_id}/events", response_model=list[HrLifecycleEventResponse])
-async def list_user_events(user_id: int, db: Session = Depends(get_db), user: User = Depends(require_hr)):
+async def list_user_events(user_id: int, db: Session = Depends(get_db), user: User = Depends(require_hr_lifecycle_read)):
     """Lifecycle history of one employee (employee detail > Lifecycle tab)."""
     events = (
-        db.query(HrLifecycleEvent).filter(HrLifecycleEvent.user_id == user_id)
+        apply_scope(db.query(HrLifecycleEvent), user, HrLifecycleEvent).filter(HrLifecycleEvent.user_id == user_id)
         .order_by(HrLifecycleEvent.created_at.desc(), HrLifecycleEvent.id.desc()).all()
     )
     names = _lookup_names(db, events) if events else None
@@ -274,7 +346,7 @@ async def list_user_events(user_id: int, db: Session = Depends(get_db), user: Us
 
 
 @router.post("/events", response_model=HrLifecycleEventResponse)
-async def create_event(payload: HrLifecycleEventCreate, db: Session = Depends(get_db), user: User = Depends(require_hr)):
+async def create_event(payload: HrLifecycleEventCreate, db: Session = Depends(get_db), user: User = Depends(require_hr_create)):
     _validate_choice(payload.event_type, LIFECYCLE_EVENT_TYPES, "event type")
     _validate_choice(payload.exit_type, EXIT_TYPES, "exit type")
     if payload.status not in (None, "draft", "in_progress"):
@@ -287,6 +359,10 @@ async def create_event(payload: HrLifecycleEventCreate, db: Session = Depends(ge
             raise HTTPException(status_code=400, detail=f"User #{payload.user_id} doesn't exist. Pick the employee from the list again.")
         if subject.id == user.id:
             raise HTTPException(status_code=403, detail="You can't raise a lifecycle event about yourself. Ask another HR user to raise it.")
+        # HR data access: the creator becomes an owner of the event (created_by_id),
+        # so without this an HR user could raise — and later complete — an exit
+        # or transfer for an employee outside their scope.
+        _hr_scope.ensure_employee_in_scope(db, user, subject)
     if payload.event_type == "joining":
         if not subject and not (payload.candidate_name or "").strip():
             raise HTTPException(status_code=400, detail="Enter the new joiner's name (and email, so the portal user can be linked later), or pick an existing portal user.")
@@ -301,7 +377,7 @@ async def create_event(payload: HrLifecycleEventCreate, db: Session = Depends(ge
             raise HTTPException(status_code=409, detail=f"{svc.user_label(subject)} has already exited. To bring them back, raise a joining event (rehire).")
         dup = db.query(HrLifecycleEvent).filter(
             HrLifecycleEvent.user_id == subject.id, HrLifecycleEvent.event_type == payload.event_type,
-            HrLifecycleEvent.status.in_(OPEN_STATUSES),
+            HrLifecycleEvent.status.in_(OPEN_STATUSES + ("scheduled",)),
         ).first()
         if dup:
             raise HTTPException(status_code=409, detail=f"{svc.user_label(subject)} already has an open {payload.event_type} event ({dup.event_no}). Finish or cancel that one first.")
@@ -340,9 +416,11 @@ async def create_event(payload: HrLifecycleEventCreate, db: Session = Depends(ge
     if payload.event_type == "exit" and subject:
         # Serving notice from here on — HR screens show it, P2P etc. don't care.
         profile = svc.get_profile(db, subject.id)
-        if profile and profile.employment_status in ("active", "probation"):
+        if profile and profile.employment_status == "active":
             profile.employment_status = "notice"
             profile.updated_by_id = user.id
+    if payload.event_type == "joining" and subject:
+        _ensure_onboarding_profile(db, subject, user)
     if ev.status == "in_progress":
         svc.notify_item_owners(db, ev, items, user.id)
     db.commit()
@@ -353,7 +431,9 @@ async def create_event(payload: HrLifecycleEventCreate, db: Session = Depends(ge
 @router.get("/events/{event_id}", response_model=HrLifecycleEventResponse)
 async def get_event(event_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     ev = _get_event(db, event_id)
-    if not is_hr(user) and not _is_owner_of_any(db, ev, user):
+    if is_hr_for(user, ("lifecycle", "employees")) and not _is_owner_of_any(db, ev, user):
+        ensure_in_scope(db, user, ev)
+    if not is_hr_for(user, ("lifecycle", "employees")) and not _is_owner_of_any(db, ev, user):
         raise HTTPException(
             status_code=403,
             detail="You can only open lifecycle events you have a checklist task on. HR & Administration access is needed to see the rest.",
@@ -362,8 +442,8 @@ async def get_event(event_id: int, db: Session = Depends(get_db), user: User = D
 
 
 @router.patch("/events/{event_id}", response_model=HrLifecycleEventResponse)
-async def update_event(event_id: int, payload: HrLifecycleEventUpdate, db: Session = Depends(get_db), user: User = Depends(require_hr)):
-    ev = _get_event(db, event_id)
+async def update_event(event_id: int, payload: HrLifecycleEventUpdate, db: Session = Depends(get_db), user: User = Depends(require_hr_edit)):
+    ev = _get_event(db, event_id, user)
     _ensure_open(ev, "edited")
     updates = payload.model_dump(exclude_unset=True)
     if "status" in updates and updates["status"] not in ("draft", "in_progress"):
@@ -395,20 +475,44 @@ async def update_event(event_id: int, payload: HrLifecycleEventUpdate, db: Sessi
 
 
 @router.post("/events/{event_id}/cancel", response_model=HrLifecycleEventResponse)
-async def cancel_event(event_id: int, payload: HrLifecycleEventCancelPayload, db: Session = Depends(get_db), user: User = Depends(require_hr)):
-    ev = _get_event(db, event_id)
-    _ensure_open(ev, "cancelled")
+async def cancel_event(event_id: int, payload: HrLifecycleEventCancelPayload, db: Session = Depends(get_db), user: User = Depends(require_hr_edit)):
+    ev = _get_event(db, event_id, user)
+    if ev.status != "scheduled":  # a scheduled (future-dated) move can be withdrawn before its date
+        _ensure_open(ev, "cancelled")
     ev.status = "cancelled"
     ev.cancelled_reason = payload.reason.strip()
+    restored = ""
     if ev.event_type == "exit" and ev.user_id:
-        # Exit withdrawn — take them off notice again.
+        # Exit withdrawn — take them off notice again. Probation status is
+        # its own field, so someone on probation stays on probation.
         profile = svc.get_profile(db, ev.user_id)
         if profile and profile.employment_status == "notice":
             profile.employment_status = "active"
             profile.updated_by_id = user.id
+            restored = f"; employee status restored to '{profile.employment_status}'"
+    if ev.event_type == "joining" and ev.user_id:
+        # Joining withdrawn — drop the 'onboarding' profile it created, unless
+        # another open joining needs it or HR already filled data into it.
+        profile = svc.get_profile(db, ev.user_id)
+        other_joining = db.query(HrLifecycleEvent.id).filter(
+            HrLifecycleEvent.event_type == "joining", HrLifecycleEvent.user_id == ev.user_id,
+            HrLifecycleEvent.status.in_(OPEN_STATUSES), HrLifecycleEvent.id != ev.id,
+        ).first()
+        if profile and profile.employment_status == "onboarding" and not other_joining:
+            filled = _onboarding_profile_has_hr_data(db, profile, db.get(User, ev.user_id))
+            if filled:
+                note = (
+                    f"Joining {ev.event_no} was cancelled; the onboarding HR profile was kept because it already has "
+                    "data — edit or delete it in HR > Employees."
+                )
+                ev.remarks = f"{ev.remarks}\n{note}" if ev.remarks else note
+                restored = "; onboarding HR profile kept (it has data)"
+            else:
+                db.delete(profile)
+                restored = "; empty onboarding HR profile removed"
     record_audit(
         db, entity_type=svc.ENTITY_TYPE, entity_id=ev.id, action="cancelled", module_key=svc.MODULE_KEY,
-        summary=f"{ev.event_no} cancelled by {svc.user_label(user)}: {ev.cancelled_reason}", user_id=user.id,
+        summary=f"{ev.event_no} cancelled by {svc.user_label(user)}: {ev.cancelled_reason}{restored}", user_id=user.id,
     )
     db.commit()
     db.refresh(ev)
@@ -416,10 +520,10 @@ async def cancel_event(event_id: int, payload: HrLifecycleEventCancelPayload, db
 
 
 @router.post("/events/{event_id}/link-user", response_model=HrLifecycleEventResponse)
-async def link_user(event_id: int, payload: HrLifecycleEventLinkUserPayload, db: Session = Depends(get_db), user: User = Depends(require_hr)):
+async def link_user(event_id: int, payload: HrLifecycleEventLinkUserPayload, db: Session = Depends(get_db), user: User = Depends(require_hr_edit)):
     """Attach the portal user to a joining that was started from a candidate
     name/email, once their Microsoft account exists."""
-    ev = _get_event(db, event_id)
+    ev = _get_event(db, event_id, user)
     _ensure_open(ev, "linked")
     if ev.event_type != "joining":
         raise HTTPException(status_code=400, detail="Only a joining event can be linked to a portal user — other events are always raised for an existing employee.")
@@ -442,6 +546,7 @@ async def link_user(event_id: int, payload: HrLifecycleEventLinkUserPayload, db:
             )
     if target.id == user.id:
         raise HTTPException(status_code=403, detail="You can't link yourself to a joining event. Ask another HR user.")
+    _hr_scope.ensure_employee_in_scope(db, user, target)  # HR data access
     other = db.query(HrLifecycleEvent).filter(
         HrLifecycleEvent.event_type == "joining", HrLifecycleEvent.user_id == target.id,
         HrLifecycleEvent.status.in_(OPEN_STATUSES), HrLifecycleEvent.id != ev.id,
@@ -457,6 +562,7 @@ async def link_user(event_id: int, payload: HrLifecycleEventLinkUserPayload, db:
         ev.candidate_name = target.name
     ev.candidate_email = target.email.lower() if target.email else ev.candidate_email
     svc.snapshot_from_fields(db, ev, target)
+    _ensure_onboarding_profile(db, target, user)
     record_audit(
         db, entity_type=svc.ENTITY_TYPE, entity_id=ev.id, action="linked", module_key=svc.MODULE_KEY,
         summary=f"{ev.event_no} linked to portal user {svc.user_label(target)} ({target.email})", user_id=user.id,
@@ -471,13 +577,13 @@ async def link_user(event_id: int, payload: HrLifecycleEventLinkUserPayload, db:
 async def event_impact(event_id: int, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
     """Preview of everything a completion would have to reassign, cancel or
     block on — shown BEFORE the exit (or move) is completed."""
-    ev = _get_event(db, event_id)
+    ev = _get_event(db, event_id, _user)
     return svc.compute_impact(db, ev)
 
 
 @router.post("/events/{event_id}/complete", response_model=HrLifecycleEventResponse)
-async def complete_event(event_id: int, payload: HrLifecycleEventCompletePayload, db: Session = Depends(get_db), user: User = Depends(require_hr)):
-    ev = _get_event(db, event_id)
+async def complete_event(event_id: int, payload: HrLifecycleEventCompletePayload, db: Session = Depends(get_db), user: User = Depends(require_hr_approve)):
+    ev = _get_event(db, event_id, user)
     try:
         svc.complete_event(db, ev, payload, user)
         db.commit()
@@ -491,12 +597,12 @@ async def complete_event(event_id: int, payload: HrLifecycleEventCompletePayload
 # ── Checklist items ─────────────────────────────────────────────────────
 
 @router.post("/events/{event_id}/items", response_model=HrChecklistItemResponse)
-async def add_item(event_id: int, payload: HrChecklistItemCreate, db: Session = Depends(get_db), user: User = Depends(require_hr)):
-    ev = _get_event(db, event_id)
+async def add_item(event_id: int, payload: HrChecklistItemCreate, db: Session = Depends(get_db), user: User = Depends(require_checklist_edit)):
+    ev = _get_event(db, event_id, user)
     _ensure_open(ev, "given new checklist items")
     _validate_choice(payload.category, CHECKLIST_CATEGORIES, "category")
     if payload.owner_user_id:
-        svc.load_active_user(db, payload.owner_user_id, "task owner")
+        assignee_rules.ensure_allowed(db, user, OWNER_RULE_KEY, svc.load_active_user(db, payload.owner_user_id, "task owner"))
     sort_order = payload.sort_order if payload.sort_order is not None else (max((i.sort_order for i in ev.items), default=0) + 10)
     item = HrChecklistItem(
         category=payload.category, title=payload.title.strip(), owner_user_id=payload.owner_user_id,
@@ -519,9 +625,13 @@ async def update_item(item_id: int, payload: HrChecklistItemUpdate, db: Session 
         raise HTTPException(status_code=404, detail=f"Checklist item #{item_id} doesn't exist — it may have been removed. Reload the event.")
     ev = item.event
     _ensure_open(ev, "changed")
-    hr = is_hr(user)
+    hr = can_feature(user, "hr", "lifecycle", "checklist", "edit")  # HR managing the checklist
     updates = payload.model_dump(exclude_unset=True)
+    if hr and item.owner_user_id != user.id:
+        ensure_in_scope(db, user, ev)  # HR data access on the parent event (task owners keep their own line)
     if not hr:
+        # A task owner ticking off their own checklist line is self-service.
+        ensure_tab_action(user, "hr", "me", "edit")
         if item.owner_user_id != user.id:
             raise HTTPException(status_code=403, detail="Only the task owner or HR can update this checklist item. Ask HR to reassign it to you if it's yours.")
         extra = set(updates) - {"status", "remarks"}
@@ -534,7 +644,9 @@ async def update_item(item_id: int, payload: HrChecklistItemUpdate, db: Session 
     if updates.get("status") == "not_applicable" and not (updates.get("remarks") or item.remarks):
         raise HTTPException(status_code=400, detail="Say why this item doesn't apply — add a remark when marking it Not applicable.")
     if updates.get("owner_user_id"):
-        svc.load_active_user(db, updates["owner_user_id"], "task owner")
+        owner = svc.load_active_user(db, updates["owner_user_id"], "task owner")
+        if owner.id != item.owner_user_id:
+            assignee_rules.ensure_allowed(db, user, OWNER_RULE_KEY, owner)
     old_owner = item.owner_user_id
     if "title" in updates and updates["title"]:
         updates["title"] = updates["title"].strip()
@@ -557,10 +669,11 @@ async def update_item(item_id: int, payload: HrChecklistItemUpdate, db: Session 
 
 
 @router.delete("/items/{item_id}")
-async def delete_item(item_id: int, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def delete_item(item_id: int, db: Session = Depends(get_db), _user: User = Depends(require_checklist_edit)):
     item = db.get(HrChecklistItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail=f"Checklist item #{item_id} doesn't exist — it may already have been removed. Reload the event.")
+    ensure_in_scope(db, _user, item.event)  # HR data access on the parent event
     _ensure_open(item.event, "changed")
     if item.status == "done":
         raise HTTPException(status_code=409, detail="This item is already done, so it stays on record. Mark it Not applicable instead if it was a mistake.")
@@ -584,7 +697,7 @@ async def list_templates(
     event_type: str | None = None,
     include_inactive: bool = True,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_hr),
+    _user: User = Depends(require_hr_templates_read),
 ):
     _validate_choice(event_type, LIFECYCLE_EVENT_TYPES, "event type")
     q = db.query(HrChecklistTemplate)
@@ -597,7 +710,7 @@ async def list_templates(
 
 
 @router.post("/templates", response_model=HrChecklistTemplateResponse)
-async def create_template(payload: HrChecklistTemplateCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def create_template(payload: HrChecklistTemplateCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr_templates_create)):
     _validate_choice(payload.event_type, LIFECYCLE_EVENT_TYPES, "event type")
     _validate_choice(payload.category, CHECKLIST_CATEGORIES, "category")
     if payload.default_owner_user_id:
@@ -622,7 +735,7 @@ async def create_template(payload: HrChecklistTemplateCreate, db: Session = Depe
 
 
 @router.patch("/templates/{template_id}", response_model=HrChecklistTemplateResponse)
-async def update_template(template_id: int, payload: HrChecklistTemplateUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def update_template(template_id: int, payload: HrChecklistTemplateUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr_templates_edit)):
     t = db.get(HrChecklistTemplate, template_id)
     if not t:
         raise HTTPException(status_code=404, detail=f"Checklist template #{template_id} doesn't exist — it may have been deleted. Reload the list.")
@@ -647,12 +760,13 @@ async def update_template(template_id: int, payload: HrChecklistTemplateUpdate, 
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: int, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def delete_template(template_id: int, db: Session = Depends(get_db), _user: User = Depends(require_hr_templates)):
     """Delete a template line. Checklist items already copied from it stay
     on their events (template_id is set to NULL)."""
     t = db.get(HrChecklistTemplate, template_id)
     if not t:
         raise HTTPException(status_code=404, detail=f"Checklist template #{template_id} doesn't exist — it may already have been deleted. Reload the list.")
+    ensure_can_delete(_user, t, "hr", "masters", what="checklist template")  # no creator column: 'delete' decides
     db.query(HrChecklistItem).filter(HrChecklistItem.template_id == t.id).update({HrChecklistItem.template_id: None}, synchronize_session=False)
     db.delete(t)
     db.commit()

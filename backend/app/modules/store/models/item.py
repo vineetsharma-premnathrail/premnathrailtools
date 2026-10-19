@@ -3,6 +3,7 @@ from sqlalchemy import String, Integer, Text, Float, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
+from sqlalchemy import Numeric
 
 # What the item is used for — drives which downstream doc types (Purchase,
 # Manufacturing BOM) it can be picked into. Free text, not an enum column in
@@ -100,7 +101,28 @@ class StoreItem(Base, TimestampMixin):
     safety_stock: Mapped[float | None] = mapped_column(Float, nullable=True)
     reorder_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
     standard_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Read-only mirror of store_item_valuations.avg_rate (foundation plan §3.4):
+    # written by services/valuation.py with a Core UPDATE (no audit row, no
+    # updated_at bump) and no longer accepted by the item create/update API.
     moving_average_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Purchase lead time in CALENDAR days, PO → goods in store (supplier days).
+    # The one lead-time column Production MRP and Engineering long-lead reuse.
+    lead_time_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Code of this item in the v3 sheet / Tally (searchable, unique when set).
+    legacy_code: Mapped[str | None] = mapped_column(String(50), nullable=True, unique=True, index=True)
+    # Smallest quantity the vendor sells (in the item UOM) — MRP rounds up to it.
+    min_order_qty: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Tax: GST rate % from the Finance GST rate master (with hsn_sac_code
+    # above). Defaults onto PO / invoice lines.
+    gst_rate: Mapped[float | None] = mapped_column(Numeric(7, 3, asdecimal=False), nullable=True)
+    # Preferred vendor from the shared vendor master. preferred_supplier (text)
+    # is the legacy free-text field, kept for display only.
+    preferred_vendor_id: Mapped[int | None] = mapped_column(ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True)
+    # Ledger overrides. Empty = the category's ledger, then Finance's default
+    # purchase / sales ledger (services/item_accounts.py). SAP: valuation class.
+    purchase_gl_account_id: Mapped[int | None] = mapped_column(ForeignKey("gl_accounts.id"), nullable=True)
+    sales_gl_account_id: Mapped[int | None] = mapped_column(ForeignKey("gl_accounts.id"), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     # Item photo in SharePoint (see routes/item_photo.py).

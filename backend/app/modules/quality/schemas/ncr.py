@@ -56,7 +56,7 @@ class QualityNcrProposePayload(BaseModel):
 
 
 class QualityNcrApprovePayload(BaseModel):
-    role: str
+    role: str | None = None  # None = the stage currently waiting
     approve: bool = True
     remarks: str | None = None
 
@@ -145,6 +145,13 @@ class QualityNcrResponse(BaseModel):
     disposition_label: str | None = None
     required_roles: list[str] = []
     pending_roles: list[str] = []
-    cost_of_non_quality: float = 0
+    cost_of_non_quality: float | None = 0  # None = hidden (Quality › NCR › costs switch)
     capa_ids: list[int] = []
+    capas: list[dict] = []
+    closure_problem: str | None = None
+    # Scrap value above which the Partner stage of Organization › Approval
+    # Workflows › NCR disposition applies (None = no such condition).
     scrap_value_limit: float | None = None
+    # True for a disposition proposed before the central approval engine —
+    # it finishes on the old per-role buttons.
+    legacy_approval: bool = False

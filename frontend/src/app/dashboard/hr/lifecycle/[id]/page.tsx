@@ -3,21 +3,27 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useProtectedPage } from '@/hooks/useAuth'
+import { canActOnTab } from '@/lib/tabAccess'
+import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrLifecycleEvent, HrLifecycleMeta } from '@/types'
-import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { dangerBtnStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import PromptDialog from '@/components/erp/PromptDialog'
+import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import HrNav from '@/components/hr/HrNav'
 import EventFields, { EventFormState, EXIT_TYPE_LABELS, eventToForm, formToPayload } from '@/components/hr/lifecycle/EventFields'
 import ChecklistPanel from '@/components/hr/lifecycle/ChecklistPanel'
 import CompletionPanel from '@/components/hr/lifecycle/CompletionPanel'
+import ScheduledEventPanel from '@/components/hr/lifecycle/ScheduledEventPanel'
+import { recordPath, useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 const TYPE_LABELS: Record<string, string> = { joining: 'Joining', confirmation: 'Confirmation', transfer: 'Transfer', promotion: 'Promotion', exit: 'Exit' }
 const TYPE_HEX: Record<string, string> = { joining: '#16A34A', confirmation: '#0891B2', transfer: '#2563EB', promotion: '#7C3AED', exit: '#DC2626' }
-const STATUS_LABELS: Record<string, string> = { draft: 'Draft', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' }
-const STATUS_HEX: Record<string, string> = { draft: '#78716C', in_progress: '#F59E0B', completed: '#16A34A', cancelled: '#DC2626' }
+const STATUS_LABELS: Record<string, string> = { draft: 'Draft', in_progress: 'In Progress', scheduled: 'Scheduled', completed: 'Completed', cancelled: 'Cancelled' }
+const STATUS_HEX: Record<string, string> = { draft: '#78716C', in_progress: '#F59E0B', scheduled: '#7C3AED', completed: '#16A34A', cancelled: '#94A3B8' }
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -40,8 +46,15 @@ export default function HrLifecycleDetailPage() {
   const { isAuthorized, isLoading, user } = useProtectedPage()
   const router = useRouter()
   const params = useParams<{ id: string }>()
-  const id = Number(params?.id)
-  const isHr = !!user?.apps?.includes('hr')
+  const { id: idResolved, error: linkError } = useRecordId(params?.id)
+  const id = idResolved ?? 0
+  // HR-staff view only with the hr app AND the Lifecycle tab in the Permission Matrix.
+  const isHr = canActOnTab('hr', 'lifecycle', user)
+  const { can, canFeature } = useCan()
+  // Changing the event / its checklist = 'edit'; completing it (applying the
+  // promotion / transfer / exit) = 'approve' on HR › Lifecycle.
+  const canEditLc = isHr && can('hr', 'lifecycle', 'edit')
+  const canCompleteLc = isHr && can('hr', 'lifecycle', 'approve')
 
   const [event, setEvent] = useState<HrLifecycleEvent | null>(null)
   const [meta, setMeta] = useState<HrLifecycleMeta | null>(null)
@@ -108,6 +121,8 @@ export default function HrLifecycleDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HrNav /><InvalidRecordLink message={linkError} listHref={backHref} listLabel="Back" /></div>)
+  if (!id) return <div><HrNav /></div>
 
   const summary = event?.completion_summary
   const move = (label: string, from: string | null, to: string | null) => (
@@ -123,34 +138,37 @@ export default function HrLifecycleDetailPage() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             HR &amp; Administration · Lifecycle
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div data-tour="hr-lcd-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{event ? event.event_no : 'Lifecycle event'}</h1>
-            {event && <span style={badge(TYPE_HEX[event.event_type])}>{TYPE_LABELS[event.event_type]}</span>}
-            {event && <span style={badge(STATUS_HEX[event.status])}>{STATUS_LABELS[event.status]}</span>}
+            {event && <span data-tour="hr-lcd-type-badge" style={badge(TYPE_HEX[event.event_type])}>{TYPE_LABELS[event.event_type]}</span>}
+            {event && <span data-tour="hr-lcd-status-badge" style={badge(STATUS_HEX[event.status])}>{STATUS_LABELS[event.status]}</span>}
           </div>
           {event && (
             <p style={{ fontSize: 13.5, color: TEXT.muted, margin: '4px 0 0' }}>
               <b style={{ color: TEXT.heading }}>{event.subject_name || '—'}</b>
               {event.employee_code ? ` · ${event.employee_code}` : ''}{event.subject_email ? ` · ${event.subject_email}` : ''}
               {isHr && event.user_id && (
-                <span onClick={() => router.push(`/dashboard/hr/employees/${event.user_id}`)} style={{ marginLeft: 8, color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>Employee record</span>
+                <span data-tour="hr-lcd-employee-link" onClick={() => router.push(recordPath('/dashboard/hr/employees', event, 'user_id'))} style={{ marginLeft: 8, color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>Employee record</span>
               )}
             </p>
           )}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {isHr && event && open && !editing && (
+          {canEditLc && event && open && !editing && (
             <>
-              {event.status === 'draft' && <button type="button" onClick={start} style={primaryBtnStyle}>Start checklist</button>}
-              <button type="button" onClick={() => { setForm(eventToForm(event)); setEditing(true) }} style={secondaryBtnStyle}>Edit details</button>
-              <button type="button" onClick={() => setCancelOpen(true)} style={dangerBtnStyle}>Cancel event</button>
+              {event.status === 'draft' && <button type="button" data-tour="hr-lcd-start-btn" onClick={start} style={primaryBtnStyle}>Start checklist</button>}
+              <button type="button" data-tour="hr-lcd-edit-btn" onClick={() => { setForm(eventToForm(event)); setEditing(true) }} style={secondaryBtnStyle}>Edit details</button>
+              <button type="button" data-tour="hr-lcd-cancel-btn" onClick={() => setCancelOpen(true)} style={dangerBtnStyle}>Cancel event</button>
             </>
           )}
-          <button onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>← Back</button>
+          {canEditLc && event?.status === 'scheduled' && (
+            <button type="button" onClick={() => setCancelOpen(true)} style={dangerBtnStyle}>Cancel event</button>
+          )}
+          <button data-tour="hr-lcd-back-btn" onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>← Back</button>
         </div>
       </div>
 
-      {error.length > 0 && <div style={errorBox}>{error.join(' ')}</div>}
+      {!editing && error.length > 0 && <div style={errorBox}>{error.join(' ')}</div>}
 
       {loading && <div style={sectionStyle}><p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p></div>}
 
@@ -164,7 +182,7 @@ export default function HrLifecycleDetailPage() {
           )}
 
           {event.status === 'completed' && (
-            <div style={{ ...sectionStyle, border: '1px solid rgba(22,163,74,0.3)' }}>
+            <div data-tour="hr-lcd-completed-summary" style={{ ...sectionStyle, border: '1px solid rgba(22,163,74,0.3)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
                 <h3 style={{ fontSize: 15, fontWeight: 700, color: '#15803d', margin: 0 }}>Completed</h3>
                 <span style={{ fontSize: 12, color: TEXT.muted }}>
@@ -191,29 +209,9 @@ export default function HrLifecycleDetailPage() {
             </div>
           )}
 
-          <div style={sectionStyle}>
+          <div data-tour="hr-lcd-details" style={sectionStyle}>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Details</h3>
-            {editing && form && meta ? (
-              <>
-                {event.event_type === 'joining' && !event.user_id && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-                    <div style={{ flex: '1 1 240px', maxWidth: 340 }}>
-                      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, marginBottom: 6 }}>Full name</label>
-                      <input style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, fontSize: 13.5, boxSizing: 'border-box' }} value={form.candidate_name} onChange={(e) => setForm({ ...form, candidate_name: e.target.value })} />
-                    </div>
-                    <div style={{ flex: '1 1 260px', maxWidth: 340 }}>
-                      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, marginBottom: 6 }}>Work email</label>
-                      <input style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, fontSize: 13.5, boxSizing: 'border-box' }} value={form.candidate_email} onChange={(e) => setForm({ ...form, candidate_email: e.target.value })} />
-                    </div>
-                  </div>
-                )}
-                <EventFields type={event.event_type} form={form} setForm={setForm} meta={meta} subjectUserId={event.user_id} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-                  <button type="button" onClick={() => setEditing(false)} style={secondaryBtnStyle}>Discard</button>
-                  <button type="button" disabled={saving} onClick={saveEdit} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save changes'}</button>
-                </div>
-              </>
-            ) : (
+            {(
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px 20px' }}>
                 {event.event_type === 'exit' ? (
                   <>
@@ -248,17 +246,52 @@ export default function HrLifecycleDetailPage() {
             )}
           </div>
 
-          <ChecklistPanel event={event} meta={meta} isHr={isHr} onChanged={load} />
+          <ChecklistPanel event={event} meta={meta} isHr={canEditLc && canFeature('hr', 'lifecycle', 'checklist', 'edit')} onChanged={load} />
 
-          {isHr && event.status === 'in_progress' && (
+          {event.status === 'scheduled' && (
+            <ScheduledEventPanel eventId={event.id} eventNo={event.event_no} effectiveDate={event.effective_date ?? null} canApply={canCompleteLc} onApplied={load} />
+          )}
+          {canCompleteLc && event.status === 'in_progress' && (
             <CompletionPanel key={`${event.id}-${event.updated_at}`} event={event} meta={meta} onDone={(ev) => { setEvent(ev); setError([]) }} />
           )}
           {isHr && event.status === 'draft' && (
-            <div style={sectionStyle}>
+            <div data-tour="hr-lcd-draft-note" style={sectionStyle}>
               <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>This event is a draft — checklist owners haven&apos;t been notified yet. Use <b>Start checklist</b> when it&apos;s ready.</p>
             </div>
           )}
         </>
+      )}
+
+      {editing && form && meta && event && (
+        <FormSheet width={760} tour="hr-lcd-edit-sheet" icon="edit" iconColor={TYPE_HEX[event.event_type] || SHEET.BLUE}
+          title={`Edit ${TYPE_LABELS[event.event_type] || 'lifecycle'} event`}
+          subtitle="Changes apply to the event; the checklist already raised is kept."
+          onClose={() => setEditing(false)} busy={saving}
+          footer={<>
+            <button type="button" data-tour="hr-lcd-edit-discard-btn" onClick={() => setEditing(false)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Discard</button>
+            <button type="button" data-tour="hr-lcd-edit-save-btn" disabled={saving} onClick={saveEdit} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save changes'}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {error.length > 0 && <div style={errorBox}>{error.join(' ')}</div>}
+            {event.event_type === 'joining' && !event.user_id && (
+              <SheetSection icon="user" title="New Joiner">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                  <div data-tour="hr-lcd-edit-candidate-name" style={{ flex: '1 1 240px', maxWidth: 340 }}>
+                    <label style={sheetLabel}>Full name</label>
+                    <input style={sheetInput} value={form.candidate_name} onChange={(e) => setForm({ ...form, candidate_name: e.target.value })} />
+                  </div>
+                  <div data-tour="hr-lcd-edit-candidate-email" style={{ flex: '1 1 260px', maxWidth: 340 }}>
+                    <label style={sheetLabel}>Work email</label>
+                    <input style={sheetInput} value={form.candidate_email} onChange={(e) => setForm({ ...form, candidate_email: e.target.value })} />
+                  </div>
+                </div>
+              </SheetSection>
+            )}
+            <SheetSection icon="list" title="Details">
+              <EventFields type={event.event_type} form={form} setForm={setForm} meta={meta} subjectUserId={event.user_id} />
+            </SheetSection>
+          </div>
+        </FormSheet>
       )}
 
       <PromptDialog

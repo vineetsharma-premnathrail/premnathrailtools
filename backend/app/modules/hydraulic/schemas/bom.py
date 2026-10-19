@@ -26,8 +26,9 @@ class HydBomItemResponse(BaseModel):
     component_category: str | None = None
     manufacturer: str | None = None
     model_number: str | None = None
-    unit_cost: float = 0.0
-    line_cost: float = 0.0
+    # None = hidden (Hydraulic › BOM › Prices & costs).
+    unit_cost: float | None = 0.0
+    line_cost: float | None = 0.0
 
 
 class HydBomCreate(BaseModel):
@@ -75,4 +76,5 @@ class HydBomResponse(BaseModel):
     created_by_name: str | None = None
     released_by_name: str | None = None
     line_count: int = 0
-    total_cost: float = 0.0
+    total_cost: float | None = 0.0  # None = hidden (Prices & costs)
+    approval_request_id: int | None = None  # pending central approval request of the release

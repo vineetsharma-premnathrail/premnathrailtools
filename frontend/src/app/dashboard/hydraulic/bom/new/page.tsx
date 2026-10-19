@@ -4,42 +4,38 @@ import { Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
-import { TEXT } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import HydBomForm from '@/components/hydraulic/HydBomForm'
 
 function NewHydBomPageInner() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const systemId = searchParams.get('system_id') || ''
+  const systemRef = searchParams.get('system_id')
+  const { id: presetSystemId, error: linkError, loading: linkLoading } = useRecordId(systemRef)
+  const systemId = presetSystemId ? String(presetSystemId) : ''
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/bom" listLabel="Back to BOMs" /></div>)
+  if (linkLoading) return <div><HydraulicNav /></div>
 
+  const back = () => router.push(systemRef ? `/dashboard/hydraulic/systems/${systemRef}` : '/dashboard/hydraulic/bom')
   return (
-    <div>
-      <HydraulicNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Hydraulic &amp; Pneumatic
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New BOM</h1>
-        </div>
-        <button onClick={() => router.push(systemId ? `/dashboard/hydraulic/systems/${systemId}` : '/dashboard/hydraulic/bom')} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
-
-      <HydBomForm
-        defaultSystemId={systemId}
-        submitLabel="Create BOM"
-        onSubmit={async (payload) => {
-          const bom = await hydraulicApi.createBom(payload)
-          router.push(`/dashboard/hydraulic/bom/${bom.id}`)
-        }}
-      />
-    </div>
+    <HydBomForm
+      nav={<HydraulicNav />}
+      title="New BOM"
+      subtitle="Bill of material for a system or circuit — tag each line with the circuit symbol (P1, V3…)."
+      onBack={back}
+      onCancel={back}
+      defaultSystemId={systemId}
+      submitLabel="Create BOM"
+      onSubmit={async (payload) => {
+        const bom = await hydraulicApi.createBom(payload)
+        router.push(recordPath('/dashboard/hydraulic/bom', bom))
+      }}
+    />
   )
 }
 

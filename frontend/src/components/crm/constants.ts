@@ -5,11 +5,6 @@ export const RAILWAY_ZONES = [
   'North Western Railway', 'South Western Railway', 'Metro Railway Kolkata', 'Not Applicable', 'Other',
 ]
 
-export const DOC_CATEGORIES = [
-  'RFQ', 'Tender Notice', 'BOQ', 'Technical Specifications', 'Drawings', 'Cost Sheet',
-  'Quotation', 'Purchase Documents', 'Approval Documents', 'Other',
-]
-
 export const ACTIVITY_TYPES = ['Call', 'Email', 'Meet at Client/Site Office', 'Meet at Own Office']
 
 export const FOLLOW_UP_STATUSES = ['Open', 'Closed', 'Hold']
@@ -18,7 +13,7 @@ export const RELATED_MODULES = [
   { value: '', label: '— None —' },
   { value: 'inquiry', label: 'Inquiry' },
   { value: 'tender', label: 'Tender' },
-  { value: 'organization', label: 'Organization' },
+  { value: 'organization', label: 'Customer Organization' },
 ]
 
 export const ORG_TYPES = ['PSU', 'Govt Department', 'Railway', 'Private', 'Joint Venture', 'Other']
@@ -52,22 +47,44 @@ export const LEAD_SOURCES = [
 
 export const PRODUCT_CATEGORIES = ['Road Rail Vehicle', 'Rail Vehicle', 'Hydraulic System', 'Braking System', 'Spare Parts', 'Other']
 
-export const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
+export const PRIORITIES = ['High', 'Medium', 'Low']
+
+export const PRIORITY_MEANINGS: Record<string, string> = {
+  High: 'Important requirement, quick action needed',
+  Medium: 'Normal requirement',
+  Low: 'Can be handled later',
+}
+
+// Older records may still carry a retired value (e.g. 'Urgent') — keep it
+// selectable so opening such a record doesn't silently change it.
+export const priorityOptions = (current?: string | null) =>
+  current && !PRIORITIES.includes(current) ? [...PRIORITIES, current] : PRIORITIES
+
+export const priorityLabel = (p: string) => (PRIORITY_MEANINGS[p] ? `${p} — ${PRIORITY_MEANINGS[p]}` : p)
 
 export const INQUIRY_STATUSES = [
   'Requirement Received',
-  'Quotation Under Creation',
+  'R&D / Technical Review',
+  'Qualified',
   'Quotation Sent',
-  'Negotiation',
+  'Order Received',
+  'Under Production',
   'Closed - Ordered',
   'Closed - Not Ordered',
 ]
 
+// Older inquiries may still carry a retired status (e.g. 'Negotiation') — keep it
+// selectable so opening such a record doesn't silently show/save a different one.
+export const inquiryStatusOptions = (current?: string | null) =>
+  current && !INQUIRY_STATUSES.includes(current) ? [...INQUIRY_STATUSES, current] : INQUIRY_STATUSES
+
 export const INQUIRY_STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   'Requirement Received': { bg: 'rgba(37,99,235,0.1)', text: '#1d4ed8' },
-  'Quotation Under Creation': { bg: 'rgba(234,179,8,0.14)', text: '#a16207' },
+  'R&D / Technical Review': { bg: 'rgba(14,165,233,0.12)', text: '#0369a1' },
+  Qualified: { bg: 'rgba(234,179,8,0.14)', text: '#a16207' },
   'Quotation Sent': { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed' },
-  Negotiation: { bg: 'rgba(249,115,22,0.12)', text: '#c2410c' },
+  'Order Received': { bg: 'rgba(16,185,129,0.12)', text: '#047857' },
+  'Under Production': { bg: 'rgba(245,158,11,0.14)', text: '#b45309' },
   'Closed - Ordered': { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
   'Closed - Not Ordered': { bg: 'rgba(220,38,38,0.1)', text: '#b91c1c' },
 }
@@ -114,7 +131,7 @@ export const TENDER_STATUS_COLORS: Record<string, { bg: string; text: string }> 
   'Tender Submitted': { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed' },
   'Technical Evaluation': { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed' },
   'Commercial Evaluation': { bg: 'rgba(139,92,246,0.12)', text: '#7c3aed' },
-  Negotiation: { bg: 'rgba(249,115,22,0.12)', text: '#c2410c' },
+  Negotiation: { bg: 'rgba(245,158,11,0.14)', text: '#b45309' },
   'LOA / Order Received': { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
   'Closed – Ordered': { bg: 'rgba(34,197,94,0.12)', text: '#16a34a' },
   'Closed – Not Ordered': { bg: 'rgba(220,38,38,0.1)', text: '#b91c1c' },

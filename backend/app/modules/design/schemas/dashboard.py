@@ -11,8 +11,16 @@ class DesignLookupOption(BaseModel):
 
 class DesignTaskItem(BaseModel):
     """One row of "waiting on me" — a revision (kind review/approve/returned/
-    draft) or an ECN (kind ecn_approve/ecn_implement)."""
+    draft/release), a BOM revision (bom_review/bom_approve/bom_returned), an
+    ECR vote/decision, an ECN (ecn_approve/ecn_implement/ecn_acknowledge) or
+    a customer comment to address."""
     kind: str
+    bom_id: int | None = None
+    bom_number: str | None = None
+    ecr_id: int | None = None
+    ecr_number: str | None = None
+    submission_id: int | None = None
+    link: str | None = None
     document_id: int | None = None
     doc_number: str | None = None
     title: str
@@ -34,6 +42,14 @@ class DesignMyTasks(BaseModel):
     my_drafts: list[DesignTaskItem] = []
     ecns_to_approve: list[DesignTaskItem] = []
     ecns_to_implement: list[DesignTaskItem] = []
+    boms_to_review: list[DesignTaskItem] = []
+    boms_to_approve: list[DesignTaskItem] = []
+    boms_returned_to_me: list[DesignTaskItem] = []
+    ecrs_to_vote: list[DesignTaskItem] = []
+    ecrs_to_decide: list[DesignTaskItem] = []
+    ecns_to_acknowledge: list[DesignTaskItem] = []
+    to_release: list[DesignTaskItem] = []
+    customer_comments: list[DesignTaskItem] = []
 
 
 class DesignRecentRelease(BaseModel):
@@ -61,6 +77,21 @@ class DesignDashboard(BaseModel):
     my_tasks: list[DesignTaskItem] = []
     overdue: list[DesignTaskItem] = []
     recent_releases: list[DesignRecentRelease] = []
+    # Phase 2-4 additions
+    requests_waiting: int = 0
+    requests_overdue: int = 0
+    my_pm_tasks_due: int = 0
+    my_pm_tasks_overdue: int = 0
+    boms_in_workflow: int = 0
+    released_boms: int = 0
+    customer_pending: int = 0
+    customer_overdue: int = 0
+    oldest_customer_days: int = 0
+    customer_pending_list: list[dict] = []
+    open_ecrs: int = 0
+    ecns_awaiting_ack: int = 0
+    workload: list[dict] = []
+    my_role: str = "designer"
 
 
 class DesignCountRow(BaseModel):

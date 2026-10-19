@@ -4,7 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
-PM_DOCUMENT_TYPES = ("charter", "plan", "specification", "contract", "report", "other")
+PM_DOCUMENT_TYPES = ("drawing", "report", "certificate", "specification", "contract", "other")
 
 
 class PmProjectDocument(Base, TimestampMixin, SoftDeleteMixin):
@@ -19,6 +19,14 @@ class PmProjectDocument(Base, TimestampMixin, SoftDeleteMixin):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("pm_projects.id"), nullable=False, index=True)
+    # Set when the file is a milestone's handover evidence or a task's file;
+    # both still list under the project's Documents tab.
+    milestone_id: Mapped[int | None] = mapped_column(ForeignKey("pm_project_milestones.id"), nullable=True, index=True)
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("pm_project_tasks.id"), nullable=True, index=True)
+    # Set (with task_id) when the file is attached to one sub-task.
+    subtask_id: Mapped[int | None] = mapped_column(ForeignKey("pm_task_subtasks.id", ondelete="CASCADE"), nullable=True, index=True)
+    # Set when the file was sent in the milestone team chat.
+    message_id: Mapped[int | None] = mapped_column(ForeignKey("pm_milestone_messages.id"), nullable=True, index=True)
     doc_type: Mapped[str] = mapped_column(String(30), nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[str | None] = mapped_column(String(20), nullable=True)

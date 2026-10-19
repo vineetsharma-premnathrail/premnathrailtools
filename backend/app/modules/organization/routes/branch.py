@@ -1,12 +1,15 @@
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
+from sqlalchemy import func, or_, inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.base import Base
 from app.db.session import get_db
 from app.modules.main.models.user import User
-from app.modules.main.routes.users import require_admin
+from app.core.permissions import ensure_can_delete, require_feature_action, require_tab_action
+from app.core.permission_registry import can_feature, can_view_tab
 from app.modules.main.routes.auth import get_current_user
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.branch_address import BranchAddress
@@ -65,12 +68,39 @@ def _get_branch_or_404(branch_id: int, db: Session) -> Branch:
 
 
 def _branch_reader(user: User = Depends(get_current_user)) -> User:
-    """Reading the branch list: admins, plus Store users — a warehouse is
-    created under a branch, so the Warehouses form needs the list. Creating
-    or changing branches stays admin-only."""
-    if user.role == "admin" or "store" in user.get_apps():
+    """Reading the branch list: anyone with Organization › Branches 'View'
+    (admins included), plus Store users — a warehouse is created under a
+    branch, so the Warehouses form needs the list as a picker."""
+    # Users viewers need it too: a user's plant assignments pick a plant.
+    if (can_view_tab(user, "organization", "branches") or can_view_tab(user, "organization", "users")
+            or "store" in user.get_apps()):
         return user
-    raise HTTPException(status_code=403, detail="Only admins and Store users can view the branch list.")
+    raise HTTPException(
+        status_code=403,
+        detail="You don't have 'View' permission on Organization › Branches (and no Store access, which also "
+               "shows the plant list). Ask an admin to add it to one of your roles in Organization › Role & Permissions.",
+    )
+
+
+def _assignment_access(action: str):
+    """Plant user assignments are maintained from two screens — the Plant
+    pages (Branches › Plant › Users) and a user's Assignments tab (Users ›
+    User › Assignments) — so either feature opens them (admins always;
+    roles not customised for the tab follow its view / edit)."""
+
+    def _dependency(user: User = Depends(get_current_user)) -> User:
+        if (can_feature(user, "organization", "branches", "user_assignments", action)
+                or can_feature(user, "organization", "users", "assignments", action)):
+            return user
+        raise HTTPException(
+            status_code=403,
+            detail=f"You need '{action.capitalize()}' on Organization › Branches › Plant › Users "
+                   f"(organization:branches.user_assignments:{action}) or on Organization › Users › User › Assignments "
+                   f"(organization:users.assignments:{action}) to {'see' if action == 'view' else 'change'} plant user assignments. "
+                   "Ask an admin to add it to one of your roles in Organization › Role & Permissions.",
+        )
+
+    return _dependency
 
 
 @router.get("", response_model=list[BranchResponse])
@@ -86,7 +116,7 @@ async def list_branches(
 async def create_branch(
     payload: BranchCreate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_tab_action("organization", "branches", "create")),
 ):
     _validate_status(payload.status)
     if db.query(Branch).filter(Branch.code == payload.code).first():
@@ -102,7 +132,7 @@ async def create_branch(
 async def get_branch(
     branch_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_tab_action("organization", "branches", "view")),
 ):
     branch = _get_branch_or_404(branch_id, db)
     return _to_response(branch, db)
@@ -113,7 +143,7 @@ async def update_branch(
     branch_id: int,
     payload: BranchUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_tab_action("organization", "branches", "edit")),
 ):
     _validate_status(payload.status)
     branch = _get_branch_or_404(branch_id, db)
@@ -131,18 +161,118 @@ async def update_branch(
 async def delete_branch(
     branch_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(get_current_user),
 ):
+    """Hard-deletes a plant only while nothing uses it.
+
+    ERP standard: master data that has been used on transactions is never
+    hard-deleted — it is deactivated (status Inactive), so posted documents
+    keep a valid reference and the audit trail stays intact. The DB-level FK
+    error (translated to a 409 by the error handler) can't say WHICH records
+    use the plant, and SQLite (tests) doesn't enforce FKs at all, so every
+    table referencing branches.id is counted explicitly here (plus a
+    metadata walk that catches any FK to branches.id not listed)."""
+    # Imported lazily: these modules import organization models themselves.
+    from app.modules.electrical.models.job import ElectricalJob
+    from app.modules.hr.models.asset import HrAsset
+    from app.modules.hr.models.employee_profile import HrEmployeeProfile
+    from app.modules.hr.models.holiday import HrHoliday
+    from app.modules.hr.models.lifecycle import HrLifecycleEvent
+    from app.modules.hr.models.masters import HrShift
+    from app.modules.hr.models.visitor import HrVisitor
+    from app.modules.hydraulic.models.system import HydSystem
+    from app.modules.maintenance.models.asset import MaintenanceAsset
+    from app.modules.production.models.rrv_build import ProductionRrvBuild
+    from app.modules.production.models.work_order import ProductionWorkOrder
+    from app.modules.production.models.workstation import ProductionWorkstation
+    from app.modules.store.models.location import StoreLocation
+
+    # Sales orders: guarded, the Sales module may not be present on every build.
+    try:
+        from app.modules.sales.models.order import SalesOrder
+    except ImportError:
+        SalesOrder = None
+
     branch = _get_branch_or_404(branch_id, db)
-    user_count = db.query(User).filter(User.branch_id == branch_id).count()
-    dept_count = db.query(Department).filter(Department.branch_id == branch_id).count()
-    if user_count or dept_count:
-        parts = []
-        if user_count:
-            parts.append(f"{user_count} user(s)")
-        if dept_count:
-            parts.append(f"{dept_count} department(s)")
-        raise HTTPException(status_code=409, detail=f"Cannot delete plant — {' and '.join(parts)} still assigned to it.")
+    ensure_can_delete(_user, branch, "organization", "branches", what="plant")
+    # Each use is (label, FK columns pointing at branches.id). Soft-deleted rows
+    # are counted too: they still hold the FK to this plant.
+    uses: list[tuple[str, list]] = [
+        ("user(s)", [User.branch_id]),
+        ("department(s)", [Department.branch_id]),
+        ("company default-plant setting(s)", [Company.default_plant_id]),
+        ("cost center(s)", [CostCenter.branch_id]),
+        ("store location(s)", [StoreLocation.branch_id]),
+        ("maintenance asset(s)", [MaintenanceAsset.branch_id]),
+        ("production workstation(s)", [ProductionWorkstation.branch_id]),
+        ("production work order(s)", [ProductionWorkOrder.branch_id]),
+        ("RRV build(s)", [ProductionRrvBuild.branch_id]),
+        ("employee profile(s)", [HrEmployeeProfile.branch_id]),
+        ("holiday(s)", [HrHoliday.branch_id]),
+        ("HR shift(s)", [HrShift.branch_id]),
+        ("HR asset(s)", [HrAsset.branch_id]),
+        ("visitor record(s)", [HrVisitor.branch_id]),
+        ("employee transfer/lifecycle event(s)", [HrLifecycleEvent.from_branch_id, HrLifecycleEvent.to_branch_id]),
+        ("electrical job(s)", [ElectricalJob.branch_id]),
+        ("hydraulic system(s)", [HydSystem.branch_id]),
+    ]
+    if SalesOrder is not None:
+        uses.append(("sales order(s)", [SalesOrder.branch_id]))
+    # Normalise ORM attributes to their Column objects.
+    uses = [(label, [a.property.columns[0] if hasattr(a, "property") else a for a in cols]) for label, cols in uses]
+    covered = {(c.table.name, c.name) for _, cols in uses for c in cols}
+
+    # Safety net: any other table with an FK to branches.id (e.g. a module added
+    # later that isn't listed above) still blocks the delete, labelled by table.
+    plant_owned_tables = {
+        BranchAddress.__tablename__, BranchUserAssignment.__tablename__,
+        BranchDocument.__tablename__, "module_settings",
+    }
+    existing_tables = set(sa_inspect(db.get_bind()).get_table_names())
+    for table in Base.metadata.tables.values():
+        if table.name in plant_owned_tables or table.name not in existing_tables:
+            continue
+        for fk in table.foreign_keys:
+            if fk.target_fullname == "branches.id" and (table.name, fk.parent.name) not in covered:
+                uses.append((f"{table.name.replace('_', ' ')} record(s)", [fk.parent]))
+                covered.add((table.name, fk.parent.name))
+
+    usage = []
+    for label, cols in uses:
+        table = cols[0].table
+        if table.name not in existing_tables:
+            continue
+        n = db.query(func.count()).select_from(table).filter(or_(*[c == branch_id for c in cols])).scalar()
+        usage.append((n, label))
+    if in_use := [f"{n} {what}" for n, what in usage if n]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Can't delete plant '{branch.name}' — it is used by {', '.join(in_use)}. "
+                "Set the plant to Inactive instead (Organization → Plants → Status)."
+            ),
+        )
+    # Rows that belong to the plant itself (addresses, documents, user
+    # assignments) go with it. Document files are removed from SharePoint the
+    # same way the single-document delete does.
+    for document in db.query(BranchDocument).filter(BranchDocument.branch_id == branch_id).all():
+        if settings.SHAREPOINT_SITE_ID and document.sharepoint_path:
+            try:
+                await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, document.sharepoint_path)
+            except HTTPException:
+                pass
+        db.delete(document)
+    plant_owned: list = [BranchAddress, BranchUserAssignment]
+    # Per-plant setting overrides (settings framework) belong to the plant too.
+    # (Guarded: the model/table may not exist yet on every DB.)
+    try:
+        from app.modules.main.models.module_setting import ModuleSetting
+    except ImportError:
+        ModuleSetting = None
+    if ModuleSetting is not None and sa_inspect(db.get_bind()).has_table(ModuleSetting.__tablename__):
+        plant_owned.append(ModuleSetting)
+    for model in plant_owned:
+        db.query(model).filter(model.branch_id == branch_id).delete(synchronize_session=False)
     db.delete(branch)
     db.commit()
 
@@ -152,13 +282,13 @@ async def delete_branch(
 # ---------------------------------------------------------------------------
 
 @router.get("/{branch_id}/addresses", response_model=list[BranchAddressResponse])
-async def list_branch_addresses(branch_id: int, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def list_branch_addresses(branch_id: int, db: Session = Depends(get_db), _user: User = Depends(require_tab_action("organization", "branches", "view"))):
     _get_branch_or_404(branch_id, db)
     return db.query(BranchAddress).filter(BranchAddress.branch_id == branch_id).order_by(BranchAddress.id).all()
 
 
 @router.post("/{branch_id}/addresses", response_model=BranchAddressResponse)
-async def create_branch_address(branch_id: int, payload: BranchAddressCreate, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def create_branch_address(branch_id: int, payload: BranchAddressCreate, db: Session = Depends(get_db), _user: User = Depends(require_tab_action("organization", "branches", "edit"))):
     _get_branch_or_404(branch_id, db)
     if payload.is_primary:
         db.query(BranchAddress).filter(BranchAddress.branch_id == branch_id).update({"is_primary": False})
@@ -170,10 +300,10 @@ async def create_branch_address(branch_id: int, payload: BranchAddressCreate, db
 
 
 @router.patch("/{branch_id}/addresses/{address_id}", response_model=BranchAddressResponse)
-async def update_branch_address(branch_id: int, address_id: int, payload: BranchAddressUpdate, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def update_branch_address(branch_id: int, address_id: int, payload: BranchAddressUpdate, db: Session = Depends(get_db), _user: User = Depends(require_tab_action("organization", "branches", "edit"))):
     address = db.query(BranchAddress).filter(BranchAddress.id == address_id, BranchAddress.branch_id == branch_id).first()
     if not address:
-        raise HTTPException(status_code=404, detail="Address not found")
+        raise HTTPException(status_code=404, detail=f"Address #{address_id} does not belong to plant #{branch_id} (or was deleted). Refresh the plant's Addresses tab.")
     data = payload.model_dump(exclude_unset=True)
     if data.get("is_primary"):
         db.query(BranchAddress).filter(BranchAddress.branch_id == branch_id, BranchAddress.id != address_id).update({"is_primary": False})
@@ -185,10 +315,10 @@ async def update_branch_address(branch_id: int, address_id: int, payload: Branch
 
 
 @router.delete("/{branch_id}/addresses/{address_id}")
-async def delete_branch_address(branch_id: int, address_id: int, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def delete_branch_address(branch_id: int, address_id: int, db: Session = Depends(get_db), _user: User = Depends(require_tab_action("organization", "branches", "edit"))):
     address = db.query(BranchAddress).filter(BranchAddress.id == address_id, BranchAddress.branch_id == branch_id).first()
     if not address:
-        raise HTTPException(status_code=404, detail="Address not found")
+        raise HTTPException(status_code=404, detail=f"Address #{address_id} does not belong to plant #{branch_id} (or was deleted). Refresh the plant's Addresses tab.")
     db.delete(address)
     db.commit()
     return {"ok": True}
@@ -207,14 +337,14 @@ def _assignment_to_response(a: BranchUserAssignment, db: Session) -> BranchUserA
 
 
 @router.get("/{branch_id}/user-assignments", response_model=list[BranchUserAssignmentResponse])
-async def list_branch_user_assignments(branch_id: int, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def list_branch_user_assignments(branch_id: int, db: Session = Depends(get_db), _user: User = Depends(_assignment_access("view"))):
     _get_branch_or_404(branch_id, db)
     assignments = db.query(BranchUserAssignment).filter(BranchUserAssignment.branch_id == branch_id).order_by(BranchUserAssignment.id).all()
     return [_assignment_to_response(a, db) for a in assignments]
 
 
 @router.post("/{branch_id}/user-assignments", response_model=BranchUserAssignmentResponse)
-async def create_branch_user_assignment(branch_id: int, payload: BranchUserAssignmentCreate, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def create_branch_user_assignment(branch_id: int, payload: BranchUserAssignmentCreate, db: Session = Depends(get_db), _user: User = Depends(_assignment_access("edit"))):
     _get_branch_or_404(branch_id, db)
     if payload.is_primary_branch:
         db.query(BranchUserAssignment).filter(
@@ -228,10 +358,10 @@ async def create_branch_user_assignment(branch_id: int, payload: BranchUserAssig
 
 
 @router.patch("/{branch_id}/user-assignments/{assignment_id}", response_model=BranchUserAssignmentResponse)
-async def update_branch_user_assignment(branch_id: int, assignment_id: int, payload: BranchUserAssignmentUpdate, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def update_branch_user_assignment(branch_id: int, assignment_id: int, payload: BranchUserAssignmentUpdate, db: Session = Depends(get_db), _user: User = Depends(_assignment_access("edit"))):
     assignment = db.query(BranchUserAssignment).filter(BranchUserAssignment.id == assignment_id, BranchUserAssignment.branch_id == branch_id).first()
     if not assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found")
+        raise HTTPException(status_code=404, detail=f"User assignment #{assignment_id} does not belong to plant #{branch_id} (or was removed). Refresh the plant's User Assignments tab.")
     data = payload.model_dump(exclude_unset=True)
     if data.get("is_primary_branch"):
         db.query(BranchUserAssignment).filter(
@@ -247,10 +377,10 @@ async def update_branch_user_assignment(branch_id: int, assignment_id: int, payl
 
 
 @router.delete("/{branch_id}/user-assignments/{assignment_id}")
-async def delete_branch_user_assignment(branch_id: int, assignment_id: int, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def delete_branch_user_assignment(branch_id: int, assignment_id: int, db: Session = Depends(get_db), _user: User = Depends(_assignment_access("edit"))):
     assignment = db.query(BranchUserAssignment).filter(BranchUserAssignment.id == assignment_id, BranchUserAssignment.branch_id == branch_id).first()
     if not assignment:
-        raise HTTPException(status_code=404, detail="Assignment not found")
+        raise HTTPException(status_code=404, detail=f"User assignment #{assignment_id} does not belong to plant #{branch_id} (or was removed). Refresh the plant's User Assignments tab.")
     db.delete(assignment)
     db.commit()
     return {"ok": True}
@@ -261,7 +391,7 @@ async def delete_branch_user_assignment(branch_id: int, assignment_id: int, db: 
 # ---------------------------------------------------------------------------
 
 @router.get("/{branch_id}/documents", response_model=list[BranchDocumentResponse])
-async def list_branch_documents(branch_id: int, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def list_branch_documents(branch_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("organization", "branches", "documents", "view"))):
     _get_branch_or_404(branch_id, db)
     return db.query(BranchDocument).filter(BranchDocument.branch_id == branch_id).order_by(BranchDocument.id.desc()).all()
 
@@ -282,7 +412,7 @@ async def upload_branch_document(
     tags: str | None = Form(None),
     remarks: str | None = Form(None),
     db: Session = Depends(get_db),
-    user: User = Depends(require_admin),
+    user: User = Depends(require_feature_action("organization", "branches", "documents", "create")),
 ):
     branch = _get_branch_or_404(branch_id, db)
     if not settings.SHAREPOINT_SITE_ID:
@@ -320,10 +450,10 @@ async def upload_branch_document(
 
 
 @router.get("/{branch_id}/documents/{document_id}/content")
-async def get_branch_document_content(branch_id: int, document_id: int, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def get_branch_document_content(branch_id: int, document_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("organization", "branches", "documents", "export"))):
     document = db.query(BranchDocument).filter(BranchDocument.id == document_id, BranchDocument.branch_id == branch_id).first()
     if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail=f"Document #{document_id} does not belong to plant #{branch_id} (or was deleted). Refresh the plant's Documents tab.")
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
     content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, document.sharepoint_path or "")
@@ -335,10 +465,10 @@ async def get_branch_document_content(branch_id: int, document_id: int, db: Sess
 
 
 @router.delete("/{branch_id}/documents/{document_id}")
-async def delete_branch_document(branch_id: int, document_id: int, db: Session = Depends(get_db), _user: User = Depends(require_admin)):
+async def delete_branch_document(branch_id: int, document_id: int, db: Session = Depends(get_db), _user: User = Depends(require_feature_action("organization", "branches", "documents", "delete"))):
     document = db.query(BranchDocument).filter(BranchDocument.id == document_id, BranchDocument.branch_id == branch_id).first()
     if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail=f"Document #{document_id} does not belong to plant #{branch_id} (or was deleted). Refresh the plant's Documents tab.")
     if settings.SHAREPOINT_SITE_ID and document.sharepoint_path:
         try:
             await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, document.sharepoint_path)

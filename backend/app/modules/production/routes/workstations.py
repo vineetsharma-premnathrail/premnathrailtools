@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
@@ -64,6 +64,32 @@ def _get_or_404(db: Session, workstation_id: int) -> ProductionWorkstation:
     return ws
 
 
+# Non-nullable columns a PATCH could otherwise null out (→ IntegrityError).
+_REQUIRED_FIELDS = {
+    "code": "Code", "name": "Name", "workstation_type": "Workstation type",
+    "capacity_hours_per_day": "Capacity hours per day", "hourly_rate": "Hourly rate", "status": "Status",
+}
+
+
+def _check_not_down_in_maintenance(db: Session, ws: ProductionWorkstation) -> None:
+    """Plan §17: Maintenance owns 'under_maintenance' while the linked asset is
+    down — Production can't put the machine back into use from here."""
+    try:
+        from app.modules.maintenance.models.asset import MaintenanceAsset
+    except Exception:  # pragma: no cover — Maintenance module absent
+        return
+    asset = db.query(MaintenanceAsset).filter(
+        MaintenanceAsset.workstation_id == ws.id, MaintenanceAsset.is_deleted == False,  # noqa: E712
+    ).first()
+    if asset and asset.status in ("breakdown", "under_maintenance"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Workstation {ws.code} is under maintenance because asset {asset.asset_code} is "
+                   f"{asset.status.replace('_', ' ')} in Maintenance. Close the maintenance work order there — "
+                   "the workstation goes back to active automatically.",
+        )
+
+
 def _validate(db: Session, data: dict, current_id: int | None = None) -> None:
     if data.get("workstation_type") and data["workstation_type"] not in PRODUCTION_WORKSTATION_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid workstation type '{data['workstation_type']}'. Use one of: {', '.join(PRODUCTION_WORKSTATION_TYPES)}.")
@@ -71,18 +97,31 @@ def _validate(db: Session, data: dict, current_id: int | None = None) -> None:
         raise HTTPException(status_code=400, detail=f"Invalid status '{data['status']}'. Use one of: {', '.join(PRODUCTION_WORKSTATION_STATUSES)}.")
     if data.get("code"):
         data["code"] = data["code"].strip().upper()
+        # Checks deleted rows too: production_workstations.code is unique across
+        # every row, so a deleted workstation's code can't be reused.
         clash = db.query(ProductionWorkstation).filter(
             func.upper(ProductionWorkstation.code) == data["code"],
-            ProductionWorkstation.is_deleted == False,  # noqa: E712
         )
         if current_id:
             clash = clash.filter(ProductionWorkstation.id != current_id)
-        if clash.first():
+        clash = clash.order_by(ProductionWorkstation.is_deleted).first()
+        if clash and clash.is_deleted:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Workstation code '{data['code']}' still belongs to the deleted workstation '{clash.name}' (#{clash.id}) — "
+                       "codes stay reserved after a workstation is deleted so old work orders and time logs keep pointing at it. "
+                       f"Pick a different code (e.g. '{data['code']}-2').",
+            )
+        if clash:
             raise HTTPException(status_code=409, detail=f"Workstation code '{data['code']}' is already used by another workstation. Pick a different code.")
     if data.get("branch_id") and not db.query(Branch).filter(Branch.id == data["branch_id"]).first():
         raise HTTPException(status_code=404, detail=f"Plant #{data['branch_id']} not found")
     if data.get("department_id") and not db.query(Department).filter(Department.id == data["department_id"]).first():
         raise HTTPException(status_code=404, detail=f"Department #{data['department_id']} not found")
+    if data.get("cost_center_id"):
+        from app.modules.organization.models.cost_center import CostCenter
+        if not db.query(CostCenter.id).filter(CostCenter.id == data["cost_center_id"]).first():
+            raise HTTPException(status_code=404, detail=f"Cost centre #{data['cost_center_id']} not found — pick it again from the list.")
 
 
 @router.get("", response_model=list[ProductionWorkstationResponse])
@@ -123,7 +162,11 @@ async def create_workstation(
 
 
 @router.get("/{workstation_id}", response_model=ProductionWorkstationResponse)
-async def get_workstation(workstation_id: int, db: Session = Depends(get_db)):
+async def get_workstation(
+    workstation_id: int,
+    db: Session = Depends(get_db),
+    _tab: User = Depends(require_tab_access("production", "workstations")),
+):
     return _to_responses(db, [_get_or_404(db, workstation_id)])[0]
 
 
@@ -136,7 +179,16 @@ async def update_workstation(
 ):
     ws = _get_or_404(db, workstation_id)
     updates = payload.model_dump(exclude_unset=True)
+    empty = [k for k in _REQUIRED_FIELDS if k in updates and updates[k] is None]
+    if empty:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{', '.join(_REQUIRED_FIELDS[k] for k in empty)} can't be empty on a workstation. "
+                   "Leave the field out of the update to keep its current value, or give a new one.",
+        )
     _validate(db, updates, current_id=ws.id)
+    if updates.get("status") == "active" and ws.status != "active":
+        _check_not_down_in_maintenance(db, ws)
     for field, val in updates.items():
         setattr(ws, field, val)
     db.commit()
@@ -148,9 +200,11 @@ async def update_workstation(
 async def delete_workstation(
     workstation_id: int,
     db: Session = Depends(get_db),
-    _perm: User = Depends(require_tab_action("production", "workstations", "delete")),
+    user: User = Depends(require_tab_action("production", "workstations", "delete")),
 ):
     ws = _get_or_404(db, workstation_id)
+    # Workstations carry no creator column — anyone with 'Delete' may remove one.
+    ensure_can_delete(user, ws, "production", "workstations", what="workstation")
     open_ops = _open_operation_counts(db, [ws.id]).get(ws.id, 0)
     if open_ops:
         raise HTTPException(

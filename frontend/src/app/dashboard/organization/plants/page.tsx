@@ -3,17 +3,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useRequireAdmin } from '@/hooks/useAuth'
+import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi } from '@/lib/api'
+import { useCan } from '@/lib/permissions'
 import { Branch } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
+import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { PLANT_STATUS_LABELS, PLANT_STATUS_HEX } from '@/components/organization/PlantForm'
 import { extractErrorMessages } from '@/lib/validation'
 
 export default function OrganizationPlantsPage() {
-  const { isAuthorized, isLoading } = useRequireAdmin()
+  const { isAuthorized, isLoading } = useRequireOrgTab('branches')
+  const { can, canDelete } = useCan()
+  const canEdit = can('organization', 'branches', 'edit')
   const router = useRouter()
   const [plants, setPlants] = useState<Branch[]>([])
   const [loading, setLoading] = useState(true)
@@ -61,15 +66,22 @@ export default function OrganizationPlantsPage() {
     }
   }
 
-  const handleDelete = async (p: Branch, e: React.MouseEvent) => {
+  const [deleteTarget, setDeleteTarget] = useState<Branch | null>(null)
+
+  const askDelete = (p: Branch, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!window.confirm(`Delete branch "${p.name}"? This cannot be undone.`)) return
+    setDeleteTarget(p)
+  }
+
+  const handleDelete = async () => {
+    const p = deleteTarget
+    if (!p) return
+    setDeleteTarget(null)
     try {
       await organizationApi.deleteBranch(p.id)
       setPlants((prev) => prev.filter((x) => x.id !== p.id))
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to delete branch.')
+      setError(extractErrorMessages(err, `Could not delete branch "${p.name}" — it may still have stores, departments or users attached. Remove those first, or deactivate the branch instead.`).join(' '))
     }
   }
 
@@ -86,7 +98,7 @@ export default function OrganizationPlantsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>All Branches</h1>
         </div>
-        <Link
+        {can('organization', 'branches', 'create') && <Link
           href="/dashboard/organization/plants/new"
           data-tour="org-plants-add-btn"
           style={{
@@ -97,7 +109,7 @@ export default function OrganizationPlantsPage() {
           }}
         >
           <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add Branch
-        </Link>
+        </Link>}
       </div>
 
       <div style={{ marginBottom: 16, maxWidth: 360 }}>
@@ -118,6 +130,13 @@ export default function OrganizationPlantsPage() {
         onClose={() => setError('')}
         actionLabel="Reload"
         onAction={() => window.location.reload()}
+      />
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete this branch?"
+        message={`Delete branch "${deleteTarget?.name}"? This cannot be undone.`}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
       />
 
       <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
@@ -140,7 +159,7 @@ export default function OrganizationPlantsPage() {
               {filtered.map((p, idx) => (
                 <tr
                   key={p.id}
-                  onClick={() => router.push(`/dashboard/organization/plants/${p.id}`)}
+                  onClick={() => router.push(recordPath('/dashboard/organization/plants', p))}
                   style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                 >
                   <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{p.code}</td>
@@ -150,7 +169,7 @@ export default function OrganizationPlantsPage() {
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{p.manager_user_name || '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{p.industry_function || '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PLANT_STATUS_HEX[p.status]}1a`, color: PLANT_STATUS_HEX[p.status], whiteSpace: 'nowrap' }}>
+                    <span data-tour={idx === 0 ? 'org-plants-status-badge' : undefined} style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PLANT_STATUS_HEX[p.status]}1a`, color: PLANT_STATUS_HEX[p.status], whiteSpace: 'nowrap' }}>
                       {PLANT_STATUS_LABELS[p.status] || p.status}
                     </span>
                   </td>
@@ -158,22 +177,22 @@ export default function OrganizationPlantsPage() {
                   <td style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{new Date(p.updated_at).toLocaleDateString()}</td>
                   <td style={{ padding: '12px 16px', fontSize: 12, whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: 10 }}>
-                      <span onClick={() => router.push(`/dashboard/organization/plants/${p.id}`)} style={{ color: BRAND.primaryActive, cursor: 'pointer', fontWeight: 600 }}>View</span>
-                      <span onClick={() => router.push(`/dashboard/organization/plants/${p.id}/edit`)} style={{ color: BRAND.primaryActive, cursor: 'pointer', fontWeight: 600 }}>Edit</span>
-                      <span
+                      <span onClick={() => router.push(recordPath('/dashboard/organization/plants', p))} data-tour={idx === 0 ? 'org-plants-view-btn' : undefined} style={{ color: BRAND.primaryActive, cursor: 'pointer', fontWeight: 600 }}>View</span>
+                      {canEdit && <span onClick={() => router.push(`${recordPath('/dashboard/organization/plants', p)}/edit`)} data-tour={idx === 0 ? 'org-plants-edit-btn' : undefined} style={{ color: BRAND.primaryActive, cursor: 'pointer', fontWeight: 600 }}>Edit</span>}
+                      {canEdit && <span
                         onClick={(e) => toggleActive(p, e)}
                         data-tour={idx === 0 ? 'org-plants-toggle-status' : undefined}
                         style={{ color: p.status === 'active' ? '#92400e' : '#166534', cursor: 'pointer', fontWeight: 600 }}
                       >
                         {p.status === 'active' ? 'Deactivate' : 'Activate'}
-                      </span>
-                      <span
-                        onClick={(e) => handleDelete(p, e)}
+                      </span>}
+                      {canDelete('organization', 'branches', null) && <span
+                        onClick={(e) => askDelete(p, e)}
                         data-tour={idx === 0 ? 'org-plants-delete-btn' : undefined}
                         style={{ color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}
                       >
                         Delete
-                      </span>
+                      </span>}
                     </div>
                   </td>
                 </tr>

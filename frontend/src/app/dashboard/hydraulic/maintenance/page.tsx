@@ -4,12 +4,14 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { HydMaintenancePlan } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import RetiredBanner from '@/components/hydraulic/RetiredBanner'
 import Checkbox from '@/components/Checkbox'
 import { MAINTENANCE_TYPE_LABELS } from '@/components/hydraulic/labels'
-import { raiseJobHref, frequencyText, daysText, hoursText } from '@/components/hydraulic/MaintenancePlanForm'
+import { frequencyText, daysText, hoursText } from '@/components/hydraulic/MaintenancePlanForm'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 
@@ -93,19 +95,11 @@ export default function HydMaintenancePlansPage() {
             Hydraulic &amp; Pneumatic
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Maintenance Plans</h1>
-          <p style={{ fontSize: 13, color: TEXT.secondary, margin: '6px 0 0' }}>Recurring tasks by calendar days and/or running hours — most urgent first.</p>
+          <p style={{ fontSize: 13, color: TEXT.secondary, margin: '6px 0 0' }}>Legacy recurring tasks — kept read-only for the record.</p>
         </div>
-        <button
-          onClick={() => router.push('/dashboard/hydraulic/maintenance/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New Plan
-        </button>
       </div>
+
+      <RetiredBanner what="Maintenance plans" />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -114,27 +108,27 @@ export default function HydMaintenancePlansPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search plan no. or title…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+        <input data-tour="hyd-plan-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search plan no. or title…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="hyd-plan-medium-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
           <option value="">Hydraulic + Pneumatic</option>
           <option value="hydraulic">Hydraulic</option>
           <option value="pneumatic">Pneumatic</option>
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 220px' }} value={maintenanceType} onChange={(e) => setMaintenanceType(e.target.value)}>
+        <select data-tour="hyd-plan-type-filter" style={{ ...inputStyle, flex: '0 1 220px' }} value={maintenanceType} onChange={(e) => setMaintenanceType(e.target.value)}>
           <option value="">All maintenance types</option>
           {Object.entries(MAINTENANCE_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 150px' }} value={dueStatus} onChange={(e) => setDueStatus(e.target.value)}>
+        <select data-tour="hyd-plan-due-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={dueStatus} onChange={(e) => setDueStatus(e.target.value)}>
           <option value="">Any due status</option>
           {Object.entries(DUE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.secondary, cursor: 'pointer' }}>
+        <label data-tour="hyd-plan-inactive-toggle" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.secondary, cursor: 'pointer' }}>
           <Checkbox checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
           Show inactive
         </label>
       </div>
 
-      <div style={{
+      <div data-tour="hyd-plan-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
@@ -155,7 +149,7 @@ export default function HydMaintenancePlansPage() {
               <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No maintenance plans match. Add oil changes, filter changes and inspections so they show up here when they fall due.</td></tr>
             ) : (
               plans.map((p) => (
-                <tr key={p.id} onClick={() => router.push(`/dashboard/hydraulic/maintenance/${p.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={p.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/maintenance', p))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{p.plan_number}</td>
                   <td style={cellStyle}>{p.title}</td>
                   <td style={cellStyle}>
@@ -177,15 +171,13 @@ export default function HydMaintenancePlansPage() {
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={{ ...cellStyle, whiteSpace: 'nowrap' }}>
                     {p.open_service_record_id ? (
-                      <span onClick={() => router.push(`/dashboard/hydraulic/service/${p.open_service_record_id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#2563EB', cursor: 'pointer' }}>Open job</span>
-                    ) : p.is_active ? (
-                      <span onClick={() => router.push(raiseJobHref(p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Raise job</span>
+                      <span onClick={() => router.push(recordPath('/dashboard/hydraulic/service', p, 'open_service_record_id'))} style={{ fontSize: 12, fontWeight: 600, color: '#2563EB', cursor: 'pointer' }}>Open job</span>
                     ) : (
                       <span style={{ fontSize: 12, color: TEXT.muted }}>—</span>
                     )}
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/hydraulic/maintenance/${p.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/maintenance', p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

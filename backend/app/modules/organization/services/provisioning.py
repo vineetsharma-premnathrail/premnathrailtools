@@ -31,6 +31,7 @@ from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.branch_user_assignment import BranchUserAssignment
 from app.modules.organization.models.department import Department
+from app.modules.organization.services.department_membership import match_department, set_user_department
 
 
 def _get_or_create_branch(db: Session, office_location: str) -> Branch:
@@ -138,6 +139,17 @@ def sync_user_org_links(db: Session, user: User) -> None:
         # manager must not make that manager head of a Unit 1 department.
         head_id = user.reporting_manager_id if _user_branch_id(db, user.reporting_manager_id) == branch.id else None
         department = _get_or_create_department(db, branch.id, user.department, head_id)
+
+    if department is None and user.department:
+        department = match_department(db, user.department, user.branch_id)
+    if department is not None:
+        set_user_department(user, department)
+    elif user.department_id:
+        # Azure moved the user to a department with no Department row yet:
+        # drop the stale link, the name is matched until one exists.
+        current = db.get(Department, user.department_id)
+        if current is None or current.name.strip().lower() != (user.department or "").strip().lower():
+            user.department_id = None
 
     if branch:
         _ensure_branch_assignment(db, user, branch.id, department.id if department else None)

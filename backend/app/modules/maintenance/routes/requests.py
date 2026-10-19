@@ -1,9 +1,12 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_any_app_access, require_tab_action
+from app.core import assignee_rules
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.modules.maintenance.role_events import role_event
+from app.core.permissions import require_any_app_access, require_feature_action, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
@@ -20,6 +23,7 @@ from app.modules.maintenance.service import (
     generate_request_number, generate_work_order_number, default_priority, sync_asset_status,
     user_names, now_utc, maintenance_users_for_branch, notify_many, _aware,
 )
+from app.modules.maintenance.access import submit_close_out, withdraw_close_out  # also registers the data scopes
 
 # Requesters (production supervisors, shift in-charges) usually hold the
 # production app, not maintenance — raising, viewing their own requests and
@@ -67,6 +71,7 @@ def _get_or_404(db: Session, request_id: int, user: User) -> MaintenanceRequest:
         raise HTTPException(status_code=404, detail=f"Maintenance request #{request_id} not found.")
     if not _is_maintenance(user) and req.raised_by_id != user.id:
         raise HTTPException(status_code=403, detail="You can only view requests you raised. Ask the Maintenance team for access to other requests.")
+    ensure_in_scope(db, user, req)
     return req
 
 
@@ -102,12 +107,14 @@ async def list_requests(
                 (MaintenanceRequest.request_number.ilike(like)) | (MaintenanceRequest.problem_description.ilike(like))
                 | (MaintenanceAsset.asset_code.ilike(like)) | (MaintenanceAsset.name.ilike(like))
             )
+    query = apply_scope(query, user, MaintenanceRequest)
     return [_to_response(db, r, user) for r in query.order_by(MaintenanceRequest.reported_at.desc()).all()]
 
 
 @router.post("", response_model=MaintenanceRequestResponse)
 async def create_request(
     payload: MaintenanceRequestCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_any_app_access("maintenance", "production")),
 ):
@@ -133,7 +140,7 @@ async def create_request(
         machine_down=payload.machine_down,
         reported_at=reported_at,
         problem_description=payload.problem_description.strip(),
-        priority=payload.priority or default_priority(asset.criticality, payload.machine_down),
+        priority=payload.priority or default_priority(asset.criticality, payload.machine_down, db),
         status="open",
         raised_by_id=user.id,
     )
@@ -141,8 +148,17 @@ async def create_request(
     db.flush()
     sync_asset_status(db, asset)
     down = " — MACHINE DOWN" if req.machine_down else ""
+    team = {u.id for u in maintenance_users_for_branch(db, asset.branch_id)}
+    role_event(db, background_tasks, "request_raised", title=f"{req.request_number}: {asset.asset_code}{down}",
+               message=f"{user.name or user.email} reported {req.request_type.replace('_', ' ')} on {asset.asset_code} {asset.name}: "
+                       f"{req.problem_description[:140]}", entity_type="maintenance_request", entity_id=req.id,
+               actor=user, record=req, skip_user_ids=team)
+    if req.machine_down and asset.criticality == "A":
+        role_event(db, background_tasks, "critical_breakdown", title=f"Critical machine down: {asset.asset_code} ({req.request_number})",
+                   message=f"{asset.name} (criticality A) is down — {req.problem_description[:140]}. Reported by {user.name or user.email}.",
+                   entity_type="maintenance_request", entity_id=req.id, actor=user, record=req)
     notify_many(
-        db, [u.id for u in maintenance_users_for_branch(db, asset.branch_id)],
+        db, list(team),
         f"{'URGENT: ' if req.priority == 'urgent' else ''}{req.request_number}: {asset.asset_code}{down}",
         f"{req.request_type.replace('_', ' ').capitalize()} on {asset.name}: {req.problem_description[:140]}",
         "maintenance_request_raised", "maintenance_request", req.id, exclude_user_id=user.id,
@@ -162,8 +178,8 @@ async def get_request(
 
 @router.post("/{request_id}/acknowledge", response_model=MaintenanceRequestResponse)
 async def acknowledge_request(
-    request_id: int, db: Session = Depends(get_db),
-    user: User = Depends(require_tab_action("maintenance", "requests", "edit")),
+    request_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+    user: User = Depends(require_feature_action("maintenance", "requests", "triage", "approve")),
 ):
     _require_maintenance(user)
     req = _get_or_404(db, request_id, user)
@@ -172,14 +188,21 @@ async def acknowledge_request(
     req.status = "acknowledged"
     req.acknowledged_by_id = user.id
     req.acknowledged_at = now_utc()
+    if req.raised_by_id and req.raised_by_id != user.id:
+        notify_many(db, [req.raised_by_id], f"{req.request_number} acknowledged",
+                    f"{user.name or user.email} acknowledged your maintenance request — a work order follows.",
+                    "maintenance_request_acknowledged", "maintenance_request", req.id, exclude_user_id=user.id)
+    role_event(db, background_tasks, "request_acknowledged", title=f"{req.request_number} acknowledged",
+               message=f"{user.name or user.email} acknowledged maintenance request {req.request_number}.",
+               entity_type="maintenance_request", entity_id=req.id, actor=user, record=req, skip_user_ids={req.raised_by_id})
     db.commit()
     return _to_response(db, req, user)
 
 
 @router.post("/{request_id}/reject", response_model=MaintenanceRequestResponse)
 async def reject_request(
-    request_id: int, payload: MaintenanceRequestRejectPayload, db: Session = Depends(get_db),
-    user: User = Depends(require_tab_action("maintenance", "requests", "edit")),
+    request_id: int, payload: MaintenanceRequestRejectPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+    user: User = Depends(require_feature_action("maintenance", "requests", "triage", "reject")),
 ):
     _require_maintenance(user)
     req = _get_or_404(db, request_id, user)
@@ -201,13 +224,17 @@ async def reject_request(
             db, [req.raised_by_id], f"{req.request_number} {'marked duplicate' if payload.status == 'duplicate' else 'rejected'}",
             req.rejection_reason, "maintenance_request_rejected", "maintenance_request", req.id, exclude_user_id=user.id,
         )
+    verb = "marked duplicate" if payload.status == "duplicate" else "rejected"
+    role_event(db, background_tasks, "request_rejected", title=f"{req.request_number} {verb}",
+               message=f"{user.name or user.email} {verb} maintenance request {req.request_number}: {req.rejection_reason}",
+               entity_type="maintenance_request", entity_id=req.id, actor=user, record=req, skip_user_ids={req.raised_by_id})
     db.commit()
     return _to_response(db, req, user)
 
 
 @router.post("/{request_id}/convert", response_model=MaintenanceRequestResponse)
 async def convert_request(
-    request_id: int, payload: MaintenanceRequestConvertPayload, db: Session = Depends(get_db),
+    request_id: int, payload: MaintenanceRequestConvertPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
     user: User = Depends(require_tab_action("maintenance", "work_orders", "create")),
 ):
     """Turns the request into a work order, carrying machine_down and the
@@ -226,7 +253,17 @@ async def convert_request(
         tech = db.query(User).filter(User.id == payload.assigned_to_id, User.is_active == True).first()  # noqa: E712
         if not tech:
             raise HTTPException(status_code=404, detail=f"Technician #{payload.assigned_to_id} not found or inactive.")
+        # Same assign-to rule as assigning the job itself (Maintenance › Work Orders › Assign technician).
+        assignee_rules.ensure_allowed(db, user, "maintenance:work_orders.assign", tech)
     asset = db.query(MaintenanceAsset).filter(MaintenanceAsset.id == req.asset_id).first()
+    if not asset or asset.is_deleted or asset.status == "decommissioned":
+        what = asset.asset_code if asset else f"Asset #{req.asset_id}"
+        why = "is decommissioned" if asset and asset.status == "decommissioned" else "was deleted"
+        raise HTTPException(
+            status_code=409,
+            detail=f"{what} {why} after {req.request_number} was raised, so no work order can be opened on it. "
+                   "Reject the request (or mark it duplicate) with the reason instead.",
+        )
 
     wo = MaintenanceWorkOrder(
         wo_number=generate_work_order_number(db),
@@ -256,6 +293,10 @@ async def convert_request(
             f"{asset.asset_code if asset else ''}: {wo.title}", "maintenance_wo_assigned", "maintenance_work_order", wo.id,
             exclude_user_id=user.id,
         )
+        role_event(db, background_tasks, "wo_assigned", title=f"{wo.wo_number} assigned",
+                   message=f"{user.name or user.email} raised {wo.wo_number} from {req.request_number} and assigned it — "
+                           f"{asset.asset_code if asset else ''}: {wo.title}",
+                   entity_type="maintenance_work_order", entity_id=wo.id, actor=user, record=wo, skip_user_ids={wo.assigned_to_id})
     db.commit()
     return _to_response(db, req, user)
 
@@ -284,9 +325,13 @@ async def confirm_repair(
             "The machine is confirmed OK — the job can be verified and closed.", "maintenance_wo_confirmed",
             "maintenance_work_order", wo.id, exclude_user_id=user.id,
         )
+        # Now closable → close-out verification through the approval engine.
+        submit_close_out(db, wo)
     else:
         if not comment:
             raise HTTPException(status_code=400, detail="Say what's still wrong so the technician knows what to fix.")
+        # Already waiting for close-out approval (confirmation was optional)? Withdraw it.
+        withdraw_close_out(db, wo, user, f"Requester reported the machine is not OK: {comment}")
         wo.status = "in_progress"
         wo.requester_comment = comment
         wo.actual_end = None

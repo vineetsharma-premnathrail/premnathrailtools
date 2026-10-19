@@ -75,9 +75,16 @@ def test_uoms_can_be_added_and_renamed(client, h):
     assert added.status_code == 200 and any(u["value"] == "RFT" for u in added.json())
     assert client.post("/api/v1/store/uoms", json={"code": "RFT"}, headers=h).status_code == 409
     item = create(client, h, uom="rft").json()
-    renamed = client.put("/api/v1/store/uoms/RFT", json={"code": "RFOOT", "label": "Running foot"}, headers=h)
-    assert renamed.status_code == 200 and any(u["value"] == "RFOOT" for u in renamed.json())
-    assert client.get(f"{API}/{item['id']}", headers=h).json()["uom"] == "RFOOT"
+    # A unit's code is frozen once items use it — only its label may change.
+    blocked = client.put("/api/v1/store/uoms/RFT", json={"code": "RFOOT", "label": "Running foot"}, headers=h)
+    assert blocked.status_code == 409
+    assert client.get(f"{API}/{item['id']}", headers=h).json()["uom"] == "RFT"
+    relabelled = client.put("/api/v1/store/uoms/RFT", json={"code": "RFT", "label": "Running feet"}, headers=h)
+    assert relabelled.status_code == 200 and any(u["value"] == "RFT" and "Running feet" in u["label"] for u in relabelled.json())
+    # An unused unit can still have its code changed.
+    client.post("/api/v1/store/uoms", json={"code": "RMTR", "label": "Running metre"}, headers=h)
+    renamed = client.put("/api/v1/store/uoms/RMTR", json={"code": "RMT", "label": "Running metre"}, headers=h)
+    assert renamed.status_code == 200 and any(u["value"] == "RMT" for u in renamed.json())
 
 
 def test_categories_filter_by_type_and_subcategory_rename_follows_items(client, h):

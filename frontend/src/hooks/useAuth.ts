@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { AppModule, User } from '@/types'
 
-/** Granular ERP sub-permission check (project_create, sr_edit, etc.) — admins
- * implicitly hold every permission. Mirrors the server's own
- * `role == admin or perm in erp_permissions` check. */
+/** Legacy ERP id check (project_create, sr_edit, etc.) — admins implicitly
+ * hold every permission. /auth/me derives `erp_permissions` from the user's
+ * roles (erp:projects:* / erp:service_requests:*), so this stays in sync with
+ * the server's has_erp_permission. New code should use can() from
+ * '@/lib/permissions'. */
 export function hasErpPermission(user: User | null | undefined, permission: string): boolean {
   if (!user) return false
   if (user.role === 'admin') return true
@@ -63,7 +65,7 @@ export function useRequireAdmin() {
 
 /** Guards a page to users whose `apps` list includes `appName` (admins always pass,
  * since they implicitly get every module). Redirects everyone else to /dashboard. */
-export function useRequireApp(appName: 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p' | 'store' | 'quality' | 'projects' | 'accounts' | 'hr' | 'production' | 'design' | 'electrical' | 'hydraulic' | 'maintenance') {
+export function useRequireApp(appName: 'erp' | 'rnd' | 'crm' | 'purchase' | 'p2p' | 'store' | 'quality' | 'projects' | 'accounts' | 'hr' | 'production' | 'design' | 'electrical' | 'hydraulic' | 'maintenance' | 'sales' | 'products') {
   const router = useRouter()
   const { user, isLoading } = useAuth()
   const hasAccess = !!user?.apps?.includes(appName)

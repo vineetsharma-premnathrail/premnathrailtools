@@ -1184,7 +1184,7 @@ Snapshot note: `FE/lib/tabAccess.ts` and the `CrmNav` tab-access filter are unco
 - **Access**
   - View: crm app.
   - Edit, Delete, stage click, and status/priority inline selects require `canModify` (73, 185-196, 217-218, 363-378). BE PATCH/DELETE return 403 (inquiries.py:182-183, 234-235).
-  - **"Send Technical Offer Request" is shown to everyone** (202-216). The BE has no ownership check (inquiries.py:281-291).
+  - **"Send Technical Requirement" is shown to everyone** (202-216). The BE has no ownership check (inquiries.py:281-291).
   - Quotation create/revise/customer-response require the FE `canModify` of the **inquiry** (702, 885, 959). BE create has **no ownership check** (workflow.py:54-58). BE revise checks the **quotation's** creator (workflow.py:88-89).
   - Documents: upload requires `canModify` (1177). Delete is shown only to **admins** (1099-1100, 1172). The BE allows uploader-or-admin (documents.py:184-185), and BE upload has **no** permission check on the parent record (documents.py:47-61).
   - Follow-ups: Add, Edit, Change Status and Export are shown to everyone (1245-1247, 1320-1325). Delete is shown to creator/admin (1326). BE edit/delete/photos are creator/admin (activities.py:174-175, 194-195, 271-272, 301-302).

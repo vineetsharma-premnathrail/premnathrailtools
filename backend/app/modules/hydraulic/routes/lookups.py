@@ -15,6 +15,7 @@ from app.modules.hydraulic.models.maintenance import HydMaintenancePlan
 from app.modules.hydraulic.models.spare_part import HydSparePart
 from app.modules.hydraulic.models.system import HydSystem
 from app.modules.hydraulic.schemas.insights import HydLookupOption
+from app.modules.hydraulic.service import can_see_costs
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
 from app.modules.production.service import project_label
@@ -39,7 +40,9 @@ async def lookup_systems(system_type: str | None = None, db: Session = Depends(g
 
 
 @router.get("/components", response_model=list[HydLookupOption])
-async def lookup_components(system_type: str | None = None, include_obsolete: bool = False, db: Session = Depends(get_db)):
+async def lookup_components(system_type: str | None = None, include_obsolete: bool = False, db: Session = Depends(get_db),
+                            user: User = Depends(require_app_access("hydraulic"))):
+    show_costs = can_see_costs(user)  # Hydraulic › BOM › Prices & costs
     query = db.query(HydComponent).filter(HydComponent.is_deleted == False)  # noqa: E712
     if not include_obsolete:
         query = query.filter(HydComponent.status == "active")
@@ -47,7 +50,7 @@ async def lookup_components(system_type: str | None = None, include_obsolete: bo
         query = query.filter(HydComponent.system_type.in_((system_type, "both")))
     return [
         HydLookupOption(
-            id=c.id, code=c.code, extra=c.category,
+            id=c.id, code=c.code, extra=c.category, unit_cost=float(c.unit_cost or 0) if show_costs else None,
             label=f"{c.code} — {c.name}" + (f" · {' '.join(filter(None, [c.manufacturer, c.model_number]))}" if c.manufacturer or c.model_number else ""),
         )
         for c in query.order_by(HydComponent.code).all()

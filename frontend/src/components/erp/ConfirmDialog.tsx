@@ -1,6 +1,8 @@
 'use client'
 
+import { createPortal } from 'react-dom'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { Warning } from '@phosphor-icons/react'
 
 export default function ConfirmDialog({
   open,
@@ -22,9 +24,11 @@ export default function ConfirmDialog({
   onCancel: () => void
 }) {
   useEscapeKey(open, onCancel)
-  if (!open) return null
+  if (!open || typeof document === 'undefined') return null
 
-  return (
+  // Portal to <body>: a glass card (backdrop-filter) would otherwise trap the
+  // fixed backdrop inside itself instead of covering the screen.
+  return createPortal(
     <div
       onClick={onCancel}
       className="dialog-backdrop"
@@ -63,11 +67,7 @@ export default function ConfirmDialog({
             marginBottom: 16,
           }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={danger ? '#dc2626' : '#FF7A45'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
+          <Warning size={20} color={danger ? '#dc2626' : '#FF7A45'} />
         </div>
         <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px' }}>{title}</p>
         <p style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 22px', lineHeight: 1.6 }}>{message}</p>
@@ -104,6 +104,7 @@ export default function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

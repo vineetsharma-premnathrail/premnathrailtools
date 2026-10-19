@@ -1,6 +1,24 @@
 import { TourConfig } from './types'
 
+import { ENTRIES as CRM } from './modules/crm'
+import { ENTRIES as P2P } from './modules/p2p'
+import { ENTRIES as STORE } from './modules/store'
+import { ENTRIES as FINANCE } from './modules/finance'
+import { ENTRIES as ORGANIZATION } from './modules/organization'
+import { ENTRIES as HR } from './modules/hr'
+import { ENTRIES as PRODUCTION } from './modules/production'
+import { ENTRIES as DESIGN } from './modules/design'
+import { ENTRIES as ELECTRICAL } from './modules/electrical'
+import { ENTRIES as HYDRAULIC } from './modules/hydraulic'
+import { ENTRIES as RND } from './modules/rnd'
+import { ENTRIES as ERP } from './modules/erp'
+import { ENTRIES as PROJECTS } from './modules/projects'
+import { ENTRIES as MAINTENANCE } from './modules/maintenance'
+import { ENTRIES as QUALITY } from './modules/quality'
+import { ENTRIES as SALES } from './modules/sales'
+
 type Loader = (search: string) => Promise<{ default: TourConfig }>
+export type TourEntry = { pattern: RegExp; load: Loader }
 
 // Editing an Inquiry/Tender happens inline (the same detail page swaps its
 // Info tab into a form) rather than on a separate URL, so the route alone
@@ -43,7 +61,7 @@ const loadStoreItemDetailOrEdit = () =>
 // simply show no Tour button content (TourButton hides itself). `load` also
 // receives the current query string, for the rare page (Organizations) whose
 // list view and detail view share one path, distinguished only by `?id=`.
-const ENTRIES: { pattern: RegExp; load: Loader }[] = [
+const CORE_ENTRIES: TourEntry[] = [
   {
     pattern: /^\/dashboard\/crm$/,
     load: () => import('./configs/crmDashboard'),
@@ -60,7 +78,7 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
       : import('./configs/crmOrganizationsList'),
   },
   {
-    pattern: /^\/dashboard\/crm\/organizations\/(new|\d+\/edit)$/,
+    pattern: /^\/dashboard\/crm\/organizations\/(new|[A-Za-z0-9_-]{19}\/edit)$/,
     load: () => import('./configs/crmOrganizationForm'),
   },
   {
@@ -78,7 +96,7 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     },
   },
   {
-    pattern: /^\/dashboard\/crm\/inquiries\/\d+$/,
+    pattern: /^\/dashboard\/crm\/inquiries\/[A-Za-z0-9_-]{19}$/,
     load: () => loadInquiryDetailOrEdit(),
   },
   {
@@ -86,7 +104,7 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/crmNewRecordForm'),
   },
   {
-    pattern: /^\/dashboard\/crm\/tenders\/\d+$/,
+    pattern: /^\/dashboard\/crm\/tenders\/[A-Za-z0-9_-]{19}$/,
     load: () => loadTenderDetailOrEdit(),
   },
   {
@@ -94,20 +112,8 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/crmFollowUps'),
   },
   {
-    pattern: /^\/dashboard\/crm\/payment-terms$/,
-    load: () => import('./configs/crmPaymentTerms'),
-  },
-  {
-    pattern: /^\/dashboard\/crm\/product-categories$/,
-    load: () => import('./configs/crmProductCategories'),
-  },
-  {
-    pattern: /^\/dashboard\/crm\/products$/,
-    load: () => import('./configs/crmProducts'),
-  },
-  {
-    pattern: /^\/dashboard\/crm\/bulk-import$/,
-    load: () => import('./configs/crmBulkImport'),
+    pattern: /^\/dashboard\/crm\/settings$/,
+    load: () => import('./configs/crmSettings'),
   },
   {
     pattern: /^\/dashboard\/p2p$/,
@@ -118,7 +124,7 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/p2pRequestForm'),
   },
   {
-    pattern: /^\/dashboard\/p2p\/\d+$/,
+    pattern: /^\/dashboard\/p2p\/[A-Za-z0-9_-]{19}$/,
     load: () => import('./configs/p2pRequestDetail'),
   },
   {
@@ -138,7 +144,7 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/p2pRfqForm'),
   },
   {
-    pattern: /^\/dashboard\/p2p\/rfq\/\d+$/,
+    pattern: /^\/dashboard\/p2p\/rfq\/[A-Za-z0-9_-]{19}$/,
     load: () => loadRfqDetailOrEdit(),
   },
   {
@@ -150,7 +156,7 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/storeItemForm'),
   },
   {
-    pattern: /^\/dashboard\/store\/\d+$/,
+    pattern: /^\/dashboard\/store\/[A-Za-z0-9_-]{19}$/,
     load: () => loadStoreItemDetailOrEdit(),
   },
   {
@@ -178,7 +184,7 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/storeIssueForm'),
   },
   {
-    pattern: /^\/dashboard\/store\/issues\/\d+$/,
+    pattern: /^\/dashboard\/store\/issues\/[A-Za-z0-9_-]{19}$/,
     load: () => import('./configs/storeIssueDetail'),
   },
   {
@@ -190,7 +196,7 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/storeReturnForm'),
   },
   {
-    pattern: /^\/dashboard\/store\/returns\/\d+$/,
+    pattern: /^\/dashboard\/store\/returns\/[A-Za-z0-9_-]{19}$/,
     load: () => import('./configs/storeReturnDetail'),
   },
   {
@@ -202,7 +208,7 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/storeTransferForm'),
   },
   {
-    pattern: /^\/dashboard\/store\/transfers\/\d+$/,
+    pattern: /^\/dashboard\/store\/transfers\/[A-Za-z0-9_-]{19}$/,
     load: () => import('./configs/storeTransferDetail'),
   },
   {
@@ -214,7 +220,7 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/storeAdjustmentForm'),
   },
   {
-    pattern: /^\/dashboard\/store\/adjustments\/\d+$/,
+    pattern: /^\/dashboard\/store\/adjustments\/[A-Za-z0-9_-]{19}$/,
     load: () => import('./configs/storeAdjustmentDetail'),
   },
   {
@@ -246,28 +252,38 @@ const ENTRIES: { pattern: RegExp; load: Loader }[] = [
     load: () => import('./configs/orgPlantForm'),
   },
   {
-    pattern: /^\/dashboard\/organization\/plants\/\d+\/edit$/,
+    pattern: /^\/dashboard\/organization\/plants\/[A-Za-z0-9_-]{19}\/edit$/,
     load: () => import('./configs/orgPlantForm'),
   },
   {
-    pattern: /^\/dashboard\/organization\/plants\/\d+$/,
+    pattern: /^\/dashboard\/organization\/plants\/[A-Za-z0-9_-]{19}$/,
     load: () => import('./configs/orgPlantDetail'),
   },
   {
     pattern: /^\/dashboard\/organization\/users$/,
     load: () => import('./configs/orgUsers'),
   },
-  // Organization > Role & Permissions reuses the same component that also
-  // renders standalone at /dashboard/users (see organization/roles/page.tsx),
-  // so both routes share this one config's data-tour targets.
   {
     pattern: /^\/dashboard\/organization\/roles$/,
-    load: () => import('./configs/orgRoles'),
+    load: () => import('./configs/orgRoleList'),
+  },
+  {
+    pattern: /^\/dashboard\/organization\/roles\/[^/]+$/,
+    load: () => import('./configs/orgRoleDetail'),
   },
   {
     pattern: /^\/dashboard\/users$/,
     load: () => import('./configs/orgRoles'),
   },
+]
+
+// One file per module (lib/tour/modules/*.ts) so tours for different modules
+// can be authored in parallel without editing this file.
+const ENTRIES: TourEntry[] = [
+  ...CORE_ENTRIES,
+  ...CRM, ...P2P, ...STORE, ...FINANCE, ...ORGANIZATION, ...HR, ...PRODUCTION, ...DESIGN,
+  ...ELECTRICAL, ...HYDRAULIC, ...RND, ...ERP, ...PROJECTS, ...MAINTENANCE, ...QUALITY,
+  ...SALES,
 ]
 
 export async function loadTourForPath(pathname: string, search: string = ''): Promise<TourConfig | null> {

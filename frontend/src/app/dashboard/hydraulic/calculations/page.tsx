@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { HydCalculation, HydCalcTypeMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
@@ -67,6 +68,7 @@ export default function HydCalculationsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Calculations</h1>
         </div>
         <button
+          data-tour="hyd-calc-new-btn"
           onClick={() => router.push('/dashboard/hydraulic/calculations/new')}
           style={{
             padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
@@ -85,8 +87,8 @@ export default function HydCalculationsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search calc no. or title…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 260px' }} value={calcType} onChange={(e) => setCalcType(e.target.value)}>
+        <input data-tour="hyd-calc-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search calc no. or title…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="hyd-calc-type-filter" style={{ ...inputStyle, flex: '0 1 260px' }} value={calcType} onChange={(e) => setCalcType(e.target.value)}>
           <option value="">All calculations</option>
           {typeGroups.map((g) => (
             <optgroup key={g.medium} label={SYSTEM_TYPE_LABELS[g.medium]}>
@@ -94,7 +96,7 @@ export default function HydCalculationsPage() {
             </optgroup>
           ))}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType}
+        <select data-tour="hyd-calc-medium-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType}
           onChange={(e) => {
             setSystemType(e.target.value)
             // Drop a calc-type filter that no longer fits the chosen medium.
@@ -106,7 +108,7 @@ export default function HydCalculationsPage() {
         </select>
       </div>
 
-      <div style={{
+      <div data-tour="hyd-calc-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
@@ -127,7 +129,7 @@ export default function HydCalculationsPage() {
               <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No saved calculations match. Size a cylinder, pump, accumulator or receiver in the calculator and save it here for the record.</td></tr>
             ) : (
               calcs.map((c) => (
-                <tr key={c.id} onClick={() => router.push(`/dashboard/hydraulic/calculations/${c.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/calculations', c))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.calc_number}</td>
                   <td style={cellStyle}>{c.title}</td>
                   <td style={cellStyle}>{c.calc_type_label || c.calc_type}</td>
@@ -141,7 +143,7 @@ export default function HydCalculationsPage() {
                   <td style={cellStyle}>{c.created_by_name || '—'}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(c.created_at)}</td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/hydraulic/calculations/${c.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/calculations', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

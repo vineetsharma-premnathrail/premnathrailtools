@@ -5,6 +5,9 @@ import { useParams } from 'next/navigation'
 import { useProtectedPage } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
 import { GLASS, SHADOWS, TEXT, BRAND } from '@/lib/theme'
+import TourButton from '@/components/tour/TourButton'
+import { useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 // Technical Offer Request viewer — the link an inquiry/tender's "Send
 // Technical Offer Request" action emails to R&D. Deliberately NOT gated by
@@ -15,7 +18,7 @@ import { GLASS, SHADOWS, TEXT, BRAND } from '@/lib/theme'
 export default function TechnicalOfferViewerPage() {
   const { isAuthorized, isLoading } = useProtectedPage()
   const params = useParams()
-  const id = Number(params.id)
+  const { id, error: linkError } = useRecordId(params.id as string)
 
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [isPdf, setIsPdf] = useState(false)
@@ -41,13 +44,18 @@ export default function TechnicalOfferViewerPage() {
   }, [isAuthorized, id])
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return <InvalidRecordLink message={linkError} listHref="/dashboard" listLabel="Back to dashboard" />
+  if (!id) return null
 
   return (
     <div style={{ maxWidth: 900, margin: '0 auto', padding: 20 }}>
-      <h1 style={{ fontSize: 20, fontWeight: 700, color: TEXT.heading, margin: '0 0 16px' }}>
-        Technical Offer Request
-      </h1>
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden', minHeight: 400 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '0 0 16px' }}>
+        <h1 data-tour="tor-viewer-title" style={{ fontSize: 20, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
+          Technical Offer Request
+        </h1>
+        <TourButton variant="icon" />
+      </div>
+      <div data-tour="tor-viewer-document" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden', minHeight: 400 }}>
         {loadingDoc ? (
           <p style={{ padding: 24, fontSize: 13, color: TEXT.muted }}>Loading document…</p>
         ) : error ? (
@@ -56,7 +64,7 @@ export default function TechnicalOfferViewerPage() {
           <>
             {isPdf && <embed src={blobUrl} type="application/pdf" style={{ width: '100%', height: '80vh', border: 'none' }} />}
             <div style={{ padding: 16, borderTop: isPdf ? `1px solid ${GLASS.border}` : undefined }}>
-              <a href={blobUrl} download style={{ fontSize: 13, fontWeight: 600, color: BRAND.primary, textDecoration: 'none' }}>
+              <a href={blobUrl} download data-tour="tor-viewer-download" style={{ fontSize: 13, fontWeight: 600, color: BRAND.primary, textDecoration: 'none' }}>
                 Download document
               </a>
             </div>

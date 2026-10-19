@@ -7,7 +7,9 @@ import { QualityCharacteristic, QualityDefectCode, QualityDispositionCode } from
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import { Field, Section, inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
-import { Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, SEVERITY_HEX, DISPOSITION_TYPE_LABELS } from '@/components/quality/QualityBits'
+import { sheetInput, sheetLabel, sheetHint, Req, Optional, SheetIconName } from '@/components/shared/FormSheet'
+import { useCan } from '@/lib/permissions'
+import { Pill, PageHeader, ErrorBanner, ActionSheet, sheetGap, tableWrapStyle, thStyle, tdStyle, SEVERITY_HEX, DISPOSITION_TYPE_LABELS } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 
 type Tab = 'characteristics' | 'defect-codes' | 'disposition-codes' | 'sampling'
@@ -18,6 +20,14 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'sampling', label: 'Sampling (ISO 2859-1)' },
 ]
 const DEFECT_CATEGORIES = ['dimensional', 'surface', 'material', 'assembly', 'functional', 'documentation']
+type MasterKind = 'characteristics' | 'defect-codes' | 'disposition-codes'
+const ADD_META: Record<MasterKind, { title: string; subtitle: string; icon: SheetIconName; button: string }> = {
+  characteristics: { title: 'New Characteristic', subtitle: 'A dimension or check that inspection plans reuse.', icon: 'list', button: '+ New characteristic' },
+  'defect-codes': { title: 'New Defect Code', subtitle: 'Failed results and NCRs are coded with it.', icon: 'alert', button: '+ New defect code' },
+  'disposition-codes': { title: 'New Disposition Code', subtitle: 'What can be done with rejected stock.', icon: 'flag', button: '+ New disposition code' },
+}
+const pair: React.CSSProperties = { display: 'flex', gap: 12, flexWrap: 'wrap' }
+const half: React.CSSProperties = { flex: '1 1 160px', minWidth: 0 }
 
 function Toggle({ active, onClick }: { active: boolean; onClick: () => void }) {
   return <span onClick={onClick} style={{ fontSize: 12, fontWeight: 600, color: active ? '#DC2626' : '#16A34A', cursor: 'pointer' }}>{active ? 'Retire' : 'Reactivate'}</span>
@@ -25,6 +35,12 @@ function Toggle({ active, onClick }: { active: boolean; onClick: () => void }) {
 
 export default function QualityMastersPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
+  const { can } = useCan()
+  const canCreate = can('quality', 'masters', 'create')
+  const canEdit = can('quality', 'masters', 'edit')
+  const [adding, setAdding] = useState<MasterKind | null>(null)
+  const [addError, setAddError] = useState<string | string[]>('')
+  const [busy, setBusy] = useState(false)
   const [tab, setTab] = useState<Tab>('characteristics')
   const [error, setError] = useState<string | string[]>('')
   const [chars, setChars] = useState<QualityCharacteristic[]>([])
@@ -49,15 +65,24 @@ export default function QualityMastersPage() {
     if (isAuthorized && tab === 'sampling') qualityApi.listAqlPlans(severity).then(setAqlRows).catch((e) => setError(extractErrorMessages(e, 'Failed to load the AQL table.')))
   }, [isAuthorized, tab, severity])
 
-  const create = async (kind: 'characteristics' | 'defect-codes' | 'disposition-codes', payload: Record<string, unknown>, reset: () => void) => {
-    setError('')
+  const create = async (kind: MasterKind, payload: Record<string, unknown>, reset: () => void) => {
+    setAddError('')
+    setBusy(true)
     try {
       await qualityApi.createMaster(kind, payload)
       reset()
+      setAdding(null)
       load()
     } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to save.'))
+      setAddError(extractErrorMessages(err, 'Failed to save.'))
+    } finally {
+      setBusy(false)
     }
+  }
+  const submitAdd = () => {
+    if (adding === 'characteristics') create('characteristics', charForm, () => setCharForm({ code: '', name: '', char_type: 'variable', unit: '', method: '', gauge_type: '', classification: 'minor' }))
+    else if (adding === 'defect-codes') create('defect-codes', defForm, () => setDefForm({ code: '', name: '', category: 'dimensional' }))
+    else if (adding === 'disposition-codes') create('disposition-codes', dispForm, () => setDispForm({ code: '', name: '', disposition_type: 'rework' }))
   }
   const toggle = async (kind: 'characteristics' | 'defect-codes' | 'disposition-codes', id: number, active: boolean) => {
     setError('')
@@ -86,7 +111,11 @@ export default function QualityMastersPage() {
   return (
     <div>
       <QualityNav />
-      <PageHeader title="Quality Masters" />
+      <PageHeader title="Quality Masters">
+        {canCreate && tab !== 'sampling' && (
+          <button type="button" style={primaryBtnStyle} onClick={() => { setAddError(''); setAdding(tab as MasterKind) }}>{ADD_META[tab as MasterKind].button}</button>
+        )}
+      </PageHeader>
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {TABS.map((t) => (
           <button key={t.key} type="button" onClick={() => setTab(t.key)}
@@ -97,30 +126,6 @@ export default function QualityMastersPage() {
 
       {tab === 'characteristics' && (
         <>
-          <Section title="New characteristic" style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-              <div style={{ flex: '0 1 120px' }}><Field label="Code *"><input style={inputStyle} value={charForm.code} onChange={(e) => setCharForm({ ...charForm, code: e.target.value })} /></Field></div>
-              <div style={{ flex: '1 1 220px', maxWidth: 320 }}><Field label="Name *"><input style={inputStyle} value={charForm.name} onChange={(e) => setCharForm({ ...charForm, name: e.target.value })} /></Field></div>
-              <div style={{ flex: '0 1 150px' }}>
-                <Field label="Type">
-                  <select style={inputStyle} value={charForm.char_type} onChange={(e) => setCharForm({ ...charForm, char_type: e.target.value })}>
-                    <option value="variable">Measured value</option><option value="attribute">Pass / fail</option>
-                  </select>
-                </Field>
-              </div>
-              <div style={{ flex: '0 1 90px' }}><Field label="Unit"><input style={inputStyle} value={charForm.unit} onChange={(e) => setCharForm({ ...charForm, unit: e.target.value })} placeholder="mm" /></Field></div>
-              <div style={{ flex: '1 1 180px', maxWidth: 260 }}><Field label="Method"><input style={inputStyle} value={charForm.method} onChange={(e) => setCharForm({ ...charForm, method: e.target.value })} /></Field></div>
-              <div style={{ flex: '1 1 160px', maxWidth: 220 }}><Field label="Gauge type"><input style={inputStyle} value={charForm.gauge_type} onChange={(e) => setCharForm({ ...charForm, gauge_type: e.target.value })} placeholder="Vernier, bore gauge…" /></Field></div>
-              <div style={{ flex: '0 1 130px' }}>
-                <Field label="Class">
-                  <select style={inputStyle} value={charForm.classification} onChange={(e) => setCharForm({ ...charForm, classification: e.target.value })}>
-                    <option value="critical">Critical</option><option value="major">Major</option><option value="minor">Minor</option>
-                  </select>
-                </Field>
-              </div>
-              <button type="button" style={primaryBtnStyle} onClick={() => create('characteristics', charForm, () => setCharForm({ code: '', name: '', char_type: 'variable', unit: '', method: '', gauge_type: '', classification: 'minor' }))}>Add</button>
-            </div>
-          </Section>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
               <thead><tr>{['Code', 'Name', 'Type', 'Unit', 'Method', 'Gauge type', 'Class', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
@@ -136,7 +141,7 @@ export default function QualityMastersPage() {
                     <td style={tdStyle}>{c.gauge_type || '—'}</td>
                     <td style={tdStyle}><Pill text={c.classification} hex={SEVERITY_HEX[c.classification]} /></td>
                     <td style={tdStyle}>{c.is_active ? 'Active' : 'Retired'}</td>
-                    <td style={tdStyle}><Toggle active={c.is_active} onClick={() => toggle('characteristics', c.id, c.is_active)} /></td>
+                    <td style={tdStyle}>{canEdit && <Toggle active={c.is_active} onClick={() => toggle('characteristics', c.id, c.is_active)} />}</td>
                   </tr>
                 ))}
               </tbody>
@@ -147,20 +152,6 @@ export default function QualityMastersPage() {
 
       {tab === 'defect-codes' && (
         <>
-          <Section title="New defect code" style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-              <div style={{ flex: '0 1 120px' }}><Field label="Code *"><input style={inputStyle} value={defForm.code} onChange={(e) => setDefForm({ ...defForm, code: e.target.value })} /></Field></div>
-              <div style={{ flex: '1 1 240px', maxWidth: 340 }}><Field label="Name *"><input style={inputStyle} value={defForm.name} onChange={(e) => setDefForm({ ...defForm, name: e.target.value })} /></Field></div>
-              <div style={{ flex: '0 1 170px' }}>
-                <Field label="Category">
-                  <select style={inputStyle} value={defForm.category} onChange={(e) => setDefForm({ ...defForm, category: e.target.value })}>
-                    {DEFECT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </Field>
-              </div>
-              <button type="button" style={primaryBtnStyle} onClick={() => create('defect-codes', defForm, () => setDefForm({ code: '', name: '', category: 'dimensional' }))}>Add</button>
-            </div>
-          </Section>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
               <thead><tr>{['Code', 'Name', 'Category', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
@@ -172,7 +163,7 @@ export default function QualityMastersPage() {
                     <td style={tdStyle}>{d.name}</td>
                     <td style={tdStyle}>{d.category}</td>
                     <td style={tdStyle}>{d.is_active ? 'Active' : 'Retired'}</td>
-                    <td style={tdStyle}><Toggle active={d.is_active} onClick={() => toggle('defect-codes', d.id, d.is_active)} /></td>
+                    <td style={tdStyle}>{canEdit && <Toggle active={d.is_active} onClick={() => toggle('defect-codes', d.id, d.is_active)} />}</td>
                   </tr>
                 ))}
               </tbody>
@@ -183,21 +174,6 @@ export default function QualityMastersPage() {
 
       {tab === 'disposition-codes' && (
         <>
-          <Section title="New disposition code" style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-              <div style={{ flex: '0 1 120px' }}><Field label="Code *"><input style={inputStyle} value={dispForm.code} onChange={(e) => setDispForm({ ...dispForm, code: e.target.value })} /></Field></div>
-              <div style={{ flex: '1 1 240px', maxWidth: 340 }}><Field label="Name *"><input style={inputStyle} value={dispForm.name} onChange={(e) => setDispForm({ ...dispForm, name: e.target.value })} /></Field></div>
-              <div style={{ flex: '0 1 190px' }}>
-                <Field label="Acts as">
-                  <select style={inputStyle} value={dispForm.disposition_type} onChange={(e) => setDispForm({ ...dispForm, disposition_type: e.target.value })}>
-                    {Object.entries(DISPOSITION_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </Field>
-              </div>
-              <button type="button" style={primaryBtnStyle} onClick={() => create('disposition-codes', dispForm, () => setDispForm({ code: '', name: '', disposition_type: 'rework' }))}>Add</button>
-            </div>
-            <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>&ldquo;Acts as&rdquo; decides who must approve it and what happens to the Blocked stock.</p>
-          </Section>
           <div style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
               <thead><tr>{['Code', 'Name', 'Acts as', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
@@ -208,7 +184,7 @@ export default function QualityMastersPage() {
                     <td style={tdStyle}>{d.name}</td>
                     <td style={tdStyle}>{DISPOSITION_TYPE_LABELS[d.disposition_type] || d.disposition_type}</td>
                     <td style={tdStyle}>{d.is_active ? 'Active' : 'Retired'}</td>
-                    <td style={tdStyle}><Toggle active={d.is_active} onClick={() => toggle('disposition-codes', d.id, d.is_active)} /></td>
+                    <td style={tdStyle}>{canEdit && <Toggle active={d.is_active} onClick={() => toggle('disposition-codes', d.id, d.is_active)} />}</td>
                   </tr>
                 ))}
               </tbody>
@@ -256,6 +232,64 @@ export default function QualityMastersPage() {
             </table>
           </div>
         </>
+      )}
+      {adding && canCreate && (
+        <ActionSheet icon={ADD_META[adding].icon} title={ADD_META[adding].title} subtitle={ADD_META[adding].subtitle} onClose={() => setAdding(null)}
+          onSubmit={submitAdd} busy={busy} error={addError} submitLabel="Add">
+          {adding === 'characteristics' && (
+            <>
+              <div style={pair}>
+                <div style={{ flex: '0 1 140px' }}><label style={sheetLabel}>Code <Req /></label><input style={sheetInput} value={charForm.code} onChange={(e) => setCharForm({ ...charForm, code: e.target.value })} autoFocus /></div>
+                <div style={{ flex: '1 1 220px' }}><label style={sheetLabel}>Name <Req /></label><input style={sheetInput} value={charForm.name} onChange={(e) => setCharForm({ ...charForm, name: e.target.value })} /></div>
+              </div>
+              <div style={{ ...pair, ...sheetGap }}>
+                <div style={half}>
+                  <label style={sheetLabel}>Type</label>
+                  <select style={sheetInput} value={charForm.char_type} onChange={(e) => setCharForm({ ...charForm, char_type: e.target.value })}>
+                    <option value="variable">Measured value</option><option value="attribute">Pass / fail</option>
+                  </select>
+                </div>
+                <div style={half}>
+                  <label style={sheetLabel}>Class</label>
+                  <select style={sheetInput} value={charForm.classification} onChange={(e) => setCharForm({ ...charForm, classification: e.target.value })}>
+                    <option value="critical">Critical</option><option value="major">Major</option><option value="minor">Minor</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ ...pair, ...sheetGap }}>
+                <div style={{ flex: '0 1 120px' }}><label style={sheetLabel}>Unit</label><input style={sheetInput} value={charForm.unit} onChange={(e) => setCharForm({ ...charForm, unit: e.target.value })} placeholder="mm" /></div>
+                <div style={{ flex: '1 1 200px' }}><label style={sheetLabel}>Gauge type</label><input style={sheetInput} value={charForm.gauge_type} onChange={(e) => setCharForm({ ...charForm, gauge_type: e.target.value })} placeholder="Vernier, bore gauge…" /></div>
+              </div>
+              <label style={{ ...sheetLabel, ...sheetGap }}>Method <Optional /></label>
+              <input style={sheetInput} value={charForm.method} onChange={(e) => setCharForm({ ...charForm, method: e.target.value })} />
+            </>
+          )}
+          {adding === 'defect-codes' && (
+            <>
+              <div style={pair}>
+                <div style={{ flex: '0 1 140px' }}><label style={sheetLabel}>Code <Req /></label><input style={sheetInput} value={defForm.code} onChange={(e) => setDefForm({ ...defForm, code: e.target.value })} autoFocus /></div>
+                <div style={{ flex: '1 1 220px' }}><label style={sheetLabel}>Name <Req /></label><input style={sheetInput} value={defForm.name} onChange={(e) => setDefForm({ ...defForm, name: e.target.value })} /></div>
+              </div>
+              <label style={{ ...sheetLabel, ...sheetGap }}>Category</label>
+              <select style={sheetInput} value={defForm.category} onChange={(e) => setDefForm({ ...defForm, category: e.target.value })}>
+                {DEFECT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </>
+          )}
+          {adding === 'disposition-codes' && (
+            <>
+              <div style={pair}>
+                <div style={{ flex: '0 1 140px' }}><label style={sheetLabel}>Code <Req /></label><input style={sheetInput} value={dispForm.code} onChange={(e) => setDispForm({ ...dispForm, code: e.target.value })} autoFocus /></div>
+                <div style={{ flex: '1 1 220px' }}><label style={sheetLabel}>Name <Req /></label><input style={sheetInput} value={dispForm.name} onChange={(e) => setDispForm({ ...dispForm, name: e.target.value })} /></div>
+              </div>
+              <label style={{ ...sheetLabel, ...sheetGap }}>Acts as</label>
+              <select style={sheetInput} value={dispForm.disposition_type} onChange={(e) => setDispForm({ ...dispForm, disposition_type: e.target.value })}>
+                {Object.entries(DISPOSITION_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              <p style={sheetHint}>&ldquo;Acts as&rdquo; decides who must approve it and what happens to the Blocked stock.</p>
+            </>
+          )}
+        </ActionSheet>
       )}
     </div>
   )

@@ -8,20 +8,36 @@ import { StoreStockTransfer } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
 import { primaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
+import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+
+const STATUS_HEX: Record<string, string> = {
+  pending_approval: '#f59e0b', approved: '#2563EB', in_transit: '#7c3aed', received: '#16a34a', rejected: '#dc2626', cancelled: '#78716c',
+}
+const STATUS_FILTERS = [
+  ['', 'All'], ['pending_approval', 'Pending approval'], ['approved', 'To dispatch'], ['in_transit', 'In transit'], ['received', 'Received'],
+  ['rejected', 'Rejected'], ['cancelled', 'Cancelled'],
+] as const
 
 export default function StoreStockTransfersPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
+  const { can } = useCan()
   const router = useRouter()
   const [transfers, setTransfers] = useState<StoreStockTransfer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
 
   useEffect(() => {
     if (!isAuthorized) return
     setLoading(true)
-    storeApi.listStockTransfers().then(setTransfers).catch(() => setError('Failed to load stock transfers.')).finally(() => setLoading(false))
+    storeApi.listStockTransfers().then(setTransfers).catch((err) => setError(extractErrorMessages(err, 'Could not load stock transfers — check your connection and reload; if it persists your account may lack access to this module.').join(' '))).finally(() => setLoading(false))
   }, [isAuthorized])
+
+  const shown = statusFilter ? transfers.filter((t) => t.status === statusFilter) : transfers
+  const count = (s: string) => transfers.filter((t) => t.status === s).length
 
   if (isLoading || !isAuthorized) return null
 
@@ -36,36 +52,54 @@ export default function StoreStockTransfersPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Stock Transfers</h1>
         </div>
-        <button data-tour="transfers-add-btn" onClick={() => router.push('/dashboard/store/transfers/new')} style={primaryBtnStyle}>
-          <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> New Transfer
-        </button>
+        {can('store', 'transfers', 'create') && (
+          <button data-tour="transfers-add-btn" onClick={() => router.push('/dashboard/store/transfers/new')} style={primaryBtnStyle}>
+            <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> New Transfer
+          </button>
+        )}
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Failed to Load Stock Transfers" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
+
+      <div data-tour="transfers-status-filter" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+        {STATUS_FILTERS.map(([v, l]) => {
+          const n = v ? count(v) : transfers.length
+          const on = statusFilter === v
+          return (
+            <button key={v || 'all'} onClick={() => setStatusFilter(v)} style={{ padding: '6px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              border: `1px solid ${on ? BRAND.primary : GLASS.border}`, background: on ? BRAND.primary : '#fff', color: on ? '#fff' : TEXT.secondary }}>
+              {l}{n ? ` (${n})` : ''}
+            </button>
+          )
+        })}
+      </div>
 
       <div data-tour="transfers-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr>
-              {['Transfer #', 'From', 'To', 'Date', 'Items', ''].map((h) => (
+              {['Transfer #', 'From', 'To', 'Date', 'Items', 'Status', ''].map((h) => (
                 <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && transfers.length === 0 && (
-              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stock transfers yet.</td></tr>
+            {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && shown.length === 0 && (
+              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{statusFilter ? 'No transfers in this status.' : 'No stock transfers yet.'}</td></tr>
             )}
-            {transfers.map((t) => (
-              <tr key={t.id} onClick={() => router.push(`/dashboard/store/transfers/${t.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
+            {!loading && shown.map((t) => (
+              <tr key={t.id} onClick={() => router.push(recordPath('/dashboard/store/transfers', t))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{t.transfer_number}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{t.from_location_name}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{t.to_location_name}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{t.transfer_date}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{t.items.length}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999, color: '#fff', background: STATUS_HEX[t.status] || '#78716c', whiteSpace: 'nowrap' }}>{t.status_label || t.status}</span>
+                </td>
                 <td onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(`/dashboard/store/transfers/${t.id}`)} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</span>
+                  <span onClick={() => router.push(recordPath('/dashboard/store/transfers', t))} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

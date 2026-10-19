@@ -21,6 +21,7 @@ class RateStore(Protocol):
     def record_violation(self, ip: str, ban_duration: float, threshold: int) -> bool: ...
     def is_banned(self, ip: str) -> bool: ...
     def track_scan(self, ip: str, window: float, limit: int) -> bool: ...
+    def track_distinct(self, key: str, member: str, window: float, limit: int) -> bool: ...
 
 
 # ─── In-memory implementation ─────────────────────────────────────────────────
@@ -31,6 +32,7 @@ class InMemoryRateStore:
         self._violations: dict[str, list[float]] = defaultdict(list)
         self._bans: dict[str, float] = {}
         self._scans: dict[str, list[float]] = defaultdict(list)
+        self._distinct: dict[str, dict[str, float]] = defaultdict(dict)
 
     def is_rate_limited(self, key: str, limit: int, window: float) -> bool:
         now = time.time()
@@ -64,12 +66,22 @@ class InMemoryRateStore:
         self._scans[ip].append(now)
         return len(self._scans[ip]) >= limit
 
+    def track_distinct(self, key: str, member: str, window: float, limit: int) -> bool:
+        """Record `member` under `key`; True once `limit` DIFFERENT members were
+        seen within `window` (repeats of the same member count once)."""
+        now = time.time()
+        seen = {m: t for m, t in self._distinct[key].items() if now - t < window}
+        seen[member] = now
+        self._distinct[key] = seen
+        return len(seen) >= limit
+
     def reset(self) -> None:
         """Test-only helper: wipe all in-memory state between test runs."""
         self._rate.clear()
         self._violations.clear()
         self._bans.clear()
         self._scans.clear()
+        self._distinct.clear()
 
 
 # ─── Redis implementation ─────────────────────────────────────────────────────
@@ -112,6 +124,14 @@ class RedisRateStore:
         now = time.time()
         self._r.zremrangebyscore(rkey, 0, now - window)
         self._r.zadd(rkey, {str(now): now})
+        self._r.expire(rkey, int(window) + 1)
+        return int(self._r.zcard(rkey)) >= limit
+
+    def track_distinct(self, key: str, member: str, window: float, limit: int) -> bool:
+        rkey = f"distinct:{key}"
+        now = time.time()
+        self._r.zremrangebyscore(rkey, 0, now - window)
+        self._r.zadd(rkey, {member: now})
         self._r.expire(rkey, int(window) + 1)
         return int(self._r.zcard(rkey)) >= limit
 

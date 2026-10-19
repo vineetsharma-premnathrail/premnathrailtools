@@ -18,10 +18,13 @@ from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.formatting.rule import DataBarRule
 
 from app.core.config import settings
+from app.core.permissions import ensure_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
-from app.modules.p2p.models.p2p_request import P2PRequest, P2P_CATEGORIES, P2P_ROLE_LABELS, PO_APPROVAL_ROLE_SETS
+from app.modules.p2p.models.p2p_request import P2PRequest, P2P_CATEGORIES, P2P_ROLE_LABELS, PO_APPROVAL_ROLE_SETS, SETTINGS_SCHEME
+from app.modules.p2p import approvals as p2p_approvals
+from app.modules.p2p.access import scope_prs
 from app.modules.p2p.schemas.mis import (
     P2PMisApproverPending, P2PMisCategoryBreakdown, P2PMisKpis, P2PMisSummaryResponse, P2PMisTrendPoint,
 )
@@ -30,16 +33,19 @@ router = APIRouter(prefix="/p2p/mis", tags=["P2P"])
 
 PERIODS = ("daily", "weekly", "monthly", "yearly", "custom")
 _ROLE_LABELS = {"department_head": "Department Head", "project_head": "Project Head", "plant_head": "Plant Head"}
-_PO_ROLE_LABELS = {"purchase_head": "Purchase Head", "director": "Director", "md": "MD"}
-_PO_ROLE_FLAGS = {"purchase_head": "is_purchase_head", "director": "is_director", "md": "is_md"}
+_PO_ROLE_LABELS = {"purchase_head": "Purchase Head", "director": "Director", "partner": "Partner"}
+_PO_ROLE_FLAGS = {"purchase_head": "is_purchase_head", "director": "is_director", "partner": "is_partner"}
 
 
 def _require_mis_access(user: User = Depends(get_current_user)) -> User:
-    """Purchase team, or any PO approver (purchase head/director/MD — who may
-    not hold the "purchase" app at all, only the boolean flag), or admin."""
-    if user.role == "admin" or "purchase" in user.get_apps() or user.is_purchase_head or user.is_director or user.is_md:
-        return user
-    raise HTTPException(status_code=403, detail="Purchase module or PO approver access is required for MIS reports.")
+    """Purchase team, or any PO approver (purchase head/director/Partner — who may
+    not hold the "purchase" app at all, only the boolean flag), or admin —
+    AND 'View' on Procurement › M.I.S Report in the Permission Matrix."""
+    if not (user.role == "admin" or "purchase" in user.get_apps() or user.is_purchase_head or user.is_director or user.is_partner):
+        raise HTTPException(status_code=403, detail="MIS reports are for the Purchase team and PO approvers (Purchase Head / "
+                                                    "Director / Partner). Ask an admin to add you to the Purchase team or flag you as a PO approver.")
+    ensure_tab_action(user, "p2p", "mis", "view")
+    return user
 
 
 def _resolve_range(period: str, ref: date, date_from: date | None, date_to: date | None) -> tuple[date, date]:
@@ -73,7 +79,7 @@ def _in_range(value: datetime | date | None, start: date, end: date) -> bool:
 
 
 def _po_last_approved_at(pr: P2PRequest) -> datetime | None:
-    dates = [d for d in (pr.purchase_head_approved_at, pr.director_approved_at, pr.md_approved_at, pr.po_approved_at) if d]
+    dates = [d for d in (pr.purchase_head_approved_at, pr.director_approved_at, pr.partner_approved_at, pr.po_approved_at) if d]
     return max(dates) if dates else None
 
 
@@ -97,7 +103,7 @@ def _trend_buckets(start: date, end: date, period: str) -> list[date]:
 
 def _gather(
     db: Session, period: str, ref: date, date_from: date | None, date_to: date | None,
-    category_code: str | None, department: str | None,
+    category_code: str | None, department: str | None, user: User,
 ) -> dict:
     start, end = _resolve_range(period, ref, date_from, date_to)
     start_dt, end_dt = _dt_bounds(start, end)
@@ -110,20 +116,22 @@ def _gather(
         and_(P2PRequest.purchase_head_approved_at.isnot(None), P2PRequest.purchase_head_approved_at >= start_dt, P2PRequest.purchase_head_approved_at <= end_dt),
         and_(P2PRequest.director_approved_at.isnot(None), P2PRequest.director_approved_at >= start_dt, P2PRequest.director_approved_at <= end_dt),
         and_(P2PRequest.po_approved_at.isnot(None), P2PRequest.po_approved_at >= start_dt, P2PRequest.po_approved_at <= end_dt),
-        and_(P2PRequest.md_approved_at.isnot(None), P2PRequest.md_approved_at >= start_dt, P2PRequest.md_approved_at <= end_dt),
+        and_(P2PRequest.partner_approved_at.isnot(None), P2PRequest.partner_approved_at >= start_dt, P2PRequest.partner_approved_at <= end_dt),
     ]
     query = db.query(P2PRequest).options(
         selectinload(P2PRequest.items), selectinload(P2PRequest.approvals),
         selectinload(P2PRequest.po_approvers), selectinload(P2PRequest.attachments),
     ).filter(or_(*date_filters))
+    # Every figure counts only the requisitions in the viewer's data scope.
+    query = scope_prs(query, db, user)
     if category_code:
         query = query.filter(P2PRequest.category_code == category_code)
     if department:
         query = query.filter(P2PRequest.department == department)
     prs = query.order_by(P2PRequest.created_at.asc()).all()
 
-    pending_pr_q = db.query(P2PRequest).filter(P2PRequest.status == "submitted")
-    pending_po_q = db.query(P2PRequest).filter(P2PRequest.status == "po_raised")
+    pending_pr_q = scope_prs(db.query(P2PRequest).filter(P2PRequest.status == "submitted"), db, user)
+    pending_po_q = scope_prs(db.query(P2PRequest).filter(P2PRequest.status == "po_raised"), db, user)
     if category_code:
         pending_pr_q = pending_pr_q.filter(P2PRequest.category_code == category_code)
         pending_po_q = pending_po_q.filter(P2PRequest.category_code == category_code)
@@ -163,20 +171,54 @@ def _gather(
     ]
 
     pending_counts: dict[tuple[int, str], int] = {}
+
+    def _count_engine(req) -> None:
+        for approver, stage in p2p_approvals.pending_approvers(db, req):
+            pending_counts[(approver.id, stage)] = pending_counts.get((approver.id, stage), 0) + 1
+
     for pr in pending_prs:
+        engine_req = p2p_approvals.pr_request(db, pr.id)
+        if engine_req is not None:
+            # Approval engine: whoever the current stage waits on.
+            _count_engine(engine_req)
+            continue
+        if pr.approvals:
+            # Row-based PRs (manager matrix / Settings approvers): who holds each pending row.
+            for a in pr.approvals:
+                if a.approved_at is None:
+                    key = (a.approver_id, P2P_ROLE_LABELS.get(a.role, a.role))
+                    pending_counts[key] = pending_counts.get(key, 0) + 1
+            continue
         for role in pr.pending_approval_roles:
-            uid = pr.approver_id if role == "department_head" else getattr(pr, f"{role}_id")
+            uid = pr.approver_id if role == "department_head" else getattr(pr, f"{role}_id", None)
             if uid:
-                key = (uid, _ROLE_LABELS[role])
+                key = (uid, _ROLE_LABELS.get(role, role))
                 pending_counts[key] = pending_counts.get(key, 0) + 1
     role_approvers = {
         role: db.query(User).filter(User.is_active == True, getattr(User, flag) == True).all()  # noqa: E712
         for role, flag in _PO_ROLE_FLAGS.items()
     }
+    partners = db.query(User).filter(User.is_active == True, User.is_partner == True).all()  # noqa: E712
     for pr in pending_pos:
+        _po, engine_req = p2p_approvals.po_request(db, pr.id)
+        if engine_req is not None and pr.approval_scheme == p2p_approvals.ENGINE_SCHEME:
+            _count_engine(engine_req)
+            continue
+        pending_rows = [a for a in pr.po_approvers if a.approved_at is None]
+        for a in pending_rows:
+            key = (a.approver_id, P2P_ROLE_LABELS.get(a.role, a.role))
+            pending_counts[key] = pending_counts.get(key, 0) + 1
         for role in pr.pending_po_approval_roles:
-            for approver in role_approvers[role]:
-                key = (approver.id, _PO_ROLE_LABELS[role])
+            if any(a.role == role for a in pending_rows):
+                continue
+            if role == "partner" and pr.approval_scheme == SETTINGS_SCHEME:
+                if pending_rows:
+                    continue  # Partners act only after the PO approvers
+                holders = partners
+            else:
+                holders = role_approvers.get(role, [])
+            for approver in holders:
+                key = (approver.id, _PO_ROLE_LABELS.get(role, P2P_ROLE_LABELS.get(role, role)))
                 pending_counts[key] = pending_counts.get(key, 0) + 1
     user_ids = {uid for uid, _ in pending_counts}
     users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()} if user_ids else {}
@@ -203,9 +245,9 @@ async def get_mis_summary(
     category_code: str | None = Query(None),
     department: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(_require_mis_access),
+    user: User = Depends(_require_mis_access),
 ):
-    data = _gather(db, period, date_param or date.today(), date_from, date_to, category_code, department)
+    data = _gather(db, period, date_param or date.today(), date_from, date_to, category_code, department, user)
     return P2PMisSummaryResponse(
         period=period, date_from=data["start"].isoformat(), date_to=data["end"].isoformat(),
         kpis=data["kpis"], trend=data["trend"], category_breakdown=data["category_breakdown"],
@@ -421,9 +463,10 @@ async def export_mis_report(
     category_code: str | None = Query(None),
     department: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(_require_mis_access),
+    user: User = Depends(_require_mis_access),
 ):
-    data = _gather(db, period, date_param or date.today(), date_from, date_to, category_code, department)
+    ensure_tab_action(user, "p2p", "mis", "export")
+    data = _gather(db, period, date_param or date.today(), date_from, date_to, category_code, department, user)
     start, end, prs = data["start"], data["end"], data["prs"]
 
     person_ids = {pr.requested_by_id for pr in prs} | {pr.assigned_buyer_id for pr in prs}
@@ -460,6 +503,10 @@ async def export_mis_report(
         return "\n".join(f"{label}: {_stamp(name, at)}" for label, name, uid, at in legacy if uid)
 
     def _po_approvers(pr: P2PRequest) -> str:
+        if pr.approval_scheme == SETTINGS_SCHEME:
+            lines = [f"PO Approver: {_stamp(a.approver_name, a.approved_at)}" for a in pr.po_approvers]
+            partner = _stamp(pr.partner_approved_by_name, pr.partner_approved_at) if pr.partner_approved_at else "Any Partner — Pending"
+            return chr(10).join(lines + [f"Partner: {partner}"]) if (lines or pr.po_number) else ""
         if pr.project_type in PO_APPROVAL_ROLE_SETS:
             lines = [f"{P2P_ROLE_LABELS.get(a.role, a.role)}: {_stamp(a.approver_name, a.approved_at)}" for a in pr.po_approvers]
             if not lines:
@@ -481,7 +528,9 @@ async def export_mis_report(
         )
 
     def _pr_link(pr: P2PRequest) -> str:
-        return f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/p2p/{pr.id}"
+        from app.core.record_ref import encode_ref
+
+        return f"{settings.FRONTEND_URL.rstrip('/')}/dashboard/p2p/{encode_ref(pr.id)}"
 
     report_prs = [pr for pr in prs if _in_range(pr.created_at, start, end)]
     status_label = {k: k.replace("_", " ").title().replace("Po ", "PO ") for k in _STATUS_COLORS}
@@ -537,13 +586,13 @@ async def export_mis_report(
     po_rows = [
         [
             pr.po_number, pr.p2p_number, pr.selected_vendor or "—", _fmt(pr.po_date), _fmt(pr.expected_delivery),
-            _fmt(pr.purchase_head_approved_at), _fmt(pr.director_approved_at), _fmt(pr.md_approved_at), pr.status,
+            _fmt(pr.purchase_head_approved_at), _fmt(pr.director_approved_at), _fmt(pr.partner_approved_at), pr.status,
         ]
         for pr in prs if pr.po_number and _in_range(pr.po_date, start, end)
     ]
     _write_sheet(wb, "PO Approval Details", subtitle, [
         "PO Number", "Against PR", "Vendor", "PO Date", "Expected Delivery",
-        "Purchase Head Approved", "Director Approved", "MD Approved", "Status",
+        "Purchase Head Approved", "Director Approved", "Partner Approved", "Status",
     ], po_rows, badge_cols={"Status": _STATUS_COLORS})
 
     # Trend — a table + native line chart of Created/Approved/PO Raised across

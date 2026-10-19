@@ -7,23 +7,27 @@ import { crmApi } from '@/lib/api'
 import { Organization } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
 import OrganizationForm from '@/components/crm/OrganizationForm'
+import { extractErrorMessages } from '@/lib/validation'
+import { useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 export default function EditOrganizationPage() {
   const { isAuthorized, isLoading } = useRequireApp('crm')
   const params = useParams()
   const router = useRouter()
-  const orgId = Number(params.id)
+  const ref = params.id as string
+  const { id: orgId, error: linkError } = useRecordId(ref)
   const [org, setOrg] = useState<Organization | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
     if (isAuthorized && orgId) {
-      setError('')
-      crmApi.getOrganization(orgId).then(setOrg).catch(() => setError('Failed to load organization.'))
+      crmApi.getOrganization(orgId).then(setOrg).catch((err) => setError(extractErrorMessages(err, 'Could not load this customer organization — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
     }
   }, [isAuthorized, orgId])
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><CrmNav /><InvalidRecordLink message={linkError} listHref="/dashboard/crm/organizations" listLabel="Back to customer organizations" /></div>)
 
   if (error) {
     return (
@@ -39,18 +43,15 @@ export default function EditOrganizationPage() {
   if (!org) return null
 
   return (
-    <div>
-      <CrmNav />
-
       <OrganizationForm
+        nav={<CrmNav />}
         initial={org}
-        title="Edit Organization"
-        breadcrumb={<><span onClick={() => router.push(`/dashboard/crm/organizations/${orgId}`)} style={{ cursor: 'pointer' }}>{org.name}</span> › Edit</>}
+        title="Edit Customer Organization"
+        breadcrumb={<><span onClick={() => router.push(`/dashboard/crm/organizations/${ref}`)} style={{ cursor: 'pointer' }}>{org.name}</span> › Edit</>}
         submitLabel="Save Changes"
-        onCancel={() => router.push(`/dashboard/crm/organizations/${orgId}`)}
-        onSubmit={(payload) => crmApi.updateOrganization(orgId, payload)}
-        onSaved={() => router.push(`/dashboard/crm/organizations/${orgId}`)}
+        onCancel={() => router.push(`/dashboard/crm/organizations/${ref}`)}
+        onSubmit={(payload) => crmApi.updateOrganization(orgId!, payload)}
+        onSaved={() => router.push(`/dashboard/crm/organizations/${ref}`)}
       />
-    </div>
   )
 }

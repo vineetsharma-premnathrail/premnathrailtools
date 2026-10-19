@@ -7,8 +7,8 @@ app/modules/hr/services/leave.py."""
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
-from sqlalchemy import or_
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.audit import record_audit
@@ -31,7 +31,13 @@ from app.modules.hr.schemas.leave import (
     HrLeaveTypeResponse,
     HrLeaveTypeUpdate,
 )
-from app.modules.hr.services.access import can_decide, ensure_can_decide, is_hr, require_hr
+from app.core.data_scope import apply_scope
+from app.core.permissions import ensure_tab_action, require_feature_action
+from app.modules.hr.services import approvals as hr_approvals
+from app.modules.hr.services import role_events
+from app.modules.hr.services.access import (
+    can_decide, can_hr, ensure_can_decide, ensure_self_or_hr, is_hr_for, require_hr_tab, require_me_view,
+)
 from app.modules.hr.services.calendar import CalendarCache, today_ist
 from app.modules.hr.services.leave import (
     ZERO,
@@ -51,6 +57,20 @@ from app.utils.sharepoint import download_file_content, upload_file_to_sharepoin
 
 router = APIRouter(prefix="/hr/leave", tags=["HR"])
 
+# HR-team gate for this file: hr app + Permission Matrix › HR › leave.
+require_hr = require_hr_tab("leave")
+require_hr_leave_edit = require_hr_tab("leave", "edit")
+# Leave › Allot & adjust balances feature (core/features/hr.py)
+require_balance_allot = require_feature_action("hr", "leave", "balance_admin", "create")
+require_balance_adjust = require_feature_action("hr", "leave", "balance_admin", "edit")
+# Leave types live on the Masters tab.
+require_hr_masters_create = require_hr_tab("masters", "create")
+require_hr_masters_edit = require_hr_tab("masters", "edit")
+# Read-only per-employee data also shown on Employees › profile › Leave.
+require_hr_leave_read = require_hr_tab(("leave", "employees"))
+# Who may open any leave request's detail/attachment as HR.
+LEAVE_VIEW_TABS = ("leave", "approvals", "employees")
+
 NOTIFY_TYPE = "hr_leave"
 ENTITY = "hr_leave_request"
 
@@ -60,10 +80,12 @@ ENTITY = "hr_leave_request"
 async def list_leave_types(
     include_inactive: bool = Query(False),
     db: Session = Depends(get_db),
+    # Shared lookup inside HR (My HR apply form, Leave, Masters): the hr app
+    # (router-level require_hr_module) is enough to read active types.
     user: User = Depends(get_current_user),
 ):
     q = db.query(HrLeaveType)
-    if not (include_inactive and is_hr(user)):
+    if not (include_inactive and is_hr_for(user, ("leave", "masters"))):
         q = q.filter(HrLeaveType.is_active.is_(True))
     return q.order_by(HrLeaveType.sort_order.asc(), HrLeaveType.name.asc()).all()
 
@@ -82,7 +104,7 @@ def _check_type_rules(lt: HrLeaveType) -> None:
 
 
 @router.post("/types", response_model=HrLeaveTypeResponse)
-async def create_leave_type(payload: HrLeaveTypeCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def create_leave_type(payload: HrLeaveTypeCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr_masters_create)):
     if db.query(HrLeaveType).filter(HrLeaveType.code == payload.code).first():
         raise HTTPException(status_code=409, detail=f"Leave type code '{payload.code}' is already used. Pick a different code.")
     lt = HrLeaveType(**payload.model_dump())
@@ -94,7 +116,7 @@ async def create_leave_type(payload: HrLeaveTypeCreate, db: Session = Depends(ge
 
 
 @router.patch("/types/{type_id}", response_model=HrLeaveTypeResponse)
-async def update_leave_type(type_id: int, payload: HrLeaveTypeUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def update_leave_type(type_id: int, payload: HrLeaveTypeUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr_masters_edit)):
     lt = db.get(HrLeaveType, type_id)
     if not lt:
         raise HTTPException(status_code=404, detail=f"Leave type #{type_id} doesn't exist. Refresh the page — it may have been removed.")
@@ -145,7 +167,7 @@ def _balance_responses(db: Session, rows: list[HrLeaveBalance]) -> list[HrLeaveB
 async def my_balances(
     year: int | None = Query(None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_view),
 ):
     year = year or today_ist().year
     rows = db.query(HrLeaveBalance).filter(HrLeaveBalance.user_id == user.id, HrLeaveBalance.year == year).all()
@@ -159,10 +181,13 @@ async def list_balances(
     leave_type_id: int | None = Query(None),
     search: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_hr),
+    _user: User = Depends(require_hr_leave_read),
 ):
     year = year or today_ist().year
     q = db.query(HrLeaveBalance).filter(HrLeaveBalance.year == year)
+    scope = hr_approvals.employee_scope_filter(db, _user)  # HR data access
+    if scope is not None:
+        q = q.filter(HrLeaveBalance.user_id.in_(db.query(User.id).filter(scope)))
     if user_id:
         q = q.filter(HrLeaveBalance.user_id == user_id)
     if leave_type_id:
@@ -177,7 +202,7 @@ async def list_balances(
 
 
 @router.post("/balances/allot")
-async def allot_balances(payload: HrLeaveBalanceAllotPayload, db: Session = Depends(get_db), user: User = Depends(require_hr)):
+async def allot_balances(payload: HrLeaveBalanceAllotPayload, db: Session = Depends(get_db), user: User = Depends(require_balance_allot)):
     summary = allot_year(db, payload.year, user, payload.leave_type_ids, payload.prorate_joiners)
     record_audit(
         db, entity_type="hr_leave_balance", entity_id=None, action="allotted", module_key="hr",
@@ -189,7 +214,7 @@ async def allot_balances(payload: HrLeaveBalanceAllotPayload, db: Session = Depe
 
 
 @router.post("/balances/adjust", response_model=HrLeaveBalanceResponse)
-async def adjust_balance(payload: HrLeaveBalanceAdjustPayload, db: Session = Depends(get_db), user: User = Depends(require_hr)):
+async def adjust_balance(payload: HrLeaveBalanceAdjustPayload, db: Session = Depends(get_db), user: User = Depends(require_balance_adjust)):
     target = db.get(User, payload.user_id)
     if not target:
         raise HTTPException(status_code=404, detail=f"User #{payload.user_id} doesn't exist. Pick the employee again from the list.")
@@ -198,6 +223,7 @@ async def adjust_balance(payload: HrLeaveBalanceAdjustPayload, db: Session = Dep
             status_code=403,
             detail="You can't adjust your own leave balance. Ask another HR user to make the adjustment for you.",
         )
+    hr_approvals.ensure_employee_in_scope(db, user, target)  # HR data access
     lt = db.get(HrLeaveType, payload.leave_type_id)
     if not lt:
         raise HTTPException(status_code=404, detail=f"Leave type #{payload.leave_type_id} doesn't exist. Pick a leave type from the list.")
@@ -233,16 +259,33 @@ async def adjust_balance(payload: HrLeaveBalanceAdjustPayload, db: Session = Dep
 
 
 # ─────────────────────────────── Requests ───────────────────────────────
+def _may_cancel(user: User, req: HrLeaveRequest) -> bool:
+    """Own request: withdrawing it is hr:me:edit (not a delete). Someone
+    else's: HR with hr:leave:edit."""
+    return can_hr(user, "me", "edit") if user.id == req.user_id else can_hr(user, "leave", "edit")
+
+
 def _can_cancel(user: User, req: HrLeaveRequest) -> bool:
     if req.status == "pending":
-        return user.id == req.user_id or is_hr(user)
+        return _may_cancel(user, req)
     if req.status == "approved" and req.from_date > today_ist():
-        return user.id == req.user_id or is_hr(user)
+        return _may_cancel(user, req)
     return False
+
+
+def _can_decide(db: Session, viewer: User, r: HrLeaveRequest, areqs: dict) -> bool:
+    """Engine-routed requests: whoever the engine lets act now. Requests from
+    before the cut-over (no engine request): the legacy access.can_decide."""
+    if r.status != "pending":
+        return False
+    if r.id in areqs:
+        return hr_approvals.can_decide_engine(db, viewer, areqs[r.id])
+    return can_decide(viewer, r.approver_id, r.user_id, "approve", ("leave",))
 
 
 def _request_responses(db: Session, rows: list[HrLeaveRequest], viewer: User) -> list[HrLeaveRequestResponse]:
     ids = [r.user_id for r in rows] + [r.approver_id for r in rows] + [r.decided_by_id for r in rows]
+    areqs = hr_approvals.latest_by_entity(db, ENTITY, [r.id for r in rows])
     users = users_by_id(db, ids)
     profiles = profiles_by_user(db, [r.user_id for r in rows])
     depts = department_names(db)
@@ -257,8 +300,9 @@ def _request_responses(db: Session, rows: list[HrLeaveRequest], viewer: User) ->
             "leave_type_code": t.code if t else None, "leave_type_name": t.name if t else None,
             "approver_name": a.name if a else None, "decided_by_name": d.name if d else None,
             "attachment_name": r.attachment_path.rsplit("/", 1)[-1] if r.attachment_path else None,
-            "can_decide": r.status == "pending" and can_decide(viewer, r.approver_id, r.user_id),
+            "can_decide": _can_decide(db, viewer, r, areqs),
             "can_cancel": _can_cancel(viewer, r),
+            "approval_request_id": areqs[r.id].id if r.id in areqs else None,
         })
         out.append(resp)
     return out
@@ -277,9 +321,14 @@ def _load_request(db: Session, request_id: int, lock: bool = False) -> HrLeaveRe
     return req
 
 
-def _ensure_can_view(user: User, req: HrLeaveRequest) -> None:
-    if user.id in (req.user_id, req.approver_id) or is_hr(user):
+def _ensure_can_view(db: Session, user: User, req: HrLeaveRequest) -> None:
+    if user.id in (req.user_id, req.approver_id):
         return
+    if is_hr_for(user, LEAVE_VIEW_TABS):
+        hr_approvals.ensure_scope_unless_party(db, user, req, req.user_id, req.approver_id)
+        return
+    if hr_approvals.can_decide_engine(db, user, hr_approvals.open_request(db, ENTITY, req.id)):
+        return  # an engine approver / delegate / escalation target of this request
     raise HTTPException(
         status_code=403,
         detail="You can only view your own leave requests or ones waiting for your approval. Ask HR if you need access to this one.",
@@ -307,7 +356,7 @@ async def my_requests(
     status: str | None = Query(None),
     year: int | None = Query(None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_view),
 ):
     q = _apply_filters(db.query(HrLeaveRequest).filter(HrLeaveRequest.user_id == user.id), status, None, None, None, None)
     if year:
@@ -318,11 +367,17 @@ async def my_requests(
 
 @router.get("/requests/pending-for-me", response_model=list[HrLeaveRequestResponse])
 async def pending_for_me(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    q = db.query(HrLeaveRequest).filter(HrLeaveRequest.status == "pending", HrLeaveRequest.user_id != user.id)
-    if is_hr(user):
-        q = q.filter(or_(HrLeaveRequest.approver_id == user.id, HrLeaveRequest.approver_id.is_(None)))
+    # Engine-routed requests: the engine's inbox (approver / delegate /
+    # escalation target). Pre-engine requests: the captured approver, plus HR
+    # for requests with no approver.
+    if is_hr_for(user, "approvals"):
+        legacy = or_(HrLeaveRequest.approver_id == user.id, HrLeaveRequest.approver_id.is_(None))
     else:
-        q = q.filter(HrLeaveRequest.approver_id == user.id)
+        legacy = HrLeaveRequest.approver_id == user.id
+    legacy = and_(legacy, HrLeaveRequest.id.notin_(hr_approvals.engine_tracked_ids(ENTITY)))
+    engine_ids = hr_approvals.inbox_ids(db, user, ENTITY)
+    q = db.query(HrLeaveRequest).filter(HrLeaveRequest.status == "pending", HrLeaveRequest.user_id != user.id)
+    q = q.filter(or_(legacy, HrLeaveRequest.id.in_(engine_ids)) if engine_ids else legacy)
     rows = q.order_by(HrLeaveRequest.from_date.asc()).all()
     return _request_responses(db, rows, user)
 
@@ -337,9 +392,9 @@ async def list_requests(
     search: str | None = Query(None),
     limit: int = Query(500, ge=1, le=2000),
     db: Session = Depends(get_db),
-    user: User = Depends(require_hr),
+    user: User = Depends(require_hr_leave_read),
 ):
-    q = _apply_filters(db.query(HrLeaveRequest), status, user_id, leave_type_id, date_from, date_to)
+    q = _apply_filters(apply_scope(db.query(HrLeaveRequest), user, HrLeaveRequest), status, user_id, leave_type_id, date_from, date_to)
     if search and search.strip():
         term = f"%{search.strip()}%"
         q = q.join(User, User.id == HrLeaveRequest.user_id).filter(
@@ -350,13 +405,18 @@ async def list_requests(
 
 
 def _resolve_applicant(db: Session, user: User, user_id: int | None) -> User:
+    """Applying for yourself is self-service (hr:me:create — NOT
+    hr:leave:create); applying on someone else's behalf is HR work
+    (hr:leave:create)."""
     if not user_id or user_id == user.id:
+        ensure_tab_action(user, "hr", "me", "create")
         return user
-    if not is_hr(user):
-        raise HTTPException(status_code=403, detail="Only HR can apply leave on behalf of another employee. Apply for yourself, or ask HR.")
+    if not can_hr(user, "leave", "create"):
+        raise HTTPException(status_code=403, detail="Only HR with 'Create' permission on HR & Administration › Leave can apply leave on behalf of another employee. Apply for yourself, or ask an admin to add that permission to one of your roles in Organization › Role & Permissions.")
     target = db.get(User, user_id)
     if not target or not target.is_active:
         raise HTTPException(status_code=404, detail=f"Employee #{user_id} doesn't exist or is inactive. Pick the employee again from the list.")
+    hr_approvals.ensure_employee_in_scope(db, user, target)  # HR data access
     return target
 
 
@@ -413,6 +473,7 @@ async def apply_leave(
     attachment: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    background_tasks: BackgroundTasks = None,
 ):
     applicant = _resolve_applicant(db, user, user_id)
     if attachment is not None and not attachment.filename:
@@ -429,12 +490,23 @@ async def apply_leave(
     req = HrLeaveRequest(
         request_no=next_sequential_id(db, prefix=f"LV-{today_ist().year}-", column=HrLeaveRequest.request_no),
         user_id=applicant.id, leave_type_id=lt.id, from_date=from_date, to_date=to_date,
-        from_session=from_session, to_session=to_session if from_date != to_date else from_session,
+        # Single day: store the one session count_leave_days used (from_session
+        # unless it is 'full', then to_session) so approval recounts the same days.
+        from_session=from_session if from_date != to_date or from_session != "full" else to_session,
+        to_session=to_session if from_date != to_date else (from_session if from_session != "full" else to_session),
         days=ev.days, reason=reason.strip(), contact_during_leave=(contact_during_leave or "").strip() or None,
         status="pending", approver_id=applicant.reporting_manager_id,
     )
     db.add(req)
     db.flush()
+    # Route through Organization › Approval Workflows (default: reporting
+    # manager + HR approvers). The engine notifies the approvers, and refuses
+    # with the exact reason when nobody can approve — before any upload.
+    appr = hr_approvals.submit(
+        db, hr_approvals.LEAVE_KEY, entity_id=req.id, requester=applicant,
+        title=f"{lt.name} — {applicant.name}, {fmt_days(ev.days)} from {fmt_date(from_date)}", reference=req.request_no,
+        context={"days": float(ev.days), "leave_type": lt.code, "is_paid": bool(lt.is_paid)},
+    )
     if attachment is not None:
         try:
             await _store_attachment(req, attachment)
@@ -442,10 +514,16 @@ async def apply_leave(
             db.rollback()
             raise
     msg = f"{applicant.name} applied for {fmt_days(ev.days)} of {lt.name} ({fmt_date(from_date)} to {fmt_date(to_date)}), {req.request_no}."
-    if req.approver_id:
-        notify_user(db, req.approver_id, "Leave request waiting for you", msg, NOTIFY_TYPE, ENTITY, req.id, teams=True)
     if applicant.id != user.id:
         notify_user(db, applicant.id, "Leave applied on your behalf", f"{user.name} applied {req.request_no} for you. {msg}", NOTIFY_TYPE, ENTITY, req.id)
+    # Role event (core/events/hr.py) for HR approvers who opted in; the
+    # engine already pinged the routed approvers.
+    role_events.fire(
+        db, background_tasks, "leave_submitted", title=f"Leave waiting for approval — {req.request_no}",
+        message=f"{msg} Reason: {req.reason}. Approve or reject it under HR › Approvals.",
+        entity_type=ENTITY, entity_id=req.id, actor=user, can_open=role_events.employee_opener(db, applicant),
+        skip={applicant.id} | role_events.approver_ids(appr),
+    )
     db.commit()
     db.refresh(req)
     return _request_responses(db, [req], user)[0]
@@ -454,7 +532,7 @@ async def apply_leave(
 @router.get("/requests/{request_id}", response_model=HrLeaveRequestResponse)
 async def get_request(request_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     req = _load_request(db, request_id)
-    _ensure_can_view(user, req)
+    _ensure_can_view(db, user, req)
     return _request_responses(db, [req], user)[0]
 
 
@@ -466,8 +544,10 @@ async def upload_request_attachment(
     user: User = Depends(get_current_user),
 ):
     req = _load_request(db, request_id)
-    if user.id != req.user_id and not is_hr(user):
-        raise HTTPException(status_code=403, detail="Only the employee who applied (or HR) can attach documents to this leave request.")
+    if user.id != req.user_id and not is_hr_for(user, "leave"):
+        raise HTTPException(status_code=403, detail="Only the employee who applied, or HR with access to HR & Administration › Leave, can attach documents to this leave request.")
+    ensure_self_or_hr(user, req.user_id, "edit", "leave", "edit")
+    hr_approvals.ensure_scope_unless_party(db, user, req, req.user_id)  # HR acting on someone else's: data access
     if req.status != "pending":
         raise HTTPException(status_code=400, detail=f"{req.request_no} is already {req.status}, so its attachment can't be changed. Ask HR if a document must be added.")
     await _store_attachment(req, attachment)
@@ -479,7 +559,7 @@ async def upload_request_attachment(
 @router.get("/requests/{request_id}/attachment")
 async def download_request_attachment(request_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     req = _load_request(db, request_id)
-    _ensure_can_view(user, req)
+    _ensure_can_view(db, user, req)
     if not req.attachment_path:
         raise HTTPException(status_code=404, detail=f"{req.request_no} has no attachment.")
     if not settings.SHAREPOINT_SITE_ID:
@@ -497,15 +577,10 @@ def _pending_or_400(req: HrLeaveRequest, verb: str) -> None:
         )
 
 
-@router.post("/requests/{request_id}/approve", response_model=HrLeaveRequestResponse)
-async def approve_request(
-    request_id: int,
-    payload: HrLeaveRequestDecisionPayload | None = None,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    req = _load_request(db, request_id, lock=True)
-    ensure_can_decide(user, req.approver_id, req.user_id, "leave request")
+def _approve_pending(db: Session, req: HrLeaveRequest, user: User, remarks: str | None, notify: bool = True) -> None:
+    """Approve a pending leave: recount, check the balance and attendance,
+    deduct, mark the days on leave. Used by the engine's on_decided and by the
+    legacy path for requests submitted before the engine cut-over."""
     _pending_or_400(req, "approved")
     lt = db.get(HrLeaveType, req.leave_type_id)
     applicant = db.get(User, req.user_id)
@@ -549,19 +624,85 @@ async def approve_request(
     req.status = "approved"
     req.decided_by_id = user.id
     req.decided_at = datetime.now(timezone.utc)
-    req.decision_remarks = ((payload.remarks or "").strip() or None) if payload else None
+    req.decision_remarks = (remarks or "").strip() or None
     apply_leave_to_attendance(db, req, lt, working_portions(ev.breakdown), user.id)
     record_audit(
         db, entity_type=ENTITY, entity_id=req.id, action="approved", module_key="hr",
         summary=f"Approved {req.request_no} ({fmt_days(req.days)} {lt.code}) for {applicant.name}" + (f": {req.decision_remarks}" if req.decision_remarks else ""),
         user_id=user.id,
     )
-    notify_user(
-        db, req.user_id, "Leave approved",
-        f"{user.name} approved your {lt.name} {req.request_no} ({fmt_date(req.from_date)} to {fmt_date(req.to_date)}, {fmt_days(req.days)})."
-        + (f" Remarks: {req.decision_remarks}" if req.decision_remarks else ""),
-        NOTIFY_TYPE, ENTITY, req.id,
+    if notify:
+        notify_user(
+            db, req.user_id, "Leave approved",
+            f"{user.name} approved your {lt.name} {req.request_no} ({fmt_date(req.from_date)} to {fmt_date(req.to_date)}, {fmt_days(req.days)})."
+            + (f" Remarks: {req.decision_remarks}" if req.decision_remarks else ""),
+            NOTIFY_TYPE, ENTITY, req.id,
+        )
+
+
+def _reject_pending(db: Session, req: HrLeaveRequest, user: User, remarks: str, notify: bool = True, returned: bool = False) -> None:
+    _pending_or_400(req, "rejected")
+    req.status = "rejected"
+    req.decided_by_id = user.id
+    req.decided_at = datetime.now(timezone.utc)
+    # Leave has no draft to edit: "returned for changes" ends it like a
+    # rejection, and the employee applies again.
+    req.decision_remarks = f"Returned for changes: {remarks}" if returned else remarks
+    lt = db.get(HrLeaveType, req.leave_type_id)
+    record_audit(
+        db, entity_type=ENTITY, entity_id=req.id, action="rejected", module_key="hr",
+        summary=f"{'Returned' if returned else 'Rejected'} {req.request_no}: {remarks}", user_id=user.id,
     )
+    if notify:
+        notify_user(
+            db, req.user_id, "Leave rejected",
+            f"{user.name} rejected your {lt.name if lt else 'leave'} {req.request_no}. Reason: {remarks}",
+            NOTIFY_TYPE, ENTITY, req.id,
+        )
+
+
+def _on_leave_decided(db: Session, areq, outcome: str, actor: User) -> None:
+    """Approval engine callback (hr.leave). The engine has already notified
+    the employee, so no second notification here."""
+    req = _load_request(db, areq.entity_id, lock=True)
+    comment = hr_approvals.decision_comment(areq, actor)
+    if outcome == "approved":
+        _approve_pending(db, req, actor, comment, notify=False)
+    elif outcome in ("rejected", "returned"):
+        _reject_pending(db, req, actor, comment or "", notify=False, returned=outcome == "returned")
+    elif outcome == "cancelled" and req.status == "pending":
+        req.status = "cancelled"
+        req.cancelled_at = datetime.now(timezone.utc)
+
+
+hr_approvals.register_hr_type(
+    hr_approvals.LEAVE_KEY, "leave", "Leave request", ENTITY, "/dashboard/hr/approvals", _on_leave_decided,
+    description="Employee leave (HR › Leave). Approving deducts the balance and marks the days on leave.",
+    context_fields={
+        "days": {"label": "Days", "type": "number"},
+        "leave_type": {"label": "Leave type code", "type": "text"},
+        "is_paid": {"label": "Paid leave", "type": "bool"},
+    },
+)
+
+
+@router.post("/requests/{request_id}/approve", response_model=HrLeaveRequestResponse)
+async def approve_request(
+    request_id: int,
+    payload: HrLeaveRequestDecisionPayload | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    req = _load_request(db, request_id, lock=True)
+    remarks = ((payload.remarks or "").strip() or None) if payload else None
+    # Engine-routed: the engine decides who may act (manager, HR approvers,
+    # delegates, escalation, admin stand-in) and calls _on_leave_decided.
+    if not hr_approvals.decide(db, ENTITY, req.id, user, True, remarks, what="leave request", record_pending=req.status == "pending"):
+        # Pre-engine request: routed approver passes on routing alone; anyone
+        # else needs hr:approvals:approve or hr:leave:approve.
+        ensure_can_decide(user, req.approver_id, req.user_id, "leave request", "approve", ("leave",))
+        hr_approvals.ensure_scope_unless_party(db, user, req, req.user_id, req.approver_id)  # HR deciders: data access
+        _approve_pending(db, req, user, remarks)
     db.commit()
     db.refresh(req)
     return _request_responses(db, [req], user)[0]
@@ -575,25 +716,13 @@ async def reject_request(
     user: User = Depends(get_current_user),
 ):
     req = _load_request(db, request_id, lock=True)
-    ensure_can_decide(user, req.approver_id, req.user_id, "leave request")
-    _pending_or_400(req, "rejected")
     remarks = (payload.remarks or "").strip()
     if not remarks:
         raise HTTPException(status_code=400, detail="Give a reason for rejecting so the employee knows what to change. Add remarks and try again.")
-    req.status = "rejected"
-    req.decided_by_id = user.id
-    req.decided_at = datetime.now(timezone.utc)
-    req.decision_remarks = remarks
-    lt = db.get(HrLeaveType, req.leave_type_id)
-    record_audit(
-        db, entity_type=ENTITY, entity_id=req.id, action="rejected", module_key="hr",
-        summary=f"Rejected {req.request_no}: {remarks}", user_id=user.id,
-    )
-    notify_user(
-        db, req.user_id, "Leave rejected",
-        f"{user.name} rejected your {lt.name if lt else 'leave'} {req.request_no}. Reason: {remarks}",
-        NOTIFY_TYPE, ENTITY, req.id,
-    )
+    if not hr_approvals.decide(db, ENTITY, req.id, user, False, remarks, what="leave request", record_pending=req.status == "pending"):
+        ensure_can_decide(user, req.approver_id, req.user_id, "leave request", "reject", ("leave",))
+        hr_approvals.ensure_scope_unless_party(db, user, req, req.user_id, req.approver_id)  # HR deciders: data access
+        _reject_pending(db, req, user, remarks)
     db.commit()
     db.refresh(req)
     return _request_responses(db, [req], user)[0]
@@ -607,10 +736,17 @@ async def cancel_request(
     user: User = Depends(get_current_user),
 ):
     req = _load_request(db, request_id, lock=True)
-    if user.id != req.user_id and not is_hr(user):
-        raise HTTPException(status_code=403, detail="Only the employee who applied (or HR) can cancel this leave request.")
+    if user.id != req.user_id and not is_hr_for(user, "leave"):
+        raise HTTPException(status_code=403, detail="Only the employee who applied, or HR with access to HR & Administration › Leave, can cancel this leave request. Ask HR or an admin to grant the Leave tab in Users › Permission Matrix.")
+    # Withdrawing your own request = hr:me:edit (not delete); HR cancelling
+    # someone else's = hr:leave:edit.
+    ensure_self_or_hr(user, req.user_id, "edit", "leave", "edit")
+    hr_approvals.ensure_scope_unless_party(db, user, req, req.user_id)
     if req.status in ("rejected", "cancelled"):
         raise HTTPException(status_code=400, detail=f"{req.request_no} is already {req.status}; there is nothing to cancel.")
+    if req.status == "pending":
+        # Close the live approval so it leaves every approver's inbox.
+        hr_approvals.withdraw(db, ENTITY, req.id, user, (payload.remarks or "").strip() or None if payload else None)
     lt = db.get(HrLeaveType, req.leave_type_id)
     was_approved = req.status == "approved"
     if was_approved:

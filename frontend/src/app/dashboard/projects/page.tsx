@@ -1,95 +1,94 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { projectsApi } from '@/lib/api'
-import { PmProject } from '@/types'
-import { TEXT, GLASS, SHADOWS, DANGER, WARNING, SUCCESS } from '@/lib/theme'
-import ProjectsNav from '@/components/projects/ProjectsNav'
+import { PmDashboard } from '@/types'
+import { TEXT } from '@/lib/theme'
+import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
+import ProjectsNav from '@/components/projects/ProjectsNav'
+import { recordPath } from '@/lib/recordRef'
+import { ErrorBanner, PROJECT_HEX, PROJECT_LABELS, Pill, sectionStyle, tdStyle, thStyle, todayIso } from '@/components/projects/work/pmUi'
 
-type KpiTone = 'bad' | 'warn' | 'good' | 'neutral'
-
-function cardTone(tone: KpiTone) {
-  if (tone === 'bad') return { background: `${DANGER.primary}14`, border: `1px solid ${DANGER.primary}33`, valueColor: DANGER.primary }
-  if (tone === 'warn') return { background: `${WARNING.primary}14`, border: `1px solid ${WARNING.primary}33`, valueColor: WARNING.hover }
-  if (tone === 'good') return { background: `${SUCCESS.primary}14`, border: `1px solid ${SUCCESS.primary}33`, valueColor: SUCCESS.hover }
-  return { background: GLASS.card, border: `1px solid ${GLASS.border}`, valueColor: TEXT.heading }
-}
-
+// Management view: every live project and which handovers are due or late.
+// WBS elements are no longer used, so nothing here is WBS-based.
 export default function ProjectsDashboardPage() {
-  const { isAuthorized, isLoading, user } = useRequireApp('projects')
-
-  const [projects, setProjects] = useState<PmProject[]>([])
-  const [loading, setLoading] = useState(true)
+  const { isAuthorized, isLoading } = useRequireApp('projects')
+  const router = useRouter()
+  const [data, setData] = useState<PmDashboard | null>(null)
   const [error, setError] = useState<string | string[]>('')
 
   useEffect(() => {
     if (!isAuthorized) return
-    setLoading(true)
-    projectsApi.list()
-      .then((data) => setProjects(Array.isArray(data) ? data : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load projects.')))
-      .finally(() => setLoading(false))
+    projectsApi.dashboard().then(setData).catch((err) => setError(extractErrorMessages(err, 'Failed to load the dashboard.')))
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
-
-  const total = projects.length
-  const activeCount = projects.filter((p) => p.status === 'active').length
-  const onHoldCount = projects.filter((p) => p.status === 'on_hold').length
-  const completedCount = projects.filter((p) => p.status === 'completed').length
-
-  const cards: { label: string; value: number; tone: KpiTone }[] = [
-    { label: 'Total Projects', value: total, tone: 'neutral' },
-    { label: 'Active Projects', value: activeCount, tone: 'good' },
-    { label: 'On Hold', value: onHoldCount, tone: 'warn' },
-    { label: 'Completed', value: completedCount, tone: 'neutral' },
+  const today = todayIso()
+  const [y, mo, d] = today.split('-').map(Number)
+  const plus30 = new Date(y, mo - 1, d + 30)
+  const in30 = `${plus30.getFullYear()}-${String(plus30.getMonth() + 1).padStart(2, '0')}-${String(plus30.getDate()).padStart(2, '0')}`
+  const live = (data?.projects || []).slice().sort((a, b) => (a.target_handover_date || '9999').localeCompare(b.target_handover_date || '9999'))
+  const overdue = live.filter((p) => p.target_handover_date && p.target_handover_date < today)
+  const dueSoon = live.filter((p) => p.target_handover_date && p.target_handover_date >= today && p.target_handover_date <= in30)
+  const kpis = [
+    { label: 'Open projects', value: live.length, color: TEXT.heading },
+    { label: 'Handover in next 30 days', value: dueSoon.length, color: '#f59e0b' },
+    { label: 'Handover date passed', value: overdue.length, color: '#dc2626' },
   ]
 
   return (
     <div>
       <ProjectsNav />
-
       <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-          Project Management
-        </p>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Dashboard</h1>
-        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>{user?.department ? `${user.department} — ` : ''}Project workspaces, scope, and delivery tracking.</p>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Projects Dashboard</h1>
+        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Every open project, nearest handover first.</p>
       </div>
+      <ErrorBanner error={error} />
+      {!data ? (!error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>) : (
+        <>
+          <div data-tour="pm-dash-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 20 }}>
+            {kpis.map((k) => (
+              <div key={k.label} style={{ ...sectionStyle, marginBottom: 0, padding: 16 }}>
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', letterSpacing: '.04em', margin: '0 0 6px' }}>{k.label}</p>
+                <p style={{ fontSize: 26, fontWeight: 800, color: k.color, margin: 0 }}>{k.value}</p>
+              </div>
+            ))}
+          </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
+          <div data-tour="pm-dash-live" style={sectionStyle}>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: '0 0 12px' }}>Open projects</h2>
+            {live.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No open projects.</p> : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+                  <thead><tr>
+                    {['Project ID', 'Project', 'Customer', 'Status', 'Project manager', 'Target handover'].map((h) => <th key={h} style={thStyle}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {live.map((p) => {
+                      const late = !!p.target_handover_date && p.target_handover_date < today
+                      return (
+                        <tr key={p.id} onClick={() => router.push(recordPath('/dashboard/projects', p))} style={{ cursor: 'pointer' }}>
+                          <td style={{ ...tdStyle, fontWeight: 700 }}>{p.project_code}</td>
+                          <td style={tdStyle}>{p.name}</td>
+                          <td style={tdStyle}>{p.client_name || '—'}</td>
+                          <td style={tdStyle}><Pill value={p.status} labels={PROJECT_LABELS} hex={PROJECT_HEX} /></td>
+                          <td style={tdStyle}>{p.project_manager_name || '—'}</td>
+                          <td style={{ ...tdStyle, color: late ? '#dc2626' : TEXT.body, fontWeight: late ? 600 : 400 }}>
+                            {formatDate(p.target_handover_date)}{late ? ' · passed' : ''}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
       )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
-        {cards.map((c) => {
-          const tone = cardTone(c.tone)
-          return (
-            <div
-              key={c.label}
-              style={{
-                borderRadius: 18, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-                boxShadow: SHADOWS.glass(), padding: 18, background: tone.background, border: tone.border,
-              }}
-            >
-              <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 8px' }}>
-                {c.label}
-              </p>
-              <p style={{ fontSize: 28, fontWeight: 700, color: tone.valueColor, margin: 0 }}>
-                {loading ? '…' : c.value}
-              </p>
-            </div>
-          )
-        })}
-      </div>
-
-      <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
-        Richer KPIs (tasks due, budget burn, open risks) will appear here as those tabs ship in later phases.
-      </p>
     </div>
   )
 }

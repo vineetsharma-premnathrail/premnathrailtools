@@ -1,7 +1,7 @@
 from __future__ import annotations
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Integer, Boolean, Date, Text
+from sqlalchemy import String, Integer, Boolean, Date, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, SoftDeleteMixin
@@ -50,6 +50,12 @@ class Project(Base, TimestampMixin, SoftDeleteMixin):
     client_phone_alt: Mapped[str | None] = mapped_column(String(50), nullable=True)
     client_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     client_gst: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Installed base (SAP IE01/IB51): the CRM customer who owns the machine
+    # and the finished product it is. The client_* text above is kept as the
+    # display snapshot (and for legacy machines no customer could be matched
+    # to); billing, GSTIN and place of supply come from the customer row.
+    customer_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_organizations.id", ondelete="SET NULL"), nullable=True, index=True)
+    product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Site deployment
     site_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -85,9 +91,28 @@ class Project(Base, TimestampMixin, SoftDeleteMixin):
     tech_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     warranty_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Approval (Service → Settings "New machines need approval"). Existing and
+    # Production-created machines are 'approved'; with the setting on, a machine
+    # registered from Service starts 'pending' and can't take SRs until approved.
+    approval_status: Mapped[str] = mapped_column(String(20), default="approved", server_default="approved", nullable=False)
+    approved_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approval_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     service_requests: Mapped[list["ServiceRequest"]] = relationship(
         "ServiceRequest", back_populates="project", cascade="all, delete-orphan"
     )
     attachments: Mapped[list["ProjectAttachment"]] = relationship(
         "ProjectAttachment", back_populates="project", cascade="all, delete-orphan"
     )
+    customer = relationship("Organization", foreign_keys=[customer_id], viewonly=True, lazy="select")
+    product = relationship("FinishedProduct", foreign_keys=[product_id], viewonly=True, lazy="select")
+
+    @property
+    def customer_name(self) -> str | None:
+        return self.customer.name if self.customer is not None else None
+
+    @property
+    def product_name(self) -> str | None:
+        return self.product.name if self.product is not None else None

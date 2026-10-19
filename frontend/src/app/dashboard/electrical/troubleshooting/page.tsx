@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { electricalApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { ElectricalIssue } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
@@ -62,7 +63,7 @@ export default function ElectricalTroubleshootingPage() {
 
   const openCount = issues.filter((i) => i.status === 'open' || i.status === 'investigating').length
   const criticalCount = issues.filter((i) => i.severity === 'critical' && (i.status === 'open' || i.status === 'investigating')).length
-  const go = (i: ElectricalIssue) => router.push(`/dashboard/electrical/jobs/${i.job_id}?tab=issues`)
+  const go = (i: ElectricalIssue) => router.push(`${recordPath('/dashboard/electrical/jobs', i, 'job_id')}?tab=issues`)
 
   if (isLoading || !isAuthorized) return null
 
@@ -85,20 +86,20 @@ export default function ElectricalTroubleshootingPage() {
       <ErrorBanner error={error} />
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 190px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select data-tour="elec-ireg-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 190px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           {STATUS_FILTERS.map((s) => <option key={s.value || 'all'} value={s.value}>{s.label}</option>)}
         </select>
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
+        <select data-tour="elec-ireg-severity-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
           <option value="">All severities</option>
           {Object.entries(SEVERITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <button type="button" onClick={() => setMine((v) => !v)} style={toggleStyle(mine)} aria-pressed={mine}>
+        <button data-tour="elec-ireg-mine-toggle" type="button" onClick={() => setMine((v) => !v)} style={toggleStyle(mine)} aria-pressed={mine}>
           {mine ? '✓ ' : ''}Assigned to me
         </button>
       </div>
 
       {!loading && (
-        <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div data-tour="elec-ireg-summary" style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
           <span style={chipStyle(openCount ? '#DC2626' : '#16A34A')}>
             <strong style={{ fontSize: 18 }}>{openCount}</strong>
             <span style={{ fontSize: 12, fontWeight: 600 }}>open / investigating</span>
@@ -114,7 +115,7 @@ export default function ElectricalTroubleshootingPage() {
         </div>
       )}
 
-      <div style={{
+      <div data-tour="elec-ireg-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>

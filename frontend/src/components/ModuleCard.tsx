@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { CSSProperties, ReactNode } from 'react'
 import { TEXT } from '@/lib/theme'
+import { ArrowRight } from '@phosphor-icons/react'
 
 interface ModuleCardProps {
   title: string
@@ -69,10 +70,7 @@ export default function ModuleCard({ title, description, icon, href, iconBg, ico
           <p className="module-card-desc">{description}</p>
 
           <span className="module-card-arrow">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="5" y1="12" x2="19" y2="12" />
-              <polyline points="12 5 19 12 12 19" />
-            </svg>
+            <ArrowRight size={12} />
           </span>
         </div>
       </div>

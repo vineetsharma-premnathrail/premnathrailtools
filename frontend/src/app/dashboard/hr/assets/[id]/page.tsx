@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hrApi, usersApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import type { HrAsset, HrBranchLookup, DirectoryUser } from '@/types'
@@ -18,6 +19,8 @@ import {
   thStyle, tdStyle, fmtDate, fmtINR, fmtDateTime,
 } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
+import { useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 const STATUS_LABELS: Record<string, string> = { in_stock: 'In Stock', issued: 'Issued', under_repair: 'Under Repair', retired: 'Retired', lost: 'Lost' }
 const STATUS_HEX: Record<string, string> = { in_stock: '#16A34A', issued: '#2563EB', under_repair: '#F59E0B', retired: '#64748B', lost: '#DC2626' }
@@ -26,9 +29,12 @@ type StatusAction = { status: string; label: string; title: string; message: str
 
 export default function HrAssetDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('hr')
+  const { can, canDelete } = useCan()
+  const canEdit = can('hr', 'assets', 'edit')
   const router = useRouter()
   const params = useParams<{ id: string }>()
-  const assetId = Number(params?.id)
+  const { id: assetIdResolved, error: linkError } = useRecordId(params?.id)
+  const assetId = assetIdResolved ?? 0
 
   const [asset, setAsset] = useState<HrAsset | null>(null)
   const [loading, setLoading] = useState(true)
@@ -92,6 +98,8 @@ export default function HrAssetDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HrNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hr/assets" listLabel="Back to assets" /></div>)
+  if (!assetId) return <div><HrNav /></div>
 
   const statusActions: StatusAction[] = []
   if (asset) {
@@ -123,7 +131,7 @@ export default function HrAssetDetailPage() {
       <PageHeader
         title={asset ? `${asset.asset_code} — ${asset.name}` : 'Asset'}
         subtitle={asset ? [ASSET_CATEGORY_LABELS[asset.category] || asset.category, asset.make, asset.model].filter(Boolean).join(' · ') : undefined}
-        actions={<button onClick={() => router.push('/dashboard/hr/assets')} type="button" style={secondaryBtnStyle}>← Back</button>}
+        actions={<button data-tour="hr-asset-back-btn" onClick={() => router.push('/dashboard/hr/assets')} type="button" style={secondaryBtnStyle}>← Back</button>}
       />
 
       <ErrorBanner error={error} />
@@ -133,7 +141,7 @@ export default function HrAssetDetailPage() {
         <div style={sectionStyle}><p style={{ margin: 0, fontSize: 13, color: TEXT.muted }}>Loading…</p></div>
       ) : asset ? (
         <>
-          <div style={{ ...sectionStyle, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div data-tour="hr-asset-status-bar" style={{ ...sectionStyle, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <Pill hex={STATUS_HEX[asset.status] || '#64748B'} label={STATUS_LABELS[asset.status] || asset.status} />
             <span style={{ fontSize: 13.5, color: TEXT.body, flex: '1 1 260px' }}>
               {asset.status === 'issued'
@@ -141,19 +149,19 @@ export default function HrAssetDetailPage() {
                 : asset.status === 'in_stock' ? 'Available to issue.' : `Not available to issue while ${STATUS_LABELS[asset.status]?.toLowerCase()}.`}
             </span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {asset.status === 'in_stock' && <button type="button" style={primaryActionStyle} onClick={() => setIssueOpen(true)}>Issue to employee</button>}
-              {asset.status === 'issued' && <button type="button" style={primaryActionStyle} onClick={() => setReturnOpen(true)}>Record return</button>}
-              {statusActions.map((s) => (
-                <button key={s.status + s.label} type="button" style={s.danger ? dangerBtnStyle : secondaryBtnStyle} onClick={() => setStatusAction(s)} disabled={busy}>{s.label}</button>
+              {canEdit && asset.status === 'in_stock' && <button type="button" data-tour="hr-asset-issue-btn" style={primaryActionStyle} onClick={() => setIssueOpen(true)}>Issue to employee</button>}
+              {canEdit && asset.status === 'issued' && <button type="button" data-tour="hr-asset-return-btn" style={primaryActionStyle} onClick={() => setReturnOpen(true)}>Record return</button>}
+              {canEdit && statusActions.map((s) => (
+                <button key={s.status + s.label} type="button" data-tour="hr-asset-status-action" style={s.danger ? dangerBtnStyle : secondaryBtnStyle} onClick={() => setStatusAction(s)} disabled={busy}>{s.label}</button>
               ))}
-              <button type="button" style={secondaryBtnStyle} onClick={() => setEditOpen(true)}>Edit</button>
-              {asset.status !== 'issued' && <button type="button" style={dangerBtnStyle} onClick={() => setDeleteOpen(true)}>Delete</button>}
+              {canEdit && <button type="button" data-tour="hr-asset-edit-btn" style={secondaryBtnStyle} onClick={() => setEditOpen(true)}>Edit</button>}
+              {asset.status !== 'issued' && canDelete('hr', 'assets', asset.created_by_id ?? null) && <button type="button" data-tour="hr-asset-delete-btn" style={dangerBtnStyle} onClick={() => setDeleteOpen(true)}>Delete</button>}
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             <div style={{ flex: '1 1 380px', display: 'flex', flexDirection: 'column' }}>
-              <div style={sectionStyle}>
+              <div data-tour="hr-asset-details" style={sectionStyle}>
                 <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }}>Details</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14 }}>
                   <InfoRow label="Asset code" value={asset.asset_code} />
@@ -166,7 +174,7 @@ export default function HrAssetDetailPage() {
               </div>
             </div>
             <div style={{ flex: '1 1 320px', display: 'flex', flexDirection: 'column' }}>
-              <div style={sectionStyle}>
+              <div data-tour="hr-asset-purchase" style={sectionStyle}>
                 <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }}>Purchase</p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 14 }}>
                   <InfoRow label="Purchase date" value={fmtDate(asset.purchase_date)} />
@@ -185,7 +193,7 @@ export default function HrAssetDetailPage() {
             </div>
           )}
 
-          <div style={{ ...sectionStyle, padding: 0, overflow: 'auto' }}>
+          <div data-tour="hr-asset-history" style={{ ...sectionStyle, padding: 0, overflow: 'auto' }}>
             <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: 0, padding: '18px 20px 12px' }}>Assignment history</p>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
               <thead>

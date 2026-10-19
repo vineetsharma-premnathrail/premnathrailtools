@@ -8,6 +8,8 @@ from fastapi import HTTPException
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.core import assignee_rules
+from app.core.permission_registry import holds_deliberately, permission_id
 from app.modules.hydraulic.models.bom import HydBom
 from app.modules.hydraulic.models.calculation import HydCalculation
 from app.modules.hydraulic.models.circuit import HydCircuit
@@ -60,16 +62,18 @@ def generate_circuit_number(db: Session) -> str:
     return _next_number(db, HydCircuit.circuit_number, f"CKT-{_year()}-")
 
 
-def generate_bom_number(db: Session) -> str:
-    return _next_number(db, HydBom.bom_number, f"HBOM-{_year()}-")
+def generate_bom_number(db: Session, system_type: str | None = None) -> str:
+    """HBOM-[YEAR]-[NUMBER] for hydraulic, PBOM-[YEAR]-[NUMBER] for pneumatic (plan §37)."""
+    return _next_number(db, HydBom.bom_number, f"{'PBOM' if system_type == 'pneumatic' else 'HBOM'}-{_year()}-")
 
 
 def generate_calc_number(db: Session) -> str:
     return _next_number(db, HydCalculation.calc_number, f"HCALC-{_year()}-")
 
 
-def generate_test_number(db: Session) -> str:
-    return _next_number(db, HydTest.test_number, f"HTST-{_year()}-")
+def generate_test_number(db: Session, system_type: str | None = None) -> str:
+    """HTST-[YEAR]-[NUMBER] for hydraulic, PTST-[YEAR]-[NUMBER] for pneumatic (plan §37)."""
+    return _next_number(db, HydTest.test_number, f"{'PTST' if system_type == 'pneumatic' else 'HTST'}-{_year()}-")
 
 
 def generate_plan_number(db: Session) -> str:
@@ -98,6 +102,32 @@ def next_revision(revision: str) -> str:
         chars[i] = "A"
         i -= 1
     return "A" + "".join(chars)
+
+
+# ---------------------------------------------------------------------------
+# Retired features (plan rule R5)
+# ---------------------------------------------------------------------------
+
+RETIRED_DETAIL = (
+    "Hydraulic {what} are retired (plan rule R5) — existing records stay readable but can't be created or changed. "
+    "Log customer RRV service in Service & Commissioning → Service Requests; spares come from the Engineering BOM "
+    "recommended-spares list; plant equipment upkeep belongs in the Maintenance module."
+)
+
+
+def raise_retired(what: str) -> None:
+    raise HTTPException(status_code=410, detail=RETIRED_DETAIL.format(what=what))
+
+
+def circuit_approvers(db: Session) -> list[User]:
+    """Active users deliberately given hydraulic › circuits › approve (a role
+    or extra grant — not just the blanket migrated access every hydraulic user
+    got); admins when nobody holds it, so a review request is never sent to
+    no one."""
+    pid = permission_id("hydraulic", "circuits", "approve")
+    active = db.query(User).filter(User.is_active.is_(True)).all()
+    holders = [u for u in active if holds_deliberately(u, pid)]
+    return holders or [u for u in active if u.role == "admin"]
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +169,16 @@ def check_store_item(db: Session, store_item_id: int | None) -> StoreItem | None
 def check_user(db: Session, user_id: int | None, label: str) -> None:
     if user_id and not db.query(User.id).filter(User.id == user_id).first():
         raise HTTPException(status_code=404, detail=f"{label} (user #{user_id}) not found — pick the person again.")
+
+
+def ensure_assignee_rule(db: Session, user: User, key: str, person_id: int | None, current_id: int | None = None) -> None:
+    """The role's "Assign to" rule for this field (core/assignee_rules.py,
+    keys in core/features/hydraulic.py) — only when someone new is named."""
+    if not person_id or person_id == current_id:
+        return
+    person = db.query(User).filter(User.id == person_id).first()
+    if person:
+        assignee_rules.ensure_allowed(db, user, key, person)
 
 
 def user_names(db: Session, ids: set) -> dict[int, str]:
@@ -245,3 +285,11 @@ def spare_unit_cost(spare: HydSparePart, item: StoreItem | None) -> float:
     if item:
         return float(item.standard_cost or item.moving_average_cost or 0.0)
     return 0.0
+
+
+def can_see_costs(user: User) -> bool:
+    """Hydraulic & Pneumatic › BOM › Prices & costs (sensitive,
+    app/core/features/hydraulic.py). Someone without BOM › View keeps seeing
+    the costs they saw before features existed."""
+    from app.core.permission_registry import can_feature, can_view_tab
+    return can_feature(user, "hydraulic", "bom", "costs", "view") or not can_view_tab(user, "hydraulic", "bom")

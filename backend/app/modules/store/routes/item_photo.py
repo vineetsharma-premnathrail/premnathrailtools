@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.permissions import require_app_access
+from app.core.permissions import require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.store.models.item import StoreItem
@@ -37,7 +37,7 @@ async def upload_item_photo(
     item_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    _user: User = Depends(require_tab_action("store", "items", "edit")),
 ):
     item = _get_item(db, item_id)
     if not file.content_type or not file.content_type.startswith("image/"):
@@ -71,7 +71,7 @@ async def upload_item_photo(
 async def get_item_photo(
     item_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    _user: User = Depends(require_tab_access("store", "items")),
 ):
     item = _get_item(db, item_id)
     if not item.photo_path:
@@ -86,7 +86,7 @@ async def get_item_photo(
 async def delete_item_photo(
     item_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    _user: User = Depends(require_tab_action("store", "items", "edit")),
 ):
     item = _get_item(db, item_id)
     if item.photo_path and settings.SHAREPOINT_SITE_ID:

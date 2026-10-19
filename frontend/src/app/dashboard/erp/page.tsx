@@ -8,17 +8,17 @@ import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import { Section } from '@/components/shared/ui'
+import { extractErrorMessages } from '@/lib/validation'
+import { recordPath } from '@/lib/recordRef'
 
 const PRIORITY_COLORS: Record<string, string> = {
-  critical: '#dc2626',
-  high: '#f97316',
-  medium: '#eab308',
-  low: '#22c55e',
+  urgent: '#dc2626',
+  standard: '#2563eb',
 }
 
 const STATUS_COLORS: Record<string, string> = {
   active: '#22c55e',
-  inactive: '#ef4444',
+  inactive: '#94a3b8',
   under_service: '#eab308',
   manufacturing_under_progress: '#3b82f6',
   work_in_progress: '#3b82f6',
@@ -45,13 +45,20 @@ export default function ErpDashboardPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadErrors, setLoadErrors] = useState<string[]>([])
 
   useEffect(() => {
     if (!isAuthorized) return
-    Promise.all([erpApi.listProjects({ limit: 5000 }), erpApi.listServiceRequests({ limit: 1000 })])
+    // Load each list on its own so one failure doesn't silently show zeros
+    // for both — whatever failed is named in the banner.
+    Promise.allSettled([erpApi.listProjects({ limit: 5000 }), erpApi.listServiceRequests({ limit: 1000 })])
       .then(([p, s]) => {
-        setProjects(p)
-        setSrs(s)
+        const errs: string[] = []
+        if (p.status === 'fulfilled') setProjects(p.value)
+        else errs.push(`Machines: ${extractErrorMessages(p.reason, 'could not be loaded — check your connection and reload.').join(' ')}`)
+        if (s.status === 'fulfilled') setSrs(s.value)
+        else errs.push(`Service requests: ${extractErrorMessages(s.reason, 'could not be loaded — check your connection and reload.').join(' ')}`)
+        setLoadErrors(errs)
       })
       .finally(() => setLoading(false))
   }, [isAuthorized])
@@ -67,7 +74,7 @@ export default function ErpDashboardPage() {
     () => ({
       totalProjects: projects.length,
       totalSrs: srs.length,
-      activeTickets: srs.filter((s) => s.status !== 'closed').length,
+      activeTickets: srs.filter((s) => !['closed', 'cancelled'].includes(s.status)).length,
       thisMonthSrs: srs.filter((s) => {
         if (!s.created_at) return false
         const d = new Date(s.created_at)
@@ -88,7 +95,7 @@ export default function ErpDashboardPage() {
 
   const activeTicketsByPriority = useMemo(() => {
     const counts: Record<string, number> = {}
-    srs.filter((s) => s.status !== 'closed').forEach((s) => {
+    srs.filter((s) => !['closed', 'cancelled'].includes(s.status)).forEach((s) => {
       counts[s.priority] = (counts[s.priority] || 0) + 1
     })
     return Object.entries(counts)
@@ -108,19 +115,25 @@ export default function ErpDashboardPage() {
   return (
     <div>
       <ErpNav />
+      {loadErrors.length > 0 && (
+        <div role="alert" style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.2)', fontSize: 12.5, color: '#b91c1c' }}>
+          <strong>Some figures below are incomplete.</strong>
+          {loadErrors.map((e) => <div key={e}>{e}</div>)}
+        </div>
+      )}
       <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Dashboard Panel</h1>
       <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>
         Welcome back, {user?.name || 'there'}. Here is the real-time operational state of your deployment assets.
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
+      <div data-tour="erp-dash-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
         <StatCard label="Total Projects" value={stats.totalProjects} color="#3b82f6" />
         <StatCard label="Total Service Requests" value={stats.totalSrs} color="#FF7A45" />
         <StatCard label="Monthly SRs" value={stats.thisMonthSrs} color="#10b981" />
         <StatCard label="Total Active Tickets" value={stats.activeTickets} color="#eab308" />
       </div>
 
-      <div className="grid-2" style={{ gap: 20, marginBottom: 24 }}>
+      <div className="grid-2" data-tour="erp-dash-charts" style={{ gap: 20, marginBottom: 24 }}>
         <Section title="Project Deployment Status">
           {deploymentStatusBreakdown.length === 0 ? (
             <p style={{ fontSize: 13, color: '#a8a29e' }}>No data yet.</p>
@@ -138,10 +151,10 @@ export default function ErpDashboardPage() {
         </Section>
       </div>
 
-      <div style={{ marginBottom: 24 }}>
+      <div data-tour="erp-dash-recent-srs" style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Recent Service Tickets</h2>
-          <Link href="/dashboard/erp/service-requests" style={{ fontSize: 12, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
+          <Link href="/dashboard/erp/service-requests" data-tour="erp-dash-srs-viewall" style={{ fontSize: 12, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
         <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
@@ -162,7 +175,7 @@ export default function ErpDashboardPage() {
                 return (
                   <tr
                     key={sr.id}
-                    onClick={() => router.push(`/dashboard/erp/service-requests/${sr.id}`)}
+                    onClick={() => router.push(recordPath('/dashboard/erp/service-requests', sr))}
                     style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                   >
                     <td style={{ padding: '10px 14px' }}>
@@ -173,7 +186,7 @@ export default function ErpDashboardPage() {
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.machine_type || '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.client_company || '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', whiteSpace: 'nowrap' }}>{project?.site_name || '—'}</td>
-                    <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', maxWidth: 220 }}>{sr.issue_title}</td>
+                    <td title={sr.issue_title} style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e', maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sr.issue_title}</td>
                     <td style={{ padding: '10px 14px' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>{sr.priority}</span>
                     </td>
@@ -192,10 +205,10 @@ export default function ErpDashboardPage() {
         </div>
       </div>
 
-      <div>
+      <div data-tour="erp-dash-machines">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: '#1f1108', margin: 0 }}>Machine Assets</h2>
-          <Link href="/dashboard/erp/projects" style={{ fontSize: 12, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
+          <Link href="/dashboard/erp/projects" data-tour="erp-dash-machines-viewall" style={{ fontSize: 12, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
         </div>
         <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
@@ -213,7 +226,7 @@ export default function ErpDashboardPage() {
               {recentProjects.map((p) => (
                 <tr
                   key={p.id}
-                  onClick={() => router.push(`/dashboard/erp/projects/${p.id}`)}
+                  onClick={() => router.push(recordPath('/dashboard/erp/projects', p))}
                   style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                 >
                   <td style={{ padding: '10px 14px' }}>

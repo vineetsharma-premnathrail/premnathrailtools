@@ -8,12 +8,19 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permission_registry import can_perform
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core import assignee_rules
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permission_registry import can_feature, can_perform, is_admin_user
+from app.core.permissions import ensure_can_delete, ensure_feature_action, require_app_access, require_feature_action, require_tab_access, require_tab_action
+from app.modules.production.sensitive import mask_consumption, sees_costs
+from app.modules.production import notify as prod_notify
 from app.db.session import get_db
 from app.modules.erp.models.project import Project
 from app.modules.main.models.user import User
+from app.modules.organization.models.approval import ApprovalRequest
 from app.modules.organization.models.branch import Branch
+from app.modules.organization.services import approval_engine as engine
+from app.modules.production.authz import RRV_ENTITY, RRV_KEY, scope_path_record, submit_and_self_approve
 from app.modules.production.models.rrv_build import (
     ProductionRrvBuild, ProductionRrvEvent, ProductionRrvTest, ProductionReworkOrder,
     PRODUCTION_RRV_DONE_STAGE_STATUSES, PRODUCTION_RRV_OPEN_STATUSES, PRODUCTION_RRV_PRIORITIES,
@@ -21,7 +28,11 @@ from app.modules.production.models.rrv_build import (
     PRODUCTION_RRV_WO_ROLES, PRODUCTION_RRV_DEFAULT_REQUIRED_TESTS, PRODUCTION_REWORK_OPEN_STATUSES,
 )
 from app.modules.production.models.work_order import ProductionWorkOrder
+from app.modules.production import order_project_links  # registers the Order Project hooks / provider
+from app.modules.sales.models.order_project import OrderProjectElement
 from app.modules.production.reports.rrv_handover_pdf import build_rrv_handover_pdf
+from app.modules.production.reports.rrv_handover_docx import build_rrv_handover_docx
+from app.modules.main.services import managed_documents
 from app.modules.production.schemas.rrv_build import (
     ProductionRrvBuildCreate, ProductionRrvBuildDetail, ProductionRrvBuildResponse, ProductionRrvBuildStageResponse,
     ProductionRrvBuildUpdate, ProductionRrvConsumption, ProductionRrvConsumptionRow, ProductionRrvEventResponse,
@@ -42,13 +53,24 @@ from app.utils.notifications import broadcast_notification
 
 router = APIRouter(
     prefix="/production/rrv-builds", tags=["Production"],
-    dependencies=[Depends(require_app_access("production"))],
+    # Every /{build_id}/… and /rework/{rework_id}/… route checks the record
+    # against the caller's data scope.
+    dependencies=[
+        Depends(require_app_access("production")),
+        Depends(scope_path_record(ProductionRrvBuild, "build_id")),
+        Depends(scope_path_record(ProductionReworkOrder, "rework_id")),
+    ],
 )
 
 _CAN_CREATE = require_tab_action("production", "rrv_builds", "create")
 _CAN_EDIT = require_tab_action("production", "rrv_builds", "edit")
 _CAN_DELETE = require_tab_action("production", "rrv_builds", "delete")
-_CAN_PRINT = require_tab_action("production", "rrv_builds", "print")
+
+# Role assign-to rules (core/assignee_rules.PICKERS — Role & Permissions › Production › RRV Builds).
+MANAGER_RULE = "production:rrv_builds.build_manager"
+STAGE_RULE = "production:rrv_builds.stages"
+REWORK_RULE = "production:rrv_builds.rework"
+HANDOVER_ENTITY = "production_rrv_handover"
 _REWORK_SOURCE_LABELS = {
     "test": "Failed vehicle test", "final_inspection": "Failed final inspection",
     "operation_inspection": "Failed operation inspection", "internal": "Raised manually",
@@ -92,7 +114,7 @@ def _get_active_user(db: Session, user_id: int, role: str, app: str = "productio
     return person
 
 
-def _validate(db: Session, data: dict, build: ProductionRrvBuild | None = None) -> None:
+def _validate(db: Session, data: dict, user: User, build: ProductionRrvBuild | None = None) -> None:
     if data.get("priority") is not None and data["priority"] not in PRODUCTION_RRV_PRIORITIES:
         raise HTTPException(status_code=400, detail=f"'{data['priority']}' isn't a valid priority. Use one of: {', '.join(PRODUCTION_RRV_PRIORITIES)}.")
     if data.get("required_tests") is not None:
@@ -102,7 +124,9 @@ def _validate(db: Session, data: dict, build: ProductionRrvBuild | None = None) 
     if data.get("branch_id") and not db.query(Branch.id).filter(Branch.id == data["branch_id"]).first():
         raise HTTPException(status_code=400, detail=f"Plant #{data['branch_id']} wasn't found — pick another plant.")
     if data.get("build_manager_id"):
-        _get_active_user(db, data["build_manager_id"], "build manager")
+        manager = _get_active_user(db, data["build_manager_id"], "build manager")
+        if build is None or manager.id != build.build_manager_id:
+            assignee_rules.ensure_allowed(db, user, MANAGER_RULE, manager)
     if data.get("erp_project_id"):
         machine = db.query(Project).filter(Project.id == data["erp_project_id"], Project.is_deleted == False).first()  # noqa: E712
         if not machine:
@@ -157,6 +181,7 @@ def _responses(db: Session, builds: list[ProductionRrvBuild], cls=ProductionRrvB
             ProductionWorkOrder.rrv_build_id.in_(ids), ProductionWorkOrder.is_deleted == False  # noqa: E712
         ).all():
             wo_counts[bid] = wo_counts.get(bid, 0) + 1
+    op_links = order_project_links.build_elements(db, builds)
     out = []
     for b in builds:
         resp = cls.model_validate(b)
@@ -175,6 +200,13 @@ def _responses(db: Session, builds: list[ProductionRrvBuild], cls=ProductionRrvB
         resp.open_rework_count = rework_counts.get(b.id, 0)
         resp.work_order_count = wo_counts.get(b.id, 0)
         resp.is_overdue = bool(b.target_handover_date and b.target_handover_date < today and b.status in PRODUCTION_RRV_OPEN_STATUSES + ("completed",))
+        hit = op_links.get(b.id)
+        if hit:
+            proj, el = hit
+            resp.order_project_id, resp.order_project_element_id = proj.id, el.id
+            resp.order_project_number, resp.order_project_element_no, resp.order_project_element_label = proj.op_number, el.element_no, el.label
+        else:
+            resp.order_project_id = resp.order_project_element_id = None
         out.append(resp)
     return out
 
@@ -220,14 +252,30 @@ def _allowed(db: Session, user: User, build: ProductionRrvBuild) -> list[str]:
         actions.append("sign_off")
         if build.status in PRODUCTION_RRV_OPEN_STATUSES:
             actions.append("cancel")
-    if can_perform(user, "production", "rrv_builds", "delete") and build.status == "planned":
-        actions.append("delete")
+    elif edit and build.status in ("planned", "in_progress", "completed"):
+        # Sign-off stages go through the central approval engine: a user who
+        # can't sign off sends the stage to the build manager / production managers.
+        actions.append("request_sign_off")
+    if (can_perform(user, "production", "rrv_builds", "delete") and build.status == "planned"
+            and (is_admin_user(user) or build.created_by_id in (None, user.id))):
+        actions.append("delete")  # company rule: only the creator (or an admin) deletes
     if build.status == "handed_over":
         actions.append("certificate")
-    return actions
+        if edit:
+            actions.append("edit_certificate")  # Word certificate: create / edit / upload
+    # Feature gates on top (core/features/production.py): drop what the
+    # user's role doesn't hold.
+    feature_of = {
+        "link_work_order": ("work_orders", "edit"), "record_test": ("tests", "create"),
+        "raise_rework": ("rework", "create"), "certificate": ("handover", "print"), "edit_certificate": ("handover", "edit"),
+    }
+    return [a for a in actions if a not in feature_of or can_feature(user, "production", "rrv_builds", *feature_of[a])]
 
 
-def _detail(db: Session, build: ProductionRrvBuild, user: User) -> ProductionRrvBuildDetail:
+def _detail(db: Session, build: ProductionRrvBuild, user: User, mask: bool = True) -> ProductionRrvBuildDetail:
+    """`mask`: blank the sub-tab lists the user's role doesn't hold (Tests,
+    Rework, Work Orders, Timeline). The handover certificate passes False —
+    the document of record always carries the full build."""
     build = _get_build(db, build.id)
     resp: ProductionRrvBuildDetail = _responses(db, [build], ProductionRrvBuildDetail)[0]
     wos = rrv_work_orders(db, build.id)
@@ -293,6 +341,17 @@ def _detail(db: Session, build: ProductionRrvBuild, user: User) -> ProductionRrv
         if insp:
             resp.final_inspection_number, resp.final_inspection_status = insp.inspection_number, insp.status
     resp.allowed_actions = _allowed(db, user, build)
+    if mask:
+        def sees(f: str) -> bool:
+            return can_feature(user, "production", "rrv_builds", f, "view")
+        if not sees("tests"):
+            resp.tests, resp.test_status = [], {}
+        if not sees("rework"):
+            resp.rework_orders = []
+        if not sees("work_orders"):
+            resp.work_orders = []
+        if not sees("timeline"):
+            resp.events = []
     return resp
 
 
@@ -325,9 +384,9 @@ async def list_builds(
     db: Session = Depends(get_db),
     _tab: User = Depends(require_tab_access("production", "rrv_builds")),
 ):
-    query = db.query(ProductionRrvBuild).options(selectinload(ProductionRrvBuild.stages)).filter(
+    query = apply_scope(db.query(ProductionRrvBuild).options(selectinload(ProductionRrvBuild.stages)).filter(
         ProductionRrvBuild.is_deleted == False  # noqa: E712
-    )
+    ), _tab, ProductionRrvBuild)
     if status_filter:
         query = query.filter(ProductionRrvBuild.status.in_(status_filter.split(",")))
     if search:
@@ -349,7 +408,9 @@ async def list_rework_orders(
     user: User = Depends(require_app_access("production")),
     _tab: User = Depends(require_tab_access("production", "rrv_builds")),
 ):
-    query = db.query(ProductionReworkOrder).filter(ProductionReworkOrder.is_deleted == False)  # noqa: E712
+    query = apply_scope(db.query(ProductionReworkOrder).join(ProductionRrvBuild, ProductionRrvBuild.id == ProductionReworkOrder.build_id).filter(
+        ProductionReworkOrder.is_deleted == False, ProductionRrvBuild.is_deleted == False,  # noqa: E712
+    ), user, ProductionReworkOrder)
     if status_filter:
         query = query.filter(ProductionReworkOrder.status.in_(status_filter.split(",")))
     if mine:
@@ -367,7 +428,7 @@ async def create_build(
     data = payload.model_dump()
     if data["required_tests"] is None:
         data["required_tests"] = list(PRODUCTION_RRV_DEFAULT_REQUIRED_TESTS)
-    _validate(db, data)
+    _validate(db, data, user)
     build = ProductionRrvBuild(
         build_number=generate_rrv_build_number(db), status="planned", created_by_id=user.id,
         build_manager_id=data.pop("build_manager_id") or user.id,
@@ -382,7 +443,8 @@ async def create_build(
 
 
 @router.get("/{build_id}", response_model=ProductionRrvBuildDetail)
-async def get_build(build_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("production"))):
+async def get_build(build_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("production")),
+                    _tab: User = Depends(require_tab_access("production", "rrv_builds"))):
     return _detail(db, _get_build(db, build_id), user)
 
 
@@ -404,6 +466,8 @@ async def update_build(
     if build.status in ("handed_over", "cancelled"):
         raise HTTPException(status_code=409, detail=f"{build.build_number} is {build.status.replace('_', ' ')} — its record is closed.")
     changes = payload.model_dump(exclude_unset=True)
+    if set(changes) & (_HANDOVER_FIELDS - {"remarks"}):
+        ensure_feature_action(user, "production", "rrv_builds", "handover", "edit")
     if build.status == "completed":
         frozen = sorted(set(changes) - _HANDOVER_FIELDS)
         if frozen:
@@ -417,7 +481,7 @@ async def update_build(
             raise HTTPException(status_code=400, detail=f"{key.replace('_', ' ').capitalize()} can't be empty.")
     if changes.get("handover_date") and changes["handover_date"] > date.today():
         raise HTTPException(status_code=400, detail="The handover date can't be in the future — record it on the day the vehicle is handed over.")
-    _validate(db, changes, build)
+    _validate(db, changes, user, build)
     changed = [k for k, v in changes.items() if getattr(build, k) != v]
     for key in changed:
         value = changes[key]
@@ -466,11 +530,24 @@ async def cancel_build(build_id: int, payload: ProductionRrvReasonPayload, db: S
         raise HTTPException(status_code=409, detail=f"{build.build_number} is {build.status.replace('_', ' ')} — only an open build can be cancelled.")
     if not rrv_can_sign_off(user, build):
         raise HTTPException(status_code=403, detail=f"Only the build manager of {build.build_number}, a production manager or an admin can cancel it.")
-    running = [w.wo_number for w in rrv_work_orders(db, build.id) if w.status in ("released", "in_progress")]
+    linked = rrv_work_orders(db, build.id)
+    running = [w.wo_number for w in linked if w.status in ("released", "in_progress")]
     if running:
         raise HTTPException(status_code=409, detail=f"Work order(s) {', '.join(running)} are still running for this build. Complete or cancel them first (return any issued material).")
+    drafts = [w.wo_number for w in linked if w.status == "draft"]
+    if drafts:
+        raise HTTPException(status_code=409, detail=f"Draft work order(s) {', '.join(drafts)} are still linked to {build.build_number}. "
+                                                    "Cancel or unlink them first, so nobody releases them and reserves material for a vehicle that won't be built.")
+    open_rework = [r for (r,) in db.query(ProductionReworkOrder.rework_number).filter(
+        ProductionReworkOrder.build_id == build.id, ProductionReworkOrder.is_deleted == False,  # noqa: E712
+        ProductionReworkOrder.status.in_(PRODUCTION_REWORK_OPEN_STATUSES),
+    ).order_by(ProductionReworkOrder.id).all()]
+    if open_rework:
+        raise HTTPException(status_code=409, detail=f"Rework order(s) {', '.join(open_rework)} are still open on {build.build_number}. "
+                                                    "Cancel or finish (verify) them on the Rework tab first, so they don't stay open and overdue on a build that won't be built.")
     build.status, build.cancel_reason = "cancelled", payload.reason.strip()
     rrv_log(db, build.id, "cancelled", user, build.cancel_reason)
+    order_project_links.sync_build_element(db, build)
     db.commit()
     return _detail(db, build, user)
 
@@ -479,12 +556,15 @@ async def cancel_build(build_id: int, payload: ProductionRrvReasonPayload, db: S
 async def delete_build(build_id: int, db: Session = Depends(get_db),
                        user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_DELETE)):
     build = _get_build(db, build_id, lock=True)
+    ensure_can_delete(user, build, "production", "rrv_builds", what="RRV build")
     if build.status != "planned":
         raise HTTPException(status_code=409, detail=f"{build.build_number} is {build.status.replace('_', ' ')} — only a build that hasn't started can be deleted. Cancel it instead to keep the record.")
     if rrv_work_orders(db, build.id):
         raise HTTPException(status_code=409, detail=f"{build.build_number} has work orders linked. Unlink them first, or cancel the build instead.")
     if db.query(ProductionRrvTest.id).filter(ProductionRrvTest.build_id == build.id, ProductionRrvTest.is_deleted == False).first():  # noqa: E712
         raise HTTPException(status_code=409, detail=f"{build.build_number} has test records, so it can't be deleted. Cancel it instead.")
+    if db.query(ProductionReworkOrder.id).filter(ProductionReworkOrder.build_id == build.id, ProductionReworkOrder.is_deleted == False).first():  # noqa: E712
+        raise HTTPException(status_code=409, detail=f"{build.build_number} has rework orders, so it can't be deleted. Cancel the build instead to keep them on record.")
     build.is_deleted, build.deleted_at = True, datetime.now(timezone.utc)
     db.commit()
     return {"message": f"{build.build_number} deleted"}
@@ -496,14 +576,27 @@ async def delete_build(build_id: int, db: Session = Depends(get_db),
 
 @router.post("/{build_id}/work-orders/{wo_id}", response_model=ProductionRrvBuildDetail)
 async def link_work_order(build_id: int, wo_id: int, payload: ProductionRrvLinkWorkOrderPayload, db: Session = Depends(get_db),
-                          user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+                          user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "work_orders", "edit"))):
     build = _get_build(db, build_id, lock=True)
     _require_workable(build, "link work orders")
     wo = db.query(ProductionWorkOrder).filter(ProductionWorkOrder.id == wo_id, ProductionWorkOrder.is_deleted == False).with_for_update().first()  # noqa: E712
     if not wo:
         raise HTTPException(status_code=404, detail=f"Work order #{wo_id} not found.")
+    # The router only scopes {build_id}; the work order being linked must be
+    # in the caller's data scope too.
+    ensure_in_scope(db, user, wo)
     from app.modules.production.service import check_rrv_link
     check_rrv_link(db, build, payload.build_role, wo)
+    build_el = order_project_links.resolve_build_element(db, build, persist=True)
+    if build_el is not None:
+        if wo.order_project_element_id and wo.order_project_element_id != build_el.id:
+            other = db.get(OrderProjectElement, wo.order_project_element_id)
+            raise HTTPException(status_code=409, detail=f"{wo.wo_number} works for {other.element_no if other else 'another element'}, but "
+                                                        f"{build.build_number} builds {build_el.element_no} ({build_el.label}). Change the work "
+                                                        "order's Order Project element first, or link it to that element's build.")
+        wo.order_project_id, wo.order_project_element_id = build_el.order_project_id, build_el.id
+        wo.sales_order_id = wo.sales_order_id or build.sales_order_id
+        wo.sales_order_line_id = wo.sales_order_line_id or build.sales_order_line_id
     wo.rrv_build_id, wo.build_role = build.id, payload.build_role
     wo.erp_project_id = wo.erp_project_id or build.erp_project_id
     rrv_log(db, build.id, "work_order_linked", user, f"{wo.wo_number} as {payload.build_role.replace('_', '-')}")
@@ -513,7 +606,7 @@ async def link_work_order(build_id: int, wo_id: int, payload: ProductionRrvLinkW
 
 @router.delete("/{build_id}/work-orders/{wo_id}", response_model=ProductionRrvBuildDetail)
 async def unlink_work_order(build_id: int, wo_id: int, db: Session = Depends(get_db),
-                            user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+                            user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "work_orders", "edit"))):
     build = _get_build(db, build_id, lock=True)
     _require_workable(build, "unlink work orders")
     if build.status == "completed":
@@ -528,7 +621,9 @@ async def unlink_work_order(build_id: int, wo_id: int, db: Session = Depends(get
 
 
 @router.get("/{build_id}/material-consumption", response_model=ProductionRrvConsumption)
-async def material_consumption(build_id: int, db: Session = Depends(get_db)):
+async def material_consumption(build_id: int, db: Session = Depends(get_db),
+                               _t: User = Depends(require_tab_access("production", "rrv_builds")),
+                               _tab: User = Depends(require_feature_action("production", "rrv_builds", "work_orders", "view"))):
     """What the vehicle has actually consumed across all its work orders —
     issued minus returned, valued at standard/moving-average cost."""
     build = _get_build(db, build_id)
@@ -559,6 +654,8 @@ async def material_consumption(build_id: int, db: Session = Depends(get_db)):
     out.total_consumed_value = round(sum(r.consumed_value for r in out.rows), 2)
     out.total_required_lines = len(out.rows)
     out.lines_fully_issued = sum(1 for r in out.rows if r.outstanding_qty <= 1e-9)
+    if not sees_costs(_tab, "rrv_builds"):
+        mask_consumption(out)
     return out
 
 
@@ -574,7 +671,9 @@ async def update_stage(build_id: int, stage_key: str, payload: ProductionRrvStag
     stage = _stage(build, stage_key)
     changes = payload.model_dump(exclude_unset=True)
     if changes.get("assignee_id"):
-        _get_active_user(db, changes["assignee_id"], "stage assignee")
+        assignee = _get_active_user(db, changes["assignee_id"], "stage assignee")
+        if assignee.id != stage.assignee_id:
+            assignee_rules.ensure_allowed(db, user, STAGE_RULE, assignee)
     start = changes.get("planned_start_date", stage.planned_start_date)
     end = changes.get("planned_end_date", stage.planned_end_date)
     if start and end and end < start:
@@ -596,42 +695,79 @@ async def start_stage(build_id: int, stage_key: str, db: Session = Depends(get_d
     stage.status, stage.started_at = "in_progress", datetime.now(timezone.utc)
     if build.status == "planned":
         build.status, build.actual_start_at = "in_progress", datetime.now(timezone.utc)
+        order_project_links.sync_build_element(db, build)
     rrv_log(db, build.id, "stage_started", user, RRV_STAGE_META[stage_key][0])
     db.commit()
     return _detail(db, build, user)
 
 
-@router.post("/{build_id}/stages/{stage_key}/complete", response_model=ProductionRrvBuildDetail)
-async def complete_stage(build_id: int, stage_key: str, payload: ProductionRrvStageCompletePayload, db: Session = Depends(get_db),
-                         user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
-    build = _get_build(db, build_id, lock=True)
+def _check_completable(db: Session, build: ProductionRrvBuild, stage_key: str):
     _require_workable(build, "complete stages")
     stage = _stage(build, stage_key)
     label = RRV_STAGE_META[stage_key][0]
     if stage.status in PRODUCTION_RRV_DONE_STAGE_STATUSES:
         raise HTTPException(status_code=409, detail=f"{label} is already {stage.status.replace('_', ' ')}.")
-    if stage_key in PRODUCTION_RRV_SIGNOFF_STAGES and not (
-        can_perform(user, "production", "rrv_builds", "approve") and rrv_can_sign_off(user, build)
-    ):
-        raise HTTPException(status_code=403, detail=f"{label} is a sign-off stage — only the build manager, a production manager or an admin (with the RRV Builds approve right) can complete it.")
     problems = rrv_stage_gate_problems(db, build, stage_key)
     if problems:
         raise HTTPException(status_code=409, detail=f"{label} can't be completed yet: " + " ".join(problems))
+    return stage, label
 
+
+def _signer_ids(db: Session, build: ProductionRrvBuild) -> list[int]:
+    """Who may sign off a build by default: its build manager and every production manager."""
+    managers = [u.id for u in db.query(User.id).filter(User.is_production_manager == True, User.is_active == True).order_by(User.name).all()]  # noqa: E712
+    return list(dict.fromkeys([i for i in [build.build_manager_id, *managers] if i]))
+
+
+def _signoff_decided(db: Session, req: ApprovalRequest, outcome: str, actor: User) -> None:
+    if outcome != "approved":
+        return  # rejected / returned / withdrawn: the stage stays open
+    ctx = req.context or {}
+    stage_key = ctx.get("stage_key")
+    if stage_key not in PRODUCTION_RRV_SIGNOFF_STAGES:
+        raise HTTPException(status_code=409, detail=f"This sign-off request names no sign-off stage ('{stage_key}') — reject it and request it again.")
+    build = _get_build(db, req.entity_id, lock=True)
+    stage, label = _check_completable(db, build, stage_key)
+    _complete_stage(db, build, stage, stage_key, label, actor, ctx.get("remarks"))
+
+
+engine.register_transaction(engine.TransactionType(
+    key=RRV_KEY, module_key="production", subtab_key="rrv_builds", label="RRV sign-off",
+    entity_type=RRV_ENTITY, url="/dashboard/production/rrv-builds/{id}",
+    description="Completing an RRV sign-off stage (RRV Completion, Handover).",
+    context_fields={
+        "stage_key": {"label": "Sign-off stage", "type": "choice", "choices": list(PRODUCTION_RRV_SIGNOFF_STAGES)},
+        "build_manager_id": {"label": "Build manager", "type": "user"},
+        "signer_ids": {"label": "Build manager or a production manager", "type": "user"},
+    },
+    default_stages=[engine.StageDef("Build manager or production manager", "record_field", {"field": "signer_ids"})],
+    # As before: the signer also needs RRV Builds › Approve, and the build
+    # manager signs off stages of their own build.
+    require_permission=True, allow_self_approval=True,
+    on_decided=_signoff_decided,
+))
+
+
+def _complete_stage(db: Session, build: ProductionRrvBuild, stage, stage_key: str, label: str, user: User, remarks: str | None) -> None:
     now = datetime.now(timezone.utc)
     stage.status, stage.completed_at, stage.completed_by_id = "completed", now, user.id
     stage.started_at = stage.started_at or now
-    if payload.remarks:
-        stage.remarks = payload.remarks
+    if remarks:
+        stage.remarks = remarks
     if build.status == "planned":
         build.status, build.actual_start_at = "in_progress", now
-    rrv_log(db, build.id, "stage_completed", user, label + (f" — {payload.remarks}" if payload.remarks else ""))
+    rrv_log(db, build.id, "stage_completed", user, label + (f" — {remarks}" if remarks else ""))
 
     if stage_key == "rrv_completion":
         machine = register_rrv_machine(db, build)
         build.status, build.completed_at, build.completed_by_id = "completed", now, user.id
         rrv_log(db, build.id, "completed", user, f"Vehicle registered as machine {machine.serial_number}")
         rrv_notify(db, build, f"RRV completed: {build.build_number}", f"{build.rrv_model} ({machine.serial_number}) is complete and ready for handover.", "production_rrv_completed", user.id)
+        prod_notify.fire(db, "rrv_ready_for_handover", record=build, entity_type="production_rrv_build", actor=user,
+                         skip={build.build_manager_id, build.created_by_id},
+                         title=f"RRV ready for handover: {build.build_number}",
+                         message=f"{build.rrv_model} ({machine.serial_number}) for {build.customer_name or 'the customer'} is complete. "
+                                 "Fill the handover details and complete the Handover stage.")
     elif stage_key == "handover":
         machine = apply_rrv_handover(db, build)
         build.status, build.handed_over_at, build.handed_over_by_id = "handed_over", now, user.id
@@ -644,6 +780,34 @@ async def complete_stage(build_id: int, stage_key: str, payload: ProductionRrvSt
             notification_type="production_rrv_handed_over", entity_type="project", entity_id=machine.id,
             exclude_user_id=user.id, app_name="erp",
         )
+    order_project_links.sync_build_element(db, build)
+
+
+@router.post("/{build_id}/stages/{stage_key}/complete", response_model=ProductionRrvBuildDetail)
+async def complete_stage(build_id: int, stage_key: str, payload: ProductionRrvStageCompletePayload, db: Session = Depends(get_db),
+                         user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+    """Completes a stage. A sign-off stage (RRV Completion, Handover) goes
+    through the central approval engine (workflow "production.rrv_signoff"):
+    the build manager / a production manager with RRV Builds › Approve signs
+    it off in the same click; anyone else with Edit sends it to them."""
+    build = _get_build(db, build_id, lock=True)
+    stage, label = _check_completable(db, build, stage_key)
+    if stage_key in PRODUCTION_RRV_SIGNOFF_STAGES:
+        try:
+            submit_and_self_approve(
+                db, RRV_KEY, entity_id=build.id, requester=user, title=f"{label} sign-off — {build.build_number} ({build.rrv_model})",
+                reference=build.build_number, branch_id=build.branch_id, admin_note=f"{label} signed off directly by an admin",
+                context={"stage_key": stage_key, "build_manager_id": build.build_manager_id,
+                         "signer_ids": _signer_ids(db, build), "remarks": payload.remarks},
+            )
+        except HTTPException:
+            db.rollback()
+            raise
+        if stage.status not in PRODUCTION_RRV_DONE_STAGE_STATUSES:
+            rrv_log(db, build.id, "signoff_requested", user, label + (f" — {payload.remarks}" if payload.remarks else ""))
+        db.commit()
+        return _detail(db, build, user)
+    _complete_stage(db, build, stage, stage_key, label, user, payload.remarks)
     db.commit()
     return _detail(db, build, user)
 
@@ -685,6 +849,7 @@ async def reopen_stage(build_id: int, stage_key: str, payload: ProductionRrvReas
     stage.status, stage.completed_at, stage.completed_by_id = "in_progress", None, None
     if stage_key == "rrv_completion":
         build.status, build.completed_at, build.completed_by_id = "in_progress", None, None
+        order_project_links.sync_build_element(db, build)
     rrv_log(db, build.id, "stage_reopened", user, f"{label}: {payload.reason.strip()}")
     db.commit()
     return _detail(db, build, user)
@@ -734,7 +899,7 @@ async def request_final_inspection(build_id: int, db: Session = Depends(get_db),
 
 @router.post("/{build_id}/tests", response_model=ProductionRrvBuildDetail, status_code=201)
 async def record_test(build_id: int, payload: ProductionRrvTestCreate, db: Session = Depends(get_db),
-                      user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+                      user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "tests", "create"))):
     build = _get_build(db, build_id, lock=True)
     _require_workable(build, "record tests")
     if payload.test_type not in PRODUCTION_RRV_TEST_TYPES:
@@ -750,7 +915,7 @@ async def record_test(build_id: int, payload: ProductionRrvTestCreate, db: Sessi
         if not original or original.test_type != payload.test_type:
             raise HTTPException(status_code=400, detail="A retest must point at an earlier test of the same type on this build.")
     if payload.rework_assignee_id:
-        _get_active_user(db, payload.rework_assignee_id, "rework assignee")
+        assignee_rules.ensure_allowed(db, user, REWORK_RULE, _get_active_user(db, payload.rework_assignee_id, "rework assignee"))
     test = ProductionRrvTest(
         build_id=build.id, test_type=payload.test_type, test_date=payload.test_date, result=payload.result,
         expected=payload.expected, observed=payload.observed, remarks=payload.remarks, witnessed_by=payload.witnessed_by,
@@ -761,6 +926,11 @@ async def record_test(build_id: int, payload: ProductionRrvTestCreate, db: Sessi
     label = PRODUCTION_RRV_TEST_TYPES[payload.test_type]
     rrv_log(db, build.id, "test_recorded", user, f"{label}: {payload.result.upper()}")
     if payload.result == "fail":
+        prod_notify.fire(db, "rrv_test_failed", record=build, entity_type="production_rrv_build", actor=user,
+                         skip={build.build_manager_id, build.created_by_id},
+                         title=f"RRV test failed: {build.build_number} — {label}",
+                         message=f"{label} on {build.build_number} ({build.rrv_model}) failed on {payload.test_date:%d-%m-%Y}: "
+                                 f"{(payload.observed or payload.remarks or '')[:200]}. A rework order has been raised.")
         raise_rework(
             db, build, source="test", title=f"Failed test — {label}", defect=payload.observed or payload.remarks,
             actor_id=user.id, source_test_id=test.id, assigned_to_id=payload.rework_assignee_id,
@@ -771,7 +941,7 @@ async def record_test(build_id: int, payload: ProductionRrvTestCreate, db: Sessi
 
 @router.delete("/{build_id}/tests/{test_id}", response_model=ProductionRrvBuildDetail)
 async def delete_test(build_id: int, test_id: int, db: Session = Depends(get_db),
-                      user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+                      user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "tests", "delete"))):
     build = _get_build(db, build_id, lock=True)
     _require_workable(build, "delete tests")
     test = db.query(ProductionRrvTest).filter(ProductionRrvTest.id == test_id, ProductionRrvTest.build_id == build.id, ProductionRrvTest.is_deleted == False).first()  # noqa: E712
@@ -782,7 +952,7 @@ async def delete_test(build_id: int, test_id: int, db: Session = Depends(get_db)
     if _stage(build, "testing").status in PRODUCTION_RRV_DONE_STAGE_STATUSES:
         raise HTTPException(status_code=409, detail="The Vehicle Testing stage is completed — its test records are locked. Reopen the stage first.")
     if db.query(ProductionReworkOrder.id).filter(ProductionReworkOrder.source_test_id == test.id, ProductionReworkOrder.is_deleted == False).first():  # noqa: E712
-        raise HTTPException(status_code=409, detail="A rework order was raised from this failed test, so it stays on record. Cancel the rework order if the test was recorded by mistake.")
+        raise HTTPException(status_code=409, detail="A rework order was raised from this failed test, so it stays on record. If the test was recorded by mistake, cancel that rework order on the Rework tab with the reason — the test record stays for audit.")
     test.is_deleted, test.deleted_at = True, datetime.now(timezone.utc)
     rrv_log(db, build.id, "test_deleted", user, PRODUCTION_RRV_TEST_TYPES.get(test.test_type, test.test_type))
     db.commit()
@@ -802,11 +972,11 @@ def _get_rework(db: Session, rework_id: int) -> tuple[ProductionReworkOrder, Pro
 
 @router.post("/{build_id}/rework", response_model=ProductionRrvBuildDetail, status_code=201)
 async def create_rework(build_id: int, payload: ProductionReworkOrderCreate, db: Session = Depends(get_db),
-                        user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+                        user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "rework", "create"))):
     build = _get_build(db, build_id, lock=True)
     _require_workable(build, "raise rework")
     if payload.assigned_to_id:
-        _get_active_user(db, payload.assigned_to_id, "rework assignee")
+        assignee_rules.ensure_allowed(db, user, REWORK_RULE, _get_active_user(db, payload.assigned_to_id, "rework assignee"))
     if payload.quality_ncr_id:
         from app.modules.quality.models.ncr import QualityNcr
         if not db.query(QualityNcr.id).filter(QualityNcr.id == payload.quality_ncr_id).first():
@@ -821,7 +991,7 @@ async def create_rework(build_id: int, payload: ProductionReworkOrderCreate, db:
 
 @router.post("/rework/{rework_id}/start", response_model=ProductionRrvBuildDetail)
 async def start_rework(rework_id: int, db: Session = Depends(get_db),
-                       user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+                       user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "rework", "edit"))):
     rw, build = _get_rework(db, rework_id)
     _require_workable(build, "work on rework")
     if rw.status != "open":
@@ -835,7 +1005,7 @@ async def start_rework(rework_id: int, db: Session = Depends(get_db),
 
 @router.post("/rework/{rework_id}/done", response_model=ProductionRrvBuildDetail)
 async def finish_rework(rework_id: int, payload: ProductionReworkDonePayload, db: Session = Depends(get_db),
-                        user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+                        user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "rework", "edit"))):
     rw, build = _get_rework(db, rework_id)
     _require_workable(build, "work on rework")
     if rw.status not in ("open", "in_progress"):
@@ -854,7 +1024,7 @@ async def finish_rework(rework_id: int, payload: ProductionReworkDonePayload, db
 
 @router.post("/rework/{rework_id}/verify", response_model=ProductionRrvBuildDetail)
 async def verify_rework(rework_id: int, payload: ProductionReworkVerifyPayload, db: Session = Depends(get_db),
-                        user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+                        user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "rework", "approve"))):
     rw, build = _get_rework(db, rework_id)
     _require_workable(build, "verify rework")
     if rw.status != "done":
@@ -873,7 +1043,7 @@ async def verify_rework(rework_id: int, payload: ProductionReworkVerifyPayload, 
 
 @router.post("/rework/{rework_id}/reject-verification", response_model=ProductionRrvBuildDetail)
 async def reject_rework(rework_id: int, payload: ProductionRrvReasonPayload, db: Session = Depends(get_db),
-                        user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+                        user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "rework", "reject"))):
     rw, build = _get_rework(db, rework_id)
     _require_workable(build, "verify rework")
     if rw.status != "done":
@@ -889,8 +1059,10 @@ async def reject_rework(rework_id: int, payload: ProductionRrvReasonPayload, db:
 
 @router.post("/rework/{rework_id}/cancel", response_model=ProductionRrvBuildDetail)
 async def cancel_rework(rework_id: int, payload: ProductionRrvReasonPayload, db: Session = Depends(get_db),
-                        user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_EDIT)):
+                        user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "rework", "cancel"))):
     rw, build = _get_rework(db, rework_id)
+    if build.status != "cancelled":  # rework left open on a build cancelled before the open-rework guard can still be closed out
+        _require_workable(build, "cancel rework")
     if rw.status not in PRODUCTION_REWORK_OPEN_STATUSES:
         raise HTTPException(status_code=409, detail=f"{rw.rework_number} is {rw.status.replace('_', ' ')} — it can't be cancelled.")
     if not rrv_can_sign_off(user, build):
@@ -905,32 +1077,70 @@ async def cancel_rework(rework_id: int, payload: ProductionRrvReasonPayload, db:
 # Handover certificate
 # ---------------------------------------------------------------------------
 
-@router.get("/{build_id}/handover-certificate")
-async def handover_certificate(build_id: int, db: Session = Depends(get_db),
-                               user: User = Depends(require_app_access("production")), _perm: User = Depends(_CAN_PRINT)):
-    build = _get_build(db, build_id)
+def _handover_ctx(db: Session, build: ProductionRrvBuild, user: User) -> dict:
+    detail = _detail(db, build, user, mask=False)
+    machine = db.query(Project).filter(Project.id == build.erp_project_id).first()
+    return {
+        "build_number": build.build_number, "rrv_model": build.rrv_model, "customer": build.customer_name,
+        "po": " dated ".join(x for x in (build.customer_po_number, build.customer_po_date.strftime("%d-%m-%Y") if build.customer_po_date else None) if x),
+        "serial": machine.serial_number if machine else build.vehicle_serial_number, "chassis": build.chassis_number,
+        "engine": build.engine_number, "year": build.year_of_manufacture,
+        "handover_date": build.handover_date.strftime("%d-%m-%Y") if build.handover_date else "—",
+        "commissioning_date": build.commissioning_date.strftime("%d-%m-%Y") if build.commissioning_date else "—",
+        "location": build.handover_location, "handed_to": build.handed_over_to_name, "handed_to_org": build.handed_over_to_organization,
+        "acceptance_ref": build.customer_acceptance_ref,
+        "warranty": f"{build.warranty_months} months, until {machine.warranty_end_date:%d-%m-%Y}" if machine and machine.warranty_end_date else f"{build.warranty_months} months",
+        "final_inspection": f"{detail.final_inspection_number} ({(detail.final_inspection_status or '').replace('_', ' ')})" if detail.final_inspection_number else "—",
+        "tests": [(PRODUCTION_RRV_TEST_TYPES.get(k, k), v) for k, v in detail.test_status.items()],
+        "stages": [(s.label, s.status.replace("_", " "), s.completed_by_name or "", s.completed_at.strftime("%d-%m-%Y") if s.completed_at else "") for s in detail.stages],
+        "handed_over_by": detail.handed_over_by_name, "remarks": build.handover_remarks,
+        "printed_at": datetime.now().strftime("%d-%m-%Y %H:%M"), "printed_by": user.name or user.email,
+    }
+
+
+def _require_handed_over(build: ProductionRrvBuild) -> None:
     if build.status != "handed_over":
         raise HTTPException(status_code=409, detail=f"{build.build_number} hasn't been handed over yet — the certificate is issued at handover.")
-    detail = _detail(db, build, user)
-    machine = db.query(Project).filter(Project.id == build.erp_project_id).first()
-    try:
-        pdf = build_rrv_handover_pdf({
-            "build_number": build.build_number, "rrv_model": build.rrv_model, "customer": build.customer_name,
-            "po": " dated ".join(x for x in (build.customer_po_number, build.customer_po_date.strftime("%d-%m-%Y") if build.customer_po_date else None) if x),
-            "serial": machine.serial_number if machine else build.vehicle_serial_number, "chassis": build.chassis_number,
-            "engine": build.engine_number, "year": build.year_of_manufacture,
-            "handover_date": build.handover_date.strftime("%d-%m-%Y") if build.handover_date else "—",
-            "commissioning_date": build.commissioning_date.strftime("%d-%m-%Y") if build.commissioning_date else "—",
-            "location": build.handover_location, "handed_to": build.handed_over_to_name, "handed_to_org": build.handed_over_to_organization,
-            "acceptance_ref": build.customer_acceptance_ref,
-            "warranty": f"{build.warranty_months} months, until {machine.warranty_end_date:%d-%m-%Y}" if machine and machine.warranty_end_date else f"{build.warranty_months} months",
-            "final_inspection": f"{detail.final_inspection_number} ({(detail.final_inspection_status or '').replace('_', ' ')})" if detail.final_inspection_number else "—",
-            "tests": [(PRODUCTION_RRV_TEST_TYPES.get(k, k), v) for k, v in detail.test_status.items()],
-            "stages": [(s.label, s.status.replace("_", " "), s.completed_by_name or "", s.completed_at.strftime("%d-%m-%Y") if s.completed_at else "") for s in detail.stages],
-            "handed_over_by": detail.handed_over_by_name, "remarks": build.handover_remarks,
-            "printed_at": datetime.now().strftime("%d-%m-%Y %H:%M"), "printed_by": user.name or user.email,
-        })
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Couldn't build the handover certificate PDF: {e}")
-    return Response(content=pdf.getvalue(), media_type="application/pdf",
+
+
+@router.get("/{build_id}/handover-certificate")
+async def handover_certificate(build_id: int, db: Session = Depends(get_db),
+                               user: User = Depends(require_app_access("production")), _perm: User = Depends(require_feature_action("production", "rrv_builds", "handover", "print"))):
+    build = _get_build(db, build_id)
+    _require_handed_over(build)
+
+    def render() -> bytes:
+        try:
+            return build_rrv_handover_pdf(_handover_ctx(db, build, user)).getvalue()
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Couldn't build the handover certificate PDF: {e}")
+
+    # Once a Word certificate exists it (with any edits made in Word) is the
+    # certificate of record. Handover facts are fixed at handover, so there is
+    # a single revision (0).
+    pdf = await managed_documents.pdf_of_record(db, HANDOVER_ENTITY, build.id, 0, render=render)
+    return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="RRV-Handover-{build.build_number}.pdf"'})
+
+
+def _handover_document_target(db: Session, build_id: int, user: User, modify: bool) -> managed_documents.DocumentTarget:
+    build = db.query(ProductionRrvBuild).filter(ProductionRrvBuild.id == build_id, ProductionRrvBuild.is_deleted == False).first()  # noqa: E712
+    if not build:
+        raise HTTPException(status_code=404, detail="RRV build not found — it may have been deleted. Refresh the page.")
+    _require_handed_over(build)
+    ensure_feature_action(user, "production", "rrv_builds", "handover", "edit" if modify else "print")
+    # Served by the shared managed-documents routes, outside this router's
+    # {build_id} scope dependency — check the build's data scope here.
+    ensure_in_scope(db, user, build)
+    return managed_documents.DocumentTarget(
+        entity_id=build.id, revision=0, title=f"Handover certificate {build.build_number}",
+        folder=managed_documents.sharepoint_folder("Production-Handover", build.build_number),
+        filename_stem=managed_documents.safe_filename(f"RRV-Handover-{build.build_number}"),
+        build_docx=lambda: build_rrv_handover_docx(_handover_ctx(db, build, user)).getvalue(),
+    )
+
+
+managed_documents.register(managed_documents.DocumentAdapter(
+    entity_type=HANDOVER_ENTITY, app="production", load=_handover_document_target,
+    view_grant="production:rrv_builds.handover:print", edit_grant="production:rrv_builds.handover:edit",
+))

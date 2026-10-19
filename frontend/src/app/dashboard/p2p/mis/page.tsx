@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Bar } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend } from 'chart.js'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { p2pApi } from '@/lib/api'
 import { P2PMisSummary } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
@@ -53,6 +54,7 @@ function fmtDate(iso: string): string {
 
 export default function P2PMisPage() {
   const { isAuthorized, isLoading } = useRequireApp('p2p')
+  const { can } = useCan()
   const [period, setPeriod] = useState<Period>('weekly')
   const [summary, setSummary] = useState<P2PMisSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -123,7 +125,8 @@ export default function P2PMisPage() {
             </p>
           )}
         </div>
-        <button
+        {can('p2p', 'mis', 'export') && <button
+          data-tour="p2p-mis-export-btn"
           onClick={handleExport}
           disabled={exporting || loading || !summary}
           style={{
@@ -133,10 +136,10 @@ export default function P2PMisPage() {
           }}
         >
           {exporting ? 'Exporting…' : '⬇ Export Excel'}
-        </button>
+        </button>}
       </div>
 
-      <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)', marginBottom: 20 }}>
+      <div data-tour="p2p-mis-period-tabs" style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)', marginBottom: 20 }}>
         {PERIODS.map((p) => (
           <button
             key={p.key}
@@ -179,7 +182,7 @@ export default function P2PMisPage() {
         <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>
       ) : !summary ? null : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+          <div data-tour="p2p-mis-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
             <KpiTile label="PRs Created" value={String(k!.prs_created)} color={TEXT.heading} />
             <KpiTile label="PRs Approved" value={String(k!.prs_approved)} color={CATEGORICAL[2]} />
             <KpiTile label="PRs Rejected" value={String(k!.prs_rejected)} color={CATEGORICAL[7]} />
@@ -189,7 +192,7 @@ export default function P2PMisPage() {
             <KpiTile label="PO Pending Approval" value={String(k!.pos_pending_approval)} color={CATEGORICAL[3]} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
+          <div data-tour="p2p-mis-charts" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
             <ChartCard title="Trend — Created vs Approved vs PO Raised">
               <Bar
                 data={{
@@ -229,7 +232,7 @@ export default function P2PMisPage() {
             </ChartCard>
           </div>
 
-          <div>
+          <div data-tour="p2p-mis-approver-pending">
             <p style={{ fontSize: 11.5, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>Pending Approval — By Approver</p>
             <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 320 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>

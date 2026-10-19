@@ -6,8 +6,8 @@ import { extractErrorMessages } from '@/lib/validation'
 import type { HrAsset, HrBranchLookup, DirectoryUser } from '@/types'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { secondaryBtnStyle } from '@/components/shared/ui'
-import { FormDialog, ErrorBanner, formInputStyle, labelStyle, primaryActionStyle, todayIso, fmtDate } from './adminUi'
+import { SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { FormDialog, ErrorBanner, todayIso, fmtDate } from './adminUi'
 
 export const ASSET_CATEGORY_LABELS: Record<string, string> = {
   laptop: 'Laptop', desktop: 'Desktop', mobile: 'Mobile', sim: 'SIM Card', tablet: 'Tablet', monitor: 'Monitor',
@@ -15,10 +15,10 @@ export const ASSET_CATEGORY_LABELS: Record<string, string> = {
 }
 export const ASSET_CONDITION_LABELS: Record<string, string> = { new: 'New', good: 'Good', fair: 'Fair', poor: 'Poor', damaged: 'Damaged' }
 
-function Fld({ label, children, basis = 200, grow = false, max }: { label: string; children: React.ReactNode; basis?: number; grow?: boolean; max?: number }) {
+function Fld({ label, children, basis = 200, grow = false, max, req = false }: { label: string; children: React.ReactNode; basis?: number; grow?: boolean; max?: number; req?: boolean }) {
   return (
     <div style={{ flex: grow ? `1 1 ${basis}px` : `0 1 ${basis}px`, minWidth: Math.min(basis, 140), maxWidth: max }}>
-      <label style={labelStyle}>{label}</label>
+      <label style={sheetLabel}>{label}{req && <> <Req /></>}</label>
       {children}
     </div>
   )
@@ -93,52 +93,64 @@ export function AssetFormDialog({
   return (
     <FormDialog
       open={open}
+      icon={asset ? 'edit' : 'box'}
       title={asset ? `Edit ${asset.asset_code}` : 'Add asset'}
-      subtitle={asset ? undefined : 'Leave the asset code blank to auto-number it (AST-0001, AST-0002…).'}
+      subtitle={asset ? `${asset.name} — changes apply to the asset register.` : 'Leave the asset code blank to auto-number it (AST-0001, AST-0002…).'}
       onClose={onClose}
-      maxWidth={680}
+      busy={saving}
+      maxWidth={960}
+      bare
       footer={<>
-        <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-        <button type="button" style={{ ...primaryActionStyle, opacity: saving ? 0.7 : 1 }} onClick={save} disabled={saving}>{saving ? 'Saving…' : asset ? 'Save changes' : 'Add asset'}</button>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onClose} disabled={saving}>Cancel</button>
+        <button type="button" data-tour="hr-asset-form-save" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={save} disabled={saving}><SheetIcon name={asset ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : asset ? 'Save changes' : 'Add asset'}</button>
       </>}
     >
-      <ErrorBanner error={error} />
-      <div style={row}>
-        <Fld label="Asset code" basis={150}><input style={formInputStyle} value={f.asset_code} onChange={(e) => set('asset_code')(e.target.value)} placeholder={asset ? '' : 'Auto'} /></Fld>
-        <Fld label="Name *" basis={260} grow max={420}><input style={formInputStyle} value={f.name} onChange={(e) => set('name')(e.target.value)} placeholder="Dell Latitude 5440" /></Fld>
-      </div>
-      <div style={row}>
-        <Fld label="Category" basis={170}>
-          <select style={formInputStyle} value={f.category} onChange={(e) => set('category')(e.target.value)}>
-            {Object.entries(ASSET_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </Fld>
-        <Fld label="Make" basis={150}><input style={formInputStyle} value={f.make} onChange={(e) => set('make')(e.target.value)} placeholder="Dell" /></Fld>
-        <Fld label="Model" basis={150}><input style={formInputStyle} value={f.model} onChange={(e) => set('model')(e.target.value)} /></Fld>
-        <Fld label="Serial / IMEI" basis={170} grow max={260}><input style={formInputStyle} value={f.serial_number} onChange={(e) => set('serial_number')(e.target.value)} /></Fld>
-      </div>
-      <div style={row}>
-        <Fld label="Purchase date" basis={160}><DateField value={f.purchase_date} onChange={set('purchase_date')} /></Fld>
-        <Fld label="Cost (₹)" basis={130}><input style={formInputStyle} inputMode="decimal" value={f.purchase_cost} onChange={(e) => set('purchase_cost')(e.target.value.replace(/[^0-9.]/g, ''))} /></Fld>
-        <Fld label="Warranty until" basis={160}><DateField value={f.warranty_until} onChange={set('warranty_until')} /></Fld>
-        <Fld label="Condition" basis={130}>
-          <select style={formInputStyle} value={f.condition} onChange={(e) => set('condition')(e.target.value)}>
-            <option value="">—</option>
-            {Object.entries(ASSET_CONDITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </Fld>
-      </div>
-      <div style={row}>
-        <Fld label="Vendor" basis={200} grow max={300}><input style={formInputStyle} value={f.vendor_name} onChange={(e) => set('vendor_name')(e.target.value)} /></Fld>
-        <Fld label="Invoice no." basis={150}><input style={formInputStyle} value={f.invoice_no} onChange={(e) => set('invoice_no')(e.target.value)} /></Fld>
-        <Fld label="Plant" basis={200}>
-          <SearchableSelect value={f.branch_id} onChange={set('branch_id')} placeholder="All / not set" options={[{ value: '', label: '— Not set —' }, ...branches.map((b) => ({ value: String(b.id), label: b.name }))]} />
-        </Fld>
-      </div>
-      <div>
-        <label style={labelStyle}>Remarks</label>
-        <textarea rows={2} style={{ ...formInputStyle, resize: 'vertical' }} value={f.remarks} onChange={(e) => set('remarks')(e.target.value)} />
-      </div>
+      <SheetColumns
+        left={<>
+          <ErrorBanner error={error} />
+          <SheetSection icon="box" title="Asset">
+            <div data-tour="hr-asset-form-code-name" style={row}>
+              <Fld label="Asset code" basis={150}><input style={sheetInput} value={f.asset_code} onChange={(e) => set('asset_code')(e.target.value)} placeholder={asset ? '' : 'Auto'} /></Fld>
+              <Fld label="Name" req basis={260} grow max={420}><input style={sheetInput} value={f.name} onChange={(e) => set('name')(e.target.value)} placeholder="Dell Latitude 5440" /></Fld>
+            </div>
+            <div data-tour="hr-asset-form-identity" style={{ ...row, marginTop: 12 }}>
+              <Fld label="Category" basis={170}>
+                <select style={sheetInput} value={f.category} onChange={(e) => set('category')(e.target.value)}>
+                  {Object.entries(ASSET_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </Fld>
+              <Fld label="Make" basis={150}><input style={sheetInput} value={f.make} onChange={(e) => set('make')(e.target.value)} placeholder="Dell" /></Fld>
+              <Fld label="Model" basis={150}><input style={sheetInput} value={f.model} onChange={(e) => set('model')(e.target.value)} /></Fld>
+              <Fld label="Serial / IMEI" basis={170} grow max={260}><input style={sheetInput} value={f.serial_number} onChange={(e) => set('serial_number')(e.target.value)} /></Fld>
+            </div>
+          </SheetSection>
+          <SheetSection icon="rupee" title="Purchase">
+            <div data-tour="hr-asset-form-purchase" style={row}>
+              <Fld label="Purchase date" basis={160}><DateField value={f.purchase_date} onChange={set('purchase_date')} /></Fld>
+              <Fld label="Cost (₹)" basis={130}><input style={sheetInput} inputMode="decimal" value={f.purchase_cost} onChange={(e) => set('purchase_cost')(e.target.value.replace(/[^0-9.]/g, ''))} /></Fld>
+              <Fld label="Warranty until" basis={160}><DateField value={f.warranty_until} onChange={set('warranty_until')} /></Fld>
+            </div>
+            <div data-tour="hr-asset-form-vendor" style={{ ...row, marginTop: 12 }}>
+              <Fld label="Vendor" basis={200} grow max={300}><input style={sheetInput} value={f.vendor_name} onChange={(e) => set('vendor_name')(e.target.value)} /></Fld>
+              <Fld label="Invoice no." basis={150}><input style={sheetInput} value={f.invoice_no} onChange={(e) => set('invoice_no')(e.target.value)} /></Fld>
+            </div>
+          </SheetSection>
+        </>}
+        right={<>
+          <SheetSection icon="building" title="Location & Condition">
+            <label style={sheetLabel}>Plant</label>
+            <SearchableSelect value={f.branch_id} onChange={set('branch_id')} placeholder="All / not set" options={[{ value: '', label: '— Not set —' }, ...branches.map((b) => ({ value: String(b.id), label: b.name }))]} />
+            <label style={{ ...sheetLabel, marginTop: 14 }}>Condition</label>
+            <select style={sheetInput} value={f.condition} onChange={(e) => set('condition')(e.target.value)}>
+              <option value="">—</option>
+              {Object.entries(ASSET_CONDITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </SheetSection>
+          <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+            <textarea rows={4} data-tour="hr-asset-form-remarks" style={{ ...sheetInput, resize: 'vertical' }} value={f.remarks} onChange={(e) => set('remarks')(e.target.value)} />
+          </SheetSection>
+        </>}
+      />
     </FormDialog>
   )
 }
@@ -189,29 +201,36 @@ export function IssueAssetDialog({
       open={open}
       title={`Issue ${asset?.asset_code || ''}`}
       subtitle={asset ? `${asset.name} will be recorded against the employee and listed under their My Assets.` : undefined}
+      icon="user"
       onClose={onClose}
+      busy={saving}
+      bare
       footer={<>
-        <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-        <button type="button" style={{ ...primaryActionStyle, opacity: saving ? 0.7 : 1 }} onClick={submit} disabled={saving}>{saving ? 'Issuing…' : 'Issue asset'}</button>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onClose} disabled={saving}>Cancel</button>
+        <button type="button" data-tour="hr-asset-issue-save" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={submit} disabled={saving}><SheetIcon name="send" size={16} />{saving ? 'Issuing…' : 'Issue asset'}</button>
       </>}
     >
-      <ErrorBanner error={error} />
-      <div>
-        <label style={labelStyle}>Issue to *</label>
-        <SearchableSelect value={userId} onChange={setUserId} placeholder="Search employee…" options={people.map((p) => ({ value: String(p.id), label: `${p.name}${p.department ? ` · ${p.department}` : ''} (${p.email})` }))} />
-      </div>
-      <div style={row}>
-        <Fld label="Issued on" basis={160}><DateField value={issuedOn} onChange={setIssuedOn} /></Fld>
-        <Fld label="Expected return" basis={160}><DateField value={expectedReturn} onChange={setExpectedReturn} /></Fld>
-        <Fld label="Condition" basis={130}>
-          <select style={formInputStyle} value={condition} onChange={(e) => setCondition(e.target.value)}>
-            {Object.entries(ASSET_CONDITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </Fld>
-      </div>
-      <div>
-        <label style={labelStyle}>Remarks</label>
-        <textarea rows={2} style={{ ...formInputStyle, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Charger, bag, accessories handed over…" />
+      <div style={{ padding: '20px 24px' }}>
+        <ErrorBanner error={error} />
+        <SheetSection icon="user" title="Issue To">
+          <div data-tour="hr-asset-issue-to">
+            <label style={sheetLabel}>Employee <Req /></label>
+            <SearchableSelect value={userId} onChange={setUserId} placeholder="Search employee…" options={people.map((p) => ({ value: String(p.id), label: `${p.name}${p.department ? ` · ${p.department}` : ''} (${p.email})` }))} />
+          </div>
+        </SheetSection>
+        <SheetSection icon="calendar" title="Handover">
+          <div data-tour="hr-asset-issue-dates" style={row}>
+            <Fld label="Issued on" basis={160}><DateField value={issuedOn} onChange={setIssuedOn} /></Fld>
+            <Fld label="Expected return" basis={160}><DateField value={expectedReturn} onChange={setExpectedReturn} /></Fld>
+            <Fld label="Condition" basis={130}>
+              <select style={sheetInput} value={condition} onChange={(e) => setCondition(e.target.value)}>
+                {Object.entries(ASSET_CONDITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </Fld>
+          </div>
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks <Optional /></label>
+          <textarea rows={2} data-tour="hr-asset-issue-remarks" style={{ ...sheetInput, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Charger, bag, accessories handed over…" />
+        </SheetSection>
       </div>
     </FormDialog>
   )
@@ -261,31 +280,36 @@ export function ReturnAssetDialog({
       open={open}
       title={`Receive back ${asset?.asset_code || ''}`}
       subtitle={asset ? `From ${asset.current_holder_name || 'the employee'}${asset.issued_on ? `, issued ${fmtDate(asset.issued_on)}` : ''}.` : undefined}
+      icon="undo"
       onClose={onClose}
+      busy={saving}
+      bare
       footer={<>
-        <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-        <button type="button" style={{ ...primaryActionStyle, opacity: saving ? 0.7 : 1 }} onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Record return'}</button>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onClose} disabled={saving}>Cancel</button>
+        <button type="button" data-tour="hr-asset-return-save" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={submit} disabled={saving}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Record return'}</button>
       </>}
     >
-      <ErrorBanner error={error} />
-      <div style={row}>
-        <Fld label="Returned on" basis={160}><DateField value={returnedOn} onChange={setReturnedOn} /></Fld>
-        <Fld label="Condition on return" basis={170}>
-          <select style={formInputStyle} value={condition} onChange={(e) => setCondition(e.target.value)}>
-            {Object.entries(ASSET_CONDITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </Fld>
-        <Fld label="Send to" basis={170}>
-          <select style={formInputStyle} value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
-            <option value="in_stock">In stock</option>
-            <option value="under_repair">Under repair</option>
-            <option value="retired">Retired</option>
-          </select>
-        </Fld>
-      </div>
-      <div>
-        <label style={labelStyle}>Remarks</label>
-        <textarea rows={2} style={{ ...formInputStyle, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Missing charger, screen scratch…" />
+      <div style={{ padding: '20px 24px' }}>
+        <ErrorBanner error={error} />
+        <SheetSection icon="undo" title="Return">
+          <div data-tour="hr-asset-return-fields" style={row}>
+            <Fld label="Returned on" basis={160}><DateField value={returnedOn} onChange={setReturnedOn} /></Fld>
+            <Fld label="Condition on return" basis={170}>
+              <select style={sheetInput} value={condition} onChange={(e) => setCondition(e.target.value)}>
+                {Object.entries(ASSET_CONDITION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </Fld>
+            <Fld label="Send to" basis={170}>
+              <select style={sheetInput} value={nextStatus} onChange={(e) => setNextStatus(e.target.value)}>
+                <option value="in_stock">In stock</option>
+                <option value="under_repair">Under repair</option>
+                <option value="retired">Retired</option>
+              </select>
+            </Fld>
+          </div>
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks <Optional /></label>
+          <textarea rows={2} data-tour="hr-asset-return-remarks" style={{ ...sheetInput, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Missing charger, screen scratch…" />
+        </SheetSection>
       </div>
     </FormDialog>
   )

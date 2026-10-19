@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react'
 import { crmApi, usersApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { CrmActivity, OrgContact, DirectoryUser } from '@/types'
-import { XIcon, inputStyle, primaryBtnStyle, secondaryBtnStyle, Field } from '@/components/crm/ui'
+import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
+import DateField from '@/components/erp/DateField'
 import Checkbox from '@/components/Checkbox'
-import MessageDialog from '@/components/erp/MessageDialog'
 import { BRAND, TEXT } from '@/lib/theme'
 
 function ChipMultiSelect<T extends { id: number; label: string }>({
@@ -40,9 +40,7 @@ function ChipMultiSelect<T extends { id: number; label: string }>({
  * of Meeting. Shared by Inquiry and Tender Activities tabs since both export
  * against the same `/mom-docx` + `/mom-pdf` shape (see MomExportRequest on
  * the backend) — only the org id, related module/id, and API call differ. */
-export default function MomExportDialog({
-  open, onClose, orgId, orgName, activities, onExportDocx, onExportPdf,
-}: {
+type Props = {
   open: boolean
   onClose: () => void
   orgId: number | null | undefined
@@ -50,38 +48,36 @@ export default function MomExportDialog({
   activities: CrmActivity[]
   onExportDocx: (payload: Record<string, unknown>) => Promise<Blob>
   onExportPdf: (payload: Record<string, unknown>) => Promise<Blob>
-}) {
+}
+
+// Mounted only while open, so every opening starts blank.
+export default function MomExportDialog(props: Props) {
+  if (!props.open) return null
+  return <MomExportSheet {...props} />
+}
+
+function MomExportSheet({ onClose, orgId, orgName, activities, onExportDocx, onExportPdf }: Props) {
   const [subject, setSubject] = useState('')
   const [meetingDate, setMeetingDate] = useState(new Date().toISOString().slice(0, 10))
   const [contacts, setContacts] = useState<OrgContact[]>([])
   const [directory, setDirectory] = useState<DirectoryUser[]>([])
   const [pewMemberIds, setPewMemberIds] = useState<number[]>([])
   const [clientContactIds, setClientContactIds] = useState<number[]>([])
-  const [activityIds, setActivityIds] = useState<number[]>([])
+  const [activityIds, setActivityIds] = useState<number[]>(() => activities.map((a) => a.id))
   const [exporting, setExporting] = useState<'docx' | 'pdf' | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!open) return
-    setSubject('')
-    setMeetingDate(new Date().toISOString().slice(0, 10))
-    setPewMemberIds([])
-    setClientContactIds([])
-    setActivityIds(activities.map((a) => a.id))
-    setError('')
     if (orgId) crmApi.listOrgContacts(orgId).then(setContacts).catch(() => setContacts([]))
     usersApi.directory().then(setDirectory).catch(() => setDirectory([]))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, orgId])
-
-  if (!open) return null
+  }, [orgId])
 
   const toggleActivity = (id: number) => setActivityIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
   const togglePewMember = (id: number) => setPewMemberIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
   const toggleClientContact = (id: number) => setClientContactIds((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
 
   const download = async (kind: 'docx' | 'pdf') => {
-    if (!subject.trim()) { setError('Subject is required.'); return }
+    if (!subject.trim()) { setError('Enter the meeting subject — it is the title of the MOM document.'); return }
     setExporting(kind)
     setError('')
     try {
@@ -109,64 +105,70 @@ export default function MomExportDialog({
     }
   }
 
+  const busy = !!exporting
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 560, maxHeight: '85vh', background: '#fff', borderRadius: 18, boxShadow: '0 24px 60px rgba(0,0,0,0.25)', overflow: 'hidden' }}>
-        <div style={{ maxHeight: '85vh', overflowY: 'auto', padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-            <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: 0 }}>Export Meeting MOM</p>
-            <button onClick={onClose} aria-label="Close" style={{ border: 'none', background: 'transparent', display: 'flex', cursor: 'pointer', color: '#a8a29e', padding: 4 }}><XIcon size={16} /></button>
+    <FormSheet width={640} icon="doc" title="Export Meeting MOM" subtitle={`One Minutes of Meeting from the follow-ups you pick${orgName ? ` — ${orgName}` : ''}.`} onClose={onClose} busy={busy}
+      footer={<>
+        <button type="button" onClick={onClose} disabled={busy} data-tour="mom-close-btn" style={sheetBtn('secondary', SHEET.INK, busy)}>Close</button>
+        <button type="button" onClick={() => download('pdf')} disabled={busy} data-tour="mom-export-pdf-btn" style={sheetBtn('secondary', SHEET.INK, busy)}>
+          <SheetIcon name="doc" size={16} />{exporting === 'pdf' ? 'Exporting…' : 'Export PDF'}
+        </button>
+        <button type="button" onClick={() => download('docx')} disabled={busy} data-tour="mom-export-docx-btn" style={sheetBtn('primary', SHEET.BLUE, busy)}>
+          <SheetIcon name="doc" size={16} />{exporting === 'docx' ? 'Exporting…' : 'Export Word (.docx)'}
+        </button>
+      </>}>
+      <div style={{ padding: '20px 24px' }}>
+        <SheetError error={error} />
+        <SheetSection icon="calendar" title="Meeting">
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div data-tour="mom-subject" style={{ flex: '1 1 260px' }}>
+              <label style={sheetLabel}>Subject <Req /></label>
+              <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Technical discussion on signalling requirement" style={sheetInput} autoFocus />
+            </div>
+            <div data-tour="mom-meeting-date" style={{ flex: '0 1 170px', minWidth: 150 }}>
+              <label style={sheetLabel}>Meeting Date</label>
+              <DateField value={meetingDate} onChange={setMeetingDate} />
+            </div>
           </div>
-          <MessageDialog open={!!error} variant="error" title="Cannot Export MOM" message={error} onClose={() => setError('')} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <Field label="Subject">
-              <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Technical discussion on signalling requirement" style={inputStyle} />
-            </Field>
-            <Field label="Meeting Date">
-              <input type="date" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} style={inputStyle} />
-            </Field>
-            <Field label="PEW Attendees">
-              <ChipMultiSelect
-                options={directory.map((u) => ({ id: u.id, label: u.name }))}
-                selected={pewMemberIds}
-                onToggle={togglePewMember}
-                emptyLabel="No users found."
-              />
-            </Field>
-            <Field label="Client Attendees">
-              <ChipMultiSelect
-                options={contacts.map((c) => ({ id: c.id, label: c.name }))}
-                selected={clientContactIds}
-                onToggle={toggleClientContact}
-                emptyLabel="No contacts saved for this organization yet."
-              />
-            </Field>
-            <Field label="Follow-ups to Include">
-              {activities.length === 0 ? (
-                <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>No follow-ups logged yet.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 160, overflowY: 'auto' }}>
-                  {activities.map((a) => (
-                    <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: '#1f1108', cursor: 'pointer' }}>
-                      <Checkbox checked={activityIds.includes(a.id)} onChange={() => toggleActivity(a.id)} />
-                      {a.subject || a.activity_type || `Follow-up #${a.id}`}
-                      {a.created_at && <span style={{ color: '#a8a29e' }}> · {new Date(a.created_at).toLocaleDateString('en-GB')}</span>}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </Field>
+        </SheetSection>
+        <SheetSection icon="users" title="Attendees">
+          <div data-tour="mom-pew-attendees">
+            <label style={sheetLabel}>PEW Attendees</label>
+            <ChipMultiSelect
+              options={directory.map((u) => ({ id: u.id, label: u.name }))}
+              selected={pewMemberIds}
+              onToggle={togglePewMember}
+              emptyLabel="No users found."
+            />
           </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-            <button onClick={() => download('docx')} disabled={!!exporting} style={{ ...primaryBtnStyle, opacity: exporting ? 0.7 : 1, cursor: exporting ? 'not-allowed' : 'pointer' }}>
-              {exporting === 'docx' ? 'Exporting…' : 'Export Word (.docx)'}
-            </button>
-            <button onClick={() => download('pdf')} disabled={!!exporting} style={{ ...secondaryBtnStyle, opacity: exporting ? 0.7 : 1, cursor: exporting ? 'not-allowed' : 'pointer' }}>
-              {exporting === 'pdf' ? 'Exporting…' : 'Export PDF'}
-            </button>
+          <div data-tour="mom-client-attendees" style={{ marginTop: 14 }}>
+            <label style={sheetLabel}>Client Attendees</label>
+            <ChipMultiSelect
+              options={contacts.map((c) => ({ id: c.id, label: c.name }))}
+              selected={clientContactIds}
+              onToggle={toggleClientContact}
+              emptyLabel="No contacts saved for this customer organization yet."
+            />
           </div>
-        </div>
+        </SheetSection>
+        <SheetSection icon="list" title="Follow-ups to Include">
+          <div data-tour="mom-followups">
+            {activities.length === 0 ? (
+              <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>No follow-ups logged yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 160, overflowY: 'auto' }}>
+                {activities.map((a) => (
+                  <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: SHEET.INK, cursor: 'pointer' }}>
+                    <Checkbox checked={activityIds.includes(a.id)} onChange={() => toggleActivity(a.id)} />
+                    {a.subject || a.activity_type || `Follow-up #${a.id}`}
+                    {a.created_at && <span style={{ color: SHEET.MUTED }}> · {new Date(a.created_at).toLocaleDateString('en-GB')}</span>}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </SheetSection>
       </div>
-    </div>
+    </FormSheet>
   )
 }

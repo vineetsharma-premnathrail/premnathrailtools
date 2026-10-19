@@ -117,3 +117,4 @@ class HydTestResponse(BaseModel):
     tested_by_name: str | None = None
     completed_by_name: str | None = None
     failed_readings: int = 0
+    approval_request_id: int | None = None  # pending central approval request of the result sign-off

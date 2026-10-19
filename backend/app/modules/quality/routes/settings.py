@@ -57,7 +57,7 @@ async def assign_role(payload: QualityRoleAssignPayload, db: Session = Depends(g
     if not target:
         raise HTTPException(status_code=404, detail=f"User #{payload.user_id} not found")
     try:
-        added = access.apply_role(target, payload.role)
+        added = access.apply_role(target, payload.role, db)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     db.add(AuditLog(entity_type="user", entity_id=target.id, action="quality_role_granted", performed_by_id=user.id,

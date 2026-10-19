@@ -77,19 +77,24 @@ def test_admin_can_deactivate_other_user(client, db):
     assert response.json()["is_active"] is True
 
 
-def test_admin_can_assign_apps(client, db):
+def test_module_access_comes_from_roles_not_assigned_apps(client, db):
+    """Module access is granted through roles now; the old assigned_apps
+    write is refused with a pointer to roles."""
+    from app.modules.main.models.role import Role
+
     admin = make_user(db, "admin6@premnathrail.com", role="admin")
     target = make_user(db, "target4@premnathrail.com", role="user")
 
-    response = client.patch(
-        f"/api/v1/users/{target.id}",
-        json={"assigned_apps": ["erp", "crm"]},
-        headers=auth_header(admin),
-    )
+    refused = client.patch(f"/api/v1/users/{target.id}", json={"assigned_apps": ["erp", "crm"]}, headers=auth_header(admin))
+    assert refused.status_code == 400 and "roles" in refused.json()["detail"]
+
+    role = Role(name="ERP + CRM viewer", permissions=["erp:*:view", "crm:*:view"])
+    db.add(role)
+    db.commit()
+    response = client.put(f"/api/v1/users/{target.id}/roles", json={"role_ids": [role.id]}, headers=auth_header(admin))
     assert response.status_code == 200
     body = response.json()
-    assert sorted(body["assigned_apps"]) == ["crm", "erp"]
-    assert sorted(body["apps"]) == ["crm", "erp"]
+    assert sorted(body["apps"]) == ["crm", "erp"] and body["role_names"] == ["ERP + CRM viewer"]
 
 
 def test_admin_gets_all_apps_regardless_of_assignment(client, db):
@@ -111,19 +116,6 @@ def test_admin_rejects_invalid_app_name(client, db):
         headers=auth_header(admin),
     )
     assert response.status_code == 400
-
-
-def test_admin_can_set_erp_permissions(client, db):
-    admin = make_user(db, "admin_perm1@premnathrail.com", role="admin")
-    target = make_user(db, "target_perm1@premnathrail.com", role="user")
-
-    response = client.patch(
-        f"/api/v1/users/{target.id}",
-        json={"assigned_apps": ["erp"], "erp_permissions": ["project_view", "project_delete"]},
-        headers=auth_header(admin),
-    )
-    assert response.status_code == 200
-    assert sorted(response.json()["erp_permissions"]) == ["project_delete", "project_view"]
 
 
 def test_admin_rejects_invalid_erp_permission(client, db):
@@ -217,3 +209,131 @@ def test_sync_azure_returns_503_on_graph_failure(client, db, monkeypatch):
 
     response = client.post("/api/v1/users/sync-azure", headers=auth_header(admin))
     assert response.status_code == 503
+
+
+async def _fake_list_two_azure_users():
+    return [
+        {"id": "az-kept-off", "mail": "keptoff@premnathrail.com", "userPrincipalName": "keptoff@premnathrail.com",
+         "displayName": "Kept Off"},
+        {"id": "az-came-back", "mail": "cameback@premnathrail.com", "userPrincipalName": "cameback@premnathrail.com",
+         "displayName": "Came Back"},
+    ]
+
+
+async def _fake_no_admin_ids():
+    return set()
+
+
+def test_sync_azure_keeps_admin_deactivated_users_inactive(client, db, monkeypatch):
+    """C-10: a user an admin deactivated stays deactivated across Azure syncs,
+    while someone deactivated only because they left the tenant comes back."""
+    from app.modules.main.models.audit_log import AuditLog
+
+    admin = make_user(db, "admin12@premnathrail.com", role="admin")
+    kept_off = make_user(db, "keptoff@premnathrail.com")
+    kept_off.azure_id = "az-kept-off"
+    came_back = make_user(db, "cameback@premnathrail.com")
+    came_back.azure_id = "az-came-back"
+    came_back.is_active = False  # Azure-driven deactivation (sync writes this row)
+    db.add(AuditLog(entity_type="user", entity_id=came_back.id, action="azure_deactivated",
+                    module_key="organization"))
+    db.commit()
+
+    r = client.patch(f"/api/v1/users/{kept_off.id}/deactivate", headers=auth_header(admin))
+    assert r.status_code == 200
+    row = db.query(AuditLog).filter(AuditLog.entity_type == "user", AuditLog.entity_id == kept_off.id).one()
+    assert row.action == "deactivated" and row.module_key == "organization"
+
+    monkeypatch.setattr(users_routes, "list_azure_org_users", _fake_list_two_azure_users)
+    monkeypatch.setattr(users_routes, "get_azure_admin_ids", _fake_no_admin_ids)
+    r = client.post("/api/v1/users/sync-azure", headers=auth_header(admin))
+    assert r.status_code == 200
+    by_email = {u["email"]: u for u in r.json()}
+    assert by_email["keptoff@premnathrail.com"]["is_active"] is False
+    assert by_email["cameback@premnathrail.com"]["is_active"] is True
+
+    # Re-activating by hand clears the hold — the next sync keeps them active.
+    r = client.patch(f"/api/v1/users/{kept_off.id}/activate", headers=auth_header(admin))
+    assert r.status_code == 200
+    r = client.post("/api/v1/users/sync-azure", headers=auth_header(admin))
+    by_email = {u["email"]: u for u in r.json()}
+    assert by_email["keptoff@premnathrail.com"]["is_active"] is True
+
+
+def test_sync_azure_keeps_legacy_inactive_users_inactive(client, db, monkeypatch):
+    """C-10: an inactive user with no activation audit rows (e.g. deactivated
+    by an admin before those rows existed) stays inactive even though they
+    are still in the tenant — re-activation by the sync is opt-in."""
+    admin = make_user(db, "admin12b@premnathrail.com", role="admin")
+    legacy = make_user(db, "keptoff@premnathrail.com")
+    legacy.azure_id = "az-kept-off"
+    legacy.is_active = False
+    db.commit()
+
+    monkeypatch.setattr(users_routes, "list_azure_org_users", _fake_list_two_azure_users)
+    monkeypatch.setattr(users_routes, "get_azure_admin_ids", _fake_no_admin_ids)
+    r = client.post("/api/v1/users/sync-azure", headers=auth_header(admin))
+    assert r.status_code == 200
+    by_email = {u["email"]: u for u in r.json()}
+    assert by_email["keptoff@premnathrail.com"]["is_active"] is False
+
+
+def test_sync_azure_audits_tenant_leavers_and_brings_them_back(client, db, monkeypatch):
+    from app.modules.main.models.audit_log import AuditLog
+
+    admin = make_user(db, "admin12c@premnathrail.com", role="admin")
+    leaver = make_user(db, "cameback@premnathrail.com")
+    leaver.azure_id = "az-came-back"
+    db.commit()
+
+    async def _empty():
+        return []
+
+    monkeypatch.setattr(users_routes, "list_azure_org_users", _empty)
+    monkeypatch.setattr(users_routes, "get_azure_admin_ids", _fake_no_admin_ids)
+    r = client.post("/api/v1/users/sync-azure", headers=auth_header(admin))
+    assert r.status_code == 200
+    db.refresh(leaver)
+    assert leaver.is_active is False
+    row = db.query(AuditLog).filter(AuditLog.entity_type == "user", AuditLog.entity_id == leaver.id).one()
+    assert row.action == "azure_deactivated" and row.module_key == "organization"
+
+    monkeypatch.setattr(users_routes, "list_azure_org_users", _fake_list_two_azure_users)
+    r = client.post("/api/v1/users/sync-azure", headers=auth_header(admin))
+    by_email = {u["email"]: u for u in r.json()}
+    assert by_email["cameback@premnathrail.com"]["is_active"] is True
+
+
+def test_sync_azure_response_excludes_shared_mailboxes(client, db, monkeypatch):
+    admin = make_user(db, "admin13@premnathrail.com", role="admin")
+    make_user(db, "info@premnathrail.com")
+    monkeypatch.setattr(users_routes, "list_azure_org_users", _fake_list_azure_org_users)
+    monkeypatch.setattr(users_routes, "get_azure_admin_ids", _fake_get_azure_admin_ids)
+    r = client.post("/api/v1/users/sync-azure", headers=auth_header(admin))
+    assert r.status_code == 200
+    assert "info@premnathrail.com" not in [u["email"] for u in r.json()]
+
+
+def test_update_user_writes_audit_diff(client, db):
+    import json as _json
+    from app.modules.main.models.audit_log import AuditLog
+
+    admin = make_user(db, "admin14@premnathrail.com", role="admin")
+    target = make_user(db, "target14@premnathrail.com")
+    r = client.patch(f"/api/v1/users/{target.id}", json={"role": "admin", "is_director": True},
+                     headers=auth_header(admin))
+    assert r.status_code == 200
+    row = db.query(AuditLog).filter(AuditLog.entity_type == "user", AuditLog.entity_id == target.id).one()
+    assert row.action == "updated" and row.performed_by_id == admin.id
+    assert _json.loads(row.new_value) == {"is_director": True, "role": "admin"}
+    assert _json.loads(row.old_value)["role"] == "user"
+
+
+def test_list_users_not_capped_at_100(client, db):
+    admin = make_user(db, "admin15@premnathrail.com", role="admin")
+    for i in range(120):
+        db.add(User(email=f"bulk{i:03d}@premnathrail.com", name=f"Bulk {i:03d}", role="user", is_active=True))
+    db.commit()
+    r = client.get("/api/v1/users", headers=auth_header(admin))
+    assert r.status_code == 200
+    assert len([u for u in r.json() if u["email"].startswith("bulk")]) == 120

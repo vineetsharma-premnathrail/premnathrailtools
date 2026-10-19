@@ -24,9 +24,12 @@ async def work_orders_for_project(
 ):
     if not db.query(Project).filter(Project.id == project_id).first():
         raise HTTPException(status_code=404, detail=f"Machine / project #{project_id} not found in ERP")
-    orders = db.query(ProductionWorkOrder).filter(
+    from app.core.data_scope import apply_scope
+    from app.modules.production import authz as _authz  # noqa: F401 — registers the Production data-scope models
+
+    orders = apply_scope(db.query(ProductionWorkOrder).filter(
         ProductionWorkOrder.erp_project_id == project_id,
         ProductionWorkOrder.is_deleted == False,  # noqa: E712
-    ).order_by(ProductionWorkOrder.created_at.desc()).all()
+    ), _user, ProductionWorkOrder).order_by(ProductionWorkOrder.created_at.desc()).all()
     products = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_({o.product_item_id for o in orders})).all()} if orders else {}
     return [schedule_entry(o, products.get(o.product_item_id)) for o in orders]

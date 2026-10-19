@@ -8,6 +8,8 @@ class HydSystemCreate(BaseModel):
     application: str | None = Field(None, max_length=200)
     status: str = "design"
     erp_project_id: int | None = None
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
     branch_id: int | None = None
     equipment_ref: str | None = Field(None, max_length=150)
     location: str | None = Field(None, max_length=200)
@@ -33,6 +35,8 @@ class HydSystemUpdate(BaseModel):
     application: str | None = Field(None, max_length=200)
     status: str | None = None
     erp_project_id: int | None = None
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
     branch_id: int | None = None
     equipment_ref: str | None = Field(None, max_length=150)
     location: str | None = Field(None, max_length=200)
@@ -63,6 +67,8 @@ class HydSystemResponse(BaseModel):
     application: str | None = None
     status: str
     erp_project_id: int | None = None
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
     branch_id: int | None = None
     equipment_ref: str | None = None
     location: str | None = None
@@ -87,6 +93,11 @@ class HydSystemResponse(BaseModel):
 
     # Denormalized display fields, filled in by the route.
     project_label: str | None = None
+    # Order Project chip (OrderProjectChip): OP number, element no / label.
+    order_project_number: str | None = None
+    order_project_element_no: str | None = None
+    order_project_element_label: str | None = None
+    order_project_display: str | None = None
     branch_name: str | None = None
     owner_name: str | None = None
     created_by_name: str | None = None

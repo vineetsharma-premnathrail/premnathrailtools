@@ -10,9 +10,11 @@ import ProductionNav from '@/components/production/ProductionNav'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { recordPath } from '@/lib/recordRef'
+import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', on_hold: 'On Hold', completed: 'Completed', handed_over: 'Handed Over', cancelled: 'Cancelled' }
-const STATUS_HEX: Record<string, string> = { planned: '#78716c', in_progress: '#2563EB', on_hold: '#F59E0B', completed: '#7C3AED', handed_over: '#16A34A', cancelled: '#DC2626' }
+const STATUS_HEX: Record<string, string> = { planned: '#78716c', in_progress: '#2563EB', on_hold: '#F59E0B', completed: '#7C3AED', handed_over: '#16A34A', cancelled: '#78716c' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
 
 const STATUS_TABS = [
@@ -34,6 +36,7 @@ const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, col
 export default function RrvBuildsPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
   const router = useRouter()
+  const { can } = useCan()
   const [builds, setBuilds] = useState<ProductionRrvBuild[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
@@ -70,13 +73,14 @@ export default function RrvBuildsPage() {
           <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>One record per Rail-cum-Road Vehicle — from planning through assembly, testing and rework to customer handover.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => router.push('/dashboard/production/rrv-builds/rework')} type="button" style={secondaryBtnStyle}>Rework Orders</button>
-          <button
+          <button data-tour="production-rrv-rework-btn" onClick={() => router.push('/dashboard/production/rrv-builds/rework')} type="button" style={secondaryBtnStyle}>Rework Orders</button>
+          {can('production', 'rrv_builds', 'create') && <button
+            data-tour="production-rrv-new-btn"
             onClick={() => router.push('/dashboard/production/rrv-builds/new')}
             style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
           >
             + New RRV Build
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -86,7 +90,7 @@ export default function RrvBuildsPage() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+      <div data-tour="production-rrv-status-tabs" style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
         {STATUS_TABS.map((t) => {
           const active = statusTab === t.key
           return (
@@ -101,13 +105,13 @@ export default function RrvBuildsPage() {
         })}
       </div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input style={{ ...inputStyle, flex: '1 1 260px', minWidth: 200, maxWidth: 440 }} placeholder="Search build no., model, customer, serial, chassis or PO…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer' }}>
+        <input data-tour="production-rrv-search" style={{ ...inputStyle, flex: '1 1 260px', minWidth: 200, maxWidth: 440 }} placeholder="Search build no., model, customer, serial, chassis or PO…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <label data-tour="production-rrv-overdue-filter" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer' }}>
           <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} /> Past target handover only
         </label>
       </div>
 
-      <div style={{
+      <div data-tour="production-rrv-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 380px)',
       }}>
@@ -130,7 +134,7 @@ export default function RrvBuildsPage() {
               builds.map((b) => {
                 const pct = b.stages_total ? Math.round((b.stages_done / b.stages_total) * 100) : 0
                 return (
-                  <tr key={b.id} onClick={() => router.push(`/dashboard/production/rrv-builds/${b.id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={b.id} onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', b))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>
                       {b.build_number}
                       {b.priority !== 'normal' && <div><span style={{ fontSize: 10.5, fontWeight: 700, color: PRIORITY_HEX[b.priority] }}>{b.priority.toUpperCase()}</span></div>}
@@ -162,7 +166,7 @@ export default function RrvBuildsPage() {
                       </span>
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                      <span onClick={() => router.push(`/dashboard/production/rrv-builds/${b.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                      <span onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', b))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 )

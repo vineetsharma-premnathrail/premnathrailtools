@@ -76,6 +76,11 @@ class HrExpenseClaimResponse(BaseModel):
     paid_on: date | None = None
     payment_reference: str | None = None
     paid_by_id: int | None = None
+    # PR05 Finance posting (services/expense_posting.py)
+    cost_center_id: int | None = None
+    posted_je_id: int | None = None
+    payment_voucher_id: int | None = None
+    posting_error: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -96,3 +101,5 @@ class HrExpenseClaimResponse(BaseModel):
     can_decide: bool = False
     can_mark_paid: bool = False
     can_cancel: bool = False
+    # Latest central approval engine request (None = submitted before the cut-over / never submitted).
+    approval_request_id: int | None = None

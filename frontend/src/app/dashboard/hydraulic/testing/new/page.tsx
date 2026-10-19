@@ -4,47 +4,43 @@ import { Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
-import { TEXT } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import TestForm from '@/components/hydraulic/TestForm'
-
-// Only plain positive integers are accepted from the query string.
-const idParam = (v: string | null) => (v && /^\d+$/.test(v) ? v : '')
 
 function NewTestInner() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const presetSystemId = idParam(searchParams.get('system_id'))
-  const presetComponentId = idParam(searchParams.get('component_id'))
+  // system_id / component_id carry signed record refs (lib/recordRef.ts).
+  const sys = useRecordId(searchParams.get('system_id'))
+  const comp = useRecordId(searchParams.get('component_id'))
+  const linkError = sys.error || comp.error
+  const linkLoading = sys.loading || comp.loading
+  const presetSystemId = sys.id ? String(sys.id) : ''
+  const presetComponentId = comp.id ? String(comp.id) : ''
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/testing" listLabel="Back to tests" /></div>)
+  if (linkLoading) return <div><HydraulicNav /></div>
 
+  const back = () => router.push('/dashboard/hydraulic/testing')
   return (
-    <div>
-      <HydraulicNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Hydraulic &amp; Pneumatic
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New Test</h1>
-        </div>
-        <button onClick={() => router.push('/dashboard/hydraulic/testing')} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
-
-      <TestForm
-        presetSystemId={presetSystemId}
-        presetComponentId={presetComponentId}
-        submitLabel="Create Test"
-        onSubmit={async (payload) => {
-          const test = await hydraulicApi.createTest(payload)
-          router.push(`/dashboard/hydraulic/testing/${test.id}`)
-        }}
-      />
-    </div>
+    <TestForm
+      nav={<HydraulicNav />}
+      title="New Test"
+      subtitle="A pressure, leak or functional test of a system or component — record the conditions and readings."
+      onBack={back}
+      onCancel={back}
+      presetSystemId={presetSystemId}
+      presetComponentId={presetComponentId}
+      submitLabel="Create Test"
+      onSubmit={async (payload) => {
+        const test = await hydraulicApi.createTest(payload)
+        router.push(recordPath('/dashboard/hydraulic/testing', test))
+      }}
+    />
   )
 }
 

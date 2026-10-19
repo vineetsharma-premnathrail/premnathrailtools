@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { HydSystem } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
@@ -30,6 +32,7 @@ const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, col
 export default function HydSystemsPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
+  const { can } = useCan()
 
   const [systems, setSystems] = useState<HydSystem[]>([])
   const [loading, setLoading] = useState(true)
@@ -66,16 +69,19 @@ export default function HydSystemsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Systems</h1>
         </div>
-        <button
-          onClick={() => router.push(newHref)}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New {systemType ? SYSTEM_TYPE_LABELS[systemType] : ''} System
-        </button>
+        {can('hydraulic', 'systems', 'create') && (
+          <button
+            data-tour="hyd-sys-new-btn"
+            onClick={() => router.push(newHref)}
+            style={{
+              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
+              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
+            }}
+          >
+            + New {systemType ? SYSTEM_TYPE_LABELS[systemType] : ''} System
+          </button>
+        )}
       </div>
 
       {error && (
@@ -85,7 +91,7 @@ export default function HydSystemsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)' }}>
+        <div data-tour="hyd-sys-type-tabs" style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)' }}>
           {TYPE_TABS.map((t) => {
             const active = systemType === t.value
             const hex = t.value ? SYSTEM_TYPE_HEX[t.value] : '#FF7A45'
@@ -105,21 +111,22 @@ export default function HydSystemsPage() {
             )
           })}
         </div>
-        <select style={{ ...inputStyle, flex: '0 1 190px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="hyd-sys-status-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
-          {Object.entries(SYSTEM_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          {/* 'Under Maintenance' is retired (plan rule R5); old records still show their badge. */}
+          {Object.entries(SYSTEM_STATUS_LABELS).filter(([k]) => k !== 'under_maintenance').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search number, name, application or loco / machine serial…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input data-tour="hyd-sys-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search number, name, application or loco / machine serial…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
-      <div style={{
+      <div data-tour="hyd-sys-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
-              {['System No.', 'Name', 'Type', 'Application', 'Project', 'Working Pressure', 'Running Hrs', 'Open Jobs', 'Overdue PM', 'Status', ''].map((h) => (
+              {['System No.', 'Name', 'Type', 'Application', 'Project', 'Working Pressure', 'Status', ''].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, whiteSpace: 'nowrap' }}>
                   {h}
                 </th>
@@ -128,16 +135,16 @@ export default function HydSystemsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : systems.length === 0 ? (
-              <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
                 {filtered
                   ? 'No systems match these filters — clear the search or status filter.'
-                  : `No ${systemType ? `${SYSTEM_TYPE_LABELS[systemType].toLowerCase()} ` : ''}systems yet. Add a system (a power pack, brake unit or actuation circuit) to hang its circuits, BOMs, tests and maintenance on.`}
+                  : `No ${systemType ? `${SYSTEM_TYPE_LABELS[systemType].toLowerCase()} ` : ''}systems yet. Add a system (a power pack, brake unit or actuation circuit) to hang its circuits, BOMs and tests on.`}
               </td></tr>
             ) : (
               systems.map((s) => (
-                <tr key={s.id} onClick={() => router.push(`/dashboard/hydraulic/systems/${s.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={s.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', s))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{s.system_number}</td>
                   <td style={cellStyle}>{s.name}</td>
                   <td style={cellStyle}>
@@ -148,18 +155,13 @@ export default function HydSystemsPage() {
                   <td style={cellStyle}>{s.application || '—'}</td>
                   <td style={cellStyle}>{s.project_label || '—'}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{withUnit(s.working_pressure_bar, 'bar')}</td>
-                  <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{s.running_hours ? s.running_hours.toLocaleString('en-IN') : '—'}</td>
-                  <td style={cellStyle}>{s.open_service_count || '—'}</td>
-                  <td style={{ ...cellStyle, color: s.overdue_plan_count > 0 ? '#DC2626' : TEXT.body, fontWeight: s.overdue_plan_count > 0 ? 700 : 400 }}>
-                    {s.overdue_plan_count || '—'}
-                  </td>
                   <td style={cellStyle}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[s.status]}1a`, color: STATUS_HEX[s.status], whiteSpace: 'nowrap' }}>
                       {SYSTEM_STATUS_LABELS[s.status] || s.status}
                     </span>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/hydraulic/systems/${s.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', s))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

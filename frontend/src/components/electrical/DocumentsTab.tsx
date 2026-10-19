@@ -11,9 +11,10 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { TEXT } from '@/lib/theme'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { SheetColumns, SheetSection, FileDropZone, sheetInput, sheetLabel, sheetHint, Req } from '@/components/shared/FormSheet'
 import {
   inputStyle, sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallDangerBtn, linkStyle,
-  tableWrap, mutedText, ErrorBanner, NoticeBanner, F, rowStyle, fmtBytes, openBlob,
+  tableWrap, mutedText, ErrorBanner, NoticeBanner, Modal, ModalFooter, F, rowStyle, fmtBytes, openBlob, useJobFeatures,
 } from '@/components/electrical/shared'
 
 const defaultCategory = (cats: Record<string, string>) => ('other' in cats ? 'other' : Object.keys(cats)[0] || 'other')
@@ -36,7 +37,8 @@ export default function DocumentsTab({ job, meta, canEdit, onChanged }: { job: E
   const [stageKey, setStageKey] = useState('')
   const [description, setDescription] = useState('')
   const [files, setFiles] = useState<File[]>([])
-  const [fileInputKey, setFileInputKey] = useState(0)
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploadError, setUploadError] = useState<string | string[]>('')
 
   const [toDelete, setToDelete] = useState<ElectricalDocument | null>(null)
 
@@ -55,11 +57,21 @@ export default function DocumentsTab({ job, meta, canEdit, onChanged }: { job: E
     return () => { cancelled = true }
   }, [job.id, job.job_number, categoryFilter, reloadKey])
 
+  const openUpload = () => {
+    setTitle('')
+    setCategory(defaultCategory(categories))
+    setStageKey('')
+    setDescription('')
+    setFiles([])
+    setUploadError('')
+    setUploadOpen(true)
+  }
+
   const upload = async () => {
-    setError('')
+    setUploadError('')
     setNotice('')
-    if (!title.trim()) { setError('Document title is required.'); return }
-    if (!files.length) { setError('Choose at least one file to upload.'); return }
+    if (!title.trim()) { setUploadError('Document title is required.'); return }
+    if (!files.length) { setUploadError('Choose at least one file to upload.'); return }
     const fd = new FormData()
     fd.append('title', title.trim())
     fd.append('category', category)
@@ -70,15 +82,11 @@ export default function DocumentsTab({ job, meta, canEdit, onChanged }: { job: E
     try {
       await electricalApi.uploadDocuments(job.id, fd)
       setNotice(`${files.length} file${files.length === 1 ? '' : 's'} uploaded as "${title.trim()}".`)
-      setTitle('')
-      setDescription('')
-      setStageKey('')
-      setFiles([])
-      setFileInputKey((k) => k + 1)
+      setUploadOpen(false)
       load()
       onChanged()
     } catch (err) {
-      setError(extractErrorMessages(err, 'Could not upload the documents.'))
+      setUploadError(extractErrorMessages(err, 'Could not upload the documents.'))
     } finally {
       setBusy(false)
     }
@@ -103,63 +111,31 @@ export default function DocumentsTab({ job, meta, canEdit, onChanged }: { job: E
     }
   }
 
-  const canDelete = (d: ElectricalDocument) => canEdit && (isAdmin || (!!user && d.uploaded_by_id === user.id))
+  // Electrical › RRV Electrical Jobs › Documents (canEdit = job open + upload or delete).
+  const { jf } = useJobFeatures()
+  const canUpload = canEdit && jf('documents', 'create')
+  const canDelete = (d: ElectricalDocument) => canEdit && jf('documents', 'delete') && (isAdmin || (!!user && d.uploaded_by_id === user.id))
 
   return (
     <div>
       <ErrorBanner error={error} />
       <NoticeBanner notice={notice} />
 
-      {canEdit && (
-        <div style={sectionStyle}>
-          <h3 style={sectionTitle}>Upload Documents</h3>
-          <div style={rowStyle}>
-            <F label="Title *" basis={260} grow max={400}>
-              <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Factory insulation test report" />
-            </F>
-            <F label="Category" basis={210}>
-              <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
-                {Object.entries(categories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </F>
-            <F label="Stage" basis={240} grow max={320}>
-              <select style={inputStyle} value={stageKey} onChange={(e) => setStageKey(e.target.value)}>
-                <option value="">— Not tied to a stage —</option>
-                {stages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-              </select>
-            </F>
-          </div>
-          <div style={rowStyle}>
-            <F label="Description" basis={280} grow max={520}>
-              <input style={inputStyle} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional" />
-            </F>
-            <F label="Files *" basis={260} grow max={380}>
-              <input key={fileInputKey} type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files || []))} style={inputStyle} />
-            </F>
-            <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'flex-end' }}>
-              <button type="button" style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={upload}>{busy ? 'Uploading…' : 'Upload'}</button>
-            </div>
-          </div>
-          <p style={{ ...mutedText, fontSize: 12 }}>
-            Final Electrical Documentation needs a Test Report, Commissioning Report or O&amp;M Manual here. Each file becomes its own document entry.
-          </p>
-        </div>
-      )}
-
       <div style={sectionStyle}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
           <h3 style={{ ...sectionTitle, margin: 0 }}>Documents ({docs.length})</h3>
-          <select style={{ ...inputStyle, width: 'auto', minWidth: 200 }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-            <option value="">All categories</option>
-            {Object.entries(categories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <select data-tour="elec-docs-category-filter" style={{ ...inputStyle, width: 'auto', minWidth: 200 }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+              <option value="">All categories</option>
+              {Object.entries(categories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            {canUpload && <button data-tour="elec-doc-open-btn" type="button" style={primaryBtn} disabled={busy} onClick={openUpload}>+ Upload Documents</button>}
+          </div>
         </div>
-        {!canEdit && (
-          <p style={{ ...mutedText, fontSize: 12, marginBottom: 12 }}>
-            Final Electrical Documentation needs a Test Report, Commissioning Report or O&amp;M Manual here.
-          </p>
-        )}
-        <div style={tableWrap}>
+        <p style={{ ...mutedText, fontSize: 12, marginBottom: 12 }}>
+          Final Electrical Documentation needs a Test Report, Commissioning Report or O&amp;M Manual here.
+        </p>
+        <div data-tour="elec-docs-table" style={tableWrap}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead>
               <tr>
@@ -198,7 +174,7 @@ export default function DocumentsTab({ job, meta, canEdit, onChanged }: { job: E
                       <div style={{ fontSize: 11.5, color: TEXT.muted }}>{formatDate(d.created_at)}</div>
                     </td>
                     <td style={tdStyle}>
-                      {canDelete(d) && <button type="button" style={smallDangerBtn} disabled={busy} onClick={() => setToDelete(d)}>Delete</button>}
+                      {canDelete(d) && <button data-tour="elec-doc-delete-btn" type="button" style={smallDangerBtn} disabled={busy} onClick={() => setToDelete(d)}>Delete</button>}
                     </td>
                   </tr>
                 ))
@@ -207,6 +183,53 @@ export default function DocumentsTab({ job, meta, canEdit, onChanged }: { job: E
           </table>
         </div>
       </div>
+
+      <Modal
+        open={uploadOpen} width={960} flush busy={busy} icon="upload" tour="elec-doc-form"
+        title="Upload Documents" subtitle={`Specs, reports, manuals or photos for ${job.job_number}. Drawings go on the Drawings tab.`}
+        onClose={() => setUploadOpen(false)}
+        footer={<ModalFooter onCancel={() => setUploadOpen(false)} onSubmit={upload} busy={busy} busyLabel="Uploading…" icon="upload" label="Upload" submitTour="elec-doc-upload-btn" />}
+      >
+        <SheetColumns
+          left={<>
+            <ErrorBanner error={uploadError} />
+            <SheetSection icon="doc" title="Document">
+              <div style={rowStyle}>
+                <F tour="elec-doc-title" label="Title" req basis={260} grow>
+                  <input style={sheetInput} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Factory insulation test report" autoFocus />
+                </F>
+              </div>
+              <div style={rowStyle}>
+                <F tour="elec-doc-category" label="Category" basis={190} grow>
+                  <select style={sheetInput} value={category} onChange={(e) => setCategory(e.target.value)}>
+                    {Object.entries(categories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </F>
+                <F tour="elec-doc-stage" label="Stage" basis={210} grow>
+                  <select style={sheetInput} value={stageKey} onChange={(e) => setStageKey(e.target.value)}>
+                    <option value="">— Not tied to a stage —</option>
+                    {stages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+                </F>
+              </div>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-doc-description" label="Description" optional basis={280} grow>
+                  <textarea style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} />
+                </F>
+              </div>
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="clip" title="Files">
+              <div data-tour="elec-doc-files">
+                <label style={sheetLabel}>Files <Req /></label>
+                <FileDropZone files={files} onChange={setFiles} />
+              </div>
+              <p style={sheetHint}>Each file becomes its own document entry with the same title and category.</p>
+            </SheetSection>
+          </>}
+        />
+      </Modal>
 
       <ConfirmDialog
         open={!!toDelete}

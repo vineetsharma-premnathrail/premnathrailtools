@@ -4,9 +4,10 @@ import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
+import { getHistoryFromLink } from '@/components/rnd/historyLink'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
-import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob } from '@/components/rnd/toolStyles'
+import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface TractiveResult {
@@ -56,7 +57,7 @@ function TractiveEffortPageInner() {
     if (!isAuthorized) return
     const loadId = searchParams.get('load')
     if (!loadId) return
-    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+    getHistoryFromLink(loadId).then((detail) => {
       const i = detail.inputs as Record<string, any>
       if (i.mode != null) setMode(i.mode)
       if (i.load != null) setLoad(String(i.load))
@@ -70,7 +71,7 @@ function TractiveEffortPageInner() {
         load: Number(i.load), loco_weight: Number(i.loco_weight), gradient: Number(i.gradient), curvature: Number(i.curvature),
         speed: Number(i.speed), mode: i.mode ?? mode, grad_type: i.grad_type ?? gradType, curvature_unit: i.curvature_unit ?? curvatureUnit,
       })
-    }).catch(() => setError('Could not load the saved calculation.'))
+    }).catch((err) => setError(extractErrorMessages(err, 'Could not load the saved calculation — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
@@ -91,8 +92,8 @@ function TractiveEffortPageInner() {
       if (!isFromHistory) {
         rndApi.saveHistory({ tool_name: 'tractive_effort', inputs: p, results: data.results, calculation_name: `TE Load=${p.load}t V=${p.speed}km/h` }).catch(() => {})
       }
-    } catch {
-      setError('Calculation failed. Check your inputs.')
+    } catch (err) {
+      setError(await getErrorMessage(err, 'Calculation failed. Check your inputs.'))
     } finally {
       setBusy(false)
     }
@@ -113,7 +114,7 @@ function TractiveEffortPageInner() {
   const downloadDocx = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadTractiveEffortReport(payload()), 'Tractive_Effort_Report.docx') }
-    catch (err) { setError(extractErrorMessages(err, 'Report generation failed.').join(' ')) } finally { setBusy(false) }
+    catch (err) { setError(await getErrorMessage(err, 'Report generation failed.')) } finally { setBusy(false) }
   }
 
   const importCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -154,16 +155,16 @@ function TractiveEffortPageInner() {
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>TE · Power · OHE Current · Indian Railways resistance formulas</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
-          <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
-          <a href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
+          <button data-tour="rnd-te-csv-btn" onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
+          <button data-tour="rnd-te-docx-btn" onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
+          <a data-tour="rnd-te-history-btn" href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
         </div>
       </div>
 
       <div className="rnd-main-grid" style={{ display: 'grid', gridTemplateColumns: '280px 1fr 300px', gap: 12, alignItems: 'start' }}>
         {/* Left: inputs */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-te-mode" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Calculation Mode</span></div>
             <div style={cardBodyStyle}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -182,15 +183,15 @@ function TractiveEffortPageInner() {
           <div style={cardStyle}>
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Vehicle Data</span>
-              <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+              <label data-tour="rnd-te-csv" style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                 Import CSV
                 <input type="file" accept=".csv" onChange={importCsv} style={{ display: 'none' }} />
               </label>
             </div>
             <div style={cardBodyStyle}>
-              <div><label style={labelStyle}>Shunting / Train Load (tons)</label><input style={inputStyle} type="number" value={load} onChange={(e) => setLoad(e.target.value)} /></div>
-              <div><label style={labelStyle}>GVW of Locomotive (tons)</label><input style={inputStyle} type="number" value={locoWeight} onChange={(e) => setLocoWeight(e.target.value)} /></div>
-              <div>
+              <div data-tour="rnd-te-load"><label style={labelStyle}>Shunting / Train Load (tons)</label><input style={inputStyle} type="number" value={load} onChange={(e) => setLoad(e.target.value)} /></div>
+              <div data-tour="rnd-te-loco"><label style={labelStyle}>GVW of Locomotive (tons)</label><input style={inputStyle} type="number" value={locoWeight} onChange={(e) => setLocoWeight(e.target.value)} /></div>
+              <div data-tour="rnd-te-speed">
                 <label style={{ ...labelStyle, color: '#c2410c' }}>Speed (km/h)</label>
                 <input style={{ ...inputStyle, borderColor: '#fed7aa' }} type="number" min={0} value={speed} onChange={(e) => setSpeed(e.target.value)} />
                 <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '4px 0 0' }}>Set 0 for pure starting TE</p>
@@ -201,15 +202,15 @@ function TractiveEffortPageInner() {
           <div style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Track Parameters</span></div>
             <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
-              <div><label style={labelStyle}>Gradient</label><input style={inputStyle} type="number" step="0.1" value={gradient} onChange={(e) => setGradient(e.target.value)} /></div>
-              <div>
+              <div data-tour="rnd-te-gradient"><label style={labelStyle}>Gradient</label><input style={inputStyle} type="number" step="0.1" value={gradient} onChange={(e) => setGradient(e.target.value)} /></div>
+              <div data-tour="rnd-te-grad-unit">
                 <label style={labelStyle}>Unit</label>
                 <select style={inputStyle} value={gradType} onChange={(e) => setGradType(e.target.value as typeof gradType)}>
                   <option>1 in G</option><option>Degree</option>
                 </select>
               </div>
-              <div><label style={labelStyle}>Curvature</label><input style={inputStyle} type="number" step="0.1" value={curvature} onChange={(e) => setCurvature(e.target.value)} /></div>
-              <div>
+              <div data-tour="rnd-te-curvature"><label style={labelStyle}>Curvature</label><input style={inputStyle} type="number" step="0.1" value={curvature} onChange={(e) => setCurvature(e.target.value)} /></div>
+              <div data-tour="rnd-te-curve-unit">
                 <label style={labelStyle}>Unit</label>
                 <select style={inputStyle} value={curvatureUnit} onChange={(e) => setCurvatureUnit(e.target.value as typeof curvatureUnit)}>
                   <option>Degree</option><option>Radius(m)</option>
@@ -219,12 +220,12 @@ function TractiveEffortPageInner() {
           </div>
 
           {error && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{error}</p>}
-          <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : '» Calculate TE'}</button>
+          <button data-tour="rnd-te-calculate-btn" onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : '» Calculate TE'}</button>
         </div>
 
         {/* Center: results summary + terminal */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-te-results" style={cardStyle}>
             <div style={{ ...cardHeaderStyle, background: '#1e293b', borderBottom: 'none' }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f97316', boxShadow: '0 0 6px #f97316' }} />
               <span style={{ ...cardTitleStyle, color: '#fff' }}>Results Summary</span>
@@ -269,7 +270,7 @@ function TractiveEffortPageInner() {
 
         {/* Right: formula reference + specific values */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-te-formula" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Formula Reference</span></div>
             <div style={{ padding: 16 }}>
               <div style={{ padding: 12, borderRadius: 8, background: '#f8fafc', fontFamily: 'monospace', fontSize: 11, color: '#334155', lineHeight: 1.8 }}>
@@ -297,7 +298,7 @@ function TractiveEffortPageInner() {
             </div>
           </div>
 
-          <div style={cardStyle}>
+          <div data-tour="rnd-te-specific" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Specific Values</span></div>
             <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12.5 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>TE / Total Weight</span><strong>{r ? (r.te / totalWeight).toFixed(2) : '—'}</strong></div>

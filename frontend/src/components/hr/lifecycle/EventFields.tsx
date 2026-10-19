@@ -1,8 +1,8 @@
 'use client'
 
 import { HrLifecycleEvent, HrLifecycleEventType, HrLifecycleMeta } from '@/types'
-import { BORDER, TEXT } from '@/lib/theme'
-import { Field } from '@/components/shared/ui'
+import { TEXT } from '@/lib/theme'
+import { Req, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 
@@ -83,13 +83,21 @@ export function formToPayload(type: HrLifecycleEventType, f: EventFormState): Re
   return p
 }
 
-const textInput: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
+const textInput: React.CSSProperties = sheetInput
+
+/** Sheet-style label + control ("… *" in the label = required). */
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const req = label.endsWith(' *')
+  return (
+    <div>
+      <label style={sheetLabel}>{req ? label.slice(0, -2) : label}{req && <> <Req /></>}</label>
+      {children}
+    </div>
+  )
 }
 
-function Box({ w, grow, max, children }: { w: number; grow?: boolean; max?: number; children: React.ReactNode }) {
-  return <div style={{ flex: grow ? `1 1 ${w}px` : `0 1 ${w}px`, minWidth: w, maxWidth: max }}>{children}</div>
+function Box({ w, grow, max, tour, children }: { w: number; grow?: boolean; max?: number; tour?: string; children: React.ReactNode }) {
+  return <div data-tour={tour} style={{ flex: grow ? `1 1 ${w}px` : `0 1 ${w}px`, minWidth: w, maxWidth: max }}>{children}</div>
 }
 
 export default function EventFields({
@@ -119,7 +127,7 @@ export default function EventFields({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {type !== 'exit' && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <Box w={170}>
+          <Box w={170} tour="hr-lce-effective-date">
             <Field label={dateLabel}><DateField value={form.effective_date} onChange={(v) => set('effective_date', v)} /></Field>
           </Box>
         </div>
@@ -133,27 +141,27 @@ export default function EventFields({
               : 'Only fill what changes — blank fields stay as they are. Applied when the event is completed.'}
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            <Box w={220} grow max={320}>
+            <Box w={220} grow max={320} tour="hr-lce-department">
               <Field label={type === 'joining' ? 'Department' : 'New department'}>
                 <SearchableSelect value={form.to_department_id} onChange={(v) => set('to_department_id', v)} options={withNone(deptOptions, noChange)} placeholder={noChange} />
               </Field>
             </Box>
-            <Box w={200} grow max={300}>
+            <Box w={200} grow max={300} tour="hr-lce-plant">
               <Field label={type === 'joining' ? 'Plant' : 'New plant'}>
                 <SearchableSelect value={form.to_branch_id} onChange={(v) => set('to_branch_id', v)} options={withNone(branchOptions, noChange)} placeholder={noChange} />
               </Field>
             </Box>
-            <Box w={220} grow max={320}>
+            <Box w={220} grow max={320} tour="hr-lce-designation">
               <Field label={type === 'joining' ? 'Designation' : 'New designation'}>
                 <SearchableSelect value={form.to_designation_id} onChange={(v) => set('to_designation_id', v)} options={withNone(desigOptions, noChange)} placeholder={noChange} />
               </Field>
             </Box>
-            <Box w={180} grow max={260}>
+            <Box w={180} grow max={260} tour="hr-lce-grade">
               <Field label={type === 'joining' ? 'Grade' : 'New grade'}>
                 <SearchableSelect value={form.to_grade_id} onChange={(v) => set('to_grade_id', v)} options={withNone(gradeOptions, noChange)} placeholder={noChange} />
               </Field>
             </Box>
-            <Box w={240} grow max={340}>
+            <Box w={240} grow max={340} tour="hr-lce-manager">
               <Field label={type === 'joining' ? 'Reporting manager' : 'New reporting manager'}>
                 <SearchableSelect value={form.to_manager_id} onChange={(v) => set('to_manager_id', v)} options={withNone(userOptions, noChange)} placeholder={noChange} />
               </Field>
@@ -169,7 +177,7 @@ export default function EventFields({
 
       {(type === 'transfer' || type === 'promotion') && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <Box w={240} grow max={340}>
+          <Box w={240} grow max={340} tour="hr-lce-successor">
             <Field label="Successor (optional)">
               <SearchableSelect value={form.handover_to_id} onChange={(v) => set('handover_to_id', v)} options={withNone(userOptions, '— None —')} placeholder="— None —" />
             </Field>
@@ -183,7 +191,7 @@ export default function EventFields({
       {type === 'exit' && (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            <Box w={170}>
+            <Box w={170} tour="hr-lce-exit-type">
               <Field label="Exit type">
                 <select style={textInput} value={form.exit_type} onChange={(e) => set('exit_type', e.target.value)}>
                   <option value="">Select…</option>
@@ -191,32 +199,36 @@ export default function EventFields({
                 </select>
               </Field>
             </Box>
-            <Box w={170}>
+            <Box w={170} tour="hr-lce-resignation-date">
               <Field label="Resignation date"><DateField value={form.resignation_date} onChange={(v) => set('resignation_date', v)} /></Field>
             </Box>
-            <Box w={170}>
+            <Box w={170} tour="hr-lce-last-working-day">
               <Field label="Last working day *"><DateField value={form.last_working_day} onChange={(v) => set('last_working_day', v)} /></Field>
             </Box>
-            <Box w={130}>
+            <Box w={130} tour="hr-lce-notice-days">
               <Field label="Notice (days)">
                 <input style={textInput} inputMode="numeric" value={form.notice_period_days} onChange={(e) => set('notice_period_days', e.target.value.replace(/[^0-9]/g, ''))} placeholder="e.g. 30" />
               </Field>
             </Box>
-            <Box w={240} grow max={340}>
+            <Box w={240} grow max={340} tour="hr-lce-handover">
               <Field label="Handover to (successor)">
                 <SearchableSelect value={form.handover_to_id} onChange={(v) => set('handover_to_id', v)} options={withNone(userOptions, '— Decide later —')} placeholder="— Decide later —" />
               </Field>
             </Box>
           </div>
-          <Field label="Exit reason">
-            <textarea style={{ ...textInput, minHeight: 70, resize: 'vertical' }} value={form.exit_reason} onChange={(e) => set('exit_reason', e.target.value)} placeholder="Why the employee is leaving (HR-only)" />
-          </Field>
+          <div data-tour="hr-lce-exit-reason">
+            <Field label="Exit reason">
+              <textarea style={{ ...textInput, minHeight: 70, resize: 'vertical' }} value={form.exit_reason} onChange={(e) => set('exit_reason', e.target.value)} placeholder="Why the employee is leaving (HR-only)" />
+            </Field>
+          </div>
         </>
       )}
 
-      <Field label="Remarks">
-        <textarea style={{ ...textInput, minHeight: 60, resize: 'vertical' }} value={form.remarks} onChange={(e) => set('remarks', e.target.value)} placeholder="Anything HR should know about this event (HR-only)" />
-      </Field>
+      <div data-tour="hr-lce-remarks">
+        <Field label="Remarks">
+          <textarea style={{ ...textInput, minHeight: 60, resize: 'vertical' }} value={form.remarks} onChange={(e) => set('remarks', e.target.value)} placeholder="Anything HR should know about this event (HR-only)" />
+        </Field>
+      </div>
     </div>
   )
 }

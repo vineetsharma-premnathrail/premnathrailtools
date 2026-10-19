@@ -42,6 +42,11 @@ class StoreStockTransactionResponse(BaseModel):
     remarks: str | None = None
     created_by_id: int | None = None
     created_by_name: str | None = None
+    # Valuation (NULL while valuation is off / on legacy rows) — MB51 columns.
+    unit_cost: float | None = None
+    value: float | None = None
+    valuation_qty_after: float | None = None
+    valuation_value_after: float | None = None
 
 
 class StoreStockBalanceResponse(BaseModel):
@@ -64,6 +69,8 @@ class StoreStockBalanceResponse(BaseModel):
     # quality_qty = Quality (awaiting an inspection lot decision).
     quarantine_qty: float = 0
     quality_qty: float = 0
+    # With vendor = sent out on a job-work challan (still ours, not issuable).
+    vendor_qty: float = 0
 
 
 class StoreQuarantineClear(BaseModel):

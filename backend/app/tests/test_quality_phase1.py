@@ -182,11 +182,12 @@ def test_only_one_approved_plan_per_item_and_type(client, db):
 def test_grn_for_flagged_item_goes_to_quality_and_lot_decision_completes_grn(client, db, monkeypatch):
     # PO approval is P2P's concern (covered in test_p2p_requests) — bypass it here.
     monkeypatch.setattr("app.modules.p2p.routes.goods_receipts._po_approval_block_reason", lambda db, po: None)
+    # The PR line is picked from the Item Master: the flagged item exists first.
+    item, loc = setup_item(db, "Brake block")
     requester = _requester(db, "reqq@premnathrail.com")
-    pr = _create_pr(client, requester, items=[{"item_name": "Brake block", "quantity": 20, "unit": "NOS", "project_inhouse": "Project"}])
+    pr = _create_pr(client, requester, items=[{"store_item_id": item.id, "quantity": 20, "project_inhouse": "Project"}])
     buyer = _purchaser(db, "buyerq@premnathrail.com")
     _raise_po(client, db, pr, buyer)
-    item, loc = setup_item(db, "Brake block")
     eng = make_user(db, "eng2@x.com", quality_role="engineer")
     head = make_user(db, "head2@x.com", quality_role="head")
     approved_plan(client, db, item, eng, head)
@@ -338,12 +339,12 @@ def test_scrap_above_limit_needs_partner_and_segregation_applies(client, db):
     assert body["status"] == "action_done"
     assert balance(db, item, loc).quarantine_qty == 0
     assert client.post(f"{Q}/ncr/{ncr.id}/verify", json={}, headers=hdr(eng)).json()["status"] == "verified"
-    # Rule 6: major NCR needs a CAPA before closure.
+    # Rule 6: major NCR needs a CAPA (raised automatically — Phase 3) with its
+    # root cause and corrective actions before closure.
     r = client.post(f"{Q}/ncr/{ncr.id}/close", json={"material_cost": 100000}, headers=hdr(head2))
     assert r.status_code == 409 and "CAPA" in r.json()["detail"]
-    from datetime import date
-    db.add(QualityCapa(capa_number="CAPA-1", action_type="corrective", ncr_id=ncr.id, title="Fix", action_plan="x",
-                       status="open", due_date=date.today()))
+    capa = db.query(QualityCapa).filter(QualityCapa.ncr_id == ncr.id).one()
+    capa.status = "actions_in_progress"
     db.commit()
     body = client.post(f"{Q}/ncr/{ncr.id}/close", json={"material_cost": 100000}, headers=hdr(head2)).json()
     assert body["status"] == "closed" and body["cost_of_non_quality"] == 100000
@@ -386,7 +387,7 @@ def test_settings_only_head_edits_and_changes_are_audited(client, db):
     assert client.put(f"{Q}/settings", json={"values": {"lot_waiting_days": 3}}, headers=hdr(eng)).status_code == 403
     r = client.put(f"{Q}/settings", json={"values": {"vendor_weight_quality": 70}}, headers=hdr(head))
     assert r.status_code == 422 and "100%" in r.json()["detail"]
-    r = client.put(f"{Q}/settings", json={"values": {"lot_waiting_days": 3, "scrap_value_limit": 75000}}, headers=hdr(head))
+    r = client.put(f"{Q}/settings", json={"values": {"lot_waiting_days": 3, "gauge_due_days": 20}}, headers=hdr(head))
     assert r.status_code == 200 and r.json()["values"]["lot_waiting_days"] == 3
     from app.modules.main.models.audit_log import AuditLog
     assert db.query(AuditLog).filter(AuditLog.entity_type == "quality_setting").count() >= 2

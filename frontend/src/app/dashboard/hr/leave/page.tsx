@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrAttendanceLookups, HrLeaveAllotSummary, HrLeaveBalance, HrLeaveRequest, HrLeaveType } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
+import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import LeaveApplyForm from '@/components/hr/leave/LeaveApplyForm'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
@@ -22,7 +24,6 @@ const inputStyle: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
 }
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
 const tableWrap: React.CSSProperties = { borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }
@@ -46,22 +47,17 @@ function Banner({ errors, ok }: { errors?: string[]; ok?: string }) {
   return null
 }
 
-function Modal({ open, title, onClose, children, width = 520 }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode; width?: number }) {
-  if (!open) return null
-  return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, maxWidth: width, width: '100%', padding: 24, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto' }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 16px 0', color: TEXT.heading }}>{title}</h2>
-        {children}
-      </div>
-    </div>
-  )
-}
-
 const TABS = [{ key: 'requests', label: 'Requests' }, { key: 'balances', label: 'Balances' }] as const
 
 export default function HrLeavePage() {
   const { isAuthorized, isLoading } = useRequireApp('hr')
+  const { can, canFeature } = useCan()
+  // Allot / adjust balances = 'edit' on HR › Leave; applying for someone else = 'create'.
+  // Approve / Reject / Cancel buttons follow the server's can_decide / can_cancel flags.
+  // HR › Leave › Allot & adjust balances feature (allot = create, adjust = edit)
+  const canAllot = canFeature('hr', 'leave', 'balance_admin', 'create')
+  const canAdjust = canFeature('hr', 'leave', 'balance_admin', 'edit')
+  const canBalance = canAllot || canAdjust
   const thisYear = new Date().getFullYear()
   const [tab, setTab] = useState<'requests' | 'balances'>('requests')
   const [types, setTypes] = useState<HrLeaveType[]>([])
@@ -231,16 +227,16 @@ export default function HrLeavePage() {
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>All leave requests and employee leave balances.</p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {tab === 'requests' ? (
-            <button type="button" onClick={() => { setShowApply(true); setNotice('') }} style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
+          {tab === 'requests' ? (can('hr', 'leave', 'create') &&
+            <button type="button" data-tour="hr-leave-apply-behalf-btn" onClick={() => { setShowApply(true); setNotice('') }} style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
               + Apply on behalf
             </button>
-          ) : (
+          ) : canBalance && (
             <>
-              <button type="button" style={secondaryBtnStyle} onClick={() => { setModalErrors([]); setAdjust({ user_id: '', leave_type_id: activeTypes[0] ? String(activeTypes[0].id) : '', year, delta: '', reason: '' }) }}>Adjust balance</button>
-              <button type="button" onClick={() => { setModalErrors([]); setAllotResult(null); setAllotYear(year); setAllotTypes([]); setAllotOpen(true) }} style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
+              {canAdjust && <button type="button" data-tour="hr-leave-adjust-btn" style={secondaryBtnStyle} onClick={() => { setModalErrors([]); setAdjust({ user_id: '', leave_type_id: activeTypes[0] ? String(activeTypes[0].id) : '', year, delta: '', reason: '' }) }}>Adjust balance</button>}
+              {canAllot && <button type="button" data-tour="hr-leave-allot-btn" onClick={() => { setModalErrors([]); setAllotResult(null); setAllotYear(year); setAllotTypes([]); setAllotOpen(true) }} style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}>
                 Allot year
-              </button>
+              </button>}
             </>
           )}
         </div>
@@ -250,7 +246,7 @@ export default function HrLeavePage() {
         {TABS.map((t) => {
           const active = t.key === tab
           return (
-            <button key={t.key} type="button" onClick={() => setTab(t.key)} style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer', border: active ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)', background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)', color: active ? '#e0521a' : '#57534e' }}>
+            <button key={t.key} type="button" data-tour={`hr-leave-tab-${t.key}`} onClick={() => setTab(t.key)} style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer', border: active ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)', background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)', color: active ? '#e0521a' : '#57534e' }}>
               {t.label}
             </button>
           )
@@ -261,46 +257,48 @@ export default function HrLeavePage() {
 
       {tab === 'requests' && (
         <>
-          {showApply && (
-            <div>
-              <div style={{ maxWidth: 520, marginBottom: 12 }}>
-                <label style={labelStyle}>Employee *</label>
-                <SearchableSelect value={applyFor} onChange={setApplyFor} options={employeeOptions} placeholder="Search employee…" />
+          {showApply && (applyFor ? (
+            <LeaveApplyForm
+              key={applyFor}
+              types={activeTypes}
+              userId={Number(applyFor)}
+              title="Apply leave on behalf"
+              subtitle="It still goes to the employee's reporting manager for approval."
+              employeePicker={<><label style={sheetLabel}>Employee <Req /></label><SearchableSelect value={applyFor} onChange={setApplyFor} options={employeeOptions} placeholder="Search employee…" /></>}
+              onCancel={() => { setShowApply(false); setApplyFor('') }}
+              onSubmitted={(no) => { setShowApply(false); setApplyFor(''); setNotice(`${no} was submitted and sent to the employee's approver.`); loadRequests() }}
+            />
+          ) : (
+            <FormSheet width={580} icon="user" title="Apply leave on behalf" subtitle="Pick the employee to apply leave for. It still goes to their reporting manager for approval."
+              onClose={() => setShowApply(false)} busy={false}
+              footer={<button type="button" style={sheetBtn('secondary', SHEET.INK)} onClick={() => setShowApply(false)}>Cancel</button>}>
+              <div style={{ padding: '20px 24px' }}>
+                <SheetSection icon="user" title="Employee">
+                  <label style={sheetLabel}>Employee <Req /></label>
+                  <SearchableSelect value={applyFor} onChange={setApplyFor} options={employeeOptions} placeholder="Search employee…" />
+                  <p style={sheetHint}>The leave form opens as soon as you pick someone.</p>
+                </SheetSection>
               </div>
-              {applyFor ? (
-                <LeaveApplyForm
-                  key={applyFor}
-                  types={activeTypes}
-                  userId={Number(applyFor)}
-                  onCancel={() => { setShowApply(false); setApplyFor('') }}
-                  onSubmitted={(no) => { setShowApply(false); setApplyFor(''); setNotice(`${no} was submitted and sent to the employee's approver.`); loadRequests() }}
-                />
-              ) : (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <span style={{ fontSize: 13, color: TEXT.muted }}>Pick the employee to apply leave for. It still goes to their reporting manager for approval.</span>
-                  <button type="button" style={secondaryBtnStyle} onClick={() => setShowApply(false)}>Cancel</button>
-                </div>
-              )}
-            </div>
-          )}
+            </FormSheet>
+          ))}
 
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 300 }} placeholder="Search employee or request no…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <select style={{ ...inputStyle, flex: '0 1 160px', width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+            <input data-tour="hr-leave-search" style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 300 }} placeholder="Search employee or request no…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <select data-tour="hr-leave-status-filter" style={{ ...inputStyle, flex: '0 1 160px', width: 'auto' }} value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">All statuses</option>
               {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
-            <select style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+            <select data-tour="hr-leave-type-filter" style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
               <option value="">All leave types</option>
               {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <div style={{ flex: '0 1 150px', minWidth: 140 }}><DateField value={dateFrom} onChange={setDateFrom} /></div>
+            <div data-tour="hr-leave-date-from" style={{ flex: '0 1 150px', minWidth: 140 }}><DateField value={dateFrom} onChange={setDateFrom} /></div>
             <span style={{ fontSize: 12, color: TEXT.muted }}>to</span>
-            <div style={{ flex: '0 1 150px', minWidth: 140 }}><DateField value={dateTo} onChange={setDateTo} /></div>
+            <div data-tour="hr-leave-date-to" style={{ flex: '0 1 150px', minWidth: 140 }}><DateField value={dateTo} onChange={setDateTo} /></div>
             {(dateFrom || dateTo) && <button type="button" style={linkBtn(TEXT.secondary)} onClick={() => { setDateFrom(''); setDateTo('') }}>Clear dates</button>}
           </div>
 
-          <div style={tableWrap}>
+          <div data-tour="hr-leave-requests-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1040 }}>
               <thead>
                 <tr>{['Request', 'Employee', 'Leave', 'Dates', 'Days', 'Status', 'Approver / decision', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
@@ -330,13 +328,13 @@ export default function HrLeavePage() {
                     </td>
                     <td style={{ ...td, fontWeight: 700 }}>{num(r.days)}</td>
                     <td style={td}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[r.status] || r.status}</span>
+                      <span data-tour="hr-leave-status-badge" style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>{STATUS_LABELS[r.status] || r.status}</span>
                     </td>
                     <td style={{ ...td, fontSize: 12.5 }}>
                       {r.status === 'pending' ? (r.approver_name || <span style={{ color: '#B45309' }}>HR (no manager)</span>) : (r.decided_by_name || '—')}
                       {r.decision_remarks && <div style={{ color: TEXT.muted, marginTop: 2 }}>“{r.decision_remarks}”</div>}
                     </td>
-                    <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                    <td data-tour="hr-leave-row-actions" style={{ ...td, whiteSpace: 'nowrap' }}>
                       {r.attachment_path && <button type="button" style={linkBtn('#2563EB')} onClick={() => openAttachment(r)}>File</button>}
                       {r.can_decide && <button type="button" style={linkBtn('#16A34A')} onClick={() => setDecision({ kind: 'approve', req: r })}>Approve</button>}
                       {r.can_decide && <button type="button" style={linkBtn('#DC2626')} onClick={() => setDecision({ kind: 'reject', req: r })}>Reject</button>}
@@ -353,17 +351,17 @@ export default function HrLeavePage() {
       {tab === 'balances' && (
         <>
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select style={{ ...inputStyle, flex: '0 1 110px', width: 'auto' }} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            <select data-tour="hr-leave-bal-year" style={{ ...inputStyle, flex: '0 1 110px', width: 'auto' }} value={year} onChange={(e) => setYear(Number(e.target.value))}>
               {[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
-            <select style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={balType} onChange={(e) => setBalType(e.target.value)}>
+            <select data-tour="hr-leave-bal-type" style={{ ...inputStyle, flex: '0 1 180px', width: 'auto' }} value={balType} onChange={(e) => setBalType(e.target.value)}>
               <option value="">All leave types</option>
               {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <input style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 300 }} placeholder="Search employee…" value={balSearch} onChange={(e) => setBalSearch(e.target.value)} />
+            <input data-tour="hr-leave-bal-search" style={{ ...inputStyle, flex: '1 1 220px', maxWidth: 300 }} placeholder="Search employee…" value={balSearch} onChange={(e) => setBalSearch(e.target.value)} />
             <span style={{ fontSize: 12, color: TEXT.muted }}>{balances.length} balance row(s)</span>
           </div>
-          <div style={tableWrap}>
+          <div data-tour="hr-leave-balances-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>
                 <tr>{['Employee', 'Leave type', 'Carried', 'Allotted', 'Adjusted', 'Used', 'Pending', 'Available', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
@@ -389,7 +387,7 @@ export default function HrLeavePage() {
                     <td style={{ ...td, color: Number(b.pending) > 0 ? '#B45309' : TEXT.muted }}>{num(b.pending)}</td>
                     <td style={{ ...td, fontWeight: 800, color: TEXT.heading }}>{b.is_paid === false ? '—' : num(b.available)}</td>
                     <td style={td}>
-                      <button type="button" style={linkBtn('#E85A1F')} onClick={() => { setModalErrors([]); setAdjust({ user_id: String(b.user_id), leave_type_id: String(b.leave_type_id), year: b.year, delta: '', reason: '', label: `${b.user_name} · ${b.leave_type_name} · ${b.year} (available ${num(b.available)})` }) }}>Adjust</button>
+                      {canAdjust && <button type="button" data-tour="hr-leave-bal-adjust-link" style={linkBtn('#E85A1F')} onClick={() => { setModalErrors([]); setAdjust({ user_id: String(b.user_id), leave_type_id: String(b.leave_type_id), year: b.year, delta: '', reason: '', label: `${b.user_name} · ${b.leave_type_name} · ${b.year} (available ${num(b.available)})` }) }}>Adjust</button>}
                     </td>
                   </tr>
                 ))}
@@ -411,58 +409,64 @@ export default function HrLeavePage() {
         onCancel={() => setDecision(null)}
       />
 
-      <Modal open={allotOpen} title="Allot annual leave" onClose={() => !busy && setAllotOpen(false)} width={560}>
-        {allotResult ? (
-          <>
-            <p style={{ fontSize: 13.5, color: TEXT.body, margin: '0 0 10px' }}>
-              {allotResult.year} leave ({allotResult.leave_types.join(', ')}) for {allotResult.employees} active employees:
-            </p>
-            <ul style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 16px', paddingLeft: 18 }}>
-              <li>{allotResult.created} new balance rows</li>
-              <li>{allotResult.updated} updated (quota or carry-forward changed)</li>
-              <li>{allotResult.unchanged} already up to date</li>
-              {allotResult.skipped_gender > 0 && <li>{allotResult.skipped_gender} skipped — gender-restricted type and the employee&apos;s gender doesn&apos;t match or isn&apos;t recorded</li>}
-              {allotResult.skipped_not_joined > 0 && <li>{allotResult.skipped_not_joined} skipped — joining date is after {allotResult.year}</li>}
-            </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="button" style={primaryBtnStyle} onClick={() => setAllotOpen(false)}>Done</button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={{ display: 'flex', gap: 12, marginBottom: 14, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-              <div style={{ flex: '0 1 120px' }}>
-                <label style={labelStyle}>Year</label>
-                <select style={inputStyle} value={allotYear} onChange={(e) => setAllotYear(Number(e.target.value))}>
-                  {[thisYear + 1, thisYear, thisYear - 1].map((y) => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.secondary, cursor: 'pointer', paddingBottom: 8 }}>
-                <input type="checkbox" checked={prorate} onChange={(e) => setProrate(e.target.checked)} /> Pro-rate for employees who join during the year
-              </label>
-            </div>
-            <label style={labelStyle}>Leave types (none ticked = all active)</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-              {activeTypes.map((t) => {
-                const on = allotTypes.includes(t.id)
-                return (
-                  <button key={t.id} type="button" onClick={() => setAllotTypes(on ? allotTypes.filter((x) => x !== t.id) : [...allotTypes, t.id])} style={{ fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 9999, cursor: 'pointer', border: on ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)', background: on ? 'rgba(255,106,42,0.1)' : '#fff', color: on ? '#e0521a' : '#57534e' }}>
-                    {t.code} · {t.is_paid ? `${num(t.annual_quota)}/yr` : 'unpaid'}{t.carry_forward ? ` · carry ≤ ${num(t.max_carry_forward)}` : ''}
-                  </button>
-                )
-              })}
-            </div>
-            <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 14px' }}>
-              Sets each active employee&apos;s allotted days to the type&apos;s annual quota and, for carry-forward types, brings forward last year&apos;s unused balance up to the cap. Safe to run again — manual adjustments and days already used are never touched. Types with a quota of 0 and nothing to carry are skipped.
-            </p>
-            <Banner errors={modalErrors} />
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button type="button" style={secondaryBtnStyle} disabled={busy} onClick={() => setAllotOpen(false)}>Cancel</button>
-              <button type="button" style={{ ...primaryBtnStyle, opacity: busy ? 0.7 : 1 }} disabled={busy} onClick={() => setAllotConfirm(true)}>{busy ? 'Allotting…' : `Allot ${allotYear}`}</button>
-            </div>
-          </>
-        )}
-      </Modal>
+      {allotOpen && (
+        <FormSheet width={640} tour="hr-leave-allot-sheet" icon="calendar" title="Allot annual leave"
+          subtitle="Sets each active employee's allotted days to the type's annual quota and brings forward carry-forward balances."
+          onClose={() => setAllotOpen(false)} busy={busy}
+          footer={allotResult ? (
+            <button type="button" style={sheetBtn('primary', SHEET.BLUE)} onClick={() => setAllotOpen(false)}><SheetIcon name="check" size={16} />Done</button>
+          ) : <>
+            <button type="button" style={sheetBtn('secondary', SHEET.INK, busy)} disabled={busy} onClick={() => setAllotOpen(false)}>Cancel</button>
+            <button type="button" data-tour="hr-leave-allot-save" style={sheetBtn('primary', SHEET.BLUE, busy)} disabled={busy} onClick={() => setAllotConfirm(true)}><SheetIcon name="check" size={16} />{busy ? 'Allotting…' : `Allot ${allotYear}`}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {allotResult ? (
+              <SheetSection icon="check" title="Allotted" color="#16A34A">
+                <p style={{ fontSize: 13.5, color: SHEET.BODY, margin: '0 0 10px' }}>
+                  {allotResult.year} leave ({allotResult.leave_types.join(', ')}) for {allotResult.employees} active employees:
+                </p>
+                <ul style={{ fontSize: 13, color: SHEET.BODY, margin: 0, paddingLeft: 18 }}>
+                  <li>{allotResult.created} new balance rows</li>
+                  <li>{allotResult.updated} updated (quota or carry-forward changed)</li>
+                  <li>{allotResult.unchanged} already up to date</li>
+                  {allotResult.skipped_gender > 0 && <li>{allotResult.skipped_gender} skipped — gender-restricted type and the employee&apos;s gender doesn&apos;t match or isn&apos;t recorded</li>}
+                  {allotResult.skipped_not_joined > 0 && <li>{allotResult.skipped_not_joined} skipped — joining date is after {allotResult.year}</li>}
+                </ul>
+              </SheetSection>
+            ) : (
+              <>
+                <Banner errors={modalErrors} />
+                <SheetSection icon="calendar" title="Year">
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div style={{ flex: '0 1 120px' }}>
+                      <label style={sheetLabel}>Year</label>
+                      <select data-tour="hr-leave-allot-year" style={sheetInput} value={allotYear} onChange={(e) => setAllotYear(Number(e.target.value))}>
+                        {[thisYear + 1, thisYear, thisYear - 1].map((y) => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                    </div>
+                    <label data-tour="hr-leave-allot-prorate" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer', paddingBottom: 10 }}>
+                      <input type="checkbox" checked={prorate} onChange={(e) => setProrate(e.target.checked)} /> Pro-rate for employees who join during the year
+                    </label>
+                  </div>
+                </SheetSection>
+                <SheetSection icon="tag" title="Leave Types" extra={<span style={{ fontSize: 12, color: SHEET.MUTED }}>none ticked = all active</span>}>
+                  <div data-tour="hr-leave-allot-types" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {activeTypes.map((t) => {
+                      const on = allotTypes.includes(t.id)
+                      return (
+                        <button key={t.id} type="button" onClick={() => setAllotTypes(on ? allotTypes.filter((x) => x !== t.id) : [...allotTypes, t.id])} style={{ fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 9999, cursor: 'pointer', border: on ? `1px solid ${SHEET.BLUE}` : `1px solid ${SHEET.LINE}`, background: on ? '#eff6ff' : '#fff', color: on ? SHEET.BLUE : SHEET.BODY }}>
+                          {t.code} · {t.is_paid ? `${num(t.annual_quota)}/yr` : 'unpaid'}{t.carry_forward ? ` · carry ≤ ${num(t.max_carry_forward)}` : ''}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p style={sheetHint}>Safe to run again — manual adjustments and days already used are never touched. Types with a quota of 0 and nothing to carry are skipped.</p>
+                </SheetSection>
+              </>
+            )}
+          </div>
+        </FormSheet>
+      )}
 
       <ConfirmDialog
         open={allotConfirm}
@@ -474,52 +478,54 @@ export default function HrLeavePage() {
         onCancel={() => setAllotConfirm(false)}
       />
 
-      <Modal open={!!adjust} title="Adjust leave balance" onClose={() => !busy && setAdjust(null)} width={560}>
-        {adjust && (
-          <>
-            {adjust.label ? (
-              <p style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 14px' }}>{adjust.label}</p>
-            ) : (
-              <>
-                <div style={{ marginBottom: 12 }}>
-                  <label style={labelStyle}>Employee *</label>
+      {adjust && (
+        <FormSheet width={580} tour="hr-leave-adjust-sheet" icon="edit" title="Adjust leave balance"
+          subtitle={adjust.label || 'Add or take away days on one employee\'s balance.'}
+          onClose={() => setAdjust(null)} busy={busy}
+          footer={<>
+            <button type="button" style={sheetBtn('secondary', SHEET.INK, busy)} disabled={busy} onClick={() => setAdjust(null)}>Cancel</button>
+            <button type="button" data-tour="hr-leave-adjust-save" style={sheetBtn('primary', SHEET.BLUE, busy)} disabled={busy} onClick={saveAdjust}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save adjustment'}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            <Banner errors={modalErrors} />
+            {!adjust.label && (
+              <SheetSection icon="user" title="Balance">
+                <div data-tour="hr-leave-adjust-employee" style={{ marginBottom: 12 }}>
+                  <label style={sheetLabel}>Employee <Req /></label>
                   <SearchableSelect value={adjust.user_id} onChange={(v) => setAdjust({ ...adjust, user_id: v })} options={employeeOptions} placeholder="Search employee…" />
                 </div>
-                <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                <div style={{ display: 'flex', gap: 12 }}>
                   <div style={{ flex: '1 1 200px' }}>
-                    <label style={labelStyle}>Leave type *</label>
-                    <select style={inputStyle} value={adjust.leave_type_id} onChange={(e) => setAdjust({ ...adjust, leave_type_id: e.target.value })}>
+                    <label style={sheetLabel}>Leave type <Req /></label>
+                    <select data-tour="hr-leave-adjust-type" style={sheetInput} value={adjust.leave_type_id} onChange={(e) => setAdjust({ ...adjust, leave_type_id: e.target.value })}>
                       {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
                   </div>
                   <div style={{ flex: '0 1 110px' }}>
-                    <label style={labelStyle}>Year</label>
-                    <select style={inputStyle} value={adjust.year} onChange={(e) => setAdjust({ ...adjust, year: Number(e.target.value) })}>
+                    <label style={sheetLabel}>Year</label>
+                    <select data-tour="hr-leave-adjust-year" style={sheetInput} value={adjust.year} onChange={(e) => setAdjust({ ...adjust, year: Number(e.target.value) })}>
                       {[thisYear + 1, thisYear, thisYear - 1].map((y) => <option key={y} value={y}>{y}</option>)}
                     </select>
                   </div>
                 </div>
-              </>
+              </SheetSection>
             )}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-              <div style={{ flex: '0 1 130px' }}>
-                <label style={labelStyle}>Days (+/-) *</label>
-                <input style={inputStyle} inputMode="decimal" value={adjust.delta} onChange={(e) => setAdjust({ ...adjust, delta: e.target.value.replace(/[^0-9.-]/g, '') })} placeholder="e.g. 1 or -0.5" />
+            <SheetSection icon="edit" title="Adjustment">
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: '0 1 130px' }}>
+                  <label style={sheetLabel}>Days (+/-) <Req /></label>
+                  <input data-tour="hr-leave-adjust-days" style={sheetInput} inputMode="decimal" value={adjust.delta} onChange={(e) => setAdjust({ ...adjust, delta: e.target.value.replace(/[^0-9.-]/g, '') })} placeholder="e.g. 1 or -0.5" />
+                </div>
+                <div style={{ flex: '1 1 260px' }}>
+                  <label style={sheetLabel}>Reason <Req /></label>
+                  <input data-tour="hr-leave-adjust-reason" style={sheetInput} value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })} placeholder="e.g. Comp-off for Sunday dispatch work" />
+                </div>
               </div>
-              <div style={{ flex: '1 1 260px' }}>
-                <label style={labelStyle}>Reason *</label>
-                <input style={inputStyle} value={adjust.reason} onChange={(e) => setAdjust({ ...adjust, reason: e.target.value })} placeholder="e.g. Comp-off for Sunday dispatch work" />
-              </div>
-            </div>
-            <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>The reason is recorded in the audit log and sent to the employee.</p>
-            <Banner errors={modalErrors} />
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button type="button" style={secondaryBtnStyle} disabled={busy} onClick={() => setAdjust(null)}>Cancel</button>
-              <button type="button" style={{ ...primaryBtnStyle, opacity: busy ? 0.7 : 1 }} disabled={busy} onClick={saveAdjust}>{busy ? 'Saving…' : 'Save adjustment'}</button>
-            </div>
-          </>
-        )}
-      </Modal>
+              <p style={sheetHint}>The reason is recorded in the audit log and sent to the employee.</p>
+            </SheetSection>
+          </div>
+        </FormSheet>
+      )}
     </div>
   )
 }

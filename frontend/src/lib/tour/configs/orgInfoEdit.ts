@@ -23,12 +23,49 @@ const config: TourConfig = {
       purpose: 'The full registered legal name — printed on invoices, POs, and statutory documents, which can differ from the shorter trading Company Name.',
     },
     {
+      target: 'org-edit-short-name',
+      title: 'Short Name',
+      purpose: 'Abbreviation used where space is tight (tables, mobile).',
+      validExample: 'PRT',
+    },
+    {
       target: 'org-edit-code',
       title: 'Code',
       required: true,
       purpose: 'Short internal identifier for this company, used in numbering series (PR/PO/invoice numbers).',
       whatToEnter: 'Auto-uppercased as you type.',
       validExample: 'PNR',
+    },
+    {
+      target: 'org-edit-company-type',
+      title: 'Company Type',
+      validExample: 'Private Limited, LLP, Partnership Firm',
+    },
+    {
+      target: 'org-edit-industry',
+      title: 'Industry',
+      validExample: 'Railway Track Tools & Equipment',
+    },
+    {
+      target: 'org-edit-business-nature',
+      title: 'Business Nature',
+      purpose: 'What the company does commercially.',
+      validExample: 'Manufacturer & Supplier',
+    },
+    {
+      target: 'org-edit-website',
+      title: 'Website',
+      validExample: 'https://www.premnathrail.com',
+    },
+    {
+      target: 'org-edit-description',
+      title: 'Description',
+      purpose: 'Short company profile — can be reused in tenders and letters.',
+    },
+    {
+      target: 'org-edit-incorporation-date',
+      title: 'Date of Incorporation',
+      purpose: 'Date on the Certificate of Incorporation / partnership deed.',
     },
     {
       target: 'org-edit-country',
@@ -41,6 +78,11 @@ const config: TourConfig = {
       required: true,
       whatToEnter: '3-letter ISO currency code.',
       validExample: 'INR',
+    },
+    {
+      target: 'org-edit-language',
+      title: 'Default Language',
+      validExample: 'English',
     },
     {
       target: 'org-edit-timezone',
@@ -94,6 +136,17 @@ const config: TourConfig = {
       autoActivate: true,
     },
     {
+      target: 'org-edit-legal-entity-type',
+      title: 'Legal Entity Type',
+      purpose: 'The legal form of the business — decides which registrations apply (e.g. a partnership firm has no CIN).',
+      validExample: 'Partnership Firm, Private Limited Company',
+    },
+    {
+      target: 'org-edit-legal-status',
+      title: 'Legal Status',
+      validExample: 'Active',
+    },
+    {
       target: 'org-edit-cin',
       title: 'CIN',
       purpose: 'Corporate Identification Number issued by the Ministry of Corporate Affairs — identifies this as a registered company.',
@@ -105,6 +158,12 @@ const config: TourConfig = {
       validExample: 'AABCU9603R',
     },
     {
+      target: 'org-edit-tan',
+      title: 'TAN',
+      purpose: 'Tax Deduction Account Number — 10 characters, needed only if the company deducts tax at source (e.g. on salaries).',
+      validExample: 'DELA12345B',
+    },
+    {
       target: 'org-edit-gstin',
       title: 'GSTIN',
       purpose: '15-character GST registration number used for tax-compliant invoicing.',
@@ -112,9 +171,50 @@ const config: TourConfig = {
       invalidExample: 'A PAN number alone, or fewer/more than 15 characters',
     },
     {
+      target: 'org-edit-udyam',
+      title: 'Udyam Registration No.',
+      purpose: 'MSME Udyam number — lets customers and PSUs apply MSME benefits (faster payment, tender preference).',
+      validExample: 'UDYAM-HR-05-0012345',
+    },
+    {
+      target: 'org-edit-iec',
+      title: 'IEC',
+      purpose: 'Importer-Exporter Code — needed only for imports/exports.',
+    },
+    {
+      target: 'org-edit-msme',
+      title: 'MSME Registration No.',
+      purpose: 'Older MSME/UAM number, if the company still quotes it.',
+    },
+    {
+      target: 'org-edit-pf',
+      title: 'PF Registration No.',
+      purpose: 'EPFO establishment code for employee provident fund.',
+    },
+    {
+      target: 'org-edit-esic',
+      title: 'ESIC Registration No.',
+      purpose: 'Employee State Insurance code.',
+    },
+    {
+      target: 'org-edit-other-registration',
+      title: 'Other Registration',
+      purpose: 'One extra registration not listed above (e.g. Factory Licence, RDSO vendor registration) — type, number, date, issuing authority, and expiry.',
+    },
+    {
+      target: 'org-edit-legal-representative',
+      title: 'Legal Representative',
+      purpose: 'Person authorised to sign on behalf of the company for legal matters.',
+    },
+    {
       target: 'org-edit-authorized-capital',
       title: 'Authorized Capital',
       purpose: 'The maximum share capital this company is legally authorized to issue, per its incorporation documents.',
+    },
+    {
+      target: 'org-edit-paid-up-capital',
+      title: 'Paid-up Capital',
+      purpose: 'Capital actually paid in by owners — often asked in tender eligibility forms.',
     },
     {
       target: 'org-edit-legal-docs-note',
@@ -134,9 +234,31 @@ const config: TourConfig = {
       validExample: 'Regular',
     },
     {
+      target: 'org-edit-tax-region',
+      title: 'Default Tax Region',
+      purpose: 'Home state for GST — sales inside it attract CGST+SGST, outside it IGST.',
+      validExample: 'Haryana',
+    },
+    {
+      target: 'org-edit-tax-deductibility',
+      title: 'Tax Deductibility',
+      purpose: 'Reference note on input-tax credit eligibility.',
+      validExample: 'Full ITC',
+    },
+    {
+      target: 'org-edit-tax-reg-status',
+      title: 'Tax Registration Status',
+      validExample: 'Active',
+    },
+    {
+      target: 'org-edit-tax-effective-date',
+      title: 'Tax Effective Date',
+      purpose: 'Date from which the GST registration above is effective.',
+    },
+    {
       target: 'org-edit-tax-applicability',
       title: 'TDS / TCS Applicable',
-      purpose: 'Whether Tax Deducted at Source and Tax Collected at Source rules apply to this company\'s transactions — drives tax calculation in downstream modules like P2P and Store.',
+      purpose: 'Whether Tax Deducted at Source and Tax Collected at Source rules apply to this company. Recorded for reference — Finance does not calculate TDS/TCS automatically today.',
     },
     {
       target: 'org-edit-tab-contacts',
@@ -238,6 +360,12 @@ const config: TourConfig = {
       purpose: 'Free text shown at the bottom of generated documents, e.g. terms or a disclaimer.',
     },
     {
+      target: 'org-edit-watermark',
+      title: 'Watermark',
+      purpose: 'Text or image URL printed faintly across generated documents.',
+      validExample: 'DRAFT',
+    },
+    {
       target: 'org-edit-email-signature',
       title: 'Email Signature',
       purpose: 'Appended to system-generated emails sent on this company\'s behalf.',
@@ -304,6 +432,12 @@ const config: TourConfig = {
       autoActivate: true,
     },
     {
+      target: 'org-edit-default-tax',
+      title: 'Default Tax',
+      purpose: 'Tax rate pre-filled on new lines where none is set.',
+      validExample: 'GST 18%',
+    },
+    {
       target: 'org-edit-default-plant',
       title: 'Default Plant',
       purpose: 'Pre-selected as the plant/branch on new records where a plant is required, unless overridden.',
@@ -312,6 +446,22 @@ const config: TourConfig = {
       target: 'org-edit-default-warehouse',
       title: 'Default Store',
       purpose: 'Pre-selected as the store on new Store transactions, unless overridden.',
+    },
+    {
+      target: 'org-edit-default-cost-center',
+      title: 'Default Cost Center',
+      purpose: 'Cost center charged when a transaction does not name one.',
+      why: 'Avoids "unallocated" costs in management reports.',
+    },
+    {
+      target: 'org-edit-default-profit-center',
+      title: 'Default Profit Center',
+      purpose: 'Profit center revenue/costs roll up to when none is given.',
+    },
+    {
+      target: 'org-edit-back',
+      title: '← Back',
+      purpose: 'Returns to the read-only Info page without saving — same as Cancel.',
     },
     {
       target: 'org-edit-cancel',

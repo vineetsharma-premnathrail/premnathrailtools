@@ -4,6 +4,8 @@ add a register_audited() call here; nothing in its routes needs to change."""
 
 from app.core.audit import register_audited
 
+from app.modules.products.models.application import ProductApplication
+from app.modules.products.models.product import FinishedProduct, ProductSpecification
 from app.modules.quality.models.ncr import QualityNcr
 from app.modules.quality.models.capa import QualityCapa
 from app.modules.quality.models.customer_complaint import QualityCustomerComplaint
@@ -19,7 +21,8 @@ from app.modules.quality.models.ncr import QualityNcrApproval
 from app.modules.quality.models.rejection import QualityRejection
 from app.modules.quality.models.quality_standard import QualityStandard
 from app.modules.quality.models.quality_checklist import QualityChecklist, QualityChecklistItem
-from app.modules.quality.models.supplier_quality import QualitySupplierScorecard
+from app.modules.quality.models.supplier_quality import QualitySupplierScorecard, QualityApprovedVendor, QualityVendorAudit
+from app.modules.quality.models.capa import QualityCapaAction, QualityCapaTeamMember, QualityCapaNcr
 from app.modules.quality.models.quality_document import QualityDocument
 
 from app.modules.maintenance.models.asset import MaintenanceAsset
@@ -28,6 +31,13 @@ from app.modules.maintenance.models.work_order import (
     MaintenanceWorkOrder, MaintenanceWorkOrderTask, MaintenanceWorkOrderSpare, MaintenanceLabourLog,
 )
 from app.modules.maintenance.models.attachment import MaintenanceAttachment
+from app.modules.maintenance.models.asset import MaintenanceAssetSpare
+from app.modules.maintenance.models.pm_plan import MaintenancePmPlan, MaintenancePmPlanTask, MaintenancePmPlanSpare
+from app.modules.sales.models.order import SalesOrder, SalesOrderLine, SalesOrderSchedule, SalesBillingPlanLine
+from app.modules.sales.models.amendment import SalesOrderAmendment
+from app.modules.sales.models.extension import SalesDeliveryExtension
+from app.modules.sales.models.approval import SalesApproval
+from app.modules.sales.models.attachment import SalesAttachment
 from app.modules.production.models.workstation import ProductionWorkstation
 from app.modules.production.models.bom import ProductionBom, ProductionBomItem, ProductionBomOperation
 from app.modules.production.models.work_order import (
@@ -48,6 +58,13 @@ from app.modules.electrical.models.document import ElectricalDocument
 
 from app.modules.design.models.document import DesignDocument, DesignDocumentRevision, DesignRevisionFile
 from app.modules.design.models.change_notice import DesignChangeNotice, DesignChangeNoticeDocument
+from app.modules.design.models.change_notice import DesignChangeNoticeBom, DesignEcnAcknowledgement
+from app.modules.design.models.bom import DesignBom, DesignBomLine, DesignBomRevision
+from app.modules.design.models.change_request import DesignChangeRequest, DesignChangeRequestItem, DesignEcrVote
+from app.modules.design.models.library import DesignChecklist, DesignItemApprovedMake, DesignStandard, DesignStandardPart, DesignTemplate
+from app.modules.design.models.request import DesignRequest
+from app.modules.design.models.setting import DesignSetting, DesignTeamMember
+from app.modules.design.models.submission import DesignCustomerSubmission, DesignSubmissionComment, DesignSubmissionLine
 
 from app.modules.hydraulic.models.system import HydSystem
 from app.modules.hydraulic.models.component import HydComponent
@@ -74,6 +91,7 @@ from app.modules.store.models.stock_transfer import StoreStockTransfer, StoreSto
 from app.modules.store.models.stock_adjustment import StoreStockAdjustment, StoreStockAdjustmentItem
 from app.modules.store.models.stock_reservation import StoreStockReservation
 from app.modules.store.models.stock_transaction import StoreStockTransaction
+from app.modules.store.models.valuation import StoreValuationEvent
 
 from app.modules.organization.models.company import Company
 from app.modules.organization.models.company_address import CompanyAddress
@@ -97,6 +115,16 @@ from app.modules.hr.models.asset import HrAsset, HrAssetAssignment
 from app.modules.hr.models.visitor import HrVisitor
 from app.modules.hr.models.travel import HrTravelRequest
 from app.modules.hr.models.expense import HrExpenseClaim, HrExpenseClaimItem
+from app.modules.hr.models.safety import HrSafetyIncident, HrSafetyIncidentPerson, HrSafetyAction, HrSafetyAttachment
+from app.modules.hr.models.overtime import HrOvertime
+
+from app.modules.accounts.models.vendor import Vendor
+from app.modules.accounts.models.bank_account import BankAccount
+from app.modules.accounts.models.gl_account import GLAccount
+from app.modules.accounts.models.internal_order import InternalOrder
+from app.modules.accounts.models.account_group import AccountGroup
+from app.modules.accounts.models.settings import GSTRate, AccountDetermination
+from app.modules.accounts.models.collections import AccountsCreditRelease, AccountsCollectionNote, AccountsDunningLetter, AccountsDispute
 
 # ---------------------------------------------------------------------------
 # Quality
@@ -146,6 +174,21 @@ register_audited(
     QualityNcrApproval, entity_type="quality_ncr_approval", module_key="quality", label="NCR approval",
     ref=lambda o: f"{o.role} {o.decision}", parent_attr="ncr_id", parent_entity_type="quality_ncr", child_action="approval",
 )
+register_audited(
+    QualityCapaAction, entity_type="quality_capa_action", module_key="quality", label="CAPA action",
+    ref=lambda o: f"'{o.description[:60]}'", parent_attr="capa_id", parent_entity_type="quality_capa", child_action="action",
+)
+register_audited(
+    QualityCapaTeamMember, entity_type="quality_capa_team", module_key="quality", label="CAPA team member",
+    ref=lambda o: f"user #{o.user_id} ({o.role})", parent_attr="capa_id", parent_entity_type="quality_capa", child_action="team",
+)
+register_audited(
+    QualityCapaNcr, entity_type="quality_capa_ncr", module_key="quality", label="CAPA linked NCR",
+    ref=lambda o: f"NCR #{o.ncr_id}", parent_attr="capa_id", parent_entity_type="quality_capa", child_action="ncr_link",
+)
+register_audited(QualityApprovedVendor, entity_type="quality_approved_vendor", module_key="quality", label="Approved vendor",
+                 ref=lambda o: f"{o.vendor_name} / item #{o.item_id}")
+register_audited(QualityVendorAudit, entity_type="quality_vendor_audit", module_key="quality", label="Vendor audit", ref=lambda o: o.audit_number)
 
 # ---------------------------------------------------------------------------
 # Store
@@ -177,6 +220,10 @@ register_audited(
     parent_attr="adjustment_id", parent_entity_type="store_stock_adjustment", child_action="line",
 )
 register_audited(StoreStockReservation, entity_type="store_stock_reservation", module_key="store", label="Stock reservation", ref=lambda o: o.reservation_number)
+register_audited(
+    StoreValuationEvent, entity_type="store_valuation_event", module_key="store", label="Valuation event",
+    ref=lambda o: f"{o.event_type} item #{o.item_id} ₹{o.value_delta}",
+)
 
 # Ledger postings made by a Store document above are already captured by that
 # document's own header and line rows. Everything else (manual entries, GRN
@@ -263,6 +310,16 @@ register_audited(
     HrExpenseClaimItem, entity_type="hr_expense_claim_item", module_key="hr", label="Expense line",
     ref=lambda o: f"{o.category} {o.amount} on {o.expense_date}", parent_attr="claim_id", parent_entity_type="hr_expense_claim", child_action="line",
 )
+register_audited(HrSafetyIncident, entity_type="hr_safety_incident", module_key="hr", label="Safety incident", ref=lambda o: o.incident_no)
+register_audited(
+    HrSafetyAction, entity_type="hr_safety_action", module_key="hr", label="Safety CAPA action",
+    ref=lambda o: f"'{o.description[:60]}'", parent_attr="incident_id", parent_entity_type="hr_safety_incident", child_action="capa",
+)
+register_audited(
+    HrSafetyIncidentPerson, entity_type="hr_safety_incident_person", module_key="hr", label="Person involved",
+    ref=lambda o: o.external_name or f"user #{o.user_id}", parent_attr="incident_id", parent_entity_type="hr_safety_incident", child_action="person",
+)
+register_audited(HrOvertime, entity_type="hr_overtime", module_key="hr", label="Overtime request", ref=lambda o: o.request_no)
 
 # ---------------------------------------------------------------------------
 # R&D
@@ -373,6 +430,50 @@ register_audited(
     DesignChangeNoticeDocument, entity_type="design_change_notice_document", module_key="design", label="ECN affected document",
     ref=lambda o: f"document #{o.document_id}", parent_attr="ecn_id", parent_entity_type="design_change_notice", child_action="affected_document",
 )
+register_audited(
+    DesignChangeNoticeBom, entity_type="design_change_notice_bom", module_key="design", label="ECN affected BOM",
+    ref=lambda o: f"BOM #{o.bom_id}", parent_attr="ecn_id", parent_entity_type="design_change_notice", child_action="affected_bom",
+)
+register_audited(
+    DesignEcnAcknowledgement, entity_type="design_ecn_acknowledgement", module_key="design", label="ECN acknowledgement",
+    ref=lambda o: o.department, parent_attr="ecn_id", parent_entity_type="design_change_notice", child_action="acknowledgement",
+)
+register_audited(DesignBom, entity_type="design_bom", module_key="design", label="Engineering BOM", ref=lambda o: o.bom_number)
+register_audited(
+    DesignBomRevision, entity_type="design_bom_revision", module_key="design", label="BOM revision",
+    ref=lambda o: o.revision_label, parent_attr="bom_id", parent_entity_type="design_bom", child_action="revision",
+)
+register_audited(
+    DesignBomLine, entity_type="design_bom_line", module_key="design", label="BOM line",
+    ref=lambda o: f"line {o.position}", parent_attr="revision_id", parent_entity_type="design_bom_revision", child_action="line",
+)
+register_audited(DesignChangeRequest, entity_type="design_change_request", module_key="design", label="Change request (ECR)", ref=lambda o: o.ecr_number)
+register_audited(
+    DesignChangeRequestItem, entity_type="design_change_request_item", module_key="design", label="ECR affected item",
+    ref=lambda o: f"document #{o.document_id}" if o.document_id else f"BOM #{o.bom_id}", parent_attr="ecr_id",
+    parent_entity_type="design_change_request", child_action="affected_item",
+)
+register_audited(
+    DesignEcrVote, entity_type="design_ecr_vote", module_key="design", label="Change board vote",
+    ref=lambda o: o.vote, parent_attr="ecr_id", parent_entity_type="design_change_request", child_action="vote",
+)
+register_audited(DesignCustomerSubmission, entity_type="design_customer_submission", module_key="design", label="Customer submission", ref=lambda o: o.submission_number)
+register_audited(
+    DesignSubmissionLine, entity_type="design_submission_line", module_key="design", label="Submission drawing",
+    ref=lambda o: f"revision #{o.revision_id}", parent_attr="submission_id", parent_entity_type="design_customer_submission", child_action="line",
+)
+register_audited(
+    DesignSubmissionComment, entity_type="design_submission_comment", module_key="design", label="Customer comment",
+    ref=lambda o: f"comment #{o.id}", parent_attr="submission_id", parent_entity_type="design_customer_submission", child_action="comment",
+)
+register_audited(DesignRequest, entity_type="design_request", module_key="design", label="Design request", ref=lambda o: o.request_number)
+register_audited(DesignSetting, entity_type="design_setting", module_key="design", label="Design settings", ref=lambda o: "Design settings")
+register_audited(DesignTeamMember, entity_type="design_team_member", module_key="design", label="Design team member", ref=lambda o: f"user #{o.user_id} ({o.role})")
+register_audited(DesignStandard, entity_type="design_standard", module_key="design", label="Standard", ref=lambda o: o.code)
+register_audited(DesignStandardPart, entity_type="design_standard_part", module_key="design", label="Standard part", ref=lambda o: f"item #{o.store_item_id}")
+register_audited(DesignTemplate, entity_type="design_template", module_key="design", label="Template", ref=lambda o: f"'{o.name}'")
+register_audited(DesignItemApprovedMake, entity_type="design_item_approved_make", module_key="design", label="Approved make", ref=lambda o: o.make)
+register_audited(DesignChecklist, entity_type="design_checklist", module_key="design", label="Review checklist", ref=lambda o: f"'{o.name}'")
 
 # Hydraulic & Pneumatic
 register_audited(HydSystem, entity_type="hyd_system", module_key="hydraulic", label="Hydraulic/pneumatic system", ref=lambda o: o.system_number)
@@ -403,6 +504,19 @@ register_audited(HydDocument, entity_type="hyd_document", module_key="hydraulic"
 # ---------------------------------------------------------------------------
 register_audited(MaintenanceAsset, entity_type="maintenance_asset", module_key="maintenance", label="Asset", ref=lambda o: o.asset_code)
 register_audited(MaintenanceRequest, entity_type="maintenance_request", module_key="maintenance", label="Maintenance request", ref=lambda o: o.request_number)
+register_audited(MaintenancePmPlan, entity_type="maintenance_pm_plan", module_key="maintenance", label="PM plan", ref=lambda o: o.plan_code)
+register_audited(
+    MaintenancePmPlanTask, entity_type="maintenance_pm_plan_task", module_key="maintenance", label="PM checklist line",
+    ref=lambda o: f"'{o.description[:60]}'", parent_attr="plan_id", parent_entity_type="maintenance_pm_plan", child_action="task",
+)
+register_audited(
+    MaintenancePmPlanSpare, entity_type="maintenance_pm_plan_spare", module_key="maintenance", label="PM spares kit line",
+    ref=lambda o: f"item #{o.store_item_id} x {o.qty:g}", parent_attr="plan_id", parent_entity_type="maintenance_pm_plan", child_action="spare",
+)
+register_audited(
+    MaintenanceAssetSpare, entity_type="maintenance_asset_spare", module_key="maintenance", label="Bill of spares line",
+    ref=lambda o: f"item #{o.store_item_id} x {o.qty_per_replacement:g}", parent_attr="asset_id", parent_entity_type="maintenance_asset", child_action="spare",
+)
 register_audited(MaintenanceWorkOrder, entity_type="maintenance_work_order", module_key="maintenance", label="Maintenance work order", ref=lambda o: o.wo_number)
 register_audited(
     MaintenanceWorkOrderTask, entity_type="maintenance_wo_task", module_key="maintenance", label="Checklist line",
@@ -418,3 +532,55 @@ register_audited(
     ref=lambda o: f"{o.hours:g} h by user #{o.technician_id}", parent_attr="work_order_id", parent_entity_type="maintenance_work_order", child_action="labour",
 )
 register_audited(MaintenanceAttachment, entity_type="maintenance_attachment", module_key="maintenance", label="Maintenance attachment", ref=lambda o: f"'{o.filename}'")
+
+# Sales (docs/02-modules/sales/plan.md)
+register_audited(SalesOrder, entity_type="sales_order", module_key="sales", label="Sales order", ref=lambda o: o.so_number or f"Draft #{o.id}")
+register_audited(
+    SalesOrderLine, entity_type="sales_order_line", module_key="sales", label="Order line",
+    ref=lambda o: f"line {o.line_number}", parent_attr="so_id", parent_entity_type="sales_order", child_action="line",
+)
+register_audited(
+    SalesOrderSchedule, entity_type="sales_order_schedule", module_key="sales", label="Delivery row",
+    ref=lambda o: f"delivery {o.sequence}", parent_attr="so_id", parent_entity_type="sales_order", child_action="schedule",
+)
+register_audited(
+    SalesBillingPlanLine, entity_type="sales_billing_plan_line", module_key="sales", label="Billing milestone",
+    ref=lambda o: f"{o.milestone_type} {o.percent:g}%", parent_attr="so_id", parent_entity_type="sales_order", child_action="billing",
+)
+register_audited(
+    SalesOrderAmendment, entity_type="sales_amendment", module_key="sales", label="Order amendment",
+    ref=lambda o: f"amendment {o.amendment_no}", parent_attr="so_id", parent_entity_type="sales_order", child_action="amendment",
+)
+register_audited(
+    SalesDeliveryExtension, entity_type="sales_extension", module_key="sales", label="DP extension",
+    ref=lambda o: f"DP extension to {o.requested_new_date}", parent_attr="so_id", parent_entity_type="sales_order", child_action="extension",
+)
+register_audited(SalesApproval, entity_type="sales_approval", module_key="sales", label="Sales approval", ref=lambda o: f"{o.level} {o.decision}")
+register_audited(SalesAttachment, entity_type="sales_attachment", module_key="sales", label="Sales attachment", ref=lambda o: f"'{o.filename}'")
+
+# Finance masters — vendor bank / GSTIN / terms changes are a payment-diversion
+# risk, so every create/edit/delete is trailed. Journals, invoices and vouchers
+# are not registered: their routes already write explicit audit rows.
+register_audited(Vendor, entity_type="vendor", module_key="accounts", label="Vendor", ref=lambda o: f"{o.code} — {o.name}")
+register_audited(BankAccount, entity_type="bank_account", module_key="accounts", label="Bank account",
+                 ref=lambda o: f"{o.bank_name} — {o.account_no}" if o.account_no else o.bank_name)
+register_audited(GLAccount, entity_type="gl_account", module_key="accounts", label="GL account", ref=lambda o: f"{o.code} — {o.name}")
+register_audited(InternalOrder, entity_type="internal_order", module_key="accounts", label="Internal order", ref=lambda o: o.code)
+register_audited(AccountGroup, entity_type="account_group", module_key="accounts", label="Account group", ref=lambda o: o.name)
+register_audited(GSTRate, entity_type="gst_rate", module_key="accounts", label="GST rate", ref=lambda o: f"{o.rate:g}%")
+register_audited(AccountDetermination, entity_type="account_determination", module_key="accounts", label="Ledger role", ref=lambda o: o.role)
+from app.modules.accounts.models.bank_guarantee import BankGuarantee as _BankGuarantee  # noqa: E402
+from app.modules.accounts.models.cash_forecast_item import CashForecastItem as _CashForecastItem  # noqa: E402
+register_audited(_BankGuarantee, entity_type="bank_guarantee", module_key="accounts", label="Bank guarantee / LC / EMD", ref=lambda o: o.bg_number)
+register_audited(_CashForecastItem, entity_type="cash_forecast_item", module_key="accounts", label="Planned cash item", ref=lambda o: o.description)
+register_audited(AccountsCreditRelease, entity_type="credit_release", module_key="accounts", label="Credit release", ref=lambda o: o.release_number)
+register_audited(AccountsCollectionNote, entity_type="collection_note", module_key="accounts", label="Collection note", ref=lambda o: f"#{o.id} {o.note_type}")
+register_audited(AccountsDunningLetter, entity_type="dunning_letter", module_key="accounts", label="Reminder letter", ref=lambda o: o.letter_number)
+register_audited(AccountsDispute, entity_type="dispute", module_key="accounts", label="Dispute", ref=lambda o: o.dispute_number)
+
+register_audited(FinishedProduct, entity_type="product", module_key="products", label="Product", ref=lambda o: f"{o.code} — {o.name}")
+register_audited(
+    ProductSpecification, entity_type="product_specification", module_key="products", label="Specification",
+    ref=lambda o: f"'{o.parameter}'", parent_attr="product_id", parent_entity_type="product", child_action="specification",
+)
+register_audited(ProductApplication, entity_type="product_application", module_key="products", label="Application", ref=lambda o: f"{o.code} — {o.name}")

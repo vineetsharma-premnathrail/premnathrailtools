@@ -304,3 +304,12 @@ async def lookup_locations(db: Session = Depends(get_db)):
     from app.modules.store.models.location import StoreLocation
     return [{"id": l.id, "code": l.code, "name": l.name}
             for l in db.query(StoreLocation).filter(StoreLocation.is_active.isnot(False)).order_by(StoreLocation.name).all()]
+
+
+@router.get("/users")
+async def lookup_users(db: Session = Depends(get_db)):
+    """Every active user — CAPA teams and action owners come from any
+    department (production, design, purchase …), not only Quality."""
+    from app.modules.main.models.user import User as U
+    return [{"id": u.id, "name": u.name or u.email, "email": u.email}
+            for u in db.query(U).filter(U.is_active.is_(True)).order_by(U.name).all()]

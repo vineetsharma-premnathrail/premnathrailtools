@@ -69,7 +69,7 @@ def test_access_split(client, db):
     assert client.get(f"{BASE}/requests/{req['id']}", headers=hdr(prod2)).status_code == 403
     assert client.get(f"{BASE}/requests", headers=hdr(prod2)).json() == []
     r = client.post(f"{BASE}/requests/{req['id']}/acknowledge", headers=hdr(prod))
-    assert r.status_code == 403 and "Maintenance team" in r.json()["detail"]
+    assert r.status_code == 403 and "Maintenance" in r.json()["detail"]  # deny-by-default: the tab check answers first
     # Asset picker is open to requesters.
     assert len(client.get(f"{BASE}/lookups/assets", headers=hdr(prod)).json()) == 1
 
@@ -253,3 +253,44 @@ def test_dashboard(client, db):
     assert data["machines_down"][0]["asset_code"] == asset["asset_code"]
     lookups = client.get(f"{BASE}/lookups", headers=hm).json()
     assert "breakdown" in lookups["wo_types"] and lookups["workstations"][0]["code"] == "CNC-01"
+
+
+def test_delete_asset_with_pm_plan_is_refused(client, db):
+    from datetime import date
+    branch, *_ = setup_plant(db)
+    h = hdr(make_user(db, "m-del@premnathrail.com"))
+    asset = create_asset(client, h, branch)
+    r = client.post(f"{BASE}/pm-plans", json={
+        "asset_id": asset["id"], "title": "Monthly lubrication", "frequency_unit": "month", "frequency_value": 1,
+        "schedule_basis": "fixed", "lead_days": 3, "next_due_date": str(date.today() + timedelta(days=20)),
+    }, headers=h)
+    assert r.status_code == 200, r.text
+    r = client.delete(f"{BASE}/assets/{asset['id']}", headers=h)
+    assert r.status_code == 409
+    assert asset["asset_code"] in r.json()["detail"] and "PM-0001" in r.json()["detail"]
+
+
+def test_list_assets_down_filter(client, db):
+    branch, *_ = setup_plant(db)
+    h = hdr(make_user(db, "m-down@premnathrail.com"))
+    ids = {s: create_asset(client, h, branch, name=f"M {s}")["id"] for s in ("breakdown", "under_maintenance", "operational")}
+    for s, aid in ids.items():
+        db.query(MaintenanceAsset).filter(MaintenanceAsset.id == aid).update({"status": s})
+    db.commit()
+    down = client.get(f"{BASE}/assets", params={"status": "down"}, headers=h).json()
+    assert {a["id"] for a in down} == {ids["breakdown"], ids["under_maintenance"]}
+    ops = client.get(f"{BASE}/assets", params={"status": "operational"}, headers=h).json()
+    assert [a["id"] for a in ops] == [ids["operational"]]
+
+
+def test_request_on_decommissioned_asset_cannot_be_converted(client, db):
+    branch, *_ = setup_plant(db)
+    maint = make_user(db, "m_decom@premnathrail.com")
+    hm = hdr(maint)
+    asset = create_asset(client, hm, branch)
+    req = client.post(f"{BASE}/requests", json={"asset_id": asset["id"], "problem_description": "Noise"}, headers=hm).json()
+    a = db.get(MaintenanceAsset, asset["id"])
+    a.status = "decommissioned"
+    db.commit()
+    r = client.post(f"{BASE}/requests/{req['id']}/convert", json={}, headers=hm)
+    assert r.status_code == 409 and "decommissioned" in r.json()["detail"] and "Reject" in r.json()["detail"]

@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permissions import require_app_access, require_tab_action
 from app.db.session import get_db
 from app.modules.erp.models.project import Project
@@ -24,6 +25,7 @@ from app.modules.quality.schemas.inspection_call import (
     QualityInspectionCallResponse,
 )
 from app.modules.quality.services import inspection_calls as call_service, dispatch as dispatch_service
+from app.modules.quality.services import order_project_inspection as opi
 from app.modules.quality.services.inspection_calls import CallError
 from app.modules.quality.services.ncr import NcrError
 from app.modules.quality.services.settings import active_master_values
@@ -54,10 +56,13 @@ def _responses(db: Session, rows: list[QualityInspectionCall]) -> list[QualityIn
     uids = ({r.created_by_id for r in rows} | {r.result_recorded_by_id for r in rows}) - {None}
     users = {u.id: u.name or u.email for u in db.query(User).filter(User.id.in_(uids)).all()} if uids else {}
     agencies = _agencies(db)
+    links = opi.link_display(db, rows)
     out = []
     for r in rows:
         resp = QualityInspectionCallResponse.model_validate(r)
         resp.project_label = _project_label(projects.get(r.erp_project_id))
+        for k, v in links.get(r.id, {}).items():
+            setattr(resp, k, v)
         resp.agency_label = agencies.get(r.agency, r.agency)
         resp.lot_number = lots.get(r.lot_id)
         resp.ncr_number = ncrs.get(r.ncr_id)
@@ -68,11 +73,13 @@ def _responses(db: Session, rows: list[QualityInspectionCall]) -> list[QualityIn
     return out
 
 
-def _get(db: Session, call_id: int, lock: bool = False) -> QualityInspectionCall:
+def _get(db: Session, call_id: int, user: User | None = None, lock: bool = False) -> QualityInspectionCall:
     q = db.query(QualityInspectionCall).filter(QualityInspectionCall.id == call_id)
     call = (q.with_for_update() if lock else q).first()
     if not call:
-        raise HTTPException(status_code=404, detail=f"Inspection call #{call_id} not found")
+        raise HTTPException(status_code=404, detail=f"Inspection call #{call_id} not found — it may have been removed. Reload the list.")
+    if user is not None:
+        ensure_in_scope(db, user, call)
     return call
 
 
@@ -130,6 +137,31 @@ async def set_contract_requirement(project_id: int, payload: QualityContractRequ
     return {"id": p.id, "third_party_inspection_required": p.third_party_inspection_required, "inspection_agency": p.inspection_agency}
 
 
+# --- Order Project requirement (from the Sales Order) ----------------------
+
+@router.get("/order-project-requirement")
+async def order_project_requirement(element_id: int | None = None, project_id: int | None = None,
+                                    db: Session = Depends(get_db)):
+    """What the Sales Order of an Order Project says about inspection - shown
+    read-only on the call form ("from Sales Order ...") - and the calls
+    already raised for the element."""
+    try:
+        project, element = opi.resolve_link(db, project_id, element_id, allow_cancelled=True)
+    except opi.LinkError as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
+    if project is None:
+        raise HTTPException(status_code=422, detail="Pick an Order Project (and its vehicle / lot) first.")
+    req = opi.so_requirement(db, element, project) or {}
+    calls = opi.calls_for_element(db, element.id) if element is not None else []
+    cleared = None
+    if element is not None:
+        _req, _agency, cleared = opi.inspection_required_for_element(db, element)
+    return {**req, "op_number": project.op_number, "element_no": element.element_no if element else None,
+            "element_label": element.label if element else None, "cleared": cleared,
+            "calls": [{"id": c.id, "call_number": c.call_number, "status": c.status, "quantity": c.quantity,
+                       "accepted_qty": c.accepted_qty, "certificate_number": c.certificate_number} for c in calls]}
+
+
 # --- Dispatch release check ------------------------------------------------
 
 @router.post("/dispatch-check")
@@ -139,7 +171,8 @@ async def dispatch_check(payload: QualityDispatchCheckPayload, db: Session = Dep
     if payload.quantity <= 0:
         raise HTTPException(status_code=422, detail="Quantity must be greater than zero.")
     problems = dispatch_service.check(db, item_id=payload.item_id, quantity=payload.quantity,
-                                      batch_number=payload.batch_number, erp_project_id=payload.erp_project_id)
+                                      batch_number=payload.batch_number, erp_project_id=payload.erp_project_id,
+                                      order_project_element_id=payload.order_project_element_id)
     return {"allowed": not problems, "problems": problems}
 
 
@@ -147,14 +180,20 @@ async def dispatch_check(payload: QualityDispatchCheckPayload, db: Session = Dep
 
 @router.get("", response_model=list[QualityInspectionCallResponse])
 async def list_calls(status_filter: str | None = Query(None, alias="status"), erp_project_id: int | None = None,
-                     open_only: bool = False, search: str | None = None, db: Session = Depends(get_db)):
-    q = db.query(QualityInspectionCall)
+                     order_project_id: int | None = None, order_project_element_id: int | None = None,
+                     open_only: bool = False, search: str | None = None, db: Session = Depends(get_db),
+                     user: User = Depends(require_app_access("quality"))):
+    q = apply_scope(db.query(QualityInspectionCall), user, QualityInspectionCall)
     if status_filter:
         q = q.filter(QualityInspectionCall.status == status_filter)
     if open_only:
         q = q.filter(QualityInspectionCall.status.in_(("requested", "scheduled")))
     if erp_project_id:
         q = q.filter(QualityInspectionCall.erp_project_id == erp_project_id)
+    if order_project_id:
+        q = q.filter(QualityInspectionCall.order_project_id == order_project_id)
+    if order_project_element_id:
+        q = q.filter(QualityInspectionCall.order_project_element_id == order_project_element_id)
     if search:
         like = f"%{search}%"
         q = q.filter(QualityInspectionCall.call_number.ilike(like) | QualityInspectionCall.item_name.ilike(like)
@@ -174,14 +213,14 @@ async def create_call(payload: QualityInspectionCallCreate, db: Session = Depend
 
 
 @router.get("/{call_id}", response_model=QualityInspectionCallResponse)
-async def get_call(call_id: int, db: Session = Depends(get_db)):
-    return _responses(db, [_get(db, call_id)])[0]
+async def get_call(call_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
+    return _responses(db, [_get(db, call_id, user)])[0]
 
 
 @router.post("/{call_id}/schedule", response_model=QualityInspectionCallResponse)
 async def schedule_call(call_id: int, payload: QualityInspectionCallSchedulePayload, db: Session = Depends(get_db),
                         user: User = Depends(_CAN_EDIT)):
-    call = _get(db, call_id, lock=True)
+    call = _get(db, call_id, user, lock=True)
 
     def go():
         call_service.schedule(db, call, call_date=payload.call_date, inspector_name=payload.inspector_name, remarks=payload.remarks)
@@ -193,7 +232,7 @@ async def schedule_call(call_id: int, payload: QualityInspectionCallSchedulePayl
 @router.post("/{call_id}/result", response_model=QualityInspectionCallResponse)
 async def record_result(call_id: int, payload: QualityInspectionCallResultPayload, db: Session = Depends(get_db),
                         user: User = Depends(_CAN_EDIT)):
-    call = _get(db, call_id, lock=True)
+    call = _get(db, call_id, user, lock=True)
     _run(db, lambda: call_service.record_result(
         db, call, result=payload.result, accepted_qty=payload.accepted_qty, rejected_qty=payload.rejected_qty,
         certificate_number=payload.certificate_number, result_date=payload.result_date, inspector_name=payload.inspector_name,
@@ -204,7 +243,7 @@ async def record_result(call_id: int, payload: QualityInspectionCallResultPayloa
 @router.post("/{call_id}/cancel", response_model=QualityInspectionCallResponse)
 async def cancel_call(call_id: int, payload: QualityInspectionCallCancelPayload, db: Session = Depends(get_db),
                       user: User = Depends(_CAN_EDIT)):
-    call = _get(db, call_id, lock=True)
+    call = _get(db, call_id, user, lock=True)
     _run(db, lambda: call_service.cancel(db, call, reason=payload.reason, user=user))
     return _responses(db, [_get(db, call_id)])[0]
 
@@ -215,7 +254,7 @@ async def upload_certificate(call_id: int, file: UploadFile = File(...), db: Ses
     """The agency's certificate / release note (PDF or scan). Can be attached
     with the result or right after it; replacing it keeps the number."""
     from app.utils.sharepoint import upload_file_to_sharepoint, sanitize_folder_name
-    call = _get(db, call_id, lock=True)
+    call = _get(db, call_id, _user, lock=True)
     if call.status == "cancelled":
         raise HTTPException(status_code=409, detail=f"{call.call_number} was cancelled — there is no certificate to attach.")
     if call.certificate_file_path and call.status not in ("requested", "scheduled"):
@@ -237,9 +276,9 @@ async def upload_certificate(call_id: int, file: UploadFile = File(...), db: Ses
 
 
 @router.get("/{call_id}/certificate")
-async def download_certificate(call_id: int, db: Session = Depends(get_db)):
+async def download_certificate(call_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
     from app.utils.sharepoint import download_file_content
-    call = _get(db, call_id)
+    call = _get(db, call_id, user)
     if not call.certificate_file_path:
         raise HTTPException(status_code=404, detail=f"{call.call_number} has no certificate file attached yet.")
     content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, call.certificate_file_path)

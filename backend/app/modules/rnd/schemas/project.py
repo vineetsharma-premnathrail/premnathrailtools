@@ -22,7 +22,7 @@ class RndProjectPrototypeSummary(BaseModel):
     name: str
     version: str
     status: str
-    bom_cost: float = 0
+    bom_cost: float | None = 0  # None = hidden (R&D › Prototypes › BOM costs)
     production_bom_id: int | None = None
     production_bom_number: str | None = None
 
@@ -34,11 +34,22 @@ class RndProjectCreate(BaseModel):
     objective: str
     scope: str | None = None
     lead_id: int | None = None
+    lead_ids: list[int] | None = None
     team_member_ids: list[int] = []
     start_date: date | None = None
     target_end_date: date | None = None
     budget_amount: float | None = None
     remarks: str | None = None
+    # Origin + source (services/project_origin.py validates per origin).
+    origin: str | None = None
+    source_kind: str | None = None
+    source_id: int | None = None
+    improvement_reason: str | None = None
+    product_id: int | None = None
+    origin_note: str | None = None
+    # Files the form uploads right after create — proof for origins that need
+    # an attached document (the files themselves go to /rnd/documents).
+    attachment_count: int = 0
 
 
 class RndProjectUpdate(BaseModel):
@@ -49,6 +60,7 @@ class RndProjectUpdate(BaseModel):
     objective: str | None = None
     scope: str | None = None
     lead_id: int | None = None
+    lead_ids: list[int] | None = None
     team_member_ids: list[int] | None = None
     start_date: date | None = None
     target_end_date: date | None = None
@@ -60,6 +72,13 @@ class RndProjectUpdate(BaseModel):
     handover_quality_standards: bool | None = None
     handover_notes: str | None = None
     remarks: str | None = None
+    # Origin + source (services/project_origin.py validates per origin).
+    origin: str | None = None
+    source_kind: str | None = None
+    source_id: int | None = None
+    improvement_reason: str | None = None
+    product_id: int | None = None
+    origin_note: str | None = None
 
 
 class RndProjectStagePayload(BaseModel):
@@ -79,6 +98,7 @@ class RndProjectResponse(BaseModel):
     objective: str
     scope: str | None = None
     lead_id: int | None = None
+    lead_ids: list[int] = []
     team_member_ids: list[int] = []
     start_date: date | None = None
     target_end_date: date | None = None
@@ -91,16 +111,33 @@ class RndProjectResponse(BaseModel):
     handover_notes: str | None = None
     handed_over_at: datetime | None = None
     remarks: str | None = None
+    origin: str | None = None
+    source_kind: str | None = None
+    source_id: int | None = None
+    source_ref: str | None = None
+    improvement_reason: str | None = None
+    product_id: int | None = None
+    origin_note: str | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     # Denormalized display fields, filled in by the route.
-    lead_name: str | None = None
+    # CRM requirements (R&D › Requirements) this project is linked to.
+    linked_requirements: list[dict] = []
+    lead_name: str | None = None  # all leads, comma-separated
+    leads: list[RndProjectMember] = []
     team_members: list[RndProjectMember] = []
-    actual_cost: float = 0
+    actual_cost: float | None = 0  # None = hidden (R&D › Prototypes › BOM costs)
     experiment_count: int = 0
     prototype_count: int = 0
+    origin_label: str | None = None
+    improvement_reason_label: str | None = None
+    product_name: str | None = None
+    # Frontend detail page of the source record (null once it's deleted);
+    # the signed source_id_ref is added by the record-ref middleware.
+    source_path: str | None = None
+    source_exists: bool = False
 
 
 class RndProjectDetailResponse(RndProjectResponse):

@@ -8,6 +8,8 @@ const config: TourConfig = {
       target: 'wh-add-btn',
       title: '+ Add Store',
       purpose: 'Creates a new store location — everything else in Store & Inventory (stock, issues, transfers) happens against a store.',
+      after: 'Opens the store form — the next steps walk through it.',
+      autoActivateOnAdvance: true,
     },
     {
       target: 'wh-name',
@@ -36,6 +38,13 @@ const config: TourConfig = {
       target: 'wh-save-btn',
       title: 'Save Store',
       purpose: 'Creates the store. Name and Code are required.',
+      after: 'The store is immediately available on GRN, Stock Entry, Issues and Transfers.',
+    },
+    {
+      target: 'wh-cancel-btn',
+      title: 'Cancel',
+      purpose: 'Closes the form without saving.',
+      autoActivateOnAdvance: true,
     },
     {
       target: 'wh-table',

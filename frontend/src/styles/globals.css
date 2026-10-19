@@ -8,6 +8,13 @@
   box-sizing: border-box;
 }
 
+/* Text boxes grow only in height app-wide — dragging one sideways pushed it
+   past its card and broke the form layout. Inline styles that don't set
+   `resize` inherit this; an explicit inline `resize` still wins. */
+textarea {
+  resize: vertical;
+}
+
 html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
@@ -393,23 +400,33 @@ input[type='number'] {
   outline: none;
 }
 
-/* Scrollbar styling */
+/* Scrollbar styling — transparent track and an inset thumb, so a scrolling
+   glass card (rounded corners) never shows a grey strip poking past its
+   edges; the track margin keeps the thumb clear of the rounded corners. */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: transparent;
+  margin: 10px;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%);
-  border-radius: 4px;
+  background: rgba(100, 116, 139, 0.35);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #94a3b8 0%, #64748b 100%);
+  background: rgba(100, 116, 139, 0.6);
+  background-clip: padding-box;
 }
 
 /* Prevent any single element (image, table, wide inline-style block) from
@@ -727,5 +744,36 @@ img, svg { max-width: 100%; height: auto; }
   .reveal-on-scroll.is-visible {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* FormPage (components/shared/FormSheet.tsx): the card fits the window and its
+   body scrolls. A <form> between the body and the columns passes the height on;
+   on wide screens the two columns scroll on their own. */
+.form-page-body > form {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* Independent column scroll only when the two columns ARE the whole form.
+   Forms with more full-width sections below the columns (Sales Order: lines,
+   delivery, billing) keep the columns at their natural height and scroll the
+   body as one section instead — never squash a column. */
+.form-page-body > *,
+.form-page-body > form > * {
+  flex-shrink: 0;
+}
+@media (min-width: 1100px) {
+  .form-page-body > .sheet-columns:only-child,
+  .form-page-body > form > .sheet-columns:only-child {
+    flex: 1 1 auto;
+    flex-shrink: 1;
+    min-height: 0;
+    flex-wrap: nowrap !important;
+  }
+  .form-page-body > .sheet-columns:only-child > div,
+  .form-page-body > form > .sheet-columns:only-child > div {
+    overflow-y: auto;
   }
 }

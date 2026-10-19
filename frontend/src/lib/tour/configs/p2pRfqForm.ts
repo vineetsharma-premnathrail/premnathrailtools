@@ -76,6 +76,11 @@ const config: TourConfig = {
       title: 'Cancel',
       purpose: 'Discards this RFQ draft and returns to the R.F.Q list.',
     },
+    {
+      target: 'rfq-new-back',
+      title: '← Back',
+      purpose: 'Returns to the R.F.Q list without saving — same as Cancel.',
+    },
   ],
 }
 

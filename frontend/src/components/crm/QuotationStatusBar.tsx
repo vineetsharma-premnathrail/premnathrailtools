@@ -1,0 +1,141 @@
+'use client'
+
+// Quotation document status (SAP VA21-VA23 + release): Draft → Awaiting approval
+// → Approved → Sent → Accepted / Lost / Expired. The approval itself runs on the
+// central approval engine (Sales › Settings › Quotation approval sets the limits).
+// Replaces the old free-text "customer response" select.
+
+import { useEffect, useState } from 'react'
+import { crmQuotationStatusApi, QuotationAction } from '@/lib/sdApi'
+import { extractErrorMessages } from '@/lib/validation'
+import { QuotationItem, QuotationStatusView } from '@/types'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/crm/ui'
+import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
+
+const STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft', submitted: 'Awaiting approval', approved: 'Approved', sent: 'Sent to customer',
+  accepted: 'Accepted', lost: 'Lost', expired: 'Expired',
+}
+const STATUS_HEX: Record<string, string> = {
+  draft: '#64748B', submitted: '#D97706', approved: '#2563EB', sent: '#7C3AED', accepted: '#16A34A', lost: '#DC2626', expired: '#DC2626',
+}
+const small: React.CSSProperties = { padding: '5px 11px', fontSize: 11.5 }
+
+type Prompt = { action: QuotationAction; title: string; message: string; placeholder: string; label: string; required: boolean; danger: boolean }
+
+export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubmit = canModify, onChanged, tour }: {
+  inquiryId: number
+  quot: QuotationItem
+  /** Inquiries & Tenders › Quotations › Edit (default for canSubmit). */
+  canModify: boolean
+  /** Submit for approval / withdraw (Inquiries & Tenders › Quotations › Submit). */
+  canSubmit?: boolean
+  onChanged: () => void
+  tour?: boolean
+}) {
+  const [view, setView] = useState<QuotationStatusView | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | string[]>('')
+  const [prompt, setPrompt] = useState<Prompt | null>(null)
+  const [reason, setReason] = useState('')
+  const [promptError, setPromptError] = useState<string | string[]>('')
+  const [confirm, setConfirm] = useState<{ action: QuotationAction; title: string; message: string; label: string } | null>(null)
+  const status = (quot.status || 'draft') as string
+
+  useEffect(() => {
+    crmQuotationStatusApi.status(inquiryId, quot.id).then(setView).catch(() => setView(null))
+  }, [inquiryId, quot.id, quot.status, quot.revision_number])
+
+  // Returns the error (if any) so a reason popup can show it in place.
+  const run = async (action: QuotationAction, comment?: string, inPopup = false) => {
+    setBusy(true); setError('')
+    try {
+      const r = await crmQuotationStatusApi.act(inquiryId, quot.id, action, comment ? { comment } : {})
+      setView(r.status_view)
+      onChanged()
+      return true
+    } catch (e) {
+      const msg = extractErrorMessages(e, `Couldn't ${action} quotation ${quot.quot_number || ''}.`)
+      if (inPopup) setPromptError(msg)
+      else setError(msg)
+      return false
+    } finally { setBusy(false) }
+  }
+
+  const openPrompt = (p: Prompt) => { setReason(''); setPromptError(''); setPrompt(p) }
+  const submitPrompt = async () => {
+    if (!prompt) return
+    const v = reason.trim()
+    if (prompt.required && !v) { setPromptError(`Enter the reason — it is saved on the quotation and shown to the creator.`); return }
+    if (await run(prompt.action, v || undefined, true)) setPrompt(null)
+  }
+
+  const hex = STATUS_HEX[status] || '#64748B'
+  const btn = (label: string, onClick: () => void, style: React.CSSProperties = secondaryBtnStyle, tourId?: string) => (
+    <button type="button" disabled={busy} onClick={onClick} data-tour={tour ? tourId : undefined} style={{ ...style, ...small, opacity: busy ? 0.6 : 1 }}>{label}</button>
+  )
+
+  return (
+    <div data-tour={tour ? 'quot-status-bar' : undefined} style={{ marginTop: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' }}>
+          {STATUS_LABELS[status] || status}
+        </span>
+        {quot.customer_response === 'Negotiating' && status === 'sent' && <span style={{ fontSize: 11.5, color: '#7C3AED' }}>Customer negotiating</span>}
+        {view && status === 'draft' && view.approval_label && (
+          <span style={{ fontSize: 11.5, color: '#57534e' }}>
+            {view.approval_rank === 0 ? 'No approval needed' : `Needs ${view.approval_label} approval`}
+            {view.approval_reasons.length ? ` (${view.approval_reasons.join('; ')})` : ''}
+          </span>
+        )}
+        {view?.approval_pending && (
+          <span style={{ fontSize: 11.5, color: '#b45309' }}>
+            {view.approval_stage} stage{view.approval_waiting_on.length ? ` — waiting on ${view.approval_waiting_on.join(', ')}` : ''}
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        {/* No approval needed → submitting approves it at once, so say that instead of "for approval". */}
+        {canSubmit && status === 'draft' && btn(view?.approval_rank === 0 ? 'Finalise quotation' : 'Submit for approval', () => run('submit'), primaryBtnStyle, 'quot-submit-btn')}
+        {canSubmit && status === 'submitted' && btn('Withdraw', () => setConfirm({ action: 'withdraw', title: 'Withdraw from approval?', message: 'The quotation goes back to draft so you can change it.', label: 'Withdraw' }))}
+        {view?.can_decide && status === 'submitted' && (
+          <>
+            {btn('Approve', () => run('approve'), primaryBtnStyle, 'quot-approve-btn')}
+            {btn('Return', () => openPrompt({ action: 'return', title: 'Return for changes', message: 'Tell the creator what to change.', placeholder: 'e.g. Discount too high — max 8%', label: 'Return', required: true, danger: false }))}
+            {btn('Reject', () => openPrompt({ action: 'reject', title: 'Reject this quotation', message: 'The quotation goes back to draft with your reason.', placeholder: 'Reason', label: 'Reject', required: true, danger: true }), dangerBtnStyle)}
+          </>
+        )}
+      </div>
+      {quot.status_comment && ['draft', 'lost', 'accepted'].includes(status) && (
+        <div style={{ fontSize: 11.5, color: '#57534e', marginTop: 4 }}>{quot.status_comment}</div>
+      )}
+      {status === 'expired' && <div style={{ fontSize: 11.5, color: '#78716c', marginTop: 4 }}>Validity ended without a decision — use + Create Quote to offer it again (a finalised quotation can't be edited).</div>}
+      {error && (
+        <div style={{ padding: '10px 14px', marginTop: 8, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+          {Array.isArray(error) ? error.map((m, i) => <div key={i}>{m}</div>) : error}
+        </div>
+      )}
+      {prompt && (
+        <FormSheet width={560} icon={prompt.danger ? 'alert' : 'undo'} iconColor={prompt.danger ? '#dc2626' : SHEET.BLUE} title={prompt.title}
+          subtitle={`Quotation ${quot.quot_number || ''}${quot.revision_number ? ` · Rev ${quot.revision_number}` : ''}`} onClose={() => setPrompt(null)} busy={busy}
+          footer={<>
+            <button type="button" onClick={() => setPrompt(null)} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+            <button type="button" onClick={submitPrompt} disabled={busy} style={sheetBtn('primary', prompt.danger ? '#dc2626' : SHEET.BLUE, busy)}>
+              <SheetIcon name={prompt.danger ? 'x' : 'undo'} size={16} />{busy ? 'Saving…' : prompt.label}
+            </button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            <SheetError error={promptError} />
+            <SheetSection icon="chat" title="Reason" color={prompt.danger ? '#dc2626' : SHEET.BLUE}>
+              <label style={sheetLabel}>{prompt.message} {prompt.required && <Req />}</label>
+              <textarea autoFocus value={reason} onChange={(e) => setReason(e.target.value)} placeholder={prompt.placeholder} style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} />
+              <p style={sheetHint}>Saved on the quotation&apos;s status history.</p>
+            </SheetSection>
+          </div>
+        </FormSheet>
+      )}
+      <ConfirmDialog open={!!confirm} title={confirm?.title || ''} message={confirm?.message || ''} confirmLabel={confirm?.label} danger={false}
+        onConfirm={() => { const c = confirm; setConfirm(null); if (c) run(c.action) }} onCancel={() => setConfirm(null)} />
+    </div>
+  )
+}

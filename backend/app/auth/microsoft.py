@@ -15,15 +15,20 @@ def get_msal_app() -> ConfidentialClientApplication:
     )
 
 
-def get_auth_url(state: str, redirect_uri: str) -> str:
-    """Get Microsoft login authorization URL."""
+def get_auth_url(state: str, redirect_uri: str, pick_account: bool = False) -> str:
+    """Get Microsoft login authorization URL.
+
+    By default no `prompt` is sent, so a browser already signed in to
+    Microsoft 365 is signed straight in (auto login). `pick_account` forces
+    Microsoft's account picker — used by "Use a different account"."""
     app = get_msal_app()
     scopes = ["User.Read"]
+    extra = {"prompt": "select_account"} if pick_account else {}
     return app.get_authorization_request_url(
         scopes=scopes,
         state=state,
         redirect_uri=redirect_uri,
-        prompt="select_account",  # always show Microsoft's account picker instead of silently SSO-ing into the last account
+        **extra,
     )
 
 
@@ -147,6 +152,12 @@ async def get_azure_admin_ids() -> set[str]:
             f"https://graph.microsoft.com/v1.0/directoryRoles/roleTemplateId={GLOBAL_ADMIN_ROLE_TEMPLATE_ID}/members",
             headers={"Authorization": f"Bearer {token}"},
         )
+        # Raise instead of returning an empty set: callers write the result
+        # onto every user's is_azure_admin, so a failed call must not read
+        # as "nobody is an admin" and silently strip everyone's access.
         if resp.status_code != 200:
-            return set()
+            raise RuntimeError(
+                f"Microsoft Graph refused the Global Administrator lookup (HTTP {resp.status_code}) — "
+                "the Azure app needs the Directory.Read.All (or RoleManagement.Read.Directory) application permission with admin consent."
+            )
         return {m["id"] for m in resp.json().get("value", [])}

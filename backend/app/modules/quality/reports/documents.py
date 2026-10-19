@@ -173,3 +173,76 @@ def deviation_spec(db: Session, ncr: QualityNcr) -> dict:
         "remarks": ncr.remarks,
         "signatures": [(QUALITY_NCR_APPROVAL_ROLE_LABELS.get(a.role, a.role), _name(db, a.approved_by_id)) for a in approvals[:3]],
     }
+
+
+EIGHT_D = "quality_8d_report"
+
+
+def capa_8d_spec(db: Session, capa) -> dict:
+    """8D report of a CAPA (also the customer response to a complaint). The
+    managed document's revision is capa.report_revision, so a reopened CAPA
+    gets a fresh report while the earlier one stays on record."""
+    from app.modules.quality.models.capa import (
+        QUALITY_CAPA_STATUS_LABELS, QUALITY_CAPA_TRIGGER_LABELS, QUALITY_CAPA_PREVENTION_LABELS, QUALITY_FISHBONE_CATEGORIES,
+    )
+    from app.modules.quality.models.customer_complaint import QualityCustomerComplaint
+    from app.modules.quality.services.capa import linked_ncrs, active_actions
+    if capa.status in ("open", "reopened"):
+        raise DocumentNotReady(f"{capa.capa_number} has no root cause yet — the 8D report is generated once D1–D4 are "
+                               "complete (mark the root cause found on the CAPA).")
+    defect = db.query(QualityDefectCode).filter(QualityDefectCode.id == capa.defect_code_id).first() if capa.defect_code_id else None
+    complaint = db.query(QualityCustomerComplaint).filter(QualityCustomerComplaint.id == capa.complaint_id).first() if capa.complaint_id else None
+    acts = active_actions(capa)
+    corrective = [a for a in acts if a.kind == "corrective"]
+    preventive = [a for a in acts if a.kind == "preventive"]
+
+    def act_rows(items):
+        return [[str(i + 1), a.description, _name(db, a.owner_id) or "—", _d(a.due_date) or "—", a.status.title(),
+                 ((a.evidence or "") + (f" [{a.evidence_reference}]" if a.evidence_reference else "")) or "—"]
+                for i, a in enumerate(items)]
+
+    why = [[f"Why {i + 1}", w] for i, w in enumerate(capa.why_analysis or [])]
+    fish = [[k.title(), "; ".join((capa.fishbone or {}).get(k) or [])] for k in QUALITY_FISHBONE_CATEGORIES if (capa.fishbone or {}).get(k)]
+    ncrs = linked_ncrs(db, capa)
+    sections = [
+        {"heading": "D1 — Team", "columns": ["Name", "Role", "Department"],
+         "rows": [[_name(db, m.user_id) or "—", m.role.title(), m.department or ""] for m in capa.team],
+         "widths": [2.6, 1.6, 2.9], "empty": "No team recorded."},
+        {"heading": "D2 — Problem description", "columns": ["Problem"], "rows": [[capa.problem_statement or "—"]], "widths": [7.1]},
+        {"heading": "D2 — Non-conformance reports", "columns": ["NCR", "Date", "Severity", "Quantity", "Status"],
+         "rows": [[n.ncr_number, _d(n.ncr_date) or "—", n.severity.title(), _q(n.quantity, n.uom), n.status.replace("_", " ")] for n in ncrs],
+         "widths": [1.6, 1.1, 1.1, 1.4, 1.9], "empty": "No NCR linked."},
+        {"heading": "D3 — Containment", "columns": ["Containment actions"], "rows": [[capa.containment_actions or "—"]], "widths": [7.1]},
+        {"heading": "D4 — Root cause analysis (why-why)", "columns": ["Step", "Why"], "rows": why, "widths": [1.0, 6.1],
+         "empty": "Why-why not used."},
+        {"heading": "D4 — Fishbone (6M)", "columns": ["Category", "Causes"], "rows": fish, "widths": [1.4, 5.7], "empty": "Fishbone not used."},
+        {"heading": "D4 — Root cause", "columns": ["Root cause"], "rows": [[capa.root_cause or "—"]], "widths": [7.1]},
+        {"heading": "D5 / D6 — Corrective actions and implementation evidence",
+         "columns": ["#", "Action", "Owner", "Due", "Status", "Evidence"], "rows": act_rows(corrective),
+         "widths": [0.3, 2.3, 1.2, 0.8, 0.7, 1.8], "empty": "No corrective action."},
+        {"heading": "D7 — Prevention (system updates)", "columns": ["#", "Update", "Owner", "Due", "Status", "Evidence"],
+         "rows": [[r[0], f"{QUALITY_CAPA_PREVENTION_LABELS.get(a.prevention_type, a.prevention_type or '')}: {r[1]}", *r[2:]]
+                  for r, a in zip(act_rows(preventive), preventive)],
+         "widths": [0.3, 2.3, 1.2, 0.8, 0.7, 1.8], "empty": capa.prevention_not_needed_reason or "No prevention item."},
+        {"heading": "D8 — Effectiveness and closure", "columns": ["Due", "Result", "Checked by", "Date", "Remarks"],
+         "rows": [[_d(capa.effectiveness_due_date) or "—", (capa.effectiveness_result or "pending").replace("_", " ").title(),
+                   _name(db, capa.effectiveness_checked_by_id) or "—", _d(capa.effectiveness_checked_at) or "—",
+                   capa.effectiveness_remarks or ""]],
+         "widths": [1.0, 1.2, 1.6, 1.0, 2.3]},
+    ]
+    return {
+        "title": "8D REPORT", "number": capa.capa_number + (f"-R{capa.report_revision}" if capa.report_revision else ""),
+        "intro": capa.title,
+        "facts": [
+            ("Raised for", QUALITY_CAPA_TRIGGER_LABELS.get(capa.trigger, capa.trigger)), ("Status", QUALITY_CAPA_STATUS_LABELS.get(capa.status)),
+            ("Item", capa.item_name), ("Vendor", capa.vendor_name),
+            ("Defect", f"{defect.code} {defect.name}" if defect else None), ("Severity", capa.severity.title()),
+            ("Customer complaint", f"{complaint.complaint_number} — {complaint.customer_name}" if complaint else None),
+            ("Audit", capa.audit_reference), ("Owner", _name(db, capa.responsible_user_id)), ("Opened", _d(capa.created_at)),
+        ],
+        "sections": sections,
+        "statement": capa.implementation_summary,
+        "remarks": capa.closure_remarks,
+        "signatures": [("CAPA owner", _name(db, capa.responsible_user_id)),
+                       ("Quality head (effectiveness)", _name(db, capa.effectiveness_checked_by_id))],
+    }

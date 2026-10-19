@@ -34,8 +34,9 @@ def test_item_type_delete_rules(client, h):
 
 
 def test_doc_type_delete_rules(client, h):
-    t = client.post("/api/v1/store/doc-types/issue", json={"label": "Trial run"}, headers=h).json()
-    assert client.delete(f"/api/v1/store/doc-types/issue/{t['value']}", headers=h).status_code == 200
-    assert t["value"] not in [x["value"] for x in client.get("/api/v1/store/doc-types/issue", headers=h).json()]
+    # Issue types are a fixed list (2026-10-12): none can be added or deleted.
+    add = client.post("/api/v1/store/doc-types/issue", json={"label": "Trial run"}, headers=h)
+    assert add.status_code == 409 and "fixed in code" in add.json()["detail"]
+    assert client.delete("/api/v1/store/doc-types/issue/rework", headers=h).status_code == 409
     r = client.delete("/api/v1/store/doc-types/return_condition/good", headers=h)
     assert r.status_code == 409 and "deactivate" in r.json()["detail"]

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@microsoft/teams-js": "^2.54.0",
+    "@phosphor-icons/react": "^2.1.7",
     "@tanstack/react-query": "^5.101.4",
     "axios": "^1.18.1",
     "chart.js": "^4.5.1",

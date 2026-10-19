@@ -61,7 +61,7 @@ export default function RegularizationApprovals() {
   if (!loaded || (items.length === 0 && error.length === 0 && !notice)) return null
 
   return (
-    <div style={{ marginBottom: 24 }}>
+    <div style={{ marginBottom: 24 }} data-tour="hr-appr-reg-section">
       <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>
         Attendance corrections <span style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B' }}>· {items.length} pending</span>
       </h3>
@@ -101,7 +101,7 @@ export default function RegularizationApprovals() {
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
                     {r.can_decide && (
                       <>
-                        <button type="button" style={actionBtn('#16A34A')} onClick={() => { setNotice(''); setDialog({ kind: 'approve', reg: r }) }}>Approve</button>
+                        <button type="button" data-tour="hr-appr-reg-approve" style={actionBtn('#16A34A')} onClick={() => { setNotice(''); setDialog({ kind: 'approve', reg: r }) }}>Approve</button>
                         <button type="button" style={actionBtn('#DC2626')} onClick={() => { setNotice(''); setDialog({ kind: 'reject', reg: r }) }}>Reject</button>
                       </>
                     )}

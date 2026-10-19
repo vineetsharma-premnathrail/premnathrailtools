@@ -75,7 +75,7 @@ def new_revision(db: Session, plan: QualityInspectionPlan, plan_number: str, use
     if plan.status != "approved":
         raise PlanError(f"A new revision is made from the approved plan — {plan.plan_number} is {plan.status}.")
     existing_draft = db.query(QualityInspectionPlan).filter(
-        QualityInspectionPlan.supersedes_id == plan.id, QualityInspectionPlan.status == "draft",
+        QualityInspectionPlan.supersedes_id == plan.id, QualityInspectionPlan.status.in_(("draft", "pending_approval")),
         QualityInspectionPlan.is_deleted == False,  # noqa: E712
     ).first()
     if existing_draft:
@@ -99,6 +99,9 @@ def new_revision(db: Session, plan: QualityInspectionPlan, plan_number: str, use
 def obsolete_plan(db: Session, plan: QualityInspectionPlan) -> QualityInspectionPlan:
     if plan.status == "obsolete":
         raise PlanError(f"Plan {plan.plan_number} is already obsolete.")
+    if plan.status == "pending_approval":
+        raise PlanError(f"Plan {plan.plan_number} is waiting for approval — withdraw the approval request (Approval panel) "
+                        "or have it rejected first.")
     plan.status = "obsolete"
     plan.obsoleted_at = datetime.now(timezone.utc)
     db.flush()

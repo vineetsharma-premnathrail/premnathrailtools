@@ -3,15 +3,17 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { HydBom } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
-import { SYSTEM_TYPE_LABELS } from '@/components/hydraulic/labels'
+import { SYSTEM_TYPE_LABELS, useHydCosts } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 
-const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', obsolete: 'Obsolete' }
-const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#16A34A', obsolete: '#a8a29e' }
+const STATUS_LABELS: Record<string, string> = { draft: 'Draft', under_review: 'Awaiting Release Approval', released: 'Released', obsolete: 'Obsolete' }
+const STATUS_HEX: Record<string, string> = { draft: '#78716c', under_review: '#2563EB', released: '#16A34A', obsolete: '#a8a29e' }
 
 const inputStyle: React.CSSProperties = {
   padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -22,6 +24,8 @@ const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, col
 export default function HydBomsPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
+  const { can } = useCan()
+  const seeCosts = useHydCosts()  // Hydraulic › BOM › Prices & costs
 
   const [boms, setBoms] = useState<HydBom[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,16 +59,19 @@ export default function HydBomsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Bills of Material</h1>
         </div>
-        <button
-          onClick={() => router.push('/dashboard/hydraulic/bom/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New BOM
-        </button>
+        {can('hydraulic', 'bom', 'create') && (
+          <button
+            data-tour="hyd-bom-new-btn"
+            onClick={() => router.push('/dashboard/hydraulic/bom/new')}
+            style={{
+              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
+              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
+            }}
+          >
+            + New BOM
+          </button>
+        )}
       </div>
 
       {error && (
@@ -74,25 +81,25 @@ export default function HydBomsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search BOM no. or title…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+        <input data-tour="hyd-bom-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search BOM no. or title…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="hyd-bom-medium-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
           <option value="">Hydraulic + Pneumatic</option>
           {Object.entries(SYSTEM_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 140px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="hyd-bom-status-filter" style={{ ...inputStyle, flex: '0 1 140px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
-      <div style={{
+      <div data-tour="hyd-bom-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
-              {['BOM No.', 'Rev', 'Title', 'System', 'Circuit', 'Lines', 'Total Cost', 'Status', ''].map((h) => (
+              {['BOM No.', 'Rev', 'Title', 'System', 'Circuit', 'Lines', ...(seeCosts ? ['Total Cost'] : []), 'Status', ''].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
@@ -101,26 +108,26 @@ export default function HydBomsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={seeCosts ? 9 : 8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : boms.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs match. Create one to list the components a system or circuit is built from.</td></tr>
+              <tr><td colSpan={seeCosts ? 9 : 8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs match. Create one to list the components a system or circuit is built from.</td></tr>
             ) : (
               boms.map((b) => (
-                <tr key={b.id} onClick={() => router.push(`/dashboard/hydraulic/bom/${b.id}`)} style={{ cursor: 'pointer', opacity: b.status === 'obsolete' ? 0.65 : 1 }}>
+                <tr key={b.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/bom', b))} style={{ cursor: 'pointer', opacity: b.status === 'obsolete' ? 0.65 : 1 }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{b.bom_number}</td>
                   <td style={{ ...cellStyle, fontWeight: 600 }}>{b.revision}</td>
                   <td style={cellStyle}>{b.title}</td>
                   <td style={cellStyle}>{b.system_number ? `${b.system_number} — ${b.system_name || ''}` : '—'}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{b.circuit_number ? `${b.circuit_number} Rev ${b.circuit_revision || '?'}` : '—'}</td>
                   <td style={cellStyle}>{b.line_count}</td>
-                  <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>₹{b.total_cost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+                  {seeCosts && <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{b.total_cost == null ? '—' : `₹${b.total_cost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</td>}
                   <td style={cellStyle}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[b.status]}1a`, color: STATUS_HEX[b.status], whiteSpace: 'nowrap' }}>
                       {STATUS_LABELS[b.status] || b.status}
                     </span>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/hydraulic/bom/${b.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/bom', b))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

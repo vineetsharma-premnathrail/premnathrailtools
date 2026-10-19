@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.permissions import require_app_access
+from app.core.permissions import require_app_access, require_tab_action
 from app.modules.main.models.user import User
 from app.modules.crm.models.payment_term import PaymentTerm
 from app.modules.crm.schemas.payment_term import PaymentTermCreate, PaymentTermUpdate, PaymentTermResponse
@@ -17,6 +17,7 @@ def _can_modify(record, user: User) -> bool:
 
 @router.get("", response_model=list[PaymentTermResponse])
 async def list_payment_terms(
+    # Lookup read by every CRM form (inquiry/quotation pickers) — any CRM user; writes need Settings › Edit.
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("crm")),
 ):
@@ -27,7 +28,7 @@ async def list_payment_terms(
 async def create_payment_term(
     payload: PaymentTermCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "settings", "edit")),
 ):
     term = PaymentTerm(**payload.model_dump(), created_by_id=user.id, created_at=datetime.now(timezone.utc))
     db.add(term)
@@ -41,7 +42,7 @@ async def update_payment_term(
     term_id: int,
     payload: PaymentTermUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "settings", "edit")),
 ):
     term = db.query(PaymentTerm).filter(PaymentTerm.id == term_id, PaymentTerm.is_deleted == False).first()  # noqa: E712
     if not term:
@@ -59,7 +60,7 @@ async def update_payment_term(
 async def delete_payment_term(
     term_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "settings", "edit")),
 ):
     term = db.query(PaymentTerm).filter(PaymentTerm.id == term_id, PaymentTerm.is_deleted == False).first()  # noqa: E712
     if not term:

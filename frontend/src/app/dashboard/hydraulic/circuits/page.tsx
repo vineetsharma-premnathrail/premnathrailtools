@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { HydCircuit } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
@@ -24,6 +26,7 @@ const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, col
 export default function HydCircuitsPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
+  const { can } = useCan()
 
   const [circuits, setCircuits] = useState<HydCircuit[]>([])
   const [loading, setLoading] = useState(true)
@@ -59,16 +62,19 @@ export default function HydCircuitsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Circuits</h1>
         </div>
-        <button
-          onClick={() => router.push('/dashboard/hydraulic/circuits/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New Circuit
-        </button>
+        {can('hydraulic', 'circuits', 'create') && (
+          <button
+            data-tour="hyd-cir-new-btn"
+            onClick={() => router.push('/dashboard/hydraulic/circuits/new')}
+            style={{
+              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
+              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
+            }}
+          >
+            + New Circuit
+          </button>
+        )}
       </div>
 
       {error && (
@@ -78,23 +84,23 @@ export default function HydCircuitsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search circuit no., title or drawing no…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+        <input data-tour="hyd-cir-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search circuit no., title or drawing no…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="hyd-cir-medium-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
           <option value="">Hydraulic + Pneumatic</option>
           {Object.entries(SYSTEM_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="hyd-cir-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: statusFilter ? TEXT.muted : TEXT.body }}
+        <div data-tour="hyd-cir-superseded-toggle" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: statusFilter ? TEXT.muted : TEXT.body }}
           title={statusFilter ? 'A status filter is set, so this has no effect — clear it to use this toggle.' : undefined}>
           <Checkbox id="hyd-circuits-superseded" checked={showSuperseded} onChange={(e) => setShowSuperseded(e.target.checked)} disabled={!!statusFilter} />
           <span onClick={() => { if (!statusFilter) setShowSuperseded(!showSuperseded) }} style={{ cursor: statusFilter ? 'default' : 'pointer' }}>Show superseded</span>
         </div>
       </div>
 
-      <div style={{
+      <div data-tour="hyd-cir-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
@@ -115,7 +121,7 @@ export default function HydCircuitsPage() {
               <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No circuits match. Create one, upload its ISO 1219 schematic, and send it for review.</td></tr>
             ) : (
               circuits.map((c) => (
-                <tr key={c.id} onClick={() => router.push(`/dashboard/hydraulic/circuits/${c.id}`)} style={{ cursor: 'pointer', opacity: c.status === 'superseded' ? 0.65 : 1 }}>
+                <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/circuits', c))} style={{ cursor: 'pointer', opacity: c.status === 'superseded' ? 0.65 : 1 }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.circuit_number}</td>
                   <td style={{ ...cellStyle, fontWeight: 600 }}>{c.revision}</td>
                   <td style={cellStyle}>{c.title}</td>
@@ -140,7 +146,7 @@ export default function HydCircuitsPage() {
                     </span>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/hydraulic/circuits/${c.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/circuits', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

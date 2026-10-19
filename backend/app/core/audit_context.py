@@ -79,7 +79,12 @@ class AuditContextMiddleware(BaseHTTPMiddleware):
         ip_token = _ip_address.set(ip)
         ua_token = _user_agent.set(request.headers.get("user-agent"))
         rt_token = _refresh_token.set(request.cookies.get("refresh_token"))
-        state_token = _request_state.set({})
+        state = {}
+        # Also on the ASGI scope: the 500 handler runs in ServerErrorMiddleware,
+        # outside this middleware, after the ContextVar is reset — it reads the
+        # acting user from here (middleware/error_handler.py, SM21 log).
+        request.scope["audit_state"] = state
+        state_token = _request_state.set(state)
         try:
             return await call_next(request)
         finally:

@@ -1,21 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreItem, StoreItemCategory } from '@/types'
-import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
+import { TEXT, BRAND, GLASS, SHADOWS, SUCCESS } from '@/lib/theme'
 import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import ItemImportDialog from '@/components/store/ItemImportDialog'
 import StoreNav from '@/components/store/StoreNav'
+import { recordPath } from '@/lib/recordRef'
 import { useItemTypes } from '@/components/store/itemTypes'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+
+const filterSelectStyle: React.CSSProperties = {
+  padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', textOverflow: 'ellipsis',
+}
 
 export default function StoreItemsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
   const router = useRouter()
+  const { can } = useCan()
   const [items, setItems] = useState<StoreItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -28,6 +35,23 @@ export default function StoreItemsPage() {
   const [showImport, setShowImport] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
+  // The table stretches to the bottom of the scrolling <main> (measured, so nav/filter wrapping never
+  // leaves a gap) without overshooting it — the page itself never scrolls, only the table does.
+  const tableRef = useRef<HTMLDivElement>(null)
+  const [tableHeight, setTableHeight] = useState<number>()
+  useLayoutEffect(() => {
+    const fit = () => {
+      const el = tableRef.current
+      if (!el) return
+      const main = el.closest('main')
+      const top = el.getBoundingClientRect().top + (main?.scrollTop ?? 0)
+      const bottom = main ? main.getBoundingClientRect().bottom - parseFloat(getComputedStyle(main).paddingBottom) : window.innerHeight
+      setTableHeight(Math.max(260, Math.floor(bottom - top) - 12))
+    }
+    fit()
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  })
 
   const filterParams = () => ({
     search: search || undefined,
@@ -94,11 +118,13 @@ export default function StoreItemsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Item Master</h1>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <button data-tour="items-export-btn" onClick={exportExcel} disabled={exporting} style={{ ...secondaryBtnStyle, opacity: exporting ? 0.7 : 1 }}>{exporting ? 'Exporting…' : 'Export'}</button>
-          <button data-tour="items-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>
-          <button data-tour="items-add-btn" onClick={() => router.push('/dashboard/store/new')} style={primaryBtnStyle}>
-            <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> Add Item
-          </button>
+          {can('store', 'items', 'export') && <button data-tour="items-export-btn" onClick={exportExcel} disabled={exporting} style={{ ...secondaryBtnStyle, opacity: exporting ? 0.7 : 1 }}>{exporting ? 'Exporting…' : 'Export'}</button>}
+          {can('store', 'items', 'import') && <button data-tour="items-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
+          {can('store', 'items', 'create') && (
+            <button data-tour="items-add-btn" onClick={() => router.push('/dashboard/store/new')} style={primaryBtnStyle}>
+              <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> Add Item
+            </button>
+          )}
         </div>
       </div>
 
@@ -112,37 +138,42 @@ export default function StoreItemsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name, code or technical specification…"
-          style={{ flex: '1 1 240px', maxWidth: 320, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none' }}
+          style={{ flex: '1 1 240px', maxWidth: 300, padding: '9px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none' }}
         />
         <select
           data-tour="items-type-filter"
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value); setCategoryFilter(''); setSubcategoryFilter('') }}
-          style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none' }}
+          style={{ ...filterSelectStyle, width: 150 }}
         >
           <option value="">All Types</option>
           {Object.entries(ITEM_TYPE_LABELS).map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
-        <select
-          value={categoryFilter}
-          onChange={(e) => { setCategoryFilter(e.target.value); setSubcategoryFilter('') }}
-          style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none' }}
-        >
-          <option value="">All Categories</option>
-          {categoryOptions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-        </select>
-        <select
-          value={subcategoryFilter}
-          onChange={(e) => setSubcategoryFilter(e.target.value)}
-          disabled={!pickedCategory}
-          title={pickedCategory ? '' : 'Pick a category first'}
-          style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: pickedCategory ? 'rgba(255,255,255,.7)' : 'rgba(0,0,0,0.04)', fontSize: 13.5, outline: 'none' }}
-        >
-          <option value="">All Subcategories</option>
-          {subcategoryOptions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-        </select>
+        {/* Type → Category → Subcategory: each step appears only once the one before it is picked */}
+        {typeFilter && (
+          <select
+            data-tour="items-category-filter"
+            value={categoryFilter}
+            onChange={(e) => { setCategoryFilter(e.target.value); setSubcategoryFilter('') }}
+            style={{ ...filterSelectStyle, width: 190 }}
+          >
+            <option value="">All Categories</option>
+            {categoryOptions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+        )}
+        {subcategoryOptions.length > 0 && (
+          <select
+            data-tour="items-subcategory-filter"
+            value={subcategoryFilter}
+            onChange={(e) => setSubcategoryFilter(e.target.value)}
+            style={{ ...filterSelectStyle, width: 190 }}
+          >
+            <option value="">All Subcategories</option>
+            {subcategoryOptions.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+        )}
         {hasFilters && (
           <button type="button" onClick={() => { setSearch(''); setTypeFilter(''); setCategoryFilter(''); setSubcategoryFilter('') }}
             style={{ background: 'none', border: 'none', color: BRAND.primaryActive, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -151,36 +182,37 @@ export default function StoreItemsPage() {
         )}
       </div>
 
-      <div data-tour="items-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 380px)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+      <div ref={tableRef} data-tour="items-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflowY: 'auto', overflowX: 'hidden', height: tableHeight }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: 130 }} /><col style={{ width: 100 }} /><col style={{ width: 130 }} /><col style={{ width: 120 }} />
+            <col /><col style={{ width: 70 }} /><col /><col style={{ width: 96 }} />
+          </colgroup>
           <thead>
             <tr>
-              {['Code', 'Type', 'Category', 'Subcategory', 'Name', 'UOM', 'Technical Specification', 'Status', ''].map((h) => (
+              {['Code', 'Type', 'Category', 'Subcategory', 'Name', 'UOM', 'Technical Specification', 'Status'].map((h) => (
                 <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && items.length === 0 && (
-              <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No items match these filters.' : 'No items yet — add the first item to the master.'}</td></tr>
+              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No items match these filters.' : 'No items yet — add the first item to the master.'}</td></tr>
             )}
             {items.map((item) => (
-              <tr key={item.id} onClick={() => router.push(`/dashboard/store/${item.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
-                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap' }}>{item.item_code}</td>
+              <tr key={item.id} onClick={() => router.push(recordPath('/dashboard/store', item))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
+                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.item_code}>{item.item_code}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{(item.item_type && ITEM_TYPE_LABELS[item.item_type]) || item.item_type || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.category || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.subcategory || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.item_name}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{item.uom || '—'}</td>
-                <td title={item.description || ''} style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.muted, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</td>
+                <td title={item.description || ''} style={{ padding: '12px 16px', fontSize: 12.5, color: TEXT.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</td>
                 <td style={{ padding: '12px 16px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: item.status === 'active' ? `${BRAND.primary}1a` : 'rgba(100,116,139,0.12)', color: item.status === 'active' ? BRAND.primaryActive : TEXT.muted, textTransform: 'capitalize' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: item.status === 'active' ? `${SUCCESS.primary}1a` : 'rgba(100,116,139,0.12)', color: item.status === 'active' ? SUCCESS.hover : TEXT.muted, textTransform: 'capitalize' }}>
                     {item.status}
                   </span>
-                </td>
-                <td onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(`/dashboard/store/${item.id}`)} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

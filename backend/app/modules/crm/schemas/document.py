@@ -28,6 +28,10 @@ class CrmDocumentResponse(BaseModel):
 
 class TechnicalOfferRequestBody(BaseModel):
     document_ids: list[int] = []
+    # CRM <-> R&D channel: by when R&D must answer, and CRM's note to them.
+    # The request goes to the whole R&D team queue (no named engineer).
+    response_due_date: date | None = None
+    remarks: str | None = None
 
 
 class CrmDocumentUploadSessionPayload(BaseModel):

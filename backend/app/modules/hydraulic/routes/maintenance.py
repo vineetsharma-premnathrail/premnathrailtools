@@ -1,18 +1,15 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permissions import require_app_access, require_tab_access
 from app.db.session import get_db
-from app.modules.hydraulic.models.maintenance import HydMaintenancePlan, HydServiceRecord, HYD_MAINTENANCE_TYPES
-from app.modules.hydraulic.schemas.maintenance import (
-    HydMaintenancePlanCreate, HydMaintenancePlanUpdate, HydMaintenancePlanResponse,
-)
-from app.modules.hydraulic.service import (
-    generate_plan_number, check_choice, check_user, get_system_or_404, systems_by_id, user_names,
-    compute_next_due_date, plan_due_state,
-)
+from app.modules.hydraulic import access  # noqa: F401  (registers data scope / approval types)
+from app.modules.hydraulic.models.maintenance import HydMaintenancePlan, HydServiceRecord
+from app.modules.hydraulic.schemas.maintenance import HydMaintenancePlanResponse
+from app.modules.hydraulic.service import systems_by_id, user_names, plan_due_state, raise_retired
 from app.modules.main.models.user import User
 
 router = APIRouter(
@@ -54,13 +51,6 @@ def _get_or_404(db: Session, plan_id: int) -> HydMaintenancePlan:
     return plan
 
 
-def _validate(db: Session, data: dict) -> None:
-    check_choice(data.get("maintenance_type"), HYD_MAINTENANCE_TYPES, "maintenance type")
-    check_user(db, data.get("assigned_to_id"), "Assigned to")
-    if not data.get("frequency_days") and not data.get("frequency_hours"):
-        raise HTTPException(status_code=400, detail="Set how often the task repeats — every N days, every N running hours, or both.")
-
-
 @router.get("", response_model=list[HydMaintenancePlanResponse])
 async def list_plans(
     system_id: int | None = None,
@@ -70,9 +60,9 @@ async def list_plans(
     include_inactive: bool = False,
     search: str | None = None,
     db: Session = Depends(get_db),
-    _tab: User = Depends(require_tab_access("hydraulic", "maintenance")),
+    _tab: User = Depends(require_tab_access("hydraulic", "systems")),
 ):
-    query = db.query(HydMaintenancePlan).filter(HydMaintenancePlan.is_deleted == False)  # noqa: E712
+    query = apply_scope(db.query(HydMaintenancePlan).filter(HydMaintenancePlan.is_deleted == False), _tab, HydMaintenancePlan)  # noqa: E712
     if system_id:
         query = query.filter(HydMaintenancePlan.system_id == system_id)
     if maintenance_type:
@@ -91,59 +81,29 @@ async def list_plans(
     return sorted(rows, key=lambda r: (_DUE_ORDER.get(r.due_status, 9), r.next_due_date or datetime.max.date(), r.id))
 
 
-@router.post("", response_model=HydMaintenancePlanResponse)
-async def create_plan(
-    payload: HydMaintenancePlanCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_tab_action("hydraulic", "maintenance", "create")),
-):
-    data = payload.model_dump()
-    system = get_system_or_404(db, data["system_id"])
-    _validate(db, data)
-    if data.get("frequency_hours") and data.get("last_done_hours") is None:
-        # Start counting hours from where the system is today.
-        data["last_done_hours"] = system.running_hours
-    plan = HydMaintenancePlan(**data, plan_number=generate_plan_number(db), created_by_id=user.id)
-    plan.next_due_date = compute_next_due_date(plan)
-    db.add(plan)
-    db.commit()
-    db.refresh(plan)
-    return to_plan_responses(db, [plan])[0]
+@router.post("", status_code=410)
+async def create_plan():
+    """Retired (plan rule R5) — maintenance plans are no longer raised here."""
+    raise_retired("maintenance plans")
 
 
 @router.get("/{plan_id}", response_model=HydMaintenancePlanResponse)
-async def get_plan(plan_id: int, db: Session = Depends(get_db)):
-    return to_plan_responses(db, [_get_or_404(db, plan_id)])[0]
-
-
-@router.patch("/{plan_id}", response_model=HydMaintenancePlanResponse)
-async def update_plan(
-    plan_id: int,
-    payload: HydMaintenancePlanUpdate,
-    db: Session = Depends(get_db),
-    _perm: User = Depends(require_tab_action("hydraulic", "maintenance", "edit")),
+async def get_plan(
+    plan_id: int, db: Session = Depends(get_db),
+    user: User = Depends(require_tab_access("hydraulic", "systems")),
 ):
     plan = _get_or_404(db, plan_id)
-    updates = payload.model_dump(exclude_unset=True)
-    merged = {"frequency_days": plan.frequency_days, "frequency_hours": plan.frequency_hours, **updates}
-    _validate(db, merged)
-    for field, val in updates.items():
-        setattr(plan, field, val)
-    plan.next_due_date = compute_next_due_date(plan)
-    db.commit()
-    db.refresh(plan)
+    ensure_in_scope(db, user, plan)
     return to_plan_responses(db, [plan])[0]
 
 
-@router.delete("/{plan_id}")
-async def delete_plan(
-    plan_id: int,
-    db: Session = Depends(get_db),
-    _perm: User = Depends(require_tab_action("hydraulic", "maintenance", "delete")),
-):
-    plan = _get_or_404(db, plan_id)
-    plan.is_deleted = True
-    plan.is_active = False
-    plan.deleted_at = datetime.now(timezone.utc)
-    db.commit()
-    return {"message": f"Maintenance plan {plan.plan_number} deleted"}
+@router.patch("/{plan_id}", status_code=410)
+async def update_plan(plan_id: int):
+    """Retired (plan rule R5) — existing plans are read-only."""
+    raise_retired("maintenance plans")
+
+
+@router.delete("/{plan_id}", status_code=410)
+async def delete_plan(plan_id: int):
+    """Retired (plan rule R5) — existing plans are read-only history, kept for the export."""
+    raise_retired("maintenance plans")

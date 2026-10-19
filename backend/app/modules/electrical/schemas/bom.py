@@ -71,3 +71,5 @@ class ElectricalBomItemResponse(BaseModel):
     p2p_status: str | None = None
     job_number: str | None = None
     job_title: str | None = None
+    # Pending central approval request of the component selection, if any.
+    approval_request_id: int | None = None

@@ -9,8 +9,10 @@ HYD_TEST_TYPES = (
     "pressure_test", "proof_test", "leak_test", "flow_test", "functional_test", "performance_test",
     "cleanliness_test", "relief_valve_setting", "cylinder_drift", "endurance_test", "air_quality_test", "other",
 )
-# planned → in_progress → completed. `result` is set when completing.
-HYD_TEST_STATUSES = ("planned", "in_progress", "completed")
+# planned → in_progress → under_review → completed. The tester proposes the
+# result (held in `result` while under_review); the sign-off goes through the
+# central approval engine, and a return / rejection puts it back to in_progress.
+HYD_TEST_STATUSES = ("planned", "in_progress", "under_review", "completed")
 HYD_TEST_RESULTS = ("pending", "pass", "fail", "conditional")
 HYD_READING_RESULTS = ("pass", "fail", "na")
 

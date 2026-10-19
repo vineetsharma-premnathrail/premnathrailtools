@@ -11,6 +11,7 @@ from itertools import count
 import pytest
 
 from app.auth.jwt_handler import create_access_token
+from app.tests.test_crm_quotation_documents import sp  # noqa: F401  (fixture: fake SharePoint)
 from app.modules.electrical.models.job import ElectricalJob
 from app.modules.erp.models.project import Project
 from app.modules.hydraulic.models.system import HydSystem
@@ -161,7 +162,7 @@ def test_one_main_work_order_and_links(client, plant):
     assert len(d["work_orders"]) == 1
 
 
-def test_full_build_to_handover(client, db, plant):
+def test_full_build_to_handover(client, db, plant, sp):
     h, hm = plant["h"], plant["hm"]
     b = new_build(client, plant, vehicle_serial_number="PR-RRV-2026-014", chassis_number="CHS-9981", engine_number="ENG-4410")
     bid = b["id"]
@@ -243,9 +244,13 @@ def test_full_build_to_handover(client, db, plant):
     assert all(v == "pass" for v in d["test_status"].values())
     complete(client, h, bid, "rework_closure")
 
-    # Sign-off stages: planner can't; manager can.
-    r = client.post(f"{API}/rrv-builds/{bid}/stages/rrv_completion/complete", json={}, headers=h)
-    assert r.status_code == 403 and "sign-off" in r.json()["detail"]
+    # Sign-off stages (central approval engine): the planner can't sign off,
+    # so their click sends it to the build manager / production managers …
+    r = client.post(f"{API}/rrv-builds/{bid}/stages/rrv_completion/complete", json={"remarks": "Ready"}, headers=h)
+    assert r.status_code == 200, r.text
+    assert next(s for s in r.json()["stages"] if s["stage_key"] == "rrv_completion")["status"] != "completed"
+    assert "request_sign_off" in r.json()["allowed_actions"]
+    # … and the manager's click decides it.
     d = complete(client, hm, bid, "rrv_completion")
     assert d["status"] == "completed" and d["erp_project_id"]
     machine = db.get(Project, d["erp_project_id"])
@@ -270,6 +275,11 @@ def test_full_build_to_handover(client, db, plant):
     pdf = client.get(f"{API}/rrv-builds/{bid}/handover-certificate", headers=h)
     assert pdf.status_code == 200 and pdf.content[:5] == b"%PDF-"
     assert client.patch(f"{API}/rrv-builds/{bid}", json={"remarks": "x"}, headers=h).status_code == 409
+
+    # Word certificate of record: once created, "handover certificate" serves its PDF (edits included).
+    doc = client.post(f"/api/v1/managed-documents/production_rrv_handover/{bid}", headers=h)
+    assert doc.status_code == 200, doc.text
+    assert client.get(f"{API}/rrv-builds/{bid}/handover-certificate", headers=h).content == b"%PDF-from-word"
 
 
 def test_integration_gates_read_electrical_and_hydraulic(client, db, plant):

@@ -1,0 +1,121 @@
+import { TourStep } from '../types'
+
+// Steps for the shared BOM & Routing form (components/production/BomForm.tsx),
+// reused by the New BOM page and the BOM detail page's inline edit mode.
+export const BOM_FORM_STEPS: TourStep[] = [
+  {
+    target: 'production-bom-form-product',
+    title: 'Product (Store item)',
+    required: true,
+    purpose: 'The finished or semi-finished item this BOM builds. It must already exist in the Store Item Master. Locked once the BOM is created.',
+    whatToEnter: 'Search by item code or name.',
+    validExample: 'FG-0012 — Guide Wheel Assembly',
+    why: 'Linking to the Store item is what lets a work order receive the finished product into stock under the right code.',
+  },
+  {
+    target: 'production-bom-form-base-qty',
+    title: 'Base Quantity',
+    required: true,
+    whatToEnter: 'How many units of the product the component quantities below make. Usually 1.',
+    validExample: '1, or 10 for parts made in batches',
+    invalidExample: '0',
+    why: 'A work order scales every component by (order quantity ÷ base quantity).',
+  },
+  {
+    target: 'production-bom-form-description',
+    title: 'Description',
+    purpose: 'Optional — what this version is, e.g. the variant or drawing revision it follows.',
+    validExample: 'As per drawing PR-GW-102 Rev C',
+  },
+  {
+    target: 'production-bom-form-remarks',
+    title: 'Remarks',
+    purpose: 'Optional internal notes for planners.',
+  },
+  {
+    target: 'production-bom-form-add-component-btn',
+    title: '+ Add Component',
+    purpose: 'Adds another component line. A BOM needs at least one component before it can be activated.',
+  },
+  {
+    target: 'production-bom-form-component',
+    title: 'Component',
+    required: true,
+    purpose: 'A raw material, bought-out part or sub-assembly that goes into the product, picked from the Store Item Master.',
+  },
+  {
+    target: 'production-bom-form-component-qty',
+    title: 'Qty',
+    required: true,
+    whatToEnter: 'Quantity needed per Base Quantity of the product, in the item\'s unit (shown in brackets).',
+    validExample: '2.5 (KG), 4 (NOS)',
+    invalidExample: '0 or negative',
+  },
+  {
+    target: 'production-bom-form-scrap',
+    title: 'Scrap %',
+    whatToEnter: 'Expected process loss for this component, 0–99.',
+    validExample: '5 for sheet metal cutting loss',
+    why: 'Work orders ask Store for quantity × (1 + scrap %) so the shop floor does not run short because of normal offcuts.',
+  },
+  {
+    target: 'production-bom-form-remove-component-btn',
+    title: 'Remove (×)',
+    purpose: 'Deletes this component line.',
+  },
+  {
+    target: 'production-bom-form-add-op-btn',
+    title: '+ Add Operation',
+    purpose: 'Adds a routing step. A work order needs at least one operation before it can be released to the shop floor.',
+    why: 'The routing is the "how" of manufacturing — the sequence of steps, where they happen and how long they take. It drives the Shop Floor board, workstation load and labour cost.',
+  },
+  {
+    target: 'production-bom-form-op-seq',
+    title: 'Seq',
+    required: true,
+    whatToEnter: 'Step number — the order operations are done in. Use gaps of 10 so steps can be inserted later.',
+    validExample: '10, 20, 30',
+  },
+  {
+    target: 'production-bom-form-op-name',
+    title: 'Operation',
+    required: true,
+    whatToEnter: 'Short name of the step.',
+    validExample: 'Cutting, Welding, Painting, Assembly',
+  },
+  {
+    target: 'production-bom-form-op-workstation',
+    title: 'Workstation',
+    purpose: 'Where the step is done. Its hourly rate prices the labour; its capacity feeds the load chart on Planning. "Unassigned" groups it separately on the Shop Floor.',
+  },
+  {
+    target: 'production-bom-form-op-setup',
+    title: 'Setup hrs',
+    whatToEnter: 'One-time hours to prepare the machine/jig for a work order, regardless of quantity.',
+    validExample: '0.5',
+  },
+  {
+    target: 'production-bom-form-op-run',
+    title: 'Run hrs/unit',
+    whatToEnter: 'Hours to process one unit.',
+    validExample: '1.25',
+    why: 'Planned hours on a work order = setup + run hours × quantity. This is compared with booked hours to spot slow or over-estimated steps.',
+  },
+  {
+    target: 'production-bom-form-op-gate',
+    title: 'Quality gate',
+    purpose: 'Tick when Quality must inspect and pass this step before it can be completed (e.g. after welding or final assembly).',
+    why: 'Stops defective work moving to the next step, where fixing it costs far more.',
+  },
+  {
+    target: 'production-bom-form-op-instructions',
+    title: 'Work instructions',
+    purpose: 'Optional — what the operator must know: drawing reference, torque values, welding procedure (WPS) number. Printed on the job card and shown on the Shop Floor card.',
+  },
+  {
+    target: 'production-bom-form-submit-btn',
+    title: 'Save',
+    purpose: 'Saves the BOM as a Draft.',
+    after: 'Drafts can still be edited. Click "Activate BOM" on the detail page to make it the version used for new work orders.',
+  },
+]

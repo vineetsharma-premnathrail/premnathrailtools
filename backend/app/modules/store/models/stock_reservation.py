@@ -30,3 +30,22 @@ class StoreStockReservation(Base, TimestampMixin):
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Project stock (SAP special stock via reservation, 2026-10-17): the Order
+    # Project vehicle / lot this stock is held for. A project hold blocks the
+    # quantity from free stock like any reservation; an issue for the same
+    # element consumes it first (store/services/project_stock.py), an issue
+    # for anything else is refused unless a Store Manager overrides it with a
+    # reason. The free-text project / production_order above stay for old rows.
+    order_project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sales_order_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    order_project_element_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Where an automatic hold came from: "grn_item" (bought-out material of a
+    # project PO line, source_id = the GRN line), "manual" / NULL by hand.
+    source_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    source_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # What was first held — `quantity` is what is STILL held (an issue against
+    # the reservation lowers it, as Production's work-order holds do).
+    original_qty: Mapped[float | None] = mapped_column(Float, nullable=True)

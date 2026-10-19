@@ -8,15 +8,18 @@ import { HydLookupOption, HydServiceRecord } from '@/types'
 import { TEXT, DANGER, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import ServiceRecordForm, { todayIso } from '@/components/hydraulic/ServiceRecordForm'
 import HydDocumentsPanel from '@/components/hydraulic/HydDocumentsPanel'
-import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import RetiredBanner from '@/components/hydraulic/RetiredBanner'
 import PromptDialog from '@/components/erp/PromptDialog'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { SERVICE_TYPE_LABELS } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { open: 'Open', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { open: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', cancelled: '#78716c' }
@@ -41,7 +44,8 @@ const primaryBtn: React.CSSProperties = {
 }
 const dangerBtn: React.CSSProperties = { ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }
 const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
-const inr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+// Amounts are null when the role lacks Hydraulic › BOM › Prices & costs (backend blanks them).
+const inr = (n: number | null | undefined) => (n == null ? '—' : `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`)
 
 function Info({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -64,21 +68,24 @@ function TextBlock({ label, value }: { label: string; value?: string | null }) {
 
 export default function HydServiceRecordDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('hydraulic')
+  // Cancel Job needs systems:edit on the backend.
+  const { can } = useCan()
   const router = useRouter()
   const params = useParams()
-  const recordId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedId, error: linkError } = useRecordId(ref)
+  const recordId = resolvedId ?? 0
 
   const [rec, setRec] = useState<HydServiceRecord | null>(null)
   const [error, setError] = useState<string | string[]>('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [completeOpen, setCompleteOpen] = useState(false)
   const [completedOn, setCompletedOn] = useState(todayIso())
   const [completeWorkDone, setCompleteWorkDone] = useState('')
   const [issueLocation, setIssueLocation] = useState('')
-  const [locations, setLocations] = useState<HydLookupOption[]>([])
+  const [locations] = useState<HydLookupOption[]>([]) // only filled by the retired Complete flow
 
   const load = useCallback(async () => {
     const data = await hydraulicApi.getServiceRecord(recordId)
@@ -113,18 +120,6 @@ export default function HydServiceRecordDetailPage() {
   const storeLinkedLines = rec?.parts.filter((p) => p.store_linked) || []
   const toIssue = storeLinkedLines.filter((p) => !p.issued_location_id)
 
-  const openComplete = () => {
-    if (!rec) return
-    setCompletedOn(todayIso() < rec.service_date ? rec.service_date : todayIso())
-    setCompleteWorkDone(rec.work_done || '')
-    setIssueLocation('')
-    setCompleteOpen(true)
-    setError('')
-    if (toIssue.length && !locations.length) {
-      hydraulicApi.lookupStoreLocations().then(setLocations).catch((err) => setError(extractErrorMessages(err, 'Failed to load Store locations.')))
-    }
-  }
-
   const submitComplete = async () => {
     if (!rec) return
     if (!completedOn) { setError('Pick the completion date.'); return }
@@ -142,19 +137,9 @@ export default function HydServiceRecordDetailPage() {
     if (ok) setCompleteOpen(false)
   }
 
-  const handleDelete = async () => {
-    setConfirmDelete(false)
-    setBusy(true)
-    try {
-      await hydraulicApi.deleteServiceRecord(recordId)
-      router.push('/dashboard/hydraulic/service')
-    } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to delete service record.'))
-      setBusy(false)
-    }
-  }
-
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/service" listLabel="Back to service jobs" /></div>)
+  if (!resolvedId) return <div><HydraulicNav /></div>
 
   const editable = rec ? rec.status === 'open' || rec.status === 'in_progress' : false
 
@@ -172,13 +157,13 @@ export default function HydServiceRecordDetailPage() {
           </h1>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {rec?.status === 'open' && <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => act(() => hydraulicApi.startServiceRecord(recordId), 'Failed to start service job.', 'Job started — it is now In Progress.')}>Start Job</button>}
-          {editable && <button type="button" disabled={busy} style={primaryBtn} onClick={openComplete}>Complete Job</button>}
-          {editable && <button type="button" disabled={busy} style={dangerBtn} onClick={() => setCancelOpen(true)}>Cancel Job</button>}
-          {rec && rec.status !== 'completed' && <button type="button" disabled={busy} style={dangerBtn} onClick={() => setConfirmDelete(true)}>Delete</button>}
-          <button onClick={() => router.push('/dashboard/hydraulic/service')} type="button" style={secondaryBtnStyle}>← Back</button>
+          {/* Retired (rule R5): Start / Complete / Delete are refused by the API; Cancel stays so open legacy jobs can be closed. */}
+          {editable && can('hydraulic', 'systems', 'edit') && <button data-tour="hyd-svcd-cancel-btn" type="button" disabled={busy} style={dangerBtn} onClick={() => setCancelOpen(true)}>Cancel Job</button>}
+          <button data-tour="hyd-svcd-back-btn" onClick={() => router.push('/dashboard/hydraulic/service')} type="button" style={secondaryBtnStyle}>← Back</button>
         </div>
       </div>
+
+      <RetiredBanner what="Hydraulic service records" />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -193,14 +178,14 @@ export default function HydServiceRecordDetailPage() {
 
       {rec && (
         <>
-          <div style={cardStyle}>
+          <div data-tour="hyd-svcd-summary" style={cardStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-              <span style={pill(STATUS_HEX[rec.status])}>{STATUS_LABELS[rec.status] || rec.status}</span>
-              <span onClick={() => router.push(`/dashboard/hydraulic/systems/${rec.system_id}`)} style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
+              <span data-tour="hyd-svcd-status" style={pill(STATUS_HEX[rec.status])}>{STATUS_LABELS[rec.status] || rec.status}</span>
+              <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', rec, 'system_id'))} style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
                 {rec.system_number} — {rec.system_name}
               </span>
               {rec.plan_id && (
-                <span onClick={() => router.push(`/dashboard/hydraulic/maintenance/${rec.plan_id}`)} style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
+                <span onClick={() => router.push(recordPath('/dashboard/hydraulic/maintenance', rec, 'plan_id'))} style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
                   Plan {rec.plan_number}{rec.plan_title ? ` · ${rec.plan_title}` : ''}
                 </span>
               )}
@@ -224,11 +209,11 @@ export default function HydServiceRecordDetailPage() {
                 {rec.plan_id ? ' The maintenance plan’s last-done date and hours are reset from this job.' : ''}
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                <div style={{ flex: '0 1 170px', minWidth: 160 }}>
+                <div data-tour="hyd-svcd-complete-date" style={{ flex: '0 1 170px', minWidth: 160 }}>
                   <label style={labelStyle}>Completion Date *</label>
                   <DateField value={completedOn} onChange={setCompletedOn} />
                 </div>
-                <div style={{ flex: '1 1 360px' }}>
+                <div data-tour="hyd-svcd-complete-work" style={{ flex: '1 1 360px' }}>
                   <label style={labelStyle}>Work Done *</label>
                   <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={completeWorkDone} onChange={(e) => setCompleteWorkDone(e.target.value)}
                     placeholder="Replaced piston seal kit, flushed and refilled with HLP 46, bled air, tested at 160 bar…" />
@@ -238,7 +223,7 @@ export default function HydServiceRecordDetailPage() {
               {storeLinkedLines.length > 0 && (
                 <div style={{ marginTop: 16 }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>
-                    <div style={{ flex: '1 1 300px', maxWidth: 420 }}>
+                    <div data-tour="hyd-svcd-complete-location" style={{ flex: '1 1 300px', maxWidth: 420 }}>
                       <label style={labelStyle}>Issue Spares From (Store location)</label>
                       <SearchableSelect value={issueLocation} onChange={setIssueLocation} placeholder="Search location…"
                         options={[{ value: '', label: '— Don’t move stock —' }, ...locations.map((l) => ({ value: String(l.id), label: l.label }))]} />
@@ -266,8 +251,8 @@ export default function HydServiceRecordDetailPage() {
               )}
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-                <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => setCompleteOpen(false)}>Not Yet</button>
-                <button type="button" disabled={busy} style={primaryBtn} onClick={submitComplete}>
+                <button data-tour="hyd-svcd-complete-notyet-btn" type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => setCompleteOpen(false)}>Not Yet</button>
+                <button data-tour="hyd-svcd-complete-submit-btn" type="button" disabled={busy} style={primaryBtn} onClick={submitComplete}>
                   {busy ? 'Completing…' : issueLocation && toIssue.length ? 'Complete & Issue Spares' : 'Complete Job'}
                 </button>
               </div>
@@ -277,6 +262,8 @@ export default function HydServiceRecordDetailPage() {
           {editable ? (
             <ServiceRecordForm
               key={rec.updated_at}
+              title="Service Job Details"
+              subtitle="Retired record — kept readable; only Cancel Job is still accepted."
               initial={rec}
               submitLabel="Save Changes"
               onSubmit={async (payload) => {
@@ -288,7 +275,7 @@ export default function HydServiceRecordDetailPage() {
             />
           ) : (
             <>
-              <div style={cardStyle}>
+              <div data-tour="hyd-svcd-job-details" style={cardStyle}>
                 <p style={sectionTitle}>Job Details</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
                   <Info label="Service type" value={SERVICE_TYPE_LABELS[rec.service_type] || rec.service_type} />
@@ -318,7 +305,7 @@ export default function HydServiceRecordDetailPage() {
                 {rec.remarks && <div style={{ display: 'flex', marginTop: 16 }}><TextBlock label="Remarks" value={rec.remarks} /></div>}
               </div>
 
-              <div style={cardStyle}>
+              <div data-tour="hyd-svcd-parts" style={cardStyle}>
                 <p style={sectionTitle}>Spare Parts Used ({rec.parts.length})</p>
                 {rec.parts.length === 0 ? (
                   <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No spares were recorded on this job.</p>
@@ -332,7 +319,7 @@ export default function HydServiceRecordDetailPage() {
                       </thead>
                       <tbody>
                         {rec.parts.map((p) => (
-                          <tr key={p.id} onClick={() => router.push(`/dashboard/hydraulic/spares/${p.spare_part_id}`)} style={{ cursor: 'pointer' }}>
+                          <tr key={p.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/spares', p, 'spare_part_id'))} style={{ cursor: 'pointer' }}>
                             <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{p.part_code || `#${p.spare_part_id}`}</td>
                             <td style={tdStyle}>{p.part_name || '—'}</td>
                             <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.quantity.toLocaleString('en-IN')} {p.uom}</td>
@@ -380,15 +367,6 @@ export default function HydServiceRecordDetailPage() {
           await act(() => hydraulicApi.cancelServiceRecord(recordId, reason.trim()), 'Failed to cancel service job.', 'Job cancelled.')
         }}
         onCancel={() => setCancelOpen(false)}
-      />
-      <ConfirmDialog
-        open={confirmDelete}
-        title="Delete service record?"
-        message={`${rec?.record_number} and its spare lines will be removed. Completed jobs can't be deleted — they're part of the system's history.`}
-        confirmLabel="Delete"
-        danger
-        onConfirm={handleDelete}
-        onCancel={() => setConfirmDelete(false)}
       />
     </div>
   )

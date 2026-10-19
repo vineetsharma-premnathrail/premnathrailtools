@@ -1,20 +1,31 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { crmApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { Tender, Organization, OrgContact } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField from '@/components/erp/PhoneField'
-import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES, LEAD_SOURCES, PRIORITIES } from './constants'
-import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle, handleEnterAsTab } from './ui'
+import { RAILWAY_ZONES, TENDER_PORTALS, TENDER_TYPES, CURRENCIES, TENDER_STATUSES, LEAD_SOURCES, priorityOptions, priorityLabel } from './constants'
+import { handleEnterAsTab } from './ui'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
-import MessageDialog from '@/components/erp/MessageDialog'
 
-const TABS = ['Tender Information'] as const
+const inputStyle = sheetInput
+
+/** Labelled field in the sheet style (keeps the tour target on the wrapper). */
+function F({ label, tourId, children }: { label: React.ReactNode; tourId?: string; children: React.ReactNode }) {
+  return (
+    <div {...(tourId ? { 'data-tour': tourId } : {})}>
+      <label style={sheetLabel}>{label}</label>
+      {children}
+    </div>
+  )
+}
 
 type FormState = {
   org_id: string
@@ -96,19 +107,30 @@ export default function TenderForm({
   submitLabel,
   onCancel,
   onSubmit,
+  title,
+  subtitle,
+  nav,
+  onBack,
 }: {
   initial?: Tender
   defaultOrgId?: number
   submitLabel: string
   onCancel: () => void
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
+  title?: string
+  subtitle?: string
+  /** Module sub-nav (and anything else) rendered above the form header. */
+  nav?: React.ReactNode
+  /** Shows the "← Back" pill in the header. */
+  onBack?: () => void
 }) {
+  // Inquiries & Tenders › Prices & margins: without it the value is hidden (and the server ignores it on save).
+  const seePrices = useCan().canFeature('crm', 'inquiries_tenders', 'prices', 'view')
   const { user } = useAuth()
   const bdOwnerName = initial?.bd_owner || user?.name || ''
-  const [tab, setTab] = useState<typeof TABS[number]>('Tender Information')
   const orgLocked = !!defaultOrgId
   const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
-  const [railwayZoneCustom, setRailwayZoneCustom] = useState(
+  const [railwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )
   const [tenderPortalCustom, setTenderPortalCustom] = useState(
@@ -120,8 +142,13 @@ export default function TenderForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   const [previewNumber, setPreviewNumber] = useState('')
+  const errorRef = useRef<HTMLDivElement>(null)
+  // The banner sits at the top of a long form — bring it into view when it appears.
+  useEffect(() => { if (error && (!Array.isArray(error) || error.length)) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
 
-  useEffect(() => { crmApi.listOrganizations().then(setOrganizations) }, [])
+  const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
+
+  useEffect(() => { crmApi.listOrganizations({ picker: true }).then(setOrganizations) }, [])
 
   useEffect(() => {
     if (initial) return
@@ -137,7 +164,8 @@ export default function TenderForm({
 
   useEffect(() => {
     if (!form.org_id) {
-      setContacts([])
+      // Deferred so the effect itself sets no state.
+      Promise.resolve().then(() => setContacts([]))
       return
     }
     const orgId = Number(form.org_id)
@@ -155,12 +183,10 @@ export default function TenderForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.org_id])
 
-  const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.org_id) {
-      setError('Please select an organization.')
+      setError('Please select a customer organization.')
       return
     }
     if (!form.tender_number.trim()) {
@@ -180,7 +206,7 @@ export default function TenderForm({
       return
     }
     if (!form.priority) {
-      setError('Please select a priority.')
+      setError('Please select a Priority (High, Medium or Low).')
       return
     }
     if (form.org_contact_id === '__new__' && !newContact.name.trim()) {
@@ -222,205 +248,190 @@ export default function TenderForm({
         if (payload[k] === '' || payload[k] === undefined) delete payload[k]
       })
       await onSubmit(payload)
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save tender.'))
     } finally {
       setSaving(false)
     }
   }
 
+  const formId = initial ? `tender-form-${initial.id}` : 'tender-form-new'
+  const hasError = !!error && (!Array.isArray(error) || error.length > 0)
   return (
-    <form onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ display: 'flex', flexDirection: 'column', gap: 20, position: 'relative' }}>
+    <FormPage nav={nav} onBack={onBack} backTour="tnd-form-back-btn" tour="tnd-form" icon={initial ? 'edit' : 'flag'}
+      title={title || (initial ? `Edit Tender ${initial.universal_id || ''}`.trim() : 'New Tender')}
+      subtitle={subtitle || (initial ? 'Change the tender — the change is recorded in its timeline.' : 'A published tender we may bid for: who floated it, its number and its key dates.')}
+      footer={<>
+        <button type="button" onClick={onCancel} disabled={saving} data-tour="tnd-cancel-btn" style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+        <button type="submit" form={formId} data-tour="tnd-save" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+          <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
+        </button>
+      </>}>
+    <form id={formId} onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ position: 'relative' }}>
       {saving && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(2px)' }}>
           <div className="loader" />
         </div>
       )}
-      <MessageDialog open={!!error} variant="error" title="Cannot Save" message={error} onClose={() => setError('')} />
+      <div ref={errorRef} style={{ padding: hasError ? '16px 24px 0' : 0 }}><SheetError error={error} /></div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Internal Tender ID</span>
-          <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, background: 'rgba(244,113,59,0.08)', color: '#FF7A45' }}>
-            {initial?.universal_id || previewNumber || 'Auto-generated on save'}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e' }}>Internal Tender Creation Date</span>
-          <span style={{ fontSize: 12.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, background: '#f5f5f4', color: '#78716c' }}>
-            {initial?.created_at ? formatDate(initial.created_at) : formatDate(new Date())}
-          </span>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ flex: '1 1 160px', minWidth: 140 }}>
-          <Field label="Lead Source *" tourId="tnd-lead-source">
-            <select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
-              <option value="">-- Select Source --</option>
-              {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div style={{ flex: '1 1 120px', minWidth: 100 }}>
-          <Field label="Priority *" tourId="tnd-priority">
-            <select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
-              {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div style={{ flex: '1 1 160px', minWidth: 140 }}>
-          <Field label="BD Owner" tourId="tnd-bd-owner">
-            <input value={bdOwnerName} disabled style={{ ...inputStyle, background: '#f5f5f4', color: '#78716c' }} />
-          </Field>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-        {TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            style={{
-              padding: '10px 6px', marginRight: 16, border: 'none', background: 'transparent',
-              borderBottom: tab === t ? '2px solid #FF7A45' : '2px solid transparent',
-              color: tab === t ? '#FF7A45' : '#78716c', fontWeight: 600, fontSize: 13, cursor: 'pointer',
-            }}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'Tender Information' && (
-        <Section title="Tender Information">
-          <Row>
-            <Field label="Organization *" tourId="tnd-org">
-              <SearchableSelect
-                value={form.org_id}
-                onChange={(v) => set('org_id', v)}
-                options={organizations.map((o) => ({ value: String(o.id), label: o.name }))}
-                placeholder="Search existing organization…"
-                disabled={orgLocked}
-              />
-            </Field>
-            <Field label="Contact Person" tourId="tnd-contact">
-              <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
-                <option value="">-- Select Contact --</option>
-                {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                <option value="__new__">+ Add New Contact</option>
-              </select>
-            </Field>
-          </Row>
-
-          {form.org_contact_id === '__new__' && (
-            <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Row>
-                <Field label="Name *"><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Rajesh Kumar" style={inputStyle} /></Field>
-                <Field label="Designation"><input value={newContact.designation} onChange={(e) => setNewContact((c) => ({ ...c, designation: e.target.value }))} placeholder="Purchase Head / DGM" style={inputStyle} /></Field>
-              </Row>
-              <Row>
-                <Field label="Mobile"><PhoneField value={newContact.mobile} onChange={(v) => setNewContact((c) => ({ ...c, mobile: v }))} style={inputStyle} /></Field>
-                <Field label="Email"><ValidatedInput type="email" value={newContact.email} onChange={(v) => setNewContact((c) => ({ ...c, email: v }))} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="email@company.com" style={inputStyle} /></Field>
-              </Row>
+      <SheetColumns
+        left={<>
+          <SheetSection icon="doc" title="Tender Information">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
+                <F label={<>Tender Number <Req /></>} tourId="tnd-number"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></F>
+              </div>
+              <div style={{ flex: '1 1 200px', minWidth: 160, maxWidth: 320 }}>
+                <F label={<>Tender Name <Req /></>} tourId="tnd-name"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></F>
+              </div>
+              <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 240 }}>
+                <F label="Tender Authority" tourId="tnd-authority"><input value={form.tender_authority} onChange={(e) => set('tender_authority', e.target.value)} style={inputStyle} /></F>
+              </div>
+              <div style={{ flex: '0 1 160px', minWidth: 130 }}>
+                <F label="Tender Portal" tourId="tnd-portal">
+                  <select value={form.tender_portal} onChange={(e) => set('tender_portal', e.target.value)} style={inputStyle}>
+                    <option value="">-- Select Portal --</option>
+                    {TENDER_PORTALS.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  {form.tender_portal === 'Other' && (
+                    <input value={tenderPortalCustom} onChange={(e) => setTenderPortalCustom(e.target.value)} placeholder="Specify portal" style={{ ...inputStyle, marginTop: 8 }} />
+                  )}
+                </F>
+              </div>
+              <div style={{ flex: '0 1 150px', minWidth: 120 }}>
+                <F label="Tender Type" tourId="tnd-type">
+                  <select value={form.tender_type} onChange={(e) => set('tender_type', e.target.value)} style={inputStyle}>
+                    <option value="">-- Select Type --</option>
+                    {TENDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </F>
+              </div>
+              <div style={{ flex: '0 1 140px', minWidth: 110 }}>
+                <F label="Category" tourId="tnd-category"><input value={form.tender_category} onChange={(e) => set('tender_category', e.target.value)} style={inputStyle} /></F>
+              </div>
+              {seePrices && <div style={{ flex: '0 1 130px', minWidth: 100 }}>
+                <F label="Tender Value" tourId="tnd-value"><input type="number" value={form.tender_value} onChange={(e) => set('tender_value', e.target.value)} style={inputStyle} /></F>
+              </div>}
+              <div style={{ flex: '0 1 100px', minWidth: 80 }}>
+                <F label="Currency" tourId="tnd-currency">
+                  <select value={form.currency} onChange={(e) => set('currency', e.target.value)} style={inputStyle}>
+                    {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </F>
+              </div>
+              <div style={{ flex: '0 1 170px', minWidth: 140 }}>
+                <F label="Status" tourId="tnd-status">
+                  <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
+                    {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </F>
+              </div>
             </div>
-          )}
+            <div style={{ marginTop: 14 }}>
+              <F label="Current Status" tourId="tnd-current-status-note">
+                <textarea value={form.current_status_note} onChange={(e) => set('current_status_note', e.target.value)} rows={2} placeholder="e.g. Waiting for client confirmation" style={{ ...inputStyle, resize: 'vertical' }} />
+              </F>
+            </div>
+          </SheetSection>
 
-          <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', margin: '4px 0' }} />
+          <SheetSection icon="calendar" title="Key Dates">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ flex: '0 1 165px', minWidth: 150 }}>
+                <F label="Publish Date" tourId="tnd-publish-date"><DateField value={form.publish_date} onChange={(v) => set('publish_date', v)} /></F>
+              </div>
+              <div style={{ flex: '0 1 190px', minWidth: 170 }}>
+                <F label="Document Download Date" tourId="tnd-doc-download-date"><DateField value={form.doc_download_date} onChange={(v) => set('doc_download_date', v)} /></F>
+              </div>
+              <div style={{ flex: '0 1 175px', minWidth: 160 }}>
+                <F label="Pre-Bid Meeting Date" tourId="tnd-prebid-date"><DateField value={form.pre_bid_meeting_date} onChange={(v) => set('pre_bid_meeting_date', v)} /></F>
+              </div>
+              <div style={{ flex: '0 1 185px', minWidth: 170 }}>
+                <F label="Query Submission Date" tourId="tnd-query-date"><DateField value={form.query_submission_date} onChange={(v) => set('query_submission_date', v)} /></F>
+              </div>
+              <div style={{ flex: '0 1 170px', minWidth: 150 }}>
+                <F label={<>Submission Date <Req /></>} tourId="tnd-submission-date"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></F>
+              </div>
+              <div style={{ flex: '0 1 185px', minWidth: 170 }}>
+                <F label="Technical Opening Date" tourId="tnd-tech-opening-date"><DateField value={form.opening_date} onChange={(v) => set('opening_date', v)} /></F>
+              </div>
+              <div style={{ flex: '0 1 185px', minWidth: 170 }}>
+                <F label="Financial Opening Date" tourId="tnd-fin-opening-date"><DateField value={form.financial_opening_date} onChange={(v) => set('financial_opening_date', v)} /></F>
+              </div>
+              <div style={{ flex: '0 1 175px', minWidth: 160 }}>
+                <F label="Expected Award Date" tourId="tnd-award-date"><DateField value={form.expected_award_date} onChange={(v) => set('expected_award_date', v)} /></F>
+              </div>
+            </div>
+          </SheetSection>
+        </>}
+        right={<>
+          <SheetSection icon="list" title="Basic Information">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ flex: '1 1 140px' }}>
+                <F label="Internal Tender ID">
+                  <input value={initial?.universal_id || previewNumber || 'Auto-generated on save'} disabled style={{ ...inputStyle, background: '#eff6ff', color: SHEET.BLUE, fontWeight: 600 }} />
+                </F>
+              </div>
+              <div style={{ flex: '1 1 120px' }}>
+                <F label="Creation Date">
+                  <input value={initial?.created_at ? formatDate(initial.created_at) : formatDate(new Date())} disabled style={{ ...inputStyle, background: SHEET.SOFT, color: SHEET.MUTED }} />
+                </F>
+              </div>
+              <div style={{ flex: '1 1 140px' }}>
+                <F label={<>Lead Source <Req /></>} tourId="tnd-lead-source">
+                  <select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
+                    <option value="">-- Select Source --</option>
+                    {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </F>
+              </div>
+              <div style={{ flex: '1 1 200px' }}>
+                <F label={<>Priority <Req /></>} tourId="tnd-priority">
+                  <select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
+                    {priorityOptions(initial?.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
+                  </select>
+                </F>
+              </div>
+              <div style={{ flex: '1 1 160px' }}>
+                <F label="BD Owner" tourId="tnd-bd-owner">
+                  <input value={bdOwnerName} disabled style={{ ...inputStyle, background: SHEET.SOFT, color: SHEET.MUTED }} />
+                </F>
+              </div>
+            </div>
+          </SheetSection>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
-              <Field label="Tender Number *" tourId="tnd-number"><input value={form.tender_number} onChange={(e) => set('tender_number', e.target.value)} style={inputStyle} /></Field>
-            </div>
-            <div style={{ flex: '1 1 180px', minWidth: 160, maxWidth: 260 }}>
-              <Field label="Tender Name *" tourId="tnd-name"><input value={form.tender_name} onChange={(e) => set('tender_name', e.target.value)} style={inputStyle} /></Field>
-            </div>
-            <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 220 }}>
-              <Field label="Tender Authority" tourId="tnd-authority"><input value={form.tender_authority} onChange={(e) => set('tender_authority', e.target.value)} style={inputStyle} /></Field>
-            </div>
-            <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-              <Field label="Tender Portal" tourId="tnd-portal">
-                <select value={form.tender_portal} onChange={(e) => set('tender_portal', e.target.value)} style={inputStyle}>
-                  <option value="">-- Select Portal --</option>
-                  {TENDER_PORTALS.map((p) => <option key={p} value={p}>{p}</option>)}
+          <SheetSection icon="building" title="Customer Organization & Contact">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <F label={<>Customer Organization <Req /></>} tourId="tnd-org">
+                <SearchableSelect
+                  value={form.org_id}
+                  onChange={(v) => set('org_id', v)}
+                  options={organizations.map((o) => ({ value: String(o.id), label: o.name }))}
+                  placeholder="Search existing customer organization…"
+                  disabled={orgLocked}
+                />
+              </F>
+              <F label={<>Contact Person <Optional /></>} tourId="tnd-contact">
+                <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
+                  <option value="">-- Select Contact --</option>
+                  {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  <option value="__new__">+ Add New Contact</option>
                 </select>
-                {form.tender_portal === 'Other' && (
-                  <input value={tenderPortalCustom} onChange={(e) => setTenderPortalCustom(e.target.value)} placeholder="Specify portal" style={{ ...inputStyle, marginTop: 8 }} />
-                )}
-              </Field>
+              </F>
+              {form.org_contact_id === '__new__' && (
+                <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: `1px solid ${SHEET.LINE}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <F label={<>Name <Req /></>}><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Rajesh Kumar" style={inputStyle} /></F>
+                  <F label="Designation"><input value={newContact.designation} onChange={(e) => setNewContact((c) => ({ ...c, designation: e.target.value }))} placeholder="Purchase Head / DGM" style={inputStyle} /></F>
+                  <F label="Mobile"><PhoneField value={newContact.mobile} onChange={(v) => setNewContact((c) => ({ ...c, mobile: v }))} style={inputStyle} /></F>
+                  <F label="Email"><ValidatedInput type="email" value={newContact.email} onChange={(v) => setNewContact((c) => ({ ...c, email: v }))} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="email@company.com" style={inputStyle} /></F>
+                  <p style={{ fontSize: 12, color: SHEET.MUTED, margin: 0 }}>Saved to the customer organization together with the tender.</p>
+                </div>
+              )}
             </div>
-            <div style={{ flex: '0 1 140px', minWidth: 120 }}>
-              <Field label="Tender Type" tourId="tnd-type">
-                <select value={form.tender_type} onChange={(e) => set('tender_type', e.target.value)} style={inputStyle}>
-                  <option value="">-- Select Type --</option>
-                  {TENDER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div style={{ flex: '0 1 130px', minWidth: 110 }}>
-              <Field label="Category" tourId="tnd-category"><input value={form.tender_category} onChange={(e) => set('tender_category', e.target.value)} style={inputStyle} /></Field>
-            </div>
-            <div style={{ flex: '0 1 120px', minWidth: 100 }}>
-              <Field label="Tender Value" tourId="tnd-value"><input type="number" value={form.tender_value} onChange={(e) => set('tender_value', e.target.value)} style={inputStyle} /></Field>
-            </div>
-            <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-              <Field label="Currency" tourId="tnd-currency">
-                <select value={form.currency} onChange={(e) => set('currency', e.target.value)} style={inputStyle}>
-                  {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div style={{ flex: '0 1 120px', minWidth: 110 }}>
-              <Field label="Status" tourId="tnd-status">
-                <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
-                  {TENDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </Field>
-            </div>
-          </div>
-
-          <Field label="Current Status" tourId="tnd-current-status-note">
-            <textarea value={form.current_status_note} onChange={(e) => set('current_status_note', e.target.value)} rows={2} placeholder="e.g. Waiting for client confirmation" style={{ ...inputStyle, resize: 'vertical' }} />
-          </Field>
-
-          <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', margin: '4px 0' }} />
-
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            <div style={{ flex: '0 1 150px', minWidth: 135 }}>
-              <Field label="Publish Date" tourId="tnd-publish-date"><DateField value={form.publish_date} onChange={(v) => set('publish_date', v)} /></Field>
-            </div>
-            <div style={{ flex: '0 1 175px', minWidth: 160 }}>
-              <Field label="Document Download Date" tourId="tnd-doc-download-date"><DateField value={form.doc_download_date} onChange={(v) => set('doc_download_date', v)} /></Field>
-            </div>
-            <div style={{ flex: '0 1 170px', minWidth: 155 }}>
-              <Field label="Pre-Bid Meeting Date" tourId="tnd-prebid-date"><DateField value={form.pre_bid_meeting_date} onChange={(v) => set('pre_bid_meeting_date', v)} /></Field>
-            </div>
-            <div style={{ flex: '0 1 175px', minWidth: 160 }}>
-              <Field label="Query Submission Date" tourId="tnd-query-date"><DateField value={form.query_submission_date} onChange={(v) => set('query_submission_date', v)} /></Field>
-            </div>
-            <div style={{ flex: '0 1 155px', minWidth: 140 }}>
-              <Field label="Submission Date *" tourId="tnd-submission-date"><DateField value={form.submission_date} onChange={(v) => set('submission_date', v)} /></Field>
-            </div>
-            <div style={{ flex: '0 1 175px', minWidth: 160 }}>
-              <Field label="Technical Opening Date" tourId="tnd-tech-opening-date"><DateField value={form.opening_date} onChange={(v) => set('opening_date', v)} /></Field>
-            </div>
-            <div style={{ flex: '0 1 175px', minWidth: 160 }}>
-              <Field label="Financial Opening Date" tourId="tnd-fin-opening-date"><DateField value={form.financial_opening_date} onChange={(v) => set('financial_opening_date', v)} /></Field>
-            </div>
-            <div style={{ flex: '0 1 170px', minWidth: 155 }}>
-              <Field label="Expected Award Date" tourId="tnd-award-date"><DateField value={form.expected_award_date} onChange={(v) => set('expected_award_date', v)} /></Field>
-            </div>
-          </div>
-        </Section>
-      )}
-
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between' }}>
-        <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-        <button type="submit" data-tour="tnd-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-      </div>
+          </SheetSection>
+        </>}
+      />
     </form>
+    </FormPage>
   )
 }

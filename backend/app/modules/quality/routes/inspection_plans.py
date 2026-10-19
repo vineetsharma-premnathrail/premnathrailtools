@@ -4,7 +4,7 @@ revision."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import require_app_access, require_tab_action
+from app.core.permissions import ensure_can_delete, require_app_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.quality.models.characteristic import QualityCharacteristic, QUALITY_CHARACTERISTIC_CLASSES
@@ -16,8 +16,8 @@ from app.modules.quality.schemas.inspection_plan import (
     QualityInspectionPlanCreate, QualityInspectionPlanUpdate, QualityInspectionPlanResponse,
 )
 from app.modules.quality.service import generate_inspection_plan_number
-from app.modules.quality.services import access
-from app.modules.quality.services.plans import PlanError, approve_plan, new_revision, obsolete_plan
+from app.modules.quality.services import access, authz
+from app.modules.quality.services.plans import PlanError, new_revision, obsolete_plan
 from app.modules.quality.services.sampling import nearest_aql
 from app.modules.store.models.item import StoreItem
 
@@ -138,10 +138,10 @@ async def create_inspection_plan(payload: QualityInspectionPlanCreate, db: Sessi
     _validate_header(data)
     draft = db.query(QualityInspectionPlan).filter(
         QualityInspectionPlan.item_id == item.id, QualityInspectionPlan.inspection_type == payload.inspection_type,
-        QualityInspectionPlan.status == "draft", QualityInspectionPlan.is_deleted == False,  # noqa: E712
+        QualityInspectionPlan.status.in_(("draft", "pending_approval")), QualityInspectionPlan.is_deleted == False,  # noqa: E712
     ).first()
     if draft:
-        raise HTTPException(status_code=409, detail=f"Draft plan {draft.plan_number} already exists for {item.item_name} "
+        raise HTTPException(status_code=409, detail=f"{'Draft' if draft.status == 'draft' else 'Submitted'} plan {draft.plan_number} already exists for {item.item_name} "
                                                     f"({QUALITY_INSPECTION_TYPE_LABELS[payload.inspection_type]}) — edit that draft instead.")
     current = db.query(QualityInspectionPlan).filter(
         QualityInspectionPlan.item_id == item.id, QualityInspectionPlan.inspection_type == payload.inspection_type,
@@ -188,12 +188,40 @@ def _plan_action(fn):
         raise HTTPException(status_code=409, detail=str(e))
 
 
+@router.post("/{plan_id}/submit", response_model=QualityInspectionPlanResponse)
+async def submit_inspection_plan(plan_id: int, db: Session = Depends(get_db),
+                                 user: User = Depends(require_tab_action("quality", "inspection_plans", "submit"))):
+    """Draft → waiting for approval (Organization › Approval Workflows ›
+    Inspection plan; approvers decide in the Approval panel)."""
+    plan = _get_or_404(db, plan_id)
+    if plan.status != "draft":
+        raise HTTPException(status_code=409, detail=f"Plan {plan.plan_number} is {plan.status.replace('_', ' ')} — only a draft is submitted for approval.")
+    try:
+        authz.submit_plan(db, plan, user)
+    except HTTPException:
+        db.rollback()
+        raise
+    db.commit()
+    return _to_response(db, _get_or_404(db, plan.id))
+
+
 @router.post("/{plan_id}/approve", response_model=QualityInspectionPlanResponse)
 async def approve_inspection_plan(plan_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
+    """One-click approval by a plan approver: submits a draft and approves
+    every stage they are the approver of (a submitted plan: approves it)."""
     if not access.can_approve_plan(user):
         raise HTTPException(status_code=403, detail="Only a Quality head can approve inspection plans. Ask an admin to apply the Quality head role.")
     plan = _get_or_404(db, plan_id)
-    _plan_action(lambda: approve_plan(db, plan, user.id))
+    try:
+        req = authz.pending_request(db, authz.PLAN_ENTITY, plan.id)
+        if plan.status == "draft":
+            req = authz.submit_plan(db, plan, user)
+        elif plan.status != "pending_approval" or req is None:
+            raise HTTPException(status_code=409, detail=f"Plan {plan.plan_number} is {plan.status.replace('_', ' ')} — only a draft can be approved.")
+        authz.approve_as(db, req, user)
+    except HTTPException:
+        db.rollback()
+        raise
     db.commit()
     return _to_response(db, _get_or_404(db, plan.id))
 
@@ -217,9 +245,10 @@ async def obsolete_inspection_plan(plan_id: int, db: Session = Depends(get_db), 
 
 
 @router.delete("/{plan_id}")
-async def delete_inspection_plan(plan_id: int, db: Session = Depends(get_db), _user: User = Depends(require_tab_action("quality", "inspection_plans", "delete"))):
+async def delete_inspection_plan(plan_id: int, db: Session = Depends(get_db), user: User = Depends(require_tab_action("quality", "inspection_plans", "delete"))):
     from datetime import datetime, timezone
     plan = _get_or_404(db, plan_id)
+    ensure_can_delete(user, plan, "quality", "inspection_plans", what="inspection plan")
     if plan.status != "draft":
         raise HTTPException(status_code=409, detail=f"Plan {plan.plan_number} is {plan.status} — approved/obsolete plans are kept as records. Make it obsolete instead.")
     plan.is_deleted = True

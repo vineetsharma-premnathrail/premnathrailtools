@@ -8,6 +8,8 @@ import { RndProject } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import RndNav from '@/components/rnd/RndNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useUrlProjectId } from '@/components/rnd/projectLink'
 import RndDocumentsPanel from '@/components/rnd/RndDocumentsPanel'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -29,7 +31,8 @@ function RndDocuments() {
   const searchParams = useSearchParams()
 
   const [projects, setProjects] = useState<RndProject[]>([])
-  const [projectFilter, setProjectFilter] = useState(searchParams.get('project_id') || '')
+  const [projectFilter, setProjectFilter] = useState('')
+  const projectLink = useUrlProjectId(searchParams.get('project_id'), setProjectFilter)
   const [typeFilter, setTypeFilter] = useState('')
   const [search, setSearch] = useState('')
   const [error, setError] = useState<string | string[]>('')
@@ -42,6 +45,8 @@ function RndDocuments() {
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
+  if (projectLink.error) return (<div><RndNav /><InvalidRecordLink message={projectLink.error} listHref="/dashboard/rnd/documents" listLabel="Back to documents" /></div>)
+  if (projectLink.loading) return <div><RndNav /></div>
 
   return (
     <div>
@@ -65,12 +70,13 @@ function RndDocuments() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input
+          data-tour="rnd-docs-search"
           style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }}
           placeholder="Search by title or file name…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <div style={{ flex: '0 1 300px', minWidth: 220 }}>
+        <div data-tour="rnd-docs-project-filter" style={{ flex: '0 1 300px', minWidth: 220 }}>
           <SearchableSelect
             value={projectFilter}
             onChange={setProjectFilter}
@@ -78,7 +84,7 @@ function RndDocuments() {
             placeholder="All projects"
           />
         </div>
-        <select style={{ ...inputStyle, flex: '0 1 190px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <select data-tour="rnd-docs-type-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All types</option>
           <option value="specification">Specification</option>
           <option value="drawing">Drawing</option>

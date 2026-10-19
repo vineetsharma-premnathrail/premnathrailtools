@@ -55,8 +55,12 @@ def _send_po_overdue_reminders(db: Session) -> None:
         P2PPurchaseOrder.expected_delivery < today,
     ).all()
 
+    from app.modules.p2p import notify as p2p_notify
+
     for po in pos:
         buyer_id = _resolve_buyer_id(po)
+        # Role event (Procurement › PO delivery overdue) — once per PO, bell / Teams.
+        p2p_notify.po_delivery_overdue(db, po, (today - po.expected_delivery).days, buyer_id)
         if not buyer_id or _already_sent_today(db, buyer_id, po.id):
             continue
 

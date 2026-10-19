@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.main.models.user import User
 from app.modules.organization.models.department import Department
+from app.modules.organization.services.department_membership import set_user_department
 from app.modules.hr.models.employee_profile import HrEmployeeProfile
 from app.modules.hr.models.masters import HrDesignation
 
@@ -24,7 +25,7 @@ from app.modules.hr.models.masters import HrDesignation
 def apply_org_fields(db: Session, user: User, profile: HrEmployeeProfile) -> None:
     """Mirror the profile's org fields onto `user`. Does not commit.
 
-    - User.department  = Department.name     (when profile.department_id is set)
+    - User.department_id / User.department = the Department (when profile.department_id is set)
     - User.designation = HrDesignation.name  (when profile.designation_id is set)
     - User.branch_id   = profile.branch_id   (when profile.branch_id is set)
 
@@ -35,7 +36,7 @@ def apply_org_fields(db: Session, user: User, profile: HrEmployeeProfile) -> Non
     if profile.department_id:
         dept = db.get(Department, profile.department_id)
         if dept:
-            user.department = dept.name
+            set_user_department(user, dept)
     if profile.designation_id:
         desig = db.get(HrDesignation, profile.designation_id)
         if desig:

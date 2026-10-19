@@ -12,6 +12,9 @@ def escape_latex(s: str) -> str:
     mapping = {
         '&': r'\&', '%': r'\%', '$': r'\$', '#': r'\#', '_': r'\_',
         '{': r'\{', '}': r'\}', '~': r'\textasciitilde{}',
-        '^': r'\textasciicircum{}', '\\': r'\textbackslash{}', ';': r'\;', ':': r'\:',
+        '^': r'\textasciicircum{}', '\\': r'\textbackslash{}',
     }
-    return re.sub(r'[&%$#_{}~^;:\\]', lambda m: mapping.get(m.group(0), ""), s)
+    # ':' and ';' are deliberately NOT escaped: they are ordinary characters in
+    # text mode, whereas `\:` / `\;` are math-spacing commands that made them
+    # silently vanish from the PDF (e.g. "Doc: RD-01" rendered as "Doc RD-01").
+    return re.sub(r'[&%$#_{}~^\\]', lambda m: mapping[m.group(0)], s)

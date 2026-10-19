@@ -59,10 +59,13 @@ async def get_planning(
     db: Session = Depends(get_db),
     _tab: User = Depends(require_tab_access("production", "planning")),
 ):
-    orders = db.query(ProductionWorkOrder).filter(
+    from app.core.data_scope import apply_scope
+    from app.modules.production import authz as _authz  # noqa: F401 — registers the Production data-scope models
+
+    orders = apply_scope(db.query(ProductionWorkOrder).filter(
         ProductionWorkOrder.is_deleted == False,  # noqa: E712
         ProductionWorkOrder.status.in_(OPEN_WORK_ORDER_STATUSES),
-    ).all()
+    ), _tab, ProductionWorkOrder).all()
     products = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_({o.product_item_id for o in orders})).all()} if orders else {}
     schedule = sorted(
         (schedule_entry(o, products.get(o.product_item_id)) for o in orders),

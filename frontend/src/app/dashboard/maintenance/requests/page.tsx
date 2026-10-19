@@ -7,6 +7,7 @@ import { maintenanceApi } from '@/lib/api'
 import { MaintenanceRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
+import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
 import { PRIORITY_LABELS, REQUEST_STATUS_LABELS, REQUEST_TYPE_LABELS, WO_STATUS_LABELS } from '@/components/maintenance/labels'
@@ -39,10 +40,15 @@ export default function MaintenanceRequestsPage() {
     if (statusFilter) params.status = statusFilter
     if (mine) params.mine = true
     if (search.trim()) params.search = search.trim()
-    maintenanceApi.listRequests(params)
-      .then((data) => { setRequests(Array.isArray(data) ? data : []); setError('') })
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load maintenance requests.')))
-      .finally(() => setLoading(false))
+    // Debounce typing and drop late responses so an older search can't overwrite a newer one.
+    let ignore = false
+    const t = setTimeout(() => {
+      maintenanceApi.listRequests(params)
+        .then((data) => { if (ignore) return; setRequests(Array.isArray(data) ? data : []); setError('') })
+        .catch((err) => { if (!ignore) setError(extractErrorMessages(err, 'Failed to load maintenance requests.')) })
+        .finally(() => { if (!ignore) setLoading(false) })
+    }, 250)
+    return () => { ignore = true; clearTimeout(t) }
   }, [isAuthorized, statusFilter, mine, search])
 
   if (isLoading || !isAuthorized) return null
@@ -59,6 +65,7 @@ export default function MaintenanceRequestsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{isMaintenanceUser ? 'Maintenance Requests' : 'My Maintenance Requests'}</h1>
         </div>
         <button
+          data-tour="maint-req-new-btn"
           onClick={() => router.push('/dashboard/maintenance/requests/new')}
           style={{
             padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
@@ -77,19 +84,19 @@ export default function MaintenanceRequestsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by number, asset or problem…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 190px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <input data-tour="maint-req-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by number, asset or problem…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="maint-req-status-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(REQUEST_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         {isMaintenanceUser && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
+          <label data-tour="maint-req-mine" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
             <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Raised by me
           </label>
         )}
       </div>
 
-      <div style={{
+      <div data-tour="maint-req-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
@@ -112,7 +119,7 @@ export default function MaintenanceRequestsPage() {
               </td></tr>
             ) : (
               requests.map((r) => (
-                <tr key={r.id} onClick={() => router.push(`/dashboard/maintenance/requests/${r.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/maintenance/requests', r))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.request_number}</td>
                   <td style={cellStyle}>
                     <span style={{ fontWeight: 600 }}>{r.asset_code}</span>
@@ -140,7 +147,7 @@ export default function MaintenanceRequestsPage() {
                     {r.work_order ? `${r.work_order.wo_number} · ${WO_STATUS_LABELS[r.work_order.status] || r.work_order.status}` : '—'}
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/maintenance/requests/${r.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/maintenance/requests', r))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

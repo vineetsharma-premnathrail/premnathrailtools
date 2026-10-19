@@ -123,7 +123,9 @@ class HrLifecycleEventCompletePayload(BaseModel):
     # Transfer / promotion: approval-authority clean-up
     clear_head_flags: list[str] = Field(default_factory=list)  # is_department_head / is_project_head / is_plant_head
     department_head_slots: str = "keep"  # keep | remove | reassign (from_department's head slots held by the mover)
-    reassign_pending_approvals: bool = False  # move in-flight P2P / HR approvals to handover_to_id
+    # Move in-flight approvals to handover_to_id: legacy P2P head slots plus
+    # every module's open approval-engine steps (engine.reassign_pending).
+    reassign_pending_approvals: bool = False
     # Exit (and mover reassignment)
     handover_to_id: int | None = None
     force: bool = False

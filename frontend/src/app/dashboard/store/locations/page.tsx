@@ -4,16 +4,19 @@ import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi, organizationApi } from '@/lib/api'
 import { StoreLocation, Branch } from '@/types'
-import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { TEXT, GLASS, SHADOWS, SUCCESS } from '@/lib/theme'
+import { primaryBtnStyle } from '@/components/shared/ui'
+import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import StoreSettingsNav from '@/components/store/StoreSettingsNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 export default function StoreLocationsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
+  const { can, canDelete } = useCan()
   const [locations, setLocations] = useState<StoreLocation[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [loading, setLoading] = useState(true)
@@ -114,9 +117,11 @@ export default function StoreLocationsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Stores</h1>
         </div>
-        <button data-tour="wh-add-btn" onClick={openModal} style={primaryBtnStyle}>
-          <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> Add Store
-        </button>
+        {can('store', 'warehouses', 'create') && (
+          <button data-tour="wh-add-btn" onClick={openModal} style={primaryBtnStyle}>
+            <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> Add Store
+          </button>
+        )}
       </div>
 
       <StoreSettingsNav />
@@ -132,46 +137,47 @@ export default function StoreLocationsPage() {
       />
 
       {showModal && (
-        <div onClick={() => !saving && setShowModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, maxWidth: 460, width: '100%', padding: 24 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 16px 0', color: TEXT.heading }}>Add Store</h2>
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Name *</label>
-              <input data-tour="wh-name" style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Main Store — Plant 1" />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Code *</label>
-              <input data-tour="wh-code" style={inputStyle} value={code} onChange={(e) => setCode(e.target.value)} placeholder="WH-01" />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Branch</label>
-              <select data-tour="wh-branch" style={inputStyle} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-                <option value="">— Select —</option>
-                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Store Type</label>
-              <input data-tour="wh-type" style={inputStyle} value={warehouseType} onChange={(e) => setWarehouseType(e.target.value)} placeholder="Raw Material, Finished Goods…" />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Address</label>
-              <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={address} onChange={(e) => setAddress(e.target.value)} />
-            </div>
-
+        <FormSheet width={580} icon="building" title="Add Store" subtitle="A physical store / warehouse that holds stock." onClose={() => setShowModal(false)} busy={saving}
+          footer={<>
+            <button data-tour="wh-cancel-btn" type="button" onClick={() => setShowModal(false)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+            <button data-tour="wh-save-btn" type="button" onClick={handleCreate} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="plus" size={16} />{saving ? 'Saving…' : 'Save Store'}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
             {formErrors.length > 0 && (
-              <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+              <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {formErrors.map((e, i) => <div key={i}>{e}</div>)}
               </div>
             )}
-
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowModal(false)} disabled={saving} style={secondaryBtnStyle}>Cancel</button>
-              <button data-tour="wh-save-btn" onClick={handleCreate} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save Store'}</button>
-            </div>
+            <SheetSection icon="list" title="Basic Information">
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 260px', minWidth: 220 }}>
+                  <label style={sheetLabel}>Name <Req /></label>
+                  <input data-tour="wh-name" autoFocus style={sheetInput} value={name} onChange={(e) => setName(e.target.value)} placeholder="Main Store — Plant 1" />
+                </div>
+                <div style={{ flex: '0 1 140px', minWidth: 120 }}>
+                  <label style={sheetLabel}>Code <Req /></label>
+                  <input data-tour="wh-code" style={sheetInput} value={code} onChange={(e) => setCode(e.target.value)} placeholder="WH-01" />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
+                <div style={{ flex: '1 1 200px' }}>
+                  <label style={sheetLabel}>Branch</label>
+                  <select data-tour="wh-branch" style={sheetInput} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                    <option value="">— Select —</option>
+                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: '1 1 200px' }}>
+                  <label style={sheetLabel}>Store Type</label>
+                  <input data-tour="wh-type" style={sheetInput} value={warehouseType} onChange={(e) => setWarehouseType(e.target.value)} placeholder="Raw Material, Finished Goods…" />
+                </div>
+              </div>
+            </SheetSection>
+            <SheetSection icon="building" title="Address" extra={<Optional />}>
+              <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={address} onChange={(e) => setAddress(e.target.value)} />
+            </SheetSection>
           </div>
-        </div>
+        </FormSheet>
       )}
 
       <div data-tour="wh-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto' }}>
@@ -198,12 +204,12 @@ export default function StoreLocationsPage() {
                     <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{loc.branch_name || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{loc.warehouse_type || '—'}</td>
                     <td style={{ padding: '12px 16px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: loc.is_active ? `${BRAND.primary}1a` : 'rgba(100,116,139,0.12)', color: loc.is_active ? BRAND.primaryActive : TEXT.muted }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: loc.is_active ? `${SUCCESS.primary}1a` : 'rgba(100,116,139,0.12)', color: loc.is_active ? SUCCESS.hover : TEXT.muted }}>
                         {loc.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={{ padding: '0 16px', textAlign: 'right' }}>
-                      <span onClick={() => setDeleteTarget(loc)} style={{ color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Delete</span>
+                      {canDelete('store', 'warehouses', null) && <span onClick={() => setDeleteTarget(loc)} style={{ color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Delete</span>}
                     </td>
                   </tr>
               )

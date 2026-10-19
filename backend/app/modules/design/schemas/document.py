@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 from app.modules.design.schemas.event import DesignEventResponse
+from app.modules.design.schemas.library import DesignChecklistResponse
 from app.modules.design.schemas.revision import DesignDocumentRevisionResponse
 
 
@@ -20,6 +21,11 @@ class DesignDocumentCreate(BaseModel):
     reviewer_id: int | None = None
     approver_id: int | None = None
     change_summary: str | None = Field(None, max_length=4000)
+    customer_id: int | None = None
+    customer_approval_required: bool = False
+    standard_id: int | None = None
+    design_request_id: int | None = None
+    legacy_number: str | None = Field(None, max_length=100)
 
 
 class DesignDocumentUpdate(BaseModel):
@@ -33,6 +39,11 @@ class DesignDocumentUpdate(BaseModel):
     store_item_id: int | None = None
     department_id: int | None = None
     owner_id: int | None = None
+    customer_id: int | None = None
+    customer_approval_required: bool | None = None
+    standard_id: int | None = None
+    design_request_id: int | None = None
+    legacy_number: str | None = Field(None, max_length=100)
 
 
 class DesignDocumentObsoletePayload(BaseModel):
@@ -59,6 +70,11 @@ class DesignDocumentResponse(BaseModel):
     erp_project_id: int | None = None
     store_item_id: int | None = None
     department_id: int | None = None
+    customer_id: int | None = None
+    customer_approval_required: bool = False
+    standard_id: int | None = None
+    design_request_id: int | None = None
+    legacy_number: str | None = None
     owner_id: int | None = None
     created_by_id: int | None = None
     status: str
@@ -75,7 +91,11 @@ class DesignDocumentResponse(BaseModel):
     erp_project_label: str | None = None
     store_item_label: str | None = None
     department_name: str | None = None
-    # obsolete | draft | in_review | in_approval | released | revising
+    customer_name: str | None = None
+    standard_label: str | None = None
+    request_number: str | None = None
+    # obsolete | draft | in_review | in_approval | approved | released |
+    # revising | customer_rejected
     display_status: str = "draft"
     released_revision_id: int | None = None
     released_revision_label: str | None = None
@@ -86,6 +106,33 @@ class DesignDocumentResponse(BaseModel):
     pending_with_name: str | None = None
 
 
+class DesignDocumentSubmissionRef(BaseModel):
+    """This document on a customer submission."""
+    submission_id: int
+    submission_number: str
+    status: str
+    revision_id: int
+    revision_label: str | None = None
+    response: str
+    response_comment: str | None = None
+    sent_date: date | None = None
+    response_date: date | None = None
+
+
+class DesignWhereUsedRow(BaseModel):
+    """One BOM (and its project) that uses an item or drawing."""
+    bom_id: int
+    bom_number: str
+    bom_title: str
+    revision_id: int
+    revision_label: str
+    revision_status: str
+    quantity: float | None = None
+    product_item_label: str | None = None
+    pm_project_label: str | None = None
+    erp_project_label: str | None = None
+
+
 class DesignDocumentDetail(DesignDocumentResponse):
     revisions: list[DesignDocumentRevisionResponse] = []
     events: list[DesignEventResponse] = []
@@ -93,3 +140,13 @@ class DesignDocumentDetail(DesignDocumentResponse):
     # its next revision can be raised under.
     open_ecns: list[DesignDocumentEcnRef] = []
     allowed_actions: list[str] = []
+    # Checklist the checker of the open revision must answer, if any.
+    checklist: DesignChecklistResponse | None = None
+    submissions: list[DesignDocumentSubmissionRef] = []
+    where_used: list[DesignWhereUsedRow] = []
+    # True when the viewer isn't on the Design team — only released and
+    # superseded revisions are shown to them.
+    viewer_only: bool = False
+    # The open revision was submitted through the central approval engine —
+    # the page shows the approval panel (Organization › Approval Workflows).
+    approval_engine: bool = False

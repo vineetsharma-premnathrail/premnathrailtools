@@ -1,15 +1,23 @@
 import json
 from datetime import datetime, timezone, date
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from app.core.notify_rules import fire_rule
+from app.core.notification_events import notify_event
+from app.modules.crm.services.notify import broadcast_except
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.permissions import require_app_access
+from app.core.permissions import ensure_can_delete, ensure_feature_action, require_feature_action, require_tab_access, require_tab_action
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.modules.crm.access import INQUIRY_MONEY_FIELDS, blank, can_open_record, drop_money_updates, ensure_parent_in_scope, mask_revision_changes, sees_prices
 from app.core.sequential_id import next_sequential_id
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.crm.models.inquiry import Inquiry, InquiryLineItem
 from app.modules.crm.services.cascade import cascade_delete_children
+from app.modules.crm.services import requirement_movement, technical_offer
+from app.modules.crm.services.stage_guard import check_stage_move, ensure_deletable, ensure_no_live_order
+from app.modules.crm.services import opportunity as opp
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.models.stage_log import CrmStageLog
 from app.modules.crm.models.organization import Organization, OrgContact
@@ -20,7 +28,6 @@ from app.modules.crm.schemas.document import TechnicalOfferRequestBody
 from app.modules.crm.models.document import CrmDocument
 from app.modules.crm.reports.mom_docx import build_mom_docx, mom_rows_from_activity
 from app.modules.crm.reports.mom_pdf import build_mom_pdf
-from app.modules.crm.reports.technical_offer_pdf import build_technical_offer_pdf
 from app.utils.notifications import broadcast_notification, notify_user
 from app.utils.email import send_technical_offer_request_email
 from app.utils.sharepoint import upload_bytes_to_sharepoint, build_sharepoint_folder_path
@@ -30,11 +37,75 @@ from fastapi.responses import Response
 
 router = APIRouter(prefix="/crm/inquiries", tags=["CRM - Inquiries"])
 
+
+def _out(inquiry: Inquiry, user: User) -> InquiryResponse:
+    """A inquiry as the API returns it — money fields blanked for a user without
+    CRM › Inquiries & Tenders › Prices & margins."""
+    resp = InquiryResponse.model_validate(inquiry)
+    return resp if sees_prices(user) else blank(resp, INQUIRY_MONEY_FIELDS)
+
+# Pre-sales stages only — mirrors INQ_STAGES in frontend/src/components/crm/constants.ts.
+# Post-PO stages (Project, Manufacturing, Dispatch, ...) belong to Sales/Projects,
+# not CRM (plan §5), so they were trimmed from this list.
 INQ_STAGES = [
-    "Customer Requirement", "Design", "R&D", "Costing", "Management Approval",
-    "Quotation Submission", "Purchase Order", "Project", "Manufacturing",
-    "Inspection", "Dispatch", "Installation", "Commissioning", "Warranty", "Service",
+    "Requirement Received", "Requirement Qualified", "Quotation Sent",
+    "Negotiation", "Order Received", "Closed – Not Ordered",
 ]
+
+# Mirrors INQUIRY_STATUSES in frontend/src/components/crm/constants.ts.
+INQ_STATUSES = [
+    "Requirement Received", "R&D / Technical Review", "Qualified", "Quotation Sent",
+    "Order Received", "Under Production", "Closed - Ordered", "Closed - Not Ordered",
+]
+
+
+def _check_choice(updates: dict, record, field: str, allowed: list[str], label: str) -> None:
+    """422 when a PATCH changes `field` to a value outside the coded list.
+    A legacy value that is sent back unchanged still passes, so old records
+    stay editable."""
+    if field not in updates or updates[field] is None:
+        return
+    value = updates[field]
+    if value == getattr(record, field, None) or value in allowed:
+        return
+    raise HTTPException(
+        status_code=422,
+        detail=f"'{value}' is not a valid {label}. Pick one of: {', '.join(allowed)}.",
+    )
+
+
+def _check_probability(value) -> None:
+    if value is not None and not (0 <= int(value) <= 100):
+        raise HTTPException(status_code=422, detail=f"Probability is {value}% — enter a win probability between 0 and 100%.")
+
+
+def _check_org_and_contact(db: Session, org_id: int, contact_id: int | None, record_label: str = "record") -> None:
+    """Same organization/contact checks as create, reused on PATCH."""
+    org = db.query(Organization).filter(Organization.id == org_id, Organization.is_deleted == False).first()  # noqa: E712
+    if not org:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Customer Organization #{org_id} was not found or is in the recycle bin — pick an active customer organization.",
+        )
+    if contact_id is not None:
+        # Look the contact up without the org filter so the message can name
+        # the organization it really belongs to.
+        contact = db.query(OrgContact).filter(OrgContact.id == contact_id).first()
+        if not contact:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Contact #{contact_id} no longer exists — pick one of {org.name}'s contacts, or leave the contact empty.",
+            )
+        if contact.org_id != org_id:
+            other = db.query(Organization).filter(Organization.id == contact.org_id).first()
+            other_name = other.name if other else f"customer organization #{contact.org_id}"
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Contact '{contact.name}' belongs to {other_name}, not {org.name}. "
+                    f"When moving this {record_label} to {org.name}, also pick one of its contacts."
+                ),
+            )
 
 
 def _write_audit(db: Session, inquiry_id: int, action: str, user: User, summary: str | None = None):
@@ -75,9 +146,9 @@ async def list_inquiries(
     skip: int = 0,
     limit: int = 200,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    _user: User = Depends(require_tab_access("crm", "inquiries_tenders")),
 ):
-    query = db.query(Inquiry).filter(Inquiry.is_deleted == False)  # noqa: E712
+    query = apply_scope(db.query(Inquiry).filter(Inquiry.is_deleted == False), _user, Inquiry)  # noqa: E712
     if status:
         query = query.filter(Inquiry.status == status)
     if org_id:
@@ -104,7 +175,7 @@ async def list_inquiries(
             names_by_id[u.id] = u.name or u.email
     results = []
     for i in inquiries:
-        resp = InquiryResponse.model_validate(i)
+        resp = _out(i, _user)
         resp.created_by_name = names_by_id.get(i.created_by_id)
         results.append(resp)
     return results
@@ -113,20 +184,30 @@ async def list_inquiries(
 @router.post("", response_model=InquiryResponse, status_code=201)
 async def create_inquiry(
     payload: InquiryCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "inquiries_tenders", "create")),
 ):
     org = db.query(Organization).filter(Organization.id == payload.org_id, Organization.is_deleted == False).first()  # noqa: E712
     if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
+        raise HTTPException(status_code=404, detail="Customer Organization not found")
     if payload.org_contact_id is not None:
         contact = db.query(OrgContact).filter(OrgContact.id == payload.org_contact_id, OrgContact.org_id == payload.org_id).first()
         if not contact:
-            raise HTTPException(status_code=422, detail="org_contact_id does not belong to the specified organization")
+            raise HTTPException(status_code=422, detail="org_contact_id does not belong to the specified customer organization")
+    # Same coded lists as PATCH — a typo'd or made-up stage/status would otherwise be
+    # saved and then break the forward-only stage order and the Sales handoff check.
+    _check_choice({"current_stage": payload.current_stage}, None, "current_stage", INQ_STAGES, "inquiry stage")
+    _check_choice({"status": payload.status}, None, "status", INQ_STATUSES, "inquiry status")
 
     data = payload.model_dump(exclude={"additional_items"})
+    _check_probability(data.get("probability"))
+    opp.check_lost_code(data.get("lost_reason_code"))
+    opp.apply_owners(db, None, data, user)
+    opp.ensure_lost_details(data)
     universal_id = _generate_universal_id(db)
     inquiry = Inquiry(**data, universal_id=universal_id, created_by_id=user.id)
+    opp.stamp_closed(inquiry)
     db.add(inquiry)
     db.flush()
 
@@ -143,30 +224,45 @@ async def create_inquiry(
             assigned_to=inquiry.followup_assigned_to, created_by_id=user.id,
         ))
     _write_audit(db, inquiry.id, "created", user, summary=f"Inquiry {universal_id} created by {user.name or user.email}.")
-    broadcast_notification(
-        db, title="New Inquiry Raised", message=f"Inquiry '{universal_id}' was created by {user.name or user.email}.",
+    # Role event (Organization › Roles › Notifications); whoever it reached is left out of the broadcast / rule.
+    reached = notify_event(
+        db, background_tasks, "crm", "inquiry_received",
+        title=f"New inquiry {universal_id} — {org.name}",
+        message=f"{user.name or user.email} logged inquiry {universal_id} for {org.name}"
+                + (f" ({inquiry.product})" if inquiry.product else "") + ". Open it to qualify the requirement.",
+        entity_type="inquiry", entity_id=inquiry.id, actor=user, can_open=can_open_record(db, inquiry),
+        details=[("Inquiry", universal_id), ("Customer Organization", org.name), ("Product", inquiry.product or ""),
+                 ("Priority", inquiry.priority or "")],
+    )
+    broadcast_except(
+        db, reached, title="New Inquiry Raised", message=f"Inquiry '{universal_id}' was created by {user.name or user.email}.",
         notification_type="inquiry_created", entity_type="inquiry", entity_id=inquiry.id, exclude_user_id=user.id,
-        app_name="crm",
     )
     notify_user(
         db, user_id=user.id, title="Inquiry Created", message=f"You created inquiry '{universal_id}'.",
         notification_type="inquiry_created", entity_type="inquiry", entity_id=inquiry.id,
     )
+    fire_rule(db, background_tasks, "crm", "inquiry_create", "New Inquiry Created",
+              f"Inquiry '{universal_id}' for {org.name} was created by {user.name or user.email}.", "inquiry", inquiry.id, user,
+              [("Inquiry", universal_id), ("Customer Organization", org.name), ("Product", inquiry.product or ""),
+               ("Category", inquiry.product_category or ""), ("Priority", inquiry.priority or ""), ("Created by", user.name or user.email)],
+              skip_user_ids=reached)
     db.commit()
     db.refresh(inquiry)
-    return inquiry
+    return _out(inquiry, user)
 
 
 @router.get("/{inquiry_id}", response_model=InquiryResponse)
 async def get_inquiry(
     inquiry_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    _user: User = Depends(require_tab_access("crm", "inquiries_tenders")),
 ):
     inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
-    return inquiry
+    ensure_in_scope(db, _user, inquiry)
+    return _out(inquiry, _user)
 
 
 @router.patch("/{inquiry_id}", response_model=InquiryResponse)
@@ -174,15 +270,38 @@ async def update_inquiry(
     inquiry_id: int,
     payload: InquiryUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "inquiries_tenders", "edit")),
 ):
     inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
+    ensure_in_scope(db, user, inquiry)
     if not _can_modify(inquiry, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this inquiry.")
 
-    updates = payload.model_dump(exclude_unset=True, exclude={"additional_items"})
+    updates = payload.model_dump(exclude_unset=True, exclude={"additional_items", "stage_reason"})
+    _check_choice(updates, inquiry, "current_stage", INQ_STAGES, "inquiry stage")
+    _check_choice(updates, inquiry, "status", INQ_STATUSES, "inquiry status")
+    drop_money_updates(user, updates, INQUIRY_MONEY_FIELDS)
+    if "current_stage" in updates and updates["current_stage"] != inquiry.current_stage:
+        ensure_feature_action(user, "crm", "inquiries_tenders", "stage", "edit")
+    moved_back = False
+    if updates.get("current_stage") is not None:
+        moved_back = check_stage_move(db, stages=INQ_STAGES, old=inquiry.current_stage, new=updates["current_stage"], user=user,
+                                      reason=payload.stage_reason, label="inquiry", inquiry_id=inquiry.id)
+    if "status" in updates and updates["status"] != inquiry.status:
+        ensure_no_live_order(db, inquiry_id=inquiry.id, label="inquiry", what="status")
+    _check_probability(updates.get("probability"))
+    opp.check_lost_code(updates.get("lost_reason_code"))
+    opp.apply_owners(db, inquiry, updates, user)
+    opp.ensure_lost_details({f: updates.get(f, getattr(inquiry, f)) for f in
+                             ("current_stage", "status", "lost_reason_code", "lost_to_competitor", "lost_remarks")})
+    if "org_id" in updates and updates["org_id"] != inquiry.org_id:
+        ensure_no_live_order(db, inquiry_id=inquiry.id, label="inquiry", what="customer")
+    if ("org_id" in updates and updates["org_id"] != inquiry.org_id) or (
+        "org_contact_id" in updates and updates["org_contact_id"] != inquiry.org_contact_id
+    ):
+        _check_org_and_contact(db, updates.get("org_id") or inquiry.org_id, updates.get("org_contact_id", inquiry.org_contact_id), "inquiry")
     stage_changed = "current_stage" in updates and updates["current_stage"] != inquiry.current_stage
     changed = [f for f, v in updates.items() if str(getattr(inquiry, f, None)) != str(v)]
     # Stage changes get their own timeline entry (_log_stage below) — everything else
@@ -201,10 +320,12 @@ async def update_inquiry(
             InquiryLineItem(**item.model_dump(), sort_order=i) for i, item in enumerate(payload.additional_items)
         ]
 
+    opp.stamp_closed(inquiry)
     if info_changed:
         _write_spec_revision(db, inquiry.id, user, info_old, info_new)
     if stage_changed:
-        _log_stage(db, inquiry.id, inquiry.universal_id, "Stage updated", user, notes=f"Moved to {inquiry.current_stage}")
+        _log_stage(db, inquiry.id, inquiry.universal_id, "Stage moved back" if moved_back else "Stage updated", user,
+                   notes=f"Moved back to {inquiry.current_stage} — reason: {payload.stage_reason.strip()}" if moved_back else f"Moved to {inquiry.current_stage}")
         broadcast_notification(
             db, title="Inquiry Stage Updated",
             message=f"Inquiry '{inquiry.universal_id}' moved to '{inquiry.current_stage}' by {user.name or user.email}.",
@@ -219,20 +340,21 @@ async def update_inquiry(
 
     db.commit()
     db.refresh(inquiry)
-    return inquiry
+    return _out(inquiry, user)
 
 
 @router.delete("/{inquiry_id}", status_code=204)
 async def delete_inquiry(
     inquiry_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_access("crm", "inquiries_tenders")),
 ):
     inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
-    if not _can_modify(inquiry, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this inquiry.")
+    ensure_in_scope(db, user, inquiry)
+    ensure_can_delete(user, inquiry, "crm", "inquiries_tenders", what="inquiry")
+    ensure_deletable(db, inquiry_id=inquiry.id, label="inquiry")
 
     now = datetime.now(timezone.utc)
     inquiry.is_deleted = True
@@ -258,8 +380,9 @@ async def delete_inquiry(
 async def get_inquiry_audit(
     inquiry_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "timeline", "view")),
 ):
+    ensure_parent_in_scope(db, _user, "inquiry", inquiry_id)
     logs = db.query(AuditLog).filter(
         AuditLog.entity_type == "inquiry", AuditLog.entity_id == inquiry_id
     ).order_by(AuditLog.performed_at.asc()).all()
@@ -283,37 +406,27 @@ async def create_technical_offer_request(
     inquiry_id: int,
     body: TechnicalOfferRequestBody = TechnicalOfferRequestBody(),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_feature_action("crm", "inquiries_tenders", "send_tor", "create")),
 ):
     inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
-
-    org = db.query(Organization).filter(Organization.id == inquiry.org_id).first()
-    contact = db.query(OrgContact).filter(OrgContact.id == inquiry.org_contact_id).first() if inquiry.org_contact_id else None
-    suffix = inquiry.universal_id.split("INQ-")[-1] if inquiry.universal_id else str(inquiry.id)
-    offer_number = f"TOR-{suffix}"
+    ensure_in_scope(db, user, inquiry)
+    missing = [label for label, ok in (
+        ("Product", bool(inquiry.product)),
+        ("Specification or Requirement Description", bool(inquiry.product_spec or inquiry.requirement_desc)),
+    ) if not ok]
+    if missing:
+        raise HTTPException(status_code=422, detail=f"Fill {' and '.join(missing)} on inquiry {inquiry.universal_id} (click Edit) before sending the Technical Requirement to R&D — otherwise R&D gets a document with no requirement details.")
+    team = requirement_movement.validate_request(db, body.response_due_date)
 
     raised_by = user.name or user.email
     now = datetime.now(timezone.utc)
-
-    ctx = {
-        "offer_number": offer_number, "universal_id": inquiry.universal_id,
-        "org_name": org.name if org else None, "org_type": org.org_type if org else None,
-        "org_address": org.address if org else None, "org_gst_number": org.gst_number if org else None,
-        "org_city": org.city if org else None, "org_state": org.state if org else None,
-        "contact_name": contact.name if contact else None, "contact_designation": contact.designation if contact else None,
-        "contact_department": contact.department if contact else None, "contact_mobile": contact.mobile if contact else None,
-        "contact_email": contact.email if contact else None,
-        "product_category": inquiry.product_category, "product": inquiry.product,
-        "quantity_display": f"{inquiry.quantity:g}" if inquiry.quantity is not None else None,
-        "inspection_req": inquiry.inspection_req, "product_spec": inquiry.product_spec,
-        "requirement_desc": inquiry.requirement_desc,
-        "project_details": inquiry.project_details, "raised_by": raised_by,
-        "raised_at": now.strftime("%d %b %Y, %I:%M %p"),
-    }
+    ctx, org = technical_offer.build_context(db, "inquiry", inquiry, user, now)
+    offer_number = ctx["offer_number"]
     offer_filename = f"{offer_number}.pdf"
-    offer_bytes = build_technical_offer_pdf(ctx).read()
+    # The Word draft (edited by the BD owner before sending) when there is one for this send.
+    offer_bytes, _edited = await technical_offer.send_pdf(db, "inquiry", inquiry, ctx)
 
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
@@ -323,7 +436,7 @@ async def create_technical_offer_request(
     )
     tor_doc = CrmDocument(
         related_module="inquiry", related_id=inquiry.id, universal_id=inquiry.universal_id,
-        folder_type="technical_offer", doc_category="technical_offer_request",
+        folder_type="internal", doc_category=technical_offer.DOC_CATEGORY,
         file_name=offer_filename, file_path=upload_result["path"], sharepoint_path=upload_result["path"],
         sharepoint_url=upload_result.get("webUrl"), file_size=upload_result.get("size"),
         mime_type="application/pdf", uploaded_by_name=raised_by, org_id=org.id if org else None,
@@ -343,6 +456,7 @@ async def create_technical_offer_request(
     tor_doc_link = f"{settings.APP_BASE_URL}/api/v1/crm/documents/{tor_doc.id}/shared-content?token={create_document_share_token('crm_document', tor_doc.id)}"
 
     reference_documents = []
+    selected_docs: list[CrmDocument] = []
     if body.document_ids:
         selected_docs = db.query(CrmDocument).filter(
             CrmDocument.id.in_(body.document_ids),
@@ -369,17 +483,45 @@ async def create_technical_offer_request(
 
     inquiry.technical_offer_number = offer_number
     inquiry.technical_offer_sent_at = now
+    movement_log = requirement_movement.record_movement(
+        db, module="inquiry", record_id=inquiry.id, user=user, offer_number=offer_number,
+        ctx=ctx, tor_doc=tor_doc, reference_docs=selected_docs,
+    )
+    requirement_movement.create_rnd_request(
+        db, module="inquiry", record=inquiry, user=user, log=movement_log, offer_number=offer_number,
+        team=team, due_date=body.response_due_date, remarks=body.remarks,
+    )
     db.commit()
     db.refresh(inquiry)
-    return inquiry
+    return _out(inquiry, user)
+
+
+@router.get("/{inquiry_id}/requirement-movements")
+async def list_inquiry_requirement_movements(
+    inquiry_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_tab_access("crm", "inquiries_tenders")),
+):
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    ensure_in_scope(db, _user, inquiry)
+    return requirement_movement.list_movements(db, module="inquiry", record=inquiry)
+
+
+# The Info tab's Revision selector only counts edits to the requirement text itself;
+# every other info edit still lands in the same log and shows on the Timeline.
+REQUIREMENT_REVISION_FIELDS = ("product_spec", "requirement_desc", "project_details")
 
 
 @router.get("/{inquiry_id}/spec-revisions")
 async def list_inquiry_spec_revisions(
     inquiry_id: int,
+    requirement_only: bool = False,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    _user: User = Depends(require_tab_access("crm", "inquiries_tenders")),
 ):
+    ensure_parent_in_scope(db, _user, "inquiry", inquiry_id)
     logs = db.query(AuditLog).filter(
         AuditLog.entity_type == "inquiry_spec", AuditLog.entity_id == inquiry_id
     ).order_by(AuditLog.performed_at.asc()).all()
@@ -389,9 +531,15 @@ async def list_inquiry_spec_revisions(
         for u in db.query(User).filter(User.id.in_(user_ids)).all():
             user_map[u.id] = u.name or u.email or f"User #{u.id}"
     result = []
-    for seq, log in enumerate(logs, start=1):
+    seq = 0
+    for log in logs:
         old_vals = json.loads(log.old_value) if log.old_value else {}
         new_vals = json.loads(log.new_value) if log.new_value else {}
+        if requirement_only:
+            new_vals = {f: v for f, v in new_vals.items() if f in REQUIREMENT_REVISION_FIELDS}
+            if not new_vals:
+                continue
+        seq += 1
         result.append({
             "id": log.id,
             "revision_id": f"Rev-{seq}",
@@ -403,15 +551,19 @@ async def list_inquiry_spec_revisions(
             ],
         })
     result.reverse()
-    return result
+    return mask_revision_changes(_user, result, INQUIRY_MONEY_FIELDS)
 
 
 @router.get("/{inquiry_id}/stages", response_model=list[StageLogResponse])
 async def list_inquiry_stages(
     inquiry_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "timeline", "view")),
 ):
+    inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Inquiry not found — it may have been deleted. Refresh the list.")
+    ensure_in_scope(db, _user, inquiry)
     return db.query(CrmStageLog).filter(
         CrmStageLog.related_module == "inquiry", CrmStageLog.related_id == inquiry_id
     ).order_by(CrmStageLog.created_at.asc()).all()
@@ -422,15 +574,21 @@ async def add_inquiry_stage(
     inquiry_id: int,
     payload: StageLogEntry,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_feature_action("crm", "inquiries_tenders", "stage", "edit")),
 ):
     inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
+    ensure_in_scope(db, user, inquiry)
     if not _can_modify(inquiry, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can change this inquiry's stage.")
     if payload.stage not in INQ_STAGES:
         raise HTTPException(status_code=422, detail=f"Invalid stage. Must be one of: {', '.join(INQ_STAGES)}")
+    check_stage_move(db, stages=INQ_STAGES, old=inquiry.current_stage, new=payload.stage, user=user,
+                     reason=payload.notes, label="inquiry", inquiry_id=inquiry.id)
+    # Closing as not ordered from the timeline needs the lost reason on the inquiry first.
+    opp.ensure_lost_details({"current_stage": payload.stage, "status": inquiry.status, "lost_reason_code": inquiry.lost_reason_code,
+                             "lost_to_competitor": inquiry.lost_to_competitor, "lost_remarks": inquiry.lost_remarks})
     entry = CrmStageLog(
         related_module="inquiry", related_id=inquiry_id, universal_id=inquiry.universal_id, stage=payload.stage,
         entered_by_id=user.id, entered_by_name=user.name or user.email, notes=payload.notes,
@@ -438,15 +596,17 @@ async def add_inquiry_stage(
     )
     db.add(entry)
     inquiry.current_stage = payload.stage
+    opp.stamp_closed(inquiry)
     db.commit()
     db.refresh(entry)
     return entry
 
 
-def _build_mom_ctx(inquiry_id: int, payload: MomExportRequest, db: Session) -> tuple[dict, "Organization | None"]:
+def _build_mom_ctx(inquiry_id: int, payload: MomExportRequest, db: Session, user: User) -> tuple[dict, "Organization | None"]:
     inquiry = db.query(Inquiry).filter(Inquiry.id == inquiry_id, Inquiry.is_deleted == False).first()  # noqa: E712
     if not inquiry:
         raise HTTPException(status_code=404, detail="Inquiry not found")
+    ensure_in_scope(db, user, inquiry)
 
     org = db.query(Organization).filter(Organization.id == inquiry.org_id).first()
 
@@ -460,10 +620,13 @@ def _build_mom_ctx(inquiry_id: int, payload: MomExportRequest, db: Session) -> t
     pew_members = (
         db.query(User).filter(User.id.in_(payload.pew_member_ids)).all() if payload.pew_member_ids else []
     )
+    # Only contacts of this inquiry's own organization — never another customer's people.
     client_contacts = (
-        db.query(OrgContact).filter(OrgContact.id.in_(payload.client_contact_ids)).all()
+        db.query(OrgContact).filter(OrgContact.id.in_(payload.client_contact_ids), OrgContact.org_id == inquiry.org_id).all()
         if payload.client_contact_ids else []
     )
+    if len(client_contacts) != len(set(payload.client_contact_ids or [])):
+        raise HTTPException(status_code=422, detail="A picked client contact doesn't belong to this inquiry's customer organization (or was deleted) — reopen the MoM dialog and pick the contacts again.")
 
     # Responsibility on the MOM defaults to the inquiry's BD Owner (PEW side)
     # when an activity has no explicit per-row responsibility set. An activity
@@ -500,14 +663,14 @@ async def export_inquiry_mom(
     inquiry_id: int,
     payload: MomExportRequest,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "followups", "print")),
 ):
     """Export this inquiry's logged activities as a Minutes-of-Meeting .docx.
     Client name/contacts and organization are pulled from the already-linked
     records rather than re-entered — only the meeting-specific fields
     (subject, date, who was present, which activities to include) are asked
     for at export time."""
-    ctx, org = _build_mom_ctx(inquiry_id, payload, db)
+    ctx, org = _build_mom_ctx(inquiry_id, payload, db, _user)
     buf = build_mom_docx(ctx)
 
     org_slug = (org.name if org else "Inquiry").replace(" ", "_").replace("/", "-")
@@ -524,11 +687,11 @@ async def export_inquiry_mom_pdf(
     inquiry_id: int,
     payload: MomExportRequest,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    _user: User = Depends(require_feature_action("crm", "inquiries_tenders", "followups", "print")),
 ):
     """Export this inquiry's logged activities as a Minutes-of-Meeting .pdf,
     built directly with reportlab (no DOCX-to-PDF conversion step)."""
-    ctx, org = _build_mom_ctx(inquiry_id, payload, db)
+    ctx, org = _build_mom_ctx(inquiry_id, payload, db, _user)
     buf = build_mom_pdf(ctx)
 
     org_slug = (org.name if org else "Inquiry").replace(" ", "_").replace("/", "-")

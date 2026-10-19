@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { qualityApi } from '@/lib/api'
 import { QualityInspectionPlan } from '@/types'
 import { TEXT } from '@/lib/theme'
@@ -18,6 +20,7 @@ const SAMPLING_LABEL: Record<string, string> = { aql: 'AQL', full: '100%', fixed
 export default function InspectionPlansPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
   const router = useRouter()
+  const { can } = useCan()
   const [plans, setPlans] = useState<QualityInspectionPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
@@ -45,7 +48,7 @@ export default function InspectionPlansPage() {
     <div>
       <QualityNav />
       <PageHeader title="Inspection Plans">
-        <button type="button" onClick={() => router.push('/dashboard/quality/inspection-plans/new')} style={primaryBtnStyle}>+ New Plan</button>
+        {can('quality', 'inspection_plans', 'create') && (<button type="button" onClick={() => router.push('/dashboard/quality/inspection-plans/new')} style={primaryBtnStyle}>+ New Plan</button>)}
       </PageHeader>
       <p style={{ fontSize: 13, color: TEXT.muted, margin: '-10px 0 16px' }}>
         One approved (current) plan per item and inspection type. Approved plans are frozen — use &ldquo;New revision&rdquo; to change one; approving the revision makes the old one obsolete.
@@ -70,7 +73,7 @@ export default function InspectionPlansPage() {
             ) : plans.length === 0 ? (
               <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No inspection plans found.</td></tr>
             ) : plans.map((p) => (
-              <tr key={p.id} onClick={() => router.push(`/dashboard/quality/inspection-plans/${p.id}`)} style={{ cursor: 'pointer' }}>
+              <tr key={p.id} onClick={() => router.push(recordPath('/dashboard/quality/inspection-plans', p))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{p.plan_number}</td>
                 <td style={tdStyle}>{p.item_code ? `${p.item_code} — ` : ''}{p.item_name}{!p.item_id && <span style={{ color: '#b45309' }}> (legacy — no item link)</span>}</td>
                 <td style={tdStyle}>{INSPECTION_TYPE_LABELS[p.inspection_type] || p.inspection_type}</td>
@@ -80,7 +83,7 @@ export default function InspectionPlansPage() {
                 <td style={tdStyle}><Pill text={p.status} hex={PLAN_STATUS_HEX[p.status]} /></td>
                 <td style={tdStyle}>{p.approved_at ? `${fmtDate(p.approved_at)} · ${p.approved_by_name || ''}` : '—'}</td>
                 <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => router.push(`/dashboard/quality/inspection-plans/${p.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                  <span onClick={() => router.push(recordPath('/dashboard/quality/inspection-plans', p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

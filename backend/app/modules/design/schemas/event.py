@@ -14,6 +14,11 @@ class DesignEventResponse(BaseModel):
     document_id: int | None = None
     revision_id: int | None = None
     ecn_id: int | None = None
+    bom_id: int | None = None
+    bom_revision_id: int | None = None
+    ecr_id: int | None = None
+    submission_id: int | None = None
+    request_id: int | None = None
     action: str
     comment: str | None = None
     actor_id: int | None = None

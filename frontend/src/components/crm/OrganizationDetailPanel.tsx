@@ -1,17 +1,21 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { EnvelopeSimple, Phone } from '@phosphor-icons/react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { crmApi } from '@/lib/api'
+import { recordVisit } from '@/lib/crmShortcuts'
 import { OrganizationDetail, Inquiry, Tender, OrgContact } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages, isValidEmail } from '@/lib/validation'
-import InquiryForm from '@/components/crm/InquiryForm'
-import TenderForm from '@/components/crm/TenderForm'
 import { orgTypeHasRailwayFields } from '@/components/crm/constants'
-import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab } from '@/components/crm/ui'
+import { Card, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab } from '@/components/crm/ui'
+import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
+import { recordPath, refOf } from '@/lib/recordRef'
+import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
 
 const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Audit Trail'] as const
 
@@ -27,6 +31,7 @@ function useBackSuffix(tab: typeof TABS[number]) {
 
 export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink = true }: { orgId: number; onDeleted?: () => void; showEditLink?: boolean }) {
   const { user } = useAuth()
+  const { can, canDelete, canFeature } = useCan()
   const router = useRouter()
 
   const [org, setOrg] = useState<OrganizationDetail | null>(null)
@@ -42,28 +47,39 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
     setLoading(true)
     setError('')
     try {
-      setOrg(await crmApi.getOrganizationDetail(orgId))
+      const detail = await crmApi.getOrganizationDetail(orgId)
+      setOrg(detail)
+      recordVisit({ kind: 'organization', id: detail.id, ref: refOf(detail), title: detail.name, sub: detail.city || detail.org_type })
     } catch (err) {
-      setError(extractErrorMessages(err, 'Organization not found.'))
+      setError(extractErrorMessages(err, 'Customer Organization not found.'))
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    if (orgId) { setTab(initialTab(searchParams.get('tab'))); load() }
+    // Deferred so the effect itself sets no state.
+    if (orgId) Promise.resolve().then(() => { setTab(initialTab(searchParams.get('tab'))); load() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId])
 
-  const canModify = !!org && !!user && (user.role === 'admin' || org.created_by_id === user.id)
+  // Creator-or-admin (backend rule) AND the Permission Matrix grant for the action.
+  const isOwnerOrAdmin = !!org && !!user && (user.role === 'admin' || org.created_by_id === user.id)
+  const canModify = isOwnerOrAdmin && can('crm', 'organizations', 'edit')
+  // Organization sub-tabs are features of the Organizations tab (core/features/crm.py).
+  const seeTab = (t: typeof TABS[number]) => t === 'Overview'
+    || (t === 'Contacts' && canFeature('crm', 'organizations', 'contacts', 'view'))
+    || ((t === 'Inquiries' || t === 'Tenders') && canFeature('crm', 'organizations', 'linked_records', 'view'))
+    || (t === 'Audit Trail' && canFeature('crm', 'organizations', 'audit_trail', 'view'))
+  const canDeleteOrg = !!org && canDelete('crm', 'organizations', org.created_by_id ?? null)
 
   const handleDelete = async () => {
     try {
       await crmApi.deleteOrganization(orgId)
       if (onDeleted) onDeleted()
       else router.push('/dashboard/crm/organizations')
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to delete organization.'))
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Failed to delete customer organization.'))
     }
   }
 
@@ -75,20 +91,20 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
     <div>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 4px' }}>{org.org_type || 'Organization'}{org.org_code ? ` · ${org.org_code}` : ''}</p>
+          <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 4px' }}>{org.org_type || 'Customer Organization'}{org.org_code ? ` · ${org.org_code}` : ''}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org.name}</h1>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button onClick={() => router.push('/dashboard/crm/organizations')} type="button" style={secondaryBtnStyle}>
+          <button onClick={() => router.push('/dashboard/crm/organizations')} type="button" data-tour="orgdetail-back-btn" style={secondaryBtnStyle}>
             ← Back
           </button>
-          {canModify && showEditLink && <button type="button" onClick={() => router.push(`/dashboard/crm/organizations/${org.id}/edit`)} data-tour="orgdetail-edit-link" style={secondaryBtnStyle}>Edit</button>}
-          {canModify && <button onClick={() => setShowDeleteConfirm(true)} data-tour="orgdetail-delete-btn" style={dangerBtnStyle}>Delete</button>}
+          {canModify && showEditLink && <button type="button" onClick={() => router.push(`${recordPath('/dashboard/crm/organizations', org)}/edit`)} data-tour="orgdetail-edit-link" style={secondaryBtnStyle}>Edit</button>}
+          {canDeleteOrg && <button onClick={() => setShowDeleteConfirm(true)} data-tour="orgdetail-delete-btn" style={dangerBtnStyle}>Delete</button>}
         </div>
       </div>
 
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', overflowY: 'visible' }}>
-        {TABS.map((t) => {
+        {TABS.filter(seeTab).map((t) => {
           const count = t === 'Inquiries' ? org.inquiry_count : t === 'Tenders' ? org.tender_count : t === 'Contacts' ? org.contacts.length : null
           return (
             <button
@@ -122,16 +138,16 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
         })}
       </div>
 
-      {tab === 'Overview' && <OverviewTab org={org} />}
-      {tab === 'Contacts' && <ContactsTab org={org} canModify={canModify} onRefresh={load} />}
-      {tab === 'Inquiries' && <InquiriesTab orgId={org.id} canModify={canModify} contacts={org.contacts} />}
-      {tab === 'Tenders' && <TendersTab orgId={org.id} canModify={canModify} />}
-      {tab === 'Audit Trail' && <AuditTab orgId={org.id} />}
+      {(tab === 'Overview' || !seeTab(tab)) && <OverviewTab org={org} />}
+      {tab === 'Contacts' && seeTab(tab) && <ContactsTab org={org} canModify={isOwnerOrAdmin && canFeature('crm', 'organizations', 'contacts', 'edit')} canCreate={isOwnerOrAdmin && canFeature('crm', 'organizations', 'contacts', 'create')} onRefresh={load} />}
+      {tab === 'Inquiries' && seeTab(tab) && <InquiriesTab orgId={org.id} orgRef={refOf(org)} canModify={isOwnerOrAdmin && can('crm', 'inquiries_tenders', 'create')} contacts={org.contacts} />}
+      {tab === 'Tenders' && seeTab(tab) && <TendersTab orgId={org.id} orgRef={refOf(org)} canModify={isOwnerOrAdmin && can('crm', 'inquiries_tenders', 'create')} />}
+      {tab === 'Audit Trail' && seeTab(tab) && <AuditTab orgId={org.id} />}
 
       <ConfirmDialog
         open={showDeleteConfirm}
-        title="Delete this organization?"
-        message={`Delete organization ${org.name}? Its inquiries and tenders will also be deleted. This action cannot be undone.`}
+        title="Delete this customer organization?"
+        message={`Delete customer organization ${org.name}? Its inquiries and tenders will also be deleted. This action cannot be undone.`}
         onConfirm={() => { setShowDeleteConfirm(false); handleDelete() }}
         onCancel={() => setShowDeleteConfirm(false)}
       />
@@ -145,10 +161,9 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
   const showRailwayFields = orgTypeHasRailwayFields(org.org_type) || !!org.railway_zone || !!org.division_workshop
   return (
     <div data-tour="orgdetail-overview" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-      <Card title="Organization Details">
-        <InfoRow label="Organization Code" value={org.org_code || 'Not provided'} />
+      <Card title="Customer Organization Details">
+        <InfoRow label="Customer Organization Code" value={org.org_code || 'Not provided'} />
         <InfoRow label="Type" value={org.org_type || 'Not provided'} />
-        <InfoRow label="Parent Organization" value={org.parent_org || 'Not provided'} />
         {showRailwayFields && <InfoRow label="Railway Zone" value={org.railway_zone || 'Not provided'} />}
         {showRailwayFields && <InfoRow label="Division / Workshop" value={org.division_workshop || 'Not provided'} />}
       </Card>
@@ -161,6 +176,8 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
       </Card>
       <Card title="Contact & Registration">
         <InfoRow label="GST Number" value={org.gst_number || 'Not provided'} />
+        <InfoRow label="PAN" value={org.pan || 'Not provided'} />
+        <InfoRow label="GST State Code (place of supply)" value={org.gst_state_code || 'Not provided'} />
         <InfoRow label="Official Phone" value={[org.official_phone, ...(org.additional_phones || [])].filter(Boolean).join(', ') || 'Not provided'} />
         <InfoRow label="Official Email" value={[org.official_email, ...(org.additional_emails || [])].filter(Boolean).join(', ') || 'Not provided'} />
         <InfoRow label="Website" value={org.website || 'Not provided'} />
@@ -169,13 +186,16 @@ function OverviewTab({ org }: { org: OrganizationDetail }) {
   )
 }
 
-function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; canModify: boolean; onRefresh: () => void }) {
+function ContactsTab({ org, canModify, canCreate, onRefresh }: { org: OrganizationDetail; canModify: boolean; canCreate: boolean; onRefresh: () => void }) {
   const backSuffix = useBackSuffix('Contacts')
   const router = useRouter()
   const emptyForm = { name: '', designation: '', mobile: '', email: '', department: '' }
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyForm)
+  // More mobiles / emails for the same person (besides the main one).
+  const [extraMobiles, setExtraMobiles] = useState<string[]>([])
+  const [extraEmails, setExtraEmails] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const submittingRef = useRef(false)
   const [dupeConfirm, setDupeConfirm] = useState(false)
@@ -191,13 +211,18 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
   const startEdit = (c: OrganizationDetail['contacts'][number]) => {
     setEditingId(c.id)
     setForm({ name: c.name, designation: c.designation || '', mobile: c.mobile || '', email: c.email || '', department: c.department || '' })
+    setExtraMobiles(c.additional_mobiles || [])
+    setExtraEmails(c.additional_emails || [])
     setShowForm(true)
   }
 
   const cancelForm = () => {
     setEditingId(null)
     setForm(emptyForm)
+    setExtraMobiles([])
+    setExtraEmails([])
     setShowForm(false)
+    setErrorDialog(null)
   }
 
   const otherContacts = org.contacts.filter((c) => !(editingId && c.id === editingId))
@@ -209,17 +234,20 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
   const dupEmail = !!emailLower && otherContacts.some((c) => (c.email || '').trim().toLowerCase() === emailLower)
   const dupName = !!form.name.trim() && otherContacts.some((c) => c.name.trim().toLowerCase() === form.name.trim().toLowerCase())
 
-  const isDuplicate = () => dupName || dupMobile || dupEmail
-
   const doSave = async () => {
     submittingRef.current = true
     setSaving(true)
     try {
-      if (editingId) await crmApi.updateOrgContact(org.id, editingId, form)
-      else await crmApi.createOrgContact(org.id, form)
+      const payload = {
+        ...form,
+        additional_mobiles: extraMobiles.map((m) => m.trim()).filter(Boolean),
+        additional_emails: extraEmails.map((e) => e.trim()).filter(Boolean),
+      }
+      if (editingId) await crmApi.updateOrgContact(org.id, editingId, payload)
+      else await crmApi.createOrgContact(org.id, payload)
       cancelForm()
       onRefresh()
-    } catch (err: any) {
+    } catch (err) {
       setErrorDialog(extractErrorMessages(err, 'Failed to save contact.'))
     } finally {
       submittingRef.current = false
@@ -229,17 +257,25 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.name.trim() || submittingRef.current) return
+    if (submittingRef.current) return
+    setErrorDialog(null)
+    if (!form.name.trim()) { setErrorDialog(['Enter the contact person\'s name — it is required.']); return }
     if (form.email && !isValidEmail(form.email)) {
       setErrorDialog(['Enter a valid email address for this contact.'])
+      return
+    }
+    const badExtra = extraEmails.map((e) => e.trim()).filter((e) => e && !isValidEmail(e))
+    if (badExtra.length) { setErrorDialog([`Enter a valid email address — "${badExtra[0]}" isn't one. Fix it or remove that row.`]); return }
+    if ((extraMobiles.some((m) => m.trim()) && !form.mobile.trim()) || (extraEmails.some((e) => e.trim()) && !form.email.trim())) {
+      setErrorDialog(['Fill in the main Mobile / Email first — the extra rows are for a second or third number/address.'])
       return
     }
     // Mobile/email matching another contact on the same org is a hard stop —
     // only a same-name-but-different-details match gets a soft "save anyway?".
     if (dupMobile || dupEmail) {
       const parts: string[] = []
-      if (dupMobile) parts.push('This mobile number is already used by another contact on this organization.')
-      if (dupEmail) parts.push('This email address is already used by another contact on this organization.')
+      if (dupMobile) parts.push('This mobile number is already used by another contact on this customer organization.')
+      if (dupEmail) parts.push('This email address is already used by another contact on this customer organization.')
       setErrorDialog(parts)
       return
     }
@@ -252,34 +288,71 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {canModify && (
+      {(canCreate || canModify) && (
         <div>
-          <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} data-tour="orgdetail-add-contact-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Contact'}</button>
+          {canCreate && <button onClick={() => { cancelForm(); setShowForm(true) }} data-tour="orgdetail-add-contact-btn" style={primaryBtnStyle}>+ Add Contact</button>}
           {showForm && (
-            <form onSubmit={submit} onKeyDown={handleEnterAsTab} style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-              <Field label="Name *"><input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
-              <Field label="Designation"><input value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} style={inputStyle} /></Field>
-              <Field label="Department"><input value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} style={inputStyle} /></Field>
-              <Field label="Mobile">
-                <input
-                  value={form.mobile}
-                  onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
-                  style={{ ...inputStyle, ...(dupMobile ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }}
-                />
-                {dupMobile && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Already used by another contact on this organization.</p>}
-              </Field>
-              <Field label="Email">
-                <input
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  style={{ ...inputStyle, ...(dupEmail ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }}
-                />
-                {dupEmail && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Already used by another contact on this organization.</p>}
-              </Field>
-              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                <button type="submit" disabled={saving || dupMobile || dupEmail} style={{ ...primaryBtnStyle, width: '100%', opacity: saving || dupMobile || dupEmail ? 0.6 : 1 }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Contact'}</button>
-              </div>
-            </form>
+            <FormSheet tour="orgdetail-contact-form" width={640} icon={editingId ? 'edit' : 'user'} title={editingId ? 'Edit Contact' : 'Add Contact'}
+              subtitle={`Contact person at ${org.name}.`} onClose={cancelForm} busy={saving}
+              footer={<>
+                <button type="button" onClick={cancelForm} disabled={saving} data-tour="orgdetail-contact-cancel-btn" style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+                <button type="submit" form="orgdetail-contact-form" disabled={saving || dupMobile || dupEmail} data-tour="orgdetail-contact-save" style={sheetBtn('primary', SHEET.BLUE, saving || dupMobile || dupEmail)}>
+                  <SheetIcon name={editingId ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Contact'}
+                </button>
+              </>}>
+              <form id="orgdetail-contact-form" onSubmit={submit} onKeyDown={handleEnterAsTab} style={{ padding: '20px 24px' }}>
+                <SheetError error={errorDialog} />
+                <SheetSection icon="user" title="Person">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                    <div style={{ flex: '1 1 100%' }}><div data-tour="orgdetail-contact-name"><label style={sheetLabel}>Name <Req /></label><input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} style={sheetInput} autoFocus /></div></div>
+                    <div style={{ flex: '1 1 200px' }}><div data-tour="orgdetail-contact-designation"><label style={sheetLabel}>Designation</label><input value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} style={sheetInput} /></div></div>
+                    <div style={{ flex: '1 1 200px' }}><div data-tour="orgdetail-contact-department"><label style={sheetLabel}>Department</label><input value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} style={sheetInput} /></div></div>
+                  </div>
+                </SheetSection>
+                <SheetSection icon="chat" title="Reach">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                    <div style={{ flex: '1 1 200px' }}>
+                      <div data-tour="orgdetail-contact-mobile"><label style={sheetLabel}>Mobile</label>
+                        <ValueRow button={<AddMoreButton label="Add another mobile" extras={extraMobiles} onClick={() => canAddMore(extraMobiles) && setExtraMobiles((v) => [...v, ''])} />}>
+                          <input
+                            value={form.mobile}
+                            onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))}
+                            style={{ ...sheetInput, ...(dupMobile ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }}
+                          />
+                        </ValueRow>
+                        {dupMobile && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Already used by another contact on this customer organization.</p>}
+                        {extraMobiles.map((m, i) => (
+                          <div key={i} style={{ marginTop: 8 }}>
+                            <ValueRow button={<RemoveValueButton label="Remove this mobile" onClick={() => setExtraMobiles((v) => v.filter((_, j) => j !== i))} />}>
+                              <input value={m} placeholder={`Mobile ${i + 2}`} onChange={(e) => setExtraMobiles((v) => v.map((x, j) => (j === i ? e.target.value : x)))} style={sheetInput} />
+                            </ValueRow>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ flex: '1 1 240px' }}>
+                      <div data-tour="orgdetail-contact-email"><label style={sheetLabel}>Email</label>
+                        <ValueRow button={<AddMoreButton label="Add another email" extras={extraEmails} onClick={() => canAddMore(extraEmails) && setExtraEmails((v) => [...v, ''])} />}>
+                          <input
+                            value={form.email}
+                            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                            style={{ ...sheetInput, ...(dupEmail ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }}
+                          />
+                        </ValueRow>
+                        {dupEmail && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>Already used by another contact on this customer organization.</p>}
+                        {extraEmails.map((m, i) => (
+                          <div key={i} style={{ marginTop: 8 }}>
+                            <ValueRow button={<RemoveValueButton label="Remove this email" onClick={() => setExtraEmails((v) => v.filter((_, j) => j !== i))} />}>
+                              <input value={m} type="email" placeholder={`Email ${i + 2}`} onChange={(e) => setExtraEmails((v) => v.map((x, j) => (j === i ? e.target.value : x)))} style={sheetInput} />
+                            </ValueRow>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </SheetSection>
+              </form>
+            </FormSheet>
           )}
         </div>
       )}
@@ -287,7 +360,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
       {org.contacts.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No contacts added yet.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div data-tour="orgdetail-contacts-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {org.contacts.map((c) => {
             const linkedInquiries = inquiries.filter((i) => i.org_contact_id === c.id)
             const linkedTenders = tenders.filter((t) => t.org_contact_id === c.id)
@@ -317,14 +390,14 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
                       {c.mobile && (
                         <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#78716c' }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" /></svg>
-                          {c.mobile}
+                          <Phone size={12} />
+                          {[c.mobile, ...(c.additional_mobiles || [])].filter(Boolean).join(', ')}
                         </span>
                       )}
                       {c.email && (
                         <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#78716c' }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M22 6l-10 7L2 6" /></svg>
-                          {c.email}
+                          <EnvelopeSimple size={12} />
+                          {[c.email, ...(c.additional_emails || [])].filter(Boolean).join(', ')}
                         </span>
                       )}
                     </div>
@@ -332,7 +405,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
                 </div>
               </div>
               {canModify && (
-                <button onClick={() => startEdit(c)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>Edit</button>
+                <button onClick={() => startEdit(c)} data-tour={c.id === org.contacts[0]?.id ? 'orgdetail-contact-edit-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, flexShrink: 0 }}>Edit</button>
               )}
               </div>
 
@@ -341,7 +414,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
                   {linkedInquiries.map((i) => (
                     <span
                       key={`inq-${i.id}`}
-                      onClick={() => router.push(`/dashboard/crm/inquiries/${i.id}${backSuffix}`)}
+                      onClick={() => router.push(`/dashboard/crm/inquiries/${refOf(i)}${backSuffix}`)}
                       style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: 'rgba(59,130,246,0.1)', color: '#3b82f6', cursor: 'pointer', fontFamily: 'monospace' }}
                     >
                       Inquiry {i.universal_id || `#${i.id}`}
@@ -350,7 +423,7 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
                   {linkedTenders.map((t) => (
                     <span
                       key={`tnd-${t.id}`}
-                      onClick={() => router.push(`/dashboard/crm/tenders/${t.id}${backSuffix}`)}
+                      onClick={() => router.push(`/dashboard/crm/tenders/${refOf(t)}${backSuffix}`)}
                       style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: '#f4713b', cursor: 'pointer', fontFamily: 'monospace' }}
                     >
                       Tender {t.universal_id || `#${t.id}`}
@@ -367,17 +440,19 @@ function ContactsTab({ org, canModify, onRefresh }: { org: OrganizationDetail; c
       <ConfirmDialog
         open={dupeConfirm}
         title="Possible duplicate contact"
-        message={`A contact with the same name, mobile, or email already exists for this organization. Save anyway?`}
+        message={`A contact with the same name, mobile, or email already exists for this customer organization. Save anyway?`}
         onConfirm={() => { setDupeConfirm(false); doSave() }}
         onCancel={() => setDupeConfirm(false)}
       />
-      <MessageDialog
-        open={!!errorDialog}
-        variant="error"
-        title="Error"
-        message={errorDialog || ''}
-        onClose={() => setErrorDialog(null)}
-      />
+    </div>
+  )
+}
+
+function TabLoadError({ message }: { message: string | string[] }) {
+  const lines = Array.isArray(message) ? message : [message]
+  return (
+    <div role="alert" style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)' }}>
+      {lines.map((m, i) => <p key={i} style={{ fontSize: 13, color: '#b91c1c', margin: i ? '4px 0 0' : 0 }}>{m}</p>)}
     </div>
   )
 }
@@ -390,42 +465,33 @@ function StatusPill({ value }: { value: string }) {
   )
 }
 
-function InquiriesTab({ orgId, canModify, contacts }: { orgId: number; canModify: boolean; contacts: OrgContact[] }) {
+function InquiriesTab({ orgId, orgRef, canModify, contacts }: { orgId: number; orgRef: string; canModify: boolean; contacts: OrgContact[] }) {
   const backSuffix = useBackSuffix('Inquiries')
   const router = useRouter()
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
   const contactName = (contactId?: number) => contacts.find((c) => c.id === contactId)?.name
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const load = () => crmApi.listInquiries({ org_id: orgId }).then(setInquiries).finally(() => setLoading(false))
-  useEffect(() => { load() }, [orgId])
+  const [loadError, setLoadError] = useState<string | string[]>('')
+  const load = () => crmApi.listInquiries({ org_id: orgId })
+    .then((rows) => { setInquiries(rows); setLoadError('') })
+    .catch((err) => setLoadError(extractErrorMessages(err, "Could not load this customer organization's inquiries. Reload the page; if it persists, check that you still have CRM access.")))
+    .finally(() => setLoading(false))
+  useEffect(() => { load() }, [orgId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
+  if (loadError) return <TabLoadError message={loadError} />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {canModify && (
         <div>
-          <button onClick={() => setShowForm((v) => !v)} data-tour="orgdetail-add-inquiry-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Inquiry'}</button>
-          {showForm && (
-            <div style={{ marginTop: 12 }}>
-              <InquiryForm
-                defaultOrgId={orgId}
-                submitLabel="Save Inquiry"
-                onCancel={() => setShowForm(false)}
-                onSubmit={async (payload) => {
-                  await crmApi.createInquiry(payload)
-                  setShowForm(false)
-                  load()
-                }}
-              />
-            </div>
-          )}
+          {/* Opens the New Inquiry page for this organization (not an inline form above its old inquiries). */}
+          <button onClick={() => router.push(`/dashboard/crm/inquiries/new${backSuffix}&type=inquiry&org=${encodeURIComponent(orgRef)}`)} data-tour="orgdetail-add-inquiry-btn" style={primaryBtnStyle}>+ Add Inquiry</button>
         </div>
       )}
 
       {inquiries.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No inquiries for this organization.</p>
+        <p style={{ fontSize: 13, color: '#a8a29e' }}>No inquiries for this customer organization.</p>
       ) : (
         <div data-tour="orgdetail-inquiries-table" style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
@@ -439,7 +505,7 @@ function InquiriesTab({ orgId, canModify, contacts }: { orgId: number; canModify
             </thead>
             <tbody>
               {inquiries.map((i) => (
-                <tr key={i.id} onClick={() => router.push(`/dashboard/crm/inquiries/${i.id}${backSuffix}`)} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }}>
+                <tr key={i.id} onClick={() => router.push(`/dashboard/crm/inquiries/${refOf(i)}${backSuffix}`)} style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }}>
                   <td style={{ padding: '10px 16px', fontFamily: 'monospace', fontSize: 12, color: '#FF7A45', fontWeight: 600 }}>{i.universal_id || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#1f1108', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.product || '—'}</td>
                   <td style={{ padding: '10px 16px', color: '#57534e', whiteSpace: 'nowrap' }}>{contactName(i.org_contact_id) || '—'}</td>
@@ -457,41 +523,32 @@ function InquiriesTab({ orgId, canModify, contacts }: { orgId: number; canModify
   )
 }
 
-function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean }) {
+function TendersTab({ orgId, orgRef, canModify }: { orgId: number; orgRef: string; canModify: boolean }) {
   const backSuffix = useBackSuffix('Tenders')
   const router = useRouter()
   const [tenders, setTenders] = useState<Tender[]>([])
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const load = () => crmApi.listTenders({ org_id: orgId }).then(setTenders).finally(() => setLoading(false))
-  useEffect(() => { load() }, [orgId])
+  const [loadError, setLoadError] = useState<string | string[]>('')
+  const load = () => crmApi.listTenders({ org_id: orgId })
+    .then((rows) => { setTenders(rows); setLoadError('') })
+    .catch((err) => setLoadError(extractErrorMessages(err, "Could not load this customer organization's tenders. Reload the page; if it persists, check that you still have CRM access.")))
+    .finally(() => setLoading(false))
+  useEffect(() => { load() }, [orgId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
+  if (loadError) return <TabLoadError message={loadError} />
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {canModify && (
         <div>
-          <button onClick={() => setShowForm((v) => !v)} data-tour="orgdetail-add-tender-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Tender'}</button>
-          {showForm && (
-            <div style={{ marginTop: 12 }}>
-              <TenderForm
-                defaultOrgId={orgId}
-                submitLabel="Save Tender"
-                onCancel={() => setShowForm(false)}
-                onSubmit={async (payload) => {
-                  await crmApi.createTender(payload)
-                  setShowForm(false)
-                  load()
-                }}
-              />
-            </div>
-          )}
+          {/* Opens the New Tender page for this organization (not an inline form above its old tenders). */}
+          <button onClick={() => router.push(`/dashboard/crm/inquiries/new${backSuffix}&type=tender&org=${encodeURIComponent(orgRef)}`)} data-tour="orgdetail-add-tender-btn" style={primaryBtnStyle}>+ Add Tender</button>
         </div>
       )}
 
       {tenders.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>No tenders for this organization.</p>
+        <p style={{ fontSize: 13, color: '#a8a29e' }}>No tenders for this customer organization.</p>
       ) : (
         <div data-tour="orgdetail-tenders-table" style={{ borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
@@ -507,7 +564,7 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
               {tenders.map((t) => (
                 <tr
                   key={t.id}
-                  onClick={() => router.push(`/dashboard/crm/tenders/${t.id}${backSuffix}`)}
+                  onClick={() => router.push(`/dashboard/crm/tenders/${refOf(t)}${backSuffix}`)}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,122,69,0.05)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   style={{ borderBottom: '1px solid rgba(0,0,0,0.04)', cursor: 'pointer' }}
@@ -531,9 +588,16 @@ function TendersTab({ orgId, canModify }: { orgId: number; canModify: boolean })
 function AuditTab({ orgId }: { orgId: number }) {
   const [entries, setEntries] = useState<{ id: number; action: string; summary: string | null; performed_by: string; performed_at: string | null }[]>([])
   const [loading, setLoading] = useState(true)
-  useEffect(() => { crmApi.getOrganizationAudit(orgId).then(setEntries).finally(() => setLoading(false)) }, [orgId])
+  const [loadError, setLoadError] = useState<string | string[]>('')
+  useEffect(() => {
+    crmApi.getOrganizationAudit(orgId)
+      .then(setEntries)
+      .catch((err) => setLoadError(extractErrorMessages(err, "Could not load this customer organization's audit history. Reload the page; if it persists, check that you still have CRM access.")))
+      .finally(() => setLoading(false))
+  }, [orgId])
 
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
+  if (loadError) return <TabLoadError message={loadError} />
   if (entries.length === 0) return <p style={{ fontSize: 13, color: '#a8a29e' }}>No audit history yet.</p>
 
   return (

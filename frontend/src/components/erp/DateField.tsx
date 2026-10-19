@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { inputStyle } from '@/components/shared/ui'
+import { CalendarBlank } from '@phosphor-icons/react'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 /** value/onChange use ISO yyyy-mm-dd (what the backend expects); the visible
  * text and calendar are DD-MM-YYYY, matching the legacy app's date fields. */
-export default function DateField({ value, onChange, style }: { value: string; onChange: (v: string) => void; style?: React.CSSProperties }) {
+export default function DateField({ value, onChange, style, placeholder = 'DD-MM-YYYY' }: { value: string; onChange: (v: string) => void; style?: React.CSSProperties; placeholder?: string }) {
   const [open, setOpen] = useState(false)
   const [coords, setCoords] = useState({ top: 0, left: 0 })
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -193,20 +194,15 @@ export default function DateField({ value, onChange, style }: { value: string; o
         onChange={handleTextChange}
         onFocus={openCalendar}
         onBlur={handleBlur}
-        placeholder="DD-MM-YYYY"
+        placeholder={placeholder}
         inputMode="numeric"
         style={{ ...inputStyle, padding: '10px 36px 10px 14px', ...style }}
       />
-      <svg
+      <CalendarBlank
         onClick={openCalendar}
-        width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF7A45" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        size={15} color="#FF7A45"
         style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer' }}
-      >
-        <rect x="3" y="4" width="18" height="18" rx="2" />
-        <line x1="16" y1="2" x2="16" y2="6" />
-        <line x1="8" y1="2" x2="8" y2="6" />
-        <line x1="3" y1="10" x2="21" y2="10" />
-      </svg>
+      />
 
       {open && createPortal(
         <div

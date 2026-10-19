@@ -34,8 +34,9 @@ from app.core.audit_context import get_current_user_id
 from app.modules.main.models.audit_log import AuditLog, request_context_fields
 from app.modules.main.models.user import User
 
-# Bookkeeping columns whose change is never interesting on its own.
-_IGNORED_FIELDS = {"created_at", "updated_at", "deleted_at"}
+# Bookkeeping columns whose change is never interesting on its own — the
+# optimistic-lock pair (core/optimistic_lock.py) changes on every save.
+_IGNORED_FIELDS = {"created_at", "updated_at", "deleted_at", "lock_version", "lock_changed_by_id"}
 
 # How many changed fields the one-line summary spells out before "+N more".
 _SUMMARY_FIELD_LIMIT = 4

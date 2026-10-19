@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { qualityApi } from '@/lib/api'
 import { QualityNcr } from '@/types'
 import { TEXT } from '@/lib/theme'
@@ -17,6 +19,7 @@ import { extractErrorMessages } from '@/lib/validation'
 export default function QualityNcrListPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
   const router = useRouter()
+  const { can } = useCan()
 
   const [ncrs, setNcrs] = useState<QualityNcr[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,7 +51,7 @@ export default function QualityNcrListPage() {
     <div>
       <QualityNav />
       <PageHeader title="Non-Conformance Reports">
-        <button type="button" onClick={() => router.push('/dashboard/quality/ncr/new')} style={primaryBtnStyle}>+ New NCR</button>
+        {can('quality', 'ncr', 'create') && (<button type="button" onClick={() => router.push('/dashboard/quality/ncr/new')} style={primaryBtnStyle}>+ New NCR</button>)}
       </PageHeader>
       <ErrorBanner error={error} />
 
@@ -77,7 +80,7 @@ export default function QualityNcrListPage() {
             ) : ncrs.length === 0 ? (
               <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No NCRs found.</td></tr>
             ) : ncrs.map((n) => (
-              <tr key={n.id} onClick={() => router.push(`/dashboard/quality/ncr/${n.id}`)} style={{ cursor: 'pointer' }}>
+              <tr key={n.id} onClick={() => router.push(recordPath('/dashboard/quality/ncr', n))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{n.ncr_number}{n.auto_raised ? <span style={{ color: TEXT.muted, fontWeight: 400 }}> · auto</span> : null}</td>
                 <td style={tdStyle}>{n.item_code ? `${n.item_code} — ` : ''}{n.item_name}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtQty(n.quantity, n.uom)}</td>
@@ -89,7 +92,7 @@ export default function QualityNcrListPage() {
                 <td style={tdStyle}><Pill text={NCR_STATUS_LABELS[n.status] || n.status} hex={NCR_STATUS_HEX[n.status]} /></td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtDate(n.ncr_date)}</td>
                 <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => router.push(`/dashboard/quality/ncr/${n.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                  <span onClick={() => router.push(recordPath('/dashboard/quality/ncr', n))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

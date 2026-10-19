@@ -2,141 +2,102 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { qualityApi } from '@/lib/api'
 import { QualityCapa } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
+import { primaryBtnStyle } from '@/components/shared/ui'
+import {
+  Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate,
+  CAPA_STATUS_LABELS, CAPA_STATUS_HEX, CAPA_TRIGGER_LABELS, SEVERITY_HEX,
+} from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
-
-const STATUS_LABELS: Record<string, string> = { open: 'Open', in_progress: 'In Progress', pending_verification: 'Pending Verification', closed: 'Closed', overdue: 'Overdue' }
-const STATUS_HEX: Record<string, string> = { open: '#F59E0B', in_progress: '#2563EB', pending_verification: '#7C3AED', closed: '#16A34A', overdue: '#DC2626' }
-const ACTION_TYPE_LABELS: Record<string, string> = { corrective: 'Corrective', preventive: 'Preventive' }
-const ACTION_TYPE_HEX: Record<string, string> = { corrective: '#DC2626', preventive: '#2563EB' }
-
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
 
 export default function QualityCapaListPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
   const router = useRouter()
-
+  const { can } = useCan()
   const [capas, setCapas] = useState<QualityCapa[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
-  const [actionTypeFilter, setActionTypeFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [ncrIdFilter, setNcrIdFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('live')
+  const [trigger, setTrigger] = useState('')
+  const [mine, setMine] = useState(false)
+  const [overdue, setOverdue] = useState(false)
 
   useEffect(() => {
     if (!isAuthorized) return
     setLoading(true)
     const params: Record<string, unknown> = {}
-    if (actionTypeFilter) params.action_type = actionTypeFilter
-    if (statusFilter) params.status = statusFilter
-    if (ncrIdFilter.trim()) params.ncr_id = Number(ncrIdFilter.trim())
+    if (statusFilter === 'live') params.open_only = true
+    else if (statusFilter) params.status = statusFilter
+    if (trigger) params.trigger = trigger
+    if (search.trim()) params.search = search.trim()
+    if (mine) params.mine = true
+    if (overdue) params.overdue_only = true
     qualityApi.listCapas(params)
       .then((data) => setCapas(Array.isArray(data) ? data : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load CAPA records.')))
+      .catch((err) => setError(extractErrorMessages(err, 'Failed to load CAPAs.')))
       .finally(() => setLoading(false))
-  }, [isAuthorized, actionTypeFilter, statusFilter, ncrIdFilter])
+  }, [isAuthorized, statusFilter, trigger, search, mine, overdue])
 
   if (isLoading || !isAuthorized) return null
+  const cols = ['CAPA', 'Title', 'Raised for', 'Severity', 'Owner', 'Open actions', 'Status', 'Opened', '']
 
   return (
     <div>
       <QualityNav />
+      <PageHeader title="CAPA (8D)" subtitle="Quality · Corrective & preventive actions">
+        {can('quality', 'capa', 'create') && (<button type="button" onClick={() => router.push('/dashboard/quality/capa/new')} style={primaryBtnStyle}>+ New CAPA</button>)}
+      </PageHeader>
+      <ErrorBanner error={error} />
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Quality Module
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Corrective / Preventive Actions</h1>
-        </div>
-        <button
-          onClick={() => router.push('/dashboard/quality/capa/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New CAPA
-        </button>
-      </div>
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input
-          style={{ ...inputStyle, flex: '0 1 160px', minWidth: 140 }}
-          placeholder="Filter by NCR ID…"
-          value={ncrIdFilter}
-          onChange={(e) => setNcrIdFilter(e.target.value)}
-        />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={actionTypeFilter} onChange={(e) => setActionTypeFilter(e.target.value)}>
-          <option value="">All types</option>
-          <option value="corrective">Corrective</option>
-          <option value="preventive">Preventive</option>
-        </select>
-        <select style={{ ...inputStyle, flex: '0 1 190px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input style={{ ...filterInputStyle, flex: '1 1 240px', maxWidth: 380 }} placeholder="Search CAPA number, title, item…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="live">All not closed</option>
           <option value="">All statuses</option>
-          <option value="open">Open</option>
-          <option value="in_progress">In Progress</option>
-          <option value="pending_verification">Pending Verification</option>
-          <option value="closed">Closed</option>
-          <option value="overdue">Overdue</option>
+          {Object.entries(CAPA_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
+        <select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={trigger} onChange={(e) => setTrigger(e.target.value)}>
+          <option value="">Any trigger</option>
+          {Object.entries(CAPA_TRIGGER_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
+          <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Mine (owner / team / action)
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
+          <input type="checkbox" checked={overdue} onChange={(e) => setOverdue(e.target.checked)} /> Overdue only
+        </label>
       </div>
 
-      <div style={{
-        borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-        border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
-      }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-          <thead>
-            <tr>
-              {['CAPA Number', 'Type', 'Title', 'Status', 'Due Date', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
+      <div style={tableWrapStyle}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
+          <thead><tr>{cols.map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
             ) : capas.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No CAPA records found.</td></tr>
-            ) : (
-              capas.map((c) => (
-                <tr key={c.id} onClick={() => router.push(`/dashboard/quality/capa/${c.id}`)} style={{ cursor: 'pointer' }}>
-                  <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: TEXT.heading, borderTop: `1px solid ${BORDER.light}` }}>{c.capa_number}</td>
-                  <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${ACTION_TYPE_HEX[c.action_type]}1a`, color: ACTION_TYPE_HEX[c.action_type], whiteSpace: 'nowrap' }}>
-                      {ACTION_TYPE_LABELS[c.action_type] || c.action_type}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{c.title}</td>
-                  <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[c.status]}1a`, color: STATUS_HEX[c.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[c.status] || c.status}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{c.due_date || '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span onClick={() => router.push(`/dashboard/quality/capa/${c.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                  </td>
-                </tr>
-              ))
-            )}
+              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No CAPAs found.</td></tr>
+            ) : capas.map((c) => (
+              <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/quality/capa', c))} style={{ cursor: 'pointer' }}>
+                <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.capa_number}</td>
+                <td style={tdStyle}>{c.title}</td>
+                <td style={tdStyle}>{CAPA_TRIGGER_LABELS[c.trigger] || c.trigger}{c.ncr_number ? ` · ${c.ncr_number}` : ''}{c.complaint_number ? ` · ${c.complaint_number}` : ''}</td>
+                <td style={tdStyle}><Pill text={c.severity} hex={SEVERITY_HEX[c.severity]} /></td>
+                <td style={tdStyle}>{c.responsible_user_name || <span style={{ color: '#b45309' }}>Not assigned</span>}</td>
+                <td style={tdStyle}>{c.open_actions}{c.overdue ? <span style={{ color: '#DC2626', fontWeight: 600 }}> · overdue</span> : null}</td>
+                <td style={tdStyle}><Pill text={CAPA_STATUS_LABELS[c.status] || c.status} hex={CAPA_STATUS_HEX[c.status]} /></td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtDate(c.created_at)}</td>
+                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
+                  <span onClick={() => router.push(recordPath('/dashboard/quality/capa', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

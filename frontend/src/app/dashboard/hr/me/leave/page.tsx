@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrLeaveBalance, HrLeaveRequest, HrLeaveType } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
@@ -36,6 +37,8 @@ function dmy(iso: string | null) {
 export default function MyLeavePage() {
   // Self-service: any logged-in user.
   const { user, isLoading } = useAuth()
+  // Self-service: My HR create / edit (hr:me:*), not the HR-team tabs.
+  const { can } = useCan()
   const thisYear = new Date().getFullYear()
   const [year, setYear] = useState(thisYear)
   const [types, setTypes] = useState<HrLeaveType[]>([])
@@ -101,12 +104,13 @@ export default function MyLeavePage() {
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Apply for leave, see your balances and track your requests.</p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <select style={inputStyle} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+          <select data-tour="hr-myleave-year" style={inputStyle} value={year} onChange={(e) => setYear(Number(e.target.value))}>
             {[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
-          {!showForm && (
+          {!showForm && can('hr', 'me', 'create') && (
             <button
               type="button"
+              data-tour="hr-myleave-apply-btn"
               onClick={() => { setShowForm(true); setNotice('') }}
               style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
             >
@@ -127,7 +131,7 @@ export default function MyLeavePage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12, marginBottom: 20 }}>
+      <div data-tour="hr-myleave-balances" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12, marginBottom: 20 }}>
         {loading && balances.length === 0 ? (
           <div style={{ ...cardStyle, fontSize: 13, color: TEXT.muted }}>Loading balances…</div>
         ) : shownBalances.length === 0 ? (
@@ -172,13 +176,13 @@ export default function MyLeavePage() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 10, flexWrap: 'wrap' }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>My requests</h3>
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="hr-myleave-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+      <div data-tour="hr-myleave-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
           <thead>
             <tr>

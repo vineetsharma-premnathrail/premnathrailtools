@@ -8,15 +8,17 @@ import type { HrExpenseClaim, HrExpenseClaimItem, HrLinkableTrip } from '@/types
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
 import {
-  ErrorBanner, SuccessBanner, Pill, EmptyRow, FormDialog, primaryActionStyle, sectionStyle, formInputStyle, labelStyle,
+  ErrorBanner, SuccessBanner, Pill, EmptyRow, FormDialog, primaryActionStyle, sectionStyle,
   thStyle, tdStyle, linkActionStyle, fmtDate, fmtDateTime, fmtINR, todayIso,
 } from './adminUi'
 import { TEXT, BORDER } from '@/lib/theme'
+import { SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 export const CLAIM_STATUS_LABELS: Record<string, string> = { draft: 'Draft', submitted: 'Submitted', approved: 'Approved', rejected: 'Rejected', paid: 'Paid', cancelled: 'Cancelled' }
-export const CLAIM_STATUS_HEX: Record<string, string> = { draft: '#64748B', submitted: '#F59E0B', approved: '#16A34A', rejected: '#DC2626', paid: '#2563EB', cancelled: '#94A3B8' }
+export const CLAIM_STATUS_HEX: Record<string, string> = { draft: '#64748B', submitted: '#F59E0B', approved: '#2563EB', rejected: '#DC2626', paid: '#16A34A', cancelled: '#94A3B8' }
 export const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
   travel: 'Travel / tickets', lodging: 'Lodging', food: 'Food', local_conveyance: 'Local conveyance', fuel: 'Fuel', phone: 'Phone / data', other: 'Other',
 }
@@ -74,30 +76,32 @@ export function ClaimHeaderDialog({
       open={open}
       title={claim ? `Edit ${claim.claim_no}` : 'New expense claim'}
       subtitle={claim ? undefined : 'Creates a draft. Add the expense lines and receipts next, then submit it for approval.'}
+      icon={claim ? 'edit' : 'rupee'}
       onClose={onClose}
+      busy={saving}
+      bare
       footer={<>
-        <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-        <button type="button" style={{ ...primaryActionStyle, opacity: saving ? 0.7 : 1 }} onClick={save} disabled={saving}>{saving ? 'Saving…' : claim ? 'Save' : 'Create draft'}</button>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onClose} disabled={saving}>Cancel</button>
+        <button type="button" data-tour="hr-claim-header-save" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={save} disabled={saving}><SheetIcon name={claim ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : claim ? 'Save' : 'Create draft'}</button>
       </>}
     >
-      <ErrorBanner error={error} />
-      <div>
-        <label style={labelStyle}>Title *</label>
-        <input autoFocus style={formInputStyle} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Delhi site visit — Sept" />
-      </div>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ flex: '0 1 170px' }}>
-          <label style={labelStyle}>Claim date</label>
-          <DateField value={claimDate} onChange={setClaimDate} />
-        </div>
-        <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
-          <label style={labelStyle}>Linked trip (optional)</label>
-          <select style={formInputStyle} value={tripId} onChange={(e) => setTripId(e.target.value)}>
+      <div style={{ padding: '20px 24px' }}>
+        <ErrorBanner error={error} />
+        <SheetSection icon="doc" title="Claim">
+          <label style={sheetLabel}>Title <Req /></label>
+          <input autoFocus data-tour="hr-claim-header-title" style={sheetInput} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Delhi site visit — Sept" />
+          <div data-tour="hr-claim-header-date" style={{ maxWidth: 200, marginTop: 14 }}>
+            <label style={sheetLabel}>Claim date</label>
+            <DateField value={claimDate} onChange={setClaimDate} />
+          </div>
+        </SheetSection>
+        <SheetSection icon="truck" title="Linked Trip" extra={<Optional />}>
+          <select data-tour="hr-claim-header-trip" style={sheetInput} value={tripId} onChange={(e) => setTripId(e.target.value)}>
             <option value="">— Not linked to a trip —</option>
             {trips.map((t) => <option key={t.id} value={t.id}>{t.request_no} · {t.from_city} → {t.to_city} · {fmtDate(t.depart_date)}</option>)}
           </select>
-          {trips.length === 0 && <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '4px 0 0' }}>Only your approved or completed travel requests can be linked.</p>}
-        </div>
+          {trips.length === 0 && <p style={sheetHint}>Only your approved or completed travel requests can be linked.</p>}
+        </SheetSection>
       </div>
     </FormDialog>
   )
@@ -128,16 +132,24 @@ function MarkPaidDialog({ claim, onClose, onDone }: { claim: HrExpenseClaim | nu
       open={!!claim}
       title={`Record payment for ${claim?.claim_no || ''}`}
       subtitle={claim ? `${fmtINR(claim.total_amount)} to ${claim.user_name}. The payment itself is made outside the portal (bank / ADP); this records it.` : undefined}
+      icon="rupee"
+      iconColor="#16A34A"
       onClose={onClose}
+      busy={saving}
+      bare
       footer={<>
-        <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-        <button type="button" style={{ ...primaryActionStyle, opacity: saving ? 0.7 : 1 }} onClick={submit} disabled={saving}>{saving ? 'Saving…' : 'Mark paid'}</button>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onClose} disabled={saving}>Cancel</button>
+        <button type="button" style={sheetBtn('primary', '#16A34A', saving)} onClick={submit} disabled={saving}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Mark paid'}</button>
       </>}
     >
-      <ErrorBanner error={error} />
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ flex: '0 1 170px' }}><label style={labelStyle}>Paid on</label><DateField value={paidOn} onChange={setPaidOn} /></div>
-        <div style={{ flex: '1 1 220px', maxWidth: 320 }}><label style={labelStyle}>Payment reference *</label><input autoFocus style={formInputStyle} value={ref} onChange={(e) => setRef(e.target.value)} placeholder="UTR / NEFT / cheque no." /></div>
+      <div style={{ padding: '20px 24px' }}>
+        <ErrorBanner error={error} />
+        <SheetSection icon="rupee" title="Payment">
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: '0 1 170px' }}><label style={sheetLabel}>Paid on</label><DateField value={paidOn} onChange={setPaidOn} /></div>
+            <div style={{ flex: '1 1 220px', maxWidth: 320 }}><label style={sheetLabel}>Payment reference <Req /></label><input autoFocus style={sheetInput} value={ref} onChange={(e) => setRef(e.target.value)} placeholder="UTR / NEFT / cheque no." /></div>
+          </div>
+        </SheetSection>
       </div>
     </FormDialog>
   )
@@ -270,14 +282,14 @@ export default function ClaimDetail({ claimId, onChanged }: { claimId: number; o
 
   const lineInputs = (l: LineDraft, set: (l: LineDraft) => void) => (
     <>
-      <td style={{ ...tdStyle, minWidth: 150 }}><DateField value={l.expense_date} onChange={(v) => set({ ...l, expense_date: v })} /></td>
+      <td data-tour="hr-claim-line-date" style={{ ...tdStyle, minWidth: 150 }}><DateField value={l.expense_date} onChange={(v) => set({ ...l, expense_date: v })} /></td>
       <td style={{ ...tdStyle, minWidth: 150 }}>
-        <select style={formInputStyle} value={l.category} onChange={(e) => set({ ...l, category: e.target.value })}>
+        <select data-tour="hr-claim-line-category" style={sheetInput} value={l.category} onChange={(e) => set({ ...l, category: e.target.value })}>
           {Object.entries(EXPENSE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </td>
-      <td style={{ ...tdStyle, minWidth: 200 }}><input style={formInputStyle} value={l.description} onChange={(e) => set({ ...l, description: e.target.value })} placeholder="Hotel, cab to site, lunch with client…" /></td>
-      <td style={{ ...tdStyle, width: 120 }}><input style={{ ...formInputStyle, textAlign: 'right' }} inputMode="decimal" value={l.amount} onChange={(e) => set({ ...l, amount: e.target.value.replace(/[^0-9.]/g, '') })} placeholder="0.00" /></td>
+      <td style={{ ...tdStyle, minWidth: 200 }}><input data-tour="hr-claim-line-description" style={sheetInput} value={l.description} onChange={(e) => set({ ...l, description: e.target.value })} placeholder="Hotel, cab to site, lunch with client…" /></td>
+      <td style={{ ...tdStyle, width: 120 }}><input data-tour="hr-claim-line-amount" style={{ ...sheetInput, textAlign: 'right' }} inputMode="decimal" value={l.amount} onChange={(e) => set({ ...l, amount: e.target.value.replace(/[^0-9.]/g, '') })} placeholder="0.00" /></td>
     </>
   )
 
@@ -286,7 +298,7 @@ export default function ClaimDetail({ claimId, onChanged }: { claimId: number; o
       <ErrorBanner error={error} />
       <SuccessBanner message={notice} />
 
-      <div style={{ ...sectionStyle, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div data-tour="hr-claim-summary" style={{ ...sectionStyle, display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <div style={{ flex: '1 1 320px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 14 }}>
           <div>
             <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Status</p>
@@ -315,13 +327,23 @@ export default function ClaimDetail({ claimId, onChanged }: { claimId: number; o
       )}
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-        {editable && <button type="button" style={primaryActionStyle} disabled={busy} onClick={() => setConfirmSubmit(true)}>{claim.status === 'rejected' ? 'Resubmit for approval' : 'Submit for approval'}</button>}
-        {editable && <button type="button" style={secondaryBtnStyle} onClick={() => setHeaderOpen(true)}>Edit title / trip</button>}
-        {claim.can_decide && <button type="button" style={primaryActionStyle} disabled={busy} onClick={() => setDecision('approve')}>Approve</button>}
-        {claim.can_decide && <button type="button" style={dangerBtnStyle} disabled={busy} onClick={() => setDecision('reject')}>Reject</button>}
-        {claim.can_mark_paid && <button type="button" style={primaryActionStyle} disabled={busy} onClick={() => setPayOpen(true)}>Mark paid</button>}
-        {claim.can_cancel && <button type="button" style={dangerBtnStyle} disabled={busy} onClick={() => setDecision('cancel')}>{claim.status === 'submitted' ? 'Withdraw claim' : 'Cancel claim'}</button>}
+        {editable && <button type="button" data-tour="hr-claim-submit-btn" style={primaryActionStyle} disabled={busy} onClick={() => setConfirmSubmit(true)}>{claim.status === 'rejected' ? 'Resubmit for approval' : 'Submit for approval'}</button>}
+        {editable && <button type="button" data-tour="hr-claim-edit-header-btn" style={secondaryBtnStyle} onClick={() => setHeaderOpen(true)}>Edit title / trip</button>}
+        {/* Claims submitted before the central approval engine keep the old buttons; engine-routed ones are decided in the Approval panel below. */}
+        {claim.can_decide && !claim.approval_request_id && <button type="button" data-tour="hr-claim-approve-btn" style={primaryActionStyle} disabled={busy} onClick={() => setDecision('approve')}>Approve</button>}
+        {claim.can_decide && !claim.approval_request_id && <button type="button" data-tour="hr-claim-reject-btn" style={dangerBtnStyle} disabled={busy} onClick={() => setDecision('reject')}>Reject</button>}
+        {claim.can_mark_paid && <button type="button" data-tour="hr-claim-paid-btn" style={primaryActionStyle} disabled={busy} onClick={() => setPayOpen(true)}>Mark paid</button>}
+        {claim.can_cancel && <button type="button" data-tour="hr-claim-cancel-btn" style={dangerBtnStyle} disabled={busy} onClick={() => setDecision('cancel')}>{claim.status === 'submitted' ? 'Withdraw claim' : 'Cancel claim'}</button>}
       </div>
+
+      {claim.approval_request_id && (
+        <ApprovalPanel
+          key={claim.approval_request_id}
+          entityType="hr_expense_claim"
+          entityId={claim.id}
+          onChanged={() => { hrApi.getClaim(claim.id).then((c) => apply(c)).catch((err) => setError(extractErrorMessages(err, 'The claim could not be reloaded.'))) }}
+        />
+      )}
 
       {editable && missingReceipts.length > 0 && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.3)', color: '#92400E', fontSize: 13 }}>
@@ -329,7 +351,9 @@ export default function ClaimDetail({ claimId, onChanged }: { claimId: number; o
         </div>
       )}
 
-      <div style={{ ...sectionStyle, padding: 0, overflow: 'auto' }}>
+      <div data-tour="hr-claim-lines" style={{ background: '#fff', border: `1px solid ${SHEET.LINE}`, borderRadius: 18, padding: '18px 20px 4px', marginBottom: 20 }}>
+        <SheetSection icon="list" title="Expense Lines" extra={<span style={{ fontSize: 12, color: SHEET.MUTED }}>{items.length} line{items.length === 1 ? '' : 's'} · {fmtINR(claim.total_amount)}</span>}>
+        <div style={{ overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 12 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>{['Date', 'Category', 'Description', 'Amount', 'Receipt', ''].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}</th>)}</tr>
@@ -381,10 +405,10 @@ export default function ClaimDetail({ claimId, onChanged }: { claimId: number; o
               <tr style={{ background: 'rgba(255,255,255,.5)' }}>
                 {lineInputs(newLine, setNewLine)}
                 <td style={{ ...tdStyle, minWidth: 170 }}>
-                  <input ref={newFileRef} type="file" accept="image/*,.pdf" onChange={(e) => setNewFile(e.target.files?.[0] || null)} style={{ fontSize: 12, maxWidth: 190 }} />
+                  <input ref={newFileRef} data-tour="hr-claim-line-receipt" type="file" accept="image/*,.pdf" onChange={(e) => setNewFile(e.target.files?.[0] || null)} style={{ fontSize: 12, maxWidth: 190 }} />
                 </td>
                 <td style={tdStyle}>
-                  <button type="button" style={{ ...primaryActionStyle, padding: '8px 14px', fontSize: 12.5 }} disabled={busy} onClick={addLine}>{busy ? 'Saving…' : '+ Add line'}</button>
+                  <button type="button" data-tour="hr-claim-add-line-btn" style={{ ...primaryActionStyle, padding: '8px 14px', fontSize: 12.5 }} disabled={busy} onClick={addLine}>{busy ? 'Saving…' : '+ Add line'}</button>
                 </td>
               </tr>
             )}
@@ -399,8 +423,10 @@ export default function ClaimDetail({ claimId, onChanged }: { claimId: number; o
             </tfoot>
           )}
         </table>
+        </div>
+        {editable && <p style={sheetHint}>Receipts: images or PDF, up to 10 MB each. Required for any line above {fmtINR(threshold)}.</p>}
+        </SheetSection>
       </div>
-      {editable && <p style={{ fontSize: 12, color: TEXT.muted, margin: '-8px 0 0' }}>Receipts: images or PDF, up to 10 MB each. Required for any line above {fmtINR(threshold)}.</p>}
 
       <input ref={uploadRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }} onChange={onPickReceipt} />
 

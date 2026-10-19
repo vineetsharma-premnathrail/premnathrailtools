@@ -23,6 +23,8 @@ class RFQAttachment(Base, TimestampMixin):
     # every tier (Vendor 1-4) can carry its own vendor identity, not just L1.
     vendor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     vendor_contact: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # The vendor master row (accounts `vendors`) this slot was picked from; NULL on older RFQs typed by hand.
+    vendor_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True, index=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     size: Mapped[int | None] = mapped_column(Integer, nullable=True)

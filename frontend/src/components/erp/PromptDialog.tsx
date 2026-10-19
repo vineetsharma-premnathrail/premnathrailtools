@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 
 export default function PromptDialog({
@@ -35,9 +36,11 @@ export default function PromptDialog({
   }, [open])
   useEscapeKey(open, onCancel)
 
-  if (!open) return null
+  if (!open || typeof document === 'undefined') return null
 
-  return (
+  // Portal to <body>: a glass card (backdrop-filter) would otherwise trap the
+  // fixed backdrop inside itself instead of covering the screen.
+  return createPortal(
     <div
       onClick={onCancel}
       className="dialog-backdrop"
@@ -119,6 +122,7 @@ export default function PromptDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

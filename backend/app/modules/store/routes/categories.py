@@ -3,20 +3,26 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access
+from app.core.permissions import ensure_can_delete, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.store.access import require_store_lookup
 from app.modules.store.models.category import StoreItemCategory
 from app.modules.store.models.item import StoreItem
 from app.modules.store.routes.item_types import check_item_type
 from app.modules.store.schemas.category import StoreItemCategoryCreate, StoreItemCategoryUpdate, StoreItemCategoryResponse
+from app.modules.store.services.item_accounts import check_item_ledger, ledger_label
 
 router = APIRouter(prefix="/store/categories", tags=["Store"])
 
 
 def _to_response(category: StoreItemCategory, db: Session) -> StoreItemCategoryResponse:
     parent = db.query(StoreItemCategory).filter(StoreItemCategory.id == category.parent_id).first() if category.parent_id else None
-    return StoreItemCategoryResponse.model_validate(category).model_copy(update={"parent_name": parent.name if parent else None})
+    return StoreItemCategoryResponse.model_validate(category).model_copy(update={
+        "parent_name": parent.name if parent else None,
+        "purchase_gl_account_name": ledger_label(db, category.purchase_gl_account_id),
+        "sales_gl_account_name": ledger_label(db, category.sales_gl_account_id),
+    })
 
 
 def _auto_code(db: Session, name: str) -> str:
@@ -36,12 +42,13 @@ def _same_level(category_parent_id: int | None):
     return StoreItemCategory.parent_id == category_parent_id if category_parent_id else StoreItemCategory.parent_id.is_(None)
 
 
+# Cross-module lookup: item pickers everywhere filter by category.
 @router.get("", response_model=list[StoreItemCategoryResponse])
 async def list_categories(
     parent_id: int | None = Query(None),
     item_type: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    _user: User = Depends(require_store_lookup()),
 ):
     query = db.query(StoreItemCategory)
     if item_type is not None:
@@ -56,7 +63,7 @@ async def list_categories(
 async def create_category(
     payload: StoreItemCategoryCreate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    _user: User = Depends(require_tab_action("store", "categories", "create")),
 ):
     data = payload.model_dump()
     data["name"] = (data.get("name") or "").strip()
@@ -69,6 +76,13 @@ async def create_category(
         if not parent:
             raise HTTPException(status_code=404, detail="Parent category not found — reload the page and pick it again.")
         data["item_type"] = parent.item_type
+        if data.get("purchase_gl_account_id") or data.get("sales_gl_account_id"):
+            raise HTTPException(status_code=400, detail=f"Ledgers are set on the top-level category, not on a subcategory — set it on '{parent.name}'.")
+    try:
+        for purpose in ("purchase", "sales"):
+            data[f"{purpose}_gl_account_id"] = check_item_ledger(db, purpose, data.get(f"{purpose}_gl_account_id"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     if db.query(StoreItemCategory).filter(StoreItemCategory.name.ilike(data["name"]), _same_level(data.get("parent_id"))).first():
         where = f"under '{parent.name}'" if parent else "as a top-level category"
         raise HTTPException(status_code=409, detail=f"'{data['name']}' already exists {where} — pick it from the list or edit it instead.")
@@ -87,7 +101,7 @@ async def update_category(
     category_id: int,
     payload: StoreItemCategoryUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    _user: User = Depends(require_tab_action("store", "categories", "edit")),
 ):
     category = db.query(StoreItemCategory).filter(StoreItemCategory.id == category_id).first()
     if not category:
@@ -113,6 +127,15 @@ async def update_category(
             else:
                 db.query(StoreItem).filter(StoreItem.category == category.name).update(
                     {StoreItem.category: new_name}, synchronize_session=False)
+    for purpose in ("purchase", "sales"):
+        col = f"{purpose}_gl_account_id"
+        if col in changes:
+            if category.parent_id and changes[col]:
+                raise HTTPException(status_code=400, detail=f"Ledgers are set on the top-level category, not on a subcategory — set it on the category above '{category.name}'.")
+            try:
+                changes[col] = check_item_ledger(db, purpose, changes[col])
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from None
     if category.parent_id:
         # subcategories always follow their parent's item type
         changes.pop("item_type", None)
@@ -132,11 +155,12 @@ async def update_category(
 async def delete_category(
     category_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_access("store", "categories")),
 ):
     category = db.query(StoreItemCategory).filter(StoreItemCategory.id == category_id).first()
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
+    ensure_can_delete(user, category, "store", "categories", what="category")
     if db.query(StoreItemCategory).filter(StoreItemCategory.parent_id == category_id).first():
         raise HTTPException(status_code=409, detail="Cannot delete — this category has subcategories under it.")
     # Items hold the category / subcategory by name, so deleting a used one

@@ -101,6 +101,9 @@ def upsert_attendance(
     """Returns (row, created)."""
     if status not in ATTENDANCE_STATUSES:
         raise HTTPException(status_code=400, detail=f"Unknown attendance status '{status}'. Use one of: {', '.join(ATTENDANCE_STATUSES)}.")
+    from app.modules.hr.services.period_lock import assert_open
+
+    assert_open(db, user_id, attendance_date)  # payroll period lock (models/attendance_period.py)
     row = db.query(HrAttendance).filter(HrAttendance.user_id == user_id, HrAttendance.attendance_date == attendance_date).first()
     created = row is None
     if created:
@@ -133,13 +136,14 @@ class DayView:
     holiday_name: str | None = None
     day_kind: str = "working"
     late_minutes: int | None = None
+    marked_by_id: int | None = None  # creator of the stored row (delete = own entries only)
 
     def as_dict(self) -> dict:
         return {
             "date": self.date, "status": self.status, "computed": self.computed, "source": self.source, "id": self.id,
             "check_in": self.check_in, "check_out": self.check_out, "check_in_time": fmt_time(self.check_in),
             "check_out_time": fmt_time(self.check_out), "remarks": self.remarks, "holiday_name": self.holiday_name,
-            "day_kind": self.day_kind, "late_minutes": self.late_minutes,
+            "day_kind": self.day_kind, "late_minutes": self.late_minutes, "marked_by_id": self.marked_by_id,
         }
 
 
@@ -147,10 +151,10 @@ def day_view(cache: CalendarCache, ctx: EmployeeContext, d: date, row: HrAttenda
     today = today or today_ist()
     kind, hol_name = cache.day_kind(ctx, d)
     if row is not None:
-        shift = cache.shift(row.shift_id) or ctx.shift
+        shift = cache.shift(row.shift_id) or cache.shift_on(ctx, d)
         return DayView(
             date=d, status=row.status, computed=False, source=row.source, id=row.id, check_in=row.check_in,
-            check_out=row.check_out, remarks=row.remarks, holiday_name=hol_name, day_kind=kind,
+            check_out=row.check_out, remarks=row.remarks, holiday_name=hol_name, day_kind=kind, marked_by_id=row.marked_by_id,
             late_minutes=late_minutes(row.check_in, shift) if row.status in ("present", "half_day") else None,
         )
     if kind == "holiday":

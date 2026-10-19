@@ -50,6 +50,14 @@ class QualityInspectionLot(Base, TimestampMixin):
     # two-way FK cycle breaks metadata create/drop ordering.
     ncr_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # The build this lot belongs to (Sales › Order Projects) — final /
+    # in-process lots of a vehicle or a spares lot. Copied from the work
+    # order when Production carries the link, or picked on a manual lot.
+    order_project_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), index=True, nullable=True)
+    order_project_element_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
+
     item_id: Mapped[int] = mapped_column(Integer, ForeignKey("store_items.id"), nullable=False, index=True)
     item_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     item_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -67,6 +75,11 @@ class QualityInspectionLot(Base, TimestampMixin):
     plan_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sampling_severity: Mapped[str] = mapped_column(String(10), default="normal", nullable=False)
     sample_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Skip-lot (Phase 3): a consistently good vendor's lot where only the
+    # critical characteristics (always 100%) are checked; the rest is
+    # accepted on the vendor's record. Decided per lot at creation from the
+    # approved vendor list.
+    skip_lot: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     test_certificate_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     test_certificate_received: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -127,9 +140,9 @@ class QualityLotResult(Base, TimestampMixin):
     defects_found: Mapped[int | None] = mapped_column(Integer, nullable=True)
     result: Mapped[str | None] = mapped_column(String(10), nullable=True)
     defect_code_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("quality_defect_codes.id"), nullable=True)
-    # Gauge master arrives in Phase 4 (which also enforces rule 3 — only an
-    # in-calibration gauge may be used); until then this is a free id.
-    gauge_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The instrument used (Quality › Gauges). Recording results refuses a
+    # gauge that is overdue / out of calibration (services/gauges.py).
+    gauge_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("quality_gauges.id"), nullable=True)
     gauge_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     recorded_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)

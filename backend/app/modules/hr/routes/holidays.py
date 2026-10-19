@@ -21,11 +21,17 @@ from app.modules.hr.schemas.holiday import (
     HrHolidayResponse,
     HrHolidayUpdate,
 )
-from app.modules.hr.services.access import is_hr, require_hr
+from app.core.permissions import ensure_can_delete
+from app.modules.hr.services.access import is_hr_for, require_hr_tab
 from app.modules.hr.services.calendar import CalendarCache, today_ist
 from app.modules.hr.services.leave import fmt_date
 
 router = APIRouter(prefix="/hr/holidays", tags=["HR"])
+
+# HR-team gate for this file: hr app + Permission Matrix › HR › holidays.
+require_hr = require_hr_tab("holidays")
+require_hr_create = require_hr_tab("holidays", "create")
+require_hr_edit = require_hr_tab("holidays", "edit")
 
 
 def _branch_names(db: Session) -> dict[int, str]:
@@ -54,7 +60,8 @@ def _check_branch(db: Session, branch_id: int | None, branches: dict[int, str]) 
 
 @router.get("/branches")
 async def holiday_branches(db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
-    """Plants for the calendar filter (any logged-in user)."""
+    """Plants for the calendar filter — read by My HR and every HR tab, so
+    the hr app (router-level require_hr_module) is enough."""
     return [{"id": b.id, "name": b.name} for b in db.query(Branch.id, Branch.name).order_by(Branch.name).all()]
 
 
@@ -67,6 +74,8 @@ async def list_holidays(
     include_inactive: bool = Query(False),
     mine: bool = Query(False, description="Holidays that apply at the caller's own plant"),
     db: Session = Depends(get_db),
+    # The holiday calendar is shown on My HR, Leave and Attendance too: the hr
+    # app (router-level) is enough to read active holidays.
     user: User = Depends(get_current_user),
 ):
     year = year or today_ist().year
@@ -80,14 +89,14 @@ async def list_holidays(
         q = q.filter(or_(HrHoliday.branch_id.is_(None), HrHoliday.branch_id == branch_id))
     if holiday_type:
         q = q.filter(HrHoliday.holiday_type == holiday_type)
-    if not (include_inactive and is_hr(user)):
+    if not (include_inactive and is_hr_for(user, "holidays")):
         q = q.filter(HrHoliday.is_active.is_(True))
     branches = _branch_names(db)
     return [_resp(h, branches) for h in q.order_by(HrHoliday.holiday_date.asc(), HrHoliday.name.asc()).all()]
 
 
 @router.post("", response_model=HrHolidayResponse)
-async def create_holiday(payload: HrHolidayCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def create_holiday(payload: HrHolidayCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr_create)):
     branches = _branch_names(db)
     _check_branch(db, payload.branch_id, branches)
     name = payload.name.strip()
@@ -103,7 +112,7 @@ async def create_holiday(payload: HrHolidayCreate, db: Session = Depends(get_db)
 
 
 @router.post("/bulk")
-async def bulk_create_holidays(payload: HrHolidayBulkPayload, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def bulk_create_holidays(payload: HrHolidayBulkPayload, db: Session = Depends(get_db), _user: User = Depends(require_hr_create)):
     """Adds every valid row; duplicates and bad rows are reported, not fatal."""
     branches = _branch_names(db)
     created: list[HrHoliday] = []
@@ -133,7 +142,7 @@ async def bulk_create_holidays(payload: HrHolidayBulkPayload, db: Session = Depe
 
 
 @router.post("/copy")
-async def copy_year(payload: HrHolidayCopyPayload, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def copy_year(payload: HrHolidayCopyPayload, db: Session = Depends(get_db), _user: User = Depends(require_hr_create)):
     """Copies a year's holidays to another year on the same day and month
     (29 Feb becomes 28 Feb). Festivals follow the lunar calendar, so their
     dates must be reviewed after copying."""
@@ -169,7 +178,7 @@ async def copy_year(payload: HrHolidayCopyPayload, db: Session = Depends(get_db)
 
 
 @router.patch("/{holiday_id}", response_model=HrHolidayResponse)
-async def update_holiday(holiday_id: int, payload: HrHolidayUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def update_holiday(holiday_id: int, payload: HrHolidayUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr_edit)):
     h = db.get(HrHoliday, holiday_id)
     if not h:
         raise HTTPException(status_code=404, detail=f"Holiday #{holiday_id} doesn't exist. Refresh the calendar — it may have been deleted.")
@@ -199,6 +208,8 @@ async def delete_holiday(holiday_id: int, db: Session = Depends(get_db), _user: 
     h = db.get(HrHoliday, holiday_id)
     if not h:
         raise HTTPException(status_code=404, detail=f"Holiday #{holiday_id} doesn't exist. Refresh the calendar — it may already be deleted.")
+    # Holidays have no creator column, so 'delete' on the tab decides.
+    ensure_can_delete(_user, h, "hr", "holidays", what="holiday")
     db.delete(h)
     db.commit()
     return {"ok": True}

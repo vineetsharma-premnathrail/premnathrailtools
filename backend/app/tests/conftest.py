@@ -10,20 +10,37 @@ from app.main import app
 from app.db.base import Base
 from app.db.session import get_db
 from app.middleware.owasp import get_rate_store
+from app.core.permission_registry import expand_grant_sources, expand_grants, legacy_access, standard_module_grants
+from app.modules.main.models.user import User
 
 
-@pytest.fixture(autouse=True)
-def _unlock_restricted_modules():
-    """The production module lock (app/core/module_visibility.py) would 403
-    every module test whose users aren't allow-listed — switch it off for the
-    suite; test_module_visibility.py turns it back on to test the lock."""
-    from app.core import module_visibility
-    saved = dict(module_visibility.RESTRICTED_APPS)
-    module_visibility.RESTRICTED_APPS.clear()
-    module_visibility._PACKAGE_TO_APP.clear()
-    yield
-    module_visibility.RESTRICTED_APPS.update(saved)
-    module_visibility._PACKAGE_TO_APP.update({k: k for k in saved})
+def _legacy_effective_permissions(self) -> set[str]:
+    """Test shim: most fixtures build users the pre-roles way
+    (`assigned_apps=[...]`, optional opt-in matrix grants, `erp_permissions`).
+    Translate that exactly as the c4e8a1f3b7d2 roles migration does, so the
+    whole suite keeps asserting that access is unchanged after it. Users
+    built without `assigned_apps` get the real roles + deny-by-default
+    behaviour (test_roles_permissions.py)."""
+    if not (self.assigned_apps or []):
+        # Real behaviour: each role (and the extra grants) expands on its own —
+        # features inherit per role (permission_registry.expand_grants).
+        return expand_grant_sources(list(self.granular_permissions or []), *self.role_grant_lists())
+    keep, standard = legacy_access(self.assigned_apps, self.erp_permissions, self.granular_permissions)
+    apps = set(self.assigned_apps)
+    other = [g for g in (self.granular_permissions or []) if g.split(":", 1)[0] not in apps]
+    eff = expand_grants(keep + other + self.role_grants())
+    for mk in standard:
+        eff |= standard_module_grants(mk)
+    return eff
+
+
+User.effective_permissions = property(_legacy_effective_permissions)
+
+# The suite predates DEFAULT_DATA_SCOPE="assigned" and builds users without role
+# data scopes; keep their organization-wide reads. test_default_data_scope.py
+# covers the production default.
+from app.core.config import settings as _settings  # noqa: E402
+_settings.DEFAULT_DATA_SCOPE = "organization"
 
 
 @pytest.fixture(autouse=True)

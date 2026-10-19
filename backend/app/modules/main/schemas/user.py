@@ -25,7 +25,6 @@ class UserUpdate(BaseModel):
     is_plant_head: bool | None = None
     is_purchase_head: bool | None = None
     is_director: bool | None = None
-    is_md: bool | None = None
     is_finance_manager: bool | None = None
 
 
@@ -66,7 +65,7 @@ class UserResponse(BaseModel):
     is_plant_head: bool = False
     is_purchase_head: bool = False
     is_director: bool = False
-    is_md: bool = False
+    is_partner: bool = False
     is_finance_manager: bool = False
     apps: list[str] = []
     is_azure_admin: bool = False
@@ -74,12 +73,20 @@ class UserResponse(BaseModel):
     reporting_manager_name: str | None = None
     date_of_joining: date | None = None
     granular_permissions: list[str] = []
-    data_access_scopes: dict[str, str] = {}
+    role_ids: list[int] = []
+    role_names: list[str] = []
 
 
 class UserPermissionsUpdate(BaseModel):
     granular_permissions: list[str]
-    data_access_scopes: dict[str, str]
+    # GRC: required when the change adds a high-risk SoD conflict (core/sod_rules.py)
+    sod_mitigation_reason: str | None = None
+
+
+class UserRolesUpdate(BaseModel):
+    role_ids: list[int]
+    # GRC: required when the change adds a high-risk SoD conflict (core/sod_rules.py)
+    sod_mitigation_reason: str | None = None
 
 
 class UserSessionResponse(BaseModel):
@@ -91,6 +98,8 @@ class UserSessionResponse(BaseModel):
     revoked_at: datetime | None
     last_used_at: datetime
     user_agent: str | None
+    ip_address: str | None = None
+    revoked_reason: str | None = None
 
 
 class UserActivityResponse(BaseModel):
@@ -108,7 +117,13 @@ class UserDocumentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    user_id: int
+    user_id: int | None = None
+    hr_profile_id: int | None = None
+    checklist_key: str | None = None
+    verification_status: str | None = None
+    verified_by_id: int | None = None
+    verified_by_name: str | None = None
+    verified_at: datetime | None = None
     document_type: str
     document_name: str
     document_number: str | None

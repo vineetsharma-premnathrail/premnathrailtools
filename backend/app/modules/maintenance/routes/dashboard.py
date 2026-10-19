@@ -1,8 +1,9 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core.data_scope import apply_scope
 from app.core.permissions import require_app_access, require_any_app_access, require_tab_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -17,6 +18,9 @@ from app.modules.maintenance.models.work_order import (
     MaintenanceWorkOrder, MAINTENANCE_WO_TYPES, MAINTENANCE_WO_STATUSES, MAINTENANCE_WO_OPEN_STATUSES, MAINTENANCE_FAILURE_CATEGORIES,
 )
 from app.modules.maintenance.service import now_utc, minutes_between, user_names, _aware
+from app.modules.maintenance.reporting import dashboard_extras, compute_summary, today_ist
+from app.modules.maintenance.settings import requester_confirmation_required
+from app.modules.maintenance import access  # noqa: F401 — registers the maintenance data scopes
 
 router = APIRouter(prefix="/maintenance", tags=["Maintenance"])
 
@@ -32,12 +36,17 @@ async def maintenance_dashboard(
     assets_q = db.query(MaintenanceAsset).filter(MaintenanceAsset.is_deleted == False)  # noqa: E712
     if branch_id:
         assets_q = assets_q.filter(MaintenanceAsset.branch_id == branch_id)
-    assets = assets_q.all()
-    asset_ids = [a.id for a in assets] or [0]
-    by_id = {a.id: a for a in assets}
+    # Every figure below is limited to the user's Maintenance data scope. The
+    # plant's full asset list is only a lookup (codes / names) for the work
+    # orders and requests the user may see — e.g. a technician's assigned job
+    # on a machine someone else registered.
+    plant_assets = assets_q.all()
+    asset_ids = [a.id for a in plant_assets] or [0]
+    by_id = {a.id: a for a in plant_assets}
+    assets = apply_scope(assets_q, user, MaintenanceAsset).all()
 
-    wos = db.query(MaintenanceWorkOrder).filter(MaintenanceWorkOrder.asset_id.in_(asset_ids)).all()
-    reqs = db.query(MaintenanceRequest).filter(MaintenanceRequest.asset_id.in_(asset_ids)).all()
+    wos = apply_scope(db.query(MaintenanceWorkOrder).filter(MaintenanceWorkOrder.asset_id.in_(asset_ids)), user, MaintenanceWorkOrder).all()
+    reqs = apply_scope(db.query(MaintenanceRequest).filter(MaintenanceRequest.asset_id.in_(asset_ids)), user, MaintenanceRequest).all()
 
     # Machines down right now, with how long they've been down.
     down = []
@@ -59,16 +68,14 @@ async def maintenance_dashboard(
     my_wos = [w for w in wos if w.assigned_to_id == user.id and w.status in MAINTENANCE_WO_OPEN_STATUSES]
     awaiting_close = [w for w in wos if w.status == "completed"]
 
-    # Last 30 days of closed/completed breakdown work: downtime and MTTR.
-    since_30 = now - timedelta(days=30)
-    recent_bd = [
-        w for w in wos
-        if w.wo_type == "breakdown" and w.status in ("completed", "closed") and w.actual_end and _aware(w.actual_end) >= since_30
-    ]
-    downtime_30 = sum(w.downtime_minutes or 0 for w in recent_bd)
-    cost_30 = round(sum(w.total_cost or 0 for w in wos if w.actual_end and _aware(w.actual_end) >= since_30), 2)
+    # Last 30 days (today + 29 days back, IST): the same compute_summary the
+    # Reports tab uses, so a KPI never shows two different figures. Counts
+    # breakdown + corrective (machine-down) jobs.
+    t = today_ist()
+    s30 = compute_summary(db, t - timedelta(days=29), t, branch_id=branch_id, user=user)["kpis"]
 
     names = user_names(db, [r.raised_by_id for r in open_requests] + [w.assigned_to_id for w in my_wos])
+    confirm_required = requester_confirmation_required(db)
     return {
         "counts": {
             "assets": len(assets),
@@ -79,10 +86,10 @@ async def maintenance_dashboard(
             "my_work_orders": len(my_wos),
         },
         "last_30_days": {
-            "breakdowns": len(recent_bd),
-            "downtime_minutes": downtime_30,
-            "mttr_minutes": round(downtime_30 / len(recent_bd)) if recent_bd else None,
-            "maintenance_cost": cost_30,
+            "breakdowns": s30["breakdowns"],
+            "downtime_minutes": s30["downtime_minutes"],
+            "mttr_minutes": s30["mttr_minutes"],
+            "maintenance_cost": s30["maintenance_cost"],
         },
         "machines_down": down,
         "open_requests": [
@@ -101,9 +108,11 @@ async def maintenance_dashboard(
         ],
         "awaiting_close": [
             {"id": w.id, "wo_number": w.wo_number, "title": w.title, "asset_code": by_id[w.asset_id].asset_code,
-             "awaiting_confirmation": bool(w.request_id and not w.requester_confirmed_at)}
+             "awaiting_confirmation": bool(w.request_id and not w.requester_confirmed_at and confirm_required)}
             for w in awaiting_close[:10]
         ],
+        # Phase 2: PM due / overdue, critical spares, this-month MTTR + availability.
+        **dashboard_extras(db, assets, wos, branch_id, user=user),
     }
 
 
@@ -154,20 +163,37 @@ async def maintenance_lookups(
 async def lookup_assets(
     search: str | None = None,
     branch_id: int | None = None,
+    ids: str | None = Query(None, description="Comma-separated asset ids always included in the result (e.g. the currently selected asset)."),
     db: Session = Depends(get_db),
     _user: User = Depends(require_any_app_access("maintenance", "production")),
 ):
-    """Asset picker for the request form — requesters don't have the assets tab."""
+    """Asset picker for the request form — requesters don't have the assets tab.
+
+    `search` filters active (non-decommissioned) assets by code/name/location,
+    first 100 by asset code. Assets named in `ids` are always added on top
+    (even beyond the first 100, or decommissioned) so a picker can show the
+    label of an already-selected asset; deleted assets never come back."""
+    id_list: list[int] = []
+    if ids and ids.strip():
+        try:
+            id_list = sorted({int(x) for x in ids.split(",") if x.strip()})
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"ids must be comma-separated asset numbers (got '{ids}') — e.g. ids=12,15.")
+
     q = db.query(MaintenanceAsset).filter(MaintenanceAsset.is_deleted == False, MaintenanceAsset.status != "decommissioned")  # noqa: E712
     if branch_id:
         q = q.filter(MaintenanceAsset.branch_id == branch_id)
     if search:
         like = f"%{search}%"
         q = q.filter((MaintenanceAsset.asset_code.ilike(like)) | (MaintenanceAsset.name.ilike(like)) | (MaintenanceAsset.location_text.ilike(like)))
+    rows = {a.id: a for a in q.order_by(MaintenanceAsset.asset_code).limit(100).all()}
+    if id_list:
+        for a in db.query(MaintenanceAsset).filter(MaintenanceAsset.is_deleted == False, MaintenanceAsset.id.in_(id_list)).all():  # noqa: E712
+            rows.setdefault(a.id, a)
     return [
         {"id": a.id, "asset_code": a.asset_code, "name": a.name, "criticality": a.criticality, "status": a.status,
          "branch_id": a.branch_id, "location_text": a.location_text}
-        for a in q.order_by(MaintenanceAsset.asset_code).limit(100).all()
+        for a in sorted(rows.values(), key=lambda a: a.asset_code or "")
     ]
 
 

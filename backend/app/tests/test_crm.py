@@ -251,3 +251,23 @@ def test_dashboard_returns_counts(client, db):
     assert response.status_code == 200
     data = response.json()
     assert data["total_organizations"] >= 1
+
+
+def test_create_rejects_unknown_stage_or_status(client, db):
+    """Create uses the same coded stage / status lists as PATCH."""
+    user = make_user(db, "crmuser_stage_create@premnathrail.com")
+    org = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Stage Create Org"}, headers=auth_header(user)).json()
+    bad = client.post("/api/v1/crm/inquiries", json=inquiry_payload(client, user, org["id"], current_stage="Won!!"), headers=auth_header(user))
+    assert bad.status_code == 422 and "Won!!" in bad.json()["detail"]
+    bad = client.post("/api/v1/crm/inquiries", json=inquiry_payload(client, user, org["id"], status="Typo"), headers=auth_header(user))
+    assert bad.status_code == 422
+    ok = client.post("/api/v1/crm/inquiries", json=inquiry_payload(client, user, org["id"], current_stage="Negotiation"), headers=auth_header(user))
+    assert ok.status_code == 201
+    t = client.post("/api/v1/crm/tenders", json={"org_id": org["id"], "lead_source": "Direct", "current_stage": "Nope"}, headers=auth_header(user))
+    assert t.status_code == 422
+
+
+def test_organization_rejects_negative_credit_limit(client, db):
+    user = make_user(db, "crmuser_credit@premnathrail.com")
+    r = client.post("/api/v1/crm/organizations", json={"org_type": "Customer", "name": "Credit Org", "credit_limit": -1}, headers=auth_header(user))
+    assert r.status_code == 422

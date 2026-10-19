@@ -3,10 +3,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { crmApi } from '@/lib/api'
+import { recordVisit } from '@/lib/crmShortcuts'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { Inquiry, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry } from '@/types'
+import { Inquiry, Organization, OrgContact, QuotationItem, QuotationLineItem, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment, CrmTechnicalOfferOption } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import ReasonSheet from '@/components/shared/ReasonSheet'
+import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
+import CrmDocumentFolder, { DocumentSearch } from '@/components/crm/CrmDocumentFolder'
 import DateField from '@/components/erp/DateField'
 import InquiryForm from '@/components/crm/InquiryForm'
 import ActivityForm from '@/components/crm/ActivityForm'
@@ -14,15 +19,40 @@ import { RichText } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
-import { INQ_STAGES, INQUIRY_STATUSES, PRIORITIES, CUSTOMER_RESPONSES, DOC_CATEGORIES, QUOTE_CONDITIONS, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
-import { Card, InfoRow, Field, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab, XIcon, StageProgress } from '@/components/crm/ui'
+import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
+import SalesOrderHandoff from '@/components/crm/SalesOrderHandoff'
+import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
+import QuotationStatusBar from '@/components/crm/QuotationStatusBar'
+import LostReasonDialog, { LOST_STAGE, LOST_STATUS } from '@/components/crm/LostReasonDialog'
+import { INQ_STAGES, inquiryStatusOptions, priorityOptions, priorityLabel, QUOTE_CONDITIONS, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
+import { Card, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ActivityPhotos, RevisionSelector, SpecInfoRow, SpecRevision, ComboBox, handleEnterAsTab, StageProgress } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { refOf } from '@/lib/recordRef'
 
-const TABS = ['Info', 'Quotations', 'Documents', 'Follow Ups', 'Timeline'] as const
+// ?tab=discussion (from a @mention notification) opens the Discussion tab;
+// ?tab=quotations (quotation approval link) opens the Quotations tab.
+const tabFromUrl = (): 'Discussion' | 'Info' | 'Quotations' => {
+  const t = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null
+  return t === 'discussion' ? 'Discussion' : t === 'quotations' ? 'Quotations' : 'Info'
+}
+
+const TABS = ['Info', 'Discussion', 'Documents', 'Quotations', 'Follow Ups', 'Timeline'] as const
 
 export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
+  const { can, canDelete, canFeature } = useCan()
+  // Inquiry › Quotations is its own feature (Organization › Roles › CRM › Inquiries & Tenders › features).
+  const seeQuotations = canFeature('crm', 'inquiries_tenders', 'quotations', 'view')
+  // The other sub-tabs / actions are features too (core/features/crm.py).
+  const seeTab = (t: typeof TABS[number]) => t === 'Info'
+    || (t === 'Quotations' && seeQuotations)
+    || (t === 'Discussion' && canFeature('crm', 'inquiries_tenders', 'discussion', 'view'))
+    || (t === 'Documents' && canFeature('crm', 'inquiries_tenders', 'documents', 'view'))
+    || (t === 'Follow Ups' && canFeature('crm', 'inquiries_tenders', 'followups', 'view'))
+    || (t === 'Timeline' && canFeature('crm', 'inquiries_tenders', 'timeline', 'view'))
+  const canSendTor = canFeature('crm', 'inquiries_tenders', 'send_tor', 'create')
+  const canMoveStage = canFeature('crm', 'inquiries_tenders', 'stage', 'edit')
   const router = useRouter()
   const searchParams = useSearchParams()
   const backParam = searchParams.get('back')
@@ -33,9 +63,10 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   const [contact, setContact] = useState<OrgContact | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
-  const [tab, setTab] = useState<typeof TABS[number]>('Info')
+  const [tab, setTab] = useState<typeof TABS[number]>(tabFromUrl)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pendingStage, setPendingStage] = useState<string | null>(null)
+  const [lostStatusPending, setLostStatusPending] = useState(false)
   const [editing, setEditing] = useState(false)
   const [revisions, setRevisions] = useState<SpecRevision[]>([])
   const [selectedRevId, setSelectedRevId] = useState<number | null>(null)
@@ -49,7 +80,11 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
     try {
       const data = await crmApi.getInquiry(inquiryId)
       setInquiry(data)
-      crmApi.getOrganization(data.org_id).then(setOrg).catch(() => {})
+      recordVisit({ kind: 'inquiry', id: data.id, ref: refOf(data), title: data.universal_id, sub: data.product || data.current_stage })
+      crmApi.getOrganization(data.org_id).then((o: Organization) => {
+        setOrg(o)
+        recordVisit({ kind: 'inquiry', id: data.id, ref: refOf(data), title: data.universal_id, sub: [o.name, data.product].filter(Boolean).join(' · ') })
+      }).catch(() => {})
       if (data.org_contact_id) {
         crmApi.listOrgContacts(data.org_id).then((contacts: OrgContact[]) => {
           setContact(contacts.find((c) => c.id === data.org_contact_id) || null)
@@ -57,7 +92,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       } else {
         setContact(null)
       }
-      crmApi.getInquirySpecRevisions(inquiryId).then(setRevisions).catch(() => setRevisions([]))
+      crmApi.getInquirySpecRevisions(inquiryId, true).then(setRevisions).catch(() => setRevisions([]))
     } catch (err) {
       setError(extractErrorMessages(err, 'Inquiry not found.'))
     } finally {
@@ -66,25 +101,34 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   }
 
   useEffect(() => {
-    if (inquiryId) { setTab('Info'); setEditing(false); load() }
+    // Deferred so the effect itself sets no state.
+    if (inquiryId) Promise.resolve().then(() => { setTab(tabFromUrl()); setEditing(false); load() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inquiryId])
 
-  const canModify = !!inquiry && !!user && (user.role === 'admin' || inquiry.created_by_id === user.id)
+  // No discussion until the Technical Requirement has been sent to R&D.
+  useEffect(() => {
+    if (tab === 'Discussion' && inquiry && !inquiry.technical_offer_sent_at) Promise.resolve().then(() => setTab('Info'))
+  }, [tab, inquiry])
+
+  // Creator-or-admin (backend rule) AND Inquiries & Tenders › Edit in the Permission Matrix.
+  const canModify = !!inquiry && !!user && (user.role === 'admin' || inquiry.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit')
+  const canDeleteRecord = !!inquiry && canDelete('crm', 'inquiries_tenders', inquiry.created_by_id ?? null)
   const isAdmin = user?.role === 'admin'
+  const movingBack = !!pendingStage && !!inquiry && INQ_STAGES.indexOf(pendingStage) < INQ_STAGES.indexOf(inquiry.current_stage)
 
   const patch = async (payload: Record<string, unknown>) => {
     if (!inquiry) return
     try {
       setInquiry(await crmApi.updateInquiry(inquiry.id, payload))
-      crmApi.getInquirySpecRevisions(inquiry.id).then(setRevisions).catch(() => {})
-    } catch (err: any) {
+      crmApi.getInquirySpecRevisions(inquiry.id, true).then(setRevisions).catch(() => {})
+    } catch (err) {
       setError(extractErrorMessages(err, 'Update failed.'))
     }
   }
 
   // Status/Priority are quick lead-info toggles, not a requirement change — keep
-  // updated_at as it was so they don't re-arm the "Send Technical Offer Request"
+  // updated_at as it was so they don't re-arm the "Send Technical Requirement"
   // button (that button only cares about the requirement details changing).
   const patchLeadInfo = async (payload: Record<string, unknown>) => {
     if (!inquiry) return
@@ -92,7 +136,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       const prevUpdatedAt = inquiry.updated_at
       const updated = await crmApi.updateInquiry(inquiry.id, payload)
       setInquiry({ ...updated, updated_at: prevUpdatedAt })
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Update failed.'))
     }
   }
@@ -103,7 +147,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       await crmApi.deleteInquiry(inquiry.id)
       if (onDeleted) onDeleted()
       else router.push('/dashboard/crm/inquiries')
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to delete inquiry.'))
     }
   }
@@ -119,28 +163,29 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
   // The PDF has no requirement details to print until these are filled — block
   // sending an effectively-empty document to R&D rather than emailing a blank one.
   const missingRequirementDetails = !!inquiry && (
-    !inquiry.product || !inquiry.product_category || inquiry.quantity == null ||
+    !inquiry.product ||
     !(inquiry.product_spec || inquiry.requirement_desc)
   )
 
   const openTorPicker = () => {
     if (missingRequirementDetails) {
-      setTorError('Please fill Product, Category, Quantity, and at least one of Specification/Requirement Description before sending the Technical Offer Request — otherwise R&D gets a document with no requirement details.')
+      setTorError('Please fill Product and at least one of Specification/Requirement Description (click Edit) before sending the Technical Requirement to R&D — otherwise R&D gets a document with no requirement details.')
       return
     }
     setTorError('')
     setShowTorPicker(true)
   }
 
-  const sendTechnicalOfferRequest = async (documentIds: number[]) => {
+  const sendTechnicalOfferRequest = async (documentIds: number[], assignment: RndRequestAssignment) => {
     if (!inquiry || !torActive || missingRequirementDetails) return
     setSendingTOR(true)
     setTorError('')
     try {
-      setInquiry(await crmApi.createInquiryTechnicalOfferRequest(inquiry.id, documentIds))
+      setInquiry(await crmApi.createInquiryTechnicalOfferRequest(inquiry.id, documentIds, assignment))
       setShowTorPicker(false)
-    } catch (err: any) {
-      setTorError(extractErrorMessages(err, 'Failed to send Technical Offer Request.'))
+      setTab('Info')
+    } catch (err) {
+      setTorError(extractErrorMessages(err, 'Failed to send Technical Requirement to R&D.'))
     } finally {
       setSendingTOR(false)
     }
@@ -168,6 +213,40 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
           </div>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: '#1f1108', margin: 0 }}>{org?.name || 'Inquiry'}</h1>
         </div>
+        {!editing && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+              <button onClick={() => router.push(backHref)} type="button" data-tour="inq-back-btn" style={secondaryBtnStyle}>
+                ← Back
+              </button>
+              {/* Sending needs Inquiries & Tenders › Send Technical Requirement (TOR) to R&D › Create. */}
+              {canSendTor && <button
+                onClick={openTorPicker}
+                disabled={!torActive || sendingTOR}
+                data-tour="inq-tor-btn"
+                title={
+                  !torActive
+                    ? `Already sent as ${inquiry.technical_offer_number} — edit the inquiry to send again.`
+                    : missingRequirementDetails
+                    ? 'Fill Product and a Specification/Requirement Description before sending — the PDF would otherwise be empty.'
+                    : 'Emails R&D the Customer Organization, Project, and Product Requirement details as a PDF.'
+                }
+                style={{ ...secondaryBtnStyle, opacity: !torActive || sendingTOR ? 0.5 : 1, cursor: !torActive || sendingTOR ? 'not-allowed' : 'pointer' }}
+              >
+                {sendingTOR ? 'Sending…' : 'Send Technical Requirement to R&D'}
+              </button>}
+              <SalesOrderHandoff source="inquiry" record={inquiry} tourId="inq-create-so-btn" />
+              {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} data-tour="inq-edit-btn" style={secondaryBtnStyle}>Edit</button>}
+              {canDeleteRecord && <button onClick={() => setShowDeleteConfirm(true)} data-tour="inq-delete-btn" style={dangerBtnStyle}>Delete</button>}
+            </div>
+            {inquiry.technical_offer_number && (
+              <span style={{ fontSize: 11, color: '#78716c' }}>
+                {torActive ? 'Previously sent as ' : 'Sent as '}<strong>{inquiry.technical_offer_number}</strong>
+                {inquiry.technical_offer_sent_at && ` on ${formatDateTime(inquiry.technical_offer_sent_at)}`}
+              </span>
+            )}
+          </div>
+        )}
         {editing && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 999, background: 'rgba(255,122,69,0.12)', color: '#FF7A45' }}>
@@ -178,57 +257,14 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         )}
       </div>
 
-      <MessageDialog open={!!torError} variant="error" title="Technical Offer Request Failed" message={torError} onClose={() => setTorError('')} />
+      <MessageDialog open={!!torError} variant="error" title="Send Technical Requirement Failed" message={torError} onClose={() => setTorError('')} />
       <MessageDialog open={!!error} variant="error" title="Something Went Wrong" message={error} onClose={() => setError('')} />
 
-      {editing && (
-        <StageProgress stage={inquiry.current_stage} stages={INQ_STAGES} canModify={canModify} onRequestChange={setPendingStage} tourId="inq-stage-progress" />
-      )}
-      {!editing && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-          <StageProgress
-            stage={inquiry.current_stage}
-            stages={INQ_STAGES}
-            canModify={canModify}
-            onRequestChange={setPendingStage}
-            tourId="inq-stage-progress"
-            style={{ marginBottom: 0, flex: '1 1 280px', minWidth: 240 }}
-          />
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>
-                ← Back
-              </button>
-              <button
-                onClick={openTorPicker}
-                disabled={!torActive || sendingTOR}
-                data-tour="inq-tor-btn"
-                title={
-                  !torActive
-                    ? `Already sent as ${inquiry.technical_offer_number} — edit the inquiry to send again.`
-                    : missingRequirementDetails
-                    ? 'Fill Product, Category, Quantity, and a Specification/Requirement before sending — the PDF would otherwise be empty.'
-                    : 'Emails R&D the Organization, Project, and Product Requirement details as a PDF.'
-                }
-                style={{ ...secondaryBtnStyle, opacity: !torActive || sendingTOR ? 0.5 : 1, cursor: !torActive || sendingTOR ? 'not-allowed' : 'pointer' }}
-              >
-                {sendingTOR ? 'Sending…' : 'Send Technical Offer Request to R&D'}
-              </button>
-              {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} data-tour="inq-edit-btn" style={secondaryBtnStyle}>Edit</button>}
-              {canModify && <button onClick={() => setShowDeleteConfirm(true)} data-tour="inq-delete-btn" style={dangerBtnStyle}>Delete</button>}
-            </div>
-            {inquiry.technical_offer_number && (
-              <span style={{ fontSize: 11, color: '#78716c' }}>
-                {torActive ? 'Previously sent as ' : 'Sent as '}<strong>{inquiry.technical_offer_number}</strong>
-                {inquiry.technical_offer_sent_at && ` on ${formatDateTime(inquiry.technical_offer_sent_at)}`}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
+      <StageProgress stage={inquiry.current_stage} stages={INQ_STAGES} canModify={canModify && canMoveStage} allowBackward={isAdmin} onRequestChange={setPendingStage} tourId="inq-stage-progress" />
+
 
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', overflowY: 'visible' }}>
-        {TABS.map((t) => (
+        {TABS.filter((t) => (t !== 'Discussion' || !!inquiry.technical_offer_sent_at) && seeTab(t)).map((t) => (
           <div key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <button
               onClick={() => setTab(t)}
@@ -255,7 +291,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         ))}
       </div>
 
-      {tab === 'Info' && editing && (
+      {(tab === 'Info' || !seeTab(tab)) && editing && (
         <InquiryForm
           initial={inquiry}
           submitLabel="Save Changes"
@@ -266,11 +302,15 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
           }}
         />
       )}
-      {tab === 'Info' && !editing && <InfoTab inquiry={inquiry} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canModify} onChangeLeadInfo={patchLeadInfo} />}
-      {tab === 'Quotations' && <QuotationsTab inquiryId={inquiry.id} canModify={canModify} org={org} contact={contact} inquiry={inquiry} />}
-      {tab === 'Documents' && <DocumentsTab inquiry={inquiry} canModify={canModify} isAdmin={isAdmin} />}
-      {tab === 'Follow Ups' && <ActivitiesTab inquiry={inquiry} org={org} />}
-      {tab === 'Timeline' && <TimelineTab inquiryId={inquiry.id} />}
+      {(tab === 'Info' || !seeTab(tab)) && !editing && (
+        <InfoTab inquiry={inquiry} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canModify}
+          onChangeLeadInfo={(p) => (p.status === LOST_STATUS && !inquiry.lost_reason_code ? setLostStatusPending(true) : patchLeadInfo(p))} />
+      )}
+      {tab === 'Quotations' && seeQuotations && <QuotationsTab inquiryId={inquiry.id} org={org} contact={contact} inquiry={inquiry} />}
+      {tab === 'Discussion' && seeTab('Discussion') && inquiry.technical_offer_sent_at && <RequirementDiscussionTab source="inquiry" recordId={inquiry.id} side="crm" />}
+      {tab === 'Documents' && seeTab('Documents') && <DocumentsTab inquiry={inquiry} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
+      {tab === 'Follow Ups' && seeTab('Follow Ups') && <ActivitiesTab inquiry={inquiry} org={org} />}
+      {tab === 'Timeline' && seeTab('Timeline') && <TimelineTab inquiryId={inquiry.id} />}
 
       <TechnicalOfferPickerDialog
         open={showTorPicker}
@@ -289,24 +329,58 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
         onCancel={() => setShowDeleteConfirm(false)}
       />
 
+      {/* Stages only move forward; going back is an admin correction and needs a reason. */}
+      <LostReasonDialog
+        open={lostStatusPending}
+        onConfirm={(d) => { setLostStatusPending(false); patchLeadInfo({ status: LOST_STATUS, ...d }) }}
+        onCancel={() => setLostStatusPending(false)}
+      />
+      <LostReasonDialog
+        open={pendingStage === LOST_STAGE && !movingBack}
+        initial={{ lost_reason_code: inquiry.lost_reason_code || '', lost_to_competitor: inquiry.lost_to_competitor, lost_remarks: inquiry.lost_remarks }}
+        onConfirm={(d) => { setPendingStage(null); patch({ current_stage: LOST_STAGE, ...d }) }}
+        onCancel={() => setPendingStage(null)}
+      />
       <ConfirmDialog
-        open={!!pendingStage}
+        open={!!pendingStage && !movingBack && pendingStage !== LOST_STAGE}
         title="Update Stage"
         danger={false}
         confirmLabel="Update Stage"
-        message={pendingStage ? `Move this inquiry from "${inquiry.current_stage}" to "${pendingStage}"?` : ''}
+        message={pendingStage ? `Move this inquiry from "${inquiry.current_stage}" to "${pendingStage}"? Stages only move forward — once moved, it cannot be undone except by an admin.` : ''}
         onConfirm={() => { const s = pendingStage; setPendingStage(null); if (s) patch({ current_stage: s }) }}
+        onCancel={() => setPendingStage(null)}
+      />
+      <ReasonSheet
+        open={!!pendingStage && movingBack}
+        title="Move Stage Back"
+        message={pendingStage ? `Move this inquiry back from "${inquiry.current_stage}" to "${pendingStage}"? This reverses the pipeline — the reason is kept on the timeline.` : ''}
+        placeholder="e.g. Customer re-opened the requirement after the PO was withdrawn"
+        label="Reason for moving the stage back"
+        hint="Admin correction — the reason is kept on the inquiry's timeline."
+        confirmLabel="Move Back"
+        requireValue
+        requiredMessage="Enter the reason for moving the stage back — it is required and is kept on the record."
+        onConfirm={(reason) => { const s = pendingStage; setPendingStage(null); if (s) patch({ current_stage: s, stage_reason: reason.trim() }) }}
         onCancel={() => setPendingStage(null)}
       />
     </div>
   )
 }
 
+const infoGrid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px 16px' }
+const leadLabel: React.CSSProperties = { fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 4px' }
+
+const LOST_REASON_LABELS: Record<string, string> = {
+  price: 'Price too high', technical: 'Technical / specification', delivery: 'Delivery period', budget_dropped: 'Budget dropped',
+  competitor: 'Lost to competitor', no_response: 'No response', other: 'Other',
+}
+
 function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, onChangeLeadInfo }: { inquiry: Inquiry; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null; canModify: boolean; onChangeLeadInfo: (payload: Record<string, unknown>) => void }) {
   const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
   const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
-  const shownFields = new Set(['product', 'product_category', 'quantity', 'required_delivery_date', 'delivery_location', 'inspection_req', 'warranty_req', 'product_spec', 'requirement_desc'])
-  const changesNotShownAbove = selectedRev?.changes.filter((c) => !shownFields.has(c.field)) || []
+  const { canFeature } = useCan()
+  const seeCustomer = canFeature('crm', 'inquiries_tenders', 'customer_contact', 'view')
+  const seePrices = canFeature('crm', 'inquiries_tenders', 'prices', 'view')
 
   return (
     <div data-tour="inq-info-view" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -323,63 +397,62 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
               dangerouslySetInnerHTML={{ __html: specRevisionDetailHtml(selectedRev.changes) }}
             />
           )}
-          {changesNotShownAbove.length > 0 && (
-            <p style={{ fontSize: 11, color: '#a8a29e', margin: '6px 0 0' }}>
-              Some of these fields (e.g. Status, Priority, Organization/Contact) aren't highlighted inline below — see this summary or the Timeline tab for full detail.
-            </p>
-          )}
         </div>
       )}
       <Card title="Current Status">
         <p data-tour="inq-info-current-status" style={{ fontSize: 13, color: '#1f1108', margin: 0, whiteSpace: 'pre-wrap' }}>{inquiry.current_status_note || 'Not provided'}</p>
       </Card>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 300px', minWidth: 280 }}>
-          <Card title="Organization">
+      {/* Organization (wide) + Lead Info (narrow) side by side, same height;
+          fields sit on a grid so the columns line up row to row. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'stretch' }}>
+        {seeCustomer && <div style={{ display: 'flex', flexDirection: 'column', flex: '2 1 480px', minWidth: 0 }}>
+          <Card title="Customer Organization" style={{ flex: 1 }}>
             <InfoRow label="Name" value={org?.name || 'Not provided'} />
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-              <div style={{ flex: '0 1 160px', minWidth: 140 }}><InfoRow label="GST Number" value={org?.gst_number || 'Not provided'} /></div>
-              <div style={{ flex: '0 1 140px', minWidth: 120 }}><InfoRow label="Type" value={org?.org_type || 'Not provided'} /></div>
-              <div style={{ flex: '0 1 110px', minWidth: 90 }}><InfoRow label="City" value={org?.city || 'Not provided'} /></div>
-              <div style={{ flex: '0 1 110px', minWidth: 90 }}><InfoRow label="State" value={org?.state || 'Not provided'} /></div>
+            <div style={infoGrid}>
+              <InfoRow label="GST Number" value={org?.gst_number || 'Not provided'} />
+              <InfoRow label="Type" value={org?.org_type || 'Not provided'} />
+              <InfoRow label="City" value={org?.city || 'Not provided'} />
+              <InfoRow label="State" value={org?.state || 'Not provided'} />
             </div>
             <InfoRow label="Address" value={org?.address || 'Not provided'} />
-            <div style={{ paddingTop: 10, marginTop: 4, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+            <div style={{ paddingTop: 12, marginTop: 2, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
               <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#1f1108', margin: '0 0 10px' }}>Contact Person</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                <div style={{ flex: '0 1 180px', minWidth: 140, maxWidth: 320 }}><InfoRow label="Name" value={contact?.name || 'Not provided'} /></div>
-                <div style={{ flex: '0 1 150px', minWidth: 130 }}><InfoRow label="Mobile" value={contact?.mobile || 'Not provided'} /></div>
-                <div style={{ flex: '1 1 200px', minWidth: 160, maxWidth: 300 }}><InfoRow label="Email" value={contact?.email || 'Not provided'} /></div>
-                <div style={{ flex: '0 1 150px', minWidth: 120 }}><InfoRow label="Department" value={contact?.department || 'Not provided'} /></div>
+              <div style={infoGrid}>
+                <InfoRow label="Name" value={contact?.name || 'Not provided'} />
+                <InfoRow label="Mobile" value={contact?.mobile || 'Not provided'} />
+                <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}><InfoRow label="Email" value={contact?.email || 'Not provided'} /></div>
+                <InfoRow label="Department" value={contact?.department || 'Not provided'} />
               </div>
             </div>
           </Card>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 260px', minWidth: 240, maxWidth: 360 }}>
-          <Card title="Lead Info">
-            <InfoRow
-              label="Status"
-              value={
-                canModify ? (
-                  <select data-tour="inq-info-status" value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
-                    {INQUIRY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                ) : (inquiry.status || 'Not provided')
-              }
-            />
-            <InfoRow
-              label="Priority"
-              value={
-                canModify ? (
-                  <select data-tour="inq-info-priority" value={inquiry.priority} onChange={(e) => onChangeLeadInfo({ priority: e.target.value })} style={{ ...inputStyle, padding: '4px 8px', fontSize: 12.5, width: 'auto' }}>
-                    {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                ) : (inquiry.priority || 'Not provided')
-              }
-            />
-            <InfoRow label="Lead Source" value={inquiry.lead_source || 'Not provided'} />
-            <InfoRow label="BD Owner" value={inquiry.bd_owner || 'Not provided'} />
-            <InfoRow label="Created On" value={inquiry.created_at ? formatDate(inquiry.created_at) : 'Not provided'} />
+        </div>}
+        <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 300px', minWidth: 0 }}>
+          <Card title="Lead Info" style={{ flex: 1 }}>
+            <div>
+              <p style={leadLabel}>Status</p>
+              {canModify ? (
+                <select data-tour="inq-info-status" value={inquiry.status} onChange={(e) => onChangeLeadInfo({ status: e.target.value })} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12.5, width: '100%' }}>
+                  {inquiryStatusOptions(inquiry.status).map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              ) : <p style={{ fontSize: 13, color: '#1f1108', margin: 0 }}>{inquiry.status || 'Not provided'}</p>}
+            </div>
+            <div>
+              <p style={leadLabel}>Customer Requirement Priority</p>
+              {canModify ? (
+                <select data-tour="inq-info-priority" value={inquiry.priority} onChange={(e) => onChangeLeadInfo({ priority: e.target.value })} style={{ ...inputStyle, padding: '6px 10px', fontSize: 12.5, width: '100%' }}>
+                  {priorityOptions(inquiry.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
+                </select>
+              ) : <p style={{ fontSize: 13, color: '#1f1108', margin: 0 }}>{inquiry.priority || 'Not provided'}</p>}
+            </div>
+            <div style={{ ...infoGrid, gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', paddingTop: 10, borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+              <InfoRow label="Lead Source" value={inquiry.lead_source || 'Not provided'} />
+              <InfoRow label="BD Owner" value={inquiry.bd_owner || 'Not provided'} />
+              {seePrices && <InfoRow label="Expected Value" value={inquiry.expected_value != null ? `₹${Number(inquiry.expected_value).toLocaleString('en-IN')}` : 'Not provided'} />}
+              <InfoRow label="Win Probability" value={inquiry.probability != null ? `${inquiry.probability}%` : 'Not provided'} />
+              <InfoRow label="Expected Order" value={inquiry.expected_order_date ? formatDate(inquiry.expected_order_date) : 'Not provided'} />
+              {inquiry.lost_reason_code && <InfoRow label="Lost Reason" value={`${LOST_REASON_LABELS[inquiry.lost_reason_code] || inquiry.lost_reason_code}${inquiry.lost_to_competitor ? ` — ${inquiry.lost_to_competitor}` : ''}${inquiry.lost_remarks ? ` (${inquiry.lost_remarks})` : ''}`} />}
+              <InfoRow label="Created On" value={inquiry.created_at ? formatDate(inquiry.created_at) : 'Not provided'} />
+            </div>
           </Card>
         </div>
       </div>
@@ -408,13 +481,13 @@ function InfoTab({ inquiry, org, contact, revisions, selectedRevId, canModify, o
           </div>
         )}
         <SpecInfoRow label="Requirement Summary" value={inquiry.requirement_desc || 'Not provided'} change={changeFor('requirement_desc')} />
-        <InfoRow label="Project Details" value={inquiry.project_details || 'Not provided'} />
+        <SpecInfoRow label="Project Details" value={inquiry.project_details || 'Not provided'} change={changeFor('project_details')} />
       </Card>
     </div>
   )
 }
 
-const emptyLineItem = { description: '', model_number: '', quantity: '', unit_price: '', gst_percent: '', subtotal: '', total: '' }
+const emptyLineItem = { description: '', model_number: '', details: '', quantity: '', unit_price: '', gst_percent: '', subtotal: '', total: '' }
 
 // A valid Delivery Time must carry a unit, not just a bare number — "7" is ambiguous,
 // "7 days" isn't. Accepts day/week/month/hour in singular or plural, any case, with
@@ -430,25 +503,70 @@ type QuotationFormErrors = {
   itemErrors?: Record<number, QuotationItemErrors>
   delivery_time?: string
   valid_until?: string
+  discount?: string
   quote_conditions?: string
   payment_terms?: string
+  price?: string
+  lump_sum_gst_percent?: string
+}
+
+// Default quote validity: 30 days from the quote date (yyyy-mm-dd in, yyyy-mm-dd out).
+const QUOTE_VALIDITY_DAYS = 30
+const addDaysIso = (iso: string, days: number) => {
+  const d = new Date(`${iso}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return ''
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
 }
 
 const fieldErrorTextStyle: React.CSSProperties = { fontSize: 11, color: '#ef4444', fontWeight: 600, margin: '4px 0 0' }
 const errInputStyle = (hasError: boolean): React.CSSProperties => (hasError ? { borderColor: '#f87171' } : {})
+const fmtAmount = (v: number | string | null | undefined) =>
+  v === null || v === undefined || v === '' ? '—' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquiryId: number; canModify: boolean; org: Organization | null; contact: OrgContact | null; inquiry: Inquiry }) {
+/** Quotation prices are visible with Prices & margins, or to whoever creates /
+ *  edits / approves quotations (same rule as crm/access.py sees_quotation_prices). */
+const seesQuotationPrices = (canFeature: ReturnType<typeof useCan>['canFeature']) =>
+  canFeature('crm', 'inquiries_tenders', 'prices', 'view')
+  || canFeature('crm', 'inquiries_tenders', 'quotations', 'create')
+  || canFeature('crm', 'inquiries_tenders', 'quotations', 'edit')
+  || canFeature('crm', 'inquiries_tenders', 'quotations', 'approve')
+
+/** Labelled field in the sheet style (keeps the tour target on the wrapper). */
+function SF({ label, tourId, children }: { label: React.ReactNode; tourId?: string; children: React.ReactNode }) {
+  return (
+    <div {...(tourId ? { 'data-tour': tourId } : {})}>
+      <label style={sheetLabel}>{label}</label>
+      {children}
+    </div>
+  )
+}
+
+function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number; org: Organization | null; contact: OrgContact | null; inquiry: Inquiry }) {
+  const { canFeature } = useCan()
+  const { user: me } = useAuth()
+  // Inquiry owner or admin (backend rule) AND Inquiries & Tenders › Quotations › Create / Edit.
+  const ownerOrAdmin = !!me && (me.role === 'admin' || inquiry.created_by_id === me.id)
+  const canModify = ownerOrAdmin && canFeature('crm', 'inquiries_tenders', 'quotations', 'edit')
+  const canCreateQuote = ownerOrAdmin && canFeature('crm', 'inquiries_tenders', 'quotations', 'create')
+  const seeQuotePrices = seesQuotationPrices(canFeature)
+  const { user } = useAuth()
   const [quotations, setQuotations] = useState<QuotationItem[]>([])
   const [showForm, setShowForm] = useState(false)
-  const [revisingId, setRevisingId] = useState<number | null>(null)
+  // Revise opens the same full form, filled with this quotation; saving records a revision.
+  const [revisingQuot, setRevisingQuot] = useState<QuotationItem | null>(null)
   const todayIso = new Date().toISOString().slice(0, 10)
+  // R&D's released Technical Offers for this inquiry — the quotation quotes against one of them.
+  const [technicalOffers, setTechnicalOffers] = useState<CrmTechnicalOfferOption[]>([])
+  const currentOffer = technicalOffers.find((o) => o.status === 'released')
   const emptyForm = {
     quotation_type: 'Domestic', gst_type: 'CGST_SGST', quote_date: todayIso, client_name: org?.name || '', client_contact_name: contact?.name || '',
     client_contact_email: contact?.email || '', client_contact_phone: contact?.mobile || '',
-    technical_offer_number: inquiry?.technical_offer_number || '',
-    technical_offer_date: inquiry?.technical_offer_sent_at ? String(inquiry.technical_offer_sent_at).slice(0, 10) : '',
-    valid_until: '', delivery_time: '', payment_terms: '', notes: '',
+    technical_offer_id: currentOffer ? String(currentOffer.id) : '',
+    valid_until: addDaysIso(todayIso, QUOTE_VALIDITY_DAYS), delivery_time: '', payment_terms: '', notes: '',
     discount: '', discount_type: 'percent', quote_conditions: '', quote_conditions_custom: '',
+    // 'lumpsum' = official Commercial Offer: items are a Particulars list, one Total Price + GST for the whole offer.
+    pricing_mode: 'itemwise', price: '', lump_sum_gst_percent: '18',
   }
   const [form, setForm] = useState(emptyForm)
   const [items, setItems] = useState([{ ...emptyLineItem }])
@@ -464,34 +582,50 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
   const [paymentTerms, setPaymentTerms] = useState<{ id: number; label: string; description?: string | null }[]>([])
   const [quotRevisions, setQuotRevisions] = useState<Record<number, SpecRevision[]>>({})
   const [selectedQuotRev, setSelectedQuotRev] = useState<Record<number, number | null>>({})
+  const [saving, setSaving] = useState(false)
+  const [tabError, setTabError] = useState<{ title: string; message: string | string[] } | null>(null)
   const load = () => {
     crmApi.listQuotations(inquiryId).then((data: QuotationItem[]) => {
       setQuotations(data)
       data.filter((q) => q.revision_number > 0).forEach((q) => {
-        crmApi.getQuotationRevisions(inquiryId, q.id).then((revs) => setQuotRevisions((m) => ({ ...m, [q.id]: revs }))).catch(() => {})
+        crmApi.getQuotationRevisions(inquiryId, q.id)
+          .then((revs) => setQuotRevisions((m) => ({ ...m, [q.id]: revs })))
+          .catch((err) => setTabError({ title: 'Cannot Load Revision History', message: extractErrorMessages(err, `Could not load the revision history of ${q.quot_number || 'this quotation'}. Refresh the page; if it persists, check your connection.`) }))
       })
-    })
+    }).catch((err) => setTabError({ title: 'Cannot Load Quotations', message: extractErrorMessages(err, 'Could not load the quotations for this inquiry. Refresh the page; if it persists, check your connection.') }))
   }
-  // Status tracking, not a revision — updates independently of the price/payment-terms
-  // revision flow, so it lives outside ReviseQuotationForm as its own control.
-  const updateCustomerResponse = async (quotId: number, value: string) => {
-    await crmApi.updateQuotation(inquiryId, quotId, { customer_response: value || undefined })
-    load()
-  }
-  useEffect(() => { load() }, [inquiryId])
+  // Status (draft → approval → sent → accepted / lost) is driven by QuotationStatusBar,
+  // not by a free-text customer-response select.
+  useEffect(() => { load() }, [inquiryId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     crmApi.listProducts().then(setProducts).catch(() => {})
     crmApi.listPaymentTerms().then(setPaymentTerms).catch(() => {})
   }, [])
+  useEffect(() => {
+    crmApi.listInquiryTechnicalOffers(inquiryId).then(setTechnicalOffers)
+      .catch((err) => setTabError({ title: 'Cannot Load Technical Offers', message: extractErrorMessages(err, "Could not load R&D's Technical Offers for this inquiry. Refresh the page; if it persists, check your connection.") }))
+  }, [inquiryId])
+  const openTechnicalOfferPdf = async (offer: CrmTechnicalOfferOption) => {
+    const tab = window.open('', '_blank')
+    try {
+      const url = URL.createObjectURL(await crmApi.technicalOfferPdf(inquiryId, offer.id))
+      if (tab) tab.location.href = url
+      else window.open(url, '_blank')
+    } catch (err) {
+      tab?.close()
+      setTabError({ title: 'Cannot Open Technical Offer', message: extractErrorMessages(err, `Could not open ${offer.offer_number}.`) })
+    }
+  }
 
   const applyProductToRow = (idx: number, product: { name: string; model_number?: string | null; default_price?: number | null }) => {
+    setDupItemError('')
     const nameKey = product.name.trim().toLowerCase()
     const modelKey = (product.model_number || '').trim().toLowerCase()
     const dupExists = items.some((row, i) =>
       i !== idx && row.description.trim().toLowerCase() === nameKey && (row.model_number || '').trim().toLowerCase() === modelKey
     )
     if (dupExists) {
-      setDupItemError('This item with the same model number is already added.')
+      setDupItemError('This item with the same model number is already added — change the model number or edit the existing line instead.')
       return
     }
     setItems((rows) => rows.map((row, i) => i === idx ? {
@@ -509,11 +643,18 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
     const row = items[idx]
     const name = typedName.trim()
     if (!name) return
-    const created = await crmApi.createProduct({
-      name,
-      model_number: row.model_number.trim() || undefined,
-      default_price: row.unit_price ? Number(row.unit_price) : undefined,
-    })
+    setProductError('')
+    let created
+    try {
+      created = await crmApi.createProduct({
+        name,
+        model_number: row.model_number.trim() || undefined,
+        default_price: row.unit_price ? Number(row.unit_price) : undefined,
+      })
+    } catch (err) {
+      setProductError(extractErrorMessages(err, `Product "${name}" was not added to the product list. Check the name/model number and try again.`).join(' '))
+      return
+    }
     setProducts((p) => [...p, created])
     updateItemRow(idx, 'description', created.name)
     setProductNotice(created.model_number
@@ -526,20 +667,27 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
   const createPaymentTermFromField = async (typedText: string) => {
     const text = typedText.trim()
     if (!text) return
-    const created = await crmApi.createPaymentTerm({ label: text, description: text })
+    let created
+    try {
+      created = await crmApi.createPaymentTerm({ label: text, description: text })
+    } catch (err) {
+      setTabError({ title: 'Cannot Add Payment Term', message: extractErrorMessages(err, `Payment term "${text}" was not added to the list. Try again, or ask an admin to add it under CRM settings.`) })
+      return
+    }
     setPaymentTerms((p) => [...p, created])
     setForm((f) => ({ ...f, payment_terms: created.description || created.label }))
   }
 
   useEffect(() => {
     if (showForm) return
-    setForm((f) => ({
+    // Deferred so the effect itself sets no state.
+    Promise.resolve().then(() => setForm((f) => ({
       ...f,
       client_name: f.client_name || org?.name || '',
       client_contact_name: f.client_contact_name || contact?.name || '',
       client_contact_email: f.client_contact_email || contact?.email || '',
       client_contact_phone: f.client_contact_phone || contact?.mobile || '',
-    }))
+    })))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [org, contact])
 
@@ -562,12 +710,42 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
   }
 
   const cancelForm = () => {
+    setProductError('')
+    setDupItemError('')
+    setProductNotice('')
     setForm(emptyForm)
     setItems([{ ...emptyLineItem }])
     setFormError('')
     setFieldErrors({})
     setAttemptedSave(false)
     setShowForm(false)
+    setRevisingQuot(null)
+  }
+
+  const startRevise = (q: QuotationItem) => {
+    const conditions = q.quote_conditions || ''
+    const known = !conditions || (QUOTE_CONDITIONS as readonly string[]).includes(conditions)
+    setForm({
+      quotation_type: q.quotation_type || 'Domestic', gst_type: q.gst_type || 'CGST_SGST', quote_date: q.quote_date || todayIso,
+      client_name: q.client_name || '', client_contact_name: q.client_contact_name || '',
+      client_contact_email: q.client_contact_email || '', client_contact_phone: q.client_contact_phone || '',
+      technical_offer_id: q.technical_offer_id ? String(q.technical_offer_id) : '',
+      valid_until: q.valid_until || '', delivery_time: q.delivery_time || '', payment_terms: q.payment_terms || '', notes: q.notes || '',
+      discount: q.discount != null ? String(q.discount) : '', discount_type: q.discount_type || 'percent',
+      quote_conditions: known ? conditions : 'Other/Custom', quote_conditions_custom: known ? '' : conditions,
+      pricing_mode: q.pricing_mode || 'itemwise', price: q.price != null ? String(q.price) : '',
+      lump_sum_gst_percent: q.lump_sum_gst_percent != null ? String(q.lump_sum_gst_percent) : '18',
+    })
+    const str = (v?: number | null) => (v != null ? String(v) : '')
+    setItems(q.items.length ? q.items.map((it) => ({
+      description: it.description || '', model_number: it.model_number || '', details: it.details || '',
+      quantity: str(it.quantity), unit_price: str(it.unit_price), gst_percent: str(it.gst_percent), subtotal: str(it.subtotal), total: str(it.total),
+    })) : [{ ...emptyLineItem }])
+    setFormError('')
+    setFieldErrors({})
+    setAttemptedSave(false)
+    setRevisingQuot(q)
+    setShowForm(true)
   }
 
   const addItemRow = () => setItems((rows) => [...rows, { ...emptyLineItem }])
@@ -587,28 +765,32 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
       }
       return updated
     }))
-  const itemsTotal = items.reduce((sum, it) => sum + (Number(it.total) || 0), 0)
-  const discountAmount = form.discount
+  const isLumpSum = form.pricing_mode === 'lumpsum'
+  const isExport = form.quotation_type === 'Export'
+  const currencySymbol = isExport ? '$' : '₹'
+  const lumpSumTotal = (Number(form.price) || 0) * (1 + (form.quotation_type === 'Export' ? 0 : Number(form.lump_sum_gst_percent) || 0) / 100)
+  const itemsTotal = isLumpSum ? lumpSumTotal : items.reduce((sum, it) => sum + (Number(it.total) || 0), 0)
+  const discountAmount = form.discount && !isLumpSum
     ? (form.discount_type === 'percent' ? itemsTotal * (Number(form.discount) / 100) : Number(form.discount))
     : 0
   const grandTotal = itemsTotal - discountAmount
 
   useEffect(() => {
-    setItems((rows) => rows.map((row) => {
+    // Deferred so the effect itself sets no state.
+    Promise.resolve().then(() => setItems((rows) => rows.map((row) => {
       const qty = Number(row.quantity) || 0
       const price = Number(row.unit_price) || 0
       const gst = form.quotation_type === 'Export' ? 0 : Number(row.gst_percent) || 0
       const subtotal = qty * price
       const total = subtotal + subtotal * (gst / 100)
       return { ...row, subtotal: subtotal ? String(Number(subtotal.toFixed(2))) : row.subtotal, total: subtotal ? String(Number(total.toFixed(2))) : row.total }
-    }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    })))
   }, [form.quotation_type])
 
   // Only rows the user actually touched are validated/sent — a blank extra row from
   // "+ Add Line Item" that was never filled in is silently dropped, not an error.
   const isItemRowEmpty = (it: typeof emptyLineItem) =>
-    !it.description.trim() && !it.model_number.trim() && !it.quantity && !it.unit_price && !it.gst_percent
+    !it.description.trim() && !it.model_number.trim() && !it.details.trim() && !it.quantity && !it.unit_price && !it.gst_percent
 
   const validate = (): QuotationFormErrors => {
     const errs: QuotationFormErrors = {}
@@ -623,21 +805,36 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
       anyFilledItem = true
       const rowErrs: QuotationItemErrors = {}
       if (!it.description.trim()) rowErrs.description = 'Item Name is required.'
-      if (!it.quantity || Number(it.quantity) <= 0) rowErrs.quantity = 'Quantity is required.'
-      if (!it.unit_price || Number(it.unit_price) <= 0) rowErrs.unit_price = 'Price/Unit is required.'
-      if (!isExport && !it.gst_percent) rowErrs.gst_percent = 'GST/Tax is required.'
+      if (it.quantity && Number(it.quantity) <= 0) rowErrs.quantity = 'Quantity must be more than 0 — enter a positive number or leave it blank.'
+      if (!isLumpSum && it.unit_price && Number(it.unit_price) < 0) rowErrs.unit_price = 'Price/Unit cannot be negative — enter 0 or more, or leave it blank.'
+      if (!isLumpSum && !isExport && it.gst_percent && (Number(it.gst_percent) < 0 || Number(it.gst_percent) > 100)) rowErrs.gst_percent = 'GST % must be between 0 and 100 — fix it or leave it blank.'
       if (Object.keys(rowErrs).length) itemErrors[idx] = rowErrs
     })
     if (!anyFilledItem) errs.items = 'Add at least one line item.'
     else if (Object.keys(itemErrors).length) errs.itemErrors = itemErrors
 
+    if (isLumpSum) {
+      if (!form.price || !(Number(form.price) > 0)) errs.price = 'Total Price is required for a lump-sum offer — enter the price for the whole offer, or switch Pricing to Item-wise.'
+      if (!isExport && form.lump_sum_gst_percent !== '' && (Number(form.lump_sum_gst_percent) < 0 || Number(form.lump_sum_gst_percent) > 100)) errs.lump_sum_gst_percent = 'GST % must be between 0 and 100.'
+    }
+
     if (!form.delivery_time.trim()) errs.delivery_time = 'Delivery Time is required.'
     else if (!DELIVERY_TIME_PATTERN.test(form.delivery_time.trim())) errs.delivery_time = 'Include a unit, e.g. "7 days" or "2 weeks".'
 
     if (!form.valid_until) errs.valid_until = 'Quote Validity Date is required.'
+    else if (form.quote_date && form.valid_until < form.quote_date) {
+      errs.valid_until = `Quote Validity Date (${form.valid_until}) is before the Date of Quote (${form.quote_date}). Set it on or after the quote date.`
+    }
+
+    if (form.discount !== '' && !isLumpSum) {
+      const d = Number(form.discount)
+      if (Number.isNaN(d) || d < 0) errs.discount = 'Discount cannot be negative. Enter 0 or more, or leave it blank.'
+      else if (form.discount_type === 'percent' && d > 100) errs.discount = `Discount is ${d}% — a percent discount cannot exceed 100%. Enter 100 or less, or switch the type to a flat amount.`
+      else if (form.discount_type === 'flat' && d > itemsTotal) errs.discount = `Flat discount (${d}) is more than the line items total (${itemsTotal.toFixed(2)}). Reduce the discount.`
+    }
 
     const conditionsValue = form.quote_conditions === 'Other/Custom' ? form.quote_conditions_custom : form.quote_conditions
-    if (!conditionsValue.trim()) errs.quote_conditions = 'Quote Conditions is required.'
+    if (!isLumpSum && !conditionsValue.trim()) errs.quote_conditions = 'Quote Conditions is required.'
 
     if (!form.payment_terms.trim()) errs.payment_terms = 'Payment Terms is required.'
 
@@ -647,12 +844,13 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
   // Once the user has tried to save once, keep re-validating live so field errors
   // clear themselves as soon as the user fixes them, instead of only at next submit.
   useEffect(() => {
-    if (attemptedSave) setFieldErrors(validate())
+    if (attemptedSave) Promise.resolve().then(() => setFieldErrors(validate()))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, items, attemptedSave])
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (saving) return  // a double-click must not create two quotations
     setFormError('')
     setAttemptedSave(true)
     const errs = validate()
@@ -665,16 +863,20 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
     const { quote_conditions_custom, ...rest } = form
     const payload: Record<string, unknown> = {
       ...rest,
-      discount: form.discount ? Number(form.discount) : undefined,
-      discount_type: form.discount ? form.discount_type : undefined,
+      technical_offer_id: form.technical_offer_id ? Number(form.technical_offer_id) : undefined,
+      discount: form.discount && !isLumpSum ? Number(form.discount) : undefined,
+      discount_type: form.discount && !isLumpSum ? form.discount_type : undefined,
+      price: isLumpSum ? Number(form.price) : undefined,
+      lump_sum_gst_percent: isLumpSum && !isExport && form.lump_sum_gst_percent !== '' ? Number(form.lump_sum_gst_percent) : undefined,
       quote_conditions: form.quote_conditions === 'Other/Custom' ? (quote_conditions_custom || undefined) : (form.quote_conditions || undefined),
       items: validItems
         .map((it) => ({
           description: it.description || undefined,
           model_number: it.model_number || undefined,
+          details: it.details.trim() || undefined,
           quantity: it.quantity ? Number(it.quantity) : undefined,
-          unit_price: it.unit_price ? Number(it.unit_price) : undefined,
-          gst_percent: form.quotation_type === 'Export' || !it.gst_percent ? undefined : Number(it.gst_percent),
+          unit_price: !isLumpSum && it.unit_price ? Number(it.unit_price) : undefined,
+          gst_percent: isLumpSum || form.quotation_type === 'Export' || !it.gst_percent ? undefined : Number(it.gst_percent),
           subtotal: it.subtotal ? Number(it.subtotal) : undefined,
           total: it.total ? Number(it.total) : undefined,
         })),
@@ -684,76 +886,138 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
     Object.keys(payload).forEach((k) => {
       if (payload[k] === '') delete payload[k]
     })
+    if (revisingQuot) {
+      // A revision sends every field: one left blank is cleared (null), not kept as it was.
+      for (const k of ['technical_offer_id', 'client_contact_name', 'client_contact_email', 'client_contact_phone', 'discount', 'discount_type',
+        'price', 'lump_sum_gst_percent', 'quote_conditions', 'notes']) {
+        if (payload[k] === undefined) payload[k] = null
+      }
+      delete payload.customer_response
+      delete payload.submitted_date
+    }
+    setSaving(true)
     try {
-      await crmApi.createQuotation(inquiryId, payload)
-    } catch (err: any) {
+      if (revisingQuot) await crmApi.updateQuotation(inquiryId, revisingQuot.id, payload)
+      else await crmApi.createQuotation(inquiryId, payload)
+    } catch (err) {
       setFormError(extractErrorMessages(err, 'Failed to save quotation.'))
       return
+    } finally {
+      setSaving(false)
     }
     cancelForm()
     load()
   }
 
-  const isExport = form.quotation_type === 'Export'
-  const currencySymbol = isExport ? '$' : '₹'
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {canModify && (
+      {(canCreateQuote || canModify) && (
         <div>
-          <button onClick={() => (showForm ? cancelForm() : (setFormError(''), setShowForm(true)))} data-tour="quotation-create-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Create Quote'}</button>
+          {canCreateQuote && <button onClick={() => { setFormError(''); setForm(emptyForm); setItems([{ ...emptyLineItem }]); setRevisingQuot(null); setShowForm(true) }} data-tour="quotation-create-btn" style={primaryBtnStyle}>+ Create Quote</button>}
+          {/* Create and Revise both open the form as a popup (FormSheet is portalled to body —
+              the glass cards' backdrop-filter would clip a fixed overlay), so the saved
+              quotation card is never shown side by side with an inline edit copy. */}
           {showForm && (
-            <form
-              onSubmit={save}
-              onKeyDown={handleEnterAsTab}
-              style={{ marginTop: 12, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', display: 'flex', flexDirection: 'column', gap: 14 }}
-            >
-              <MessageDialog open={!!formError} variant="error" title="Cannot Save Quotation" message={formError} onClose={() => setFormError('')} />
-              <MessageDialog open={!!productError} variant="error" title="Cannot Add Product" message={productError} onClose={() => setProductError('')} />
-              <MessageDialog open={!!productNotice} variant="success" title="Product Added" message={productNotice} onClose={() => setProductNotice('')} />
-              <MessageDialog open={!!dupItemError} variant="error" title="Duplicate Line Item" message={dupItemError} onClose={() => setDupItemError('')} />
+            <FormSheet tour="quot-form" icon={revisingQuot ? 'edit' : 'rupee'} onClose={cancelForm} busy={saving}
+              title={revisingQuot ? `Edit ${revisingQuot.quot_number || 'Quotation'}` : 'New Quotation'}
+              subtitle={revisingQuot
+                ? `Saving updates this quotation as revision r${revisingQuot.revision_number + 1}; earlier versions stay available in its revision list.`
+                : `Price offer to ${org?.name || 'the customer'} for inquiry ${inquiry.universal_id}.`}
+              footer={<>
+                <button type="button" onClick={cancelForm} disabled={saving} data-tour="quot-cancel-btn" style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+                <button type="submit" form="quotation-form" data-tour="quot-save" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+                  <SheetIcon name={revisingQuot ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : revisingQuot ? 'Save Changes' : 'Save Quotation'}
+                </button>
+              </>}>
+            <form id="quotation-form" onSubmit={save} onKeyDown={handleEnterAsTab} style={{ padding: '20px 24px' }}>
+              <SheetError error={formError} />
+              <SheetError error={productError} />
+              <SheetError error={dupItemError} />
+              {productNotice && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>
+                  <span style={{ flex: 1 }}>{productNotice}</span>
+                  <button type="button" aria-label="Dismiss" onClick={() => setProductNotice('')} style={sheetBtn('ghost', '#15803d')}><SheetIcon name="x" size={14} /></button>
+                </div>
+              )}
+              <SheetSection icon="doc" title="Quotation">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <Field label="Quotation Type *" tourId="quot-type">
-                  <select value={form.quotation_type} onChange={(e) => setForm((f) => ({ ...f, quotation_type: e.target.value }))} style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.quotation_type) }}>
+                <SF label={<>Quotation Type <Req /></>} tourId="quot-type">
+                  <select value={form.quotation_type} onChange={(e) => setForm((f) => ({ ...f, quotation_type: e.target.value }))} style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.quotation_type) }}>
                     <option value="Domestic">Domestic (INR)</option>
                     <option value="Export">Export (USD)</option>
                   </select>
                   {fieldErrors.quotation_type && <p style={fieldErrorTextStyle}>{fieldErrors.quotation_type}</p>}
-                </Field>
+                </SF>
                 {!isExport && (
-                  <Field label="GST Type" tourId="quot-gst-type">
-                    <select value={form.gst_type} onChange={(e) => setForm((f) => ({ ...f, gst_type: e.target.value }))} style={inputStyle}>
+                  <SF label="GST Type" tourId="quot-gst-type">
+                    <select value={form.gst_type} onChange={(e) => setForm((f) => ({ ...f, gst_type: e.target.value }))} style={sheetInput}>
                       <option value="CGST_SGST">CGST + SGST (Intra-state)</option>
                       <option value="IGST">IGST (Inter-state)</option>
                     </select>
-                  </Field>
+                  </SF>
                 )}
-                <Field label="Date of Quote *" tourId="quot-date">
-                  <DateField value={form.quote_date} onChange={(v) => setForm((f) => ({ ...f, quote_date: v }))} style={errInputStyle(!!fieldErrors.quote_date)} />
+                <SF label="Pricing" tourId="quot-pricing-mode">
+                  <select value={form.pricing_mode} onChange={(e) => setForm((f) => ({ ...f, pricing_mode: e.target.value }))} style={sheetInput}>
+                    <option value="itemwise">Item-wise (price per line)</option>
+                    <option value="lumpsum">Lump sum (one total price)</option>
+                  </select>
+                </SF>
+                <SF label={<>Date of Quote <Req /></>} tourId="quot-date">
+                  <DateField value={form.quote_date} onChange={(v) => setForm((f) => ({
+                    ...f,
+                    quote_date: v,
+                    // Keep the 30-day default in step with the quote date unless the user set their own validity.
+                    valid_until: !f.valid_until || f.valid_until === addDaysIso(f.quote_date, QUOTE_VALIDITY_DAYS) ? addDaysIso(v, QUOTE_VALIDITY_DAYS) : f.valid_until,
+                  }))} style={errInputStyle(!!fieldErrors.quote_date)} />
                   {fieldErrors.quote_date && <p style={fieldErrorTextStyle}>{fieldErrors.quote_date}</p>}
-                </Field>
-                <Field label="Technical Offer Number" tourId="quot-tor-number"><input value={form.technical_offer_number} onChange={(e) => setForm((f) => ({ ...f, technical_offer_number: e.target.value }))} placeholder="e.g. TOR-2026-0042" style={inputStyle} /></Field>
-                <Field label="Technical Offer Date" tourId="quot-tor-date"><DateField value={form.technical_offer_date} onChange={(v) => setForm((f) => ({ ...f, technical_offer_date: v }))} /></Field>
+                </SF>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <SF label="Technical Offer (R&D)" tourId="quot-tor-number">
+                    {technicalOffers.length === 0 ? (
+                      <p style={{ fontSize: 12.5, color: '#78716c', margin: '10px 0 0' }}>No Technical Offer from R&amp;D yet — R&amp;D prepares it in R&amp;D › Requirements › Technical Offers and the R&amp;D head sends it to the BD team.</p>
+                    ) : (
+                      <select value={form.technical_offer_id} onChange={(e) => setForm((f) => ({ ...f, technical_offer_id: e.target.value }))} style={sheetInput}>
+                        <option value="">— No technical offer —</option>
+                        {technicalOffers.map((o) => (
+                          <option key={o.id} value={String(o.id)}>{o.offer_number} · {o.title}{o.status === 'superseded' ? ' (superseded)' : ''}</option>
+                        ))}
+                      </select>
+                    )}
+                  </SF>
+                  {(() => {
+                    const picked = technicalOffers.find((o) => String(o.id) === form.technical_offer_id)
+                    return picked && (
+                      <p data-tour="quot-tor-date" style={{ fontSize: 12, color: '#57534e', margin: '6px 0 0' }}>
+                        Technical Offer Date: <strong>{formatDate(picked.offer_date)}</strong>
+                        {picked.status === 'superseded' && <span style={{ color: '#b45309' }}> · a newer revision exists</span>}
+                        {' · '}<a href="#" onClick={(e) => { e.preventDefault(); openTechnicalOfferPdf(picked) }} style={{ color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}>Open PDF</a>
+                      </p>
+                    )
+                  })()}
+                </div>
               </div>
+              </SheetSection>
 
+              <SheetSection icon="building" title="Customer">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <Field label="Customer/Client *" tourId="quot-client-name">
-                  <input value={form.client_name} onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))} placeholder="e.g. Northern Railway HQ" style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.client_name) }} />
+                <SF label={<>Customer/Client <Req /></>} tourId="quot-client-name">
+                  <input value={form.client_name} onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))} placeholder="e.g. Northern Railway HQ" style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.client_name) }} />
                   {fieldErrors.client_name && <p style={fieldErrorTextStyle}>{fieldErrors.client_name}</p>}
-                </Field>
-                <Field label="Contact Person Name" tourId="quot-contact-name"><input value={form.client_contact_name} onChange={(e) => setForm((f) => ({ ...f, client_contact_name: e.target.value }))} placeholder="e.g. Rajesh Kumar" style={inputStyle} /></Field>
-                <Field label="Contact Email" tourId="quot-contact-email"><input type="email" value={form.client_contact_email} onChange={(e) => setForm((f) => ({ ...f, client_contact_email: e.target.value }))} placeholder="e.g. name@company.com" style={inputStyle} /></Field>
-                <Field label="Contact Phone" tourId="quot-contact-phone"><input value={form.client_contact_phone} onChange={(e) => setForm((f) => ({ ...f, client_contact_phone: e.target.value }))} placeholder="e.g. +91 98765 43210" style={inputStyle} /></Field>
+                </SF>
+                <SF label="Contact Person Name" tourId="quot-contact-name"><input value={form.client_contact_name} onChange={(e) => setForm((f) => ({ ...f, client_contact_name: e.target.value }))} placeholder="e.g. Rajesh Kumar" style={sheetInput} /></SF>
+                <SF label="Contact Email" tourId="quot-contact-email"><input type="email" value={form.client_contact_email} onChange={(e) => setForm((f) => ({ ...f, client_contact_email: e.target.value }))} placeholder="e.g. name@company.com" style={sheetInput} /></SF>
+                <SF label="Contact Phone" tourId="quot-contact-phone"><input value={form.client_contact_phone} onChange={(e) => setForm((f) => ({ ...f, client_contact_phone: e.target.value }))} placeholder="e.g. +91 98765 43210" style={sheetInput} /></SF>
               </div>
+              </SheetSection>
 
+              <SheetSection icon="list" title="Line Items" extra={<Req />}>
               <div data-tour="quot-line-items">
-                <label style={{ fontSize: 12, fontWeight: 700, color: '#57534e', marginBottom: 6, display: 'block' }}>Line Items *</label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: items.length > 4 ? 340 : undefined, overflowY: items.length > 4 ? 'auto' : undefined, paddingRight: items.length > 4 ? 6 : undefined }}>
                   {items.map((row, idx) => {
                     const rowErr = fieldErrors.itemErrors?.[idx]
                     return (
                     <div key={idx}>
-                      <div style={{ display: 'grid', gridTemplateColumns: isExport ? '2fr 1.2fr 0.7fr 0.9fr 0.9fr auto' : '2fr 1.2fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: isLumpSum ? '2fr 1.2fr 0.7fr auto' : isExport ? '2fr 1.2fr 0.7fr 0.9fr 0.9fr auto' : '2fr 1.2fr 0.7fr 0.9fr 0.7fr 0.9fr auto', gap: 6, alignItems: 'center' }}>
                         <div {...(idx === 0 ? { 'data-tour': 'quot-item-name' } : {})}>
                           <ComboBox
                             value={row.description}
@@ -765,13 +1029,23 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                             placeholder="Item Name — type or pick a product"
                           />
                         </div>
-                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-model' } : {})} value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No. (if applicable)" style={inputStyle} />
-                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-qty' } : {})} type="number" value={row.quantity} onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} placeholder="Qty *" style={{ ...inputStyle, ...errInputStyle(!!rowErr?.quantity) }} />
-                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-price' } : {})} type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol}) *`} style={{ ...inputStyle, ...errInputStyle(!!rowErr?.unit_price) }} />
-                        {!isExport && <input {...(idx === 0 ? { 'data-tour': 'quot-item-gst' } : {})} type="number" value={row.gst_percent} onChange={(e) => updateItemRow(idx, 'gst_percent', e.target.value)} placeholder="GST % *" style={{ ...inputStyle, ...errInputStyle(!!rowErr?.gst_percent) }} />}
-                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-subtotal' } : {})} type="number" value={row.subtotal} readOnly placeholder="Subtotal" style={{ ...inputStyle, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
-                        <button type="button" onClick={() => removeItemRow(idx)} style={{ ...secondaryBtnStyle, padding: '6px 10px', fontSize: 11 }}><XIcon /></button>
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-model' } : {})} value={row.model_number} onChange={(e) => updateItemRow(idx, 'model_number', e.target.value)} placeholder="Model No. (if applicable)" style={sheetInput} />
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-qty' } : {})} type="number" value={row.quantity} onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} placeholder="Qty" style={{ ...sheetInput, ...errInputStyle(!!rowErr?.quantity) }} />
+                        {!isLumpSum && <>
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-price' } : {})} type="number" value={row.unit_price} onChange={(e) => updateItemRow(idx, 'unit_price', e.target.value)} placeholder={`Price/unit (${currencySymbol})`} style={{ ...sheetInput, ...errInputStyle(!!rowErr?.unit_price) }} />
+                        {!isExport && <input {...(idx === 0 ? { 'data-tour': 'quot-item-gst' } : {})} type="number" value={row.gst_percent} onChange={(e) => updateItemRow(idx, 'gst_percent', e.target.value)} placeholder="GST %" style={{ ...sheetInput, ...errInputStyle(!!rowErr?.gst_percent) }} />}
+                        <input {...(idx === 0 ? { 'data-tour': 'quot-item-subtotal' } : {})} type="number" value={row.subtotal} readOnly placeholder="Subtotal" style={{ ...sheetInput, background: 'rgba(0,0,0,0.04)', color: '#57534e' }} />
+                        </>}
+                        <button type="button" onClick={() => removeItemRow(idx)} aria-label="Remove line item" style={sheetBtn('ghost', '#DC2626')}><SheetIcon name="trash" size={16} /></button>
                       </div>
+                      <textarea
+                        {...(idx === 0 ? { 'data-tour': 'quot-item-details' } : {})}
+                        value={row.details}
+                        onChange={(e) => updateItemRow(idx, 'details', e.target.value)}
+                        rows={row.details.includes('\n') ? 3 : 1}
+                        placeholder="Details (optional) — printed under the item, one per line, e.g. Total 1 year warranty"
+                        style={{ ...sheetInput, marginTop: 4, fontSize: 12, resize: 'vertical', minHeight: 32 }}
+                      />
                       {rowErr && (
                         <p style={fieldErrorTextStyle}>
                           {[rowErr.description, rowErr.quantity, rowErr.unit_price, rowErr.gst_percent].filter(Boolean).join(' ')}
@@ -782,9 +1056,23 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                   })}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
-                  <button type="button" onClick={addItemRow} style={{ ...secondaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>+ Add Line Item</button>
+                  <button type="button" onClick={addItemRow} style={sheetBtn('secondary', SHEET.INK)}><SheetIcon name="plus" size={15} />Add Line Item</button>
                 </div>
                 {fieldErrors.items && <p style={fieldErrorTextStyle}>{fieldErrors.items}</p>}
+                {isLumpSum && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginTop: 12 }}>
+                    <SF label={<>Total Price ({currencySymbol}) <Req /></>} tourId="quot-lump-sum-price">
+                      <input type="number" min={0} value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} placeholder="Price for the whole offer, before GST" style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.price) }} />
+                      {fieldErrors.price && <p style={fieldErrorTextStyle}>{fieldErrors.price}</p>}
+                    </SF>
+                    {!isExport && (
+                      <SF label="GST %" tourId="quot-lump-sum-gst">
+                        <input type="number" min={0} max={100} value={form.lump_sum_gst_percent} onChange={(e) => setForm((f) => ({ ...f, lump_sum_gst_percent: e.target.value }))} placeholder="e.g. 18" style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.lump_sum_gst_percent) }} />
+                        {fieldErrors.lump_sum_gst_percent && <p style={fieldErrorTextStyle}>{fieldErrors.lump_sum_gst_percent}</p>}
+                      </SF>
+                    )}
+                  </div>
+                )}
                 {discountAmount > 0 && (
                   <p style={{ marginTop: 10, fontSize: 12.5, color: '#57534e', textAlign: 'right' }}>
                     Discount ({form.discount_type === 'percent' ? `${form.discount}%` : `${currencySymbol}${form.discount}`}): -{currencySymbol}{discountAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -794,39 +1082,43 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                   Grand Total: {currencySymbol}{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
+              </SheetSection>
 
+              <SheetSection icon="truck" title="Terms">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-                <Field label="Delivery Time *" tourId="quot-delivery-time">
-                  <input value={form.delivery_time} onChange={(e) => setForm((f) => ({ ...f, delivery_time: e.target.value }))} placeholder="e.g. 7 days or 2 weeks" style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.delivery_time) }} />
+                <SF label={<>Delivery Time <Req /></>} tourId="quot-delivery-time">
+                  <input value={form.delivery_time} onChange={(e) => setForm((f) => ({ ...f, delivery_time: e.target.value }))} placeholder="e.g. 7 days or 2 weeks" style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.delivery_time) }} />
                   {fieldErrors.delivery_time && <p style={fieldErrorTextStyle}>{fieldErrors.delivery_time}</p>}
-                </Field>
-                <Field label="Quote Validity Date *" tourId="quot-valid-until">
+                </SF>
+                <SF label={<>Quote Validity Date <Req /></>} tourId="quot-valid-until">
                   <DateField value={form.valid_until} onChange={(v) => setForm((f) => ({ ...f, valid_until: v }))} style={errInputStyle(!!fieldErrors.valid_until)} />
                   {fieldErrors.valid_until && <p style={fieldErrorTextStyle}>{fieldErrors.valid_until}</p>}
-                </Field>
-                <Field label="Discount" tourId="quot-discount">
+                </SF>
+                {!isLumpSum && <SF label="Discount" tourId="quot-discount">
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <input type="number" value={form.discount} onChange={(e) => setForm((f) => ({ ...f, discount: e.target.value }))} placeholder="0" style={inputStyle} />
-                    <select value={form.discount_type} onChange={(e) => setForm((f) => ({ ...f, discount_type: e.target.value }))} style={{ ...inputStyle, width: 90, flex: '0 0 90px' }}>
+                    <input type="number" min={0} value={form.discount} onChange={(e) => setForm((f) => ({ ...f, discount: e.target.value }))} placeholder="0" style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.discount) }} />
+                    <select value={form.discount_type} onChange={(e) => setForm((f) => ({ ...f, discount_type: e.target.value }))} style={{ ...sheetInput, width: 90, flex: '0 0 90px' }}>
                       <option value="percent">%</option>
                       <option value="flat">{isExport ? 'USD' : 'INR'}</option>
                     </select>
                   </div>
-                </Field>
-                <Field label="Quote Conditions *" tourId="quot-conditions">
-                  <select value={form.quote_conditions} onChange={(e) => setForm((f) => ({ ...f, quote_conditions: e.target.value }))} style={{ ...inputStyle, ...errInputStyle(!!fieldErrors.quote_conditions) }}>
+                  {fieldErrors.discount && <p style={fieldErrorTextStyle}>{fieldErrors.discount}</p>}
+                </SF>}
+                <SF label={isLumpSum ? 'Quote Conditions (not printed on a Commercial Offer)' : <>Quote Conditions <Req /></>} tourId="quot-conditions">
+                  <select value={form.quote_conditions} onChange={(e) => setForm((f) => ({ ...f, quote_conditions: e.target.value }))} style={{ ...sheetInput, ...errInputStyle(!!fieldErrors.quote_conditions) }}>
                     <option value="">— Select —</option>
                     {QUOTE_CONDITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                   {fieldErrors.quote_conditions && <p style={fieldErrorTextStyle}>{fieldErrors.quote_conditions}</p>}
-                </Field>
+                </SF>
               </div>
               {form.quote_conditions === 'Other/Custom' && (
-                <Field label="Custom Quote Conditions">
-                  <textarea value={form.quote_conditions_custom} onChange={(e) => setForm((f) => ({ ...f, quote_conditions_custom: e.target.value }))} rows={2} placeholder="e.g. Prices are ex-works; freight and insurance extra." style={{ ...inputStyle, resize: 'vertical', ...errInputStyle(!!fieldErrors.quote_conditions) }} />
-                </Field>
+                <SF label="Custom Quote Conditions">
+                  <textarea value={form.quote_conditions_custom} onChange={(e) => setForm((f) => ({ ...f, quote_conditions_custom: e.target.value }))} rows={2} placeholder="e.g. Prices are ex-works; freight and insurance extra." style={{ ...sheetInput, resize: 'vertical', ...errInputStyle(!!fieldErrors.quote_conditions) }} />
+                </SF>
               )}
-              <Field label="Payment Terms *" tourId="quot-payment-terms">
+              <SF label={<>Payment Terms <Req /></>} tourId="quot-payment-terms">
                 <ComboBox
                   value={form.payment_terms}
                   onChange={(v) => setForm((f) => ({ ...f, payment_terms: v }))}
@@ -837,20 +1129,20 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                   placeholder="Select from Payment Terms list or type your own"
                 />
                 {fieldErrors.payment_terms && <p style={fieldErrorTextStyle}>{fieldErrors.payment_terms}</p>}
-              </Field>
-              <Field label="Notes" tourId="quot-notes"><textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any additional remarks for this quotation (optional)" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-              <div>
-                <button type="submit" data-tour="quot-save" style={primaryBtnStyle}>Save Quotation</button>
+              </SF>
+              <SF label="Notes" tourId="quot-notes"><textarea value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} rows={2} placeholder="Any additional remarks for this quotation (optional)" style={{ ...sheetInput, resize: 'vertical' }} /></SF>
               </div>
+              </SheetSection>
             </form>
+            </FormSheet>
           )}
         </div>
       )}
       {quotations.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No quotations yet.</p>
       ) : (
-        quotations.map((q) => (
-          <div key={q.id} style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
+        quotations.map((q, qIdx) => (
+          <div key={q.id} data-tour={qIdx === 0 ? 'quot-card' : undefined} style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
             <div style={{ flex: 1, minWidth: 240 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
                 <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0 }}>
@@ -870,7 +1162,7 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                 return (
                   <div style={{ marginBottom: 6, padding: '6px 10px', borderRadius: 8, background: 'rgba(255,122,69,0.06)', border: '1px dashed rgba(255,122,69,0.3)' }}>
                     {rev.changes.map((c, i) => (
-                      <p key={i} style={{ fontSize: 12, margin: i === 0 ? 0 : '2px 0 0' }}>
+                      <p key={i} style={{ fontSize: 12, margin: i === 0 ? 0 : '2px 0 0', whiteSpace: 'pre-line' }}>
                         <strong>{quotationRevisionFieldLabel(c.field)}:</strong>{' '}
                         <span style={{ color: '#b91c1c', textDecoration: 'line-through' }}>{c.old == null || String(c.old).trim() === '' ? '(empty)' : String(c.old)}</span>
                         {' → '}
@@ -881,27 +1173,30 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                 )
               })()}
               <p style={{ fontSize: 12.5, color: '#57534e', margin: 0, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                {q.client_name || '—'} · {q.delivery_time || '—'} ·
-                {canModify ? (
-                  <select
-                    value={q.customer_response || ''}
-                    onChange={(e) => updateCustomerResponse(q.id, e.target.value)}
-                    style={{ ...inputStyle, width: 'auto', padding: '3px 8px', fontSize: 12.5 }}
-                  >
-                    <option value="">— Awaiting —</option>
-                    {CUSTOMER_RESPONSES.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                ) : (q.customer_response || '— Awaiting —')}
+                {q.client_name || '—'} · {q.delivery_time || '—'}
                 {q.valid_until && ` · Valid: ${q.valid_until}`}{q.submitted_date && ` · Submitted: ${q.submitted_date}`}
-                {q.discount != null && ` · Discount: ${q.discount_type === 'flat' ? (q.quotation_type === 'Export' ? 'USD ' : 'INR ') : ''}${q.discount}${q.discount_type === 'flat' ? '' : '%'}`}
+                {seeQuotePrices && q.discount != null && ` · Discount: ${q.discount_type === 'flat' ? (q.quotation_type === 'Export' ? 'USD ' : 'INR ') : ''}${q.discount}${q.discount_type === 'flat' ? '' : '%'}`}
               </p>
+              <QuotationStatusBar inquiryId={inquiryId} quot={q} canModify={canModify} canSubmit={ownerOrAdmin && canFeature('crm', 'inquiries_tenders', 'quotations', 'submit')} onChanged={load} tour={qIdx === 0} />
               {q.quote_conditions && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>Conditions: {q.quote_conditions}</p>}
               {q.client_contact_name && (
                 <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>
                   Contact: {q.client_contact_name}{q.client_contact_email && ` · ${q.client_contact_email}`}{q.client_contact_phone && ` · ${q.client_contact_phone}`}
                 </p>
               )}
-              {q.items.length > 0 && (
+              {q.pricing_mode === 'lumpsum' && (
+                <div style={{ marginTop: 8, fontSize: 12 }}>
+                  <ol style={{ margin: 0, paddingLeft: 18, color: '#1f1108' }}>
+                    {q.items.map((it: QuotationLineItem) => (
+                      <li key={it.id}>{it.description || '—'}{it.model_number && ` · Model - ${it.model_number}`}{it.quantity != null && ` · Qty ${it.quantity}`}{it.details && <div style={{ color: '#78716c', whiteSpace: 'pre-line' }}>{it.details}</div>}</li>
+                    ))}
+                  </ol>
+                  {seeQuotePrices && <p style={{ margin: '6px 0 0', fontWeight: 600, color: '#1f1108' }}>
+                    Total Price: {q.quotation_type === 'Export' ? '$' : '₹'}{fmtAmount(q.price)}{q.quotation_type !== 'Export' && q.lump_sum_gst_percent != null && ` + ${q.lump_sum_gst_percent}% GST`}
+                  </p>}
+                </div>
+              )}
+              {q.pricing_mode !== 'lumpsum' && q.items.length > 0 && (
                 <div style={{ marginTop: 8, overflowX: 'auto' }}>
                   <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead>
@@ -909,56 +1204,61 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
                         <th style={{ textAlign: 'left', padding: '2px 10px 2px 0' }}>Description</th>
                         <th style={{ textAlign: 'left', padding: '2px 10px' }}>Model No.</th>
                         <th style={{ textAlign: 'right', padding: '2px 10px' }}>Qty</th>
-                        <th style={{ textAlign: 'right', padding: '2px 10px' }}>Price/Unit</th>
+                        {seeQuotePrices && <th style={{ textAlign: 'right', padding: '2px 10px' }}>Price/Unit</th>}
                         {q.quotation_type !== 'Export' && <th style={{ textAlign: 'right', padding: '2px 10px' }}>GST %</th>}
-                        <th style={{ textAlign: 'right', padding: '2px 10px' }}>Subtotal</th>
-                        <th style={{ textAlign: 'right', padding: '2px 0 2px 10px' }}>Total</th>
+                        {seeQuotePrices && <th style={{ textAlign: 'right', padding: '2px 10px' }}>Subtotal</th>}
+                        {seeQuotePrices && <th style={{ textAlign: 'right', padding: '2px 0 2px 10px' }}>Total</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {q.items.map((it: QuotationLineItem) => (
                         <tr key={it.id}>
-                          <td style={{ padding: '2px 10px 2px 0' }}>{it.description || '—'}</td>
+                          <td style={{ padding: '2px 10px 2px 0' }}>{it.description || '—'}{it.details && <div style={{ color: '#78716c', whiteSpace: 'pre-line' }}>{it.details}</div>}</td>
                           <td style={{ padding: '2px 10px' }}>{it.model_number || '—'}</td>
                           <td style={{ textAlign: 'right', padding: '2px 10px' }}>{it.quantity ?? '—'}</td>
-                          <td style={{ textAlign: 'right', padding: '2px 10px' }}>{it.unit_price ?? '—'}</td>
+                          {seeQuotePrices && <td style={{ textAlign: 'right', padding: '2px 10px' }}>{fmtAmount(it.unit_price)}</td>}
                           {q.quotation_type !== 'Export' && <td style={{ textAlign: 'right', padding: '2px 10px' }}>{it.gst_percent ?? '—'}</td>}
-                          <td style={{ textAlign: 'right', padding: '2px 10px' }}>{it.subtotal ?? '—'}</td>
-                          <td style={{ textAlign: 'right', padding: '2px 0 2px 10px' }}>{it.total ?? '—'}</td>
+                          {seeQuotePrices && <td style={{ textAlign: 'right', padding: '2px 10px' }}>{fmtAmount(it.subtotal)}</td>}
+                          {seeQuotePrices && <td style={{ textAlign: 'right', padding: '2px 0 2px 10px' }}>{fmtAmount(it.total)}</td>}
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot>
-                      <tr>
-                        <td colSpan={q.quotation_type !== 'Export' ? 6 : 5} style={{ textAlign: 'right', padding: '4px 10px 0 0', fontWeight: 600, color: '#1f1108' }}>Grand Total</td>
-                        <td style={{ textAlign: 'right', padding: '4px 0 0 10px', fontWeight: 600, color: '#1f1108' }}>
-                          {q.items.reduce((sum, it) => sum + (Number(it.total) || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </td>
-                      </tr>
-                    </tfoot>
+                    {seeQuotePrices && <tfoot>
+                      {(() => {
+                        const qItemsTotal = q.items.reduce((sum, it) => sum + (Number(it.total) || 0), 0)
+                        const qDiscount = q.discount ? (q.discount_type === 'flat' ? Number(q.discount) : qItemsTotal * (Number(q.discount) / 100)) : 0
+                        const span = q.quotation_type !== 'Export' ? 6 : 5
+                        return (
+                          <>
+                            {qDiscount > 0 && (
+                              <tr>
+                                <td colSpan={span} style={{ textAlign: 'right', padding: '4px 10px 0 0', color: '#57534e' }}>Discount{q.discount_type === 'flat' ? '' : ` (${q.discount}%)`}</td>
+                                <td style={{ textAlign: 'right', padding: '4px 0 0 10px', color: '#57534e' }}>-{fmtAmount(qDiscount)}</td>
+                              </tr>
+                            )}
+                            <tr>
+                              <td colSpan={span} style={{ textAlign: 'right', padding: '4px 10px 0 0', fontWeight: 600, color: '#1f1108' }}>Grand Total</td>
+                              <td style={{ textAlign: 'right', padding: '4px 0 0 10px', fontWeight: 600, color: '#1f1108' }}>{fmtAmount(qItemsTotal - qDiscount)}</td>
+                            </tr>
+                          </>
+                        )
+                      })()}
+                    </tfoot>}
                   </table>
                 </div>
               )}
               {q.payment_terms && <p style={{ fontSize: 12, color: '#57534e', margin: '4px 0 0' }}>Payment: {q.payment_terms}</p>}
               {q.notes && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>{q.notes}</p>}
-              {revisingId === q.id && (
-                <ReviseQuotationForm
-                  inquiryId={inquiryId}
-                  quotation={q}
-                  paymentTerms={paymentTerms}
-                  onCreatePaymentTerm={createPaymentTermFromField}
-                  onCancel={() => setRevisingId(null)}
-                  onSaved={() => { setRevisingId(null); load() }}
-                />
-              )}
+              {seeQuotePrices && <ManagedDocumentPanel entityType="crm_quotation" entityId={q.id} revision={q.revision_number} canModify={canModify && ['draft', 'submitted'].includes(q.status || 'draft')}recordLabel="quotation" downloadName={q.quot_number || `Quotation-${q.id}`} />}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-              <button onClick={() => downloadPdf(q)} disabled={downloadingId === q.id} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: downloadingId === q.id ? 0.7 : 1 }}>
+              {canFeature('crm', 'inquiries_tenders', 'quotations', 'print') && seeQuotePrices && <button onClick={() => downloadPdf(q)} disabled={downloadingId === q.id} data-tour={qIdx === 0 ? 'quot-download-pdf-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: downloadingId === q.id ? 0.7 : 1 }}>
                 {downloadingId === q.id ? 'Generating…' : 'Download PDF'}
-              </button>
-              {canModify && (
-                <button onClick={() => setRevisingId((id) => (id === q.id ? null : q.id))} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>
-                  {revisingId === q.id ? 'Cancel' : 'Revise'}
+              </button>}
+              {/* Finalised (approved and later) quotations are locked for everyone — a new offer is + Create Quote. */}
+              {canModify && ['draft', 'submitted'].includes(q.status || 'draft') && (
+                <button onClick={() => startRevise(q)} data-tour={qIdx === 0 ? 'quot-revise-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>
+                  Edit
                 </button>
               )}
             </div>
@@ -966,228 +1266,90 @@ function QuotationsTab({ inquiryId, canModify, org, contact, inquiry }: { inquir
         ))
       )}
       <MessageDialog open={!!pdfError} variant="error" title="Download Failed" message={pdfError} onClose={() => setPdfError('')} />
-    </div>
-  )
-}
-
-/**
- * Post-creation edits to a quotation are deliberately limited to price/unit, payment terms,
- * validity, and delivery time (plus status tracking) — everything else about the quote is
- * fixed once created. A bigger change means creating a new quotation for the inquiry instead.
- * Each save here bumps the quote's revision number and is recorded in its revision history.
- */
-function ReviseQuotationForm({
-  inquiryId, quotation, paymentTerms, onCreatePaymentTerm, onCancel, onSaved,
-}: {
-  inquiryId: number
-  quotation: QuotationItem
-  paymentTerms: { id: number; label: string; description?: string | null }[]
-  onCreatePaymentTerm: (text: string) => Promise<void>
-  onCancel: () => void
-  onSaved: () => void
-}) {
-  const [paymentTermsValue, setPaymentTermsValue] = useState(quotation.payment_terms || '')
-  const [validUntil, setValidUntil] = useState(quotation.valid_until || '')
-  const [deliveryTime, setDeliveryTime] = useState(quotation.delivery_time || '')
-  const [itemPrices, setItemPrices] = useState<Record<number, string>>(
-    Object.fromEntries(quotation.items.map((it) => [it.id, it.unit_price != null ? String(it.unit_price) : '']))
-  )
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | string[]>('')
-
-  const save = async () => {
-    setSaving(true)
-    setError('')
-    const payload: Record<string, unknown> = {
-      payment_terms: paymentTermsValue || undefined,
-      valid_until: validUntil || undefined,
-      delivery_time: deliveryTime || undefined,
-      items: quotation.items
-        .filter((it) => itemPrices[it.id] !== '' && Number(itemPrices[it.id]) !== it.unit_price)
-        .map((it) => ({ id: it.id, unit_price: Number(itemPrices[it.id]) })),
-    }
-    try {
-      await crmApi.updateQuotation(inquiryId, quotation.id, payload)
-      onSaved()
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to save revision.'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div style={{ marginTop: 10, padding: 12, borderRadius: 10, background: 'rgba(255,122,69,0.05)', border: '1px dashed rgba(255,122,69,0.3)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <MessageDialog open={!!error} variant="error" title="Cannot Revise Quotation" message={error} onClose={() => setError('')} />
-      <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: '#c2410c', margin: 0 }}>
-        Revise Quotation — price, payment terms, validity, delivery time only
-      </p>
-      {quotation.items.length > 0 && (
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: '#78716c', marginBottom: 6, display: 'block' }}>Price / Unit</label>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {quotation.items.map((it) => (
-              <div key={it.id} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 12.5, color: '#57534e' }}>{it.description || `Item #${it.id}`}{it.model_number ? ` · ${it.model_number}` : ''}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 11, color: '#a8a29e', flexShrink: 0 }}>Price/unit</span>
-                  <input
-                    type="number"
-                    value={itemPrices[it.id] ?? ''}
-                    onChange={(e) => setItemPrices((p) => ({ ...p, [it.id]: e.target.value }))}
-                    placeholder="e.g. 12500"
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
-        <Field label="Payment Terms">
-          <ComboBox
-            value={paymentTermsValue}
-            onChange={setPaymentTermsValue}
-            onPick={(o) => { const t = paymentTerms.find((pt) => String(pt.id) === o.key); setPaymentTermsValue(t ? (t.description || t.label) : o.label) }}
-            onCreateNew={(query) => onCreatePaymentTerm(query).then(() => setPaymentTermsValue(query))}
-            createLabel="New Payment Term"
-            options={paymentTerms.map((t) => ({ key: String(t.id), label: t.label, sublabel: t.description || undefined }))}
-            placeholder="Payment Terms"
-          />
-        </Field>
-        <Field label="Quote Validity Date"><DateField value={validUntil} onChange={setValidUntil} /></Field>
-        <Field label="Delivery Time"><input value={deliveryTime} onChange={(e) => setDeliveryTime(e.target.value)} placeholder="e.g. 7 days or 2 weeks" style={inputStyle} /></Field>
-      </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" onClick={save} disabled={saving} style={{ ...primaryBtnStyle, padding: '6px 14px', fontSize: 12, opacity: saving ? 0.7 : 1 }}>
-          {saving ? 'Saving…' : 'Save Revision'}
-        </button>
-        <button type="button" onClick={onCancel} style={{ ...secondaryBtnStyle, padding: '6px 14px', fontSize: 12 }}>Cancel</button>
-      </div>
+      <MessageDialog open={!!tabError} variant="error" title={tabError?.title || 'Quotation Action Failed'} message={tabError?.message || ''} onClose={() => setTabError(null)} />
     </div>
   )
 }
 
 const QUOTATION_REVISION_FIELD_LABELS: Record<string, string> = {
-  payment_terms: 'Payment Terms', valid_until: 'Quote Validity', delivery_time: 'Delivery Time',
+  quotation_type: 'Quotation Type', gst_type: 'GST Type', quote_date: 'Date of Quote', technical_offer_id: 'Technical Offer',
+  client_name: 'Customer/Client', client_contact_name: 'Contact Person', client_contact_email: 'Contact Email', client_contact_phone: 'Contact Phone',
+  valid_until: 'Quote Validity', pricing_mode: 'Pricing', price: 'Total Price', lump_sum_gst_percent: 'GST % (lump sum)',
+  delivery_time: 'Delivery Time', payment_terms: 'Payment Terms', discount: 'Discount', discount_type: 'Discount Type',
+  quote_conditions: 'Quote Conditions', notes: 'Notes', items: 'Line Items',
 }
 
 function quotationRevisionFieldLabel(field: string): string {
+  // Revisions saved before full revision recorded per-line price changes as item_<id>_unit_price.
   if (field.startsWith('item_') && field.endsWith('_unit_price')) return 'Price'
   return QUOTATION_REVISION_FIELD_LABELS[field] || field
 }
 
-function DocumentsTab({ inquiry, canModify, isAdmin }: { inquiry: Inquiry; canModify: boolean; isAdmin: boolean }) {
+function DocumentsTab({ inquiry, canModify }: { inquiry: Inquiry; canModify: boolean; isAdmin: boolean }) {
   const [documents, setDocuments] = useState<CrmDocument[]>([])
+  const [quotations, setQuotations] = useState<QuotationItem[]>([])
   const [error, setError] = useState<string | string[]>('')
+  const [loadError, setLoadError] = useState<string | string[]>('')
+  const [docSearch, setDocSearch] = useState('')
 
-  const load = () => crmApi.listDocuments({ related_module: 'inquiry', related_id: inquiry.id }).then(setDocuments)
-  useEffect(() => { load() }, [inquiry.id])
+  const load = () => crmApi.listDocuments({ related_module: 'inquiry', related_id: inquiry.id })
+    .then(setDocuments)
+    .catch((err) => setLoadError(extractErrorMessages(err, 'Could not load the documents of this inquiry. Reload the page; if it persists, check that you still have CRM access.')))
+  useEffect(() => { load() }, [inquiry.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Quotations are generated documents: listed under Internal Documents and
+  // opened as their current PDF of record (Word edits included), never a stale copy.
+  const { canFeature: canFeatureDocs } = useCan()
+  // Their PDF is the priced offer: needs Quotations › Print and quotation prices.
+  const seeQuotationDocs = canFeatureDocs('crm', 'inquiries_tenders', 'quotations', 'view')
+    && canFeatureDocs('crm', 'inquiries_tenders', 'quotations', 'print') && seesQuotationPrices(canFeatureDocs)
+  useEffect(() => {
+    if (!seeQuotationDocs) return
+    crmApi.listQuotations(inquiry.id)
+      .then(setQuotations)
+      .catch((err) => setLoadError(extractErrorMessages(err, 'Could not load the quotations of this inquiry for Internal Documents. Reload the page.')))
+  }, [inquiry.id, seeQuotationDocs])
 
-  const remove = async (id: number) => {
-    await crmApi.deleteDocument(id)
-    load()
-  }
-
-  const clientDocs = documents.filter((d) => d.folder_type === 'client')
-  const internalDocs = documents.filter((d) => d.folder_type === 'internal')
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-      <MessageDialog open={!!error} variant="error" title="Upload Failed" message={error} onClose={() => setError('')} />
-      <DocumentFolderPanel tourId="inq-docs-client" title="Client Documents" folderType="client" docs={clientDocs} inquiry={inquiry} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
-      <DocumentFolderPanel tourId="inq-docs-internal" title="Internal Documents" folderType="internal" docs={internalDocs} inquiry={inquiry} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
-    </div>
-  )
-}
-
-function DocumentFolderPanel({ tourId, title, folderType, docs, inquiry, canModify, canDelete, onUploaded, onRemove, error, setError }: {
-  tourId?: string
-  title: string
-  folderType: 'client' | 'internal'
-  docs: CrmDocument[]
-  inquiry: Inquiry
-  canModify: boolean
-  canDelete: boolean
-  onUploaded: () => void
-  onRemove: (id: number) => void
-  error: string | string[]
-  setError: (v: string | string[]) => void
-}) {
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [docCategory, setDocCategory] = useState(DOC_CATEGORIES[DOC_CATEGORIES.length - 1])
-  const [uploading, setUploading] = useState(false)
-
-  const handleUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
-    setUploading(true)
-    setError('')
+  const openQuotationPdf = async (q: QuotationItem) => {
+    const tab = window.open('', '_blank')
     try {
-      await crmApi.uploadDocuments(
-        { related_module: 'inquiry', related_id: inquiry.id, folder_type: folderType, doc_category: docCategory, universal_id: inquiry.universal_id, org_id: inquiry.org_id },
-        Array.from(files)
-      )
-      onUploaded()
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Upload failed.'))
-    } finally {
-      setUploading(false)
-      if (fileRef.current) fileRef.current.value = ''
+      const blob = await crmApi.downloadQuotationPdf(inquiry.id, q.id)
+      const url = URL.createObjectURL(blob)
+      if (tab) tab.location.href = url
+      else window.location.assign(url)
+    } catch (err) {
+      tab?.close()
+      setError(extractErrorMessages(err, `Could not open quotation ${q.quot_number || q.id}. You need Inquiries & Tenders › Quotations › Print (and Prices & margins) to open quotation PDFs.`))
     }
   }
 
+  const clientDocs = documents.filter((d) => d.folder_type === 'client')
+  // Sent TOR PDFs are filed as internal; R&D's reply files are listed with them.
+  const internalDocs = documents.filter((d) => d.folder_type === 'internal' || d.doc_category === 'rnd_response')
+
+  const related = { module: 'inquiry' as const, id: inquiry.id, universalId: inquiry.universal_id, orgId: inquiry.org_id }
+
   return (
-    <div data-tour={tourId} style={{ position: 'relative', padding: 16, borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {uploading && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 2, borderRadius: 14, background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(2px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <div style={{ width: 26, height: 26, borderRadius: '50%', border: '3px solid rgba(255,122,69,0.2)', borderTopColor: '#FF7A45', animation: 'crm-spin 0.8s linear infinite' }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>Uploading…</span>
-          <style>{'@keyframes crm-spin { to { transform: rotate(360deg) } }'}</style>
-        </div>
-      )}
-      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: 0 }}>{title}</p>
-      {docs.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>None</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {docs.map((d) => (
-            <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-              <div>
-                <a
-                  href="#"
-                  onClick={async (e) => {
-                    e.preventDefault()
-                    try {
-                      await crmApi.openDocument(d)
-                    } catch (err) {
-                      setError(extractErrorMessages(err, 'Unable to open document.'))
-                    }
-                  }}
-                  style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none', cursor: 'pointer' }}
-                >{d.file_name}</a>
-                <p style={{ fontSize: 11, color: '#a8a29e', margin: '2px 0 0' }}>{d.doc_category || '—'}</p>
-              </div>
-              {canDelete && <button onClick={() => onRemove(d.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>}
-            </div>
-          ))}
-        </div>
-      )}
-      {canModify && (
-        <div style={{ paddingTop: 12, borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: '#78716c', margin: 0 }}>Upload {title.slice(0, -1)}</p>
-          <select value={docCategory} onChange={(e) => setDocCategory(e.target.value)} style={inputStyle}>
-            {DOC_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <input ref={fileRef} type="file" multiple onChange={(e) => handleUpload(e.target.files)} disabled={uploading} style={inputStyle} />
-        </div>
-      )}
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 16 }}>
+      <MessageDialog open={!!error} variant="error" title="Document Error" message={error} onClose={() => setError('')} />
+      <MessageDialog open={!!loadError} variant="error" title="Cannot Load Documents" message={loadError} onClose={() => setLoadError('')} />
+      <DocumentSearch value={docSearch} onChange={setDocSearch} />
+      <CrmDocumentFolder tourId="inq-docs-client" title="Client Documents" folderType="client" docs={clientDocs} related={related} canModify={canModify} onUploaded={load} setError={setError} query={docSearch} />
+      <CrmDocumentFolder tourId="inq-docs-internal" title="Internal Documents" folderType="internal" docs={internalDocs} related={related} canModify={canModify} onUploaded={load} setError={setError} query={docSearch}
+        generated={(seeQuotationDocs ? quotations : []).map((q) => ({
+          key: `quotation-${q.id}`,
+          name: `${q.quot_number || `Quotation-${q.id}`}.pdf`,
+          category: `Quotation${q.revision_number ? ` · rev ${q.revision_number}` : ''} · generated`,
+          createdAt: q.created_at,
+          open: () => openQuotationPdf(q),
+        }))}
+      />
     </div>
   )
 }
 
 function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization | null }) {
   const { user } = useAuth()
+  const { canFeature } = useCan()
   const [activities, setActivities] = useState<CrmActivity[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editingActivity, setEditingActivity] = useState<CrmActivity | null>(null)
@@ -1195,10 +1357,13 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
   const [deletingActivity, setDeletingActivity] = useState<CrmActivity | null>(null)
   const [exportingMomId, setExportingMomId] = useState<number | null>(null)
   const [momError, setMomError] = useState<string | string[]>('')
+  const [loadError, setLoadError] = useState<string | string[]>('')
   const [showMomExport, setShowMomExport] = useState(false)
 
-  const load = () => crmApi.listActivities({ related_module: 'inquiry', related_id: inquiry.id }).then(setActivities)
-  useEffect(() => { load() }, [inquiry.id])
+  const load = () => crmApi.listActivities({ related_module: 'inquiry', related_id: inquiry.id })
+    .then(setActivities)
+    .catch((err) => setLoadError(extractErrorMessages(err, 'Could not load the follow-ups of this inquiry. Reload the page; if it persists, check that you still have CRM access.')))
+  useEffect(() => { load() }, [inquiry.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const exportMom = async (a: CrmActivity) => {
     setExportingMomId(a.id)
@@ -1230,6 +1395,8 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
     setShowForm(false)
   }
 
+  // Editing a follow-up (and its status) is creator-or-admin on the backend.
+  const canEditActivity = (a: CrmActivity) => canFeature('crm', 'inquiries_tenders', 'followups', 'edit') && !!user && (user.role === 'admin' || a.created_by_id === user.id)
   const changeStatus = (a: CrmActivity, status: string) => crmApi.updateActivity(a.id, { status }).then(load)
 
   const handleDelete = async () => {
@@ -1242,10 +1409,11 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <button onClick={() => { if (showForm) cancelForm(); else { setEditingActivity(null); setShowForm(true) } }} data-tour="activity-add-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Follow Up'}</button>
-        <button onClick={() => setShowMomExport(true)} data-tour="activity-export-meeting-mom-btn" style={secondaryBtnStyle}>Export Meeting MOM</button>
+        {canFeature('crm', 'inquiries_tenders', 'followups', 'create') && <button onClick={() => { setEditingActivity(null); setShowForm(true) }} data-tour="activity-add-btn" style={primaryBtnStyle}>+ Add Follow Up</button>}
+        {canFeature('crm', 'inquiries_tenders', 'followups', 'print') && <button onClick={() => setShowMomExport(true)} data-tour="activity-export-meeting-mom-btn" style={secondaryBtnStyle}>Export Meeting MOM</button>}
       </div>
       <MessageDialog open={!!momError} variant="error" title="Cannot Save Follow Up" message={momError} onClose={() => setMomError('')} />
+      <MessageDialog open={!!loadError} variant="error" title="Cannot Load Follow Ups" message={loadError} onClose={() => setLoadError('')} />
       <MomExportDialog
         open={showMomExport}
         onClose={() => setShowMomExport(false)}
@@ -1270,11 +1438,11 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
           }}
         />
       )}
-      {!showForm && (activities.length === 0 ? (
+      {activities.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No follow-ups logged.</p>
       ) : (
         activities.map((a, idx) => (
-          <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
+          <div key={a.id} data-tour={idx === 0 ? 'inq-followups-list' : undefined} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
             <div>
               <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }}>
                 {a.activity_type || 'Activity'} {a.assigned_to && <span title={`Contact Person: ${a.assigned_to}`} style={{ fontWeight: 500, color: '#78716c' }}>· {a.assigned_to}</span>}
@@ -1316,19 +1484,19 @@ function ActivitiesTab({ inquiry, org }: { inquiry: Inquiry; org: Organization |
               <ActivityPhotos attachments={a.attachments} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button onClick={() => setViewingActivity(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>View</button>
-              <button onClick={() => startEdit(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>
-              <ChangeStatusButton currentStatus={a.status || FOLLOW_UP_STATUSES[0]} statuses={FOLLOW_UP_STATUSES} onSelect={(s) => changeStatus(a, s)} tourId={idx === 0 ? 'inq-followup-change-status-btn' : undefined} />
-              <button disabled={exportingMomId === a.id} onClick={() => exportMom(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: exportingMomId === a.id ? 0.7 : 1 }}>
+              <button onClick={() => setViewingActivity(a)} data-tour={idx === 0 ? 'activity-row-view-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>View</button>
+              {canEditActivity(a) && <button onClick={() => startEdit(a)} data-tour={idx === 0 ? 'activity-row-edit-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>}
+              {canEditActivity(a) && <ChangeStatusButton currentStatus={a.status || FOLLOW_UP_STATUSES[0]} statuses={FOLLOW_UP_STATUSES} onSelect={(s) => changeStatus(a, s)} tourId={idx === 0 ? 'inq-followup-change-status-btn' : undefined} />}
+              {canFeature('crm', 'inquiries_tenders', 'followups', 'print') && <button disabled={exportingMomId === a.id} onClick={() => exportMom(a)} data-tour={idx === 0 ? 'activity-row-export-mom-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: exportingMomId === a.id ? 0.7 : 1 }}>
                 {exportingMomId === a.id ? 'Exporting…' : 'Export MoM'}
-              </button>
-              {(user?.role === 'admin' || a.created_by_id === user?.id) && (
-                <button onClick={() => setDeletingActivity(a)} style={{ ...dangerBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Delete</button>
+              </button>}
+              {canFeature('crm', 'inquiries_tenders', 'followups', 'delete') && !!user && (user.role === 'admin' || a.created_by_id == null || a.created_by_id === user.id) && (
+                <button onClick={() => setDeletingActivity(a)} data-tour={idx === 0 ? 'activity-row-delete-btn' : undefined} style={{ ...dangerBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Delete</button>
               )}
             </div>
           </div>
         ))
-      ))}
+      )}
 
       <ActivityViewDialog activity={viewingActivity} onClose={() => setViewingActivity(null)} />
 
@@ -1436,9 +1604,9 @@ const AUDIT_FIELD_LABELS: Record<string, string> = {
   railway_zone: 'Railway Zone', division: 'Division', lead_source: 'Lead Source', bd_owner: 'BD Owner',
   sales_engineer: 'Sales Engineer', status: 'Status', current_stage: 'Stage', current_status_note: 'Current Status', budget: 'Budget',
   expected_value: 'Expected Value', probability: 'Probability', expected_order_date: 'Expected Order Date',
-  priority: 'Priority', next_followup_date: 'Follow-up Date', followup_priority: 'Follow-up Priority',
+  priority: 'Customer Requirement Priority', next_followup_date: 'Follow-up Date', followup_priority: 'Follow-up Priority',
   followup_assigned_to: 'Follow-up Assigned To', followup_remarks: 'Follow-up Remarks',
-  org_id: 'Organization', org_contact_id: 'Contact',
+  org_id: 'Customer Organization', org_contact_id: 'Contact',
 }
 
 /**
@@ -1457,14 +1625,17 @@ function cleanAuditTitle(summary: string | null, actor: string | null | undefine
 }
 
 function TimelineTab({ inquiryId }: { inquiryId: number }) {
+  const { canFeature: canFeatureTl } = useCan()
+  const seeQuotationsTl = canFeatureTl('crm', 'inquiries_tenders', 'quotations', 'view')
+  const seeFollowupsTl = canFeatureTl('crm', 'inquiries_tenders', 'followups', 'view')
   const [entries, setEntries] = useState<TimelineEntry[] | null>(null)
 
   useEffect(() => {
     Promise.all([
       crmApi.getInquiryAudit(inquiryId),
       crmApi.listInquiryStages(inquiryId),
-      crmApi.listActivities({ related_module: 'inquiry', related_id: inquiryId }),
-      crmApi.listQuotations(inquiryId),
+      seeFollowupsTl ? crmApi.listActivities({ related_module: 'inquiry', related_id: inquiryId }) : Promise.resolve([]),
+      seeQuotationsTl ? crmApi.listQuotations(inquiryId) : Promise.resolve([]),
       crmApi.getInquirySpecRevisions(inquiryId),
     ]).then(([audit, stages, activities, quotations, specRevisions]) => {
       const merged: TimelineEntry[] = [
@@ -1513,6 +1684,7 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
           key: `quotation-${q.id}`,
           kind: 'quotation' as const,
           title: `Quotation ${q.quot_number || `Rev ${q.revision_number}`} generated`,
+          // q.price is blanked by the server for a user without quotation prices.
           detail: q.price != null ? `₹${q.price.toLocaleString()}${q.delivery_time ? ` · Delivery: ${q.delivery_time}` : ''}` : undefined,
           date: q.submitted_date || q.created_at || null,
         })),
@@ -1520,7 +1692,7 @@ function TimelineTab({ inquiryId }: { inquiryId: number }) {
       merged.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
       setEntries(merged)
     })
-  }, [inquiryId])
+  }, [inquiryId, seeQuotationsTl, seeFollowupsTl])
 
   if (entries === null) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
   if (entries.length === 0) return <p style={{ fontSize: 13, color: '#a8a29e' }}>No timeline history yet.</p>

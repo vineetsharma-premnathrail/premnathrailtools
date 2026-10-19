@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrShift, HrLookups } from '@/types'
 import { TEXT } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 import {
-  sectionStyle, tableWrapStyle, thStyle, tdStyle, labelStyle, hintStyle, linkActionStyle, dangerActionStyle, mutedActionStyle,
+  sectionStyle, tableWrapStyle, thStyle, tdStyle, linkActionStyle, dangerActionStyle, mutedActionStyle,
   ErrorBanner, ActiveBadge, Modal, MasterToolbar,
 } from './masterUi'
 
@@ -33,6 +34,7 @@ function computeHours(start: string, end: string): number | null {
 }
 
 export default function ShiftsMaster() {
+  const { can, canDelete } = useCan()
   const [rows, setRows] = useState<HrShift[]>([])
   const [lookups, setLookups] = useState<HrLookups | null>(null)
   const [loading, setLoading] = useState(true)
@@ -138,13 +140,13 @@ export default function ShiftsMaster() {
   }
 
   return (
-    <div style={sectionStyle}>
+    <div data-tour="hr-mst-shift-section" style={sectionStyle}>
       <div style={{ marginBottom: 14 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Shifts</h3>
         <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Work timings used for attendance. A shift with no plant applies at every plant.</p>
       </div>
 
-      <MasterToolbar search={search} onSearch={setSearch} showInactive={showInactive} onToggleInactive={setShowInactive} addLabel="Add Shift" onAdd={() => openEdit()} placeholder="Search code or name…" />
+      <MasterToolbar search={search} onSearch={setSearch} showInactive={showInactive} onToggleInactive={setShowInactive} addLabel="Add Shift" onAdd={can('hr', 'masters', 'create') ? () => openEdit() : undefined} placeholder="Search code or name…" />
 
       <ErrorBanner errors={loadError} />
       <MessageDialog open={actionErrors.length > 0} variant="error" title="Action Not Completed" message={actionErrors} onClose={() => setActionErrors([])} />
@@ -169,61 +171,67 @@ export default function ShiftsMaster() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <Modal open={!!form} title={form?.id ? 'Edit Shift' : 'Add Shift'} onClose={() => setForm(null)} busy={saving} width={500}>
+      <Modal open={!!form} icon={form?.id ? 'edit' : 'plus'} title={form?.id ? 'Edit Shift' : 'Add Shift'} subtitle="Work timing used for attendance. No plant = applies at every plant." onClose={() => setForm(null)} busy={saving}
+        footer={<>
+              <button type="button" data-tour="hr-mst-shift-cancel-btn" onClick={() => setForm(null)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+              <button type="button" data-tour="hr-mst-shift-save-btn" onClick={save} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Shift'}</button>
+        </>}>
         {form && (
           <>
+            <ErrorBanner errors={formErrors} />
+            <SheetSection icon="tag" title="Shift">
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-              <div style={{ flex: '0 1 110px', minWidth: 100 }}>
-                <label style={labelStyle}>Code *</label>
-                <input style={inputStyle} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="GEN" />
+              <div data-tour="hr-mst-shift-code" style={{ flex: '0 1 110px', minWidth: 100 }}>
+                <label style={sheetLabel}>Code <Req /></label>
+                <input style={sheetInput} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="GEN" />
               </div>
-              <div style={{ flex: '1 1 200px', maxWidth: 300 }}>
-                <label style={labelStyle}>Name *</label>
-                <input style={inputStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="General Shift" />
+              <div data-tour="hr-mst-shift-name" style={{ flex: '1 1 200px', maxWidth: 300 }}>
+                <label style={sheetLabel}>Name <Req /></label>
+                <input style={sheetInput} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="General Shift" />
               </div>
             </div>
+            </SheetSection>
+            <SheetSection icon="clock" title="Timing">
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
-              <div style={{ flex: '0 1 130px', minWidth: 120 }}>
-                <label style={labelStyle}>Start *</label>
-                <input type="time" style={inputStyle} value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
+              <div data-tour="hr-mst-shift-start" style={{ flex: '0 1 130px', minWidth: 120 }}>
+                <label style={sheetLabel}>Start <Req /></label>
+                <input type="time" style={sheetInput} value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
               </div>
-              <div style={{ flex: '0 1 130px', minWidth: 120 }}>
-                <label style={labelStyle}>End *</label>
-                <input type="time" style={inputStyle} value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
+              <div data-tour="hr-mst-shift-end" style={{ flex: '0 1 130px', minWidth: 120 }}>
+                <label style={sheetLabel}>End <Req /></label>
+                <input type="time" style={sheetInput} value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
               </div>
-              <div style={{ flex: '0 1 110px', minWidth: 100 }}>
-                <label style={labelStyle}>Grace (min)</label>
-                <input style={inputStyle} inputMode="numeric" value={form.grace_minutes} onChange={(e) => setForm({ ...form, grace_minutes: e.target.value.replace(/[^0-9]/g, '') })} />
+              <div data-tour="hr-mst-shift-grace" style={{ flex: '0 1 110px', minWidth: 100 }}>
+                <label style={sheetLabel}>Grace (min)</label>
+                <input style={sheetInput} inputMode="numeric" value={form.grace_minutes} onChange={(e) => setForm({ ...form, grace_minutes: e.target.value.replace(/[^0-9]/g, '') })} />
               </div>
-              <div style={{ flex: '0 1 120px', minWidth: 110 }}>
-                <label style={labelStyle}>Work Hours</label>
-                <input style={inputStyle} inputMode="decimal" value={form.working_hours} onChange={(e) => setForm({ ...form, working_hours: e.target.value.replace(/[^0-9.]/g, '') })} placeholder={autoHours != null ? String(autoHours) : ''} />
+              <div data-tour="hr-mst-shift-hours" style={{ flex: '0 1 120px', minWidth: 110 }}>
+                <label style={sheetLabel}>Work Hours</label>
+                <input style={sheetInput} inputMode="decimal" value={form.working_hours} onChange={(e) => setForm({ ...form, working_hours: e.target.value.replace(/[^0-9.]/g, '') })} placeholder={autoHours != null ? String(autoHours) : ''} />
               </div>
             </div>
-            <p style={{ ...hintStyle, margin: '0 0 14px' }}>
+            <p style={{ ...sheetHint, margin: '0 0 14px' }}>
               {isNight ? 'Night shift — ends the next morning. ' : ''}
               {autoHours != null ? `Span is ${autoHours} h; leave Work Hours blank to use that, or enter the hours net of breaks.` : ''}
             </p>
-            <div style={{ marginBottom: 14, maxWidth: 300 }}>
-              <label style={labelStyle}>Plant</label>
-              <select style={inputStyle} value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })}>
+            </SheetSection>
+            <SheetSection icon="building" title="Plant & Status">
+            <div data-tour="hr-mst-shift-plant" style={{ marginBottom: 14, maxWidth: 300 }}>
+              <label style={sheetLabel}>Plant</label>
+              <select style={sheetInput} value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })}>
                 <option value="">— All plants —</option>
                 {(lookups?.branches || []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.secondary, marginBottom: 16, cursor: 'pointer' }}>
+            <label data-tour="hr-mst-shift-active" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer' }}>
               <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active
             </label>
-            <ErrorBanner errors={formErrors} />
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setForm(null)} disabled={saving} style={secondaryBtnStyle}>Cancel</button>
-              <button type="button" onClick={save} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save Shift'}</button>
-            </div>
+            </SheetSection>
           </>
         )}
       </Modal>
 
-      <div style={tableWrapStyle}>
+      <div data-tour="hr-mst-shift-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
           <thead>
             <tr>{['Code', 'Name', 'Timing', 'Grace', 'Hours', 'Plant', 'Employees', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
@@ -249,10 +257,10 @@ export default function ShiftsMaster() {
                 <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.employee_count}</td>
                 <td style={tdStyle}><ActiveBadge active={r.is_active} /></td>
                 <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <span style={{ display: 'inline-flex', gap: 14 }}>
-                    <button type="button" style={linkActionStyle} onClick={() => openEdit(r)}>Edit</button>
-                    <button type="button" style={mutedActionStyle} onClick={() => setToggleTarget(r)}>{r.is_active ? 'Deactivate' : 'Activate'}</button>
-                    <button type="button" style={dangerActionStyle} onClick={() => setDeleteTarget(r)}>Delete</button>
+                  <span data-tour="hr-mst-shift-row-actions" style={{ display: 'inline-flex', gap: 14 }}>
+                    {can('hr', 'masters', 'edit') && <button type="button" style={linkActionStyle} onClick={() => openEdit(r)}>Edit</button>}
+                    {can('hr', 'masters', 'edit') && <button type="button" style={mutedActionStyle} onClick={() => setToggleTarget(r)}>{r.is_active ? 'Deactivate' : 'Activate'}</button>}
+                    {canDelete('hr', 'masters', null) && <button type="button" style={dangerActionStyle} onClick={() => setDeleteTarget(r)}>Delete</button>}
                   </span>
                 </td>
               </tr>

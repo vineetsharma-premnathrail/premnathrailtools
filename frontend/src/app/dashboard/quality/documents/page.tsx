@@ -1,14 +1,18 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
 import { QualityDocument, QualityDocumentType, QualityStandard } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { primaryBtnStyle } from '@/components/shared/ui'
+import { FormSheet, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, FileDropZone, Req, Optional } from '@/components/shared/FormSheet'
+import { ErrorBanner } from '@/components/quality/QualityBits'
 import QualityNav from '@/components/quality/QualityNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 const DOC_TYPE_LABELS: Record<QualityDocumentType, string> = {
   sop: 'SOP',
@@ -31,12 +35,6 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, width: '100%',
 }
 
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
 
 function formatBytes(n?: number) {
   if (!n && n !== 0) return '—'
@@ -47,6 +45,7 @@ function formatBytes(n?: number) {
 
 export default function QualityDocumentsPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
+  const { canDelete } = useCan()
 
   const [documents, setDocuments] = useState<QualityDocument[]>([])
   const [standards, setStandards] = useState<QualityStandard[]>([])
@@ -58,7 +57,8 @@ export default function QualityDocumentsPage() {
   const [filterStandardId, setFilterStandardId] = useState('')
 
   // Upload form
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [showUpload, setShowUpload] = useState(false)
+  const [uploadFiles, setUploadFiles] = useState<File[]>([])
   const [uploadDocType, setUploadDocType] = useState<QualityDocumentType>('sop')
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploadVersion, setUploadVersion] = useState('')
@@ -98,10 +98,9 @@ export default function QualityDocumentsPage() {
 
   const standardOptions = standards.map((s) => ({ value: String(s.id), label: `${s.standard_code} — ${s.title}` }))
 
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const files = fileRef.current?.files
-    if (!files || files.length === 0) {
+  const handleUpload = async () => {
+    const files = uploadFiles
+    if (files.length === 0) {
       setUploadError('Select at least one file to upload.')
       return
     }
@@ -118,15 +117,16 @@ export default function QualityDocumentsPage() {
       if (uploadVersion.trim()) formData.append('version', uploadVersion.trim())
       if (uploadStandardId) formData.append('linked_standard_id', uploadStandardId)
       if (uploadDescription.trim()) formData.append('description', uploadDescription.trim())
-      Array.from(files).forEach((f) => formData.append('files', f))
+      files.forEach((f) => formData.append('files', f))
       await qualityApi.uploadDocuments(formData)
       setUploadTitle('')
       setUploadVersion('')
       setUploadStandardId('')
       setUploadDescription('')
-      if (fileRef.current) fileRef.current.value = ''
+      setUploadFiles([])
+      setShowUpload(false)
       load()
-    } catch (err: any) {
+    } catch (err) {
       setUploadError(extractErrorMessages(err, 'Upload failed.'))
     } finally {
       setUploading(false)
@@ -137,7 +137,7 @@ export default function QualityDocumentsPage() {
     try {
       const blob = await qualityApi.getDocumentContent(doc.id)
       window.open(URL.createObjectURL(blob), '_blank')
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Unable to open document.'))
     }
   }
@@ -149,7 +149,7 @@ export default function QualityDocumentsPage() {
       await qualityApi.deleteDocument(deletingDoc.id)
       setDeletingDoc(null)
       load()
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to delete document.'))
     } finally {
       setDeleting(false)
@@ -169,78 +169,60 @@ export default function QualityDocumentsPage() {
         onCancel={() => setDeletingDoc(null)}
       />
 
-      <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-          Quality Module
-        </p>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Documents</h1>
-        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: '4px 0 0' }}>SOPs, specifications, certificates, and standard references.</p>
-      </div>
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div>
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
+            Quality Module
+          </p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Documents</h1>
+          <p style={{ fontSize: 13.5, color: TEXT.muted, margin: '4px 0 0' }}>SOPs, specifications, certificates, and standard references.</p>
         </div>
-      )}
-
-      <div style={sectionStyle}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Upload Document</p>
-
-        {uploadError && (
-          <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-            {Array.isArray(uploadError) ? uploadError.join(' ') : uploadError}
-          </div>
-        )}
-
-        <form onSubmit={handleUpload}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
-            <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-              <label style={labelStyle}>Doc Type</label>
-              <select style={inputStyle} value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value as QualityDocumentType)}>
-                {(Object.keys(DOC_TYPE_LABELS) as QualityDocumentType[]).map((t) => (
-                  <option key={t} value={t}>{DOC_TYPE_LABELS[t]}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: '1 1 220px', maxWidth: 340 }}>
-              <label style={labelStyle}>Title *</label>
-              <input style={inputStyle} value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Incoming Inspection SOP" />
-            </div>
-            <div style={{ flex: '0 1 120px', minWidth: 100 }}>
-              <label style={labelStyle}>Version</label>
-              <input style={inputStyle} value={uploadVersion} onChange={(e) => setUploadVersion(e.target.value)} placeholder="e.g. v1.0" />
-            </div>
-            <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-              <label style={labelStyle}>Linked Standard (optional)</label>
-              <SearchableSelect
-                value={uploadStandardId}
-                onChange={setUploadStandardId}
-                options={standardOptions}
-                placeholder="None"
-              />
-            </div>
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>Description</label>
-            <input style={inputStyle} value={uploadDescription} onChange={(e) => setUploadDescription(e.target.value)} placeholder="Optional notes about this document" />
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>File(s) *</label>
-            <input ref={fileRef} type="file" multiple style={inputStyle} disabled={uploading} />
-          </div>
-          <button
-            type="submit"
-            disabled={uploading}
-            style={{
-              padding: '11px 22px', borderRadius: 12, border: 'none', cursor: uploading ? 'not-allowed' : 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 13.5, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`, opacity: uploading ? 0.7 : 1,
-            }}
-          >
-            {uploading ? 'Uploading…' : 'Upload'}
-          </button>
-        </form>
+        <button type="button" style={primaryBtnStyle} onClick={() => { setUploadError(''); setShowUpload(true) }}>+ Upload Document</button>
       </div>
+
+      <ErrorBanner error={error} />
+
+      {showUpload && (
+        <FormSheet icon="upload" title="Upload Document" subtitle="Store an SOP, specification, certificate or standard reference in SharePoint." onClose={() => setShowUpload(false)} busy={uploading}
+          footer={<>
+            <button type="button" onClick={() => setShowUpload(false)} disabled={uploading} style={sheetBtn('secondary', SHEET.INK, uploading)}>Cancel</button>
+            <button type="button" onClick={handleUpload} disabled={uploading} style={sheetBtn('primary', SHEET.BLUE, uploading)}><SheetIcon name="upload" size={16} />{uploading ? 'Uploading…' : 'Upload'}</button>
+          </>}>
+          <SheetColumns
+            left={<>
+              <ErrorBanner error={uploadError} />
+              <SheetSection icon="doc" title="Document">
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 160px' }}>
+                    <label style={sheetLabel}>Doc Type <Req /></label>
+                    <select style={sheetInput} value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value as QualityDocumentType)}>
+                      {(Object.keys(DOC_TYPE_LABELS) as QualityDocumentType[]).map((t) => (
+                        <option key={t} value={t}>{DOC_TYPE_LABELS[t]}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ flex: '0 1 130px' }}>
+                    <label style={sheetLabel}>Version</label>
+                    <input style={sheetInput} value={uploadVersion} onChange={(e) => setUploadVersion(e.target.value)} placeholder="e.g. v1.0" />
+                  </div>
+                </div>
+                <label style={{ ...sheetLabel, marginTop: 14 }}>Title <Req /></label>
+                <input style={sheetInput} value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Incoming Inspection SOP" />
+                <label style={{ ...sheetLabel, marginTop: 14 }}>Linked Standard <Optional /></label>
+                <SearchableSelect value={uploadStandardId} onChange={setUploadStandardId} options={standardOptions} placeholder="None" />
+                <label style={{ ...sheetLabel, marginTop: 14 }}>Description <Optional /></label>
+                <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={uploadDescription} onChange={(e) => setUploadDescription(e.target.value)} placeholder="Notes about this document" />
+              </SheetSection>
+            </>}
+            right={<>
+              <SheetSection icon="clip" title="File(s)" extra={<Req />}>
+                <FileDropZone files={uploadFiles} onChange={setUploadFiles} />
+                <p style={sheetHint}>Each file is saved as its own document with the same type, title and version.</p>
+              </SheetSection>
+            </>}
+          />
+        </FormSheet>
+      )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <select style={{ ...inputStyle, flex: '0 1 200px' }} value={filterDocType} onChange={(e) => setFilterDocType(e.target.value)}>
@@ -294,7 +276,7 @@ export default function QualityDocumentsPage() {
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{d.created_at ? d.created_at.slice(0, 10) : '—'}</td>
                   <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>
                     <span onClick={() => handleView(d)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', marginRight: 14 }}>View</span>
-                    <span onClick={() => setDeletingDoc(d)} style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', cursor: 'pointer' }}>Delete</span>
+                    {canDelete('quality', 'documents', d.uploaded_by_id ?? null) && <span onClick={() => setDeletingDoc(d)} style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', cursor: 'pointer' }}>Delete</span>}
                   </td>
                 </tr>
               ))

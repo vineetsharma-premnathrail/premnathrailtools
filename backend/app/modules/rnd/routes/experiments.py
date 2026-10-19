@@ -3,9 +3,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access
+from app.core import assignee_rules
+from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.rnd.scope import apply_scope, ensure_in_scope
 from app.modules.rnd.models.project import RndProject
 from app.modules.rnd.models.prototype import RndPrototype
 from app.modules.rnd.models.document import RndDocument
@@ -36,27 +38,52 @@ def _to_response(db: Session, exp: RndExperiment) -> RndExperimentResponse:
     return resp
 
 
-def _get_or_404(db: Session, experiment_id: int) -> RndExperiment:
+def _get_or_404(db: Session, experiment_id: int, user: User | None = None) -> RndExperiment:
     exp = db.query(RndExperiment).filter(RndExperiment.is_deleted == False, RndExperiment.id == experiment_id).first()  # noqa: E712
     if not exp:
         raise HTTPException(status_code=404, detail=f"Experiment #{experiment_id} not found (it may have been deleted).")
+    if user is not None:
+        ensure_in_scope(db, user, exp)
     return exp
 
 
-def _validate_links(db: Session, project_id: int | None, prototype_id: int | None) -> None:
+def _validate_links(db: Session, project_id: int | None, prototype_id: int | None,
+                    user: User | None = None, changed: tuple[bool, bool] = (True, True)) -> None:
+    """With `user`, a project / prototype being linked must be in the user's
+    R&D data scope — otherwise anyone could file experiments under a project
+    they can't open. `changed` limits that to links actually being set (an
+    unchanged link was already on the record)."""
     if project_id is not None:
         project = db.query(RndProject).filter(RndProject.id == project_id, RndProject.is_deleted == False).first()  # noqa: E712
         if not project:
             raise HTTPException(status_code=404, detail=f"R&D project #{project_id} not found — pick the project again from the list.")
+        if user is not None and changed[0]:
+            ensure_in_scope(db, user, project)
     if prototype_id is not None:
         proto = db.query(RndPrototype).filter(RndPrototype.id == prototype_id, RndPrototype.is_deleted == False).first()  # noqa: E712
         if not proto:
             raise HTTPException(status_code=404, detail=f"Prototype #{prototype_id} not found — pick the prototype again from the list.")
+        if user is not None and changed[1]:
+            ensure_in_scope(db, user, proto)
         if project_id is not None and proto.project_id != project_id:
             raise HTTPException(
                 status_code=400,
                 detail=f"Prototype {proto.prototype_number} belongs to a different project. Pick a prototype from the selected project, or leave it blank.",
             )
+
+
+RULE_KEY = "rnd:experiments.conducted_by"  # core/assignee_rules.PICKERS
+
+
+def _check_conductor(db: Session, user: User, conductor_id: int) -> None:
+    """The person picked as 'Conducted by' exists and is allowed by the role's
+    assign-to rule (Role & Permissions › R&D › Experiments & Tests › Conducted by).
+    Callers skip it for the user themselves — an experiment left blank is
+    theirs by default, so picking yourself is never refused."""
+    conductor = db.query(User).filter(User.id == conductor_id).first()
+    if not conductor:
+        raise HTTPException(status_code=404, detail=f"User #{conductor_id} (Conducted by) was not found — pick the person again from the list.")
+    assignee_rules.ensure_allowed(db, user, RULE_KEY, conductor)
 
 
 def _validate_choices(experiment_type: str | None, status: str | None, result: str | None) -> None:
@@ -89,8 +116,10 @@ async def list_experiments(
     experiment_type: str | None = None,
     search: str | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("rnd")),
 ):
     query = db.query(RndExperiment).filter(RndExperiment.is_deleted == False)  # noqa: E712
+    query = apply_scope(query, user, RndExperiment)
     if project_id:
         query = query.filter(RndExperiment.project_id == project_id)
     if prototype_id:
@@ -107,7 +136,7 @@ async def list_experiments(
     return [_to_response(db, e) for e in query.order_by(RndExperiment.created_at.desc()).all()]
 
 
-@router.post("", response_model=RndExperimentResponse)
+@router.post("", response_model=RndExperimentResponse, dependencies=[Depends(require_tab_action("rnd", "experiments", "create"))])
 async def create_experiment(
     payload: RndExperimentCreate,
     db: Session = Depends(get_db),
@@ -116,7 +145,9 @@ async def create_experiment(
     if not payload.title.strip():
         raise HTTPException(status_code=400, detail="Experiment title is required.")
     _validate_choices(payload.experiment_type, None, None)
-    _validate_links(db, payload.project_id, payload.prototype_id)
+    _validate_links(db, payload.project_id, payload.prototype_id, user=user)
+    if payload.conducted_by_id and payload.conducted_by_id != user.id:
+        _check_conductor(db, user, payload.conducted_by_id)
 
     exp = RndExperiment(
         experiment_number=generate_experiment_number(db),
@@ -141,19 +172,26 @@ async def create_experiment(
 
 
 @router.get("/{experiment_id}", response_model=RndExperimentResponse)
-async def get_experiment(experiment_id: int, db: Session = Depends(get_db)):
-    return _to_response(db, _get_or_404(db, experiment_id))
+async def get_experiment(experiment_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("rnd"))):
+    return _to_response(db, _get_or_404(db, experiment_id, user=user))
 
 
-@router.patch("/{experiment_id}", response_model=RndExperimentResponse)
-async def update_experiment(experiment_id: int, payload: RndExperimentUpdate, db: Session = Depends(get_db)):
-    exp = _get_or_404(db, experiment_id)
+@router.patch("/{experiment_id}", response_model=RndExperimentResponse, dependencies=[Depends(require_tab_action("rnd", "experiments", "edit"))])
+async def update_experiment(experiment_id: int, payload: RndExperimentUpdate, db: Session = Depends(get_db), user: User = Depends(require_app_access("rnd"))):
+    exp = _get_or_404(db, experiment_id, user=user)
     updates = payload.model_dump(exclude_unset=True)
 
     if "title" in updates and not (updates["title"] or "").strip():
         raise HTTPException(status_code=400, detail="Experiment title can't be empty.")
     _validate_choices(updates.get("experiment_type"), updates.get("status"), updates.get("result"))
-    _validate_links(db, updates.get("project_id", exp.project_id), updates.get("prototype_id", exp.prototype_id))
+    _validate_links(
+        db, updates.get("project_id", exp.project_id), updates.get("prototype_id", exp.prototype_id), user=user,
+        changed=(updates.get("project_id", exp.project_id) != exp.project_id,
+                 updates.get("prototype_id", exp.prototype_id) != exp.prototype_id),
+    )
+
+    if updates.get("conducted_by_id") and updates["conducted_by_id"] not in (exp.conducted_by_id, user.id):
+        _check_conductor(db, user, updates["conducted_by_id"])
 
     new_status = updates.get("status", exp.status)
     new_result = updates.get("result", exp.result)
@@ -178,8 +216,13 @@ async def update_experiment(experiment_id: int, payload: RndExperimentUpdate, db
 
 
 @router.delete("/{experiment_id}")
-async def delete_experiment(experiment_id: int, db: Session = Depends(get_db)):
-    exp = _get_or_404(db, experiment_id)
+async def delete_experiment(
+    experiment_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_action("rnd", "experiments", "delete")),
+):
+    exp = _get_or_404(db, experiment_id, user=user)
+    ensure_can_delete(user, exp, "rnd", "experiments", what="experiment")
     exp.is_deleted = True
     exp.deleted_at = datetime.now(timezone.utc)
     db.commit()

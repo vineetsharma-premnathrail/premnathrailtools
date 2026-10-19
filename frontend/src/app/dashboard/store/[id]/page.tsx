@@ -9,13 +9,20 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
-import { StoreItem, StoreItemCategory } from '@/types'
+import { StoreItem, StoreItemCategory, StoreItemMeta } from '@/types'
+import { ItemErpForm, ItemErpInfo, ItemVendorSuggestions, erpPayload } from '@/components/store/ItemErpSections'
 import { TEXT } from '@/lib/theme'
-import { Field, Section, Row, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { Section, Row, InfoRow, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
+import ItemPlantData from '@/components/store/ItemPlantData'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useRecordId } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { formatDate } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
 
 const STATUSES = [
   { value: 'active', label: 'Active' },
@@ -26,13 +33,24 @@ const STATUSES = [
 export default function StoreItemDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
   const router = useRouter()
+  const { can, canDelete, canFeature } = useCan()
+  // Store › Items features: "Stock value & rates" (sensitive — the backend
+  // blanks the rates without it; standard cost stays for item editors),
+  // Plant data and Who can supply this item (sections).
+  const seeValues = canFeature('store', 'items', 'stock_values', 'view')
+  const seeStandardCost = seeValues || can('store', 'items', 'edit')
+  const seePlantData = canFeature('store', 'items', 'plant_data', 'view')
+  const seeVendors = canFeature('store', 'items', 'vendor_suggestions', 'view')
   const params = useParams()
-  const itemId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedItemId, error: linkError } = useRecordId(ref)
+  const itemId = resolvedItemId ?? 0
 
   const [item, setItem] = useState<StoreItem | null>(null)
   const [categories, setCategories] = useState<StoreItemCategory[]>([])
   const [itemTypes, setItemTypes] = useState<ItemTypeOption[]>([])
   const [uoms, setUoms] = useState<{ value: string; label: string }[]>([])
+  const [meta, setMeta] = useState<StoreItemMeta | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [editing, setEditing] = useState(false)
@@ -58,7 +76,7 @@ export default function StoreItemDetailPage() {
     if (isAuthorized && itemId) {
       load()
       storeApi.listCategories().then(setCategories).catch(() => setCategories([]))
-      storeApi.getItemMeta().then((m) => { setUoms(m.uoms); setItemTypes(m.item_types) }).catch(() => setUoms([]))
+      storeApi.getItemMeta().then((m) => { setMeta(m); setUoms(m.uoms); setItemTypes(m.item_types) }).catch(() => setUoms([]))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, itemId])
@@ -90,17 +108,9 @@ export default function StoreItemDetailPage() {
         description: form.description?.trim() || undefined,
         part_number: form.part_number?.trim() || null,
         uom: form.uom || undefined,
-        hsn_sac_code: form.hsn_sac_code?.trim() || undefined,
-        manufacturer: form.manufacturer?.trim() || undefined,
-        batch_controlled: form.batch_controlled,
-        serial_controlled: form.serial_controlled,
-        expiry_controlled: form.expiry_controlled,
-        inspection_on_receipt: !!form.inspection_on_receipt,
-        test_certificate_required: !!form.test_certificate_required,
-        minimum_stock: form.minimum_stock ?? undefined,
-        maximum_stock: form.maximum_stock ?? undefined,
-        reorder_level: form.reorder_level ?? undefined,
-        standard_cost: form.standard_cost ?? undefined,
+        ...erpPayload(form),
+        lead_time_days: form.lead_time_days ?? null,
+        legacy_code: form.legacy_code?.trim() || null,
         status: form.status,
       })
       setItem(updated)
@@ -126,8 +136,123 @@ export default function StoreItemDetailPage() {
     }
   }
 
-  if (isLoading || !isAuthorized) return null
+  // System weighted average (read-only — maintained by priced receipts).
+  const averageText = (it: StoreItem) => {
+    if (it.moving_average_cost == null) return 'Not valued yet'
+    const last = it.last_receipt_rate != null
+      ? ` · last receipt ₹${it.last_receipt_rate.toLocaleString('en-IN')}${it.last_receipt_date ? ` on ${formatDate(it.last_receipt_date)}` : ''}`
+      : ''
+    return `₹${it.moving_average_cost.toLocaleString('en-IN', { maximumFractionDigits: 4 })} (system weighted average${last})`
+  }
 
+  if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><StoreNav /><InvalidRecordLink message={linkError} listHref="/dashboard/store" listLabel="Back to items" /></div>)
+  if (!itemId) return <div><StoreNav /></div>
+
+  // Edit mode: the same sectioned sheet layout as Add Item, in place of the view.
+  if (editing && item) {
+    const cancelEdit = () => { setEditing(false); setForm(item) }
+    return (
+      <FormPage nav={<StoreNav />} icon="edit" title={`Edit ${item.item_name}`} subtitle={`${item.item_code} · changes apply from now on; posted documents keep their values.`}
+        onBack={cancelEdit} backLabel="← Back" backTour="item-edit-back-btn"
+        footer={<>
+          <button type="button" data-tour="item-edit-cancel-btn" disabled={busy} onClick={cancelEdit} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+          <button type="button" data-tour="item-edit-save-btn" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Changes'}</button>
+        </>}>
+        <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Item" message={errors} onClose={() => setErrors([])} />
+        <SheetColumns
+          left={<>
+            <SheetSection icon="list" title="Item Details">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
+                <div style={{ flex: '1 1 180px' }}>
+                  <label style={sheetLabel}>Item Type</label>
+                  <div data-tour="item-edit-type">
+                    <ItemTypeSelect value={form.item_type || ''} types={itemTypes}
+                      onChange={(v) => { if (v !== form.item_type) setForm({ ...form, item_type: v, category: null, subcategory: null }) }} />
+                  </div>
+                </div>
+                <div style={{ flex: '1 1 180px' }}>
+                  <label style={sheetLabel}>Category</label>
+                  <div data-tour="item-edit-category">
+                    <CategorySelect itemType={form.item_type || ''} value={form.category || ''}
+                      onChange={(v) => { if (v !== (form.category || '')) setForm({ ...form, category: v || null, subcategory: null }) }} categories={categories} />
+                  </div>
+                </div>
+                <div style={{ flex: '1 1 180px' }}>
+                  <label style={sheetLabel}>Subcategory</label>
+                  <div data-tour="item-edit-subcategory">
+                    <SubcategorySelect category={selectedCategory} value={form.subcategory || ''} onChange={(v) => setForm({ ...form, subcategory: v || null })} categories={categories} />
+                  </div>
+                </div>
+              </div>
+              <label style={sheetLabel}>Item Name <Req /></label>
+              <input data-tour="item-edit-name" style={sheetInput} value={form.item_name || ''} onChange={(e) => setForm({ ...form, item_name: e.target.value })} />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 14 }}>
+                <div style={{ flex: '0 1 200px', minWidth: 160 }}>
+                  <label style={sheetLabel}>UOM <Req /></label>
+                  <div data-tour="item-edit-uom">
+                    <UomSelect value={form.uom || ''} onChange={(v) => setForm({ ...form, uom: v })} options={uoms} onOptionsChange={setUoms} manage={false} />
+                  </div>
+                </div>
+                <div style={{ flex: '1 1 180px', maxWidth: 300 }}>
+                  <label style={sheetLabel}>Part Code <Optional /></label>
+                  <input data-tour="item-edit-part-code" style={sheetInput} value={form.part_number || ''} onChange={(e) => setForm({ ...form, part_number: e.target.value })} placeholder="Part code" />
+                </div>
+                <div style={{ flex: '0 1 170px', minWidth: 150 }}>
+                  <label style={sheetLabel}>Status</label>
+                  <select data-tour="item-edit-status" style={sheetInput} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as StoreItem['status'] })}>
+                    {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Technical Specification</label>
+              <textarea data-tour="item-edit-description" style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            </SheetSection>
+
+            <SheetSection icon="calendar" title="Planning & Cost">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                <div style={{ flex: '0 1 220px', minWidth: 180 }}>
+                  <label style={sheetLabel}>Purchase lead time (days)</label>
+                  <input data-tour="item-edit-lead-time" type="number" min={0} max={730} step={1} style={sheetInput}
+                    value={form.lead_time_days ?? ''}
+                    onChange={(e) => setForm({ ...form, lead_time_days: e.target.value === '' ? null : Number(e.target.value) })}
+                    placeholder="e.g. 21" />
+                </div>
+                <div style={{ flex: '0 1 220px', minWidth: 180 }}>
+                  <label style={sheetLabel}>Legacy code <Optional /></label>
+                  <input data-tour="item-edit-legacy-code" style={sheetInput} value={form.legacy_code || ''} maxLength={50}
+                    onChange={(e) => setForm({ ...form, legacy_code: e.target.value })} placeholder="v3 / Tally code" />
+                </div>
+              </div>
+              <p style={sheetHint}>Lead time = calendar days from PO to goods in store. Used by MRP and the Engineering long-lead list.</p>
+            </SheetSection>
+
+            <div data-tour="item-edit-erp">
+              <ItemErpForm values={form} onChange={(patch) => setForm({ ...form, ...patch })} meta={meta}
+                itemType={form.item_type || ''} uom={form.uom} effective={item} />
+            </div>
+          </>}
+          right={<>
+            <SheetSection icon="tag" title="Item Code">
+              <input data-tour="item-edit-code" style={{ ...sheetInput, background: SHEET.SOFT, color: SHEET.BODY, fontWeight: 600 }} value={item.item_code} readOnly />
+              <p style={sheetHint}>Fixed once created.</p>
+            </SheetSection>
+            {seeValues && (
+              <SheetSection icon="rupee" title="Weighted Average">
+                <p style={{ fontSize: 13, color: SHEET.BODY, margin: 0 }}>{averageText(item)}</p>
+                <p style={sheetHint}>Read-only — kept by priced receipts.</p>
+              </SheetSection>
+            )}
+            <SheetSection icon="clip" title="Photo">
+              <div data-tour="item-detail-photo">
+                <ItemPhoto itemId={item.id} hasPhoto={!!item.has_photo} editable={can('store', 'items', 'edit')} onChanged={(has) => setItem({ ...item, has_photo: has })} />
+              </div>
+            </SheetSection>
+          </>}
+        />
+      </FormPage>
+    )
+  }
   return (
     <div>
       <StoreNav />
@@ -154,24 +279,22 @@ export default function StoreItemDetailPage() {
               <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{item.item_name}</h1>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              {editing ? (
-                <button type="button" data-tour="item-edit-cancel-btn" onClick={() => { setEditing(false); setForm(item) }} style={secondaryBtnStyle}>Cancel</button>
-              ) : (
-                <>
-                  <button type="button" data-tour="item-detail-back-btn" onClick={() => router.push('/dashboard/store')} style={secondaryBtnStyle}>← Back</button>
-                  <button type="button" data-tour="item-detail-edit-btn" onClick={startEdit} style={secondaryBtnStyle}>Edit</button>
-                  <button type="button" data-tour="item-detail-delete-btn" onClick={() => setDeleteConfirmOpen(true)} style={dangerBtnStyle}>Delete</button>
-                </>
-              )}
+              <button type="button" data-tour="item-detail-back-btn" onClick={() => router.push('/dashboard/store')} style={secondaryBtnStyle}>← Back</button>
+              {can('store', 'items', 'edit') && <button type="button" data-tour="item-detail-edit-btn" onClick={startEdit} style={secondaryBtnStyle}>Edit</button>}
+              {/* Items carry no creator, so anyone holding Items › Delete may delete. */}
+              {canDelete('store', 'items', null) && <button type="button" data-tour="item-detail-delete-btn" onClick={() => setDeleteConfirmOpen(true)} style={dangerBtnStyle}>Delete</button>}
             </div>
           </div>
 
           <Section title="Photo" style={{ marginBottom: 20 }}>
-            <ItemPhoto itemId={item.id} hasPhoto={!!item.has_photo} onChanged={(has) => setItem({ ...item, has_photo: has })} />
+            <div data-tour="item-detail-photo">
+              <ItemPhoto itemId={item.id} hasPhoto={!!item.has_photo} editable={can('store', 'items', 'edit')} onChanged={(has) => setItem({ ...item, has_photo: has })} />
+            </div>
           </Section>
 
           {!editing ? (
             <Section title="Item Details" style={{ marginBottom: 20 }}>
+              <div data-tour="item-detail-info" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Row>
                 <InfoRow label="Item Code" value={item.item_code} />
                 <InfoRow label="Item Type" value={typeLabel(item.item_type)} />
@@ -185,72 +308,28 @@ export default function StoreItemDetailPage() {
                 <InfoRow label="Status" value={STATUSES.find((s) => s.value === item.status)?.label || item.status} />
               </Row>
               <InfoRow label="Technical Specification" value={item.description || '—'} />
+              </div>
             </Section>
           ) : null}
           {!editing ? (
-            <Section title="Quality" style={{ marginBottom: 20 }}>
+            <Section title="Planning & Cost" style={{ marginBottom: 20 }}>
+              <div data-tour="item-detail-planning">
               <Row>
-                <InfoRow label="Inspection on receipt" value={item.inspection_on_receipt ? 'Yes — GRN / production receipts go to Quality stock and get an inspection lot' : 'No — receipts go straight to Free stock'} />
-                <InfoRow label="Test certificate required" value={item.test_certificate_required ? "Yes — an incoming lot can't be accepted without the MTC / test certificate" : 'No'} />
+                <InfoRow label="Purchase lead time" value={item.lead_time_days != null ? `${item.lead_time_days} calendar day(s)` : 'Not set — MRP will assume one'} />
+                <InfoRow label="Legacy code (v3 / Tally)" value={item.legacy_code || '—'} />
+                {seeStandardCost && <InfoRow label="Standard cost" value={item.standard_cost != null ? `₹${item.standard_cost.toLocaleString('en-IN')}` : '—'} />}
+                {seeValues && <InfoRow label="Weighted average" value={averageText(item)} />}
               </Row>
-            </Section>
-          ) : (
-            <>
-              <Section title="Item Details" style={{ marginBottom: 20 }}>
-                <Row>
-                  <Field label="Item Code">
-                    <input style={{ ...inputStyle, background: 'rgba(0,0,0,0.04)', color: TEXT.secondary, fontWeight: 600 }} value={item.item_code} readOnly />
-                  </Field>
-                  <Field label="Item Type">
-                    <ItemTypeSelect value={form.item_type || ''} types={itemTypes}
-                      onChange={(v) => { if (v !== form.item_type) setForm({ ...form, item_type: v, category: null, subcategory: null }) }} />
-                  </Field>
-                  <Field label="Category">
-                    <CategorySelect itemType={form.item_type || ''} value={form.category || ''}
-                      onChange={(v) => { if (v !== (form.category || '')) setForm({ ...form, category: v || null, subcategory: null }) }} categories={categories} />
-                  </Field>
-                  <Field label="Subcategory">
-                    <SubcategorySelect category={selectedCategory} value={form.subcategory || ''} onChange={(v) => setForm({ ...form, subcategory: v || null })} categories={categories} />
-                  </Field>
-                </Row>
-                <Row>
-                  <Field label="Item Name *">
-                    <input style={inputStyle} value={form.item_name || ''} onChange={(e) => setForm({ ...form, item_name: e.target.value })} />
-                  </Field>
-                  <Field label="UOM *">
-                    <UomSelect value={form.uom || ''} onChange={(v) => setForm({ ...form, uom: v })} options={uoms} onOptionsChange={setUoms} manage={false} />
-                  </Field>
-                  <Field label="Part Code (optional)">
-                    <input style={inputStyle} value={form.part_number || ''} onChange={(e) => setForm({ ...form, part_number: e.target.value })} placeholder="Part code" />
-                  </Field>
-                  <Field label="Status">
-                    <select style={inputStyle} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as StoreItem['status'] })}>
-                      {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                  </Field>
-                </Row>
-                <Field label="Technical Specification">
-                  <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-                </Field>
-              </Section>
-
-              <Section title="Quality" style={{ marginBottom: 20 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={!!form.inspection_on_receipt} onChange={(e) => setForm({ ...form, inspection_on_receipt: e.target.checked })} />
-                  Inspection on receipt — receipts go to Quality stock with an inspection lot instead of straight to Free stock
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={!!form.test_certificate_required} onChange={(e) => setForm({ ...form, test_certificate_required: e.target.checked })} />
-                  Test certificate (MTC) required — an incoming lot can&apos;t be accepted until the certificate is marked received
-                </label>
-              </Section>
-
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button data-tour="item-edit-save-btn" disabled={busy} onClick={save} style={{ ...primaryBtnStyle, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : 'Save Changes'}</button>
-                <button disabled={busy} onClick={() => { setEditing(false); setForm(item) }} style={{ ...secondaryBtnStyle, opacity: busy ? 0.6 : 1 }}>Cancel</button>
               </div>
+            </Section>
+          ) : null}
+          {!editing ? (
+            <>
+              <ItemErpInfo item={item} />
+              {seePlantData && <ItemPlantData itemId={item.id} canEdit={canFeature('store', 'items', 'plant_data', 'edit')} />}
+              {seeVendors && <ItemVendorSuggestions itemId={item.id} />}
             </>
-          )}
+          ) : null}
         </>
       )}
     </div>

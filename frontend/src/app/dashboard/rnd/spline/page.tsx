@@ -5,9 +5,10 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
+import { getHistoryFromLink } from '@/components/rnd/historyLink'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
-import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, smBtnStyle, calcButtonStyle, downloadCsv, downloadBlob } from '@/components/rnd/toolStyles'
+import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, smBtnStyle, calcButtonStyle, downloadCsv, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface SplineResult {
@@ -75,7 +76,7 @@ function SplinePageInner() {
     if (!isAuthorized) return
     const loadId = searchParams.get('load')
     if (!loadId) return
-    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+    getHistoryFromLink(loadId).then((detail) => {
       const i = detail.inputs as Record<string, any>
       if (i.doc_no != null) setDocNo(String(i.doc_no))
       if (i.made_by != null) setMadeBy(String(i.made_by))
@@ -96,7 +97,7 @@ function SplinePageInner() {
       if (i.wheel_diameter != null) setWheelDiameter(String(i.wheel_diameter))
       if (i.friction_coeff != null) setFrictionCoeff(String(i.friction_coeff))
       calculate(i as ReturnType<typeof payload>)
-    }).catch(() => setError('Could not load the saved calculation.'))
+    }).catch((err) => setError(extractErrorMessages(err, 'Could not load the saved calculation — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
@@ -128,8 +129,8 @@ function SplinePageInner() {
       if (!isFromHistory) {
         rndApi.saveHistory({ tool_name: 'spline', inputs: usedPayload, results: data, calculation_name: `Spline — ${docNo}` }).catch(() => {})
       }
-    } catch {
-      setError('Calculation failed. Check your inputs.')
+    } catch (err) {
+      setError(await getErrorMessage(err, 'Calculation failed. Check your inputs.'))
     } finally {
       setBusy(false)
     }
@@ -153,12 +154,12 @@ function SplinePageInner() {
   const downloadDocx = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadSplineDocx(payload()), `Spline_Report_${docNo}.docx`) }
-    catch (err) { setError(extractErrorMessages(err, 'DOCX generation failed.').join(' ')) } finally { setBusy(false) }
+    catch (err) { setError(await getErrorMessage(err, 'DOCX generation failed.')) } finally { setBusy(false) }
   }
   const downloadPdf = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadSplinePdf(payload()), `Spline_Report_${docNo}.pdf`) }
-    catch (err) { setError(extractErrorMessages(err, 'PDF generation failed.').join(' ')) } finally { setBusy(false) }
+    catch (err) { setError(await getErrorMessage(err, 'PDF generation failed.')) } finally { setBusy(false) }
   }
 
   const importCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -195,16 +196,16 @@ function SplinePageInner() {
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>Involute spline · Torque capacity · Factor of safety · ANSI B92.1</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={exportCsv} style={smBtnStyle('#f8fafc', '#e2e8f0', '#475569')}>Export CSV</button>
-          <button onClick={downloadDocx} disabled={busy} style={smBtnStyle('#f8fafc', '#e2e8f0', '#475569')}>Export DOCX</button>
-          <button onClick={downloadPdf} disabled={busy} style={smBtnStyle('#fef2f2', '#fecaca', '#dc2626')}>Download PDF</button>
-          <Link href="/dashboard/rnd/history" style={{ ...smBtnStyle('#f5f3ff', '#ddd6fe', '#7c3aed'), textDecoration: 'none', display: 'inline-flex' }}>History</Link>
+          <button data-tour="rnd-spl-csv-btn" onClick={exportCsv} style={smBtnStyle('#f8fafc', '#e2e8f0', '#475569')}>Export CSV</button>
+          <button data-tour="rnd-spl-docx-btn" onClick={downloadDocx} disabled={busy} style={smBtnStyle('#f8fafc', '#e2e8f0', '#475569')}>Export DOCX</button>
+          <button data-tour="rnd-spl-pdf-btn" onClick={downloadPdf} disabled={busy} style={smBtnStyle('#fef2f2', '#fecaca', '#dc2626')}>Download PDF</button>
+          <Link data-tour="rnd-spl-history-btn" href="/dashboard/rnd/history" style={{ ...smBtnStyle('#f5f3ff', '#ddd6fe', '#7c3aed'), textDecoration: 'none', display: 'inline-flex' }}>History</Link>
         </div>
       </div>
 
       <div className="rnd-main-grid" style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 12, alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-spl-doc" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Document Details</span></div>
             <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
               <div><label style={labelStyle}>Doc No.</label><input style={inputStyle} value={docNo} onChange={(e) => setDocNo(e.target.value)} /></div>
@@ -217,60 +218,60 @@ function SplinePageInner() {
           <div style={cardStyle}>
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Geometry</span>
-              <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+              <label data-tour="rnd-spl-csv" style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                 Import CSV
                 <input type="file" accept=".csv" onChange={importCsv} style={{ display: 'none' }} />
               </label>
             </div>
             <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
-              <div><label style={labelStyle}>No. of Teeth</label><input style={inputStyle} type="number" value={numberTeeth} onChange={(e) => setNumberTeeth(e.target.value)} /></div>
-              <div><label style={labelStyle}>Diametral Pitch</label><input style={inputStyle} type="number" step="0.01" value={diametralPitch} onChange={(e) => setDiametralPitch(e.target.value)} /></div>
-              <div><label style={labelStyle}>Pressure Angle (°)</label><input style={inputStyle} type="number" step="0.01" value={pressureAngle} onChange={(e) => setPressureAngle(e.target.value)} /></div>
-              <div><label style={labelStyle}>Outer Diameter (mm)</label><input style={inputStyle} type="number" step="0.01" value={outerDiameter} onChange={(e) => setOuterDiameter(e.target.value)} /></div>
-              <div><label style={labelStyle}>Inner Diameter (mm)</label><input style={inputStyle} type="number" step="0.01" value={innerDiameter} onChange={(e) => setInnerDiameter(e.target.value)} /></div>
-              <div><label style={labelStyle}>Length of Engagement (mm)</label><input style={inputStyle} type="number" step="0.01" value={lengthEngagement} onChange={(e) => setLengthEngagement(e.target.value)} /></div>
+              <div data-tour="rnd-spl-teeth"><label style={labelStyle}>No. of Teeth</label><input style={inputStyle} type="number" value={numberTeeth} onChange={(e) => setNumberTeeth(e.target.value)} /></div>
+              <div data-tour="rnd-spl-pitch"><label style={labelStyle}>Diametral Pitch</label><input style={inputStyle} type="number" step="0.01" value={diametralPitch} onChange={(e) => setDiametralPitch(e.target.value)} /></div>
+              <div data-tour="rnd-spl-pressure-angle"><label style={labelStyle}>Pressure Angle (°)</label><input style={inputStyle} type="number" step="0.01" value={pressureAngle} onChange={(e) => setPressureAngle(e.target.value)} /></div>
+              <div data-tour="rnd-spl-od"><label style={labelStyle}>Outer Diameter (mm)</label><input style={inputStyle} type="number" step="0.01" value={outerDiameter} onChange={(e) => setOuterDiameter(e.target.value)} /></div>
+              <div data-tour="rnd-spl-id"><label style={labelStyle}>Inner Diameter (mm)</label><input style={inputStyle} type="number" step="0.01" value={innerDiameter} onChange={(e) => setInnerDiameter(e.target.value)} /></div>
+              <div data-tour="rnd-spl-length"><label style={labelStyle}>Length of Engagement (mm)</label><input style={inputStyle} type="number" step="0.01" value={lengthEngagement} onChange={(e) => setLengthEngagement(e.target.value)} /></div>
             </div>
           </div>
 
           <div style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Material</span></div>
             <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
-              <div><label style={labelStyle}>Yield Strength (MPa)</label><input style={inputStyle} type="number" step="0.01" value={yieldStrength} onChange={(e) => setYieldStrength(e.target.value)} /></div>
-              <div><label style={labelStyle}>Material Type</label><input style={inputStyle} value={materialType} onChange={(e) => setMaterialType(e.target.value)} /></div>
+              <div data-tour="rnd-spl-yield"><label style={labelStyle}>Yield Strength (MPa)</label><input style={inputStyle} type="number" step="0.01" value={yieldStrength} onChange={(e) => setYieldStrength(e.target.value)} /></div>
+              <div data-tour="rnd-spl-material"><label style={labelStyle}>Material Type</label><input style={inputStyle} value={materialType} onChange={(e) => setMaterialType(e.target.value)} /></div>
             </div>
           </div>
 
           <div style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Operating Conditions</span></div>
             <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
-              <div><label style={labelStyle}>Loco Weight (t)</label><input style={inputStyle} type="number" step="0.01" value={locoWeight} onChange={(e) => setLocoWeight(e.target.value)} /></div>
-              <div><label style={labelStyle}>No. of Axles</label><input style={inputStyle} type="number" value={numberAxles} onChange={(e) => setNumberAxles(e.target.value)} /></div>
-              <div><label style={labelStyle}>Wheels per Axle</label><input style={inputStyle} type="number" value={wheelsPerAxle} onChange={(e) => setWheelsPerAxle(e.target.value)} /></div>
-              <div><label style={labelStyle}>Speed (km/h)</label><input style={inputStyle} type="number" step="0.01" value={speed} onChange={(e) => setSpeed(e.target.value)} /></div>
-              <div><label style={labelStyle}>Wheel Diameter (m)</label><input style={inputStyle} type="number" step="0.001" value={wheelDiameter} onChange={(e) => setWheelDiameter(e.target.value)} /></div>
-              <div><label style={labelStyle}>Friction Coeff. (μ)</label><input style={inputStyle} type="number" step="0.01" value={frictionCoeff} onChange={(e) => setFrictionCoeff(e.target.value)} /></div>
+              <div data-tour="rnd-spl-loco-weight"><label style={labelStyle}>Loco Weight (t)</label><input style={inputStyle} type="number" step="0.01" value={locoWeight} onChange={(e) => setLocoWeight(e.target.value)} /></div>
+              <div data-tour="rnd-spl-axles"><label style={labelStyle}>No. of Axles</label><input style={inputStyle} type="number" value={numberAxles} onChange={(e) => setNumberAxles(e.target.value)} /></div>
+              <div data-tour="rnd-spl-wheels"><label style={labelStyle}>Wheels per Axle</label><input style={inputStyle} type="number" value={wheelsPerAxle} onChange={(e) => setWheelsPerAxle(e.target.value)} /></div>
+              <div data-tour="rnd-spl-speed"><label style={labelStyle}>Speed (km/h)</label><input style={inputStyle} type="number" step="0.01" value={speed} onChange={(e) => setSpeed(e.target.value)} /></div>
+              <div data-tour="rnd-spl-wheel-dia"><label style={labelStyle}>Wheel Diameter (m)</label><input style={inputStyle} type="number" step="0.001" value={wheelDiameter} onChange={(e) => setWheelDiameter(e.target.value)} /></div>
+              <div data-tour="rnd-spl-mu"><label style={labelStyle}>Friction Coeff. (μ)</label><input style={inputStyle} type="number" step="0.01" value={frictionCoeff} onChange={(e) => setFrictionCoeff(e.target.value)} /></div>
             </div>
           </div>
 
           {error && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{error}</p>}
-          <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Execute Calculation'}</button>
+          <button data-tour="rnd-spl-calculate-btn" onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Execute Calculation'}</button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          <div data-tour="rnd-spl-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
             <StatTile label="Torque Capacity" value={result?.torque_capacity.toFixed(2)} unit="N·m" bg="#eff6ff" color="#2563eb" />
             <StatTile label="Working Torque" value={result?.working_torque.toFixed(2)} unit="N·m" bg="#fff7ed" color="#c2410c" />
             <StatTile label="Factor of Safety" value={result?.safety_factor.toFixed(2)} unit="unitless" bg="#f0fdf4" color="#166534" />
           </div>
 
           {result && verdictStyle && (
-            <div style={{ padding: '10px 16px', borderRadius: 10, background: verdictStyle.bg, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div data-tour="rnd-spl-verdict" style={{ padding: '10px 16px', borderRadius: 10, background: verdictStyle.bg, display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: '.04em', color: verdictStyle.text }}>{result.verdict}</span>
               <span style={{ fontSize: 12, color: verdictStyle.text }}>{result.reason}</span>
             </div>
           )}
 
-          <div style={cardStyle}>
+          <div data-tour="rnd-spl-details" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Geometry Details</span></div>
             <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr', fontFamily: 'monospace', fontSize: 12.5 }}>
               <DetailCell label="Pitch Diameter" value={result?.pitch_diameter} unit="mm" />

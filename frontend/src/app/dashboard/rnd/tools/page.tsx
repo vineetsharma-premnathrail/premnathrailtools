@@ -1,57 +1,77 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { CaretDoubleRight, ChartBar, ClockCounterClockwise, Disc, Drop, Gauge, Gear, Lightning } from '@phosphor-icons/react'
+import { useAuth, useRequireApp } from '@/hooks/useAuth'
+import { filterTabsByAccess } from '@/lib/tabAccess'
 import RndNav from '@/components/rnd/RndNav'
 
 const TOOLS = [
   {
     href: '/dashboard/rnd/braking',
+    subtabKey: 'braking',
     title: 'Braking Calculator',
     description: 'Calculate braking distances, deceleration, and gross braking ratio for rail and road scenarios.',
-    icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6.3 6.3l2.1 2.1M15.6 15.6l2.1 2.1M6.3 17.7l2.1-2.1M15.6 8.4l2.1-2.1" /></svg>,
+    icon: <Disc size={24} />,
   },
   {
     href: '/dashboard/rnd/hydraulic',
+    subtabKey: 'hydraulic',
     title: 'Hydraulic Calculator',
     description: 'Hydraulic motor/pump sizing, system requirements, and sensitivity analysis.',
-    icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M12 2v20M2 12h20" /></svg>,
+    icon: <Drop size={24} />,
   },
   {
     href: '/dashboard/rnd/qmax',
+    subtabKey: 'qmax',
     title: 'Qmax Calculator',
     description: 'Maximum load capacity calculations for rail wheels based on material properties.',
-    icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>,
+    icon: <Gauge size={24} />,
   },
   {
     href: '/dashboard/rnd/load-distribution',
+    subtabKey: 'load_distribution',
     title: 'Load Distribution',
     description: 'Wheel load calculations (Q1-Q4) and safety margin validation for vehicles.',
-    icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>,
+    icon: <ChartBar size={24} />,
   },
   {
     href: '/dashboard/rnd/tractive-effort',
+    subtabKey: 'tractive_effort',
     title: 'Tractive Effort',
     description: 'Tractive force requirements, power calculations, and OHE current for rail traction.',
-    icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><polyline points="13 17 18 12 13 7" /><polyline points="6 17 11 12 6 7" /></svg>,
+    icon: <CaretDoubleRight size={24} />,
   },
   {
     href: '/dashboard/rnd/vehicle-performance',
+    subtabKey: 'vehicle_performance',
     title: 'Vehicle Performance',
     description: 'Locomotive traction capability, performance envelopes, and gear selection analysis.',
-    icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
+    icon: <Lightning size={24} />,
   },
   {
     href: '/dashboard/rnd/spline',
+    subtabKey: 'spline',
     title: 'Spline Calculator',
     description: 'Spline shaft strength analysis, safety factor calculations, and design validation.',
-    icon: <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="3" /><path d="M12 1v6M12 17v6" /></svg>,
+    icon: <Gear size={24} />,
+  },
+  {
+    href: '/dashboard/rnd/history',
+    subtabKey: 'history',
+    title: 'Calculation History',
+    description: 'Every saved calculation from the tools above — reopen, rename or compare past results.',
+    icon: <ClockCounterClockwise size={24} />,
   },
 ] as const
 
 export default function RndToolsPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const { user } = useAuth()
   const router = useRouter()
+  // Same subtab keys as RndNav's TOOL_TABS and the backend's per-calculator
+  // gate, so a card only shows when the user can actually run that tool.
+  const visibleTools = filterTabsByAccess('rnd', TOOLS, user)
 
   if (isLoading || !isAuthorized) return null
 
@@ -63,8 +83,13 @@ export default function RndToolsPage() {
         Calculation tools for braking, hydraulics, load capacity, and traction analysis.
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
-        {TOOLS.map((tool) => (
+      <div data-tour="rnd-tools-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+        {visibleTools.length === 0 && (
+          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>
+            You have no calculator access yet. Ask an administrator to grant the calculator tabs you need under R&amp;D in the Permission Matrix.
+          </p>
+        )}
+        {visibleTools.map((tool) => (
           <div
             key={tool.href}
             onClick={() => router.push(tool.href)}

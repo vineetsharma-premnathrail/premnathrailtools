@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { HydServiceRecord } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import RetiredBanner from '@/components/hydraulic/RetiredBanner'
 import DateField from '@/components/erp/DateField'
 import { SERVICE_TYPE_LABELS } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
@@ -64,17 +66,9 @@ export default function HydServiceRecordsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Service Records</h1>
         </div>
-        <button
-          onClick={() => router.push('/dashboard/hydraulic/service/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New Service Job
-        </button>
       </div>
+
+      <RetiredBanner what="Hydraulic service records" />
 
       {dateRangeError && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -88,20 +82,20 @@ export default function HydServiceRecordsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search record no., problem, work done or agency…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 180px' }} value={serviceType} onChange={(e) => setServiceType(e.target.value)}>
+        <input data-tour="hyd-svc-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search record no., problem, work done or agency…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="hyd-svc-type-filter" style={{ ...inputStyle, flex: '0 1 180px' }} value={serviceType} onChange={(e) => setServiceType(e.target.value)}>
           <option value="">All service types</option>
           {Object.entries(SERVICE_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="hyd-svc-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div data-tour="hyd-svc-date-from" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: TEXT.secondary }}>From</span>
           <div style={{ width: 150 }}><DateField value={dateFrom} onChange={setDateFrom} /></div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div data-tour="hyd-svc-date-to" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: TEXT.secondary }}>To</span>
           <div style={{ width: 150 }}><DateField value={dateTo} onChange={setDateTo} /></div>
         </div>
@@ -110,7 +104,7 @@ export default function HydServiceRecordsPage() {
         )}
       </div>
 
-      <div style={{
+      <div data-tour="hyd-svc-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
@@ -128,10 +122,10 @@ export default function HydServiceRecordsPage() {
             {loading ? (
               <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : records.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No service records match. Raise a job for a breakdown, or from a due maintenance plan.</td></tr>
+              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No service records match these filters.</td></tr>
             ) : (
               records.map((r) => (
-                <tr key={r.id} onClick={() => router.push(`/dashboard/hydraulic/service/${r.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/service', r))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.record_number}</td>
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{formatDate(r.service_date)}</td>
                   <td style={cellStyle}>
@@ -142,14 +136,14 @@ export default function HydServiceRecordsPage() {
                   <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.plan_number || '—'}</td>
                   <td style={cellStyle}>{[r.performed_by_name, r.external_agency].filter(Boolean).join(' / ') || '—'}</td>
                   <td style={cellStyle}>{r.downtime_hours ? r.downtime_hours.toLocaleString('en-IN') : '—'}</td>
-                  <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>₹{r.total_cost.toLocaleString('en-IN')}</td>
+                  <td style={{ ...cellStyle, whiteSpace: 'nowrap' }}>{r.total_cost == null ? '—' : `₹${r.total_cost.toLocaleString('en-IN')}`}</td>
                   <td style={cellStyle}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[r.status]}1a`, color: STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
                       {STATUS_LABELS[r.status] || r.status}
                     </span>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/hydraulic/service/${r.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/service', r))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

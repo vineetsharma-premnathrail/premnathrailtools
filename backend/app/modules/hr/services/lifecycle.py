@@ -27,6 +27,7 @@ from app.modules.hr.models.leave import HrLeaveRequest
 from app.modules.hr.models.lifecycle import HrChecklistItem, HrChecklistTemplate, HrLifecycleEvent
 from app.modules.hr.models.masters import HrDesignation, HrGrade
 from app.modules.hr.models.travel import HrTravelRequest
+from app.modules.hr.services import approvals as hr_approvals_svc
 from app.modules.hr.services.employee_sync import apply_org_fields
 from app.modules.hr.services.exit_guard import revoke_user_sessions
 from app.modules.main.models.user import User
@@ -50,7 +51,7 @@ ROLE_FLAG_LABELS = {
     "is_plant_head": "Plant Head",
     "is_purchase_head": "Purchase Head",
     "is_director": "Director",
-    "is_md": "MD",
+    "is_partner": "Partner",
     "is_finance_manager": "Finance Manager",
 }
 # PRs in these statuses are finished — the buyer no longer needs replacing.
@@ -61,8 +62,22 @@ P2P_SLOTS = (
     ("project_head_id", "project_head_name", "project_head_approved_at", "Project Head"),
     ("plant_head_id", "plant_head_name", "plant_head_approved_at", "Plant Head"),
 )
-PROBATION_TYPES = ("probation", "trainee", "intern")
+# Joining as one of these starts a probation (or training) period.
+PROBATION_TYPES = ("trainee", "intern")
 
+
+
+def _held_modules(user) -> list[str]:
+    """Modules the person holds through roles / extra grants (plus any legacy
+    pre-roles assigned_apps still on the row), in a stable order — not every
+    module an admin can reach, which says nothing about what to strip."""
+    derived = sorted({g.split(":", 1)[0] for g in user.effective_permissions if g.endswith(":view")})
+    return list(dict.fromkeys(list(user.assigned_apps or []) + derived))
+
+
+def _grant_count(user) -> int:
+    """Roles + extra grants + legacy ERP ids an exit clears."""
+    return len(user.roles or []) + len(user.granular_permissions or []) + len(user.erp_permissions or [])
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -105,7 +120,7 @@ def match_designation_id(db: Session, designation_name: str | None) -> int | Non
 def snapshot_from_fields(db: Session, event: HrLifecycleEvent, user: User) -> None:
     """Capture where the employee is today into the from_* columns."""
     profile = get_profile(db, user.id)
-    event.from_department_id = (profile.department_id if profile else None) or match_department_id(db, user.department)
+    event.from_department_id = (profile.department_id if profile else None) or user.department_id or match_department_id(db, user.department)
     event.from_designation_id = (profile.designation_id if profile else None) or match_designation_id(db, user.designation)
     event.from_grade_id = profile.grade_id if profile else None
     event.from_branch_id = (profile.branch_id if profile else None) or user.branch_id
@@ -150,6 +165,21 @@ def notify_item_owners(db: Session, event: HrLifecycleEvent, items: list[HrCheck
             title=f"{EVENT_TYPE_LABELS.get(event.event_type, event.event_type)} checklist: {subject}",
             message=f"{event.event_no} — you own {len(titles)} task(s): {listed}. Mark them done in HR > Lifecycle.",
             notification_type="hr_checklist_assigned", entity_type=ENTITY_TYPE, entity_id=event.id,
+        )
+    if per_owner:
+        # Role event (HR coordinators following joining / exit checklists);
+        # the owners got the direct notice above.
+        from app.core.data_scope import in_scope
+        from app.core.notification_events import notify_event
+
+        names = {u.id: u.name for u in db.query(User).filter(User.id.in_(list(per_owner))).all()}
+        who = ", ".join(f"{names.get(o, 'someone')} ({len(t)})" for o, t in per_owner.items())
+        notify_event(
+            db, None, "hr", "checklist_item_assigned",
+            title=f"{EVENT_TYPE_LABELS.get(event.event_type, event.event_type)} checklist assigned: {subject}",
+            message=f"{event.event_no} — checklist tasks went to {who}. Follow them up in HR > Lifecycle.",
+            entity_type=ENTITY_TYPE, entity_id=event.id, actor=db.get(User, actor_id) if actor_id else None,
+            can_open=lambda u: in_scope(db, u, event), skip_user_ids=set(per_owner),
         )
 
 
@@ -213,6 +243,12 @@ def pending_p2p_approvals(db: Session, user_id: int) -> list[tuple[P2PRequest, l
     return out
 
 
+_KIND_ENTITY = {
+    "leave": hr_approvals_svc.LEAVE_ENTITY, "regularization": hr_approvals_svc.REGULARIZATION_ENTITY,
+    "travel": hr_approvals_svc.TRAVEL_ENTITY, "claim": hr_approvals_svc.EXPENSE_ENTITY,
+}
+
+
 def _pending_hr_approval_queries(db: Session, user_id: int):
     return [
         ("leave", "Leave request", db.query(HrLeaveRequest).filter(HrLeaveRequest.approver_id == user_id, HrLeaveRequest.status == "pending")),
@@ -220,6 +256,49 @@ def _pending_hr_approval_queries(db: Session, user_id: int):
         ("travel", "Travel request", db.query(HrTravelRequest).filter(HrTravelRequest.approver_id == user_id, HrTravelRequest.status == "pending")),
         ("claim", "Expense claim", db.query(HrExpenseClaim).filter(HrExpenseClaim.approver_id == user_id, HrExpenseClaim.status == "submitted")),
     ]
+
+
+def reroute_pending_requests(db: Session, requester_id: int, old_mgr_id: int | None, new_mgr_id: int | None, actor: User | None) -> list[str]:
+    """Move `requester_id`'s pending leave / regularization / travel requests
+    and submitted claims from the old reporting manager to the new one, when
+    the manager changes (transfer/promotion, HR profile edit). The approver is
+    captured at submission, so without this they'd stay with the old manager.
+    A new manager of None (or the requester themself) sends them to the HR
+    queue. The new manager gets one approval notification. Does not commit;
+    returns the moved refs."""
+    if not old_mgr_id or old_mgr_id == new_mgr_id:
+        return []
+    target = new_mgr_id if new_mgr_id and new_mgr_id != requester_id else None
+    moved: list[str] = []
+    for _kind, label, q in _pending_hr_approval_queries(db, old_mgr_id):
+        for row in q.filter_by(user_id=requester_id).all():
+            row.approver_id = target  # display column (and routing for pre-engine requests)
+            moved.append(f"{label} {_ref(row)}")
+    # Engine-routed requests: move the old manager's open approval steps too.
+    engine_moved = hr_approvals_svc.reroute_requester_steps(db, requester_id, old_mgr_id, target, actor)
+    moved += [m for m in engine_moved if not any(m in x for x in moved)]
+    if not moved:
+        return []
+    requester = db.get(User, requester_id)
+    record_audit(
+        db, entity_type="user", entity_id=requester_id, action="update", module_key=MODULE_KEY,
+        summary=(
+            f"{len(moved)} pending request(s) of {user_label(requester)} moved from {_name_of(db, User, old_mgr_id) or 'the old manager'} "
+            f"to {_name_of(db, User, target) or 'the HR queue'} after a reporting-manager change: {', '.join(moved)}"
+        ),
+        old_value={"approver_id": old_mgr_id}, new_value={"approver_id": target, "requests": moved},
+        user_id=actor.id if actor else None,
+    )
+    if target:
+        notify_user(
+            db, target, title=f"{len(moved)} request(s) from {user_label(requester)} need your approval",
+            message=(
+                f"{user_label(requester)} now reports to you, so their pending request(s) moved to you: "
+                f"{', '.join(moved)}. Review them in HR > Approvals."
+            ),
+            notification_type="hr_approval_rerouted", entity_type="user", entity_id=requester_id, teams=True,
+        )
+    return moved
 
 
 def _ref(row) -> str:
@@ -246,9 +325,10 @@ def compute_impact(db: Session, event: HrLifecycleEvent) -> dict[str, Any]:
                 for i in event.items if i.status == "pending"
             ],
             "unreturned_assets": [], "direct_reportees": [], "departments_headed": [], "role_flags": [],
-            "pending_hr_approvals": [], "pending_p2p_approvals": [], "p2p_buyer_requests": [],
+            "pending_hr_approvals": [], "pending_workflow_approvals": [], "pending_p2p_approvals": [], "p2p_buyer_requests": [],
             "checklist_items_owned": [], "templates_owned": [], "own_open_requests": [],
             "own_open_p2p_requests": [], "auto_buyer_categories": [], "warnings": [],
+            "apps": [], "permission_grants_count": 0, "is_admin": False,
             "blockers": {"pending_checklist_items": 0, "unreturned_assets": 0},
         }
     uid = event.user_id
@@ -277,6 +357,10 @@ def compute_impact(db: Session, event: HrLifecycleEvent) -> dict[str, Any]:
     req_names = _names(db, {a["requester_id"] for a in hr_approvals})
     for a in hr_approvals:
         a["requester_name"] = req_names.get(a["requester_id"])
+    # Open approval-engine steps addressed to the person, in every module
+    # (HR requests already listed above are left out).
+    listed = {(_KIND_ENTITY[a["kind"]], a["id"]) for a in hr_approvals}
+    workflow_approvals = [s for s in hr_approvals_svc.pending_steps_of(db, uid) if (s["entity_type"], s["entity_id"]) not in listed]
 
     p2p = pending_p2p_approvals(db, uid)
     p2p_req_names = _names(db, {pr.requested_by_id for pr, _ in p2p if pr.requested_by_id})
@@ -338,7 +422,10 @@ def compute_impact(db: Session, event: HrLifecycleEvent) -> dict[str, Any]:
             "auto-assigning to them until that mapping is changed and redeployed."
         )
 
-    needs_handover = bool(reportees or depts or hr_approvals or p2p or buyer_rows or other_items or templates)
+    needs_handover = bool(reportees or depts or hr_approvals or workflow_approvals or p2p or buyer_rows or other_items or templates)
+    # Module access an exit strips (complete_exit step 9); shown so HR knows what goes.
+    apps = _held_modules(user) if user else []
+    permission_grants_count = _grant_count(user) if user else 0
     if event.event_type in ("transfer", "promotion"):
         needs_handover = False  # optional for movers; asked for explicitly on completion
 
@@ -362,6 +449,7 @@ def compute_impact(db: Session, event: HrLifecycleEvent) -> dict[str, Any]:
         "departments_headed": [{"id": d.id, "name": d.name, "code": d.code, "slots": slots} for d, slots in depts],
         "role_flags": [{"flag": f, "label": ROLE_FLAG_LABELS[f]} for f in flags],
         "pending_hr_approvals": hr_approvals,
+        "pending_workflow_approvals": workflow_approvals,
         "pending_p2p_approvals": [
             {"id": pr.id, "p2p_number": pr.p2p_number, "roles": [s[3] for s in slots],
              "requested_by_id": pr.requested_by_id, "requested_by_name": p2p_req_names.get(pr.requested_by_id),
@@ -376,6 +464,9 @@ def compute_impact(db: Session, event: HrLifecycleEvent) -> dict[str, Any]:
         "own_open_requests": own,
         "own_open_p2p_requests": [{"id": pr.id, "p2p_number": pr.p2p_number, "status": pr.status} for pr in own_p2p],
         "auto_buyer_categories": auto_buyer,
+        "apps": apps,
+        "permission_grants_count": permission_grants_count,
+        "is_admin": bool(user and user.role == "admin"),
         "needs_handover": needs_handover,
         "blockers": {"pending_checklist_items": len(pending_items), "unreturned_assets": len(assets)},
         "warnings": warnings,
@@ -434,7 +525,7 @@ def _ensure_profile(db: Session, user: User, actor: User) -> tuple[HrEmployeePro
         return profile, False
     profile = HrEmployeeProfile(
         user_id=user.id,
-        department_id=match_department_id(db, user.department),
+        department_id=user.department_id or match_department_id(db, user.department),
         designation_id=match_designation_id(db, user.designation),
         branch_id=user.branch_id,
         employment_status="active",
@@ -507,9 +598,13 @@ def complete_joining(db: Session, event: HrLifecycleEvent, payload, actor: User)
     if not profile:
         profile, created = _ensure_profile(db, user, actor)
     rehire = profile.employment_status == "exited"
-    status = "probation" if employment_type in PROBATION_TYPES or payload.probation_end_date else "active"
+    if profile.employment_status == "onboarding":
+        # Raised/linked joinings leave Azure in charge of org fields until now.
+        profile.org_fields_locked = True
+    on_probation = employment_type in PROBATION_TYPES or bool(payload.probation_end_date)
     profile.employment_type = employment_type
-    profile.employment_status = status
+    profile.employment_status = "active"
+    profile.probation_status = "on_probation" if on_probation else "not_applicable"
     if payload.employee_code:
         profile.employee_code = payload.employee_code.strip()
     if payload.probation_end_date:
@@ -541,11 +636,25 @@ def complete_joining(db: Session, event: HrLifecycleEvent, payload, actor: User)
     _audit_user(db, user, f"Joining {event.event_no} completed for {user_label(user)}", old_user, new_user, actor)
 
     changes = [
-        f"Employee profile {'created' if created else 'updated'} — status {status}, employment type {employment_type}",
+        f"Employee profile {'created' if created else 'updated'} — status active, employment type {employment_type}{', on probation' if on_probation else ''}",
         f"Date of joining set to {doj.strftime('%d-%m-%Y')}",
     ]
     if rehire:
         changes.append("Rehire: previous exit cleared and the portal account re-activated")
+        kept_apps = _held_modules(user)
+        kept_grants = _grant_count(user)
+        if kept_apps or kept_grants or user.role == "admin":
+            # Exited before exits started removing module access: say exactly
+            # what came back so an admin can review it instead of it returning silently.
+            line = (
+                f"Portal account re-activated WITH its access from before the exit: apps {', '.join(kept_apps) or 'none'}; "
+                f"{kept_grants} permission grant(s)"
+            )
+            if user.role == "admin":
+                line += "; admin role"
+            changes.append(line + ". Review it in Users & Roles and remove anything this rehire no longer needs")
+        else:
+            changes.append("Portal account re-activated with no modules: ask an admin to grant apps in Users & Roles")
     for label, before, after in (
         ("Department", old_user["department"], user.department),
         ("Designation", old_user["designation"], user.designation),
@@ -554,7 +663,8 @@ def complete_joining(db: Session, event: HrLifecycleEvent, payload, actor: User)
     ):
         if before != after:
             changes.append(f"{label}: {before or '—'} → {after or '—'}")
-    return {"changes": changes, "profile_id": profile.id, "employment_status": status}
+    return {"changes": changes, "profile_id": profile.id, "employment_status": profile.employment_status,
+            "probation_status": profile.probation_status}
 
 
 def complete_confirmation(db: Session, event: HrLifecycleEvent, payload, actor: User) -> dict:
@@ -565,19 +675,18 @@ def complete_confirmation(db: Session, event: HrLifecycleEvent, payload, actor: 
             status_code=409,
             detail=f"{user_label(user)} has no employee profile yet, so there is no probation to confirm. Create their profile in HR > Employees first.",
         )
-    if profile.employment_status not in ("probation", "onboarding"):
+    if profile.probation_status != "on_probation" and profile.employment_status != "onboarding":
         raise HTTPException(
             status_code=409,
-            detail=f"{user_label(user)} is '{profile.employment_status}', not on probation, so there is nothing to confirm. Cancel this event if it was raised by mistake.",
+            detail=f"{user_label(user)}'s probation status is '{profile.probation_status.replace('_', ' ')}', not on probation, so there is nothing to confirm. Cancel this event if it was raised by mistake.",
         )
-    before = profile.employment_status
     confirm_date = event.effective_date or date.today()
+    changes = [f"Probation: {profile.probation_status.replace('_', ' ')} → confirmed", f"Confirmation date set to {confirm_date.strftime('%d-%m-%Y')}"]
+    if profile.employment_status == "onboarding":
+        changes.append("Status: onboarding → active")
     profile.employment_status = "active"
+    profile.probation_status = "confirmed"
     profile.confirmation_date = confirm_date
-    changes = [f"Status: {before} → active", f"Confirmation date set to {confirm_date.strftime('%d-%m-%Y')}"]
-    if profile.employment_type == "probation":
-        profile.employment_type = "permanent"
-        changes.append("Employment type: probation → permanent")
     profile.updated_by_id = actor.id
     return {"changes": changes}
 
@@ -668,7 +777,10 @@ def complete_move(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
                 "reporting_manager_id": user.reporting_manager_id}
     if event.to_manager_id and user.reporting_manager_id != event.to_manager_id:
         changes.append(f"Reporting manager: {_name_of(db, User, user.reporting_manager_id) or '—'} → {_name_of(db, User, event.to_manager_id)}")
+        rerouted = reroute_pending_requests(db, user.id, user.reporting_manager_id, event.to_manager_id, actor)
         user.reporting_manager_id = event.to_manager_id
+        if rerouted:
+            changes.append(f"{len(rerouted)} pending request(s) moved to the new manager: {', '.join(rerouted)}")
     apply_org_fields(db, user, profile)
     new_user = {"department": user.department, "designation": user.designation, "branch_id": user.branch_id,
                 "reporting_manager_id": user.reporting_manager_id}
@@ -695,6 +807,11 @@ def complete_move(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
     if payload.reassign_pending_approvals and handover:
         p2p_changes, conflicts = _reassign_p2p(db, user.id, handover, actor, event)
         changes.extend(p2p_changes)
+        # Every module's open approval-engine steps → the successor.
+        wf_changes, wf_conflicts = hr_approvals_svc.hand_over_engine_steps(
+            db, user, handover, actor, f"{EVENT_TYPE_LABELS[event.event_type]} {event.event_no}")
+        changes.extend(wf_changes)
+        conflicts.extend(wf_conflicts)
     return {"changes": changes, "conflicts": conflicts}
 
 
@@ -735,7 +852,8 @@ def complete_exit(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
         parts = []
         for key, label in (
             ("direct_reportees", "direct reportee(s)"), ("departments_headed", "department head slot(s)"),
-            ("pending_hr_approvals", "pending HR approval(s)"), ("pending_p2p_approvals", "pending P2P approval(s)"),
+            ("pending_hr_approvals", "pending HR approval(s)"), ("pending_workflow_approvals", "open approval step(s) in other modules"),
+            ("pending_p2p_approvals", "pending P2P approval(s)"),
             ("p2p_buyer_requests", "open PR(s) as buyer"), ("checklist_items_owned", "checklist task(s) on other events"),
             ("templates_owned", "checklist template(s) as default owner"),
         ):
@@ -798,6 +916,15 @@ def complete_exit(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
     if hr_moved:
         changes.append(f"{len(hr_moved)} pending HR approval(s) reassigned")
     summary["hr_approvals"] = hr_moved
+    #    Every module's open approval-engine steps -> handover (the engine's
+    #    reassign_pending; steps on the handover person's own requests stay
+    #    and are reported as conflicts).
+    wf_changes: list[str] = []
+    if handover:
+        wf_changes, wf_conflicts = hr_approvals_svc.hand_over_engine_steps(db, user, handover, actor, f"Exit {event.event_no}")
+        changes.extend(wf_changes)
+        conflicts.extend(wf_conflicts)
+    summary["workflow_approvals"] = wf_changes
 
     # 4. P2P head approvals + buyer queue
     p2p_changes: list[str] = []
@@ -831,19 +958,44 @@ def complete_exit(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
         changes.append(f"{len(task_moves)} checklist task(s)/template(s) handed over")
     summary["checklist_tasks"] = task_moves
 
-    # 6. The leaver's own pending requests -> cancelled
+    # 6. The leaver's own pending requests -> cancelled (their live approval
+    #    requests are closed too, so they leave every approver's inbox)
     now = _now()
     cancelled = []
+    exit_note = f"Employee exited ({event.event_no})"
     for row in db.query(HrLeaveRequest).filter(HrLeaveRequest.user_id == user.id, HrLeaveRequest.status == "pending").all():
+        hr_approvals_svc.withdraw(db, hr_approvals_svc.LEAVE_ENTITY, row.id, actor, exit_note)
         row.status = "cancelled"
         row.cancelled_at = now
         row.decision_remarks = f"Cancelled automatically — employee exited ({event.event_no})."
         cancelled.append(f"Leave {row.request_no}")
+    #    Approved leave that starts after the last working day can never be
+    #    taken: cancel it and give the days back (balance + attendance), the
+    #    same as the employee cancelling it before it started.
+    lwd = event.last_working_day or event.effective_date
+    if lwd:
+        from decimal import Decimal
+
+        from app.modules.hr.services.leave import get_or_create_balance, remove_leave_attendance
+
+        for row in db.query(HrLeaveRequest).filter(
+            HrLeaveRequest.user_id == user.id, HrLeaveRequest.status == "approved", HrLeaveRequest.from_date > lwd,
+        ).all():
+            bal = get_or_create_balance(db, row.user_id, row.leave_type_id, row.from_date.year, actor.id, lock=True)
+            bal.used = max(Decimal("0"), Decimal(bal.used) - Decimal(row.days))
+            bal.updated_by_id = actor.id
+            remove_leave_attendance(db, row)
+            row.status = "cancelled"
+            row.cancelled_at = now
+            row.decision_remarks = f"Cancelled automatically — starts after the last working day of exit {event.event_no}; balance restored."
+            cancelled.append(f"Approved leave {row.request_no} (after last working day)")
     for row in db.query(HrAttendanceRegularization).filter(HrAttendanceRegularization.user_id == user.id, HrAttendanceRegularization.status == "pending").all():
+        hr_approvals_svc.withdraw(db, hr_approvals_svc.REGULARIZATION_ENTITY, row.id, actor, exit_note)
         row.status = "cancelled"
         row.decision_remarks = f"Cancelled automatically — employee exited ({event.event_no})."
         cancelled.append(f"Regularization {row.request_no}")
     for row in db.query(HrTravelRequest).filter(HrTravelRequest.user_id == user.id, HrTravelRequest.status == "pending").all():
+        hr_approvals_svc.withdraw(db, hr_approvals_svc.TRAVEL_ENTITY, row.id, actor, exit_note)
         row.status = "cancelled"
         row.decision_remarks = f"Cancelled automatically — employee exited ({event.event_no})."
         cancelled.append(f"Travel {row.request_no}")
@@ -851,6 +1003,15 @@ def complete_exit(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
         row.status = "cancelled"
         row.decision_remarks = f"Cancelled automatically — employee exited ({event.event_no})."
         cancelled.append(f"Claim {row.claim_no}")
+    #    Their other open lifecycle events (a pending confirmation, transfer,
+    #    promotion) can no longer happen.
+    for other in db.query(HrLifecycleEvent).filter(
+        HrLifecycleEvent.user_id == user.id, HrLifecycleEvent.id != event.id,
+        HrLifecycleEvent.status.in_(("draft", "in_progress")),
+    ).all():
+        other.status = "cancelled"
+        other.cancelled_reason = f"Cancelled automatically — employee exited ({event.event_no})."
+        cancelled.append(f"{EVENT_TYPE_LABELS.get(other.event_type, other.event_type)} {other.event_no}")
     if cancelled:
         changes.append(f"{len(cancelled)} of the leaver's own pending request(s) cancelled")
     summary["cancelled_requests"] = cancelled
@@ -868,9 +1029,40 @@ def complete_exit(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
     profile.date_of_exit = exit_date
     profile.exit_reason = event.exit_reason or event.exit_type
     profile.updated_by_id = actor.id
+    handover_lines = list(changes)  # what the handover person now owns (steps 1-7)
     changes.append(f"Employee profile marked exited on {exit_date.strftime('%d-%m-%Y')}")
 
-    # 9. Account off + every session revoked
+    # 9. Module access off: roles, extra Permission Matrix grants, legacy
+    #    apps/ERP ids and the admin role. Otherwise a rehire (complete_joining
+    #    re-activates the account) or an admin re-activation silently restores
+    #    the old access.
+    old_access = {
+        "assigned_apps": _held_modules(user),
+        "roles": sorted(r.name for r in user.roles or []),
+        "granular_permissions": list(user.granular_permissions or []),
+        "erp_permissions": list(user.erp_permissions or []),
+        "role": user.role,
+    }
+    user.roles = []
+    user.assigned_apps = []
+    user.granular_permissions = []
+    user.erp_permissions = []
+    user.invalidate_permissions()
+    if user.role == "admin":
+        user.role = "user"
+    new_access = {"assigned_apps": [], "roles": [], "granular_permissions": [], "erp_permissions": [], "role": user.role}
+    if old_access != new_access:
+        _audit_user(db, user, f"Module access of {user_label(user)} removed on exit {event.event_no}", old_access, new_access, actor)
+        grants = len(old_access["roles"]) + len(old_access["granular_permissions"]) + len(old_access["erp_permissions"])
+        line = f"Module access removed: {', '.join(old_access['assigned_apps']) or 'no apps'}; {grants} permission grant(s) cleared"
+        if old_access["roles"]:
+            line += f" (roles: {', '.join(old_access['roles'])})"
+        if old_access["role"] == "admin":
+            line += "; admin role removed"
+        changes.append(line)
+    summary["access_removed"] = old_access
+
+    # 10. Account off + every session revoked
     was_active = user.is_active
     user.is_active = False
     revoked = revoke_user_sessions(db, user.id)
@@ -891,7 +1083,7 @@ def complete_exit(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
             db, handover.id, title=f"Handover from {user_label(user)}",
             message=(
                 f"{user_label(user)} has exited ({event.event_no}). You now own: "
-                + ("; ".join(changes[:-2]) if len(changes) > 2 else "nothing further")
+                + ("; ".join(handover_lines) if handover_lines else "nothing further")
                 + ". Review your P2P and HR approval queues."
             ),
             notification_type="hr_exit_handover", entity_type=ENTITY_TYPE, entity_id=event.id,
@@ -899,15 +1091,91 @@ def complete_exit(db: Session, event: HrLifecycleEvent, payload, actor: User) ->
     return {"changes": changes, "conflicts": conflicts, **summary}
 
 
-def complete_event(db: Session, event: HrLifecycleEvent, payload, actor: User) -> dict:
+SCHEDULABLE_TYPES = ("transfer", "promotion", "confirmation")
+
+
+def _today() -> date:
+    from app.modules.hr.services.calendar import today_ist
+
+    return today_ist()
+
+
+def schedule_event(db: Session, event: HrLifecycleEvent, payload, actor: User) -> dict:
+    """PA40 effective dating: a transfer / promotion / confirmation completed
+    before its effective date is SCHEDULED, not applied. The daily job
+    (tasks/hr_lifecycle_apply.py) applies it on the date with the same
+    completion options HR chose now."""
+    if event.event_type in ("transfer", "promotion"):
+        if not any((event.to_department_id, event.to_branch_id, event.to_designation_id, event.to_grade_id, event.to_manager_id)):
+            raise HTTPException(
+                status_code=400,
+                detail="Nothing to apply — set at least one of the new department, plant, designation, grade or reporting manager on this event, then complete it.",
+            )
+        validate_refs(db, department_id=event.to_department_id, branch_id=event.to_branch_id, designation_id=event.to_designation_id,
+                      grade_id=event.to_grade_id, manager_id=event.to_manager_id, subject_user_id=event.user_id)
+        other = db.query(HrLifecycleEvent).filter(
+            HrLifecycleEvent.user_id == event.user_id, HrLifecycleEvent.id != event.id,
+            HrLifecycleEvent.event_type.in_(("transfer", "promotion")), HrLifecycleEvent.status == "scheduled",
+        ).first()
+        if other:
+            raise HTTPException(
+                status_code=409,
+                detail=(f"{subject_name(db, event)} already has {other.event_no} scheduled for "
+                        f"{other.effective_date.strftime('%d-%m-%Y') if other.effective_date else '—'}. Two moves can't wait on "
+                        "the same person — cancel one, or apply it now first."),
+            )
+    data = payload.model_dump(mode="json") if hasattr(payload, "model_dump") else dict(payload or {})
+    event.status = "scheduled"
+    event.completion_summary = {
+        "scheduled": True, "scheduled_payload": data, "scheduled_by_id": actor.id, "scheduled_on": _today().isoformat(),
+        "changes": [f"Scheduled — applies automatically on {event.effective_date.strftime('%d-%m-%Y')}"],
+    }
+    record_audit(
+        db, entity_type=ENTITY_TYPE, entity_id=event.id, action="scheduled", module_key=MODULE_KEY,
+        summary=f"{EVENT_TYPE_LABELS[event.event_type]} {event.event_no} for {subject_name(db, event)} scheduled for "
+                f"{event.effective_date.strftime('%d-%m-%Y')} (applies on that date)",
+        user_id=actor.id,
+    )
+    return {"scheduled": True, "effective_date": event.effective_date.isoformat(), "changes": event.completion_summary["changes"]}
+
+
+def complete_event(db: Session, event: HrLifecycleEvent, payload, actor: User, *, apply_scheduled: bool = False) -> dict:
     if event.status in ("completed", "cancelled"):
         raise HTTPException(status_code=409, detail=f"{event.event_no} is already {event.status}. Start a new event if something else needs to change.")
+    if event.status == "scheduled" and not apply_scheduled:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"{event.event_no} is already scheduled for {event.effective_date.strftime('%d-%m-%Y') if event.effective_date else '—'} "
+                    "and applies automatically that day. Use 'Apply now' (with a reason) to apply it early, or cancel it."),
+        )
     if event.status == "draft":
         raise HTTPException(status_code=409, detail=f"{event.event_no} is still a draft. Start it (set it to In progress) before completing it.")
     if event.event_type != "joining" and not event.user_id:
         raise HTTPException(status_code=400, detail=f"{event.event_no} has no employee on it. Cancel it and raise a new one for the right employee.")
     if event.user_id and event.user_id == actor.id:
         raise HTTPException(status_code=403, detail="You can't complete a lifecycle event about yourself. Another HR user has to do it.")
+    if event.event_type != "joining" and event.user_id:
+        # Another event (e.g. the exit) may have closed the employment while
+        # this one was open: a leaver can't be confirmed, moved or exited again.
+        prof = get_profile(db, event.user_id)
+        if prof is not None and prof.employment_status == "exited":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{subject_name(db, event)} has already exited, so this {EVENT_TYPE_LABELS[event.event_type].lower()} "
+                    f"can't be completed. Cancel {event.event_no}; to bring them back, raise a joining event (rehire)."
+                ),
+            )
+
+    if (not apply_scheduled and event.event_type in SCHEDULABLE_TYPES and event.effective_date
+            and event.effective_date > _today()):
+        return schedule_event(db, event, payload, actor)
+
+    # PA30 time slice: values before the action (None = no profile yet).
+    from app.modules.hr.services import assignments as asg
+
+    subject = db.get(User, event.user_id) if event.user_id else None
+    before = asg.current_values(subject, get_profile(db, subject.id)) if subject and get_profile(db, subject.id) else None
 
     if event.event_type == "joining":
         result = complete_joining(db, event, payload, actor)
@@ -920,6 +1188,18 @@ def complete_event(db: Session, event: HrLifecycleEvent, payload, actor: User) -
     else:  # pragma: no cover — validated on create
         raise HTTPException(status_code=400, detail=f"Unknown event type '{event.event_type}'.")
 
+    if subject is not None and event.event_type in ("joining", "transfer", "promotion"):
+        db.flush()
+        asg.sync_from_profile(
+            db, subject, before, asg.current_values(subject, get_profile(db, subject.id)),
+            valid_from=event.effective_date or _today(), source=event.event_type, actor_id=actor.id, event_id=event.id,
+            reason=f"{EVENT_TYPE_LABELS[event.event_type]} {event.event_no}",
+        )
+    elif subject is not None and event.event_type == "exit":
+        asg.close_on_exit(db, subject.id, event.last_working_day or event.effective_date or _today())
+    if apply_scheduled and isinstance(event.completion_summary, dict):
+        result["scheduled_by_id"] = event.completion_summary.get("scheduled_by_id")
+        result["scheduled_on"] = event.completion_summary.get("scheduled_on")
     if payload.remarks:
         event.remarks = f"{event.remarks}\n{payload.remarks}".strip() if event.remarks else payload.remarks
     result["completed_on"] = date.today().isoformat()

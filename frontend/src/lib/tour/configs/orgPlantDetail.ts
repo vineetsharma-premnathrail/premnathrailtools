@@ -15,6 +15,18 @@ const config: TourConfig = {
       purpose: 'Opens this branch\'s Edit page, where every field on this page — plus its Address, Users, Stores, Cost Centers, and Documents — can be changed.',
     },
     {
+      target: 'org-plant-detail-status',
+      title: 'Branch status',
+      purpose: 'The branch\'s current state, set from the Edit page (Branch Status) or the Activate/Deactivate link on the Branches list.',
+      options: [
+        { value: 'Active', meaning: 'Operating normally — can be picked as a location for new work.' },
+        { value: 'Inactive', meaning: 'Not in use; history is kept but it should not be used for new work.' },
+        { value: 'Under Maintenance', meaning: 'Temporarily out of service.' },
+        { value: 'Under Construction', meaning: 'Being set up — not operational yet.' },
+        { value: 'Closed', meaning: 'Permanently shut down.' },
+      ],
+    },
+    {
       target: 'org-plant-detail-tab-basic',
       title: 'Basic tab',
       purpose: 'Company, Branch Type, Branch Head/Manager, Established Date, Industry/Function, Active From, Description, and Remarks — all read-only here. Use Edit to change any of them.',

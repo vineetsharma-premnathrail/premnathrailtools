@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { p2pApi, rfqApi } from '@/lib/api'
 import { P2PRequest, RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
@@ -10,6 +11,7 @@ import P2PNav from '@/components/p2p/P2PNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { recordHref, recordPath } from '@/lib/recordRef'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -28,7 +30,9 @@ const RFQ_STATUS_LABELS: Record<string, string> = { draft: 'Draft', locked: 'Loc
 export default function P2PRfqPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('p2p')
   const router = useRouter()
-  const isPurchaseTeam = !!user?.apps?.includes('purchase')
+  const { can } = useCan()
+  // Starting an RFQ: the Purchase desk AND 'Create' on Procurement › R.F.Q.
+  const isPurchaseTeam = !!user?.apps?.includes('purchase') && can('p2p', 'rfq', 'create')
 
   const [prs, setPrs] = useState<P2PRequest[]>([])
   const [rfqs, setRfqs] = useState<RFQ[]>([])
@@ -97,7 +101,7 @@ export default function P2PRfqPage() {
             {prsAwaitingRfq.map((pr) => (
               <tr
                 key={pr.id}
-                onClick={() => isPurchaseTeam && router.push(`/dashboard/p2p/rfq/new?pr_id=${pr.id}`)}
+                onClick={() => isPurchaseTeam && router.push(recordHref('/dashboard/p2p/rfq/new', pr, 'id', undefined, 'pr_id'))}
                 style={{ borderTop: `1px solid ${BORDER.light}`, cursor: isPurchaseTeam ? 'pointer' : 'default' }}
               >
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{pr.p2p_number}</td>
@@ -106,7 +110,7 @@ export default function P2PRfqPage() {
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(pr.required_date)}</td>
                 <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                   {isPurchaseTeam && (
-                    <span data-tour="rfq-start-btn" onClick={() => router.push(`/dashboard/p2p/rfq/new?pr_id=${pr.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>
+                    <span data-tour="rfq-start-btn" onClick={() => router.push(recordHref('/dashboard/p2p/rfq/new', pr, 'id', undefined, 'pr_id'))} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>
                       Start RFQ
                     </span>
                   )}
@@ -133,7 +137,7 @@ export default function P2PRfqPage() {
               <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No RFQs raised yet.</td></tr>
             )}
             {rfqs.map((rfq) => (
-              <tr key={rfq.id} onClick={() => router.push(`/dashboard/p2p/rfq/${rfq.id}`)} style={{ borderTop: `1px solid ${BORDER.light}`, cursor: 'pointer' }}>
+              <tr key={rfq.id} onClick={() => router.push(recordPath('/dashboard/p2p/rfq', rfq))} style={{ borderTop: `1px solid ${BORDER.light}`, cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{rfq.rfq_number}</td>
                 <td style={tdStyle}>{rfq.p2p_number || '—'}</td>
                 <td style={tdStyle}>
@@ -144,7 +148,7 @@ export default function P2PRfqPage() {
                 <td style={tdStyle}>{rfq.is_single_quotation ? 'Yes' : 'No'}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDate(rfq.created_at)}</td>
                 <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
-                  <span data-tour="rfq-list-view" onClick={() => router.push(`/dashboard/p2p/rfq/${rfq.id}`)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
+                  <span data-tour="rfq-list-view" onClick={() => router.push(recordPath('/dashboard/p2p/rfq', rfq))} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

@@ -5,22 +5,22 @@ import { hrApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import type { HrTravelRequest } from '@/types'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
-import { FormDialog, ErrorBanner, formInputStyle, labelStyle, primaryActionStyle, fmtDate, fmtINR, titleCase } from './adminUi'
+import { SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
+import { FormDialog, ErrorBanner, fmtDate, fmtINR, titleCase } from './adminUi'
 import { TEXT } from '@/lib/theme'
 
 export const TRAVEL_MODE_LABELS: Record<string, string> = {
   air: 'Air', train: 'Train', bus: 'Bus', car: 'Own / hired car', company_vehicle: 'Company vehicle', other: 'Other',
 }
 export const TRAVEL_STATUS_LABELS: Record<string, string> = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', cancelled: 'Cancelled', completed: 'Completed' }
-export const TRAVEL_STATUS_HEX: Record<string, string> = { pending: '#F59E0B', approved: '#16A34A', rejected: '#DC2626', cancelled: '#64748B', completed: '#2563EB' }
+export const TRAVEL_STATUS_HEX: Record<string, string> = { pending: '#F59E0B', approved: '#2563EB', rejected: '#DC2626', cancelled: '#64748B', completed: '#16A34A' }
 
 const row: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12 }
 
-function Fld({ label, children, basis = 200, grow = false, max }: { label: string; children: React.ReactNode; basis?: number; grow?: boolean; max?: number }) {
+function Fld({ label, children, basis = 200, grow = false, max, req = false }: { label: string; children: React.ReactNode; basis?: number; grow?: boolean; max?: number; req?: boolean }) {
   return (
     <div style={{ flex: grow ? `1 1 ${basis}px` : `0 1 ${basis}px`, minWidth: Math.min(basis, 130), maxWidth: max }}>
-      <label style={labelStyle}>{label}</label>
+      <label style={sheetLabel}>{label}{req && <> <Req /></>}</label>
       {children}
     </div>
   )
@@ -84,42 +84,58 @@ export function TravelFormDialog({
   return (
     <FormDialog
       open={open}
+      icon={request ? 'edit' : 'truck'}
       title={request ? `Edit ${request.request_no}` : 'New travel request'}
-      subtitle={request ? undefined : 'Goes to your reporting manager for approval (or to HR if you have no manager set).'}
+      subtitle={request ? `${request.from_city} → ${request.to_city} — changes go to the approver.` : 'Goes to your reporting manager for approval (or to HR if you have no manager set).'}
       onClose={onClose}
-      maxWidth={640}
+      busy={saving}
+      maxWidth={960}
+      bare
       footer={<>
-        <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-        <button type="button" style={{ ...primaryActionStyle, opacity: saving ? 0.7 : 1 }} onClick={save} disabled={saving}>{saving ? 'Saving…' : request ? 'Save changes' : 'Submit request'}</button>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onClose} disabled={saving}>Cancel</button>
+        <button type="button" data-tour="hr-travel-form-save" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={save} disabled={saving}><SheetIcon name={request ? 'check' : 'send'} size={16} />{saving ? 'Saving…' : request ? 'Save changes' : 'Submit request'}</button>
       </>}
     >
-      <ErrorBanner error={error} />
-      <div>
-        <label style={labelStyle}>Purpose *</label>
-        <textarea rows={2} style={{ ...formInputStyle, resize: 'vertical' }} value={f.purpose} onChange={(e) => set('purpose')(e.target.value)} placeholder="Customer site visit, vendor audit, training…" />
-      </div>
-      <div style={row}>
-        <Fld label="From *" basis={180} grow max={260}><input style={formInputStyle} value={f.from_city} onChange={(e) => set('from_city')(e.target.value)} /></Fld>
-        <Fld label="To *" basis={180} grow max={260}><input style={formInputStyle} value={f.to_city} onChange={(e) => set('to_city')(e.target.value)} /></Fld>
-      </div>
-      <div style={row}>
-        <Fld label="Depart *" basis={160}><DateField value={f.depart_date} onChange={set('depart_date')} /></Fld>
-        <Fld label="Return" basis={160}><DateField value={f.return_date} onChange={set('return_date')} /></Fld>
-        <Fld label="Mode" basis={180}>
-          <select style={formInputStyle} value={f.travel_mode} onChange={(e) => set('travel_mode')(e.target.value)}>
-            {Object.entries(TRAVEL_MODE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-        </Fld>
-      </div>
-      <div style={row}>
-        <Fld label="Estimated cost (₹)" basis={160}><input style={formInputStyle} inputMode="decimal" value={f.estimated_cost} onChange={(e) => set('estimated_cost')(money(e.target.value))} /></Fld>
-        <Fld label="Advance needed (₹)" basis={160}><input style={formInputStyle} inputMode="decimal" value={f.advance_required} onChange={(e) => set('advance_required')(money(e.target.value))} placeholder="0" /></Fld>
-        <Fld label="Project / reference" basis={200} grow max={280}><input style={formInputStyle} value={f.project_reference} onChange={(e) => set('project_reference')(e.target.value)} /></Fld>
-      </div>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
-        <input type="checkbox" checked={f.accommodation_required} onChange={(e) => set('accommodation_required')(e.target.checked)} />
-        Accommodation required
-      </label>
+      <SheetColumns
+        left={<>
+          <ErrorBanner error={error} />
+          <SheetSection icon="list" title="Trip">
+            <label style={sheetLabel}>Purpose <Req /></label>
+            <textarea rows={2} data-tour="hr-travel-form-purpose" style={{ ...sheetInput, resize: 'vertical' }} value={f.purpose} onChange={(e) => set('purpose')(e.target.value)} placeholder="Customer site visit, vendor audit, training…" />
+            <div style={{ ...row, marginTop: 12 }}>
+              <Fld label="From" req basis={180} grow max={260}><input data-tour="hr-travel-form-from" style={sheetInput} value={f.from_city} onChange={(e) => set('from_city')(e.target.value)} /></Fld>
+              <Fld label="To" req basis={180} grow max={260}><input data-tour="hr-travel-form-to" style={sheetInput} value={f.to_city} onChange={(e) => set('to_city')(e.target.value)} /></Fld>
+            </div>
+          </SheetSection>
+          <SheetSection icon="calendar" title="Schedule">
+            <div data-tour="hr-travel-form-dates" style={row}>
+              <Fld label="Depart" req basis={160}><DateField value={f.depart_date} onChange={set('depart_date')} /></Fld>
+              <Fld label="Return" basis={160}><DateField value={f.return_date} onChange={set('return_date')} /></Fld>
+              <Fld label="Mode" basis={180}>
+                <select data-tour="hr-travel-form-mode" style={sheetInput} value={f.travel_mode} onChange={(e) => set('travel_mode')(e.target.value)}>
+                  {Object.entries(TRAVEL_MODE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </Fld>
+            </div>
+            <label data-tour="hr-travel-form-accommodation" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer', marginTop: 14 }}>
+              <input type="checkbox" checked={f.accommodation_required} onChange={(e) => set('accommodation_required')(e.target.checked)} />
+              Accommodation required
+            </label>
+          </SheetSection>
+        </>}
+        right={<>
+          <SheetSection icon="rupee" title="Cost & Advance">
+            <label style={sheetLabel}>Estimated cost (₹)</label>
+            <input data-tour="hr-travel-form-cost" style={sheetInput} inputMode="decimal" value={f.estimated_cost} onChange={(e) => set('estimated_cost')(money(e.target.value))} />
+            <label style={{ ...sheetLabel, marginTop: 14 }}>Advance needed (₹)</label>
+            <input data-tour="hr-travel-form-advance" style={sheetInput} inputMode="decimal" value={f.advance_required} onChange={(e) => set('advance_required')(money(e.target.value))} placeholder="0" />
+          </SheetSection>
+          <SheetSection icon="link" title="Reference" extra={<Optional />}>
+            <label style={sheetLabel}>Project / reference</label>
+            <input data-tour="hr-travel-form-project" style={sheetInput} value={f.project_reference} onChange={(e) => set('project_reference')(e.target.value)} />
+          </SheetSection>
+        </>}
+      />
     </FormDialog>
   )
 }

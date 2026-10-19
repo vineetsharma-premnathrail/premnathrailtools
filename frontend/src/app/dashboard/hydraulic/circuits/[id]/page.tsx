@@ -8,13 +8,17 @@ import { HydCircuit } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
 import { secondaryBtnStyle, InfoRow } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import CircuitForm from '@/components/hydraulic/CircuitForm'
 import HydDocumentsPanel from '@/components/hydraulic/HydDocumentsPanel'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import { SYSTEM_TYPE_LABELS } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', under_review: 'Under Review', approved: 'Approved', superseded: 'Superseded' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', under_review: '#2563EB', approved: '#16A34A', superseded: '#a8a29e' }
@@ -35,9 +39,21 @@ type PromptKind = 'approve' | 'return' | 'revise'
 
 export default function HydCircuitDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('hydraulic')
+  const { can, canDelete, canFeature } = useCan()
+  // Backend: edit needs circuits:edit, approve / return circuits:approve; submit and
+  // revise need the Submit for review / Revision history features (default: circuits:edit).
+  const canEditCircuit = can('hydraulic', 'circuits', 'edit')
+  const canApproveCircuit = can('hydraulic', 'circuits', 'approve')
+  const canSubmitReview = canFeature('hydraulic', 'circuits', 'submit_review', 'submit')
+  const canRevise = canFeature('hydraulic', 'circuits', 'revisions', 'create')
+  const seeRevisions = canFeature('hydraulic', 'circuits', 'revisions', 'view')
+  // A role without the Documents feature can't see the drawings, so don't block on them here (the backend still checks).
+  const seeDocs = canFeature('hydraulic', 'circuits', 'documents', 'view')
   const router = useRouter()
   const params = useParams()
-  const circuitId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedId, error: linkError } = useRecordId(ref)
+  const circuitId = resolvedId ?? 0
 
   const [circuit, setCircuit] = useState<HydCircuit | null>(null)
   const [docCount, setDocCount] = useState(0)
@@ -46,13 +62,19 @@ export default function HydCircuitDetailPage() {
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [prompt, setPrompt] = useState<PromptKind | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
 
+  // Bumped after a decision in the approval panel to re-read the circuit.
+  const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
     if (!isAuthorized || !circuitId) return
     hydraulicApi.getCircuit(circuitId)
-      .then((c: HydCircuit) => { setCircuit(c); setDocCount(c.document_count); setError(''); setNotice('') })
+      .then((c: HydCircuit) => { setCircuit(c); setDocCount(c.document_count); setError('') })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load circuit.')))
-  }, [isAuthorized, circuitId])
+  }, [isAuthorized, circuitId, reloadKey])
+  // Pending central approval request; absent on a circuit sent for review
+  // before the approval engine, which keeps the Approve / Return buttons.
+  const approvalRequestId = (circuit as (HydCircuit & { approval_request_id?: number | null }) | null)?.approval_request_id ?? null
 
   const act = async (fn: () => Promise<HydCircuit>, fallback: string, done: string) => {
     setBusy(true)
@@ -96,7 +118,7 @@ export default function HydCircuitDetailPage() {
       setError('')
       try {
         const next: HydCircuit = await hydraulicApi.reviseCircuit(circuitId, value)
-        router.push(`/dashboard/hydraulic/circuits/${next.id}`)
+        router.push(recordPath('/dashboard/hydraulic/circuits', next))
       } catch (err) {
         setError(extractErrorMessages(err, 'Failed to raise a new revision.'))
       } finally {
@@ -106,9 +128,11 @@ export default function HydCircuitDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/circuits" listLabel="Back to circuits" /></div>)
+  if (!resolvedId) return <div><HydraulicNav /></div>
 
   const isDraft = circuit?.status === 'draft'
-  const noFiles = docCount === 0
+  const noFiles = seeDocs && docCount === 0
 
   return (
     <div>
@@ -119,14 +143,14 @@ export default function HydCircuitDetailPage() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Hydraulic &amp; Pneumatic · Circuit
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 20px', flexWrap: 'wrap' }}>
+          <div data-tour="hyd-cird-header" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 20px', flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
               {circuit ? `${circuit.circuit_number} Rev ${circuit.revision} — ${circuit.title}` : 'Circuit'}
             </h1>
             {circuit && <span style={pill(STATUS_HEX[circuit.status])}>{STATUS_LABELS[circuit.status] || circuit.status}</span>}
           </div>
         </div>
-        <button onClick={() => router.push('/dashboard/hydraulic/circuits')} type="button" style={secondaryBtnStyle}>← Back</button>
+        <button data-tour="hyd-cird-back-btn" onClick={() => router.push('/dashboard/hydraulic/circuits')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
 
       {error && (
@@ -145,23 +169,24 @@ export default function HydCircuitDetailPage() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 20 }}>
             {isDraft && (
               <>
-                <button type="button" disabled={busy || noFiles} onClick={() => act(() => hydraulicApi.submitCircuit(circuitId), 'Failed to submit circuit for review.', 'Submitted for review — an approver has to check it now.')}
+                {canEditCircuit && <button data-tour="hyd-cird-edit-btn" type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => setEditOpen(true)}>Edit</button>}
+                {canSubmitReview && <button data-tour="hyd-cird-submit-btn" type="button" disabled={busy || noFiles} onClick={() => act(() => hydraulicApi.submitCircuit(circuitId), 'Failed to submit circuit for review.', 'Submitted for review — an approver has to check it now.')}
                   style={{ ...primaryBtn, opacity: busy || noFiles ? 0.55 : 1, cursor: busy || noFiles ? 'not-allowed' : 'pointer' }}
                   title={noFiles ? 'Upload the circuit diagram first' : undefined}>
                   Submit for Review
-                </button>
-                <button type="button" disabled={busy} style={dangerBtn} onClick={() => setConfirmDelete(true)}>Delete</button>
+                </button>}
+                {canDelete('hydraulic', 'circuits', (circuit as { created_by_id?: number | null } | null)?.created_by_id ?? null) && <button data-tour="hyd-cird-delete-btn" type="button" disabled={busy} style={dangerBtn} onClick={() => setConfirmDelete(true)}>Delete</button>}
                 {noFiles && <span style={{ fontSize: 12.5, color: TEXT.muted }}>Upload the circuit diagram below before submitting — reviewers need a drawing to check.</span>}
               </>
             )}
-            {circuit.status === 'under_review' && (
+            {circuit.status === 'under_review' && !approvalRequestId && canApproveCircuit && (
               <>
-                <button type="button" disabled={busy} style={primaryBtn} onClick={() => setPrompt('approve')}>Approve</button>
-                <button type="button" disabled={busy} style={dangerBtn} onClick={() => setPrompt('return')}>Return for Changes</button>
+                <button data-tour="hyd-cird-approve-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setPrompt('approve')}>Approve</button>
+                <button data-tour="hyd-cird-return-btn" type="button" disabled={busy} style={dangerBtn} onClick={() => setPrompt('return')}>Return for Changes</button>
               </>
             )}
-            {circuit.status === 'approved' && (
-              <button type="button" disabled={busy} style={primaryBtn} onClick={() => setPrompt('revise')}>Raise New Revision</button>
+            {circuit.status === 'approved' && canRevise && (
+              <button data-tour="hyd-cird-revise-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setPrompt('revise')}>Raise New Revision</button>
             )}
             {circuit.status === 'superseded' && (
               <span style={{ fontSize: 12.5, color: TEXT.muted }}>This revision has been superseded by a later approved revision — see the revision history below.</span>
@@ -169,13 +194,21 @@ export default function HydCircuitDetailPage() {
           </div>
 
           {isDraft && circuit.review_remarks && (
-            <div style={{ padding: '12px 16px', marginBottom: 16, borderRadius: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: '#92400E', fontSize: 13 }}>
+            <div data-tour="hyd-cird-returned-note" style={{ padding: '12px 16px', marginBottom: 16, borderRadius: 12, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: '#92400E', fontSize: 13 }}>
               <strong style={{ display: 'block', marginBottom: 4 }}>Returned for changes</strong>
               <span style={{ whiteSpace: 'pre-wrap' }}>{circuit.review_remarks}</span>
             </div>
           )}
 
-          <div style={{ ...sectionStyle, padding: '14px 20px' }}>
+          <ApprovalPanel
+            key={`${circuit.id}-${circuit.status}-${approvalRequestId}`}
+            entityType="hyd_circuit"
+            entityId={circuit.id}
+            title="Review"
+            onChanged={() => setReloadKey((k) => k + 1)}
+          />
+
+          <div data-tour="hyd-cird-audit" style={{ ...sectionStyle, padding: '14px 20px' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px' }}>
               <InfoRow label="Created by" value={`${circuit.created_by_name || '—'}${circuit.created_at ? ` · ${formatDateTime(circuit.created_at)}` : ''}`} />
               <InfoRow label="Submitted" value={circuit.submitted_at ? `${circuit.submitted_by_name || '—'} · ${formatDateTime(circuit.submitted_at)}` : '—'} />
@@ -184,47 +217,50 @@ export default function HydCircuitDetailPage() {
             </div>
           </div>
 
-          {isDraft ? (
+          {editOpen && (
             <CircuitForm
-              key={circuit.updated_at || circuit.id}
+              mode="sheet"
+              title={`Edit ${circuit.circuit_number} Rev ${circuit.revision}`}
+              subtitle="Draft revision — saving does not submit it for review."
+              onCancel={() => setEditOpen(false)}
               initial={circuit}
               submitLabel="Save Changes"
               onSubmit={async (payload) => {
                 setNotice('')
                 const updated: HydCircuit = await hydraulicApi.updateCircuit(circuitId, payload)
                 setCircuit(updated)
+                setEditOpen(false)
                 setNotice('Circuit saved.')
               }}
             />
-          ) : (
-            <div style={sectionStyle}>
-              <p style={sectionTitle}>Circuit</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px' }}>
-                <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
-                  <InfoRow label="System" value={circuit.system_number ? `${circuit.system_number} — ${circuit.system_name || ''}` : 'Not linked to a system'} />
-                  {circuit.system_id && (
-                    <span onClick={() => router.push(`/dashboard/hydraulic/systems/${circuit.system_id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Open system →</span>
-                  )}
-                </div>
-                <InfoRow label="Medium" value={SYSTEM_TYPE_LABELS[circuit.system_type] || circuit.system_type} />
-                <InfoRow label="Drawing Number" value={circuit.drawing_number || '—'} />
-                <InfoRow label="Symbol Standard" value={circuit.symbol_standard || '—'} />
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px', marginTop: 14 }}>
-                <div style={{ flex: '1 1 300px' }}><InfoRow label="Description" value={circuit.description || '—'} /></div>
-                <div style={{ flex: '1 1 300px' }}><InfoRow label="Change Note" value={circuit.change_note || '—'} /></div>
-              </div>
-            </div>
           )}
+          <div data-tour="hyd-cird-info" style={sectionStyle}>
+            <p style={sectionTitle}>Circuit</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px' }}>
+              <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
+                <InfoRow label="System" value={circuit.system_number ? `${circuit.system_number} — ${circuit.system_name || ''}` : 'Not linked to a system'} />
+                {circuit.system_id && (
+                  <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', circuit, 'system_id'))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Open system →</span>
+                )}
+              </div>
+              <InfoRow label="Medium" value={SYSTEM_TYPE_LABELS[circuit.system_type] || circuit.system_type} />
+              <InfoRow label="Drawing Number" value={circuit.drawing_number || '—'} />
+              <InfoRow label="Symbol Standard" value={circuit.symbol_standard || '—'} />
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px', marginTop: 14 }}>
+              <div style={{ flex: '1 1 300px' }}><InfoRow label="Description" value={circuit.description || '—'} /></div>
+              <div style={{ flex: '1 1 300px' }}><InfoRow label="Change Note" value={circuit.change_note || '—'} /></div>
+            </div>
+          </div>
 
-          <div style={{ ...sectionStyle, marginTop: isDraft ? 20 : 0 }}>
+          {seeRevisions && <div data-tour="hyd-cird-revisions" style={sectionStyle}>
             <p style={sectionTitle}>Revision History ({circuit.revisions.length})</p>
             {circuit.revisions.length === 0 ? (
               <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No revisions recorded.</p>
             ) : [...circuit.revisions].reverse().map((r) => {
               const current = r.id === circuit.id
               return (
-                <div key={r.id} onClick={() => { if (!current) router.push(`/dashboard/hydraulic/circuits/${r.id}`) }}
+                <div key={r.id} onClick={() => { if (!current) router.push(recordPath('/dashboard/hydraulic/circuits', r)) }}
                   style={{
                     display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', padding: '9px 10px', fontSize: 13,
                     borderTop: `1px solid ${BORDER.light}`, cursor: current ? 'default' : 'pointer', borderRadius: 8,
@@ -238,7 +274,7 @@ export default function HydCircuitDetailPage() {
                 </div>
               )
             })}
-          </div>
+          </div>}
 
           <HydDocumentsPanel
             entityType="circuit"

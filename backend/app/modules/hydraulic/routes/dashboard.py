@@ -4,8 +4,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.data_scope import apply_scope
 from app.core.permissions import require_app_access, require_tab_access
 from app.db.session import get_db
+from app.modules.hydraulic import access  # noqa: F401  (registers data scope / approval types)
 from app.modules.hydraulic.models.bom import HydBom
 from app.modules.hydraulic.models.circuit import HydCircuit
 from app.modules.hydraulic.models.component import HydComponent
@@ -16,7 +18,7 @@ from app.modules.hydraulic.models.testing import HydTest
 from app.modules.hydraulic.routes.maintenance import to_plan_responses
 from app.modules.hydraulic.routes.spare_parts import to_spare_responses
 from app.modules.hydraulic.schemas.insights import HydDashboardResponse
-from app.modules.hydraulic.service import systems_by_id
+from app.modules.hydraulic.service import can_see_costs, systems_by_id
 from app.modules.main.models.user import User
 
 router = APIRouter(
@@ -31,24 +33,28 @@ async def get_dashboard(
     _tab: User = Depends(require_tab_access("hydraulic", "dashboard")),
 ):
     since = date.today() - timedelta(days=30)
-    live_sys = HydSystem.is_deleted == False  # noqa: E712
-    by_type = dict(db.query(HydSystem.system_type, func.count(HydSystem.id)).filter(live_sys).group_by(HydSystem.system_type).all())
-    by_status = dict(db.query(HydSystem.status, func.count(HydSystem.id)).filter(live_sys).group_by(HydSystem.status).all())
 
-    plans = to_plan_responses(db, db.query(HydMaintenancePlan).filter(
+    def scoped(query, model):  # every figure covers only the records in the user's data scope
+        return apply_scope(query, _tab, model, db)
+
+    live_sys = HydSystem.is_deleted == False  # noqa: E712
+    by_type = dict(scoped(db.query(HydSystem.system_type, func.count(HydSystem.id)).filter(live_sys), HydSystem).group_by(HydSystem.system_type).all())
+    by_status = dict(scoped(db.query(HydSystem.status, func.count(HydSystem.id)).filter(live_sys), HydSystem).group_by(HydSystem.status).all())
+
+    plans = to_plan_responses(db, scoped(db.query(HydMaintenancePlan).filter(
         HydMaintenancePlan.is_deleted == False, HydMaintenancePlan.is_active == True,  # noqa: E712
-    ).all())
+    ), HydMaintenancePlan).all())
     due = sorted((p for p in plans if p.due_status in ("overdue", "due_soon")),
                  key=lambda p: (p.due_status != "overdue", p.next_due_date or date.max))
 
     live_svc = HydServiceRecord.is_deleted == False  # noqa: E712
-    open_services = db.query(HydServiceRecord).filter(live_svc, HydServiceRecord.status.in_(("open", "in_progress"))).order_by(HydServiceRecord.service_date).all()
-    done_30d = db.query(HydServiceRecord).filter(live_svc, HydServiceRecord.status == "completed", HydServiceRecord.completed_on >= since).all()
+    open_services = scoped(db.query(HydServiceRecord).filter(live_svc, HydServiceRecord.status.in_(("open", "in_progress"))), HydServiceRecord).order_by(HydServiceRecord.service_date).all()
+    done_30d = scoped(db.query(HydServiceRecord).filter(live_svc, HydServiceRecord.status == "completed", HydServiceRecord.completed_on >= since), HydServiceRecord).all()
     parts_cost_30d = sum(p.unit_cost * p.quantity for r in done_30d for p in r.parts)
 
     live_test = HydTest.is_deleted == False  # noqa: E712
-    tests_30d = db.query(HydTest).filter(live_test, HydTest.status == "completed", HydTest.test_date >= since)
-    recent_tests = db.query(HydTest).filter(live_test).order_by(HydTest.id.desc()).limit(8).all()
+    tests_30d = scoped(db.query(HydTest).filter(live_test, HydTest.status == "completed", HydTest.test_date >= since), HydTest)
+    recent_tests = scoped(db.query(HydTest).filter(live_test), HydTest).order_by(HydTest.id.desc()).limit(8).all()
 
     spares = to_spare_responses(db, db.query(HydSparePart).filter(HydSparePart.is_deleted == False, HydSparePart.status == "active").all())  # noqa: E712
     low = sorted((s for s in spares if s.stock_status in ("low", "out")),
@@ -62,13 +68,14 @@ async def get_dashboard(
             "in_service": by_status.get("in_service", 0) + by_status.get("commissioned", 0),
             "under_maintenance": by_status.get("under_maintenance", 0),
             "active_components": db.query(HydComponent).filter(HydComponent.is_deleted == False, HydComponent.status == "active").count(),  # noqa: E712
-            "circuits_in_review": db.query(HydCircuit).filter(HydCircuit.is_deleted == False, HydCircuit.status == "under_review").count(),  # noqa: E712
-            "draft_boms": db.query(HydBom).filter(HydBom.is_deleted == False, HydBom.status == "draft").count(),  # noqa: E712
+            "circuits_in_review": scoped(db.query(HydCircuit).filter(HydCircuit.is_deleted == False, HydCircuit.status == "under_review"), HydCircuit).count(),  # noqa: E712
+            "draft_boms": scoped(db.query(HydBom).filter(HydBom.is_deleted == False, HydBom.status.in_(("draft", "under_review"))), HydBom).count(),  # noqa: E712
             "plans_overdue": sum(1 for p in plans if p.due_status == "overdue"),
             "plans_due_soon": sum(1 for p in plans if p.due_status == "due_soon"),
             "open_service_records": len(open_services),
             "downtime_hours_30d": round(sum(r.downtime_hours or 0 for r in done_30d), 1),
-            "service_cost_30d": round(parts_cost_30d + sum((r.labour_cost or 0) + (r.other_cost or 0) for r in done_30d), 2),
+            "service_cost_30d": round(parts_cost_30d + sum((r.labour_cost or 0) + (r.other_cost or 0) for r in done_30d), 2)
+            if can_see_costs(_tab) else None,  # Hydraulic › BOM › Prices & costs
             "tests_30d": tests_30d.count(),
             "tests_failed_30d": tests_30d.filter(HydTest.result == "fail").count(),
             "spares_low": len(low),

@@ -24,7 +24,20 @@ const tenderTabStep: TourStep = {
 const config: TourConfig = {
   id: 'crm-new-record-form',
   pageTitle: 'New Inquiry / Tender',
-  steps: [inquiryTabStep, ...inquiryConfig.steps, tenderTabStep, ...tenderConfig.steps],
+  steps: [
+    inquiryTabStep, ...inquiryConfig.steps,
+    {
+      target: 'inq-form-back-btn',
+      title: '← Back',
+      purpose: 'Returns to the Inquiries & Tenders list without saving — same as Cancel (bottom right). Anything typed in the form is discarded.',
+    },
+    tenderTabStep, ...tenderConfig.steps,
+    {
+      target: 'tnd-form-back-btn',
+      title: '← Back',
+      purpose: 'Returns to the Inquiries & Tenders list without saving — same as Cancel (bottom right). Anything typed in the form is discarded.',
+    },
+  ],
 }
 
 export default config

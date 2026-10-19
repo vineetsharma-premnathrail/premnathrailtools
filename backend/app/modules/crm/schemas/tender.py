@@ -13,7 +13,7 @@ class TenderCreate(BaseModel):
     tender_category: str | None = None
     tender_value: float | None = None
     currency: str = "INR"
-    status: str = "Active"
+    status: str = "Requirement Received"
     current_stage: str = "Tender Published"
     current_status_note: str | None = None
     lead_source: str
@@ -41,6 +41,8 @@ class TenderCreate(BaseModel):
 
 
 class TenderUpdate(BaseModel):
+    # Only for an admin moving the stage back — required then, logged on the timeline.
+    stage_reason: str | None = None
     org_id: int | None = None
     org_contact_id: int | None = None
     tender_number: str | None = None

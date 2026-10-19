@@ -35,10 +35,16 @@ def _lock_number_series(db: Session, prefix: str) -> None:
 
 def _next_number(db: Session, column, prefix: str) -> str:
     _lock_number_series(db, prefix)
-    last = db.query(func.max(column)).filter(column.like(f"{prefix}%")).scalar()
-    if last:
-        return f"{prefix}{int(last.rsplit('-', 1)[-1]) + 1:04d}"
-    return f"{prefix}0001"
+    # Numeric max, not string max: '...-10000' sorts below '...-9999' as text,
+    # so a text max() would hand out a duplicate once the series passes 9999.
+    # Computed in Python over the (per-year) series so it works on SQLite and
+    # Postgres alike.
+    last = 0
+    for (value,) in db.query(column).filter(column.like(f"{prefix}%")).all():
+        suffix = (value or "")[len(prefix):]
+        if suffix.isdigit():
+            last = max(last, int(suffix))
+    return f"{prefix}{last + 1:04d}"
 
 
 def generate_bom_number(db: Session) -> str:
@@ -56,13 +62,17 @@ def explode_bom(bom: ProductionBom, quantity: float) -> tuple[list[ProductionWor
     `quantity` units of the product. Returns unsaved lines for the caller to
     attach to a work order."""
     factor = quantity / (bom.base_quantity or 1.0)
+    # Text / document lines carry no material requirement (SAP item
+    # categories T / D); non-stock lines are needed but never reserved.
     materials = [
         ProductionWorkOrderMaterial(
             item_id=line.component_item_id,
             required_qty=round(line.quantity * factor * (1 + (line.scrap_percent or 0) / 100), _QTY_PLACES),
             remarks=line.remarks,
+            item_category=getattr(line, "item_category", None) or "stock",
         )
         for line in bom.items
+        if line.component_item_id and (getattr(line, "item_category", None) or "stock") in ("stock", "non_stock")
     ]
     operations = [
         ProductionWorkOrderOperation(
@@ -73,6 +83,11 @@ def explode_bom(bom: ProductionBom, quantity: float) -> tuple[list[ProductionWor
             requires_inspection=op.requires_inspection,
             instructions=op.instructions,
             status="pending",
+            control_key=getattr(op, "control_key", None) or "internal",
+            confirmation=getattr(op, "confirmation", None) or "optional",
+            print_on_job_card=True if getattr(op, "print_on_job_card", None) is None else op.print_on_job_card,
+            vendor_id=getattr(op, "vendor_id", None),
+            external_cost=getattr(op, "external_cost", None),
         )
         for op in bom.operations
     ]
@@ -111,7 +126,10 @@ def workstation_rates(db: Session, workstation_ids: set[int]) -> dict[int, float
     ids = {i for i in workstation_ids if i}
     if not ids:
         return {}
-    return {ws.id: float(ws.hourly_rate or 0.0) for ws in db.query(ProductionWorkstation).filter(ProductionWorkstation.id.in_(ids)).all()}
+    # CO activity prices (machine + labour hour) valid today where Finance
+    # maintains them, else the workstation's flat hourly_rate.
+    from app.modules.accounts.services.co_activity import workstation_rate_map
+    return workstation_rate_map(db, ids)
 
 
 def work_order_costing(db: Session, wo: ProductionWorkOrder) -> dict:
@@ -125,12 +143,19 @@ def work_order_costing(db: Session, wo: ProductionWorkOrder) -> dict:
     op_ws = {op.id: op.workstation_id for op in wo.operations}
     rates = workstation_rates(db, {op.workstation_id for op in wo.operations} | {log.workstation_id for log in logs})
 
+    # Actual material = the order's own cost postings (the rate each issue
+    # was charged at — see costing.py); orders with none fall back to
+    # consumed qty × today's item cost, as before.
+    from app.modules.production.costing import material_actuals_by_item, _log_rates
+    posted = material_actuals_by_item(db, wo.id)
+
     material_lines = []
     est_material = act_material = 0.0
     for m in wo.materials:
         unit = item_unit_cost(items.get(m.item_id))
         consumed = m.issued_qty - m.returned_qty
-        est, act = m.required_qty * unit, consumed * unit
+        est = m.required_qty * unit
+        act = posted[m.item_id] if m.item_id in posted else consumed * unit
         est_material += est
         act_material += act
         item = items.get(m.item_id)
@@ -147,13 +172,21 @@ def work_order_costing(db: Session, wo: ProductionWorkOrder) -> dict:
 
     est_labour = sum(op.planned_hours * rates.get(op.workstation_id, 0.0) for op in wo.operations)
     act_hours = sum(log.hours for log in logs)
-    act_labour = sum(log.hours * rates.get(log.workstation_id or op_ws.get(log.operation_id), 0.0) for log in logs)
+    log_rates = _log_rates(db, logs, op_ws)
+    act_labour = sum(log.hours * log_rates[log.id] for log in logs)
 
-    estimated_total = est_material + est_labour
-    actual_total = act_material + act_labour
+    # Costing-sheet overhead (KGI2): estimated from the sheet valid today on
+    # the estimated base; actual = what the period-end runs applied.
+    from app.modules.accounts.services.co_overhead import applied_overhead, overhead_for
+    est_overhead = overhead_for(db, wo.branch_id, None, est_material, est_labour)["overhead"]
+    act_overhead = applied_overhead(db, wo.id)
+    estimated_total = est_material + est_labour + est_overhead
+    actual_total = act_material + act_labour + act_overhead
     variance = actual_total - estimated_total
     return {
         "work_order_id": wo.id,
+        "estimated_overhead_cost": round(est_overhead, 2),
+        "actual_overhead_cost": round(act_overhead, 2),
         "estimated_material_cost": round(est_material, 2),
         "estimated_labour_cost": round(est_labour, 2),
         "estimated_total_cost": round(estimated_total, 2),
@@ -165,6 +198,10 @@ def work_order_costing(db: Session, wo: ProductionWorkOrder) -> dict:
         "variance": round(variance, 2),
         "variance_percent": round(variance / estimated_total * 100, 1) if estimated_total else None,
         "cost_per_unit": round(actual_total / wo.quantity_completed, 2) if wo.quantity_completed else None,
+        # Moved into FG stock by receipts at actual cost; the rest is still
+        # open on the order (WIP while it runs, variance once it's delivered).
+        "cost_relieved": round(wo.cost_relieved or 0.0, 2),
+        "open_cost": round(actual_total - (wo.cost_relieved or 0.0), 2),
         "materials": material_lines,
     }
 
@@ -180,7 +217,7 @@ def bom_standard_cost(
         items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_(item_ids)).all()} if item_ids else {}
     material = sum(
         line.quantity * (1 + (line.scrap_percent or 0) / 100) * item_unit_cost(items.get(line.component_item_id))
-        for line in bom.items
+        for line in bom.items if line.component_item_id
     )
     if rates is None:
         rates = workstation_rates(db, {op.workstation_id for op in bom.operations})
@@ -228,6 +265,8 @@ def material_requirements(db: Session, include_draft: bool = True) -> list[dict]
 
     by_item: dict[int, dict] = {}
     for material, wo in rows:
+        if (material.item_category or "stock") != "stock":
+            continue  # non-stock lines are procured for the order, not planned from Store
         need = outstanding_qty(material)
         if need <= 0:
             continue
@@ -237,6 +276,7 @@ def material_requirements(db: Session, include_draft: bool = True) -> list[dict]
         entry["orders"].append({
             "work_order_id": wo.id, "wo_number": wo.wo_number, "status": wo.status,
             "outstanding_qty": need, "planned_start_date": wo.planned_start_date,
+            "order_project_id": wo.order_project_id, "order_project_element_id": wo.order_project_element_id,
         })
     if not by_item:
         return []
@@ -308,6 +348,8 @@ def reserve_materials(db: Session, wo: ProductionWorkOrder, user_id: int | None)
     free = available_qty(db, [m.item_id for m in wo.materials], wo.source_location_id)
     short = []
     for m in wo.materials:
+        if (m.item_category or "stock") != "stock":
+            continue  # non-stock: bought for the order, never held in Store
         res = active.get(m.reservation_id)
         if res and res.location_id != wo.source_location_id:
             continue
@@ -360,8 +402,11 @@ def release_reservations(db: Session, wo: ProductionWorkOrder, status: str = "ca
     """Give back everything a work order still holds (on cancel, complete, or
     a change of source location)."""
     for res in _active_reservations(db, wo.materials).values():
-        adjust_reserved_qty(db, item_id=res.item_id, location_id=res.location_id, delta=-res.quantity)
         res.status = status
+        adjust_reserved_qty(db, item_id=res.item_id, location_id=res.location_id, delta=-res.quantity)
+    # Flush so a reserve_materials call straight after (source location change)
+    # no longer sees these as active — the session doesn't autoflush.
+    db.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -620,6 +665,13 @@ def raise_rework(
     actor = db.query(User).filter(User.id == actor_id).first() if actor_id else None
     rrv_log(db, build.id, "rework_raised", actor, f"{rw.rework_number}: {title}")
     rrv_notify(db, build, f"Rework raised: {build.build_number}", f"{rw.rework_number} — {title}", "production_rework_raised", actor_id, {assigned_to_id})
+    # Role-based (core/events/production.py); build manager / creator / assignee were told directly.
+    from app.modules.production import notify as prod_notify
+    prod_notify.fire(db, "rework_raised", record=build, entity_type="production_rrv_build", actor=actor,
+                     skip={build.build_manager_id, build.created_by_id, assigned_to_id},
+                     title=f"Rework raised: {rw.rework_number} on {build.build_number}",
+                     message=f"{rw.rework_number} — {title} ({build.rrv_model}). "
+                             + ("Assigned." if assigned_to_id else "Not assigned yet — pick it up or assign it on the build's Rework tab."))
     return rw
 
 
@@ -751,6 +803,9 @@ def apply_rrv_handover(db: Session, build: ProductionRrvBuild) -> Project:
     machine.warranty_start_date = build.handover_date
     machine.warranty_end_date = _add_months(build.handover_date, build.warranty_months) if build.warranty_months else machine.warranty_end_date
     machine.site_location = machine.site_location or build.handover_location
+    # Sales: the vehicle's delivery row is dispatched + delivered (and commissioned) — SO status, LD, billing.
+    from app.modules.sales.delivery import on_rrv_handover
+    on_rrv_handover(db, build)
     return machine
 
 

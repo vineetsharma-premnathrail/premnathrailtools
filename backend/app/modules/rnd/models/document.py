@@ -18,6 +18,11 @@ class RndDocument(Base, TimestampMixin, SoftDeleteMixin):
     project_id: Mapped[int] = mapped_column(Integer, ForeignKey("rnd_projects.id"), index=True, nullable=False)
     experiment_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_experiments.id"), index=True, nullable=True)
     prototype_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_prototypes.id"), index=True, nullable=True)
+    # Set when the file belongs to a project task (project_tasks.py): "brief"
+    # = the lead's files, "work" = the assignee's. Task files stay out of the
+    # project's Attachments list.
+    task_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rnd_project_tasks.id"), index=True, nullable=True)
+    task_doc_role: Mapped[str | None] = mapped_column(String(10), nullable=True)
     doc_type: Mapped[str] = mapped_column(String(30), default="other", nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[str | None] = mapped_column(String(20), nullable=True)

@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { storeApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn } from '@/components/shared/FormSheet'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 
 interface ImportResult {
@@ -75,33 +75,42 @@ export default function ItemImportDialog({ open, onClose, onImported }: { open: 
   }
 
   return (
-    <div onClick={close} className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} className="dialog-panel" style={{ width: '100%', maxWidth: result ? 760 : 460, maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
-        <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 6px' }}>Import Items</p>
-
+    <FormSheet width={result ? 760 : 580} icon="upload" title="Import Items"
+      subtitle="Bulk-add items to the Item Master from a CSV or Excel file." onClose={close} busy={busy}
+      footer={!result ? <>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, busy)} onClick={close} disabled={busy}>Cancel</button>
+        <button type="button" style={sheetBtn('primary', SHEET.BLUE, busy)} onClick={upload} disabled={busy}><SheetIcon name="upload" size={16} />{busy ? 'Importing…' : 'Import'}</button>
+      </> : <>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK)} onClick={() => { setResult(null); setFile(null) }}>Import another file</button>
+        <button type="button" style={sheetBtn('primary', SHEET.BLUE)} onClick={close}><SheetIcon name="check" size={16} />Done</button>
+      </>}>
+      <div style={{ padding: '20px 24px' }}>
+        {error && (
+          <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>
+        )}
         {!result ? (
           <>
-            <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 14px', lineHeight: 1.6 }}>
-              Upload a CSV or Excel file with columns item_type, category, subcategory, <b>item_name</b>, <b>uom</b>, technical_specification.
-              Item codes are generated automatically. Items whose name and technical specification both already exist are <b>not saved</b> — you&apos;ll see them listed after the import.
-            </p>
-            <button type="button" onClick={downloadTemplate} style={{ ...secondaryBtnStyle, marginBottom: 14 }}>Download template</button>
-            <div
-              onClick={() => fileRef.current?.click()}
-              style={{ border: '1.5px dashed rgba(0,0,0,0.18)', borderRadius: 12, padding: '18px 14px', textAlign: 'center', cursor: 'pointer', fontSize: 13, color: file ? TEXT.heading : TEXT.muted, marginBottom: 14 }}
-            >
-              {file ? file.name : 'Click to choose a .csv or .xlsx file'}
-            </div>
-            <input ref={fileRef} type="file" accept=".csv,.xlsx" style={{ display: 'none' }} onChange={(e) => { setFile(e.target.files?.[0] || null); setError('') }} />
-            {error && <p style={{ fontSize: 12.5, color: '#dc2626', margin: '0 0 12px' }}>{error}</p>}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" style={secondaryBtnStyle} onClick={close} disabled={busy}>Cancel</button>
-              <button type="button" style={{ ...primaryBtnStyle, opacity: busy ? 0.7 : 1 }} onClick={upload} disabled={busy}>{busy ? 'Importing…' : 'Import'}</button>
-            </div>
+            <SheetSection icon="doc" title="File Format">
+              <p style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 12px', lineHeight: 1.6 }}>
+                Columns: item_type, category, subcategory, <b>item_name</b>, <b>uom</b>, technical_specification.
+                Item codes are generated automatically. Items whose name and technical specification both already exist are <b>not saved</b> — you&apos;ll see them listed after the import.
+              </p>
+              <button type="button" onClick={downloadTemplate} style={sheetBtn('secondary')}><SheetIcon name="doc" size={15} />Download template</button>
+            </SheetSection>
+            <SheetSection icon="upload" title="Upload">
+              <div
+                onClick={() => fileRef.current?.click()}
+                style={{ border: '1.5px dashed #cbd5e1', borderRadius: 12, padding: '18px 14px', textAlign: 'center', cursor: 'pointer', fontSize: 13, color: file ? SHEET.INK : SHEET.MUTED }}
+              >
+                <SheetIcon name="clip" size={22} color={SHEET.BLUE} />
+                <div style={{ marginTop: 6 }}>{file ? file.name : <>Click to choose a <b>.csv</b> or <b>.xlsx</b> file</>}</div>
+              </div>
+              <input ref={fileRef} type="file" accept=".csv,.xlsx" style={{ display: 'none' }} onChange={(e) => { setFile(e.target.files?.[0] || null); setError('') }} />
+            </SheetSection>
           </>
         ) : (
-          <>
-            <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 16px' }}>
+          <SheetSection icon="list" title="Import Result">
+            <p style={{ fontSize: 13, color: SHEET.MUTED, margin: '0 0 16px' }}>
               {result.created.length} new item{result.created.length === 1 ? '' : 's'} saved · {result.existing.length} already existed (not saved)
               {result.errors.length ? ` · ${result.errors.length} with problems (not saved)` : ''}
             </p>
@@ -129,14 +138,9 @@ export default function ItemImportDialog({ open, onClose, onImported }: { open: 
                 ))}</tbody>
               </Block>
             )}
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" style={secondaryBtnStyle} onClick={() => { setResult(null); setFile(null) }}>Import another file</button>
-              <button type="button" style={primaryBtnStyle} onClick={close}>Done</button>
-            </div>
-          </>
+          </SheetSection>
         )}
       </div>
-    </div>
+    </FormSheet>
   )
 }

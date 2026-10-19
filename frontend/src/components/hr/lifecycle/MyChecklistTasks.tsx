@@ -6,6 +6,7 @@ import { hrApi } from '@/lib/api'
 import { HrChecklistTask } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
+import { recordPath } from '@/lib/recordRef'
 
 const TYPE_LABELS: Record<string, string> = { joining: 'Joining', confirmation: 'Confirmation', transfer: 'Transfer', promotion: 'Promotion', exit: 'Exit' }
 const TYPE_HEX: Record<string, string> = { joining: '#16A34A', confirmation: '#0891B2', transfer: '#2563EB', promotion: '#7C3AED', exit: '#DC2626' }
@@ -49,7 +50,7 @@ export default function MyChecklistTasks({ compact = false }: { compact?: boolea
   if (tasks.length === 0 && error.length === 0) return null
 
   return (
-    <div style={sectionStyle}>
+    <div data-tour="hr-appr-checklist-section" style={sectionStyle}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
           Your onboarding / offboarding tasks <span style={{ fontSize: 12, fontWeight: 600, color: TEXT.muted }}>({tasks.length} pending)</span>
@@ -74,13 +75,14 @@ export default function MyChecklistTasks({ compact = false }: { compact?: boolea
             </div>
             <button
               type="button"
-              onClick={() => router.push(`/dashboard/hr/lifecycle/${t.event_id}`)}
+              onClick={() => router.push(recordPath('/dashboard/hr/lifecycle', t, 'event_id'))}
               style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 9999, border: `1px solid ${BORDER.normal}`, background: '#fff', color: '#57534e', cursor: 'pointer' }}
             >
               Open
             </button>
             <button
               type="button"
+              data-tour="hr-lc-my-task-done"
               disabled={busyId === t.id}
               onClick={() => markDone(t)}
               style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 9999, border: '1px solid rgba(22,163,74,0.35)', background: 'rgba(22,163,74,0.08)', color: '#15803d', cursor: busyId === t.id ? 'wait' : 'pointer' }}

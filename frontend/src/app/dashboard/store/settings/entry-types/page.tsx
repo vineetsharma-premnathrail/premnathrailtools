@@ -1,14 +1,8 @@
-'use client'
+import { redirect } from 'next/navigation'
 
-import DocTypeSettings from '@/components/store/DocTypeSettings'
-
-export default function StoreEntryTypesPage() {
-  return (
-    <DocTypeSettings
-      kind="stock_entry"
-      title="Stock Entry Types"
-      noun="entry type"
-      intro="Types offered on Stock → Record Stock Entry. Each one either adds to or removes from on-hand stock — chosen once, when the type is created."
-    />
-  )
+// Stock Entry Types are no longer configurable (2026-10-12): Record Stock
+// Entry was removed, so the list only names old entries. Old links land on
+// Store Settings.
+export default function OldStockEntryTypesLink() {
+  redirect('/dashboard/store/settings')
 }

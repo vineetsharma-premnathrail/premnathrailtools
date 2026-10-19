@@ -9,9 +9,10 @@ import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { recordPath } from '@/lib/recordRef'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
-const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#DC2626' }
+const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
 
 const cardStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -19,9 +20,9 @@ const cardStyle: React.CSSProperties = {
 }
 const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 12px' }
 
-function Kpi({ label, value, sub, hex, onClick }: { label: string; value: string | number; sub?: string; hex?: string; onClick?: () => void }) {
+function Kpi({ label, value, sub, hex, onClick, tour }: { label: string; value: string | number; sub?: string; hex?: string; onClick?: () => void; tour?: string }) {
   return (
-    <div onClick={onClick} style={{ ...cardStyle, cursor: onClick ? 'pointer' : 'default' }}>
+    <div data-tour={tour} onClick={onClick} style={{ ...cardStyle, cursor: onClick ? 'pointer' : 'default' }}>
       <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{label}</p>
       <p style={{ fontSize: 26, fontWeight: 700, margin: 0, color: hex || TEXT.heading }}>{value}</p>
       {sub && <p style={{ fontSize: 12, color: TEXT.muted, margin: '4px 0 0' }}>{sub}</p>}
@@ -29,12 +30,12 @@ function Kpi({ label, value, sub, hex, onClick }: { label: string; value: string
   )
 }
 
-function OrderRows({ rows, empty, onOpen }: { rows: ProductionScheduleEntry[]; empty: string; onOpen: (id: number) => void }) {
+function OrderRows({ rows, empty, onOpen }: { rows: ProductionScheduleEntry[]; empty: string; onOpen: (r: ProductionScheduleEntry) => void }) {
   if (!rows.length) return <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{empty}</p>
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {rows.map((r) => (
-        <div key={r.work_order_id} onClick={() => onOpen(r.work_order_id)} style={{
+        <div key={r.work_order_id} onClick={() => onOpen(r)} style={{
           display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: `1px solid ${BORDER.light}`, cursor: 'pointer', flexWrap: 'wrap',
         }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, minWidth: 110 }}>{r.wo_number}</span>
@@ -66,7 +67,7 @@ export default function ProductionDashboardPage() {
   if (isLoading || !isAuthorized) return null
 
   const k = data?.kpis
-  const open = (id: number) => router.push(`/dashboard/production/work-orders/${id}`)
+  const open = (r: ProductionScheduleEntry) => router.push(recordPath('/dashboard/production/work-orders', r, 'work_order_id'))
 
   return (
     <div>
@@ -80,6 +81,7 @@ export default function ProductionDashboardPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Production Dashboard</h1>
         </div>
         <button
+          data-tour="production-dash-new-wo-btn"
           onClick={() => router.push('/dashboard/production/work-orders/new')}
           style={{
             padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
@@ -100,24 +102,24 @@ export default function ProductionDashboardPage() {
       {k && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 14 }}>
-            <Kpi label="In Progress" value={k.in_progress} sub={`${k.released} released · ${k.draft} draft`} hex="#F59E0B" onClick={() => router.push('/dashboard/production/work-orders')} />
-            <Kpi label="Overdue" value={k.overdue} sub="Past planned end date" hex={k.overdue ? '#DC2626' : undefined} />
-            <Kpi label="Material Shortages" value={k.shortage_items} sub="Items short for released orders" hex={k.shortage_items ? '#DC2626' : undefined} onClick={() => router.push('/dashboard/production/planning')} />
-            <Kpi label="Awaiting Inspection" value={k.pending_inspections} sub="Quality gates pending" hex={k.pending_inspections ? '#2563EB' : undefined} onClick={() => router.push('/dashboard/production/shop-floor')} />
+            <Kpi tour="production-dash-kpi-in-progress" label="In Progress" value={k.in_progress} sub={`${k.released} released · ${k.draft} draft`} hex="#F59E0B" onClick={() => router.push('/dashboard/production/work-orders')} />
+            <Kpi tour="production-dash-kpi-overdue" label="Overdue" value={k.overdue} sub="Past planned end date" hex={k.overdue ? '#DC2626' : undefined} />
+            <Kpi tour="production-dash-kpi-shortages" label="Material Shortages" value={k.shortage_items} sub="Items short for released orders" hex={k.shortage_items ? '#DC2626' : undefined} onClick={() => router.push('/dashboard/production/planning')} />
+            <Kpi tour="production-dash-kpi-inspection" label="Awaiting Inspection" value={k.pending_inspections} sub="Quality gates pending" hex={k.pending_inspections ? '#2563EB' : undefined} onClick={() => router.push('/dashboard/production/shop-floor')} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 }}>
-            <Kpi label="Output (30 days)" value={k.output_30d} sub="Units received into Store" hex="#16A34A" />
-            <Kpi label="Scrap (30 days)" value={k.scrap_30d} sub={k.output_30d + k.scrap_30d > 0 ? `${((k.scrap_30d / (k.output_30d + k.scrap_30d)) * 100).toFixed(1)}% of output` : undefined} />
-            <Kpi label="Hours Booked (30 days)" value={k.hours_30d} />
-            <Kpi label="Masters" value={`${k.active_boms} / ${k.active_workstations}`} sub="Active BOMs / workstations" onClick={() => router.push('/dashboard/production/bom')} />
+            <Kpi tour="production-dash-kpi-output" label="Output (30 days)" value={k.output_30d} sub="Units received into Store" hex="#16A34A" />
+            <Kpi tour="production-dash-kpi-scrap" label="Scrap (30 days)" value={k.scrap_30d} sub={k.output_30d + k.scrap_30d > 0 ? `${((k.scrap_30d / (k.output_30d + k.scrap_30d)) * 100).toFixed(1)}% of output` : undefined} />
+            <Kpi tour="production-dash-kpi-hours" label="Hours Booked (30 days)" value={k.hours_30d} />
+            <Kpi tour="production-dash-kpi-masters" label="Masters" value={`${k.active_boms} / ${k.active_workstations}`} sub="Active BOMs / workstations" onClick={() => router.push('/dashboard/production/bom')} />
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-            <div style={{ ...cardStyle, flex: '1 1 380px' }}>
+            <div data-tour="production-dash-due-soon" style={{ ...cardStyle, flex: '1 1 380px' }}>
               <p style={sectionTitle}>Due in the next 7 days</p>
               <OrderRows rows={data!.due_soon} empty="Nothing due this week." onOpen={open} />
             </div>
-            <div style={{ ...cardStyle, flex: '1 1 380px' }}>
+            <div data-tour="production-dash-recent" style={{ ...cardStyle, flex: '1 1 380px' }}>
               <p style={sectionTitle}>Recent work orders</p>
               <OrderRows rows={data!.recent} empty="No work orders yet — create a BOM, activate it, then raise a work order." onOpen={open} />
             </div>

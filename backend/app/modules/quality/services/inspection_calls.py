@@ -52,6 +52,21 @@ def create(db: Session, data: dict, user: User) -> QualityInspectionCall:
         raise CallError(f"Item #{data['item_id']} isn't in the Item Master.", 404)
     if data["quantity"] <= 0:
         raise CallError("Offered quantity must be greater than zero.", 422)
+    # Order Project (the build) — its Sales Order decides the agency. A lot
+    # already linked to an element carries its link onto the call.
+    from app.modules.quality.services import order_project_inspection as opi
+    lot_link = None
+    if data.get("lot_id") and not data.get("order_project_element_id"):
+        lot_link = db.query(QualityInspectionLot).filter(QualityInspectionLot.id == data["lot_id"]).first()
+        if lot_link is not None and lot_link.order_project_element_id:
+            data["order_project_element_id"] = lot_link.order_project_element_id
+            data["order_project_id"] = data.get("order_project_id") or lot_link.order_project_id
+    try:
+        op_project, op_element = opi.resolve_link(db, data.get("order_project_id"), data.get("order_project_element_id"))
+        if op_project is not None:
+            opi.apply_to_call(db, data, op_project, op_element)
+    except opi.LinkError as e:
+        raise CallError(str(e), e.status)
     project = None
     if data.get("erp_project_id"):
         from app.modules.erp.models.project import Project
@@ -59,7 +74,8 @@ def create(db: Session, data: dict, user: User) -> QualityInspectionCall:
         if not project:
             raise CallError(f"ERP machine / order #{data['erp_project_id']} not found.", 404)
     elif not (data.get("order_reference") or "").strip():
-        raise CallError("Pick the ERP machine / order this inspection is for, or type the customer order reference.", 422)
+        raise CallError("Pick the Order Project (vehicle / lot) or the ERP machine / order this inspection is for, or type the "
+                        "customer order reference.", 422)
     agency = data.get("agency") or (project.inspection_agency if project else None)
     if not agency:
         raise CallError("Pick the inspecting agency (RITES / RDSO / Customer / Other).", 422)
@@ -69,12 +85,30 @@ def create(db: Session, data: dict, user: User) -> QualityInspectionCall:
         lot = db.query(QualityInspectionLot).filter(QualityInspectionLot.id == data["lot_id"]).first()
         if not lot or lot.item_id != item.id:
             raise CallError("The linked final inspection lot must be a lot of the same item.", 422)
+        if op_element is not None and lot.order_project_element_id and lot.order_project_element_id != op_element.id:
+            raise CallError(f"Lot {lot.lot_number} was inspected for another vehicle / lot of the order project — pick the "
+                            "element the lot belongs to, or a lot of this element.", 422)
         if lot.decision not in ("accept", "accept_with_deviation", "partial"):
             raise CallError(f"Lot {lot.lot_number} hasn't been accepted by our own final inspection — offer material to the "
                             "agency only after it passes internally.", 409)
+        # Offer only what passed internally: the lot's accepted quantity less
+        # what is already offered (open calls) or cleared on it. Material an
+        # agency rejected can be re-offered after rework.
+        offered = 0.0
+        for c in db.query(QualityInspectionCall).filter(QualityInspectionCall.lot_id == lot.id).all():
+            if c.status in QUALITY_CALL_OPEN_STATUSES or c.status == "accepted":
+                offered += c.quantity or 0.0
+            elif c.status == "partially_accepted":
+                offered += c.accepted_qty or 0.0
+        left = round((lot.accepted_qty or 0.0) - offered, 6)
+        if data["quantity"] > left + 1e-9:
+            raise CallError(f"Lot {lot.lot_number} passed {lot.accepted_qty or 0:g} {item.uom or ''} internally and {offered:g} of it "
+                            f"is already offered or cleared on other calls — at most {max(left, 0):g} can be offered, "
+                            f"not {data['quantity']:g}.", 422)
     call = QualityInspectionCall(
         call_number=generate_call_number(db), status="scheduled" if data.get("call_date") else "requested",
         erp_project_id=project.id if project else None,
+        order_project_id=op_project.id if op_project else None, order_project_element_id=op_element.id if op_element else None,
         order_reference=(data.get("order_reference") or "").strip() or (project.po_number if project else None),
         customer_name=(data.get("customer_name") or "").strip() or (project.client_company if project else None),
         item_id=item.id, item_code=item.item_code, item_name=item.item_name, uom=item.uom, quantity=data["quantity"],
@@ -143,6 +177,11 @@ def record_result(db: Session, call: QualityInspectionCall, *, result: str, acce
     call.result_recorded_by_id = user.id
     call.result_recorded_at = _now()
     db.flush()
+    if acc > 0:
+        # Sales billing plan: the order's 'inspection' milestone falls due (VF04) —
+        # via the Order Project's Sales Order, or the ERP machine for old calls.
+        from app.modules.quality.services.order_project_inspection import trigger_inspection_milestone
+        trigger_inspection_milestone(db, call)
     if rej > 0:
         block = bool(location_id)
         ncr = ncr_service.create_manual(db, {

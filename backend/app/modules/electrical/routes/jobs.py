@@ -1,10 +1,16 @@
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core import assignee_rules
+from app.core.permission_registry import can_feature
+from app.core.permissions import (
+    ensure_can_delete, ensure_feature_action, require_app_access, require_feature_action, require_tab_access,
+    require_tab_action,
+)
 from app.db.session import get_db
+from app.modules.design.order_project_links import clean_op_link, fill_op_labels
 from app.modules.electrical.models.job import (
     ElectricalJob, ElectricalJobStage, ELECTRICAL_JOB_PRIORITIES, ELECTRICAL_STAGE_KEYS, ELECTRICAL_STAGE_LABELS,
     ELECTRICAL_STAGE_PHASES, ELECTRICAL_DONE_STAGE_STATUSES, ELECTRICAL_WORKING_STATUSES,
@@ -16,10 +22,11 @@ from app.modules.electrical.schemas.job import (
 )
 from app.modules.electrical.service import (
     ELECTRICAL_APP, JOB_STATUS_PHRASE, MANDATORY_STAGES, OPEN_JOB_STATUSES, collect_facts, generate_job_number,
-    get_job_or_404, job_progress, mark_job_started, project_label, require_working, seed_stages,
-    stage_gate_problems, user_names,
+    can_see_costs, get_job_or_404, job_progress, mark_job_started, outside_jobs_tab, project_label, require_working,
+    seed_stages, stage_gate_problems, user_names,
 )
 from app.modules.erp.models.project import Project
+from app.modules.electrical.access import notify_job_event, scope_jobs
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
 from app.modules.quality.models.inspection import QualityInspection
@@ -31,9 +38,33 @@ router = APIRouter(
     dependencies=[Depends(require_app_access(ELECTRICAL_APP))],
 )
 
+# Any Electrical user — record-level access is the job's data scope.
+_VIEWER = require_app_access(ELECTRICAL_APP)
+
 _CAN_CREATE = require_tab_action(ELECTRICAL_APP, "jobs", "create")
 _CAN_EDIT = require_tab_action(ELECTRICAL_APP, "jobs", "edit")
 _CAN_DELETE = require_tab_action(ELECTRICAL_APP, "jobs", "delete")
+# Job features (app/core/features/electrical.py).
+_CAN_STAGES = require_feature_action("electrical", "jobs", "stages", "edit")
+_CAN_HOLD_CLOSE = require_feature_action("electrical", "jobs", "job_status", "edit")
+_CAN_CANCEL = require_feature_action("electrical", "jobs", "job_status", "cancel")
+_CAN_REQUEST_QC = require_feature_action("electrical", "jobs", "handover", "submit")
+# "Assign to" rules (core/features/electrical.py).
+LEAD_RULE = "electrical:jobs.lead_engineer"
+STAGE_RULE = "electrical:jobs.stages"
+
+# Job fields that belong to a feature block of the job page.
+_REQUIREMENT_FIELDS = (
+    "system_voltage", "battery_spec", "alternator_spec", "applicable_standards", "customer_spec_ref", "requirement_notes",
+)
+_HANDOVER_FIELDS = (
+    "commissioning_location", "commissioned_on", "handover_to_name", "handover_to_organization", "handover_date",
+    "handover_remarks",
+)
+
+
+def _can_see_requirement(user: User) -> bool:
+    return can_feature(user, "electrical", "jobs", "requirement", "view") or outside_jobs_tab(user)
 
 
 # ---------------------------------------------------------------------------
@@ -56,12 +87,16 @@ def _to_responses(db: Session, jobs: list[ElectricalJob]) -> list[ElectricalJobR
         for k, v in job_progress(j).items():
             setattr(resp, k, v)
         out.append(resp)
+    fill_op_labels(db, jobs, out)
     return out
 
 
-def _to_detail(db: Session, job: ElectricalJob) -> ElectricalJobDetail:
+def _to_detail(db: Session, job: ElectricalJob, user: User) -> ElectricalJobDetail:
     base = _to_responses(db, [job])[0]
     detail = ElectricalJobDetail(**base.model_dump())
+    if not _can_see_requirement(user):  # Electrical › Jobs › Electrical requirement
+        for f in _REQUIREMENT_FIELDS:
+            setattr(detail, f, None)
     facts = collect_facts(db, job)
     names = user_names(db, {s.assignee_id for s in job.stages} | {s.completed_by_id for s in job.stages})
     today = date.today()
@@ -81,7 +116,7 @@ def _to_detail(db: Session, job: ElectricalJob) -> ElectricalJobDetail:
     detail.summary = ElectricalJobSummary(
         bom_count=facts.bom_count,
         bom_required=len(facts.bom_required),
-        bom_estimated_cost=facts.bom_estimated_cost,
+        bom_estimated_cost=facts.bom_estimated_cost if can_see_costs(user) else None,
         cable_count=facts.cable_count,
         cables_installed=facts.cable_count - len(facts.cables_not_installed),
         panel_count=facts.panel_count,
@@ -109,6 +144,28 @@ def _get_stage(job: ElectricalJob, stage_key: str) -> ElectricalJobStage:
     return stage
 
 
+def _ensure_assignee_rule(db: Session, user: User, key: str, person_id: int | None, current_id: int | None = None) -> None:
+    """The role's "Assign to" rule — only when someone new is named."""
+    if person_id and person_id != current_id:
+        person = db.get(User, person_id)
+        if person:
+            assignee_rules.ensure_allowed(db, user, key, person)
+
+
+def _prefill_from_order_project(db: Session, data: dict) -> None:
+    """Blank customer / RRV model filled from the Order Project (its sales
+    order line)."""
+    from app.modules.sales.models.order import SalesOrderLine
+    from app.modules.sales.models.order_project import OrderProject, OrderProjectElement
+    project = db.get(OrderProject, data["order_project_id"])
+    el = db.get(OrderProjectElement, data["order_project_element_id"]) if data.get("order_project_element_id") else None
+    data["customer_name"] = data.get("customer_name") or project.customer_name
+    if el is not None:
+        line = db.get(SalesOrderLine, el.sales_order_line_id)
+        if line is not None and not data.get("rrv_model"):
+            data["rrv_model"] = (line.rrv_model or " ".join((line.description or "").split()))[:150] or None
+
+
 def _validate(db: Session, data: dict) -> None:
     if data.get("priority") and data["priority"] not in ELECTRICAL_JOB_PRIORITIES:
         raise HTTPException(status_code=400, detail=f"Invalid priority '{data['priority']}'. Use one of: {', '.join(ELECTRICAL_JOB_PRIORITIES)}.")
@@ -133,12 +190,14 @@ async def list_jobs(
     priority: str | None = None,
     phase: str | None = None,
     erp_project_id: int | None = None,
+    order_project_id: int | None = None,
     mine: bool = False,
     search: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_access(ELECTRICAL_APP, "jobs")),
 ):
     query = db.query(ElectricalJob).options(selectinload(ElectricalJob.stages)).filter(ElectricalJob.is_deleted == False)  # noqa: E712
+    query = scope_jobs(query, db, user)
     if status_filter == "open":
         query = query.filter(ElectricalJob.status.in_(OPEN_JOB_STATUSES))
     elif status_filter:
@@ -147,6 +206,8 @@ async def list_jobs(
         query = query.filter(ElectricalJob.priority == priority)
     if erp_project_id:
         query = query.filter(ElectricalJob.erp_project_id == erp_project_id)
+    if order_project_id:
+        query = query.filter(ElectricalJob.order_project_id == order_project_id)
     if mine:
         assigned = db.query(ElectricalJobStage.job_id).filter(ElectricalJobStage.assignee_id == user.id)
         query = query.filter((ElectricalJob.lead_engineer_id == user.id) | (ElectricalJob.id.in_(assigned)))
@@ -165,12 +226,17 @@ async def list_jobs(
 @router.post("", response_model=ElectricalJobDetail)
 async def create_job(
     payload: ElectricalJobCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(_CAN_CREATE),
 ):
     data = payload.model_dump()
     data["title"] = data["title"].strip()
     _validate(db, data)
+    _ensure_assignee_rule(db, user, LEAD_RULE, data.get("lead_engineer_id"))
+    clean_op_link(db, data)
+    if data.get("order_project_id"):
+        _prefill_from_order_project(db, data)
     if data.get("erp_project_id"):
         project = db.query(Project).filter(Project.id == data["erp_project_id"]).first()
         data["customer_name"] = data.get("customer_name") or project.client_company
@@ -186,35 +252,70 @@ async def create_job(
             message=f"You're the lead engineer on {job.job_number} — {job.title}.",
             notification_type="electrical_job_assigned", entity_type="electrical_job", entity_id=job.id,
         )
+    if job.lead_engineer_id:
+        _notify_assigned(db, background_tasks, job, user)
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, user)
 
 
 @router.get("/{job_id}", response_model=ElectricalJobDetail)
-async def get_job(job_id: int, db: Session = Depends(get_db)):
-    return _to_detail(db, get_job_or_404(db, job_id))
+async def get_job(job_id: int, db: Session = Depends(get_db), user: User = Depends(_VIEWER)):
+    return _to_detail(db, get_job_or_404(db, job_id, user=user), user)
+
+
+def _notify_assigned(db: Session, background_tasks, job: ElectricalJob, actor: User) -> None:
+    lead = db.get(User, job.lead_engineer_id)
+    notify_job_event(
+        db, background_tasks, "job_assigned", job, title="Electrical Job Assigned",
+        message=f"{lead.name if lead else 'A lead engineer'} is now the lead engineer on {job.job_number} — {job.title}.",
+        actor=actor, skip={job.lead_engineer_id},
+    )
+
+
+def _guard_feature_fields(user: User, job: ElectricalJob, updates: dict) -> None:
+    """Requirement / handover fields need their job feature's edit. Values a
+    user couldn't see (masked) or didn't change are dropped, so saving other
+    details never wipes or trips over them."""
+    for fields, feature in ((_REQUIREMENT_FIELDS, "requirement"), (_HANDOVER_FIELDS, "handover")):
+        if feature == "requirement" and not _can_see_requirement(user):
+            for f in fields:
+                updates.pop(f, None)
+            continue
+        changed = [f for f in fields if f in updates and updates[f] != getattr(job, f)]
+        for f in fields:
+            if f in updates and f not in changed:
+                updates.pop(f)
+        if changed and feature == "requirement":
+            ensure_feature_action(user, "electrical", "jobs", "requirement", "edit")
+        elif changed:
+            ensure_feature_action(user, "electrical", "jobs", "handover", "edit")
 
 
 @router.patch("/{job_id}", response_model=ElectricalJobDetail)
 async def update_job(
     job_id: int,
     payload: ElectricalJobUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(_CAN_EDIT),
 ):
-    job = get_job_or_404(db, job_id, lock=True)
+    job = get_job_or_404(db, job_id, lock=True, user=user)
     if job.status in ("closed", "cancelled"):
         raise HTTPException(status_code=409, detail=f"Job {job.job_number} is {job.status} — its details can't be changed any more.")
     updates = payload.model_dump(exclude_unset=True)
+    _guard_feature_fields(user, job, updates)
     if "title" in updates and updates["title"]:
         updates["title"] = updates["title"].strip()
     merged = {
         "planned_start_date": job.planned_start_date, "target_handover_date": job.target_handover_date, **updates,
     }
     _validate(db, merged)
+    clean_op_link(db, updates, current_project_id=job.order_project_id, current_element_id=job.order_project_element_id)
     new_lead = updates.get("lead_engineer_id")
     lead_changed = "lead_engineer_id" in updates and new_lead and new_lead != job.lead_engineer_id
+    if lead_changed:
+        _ensure_assignee_rule(db, user, LEAD_RULE, new_lead)
     for field, val in updates.items():
         setattr(job, field, val)
     if lead_changed and new_lead != user.id:
@@ -223,18 +324,21 @@ async def update_job(
             message=f"You're now the lead engineer on {job.job_number} — {job.title}.",
             notification_type="electrical_job_assigned", entity_type="electrical_job", entity_id=job.id,
         )
+    if lead_changed:
+        _notify_assigned(db, background_tasks, job, user)
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, user)
 
 
 @router.delete("/{job_id}")
 async def delete_job(
     job_id: int,
     db: Session = Depends(get_db),
-    _perm: User = Depends(_CAN_DELETE),
+    user: User = Depends(_CAN_DELETE),
 ):
-    job = get_job_or_404(db, job_id, lock=True)
+    job = get_job_or_404(db, job_id, lock=True, user=user)
+    ensure_can_delete(user, job, ELECTRICAL_APP, "jobs", what="electrical job")
     if job.status != "draft":
         raise HTTPException(
             status_code=409,
@@ -249,44 +353,84 @@ async def delete_job(
 
 
 @router.post("/{job_id}/hold", response_model=ElectricalJobDetail)
-async def hold_job(job_id: int, payload: ElectricalJobReasonPayload, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
-    job = get_job_or_404(db, job_id, lock=True)
+async def hold_job(job_id: int, payload: ElectricalJobReasonPayload, background_tasks: BackgroundTasks,
+                   db: Session = Depends(get_db), _perm: User = Depends(_CAN_HOLD_CLOSE)):
+    job = get_job_or_404(db, job_id, lock=True, user=_perm)
     if job.status not in ("draft", "in_progress"):
         raise HTTPException(status_code=409, detail=f"Job {job.job_number} is {JOB_STATUS_PHRASE.get(job.status, job.status)} — only a draft or in-progress job can be put on hold.")
     job.status = "on_hold"
     job.hold_reason = payload.reason.strip()
+    notify_job_event(
+        db, background_tasks, "job_on_hold", job, title="Electrical Job On Hold",
+        message=f"{job.job_number} — {job.title} was put on hold by {_perm.name or _perm.email}: {job.hold_reason}. "
+                "Stage work is frozen until it is resumed.",
+        actor=_perm,
+    )
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, _perm)
 
 
 @router.post("/{job_id}/resume", response_model=ElectricalJobDetail)
-async def resume_job(job_id: int, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
-    job = get_job_or_404(db, job_id, lock=True)
+async def resume_job(job_id: int, db: Session = Depends(get_db), _perm: User = Depends(_CAN_HOLD_CLOSE)):
+    job = get_job_or_404(db, job_id, lock=True, user=_perm)
     if job.status != "on_hold":
         raise HTTPException(status_code=409, detail=f"Job {job.job_number} isn't on hold (it's {JOB_STATUS_PHRASE.get(job.status, job.status)}).")
     job.status = "in_progress" if job.started_at else "draft"
     job.hold_reason = None
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, _perm)
+
+
+def _withdraw_open_approvals(db: Session, job: ElectricalJob, user: User) -> None:
+    """A cancelled job can't have its drawings or component selections
+    approved any more, so their pending approval requests are withdrawn —
+    otherwise they sit in the approvers' inbox and fail when decided."""
+    from app.modules.electrical import access
+    from app.modules.electrical.models.bom import ElectricalBomItem
+    from app.modules.electrical.models.drawing import ElectricalDrawing, ElectricalDrawingRevision
+
+    reason = f"Job {job.job_number} was cancelled: {job.cancel_reason}"
+    revision_ids = [rid for (rid,) in db.query(ElectricalDrawingRevision.id).join(
+        ElectricalDrawing, ElectricalDrawing.id == ElectricalDrawingRevision.drawing_id,
+    ).filter(
+        ElectricalDrawing.job_id == job.id, ElectricalDrawingRevision.status == "submitted",
+        ElectricalDrawingRevision.is_deleted == False,  # noqa: E712
+    ).all()]
+    for rid in revision_ids:
+        access.cancel_live(db, access.REVISION_ENTITY, rid, user, reason)
+    item_ids = [iid for (iid,) in db.query(ElectricalBomItem.id).filter(
+        ElectricalBomItem.job_id == job.id, ElectricalBomItem.is_deleted == False,  # noqa: E712
+    ).all()]
+    for iid in item_ids:
+        access.cancel_live(db, access.BOM_ENTITY, iid, user, reason)
 
 
 @router.post("/{job_id}/cancel", response_model=ElectricalJobDetail)
-async def cancel_job(job_id: int, payload: ElectricalJobReasonPayload, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
-    job = get_job_or_404(db, job_id, lock=True)
+async def cancel_job(job_id: int, payload: ElectricalJobReasonPayload, background_tasks: BackgroundTasks,
+                     db: Session = Depends(get_db), _perm: User = Depends(_CAN_CANCEL)):
+    job = get_job_or_404(db, job_id, lock=True, user=_perm)
     if job.status not in OPEN_JOB_STATUSES:
         raise HTTPException(status_code=409, detail=f"Job {job.job_number} is {JOB_STATUS_PHRASE.get(job.status, job.status)} and can no longer be cancelled.")
     job.status = "cancelled"
     job.cancel_reason = payload.reason.strip()
+    _withdraw_open_approvals(db, job, _perm)
+    notify_job_event(
+        db, background_tasks, "job_cancelled", job, title="Electrical Job Cancelled",
+        message=f"{job.job_number} — {job.title} was cancelled by {_perm.name or _perm.email}: {job.cancel_reason}. "
+                "Its pending drawing / component approvals were withdrawn.",
+        actor=_perm,
+    )
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, _perm)
 
 
 @router.post("/{job_id}/close", response_model=ElectricalJobDetail)
-async def close_job(job_id: int, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
-    job = get_job_or_404(db, job_id, lock=True)
+async def close_job(job_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+                    _perm: User = Depends(_CAN_HOLD_CLOSE)):
+    job = get_job_or_404(db, job_id, lock=True, user=_perm)
     if job.status != "handed_over":
         raise HTTPException(status_code=409, detail=f"Job {job.job_number} is {JOB_STATUS_PHRASE.get(job.status, job.status)}. Complete the 'RRV Electrical Handover' stage before closing the job.")
     pending = [ELECTRICAL_STAGE_LABELS[s.stage_key] for s in job.stages if s.status not in ELECTRICAL_DONE_STAGE_STATUSES]
@@ -294,20 +438,26 @@ async def close_job(job_id: int, db: Session = Depends(get_db), _perm: User = De
         raise HTTPException(status_code=409, detail=f"Complete (or mark N/A) every stage before closing — still open: {', '.join(pending)}.")
     job.status = "closed"
     job.closed_at = datetime.now(timezone.utc)
+    notify_job_event(
+        db, background_tasks, "job_closed", job, title="Electrical Job Closed",
+        message=f"{job.job_number} — {job.title} was closed by {_perm.name or _perm.email}. Its records are now final.",
+        actor=_perm,
+    )
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, _perm)
 
 
 @router.post("/{job_id}/request-inspection", response_model=ElectricalJobDetail)
 async def request_inspection(
     job_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(_CAN_EDIT),
+    user: User = Depends(_CAN_REQUEST_QC),
 ):
     """Raises a final inspection in Quality for the RRV's electrical system —
     the Inspection & QC stage completes once Quality passes it."""
-    job = get_job_or_404(db, job_id, lock=True)
+    job = get_job_or_404(db, job_id, lock=True, user=user)
     require_working(job, "request a QC inspection")
     if job.quality_inspection_id:
         current = db.query(QualityInspection).filter(QualityInspection.id == job.quality_inspection_id).first()
@@ -342,9 +492,15 @@ async def request_inspection(
         notification_type="electrical_inspection_requested", entity_type="quality_inspection", entity_id=inspection.id,
         exclude_user_id=user.id, app_name="quality",
     )
+    notify_job_event(
+        db, background_tasks, "qc_requested", job, title="Electrical QC Inspection Requested",
+        message=f"{job.job_number} ({job.title}) raised final electrical inspection {inspection.inspection_number} in Quality. "
+                "The Inspection & QC stage completes once Quality passes it.",
+        actor=user,
+    )
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, user)
 
 
 # ---------------------------------------------------------------------------
@@ -356,9 +512,9 @@ async def update_stage(
     job_id: int, stage_key: str,
     payload: ElectricalJobStageUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(_CAN_EDIT),
+    user: User = Depends(_CAN_STAGES),
 ):
-    job = get_job_or_404(db, job_id, lock=True)
+    job = get_job_or_404(db, job_id, lock=True, user=user)
     if job.status in ("closed", "cancelled"):
         raise HTTPException(status_code=409, detail=f"Job {job.job_number} is {job.status} — its stages can't be changed any more.")
     stage = _get_stage(job, stage_key)
@@ -371,6 +527,8 @@ async def update_stage(
     if new_assignee and not db.query(User).filter(User.id == new_assignee, User.is_active == True).first():  # noqa: E712
         raise HTTPException(status_code=404, detail=f"User #{new_assignee} not found or inactive. Pick someone else to own this stage.")
     assignee_changed = "assignee_id" in updates and new_assignee and new_assignee != stage.assignee_id
+    if assignee_changed:
+        _ensure_assignee_rule(db, user, STAGE_RULE, new_assignee)
     for field, val in updates.items():
         setattr(stage, field, val)
     if assignee_changed and new_assignee != user.id:
@@ -381,12 +539,12 @@ async def update_stage(
         )
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, user)
 
 
 @router.post("/{job_id}/stages/{stage_key}/start", response_model=ElectricalJobDetail)
-async def start_stage(job_id: int, stage_key: str, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
-    job = get_job_or_404(db, job_id, lock=True)
+async def start_stage(job_id: int, stage_key: str, db: Session = Depends(get_db), _perm: User = Depends(_CAN_STAGES)):
+    job = get_job_or_404(db, job_id, lock=True, user=_perm)
     require_working(job, "start stages")
     stage = _get_stage(job, stage_key)
     if stage.status != "not_started":
@@ -396,17 +554,18 @@ async def start_stage(job_id: int, stage_key: str, db: Session = Depends(get_db)
     mark_job_started(job)
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, _perm)
 
 
 @router.post("/{job_id}/stages/{stage_key}/complete", response_model=ElectricalJobDetail)
 async def complete_stage(
     job_id: int, stage_key: str,
     payload: ElectricalStageActionPayload,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(_CAN_EDIT),
+    user: User = Depends(_CAN_STAGES),
 ):
-    job = get_job_or_404(db, job_id, lock=True)
+    job = get_job_or_404(db, job_id, lock=True, user=user)
     require_working(job, "complete stages")
     stage = _get_stage(job, stage_key)
     label = ELECTRICAL_STAGE_LABELS[stage_key]
@@ -432,9 +591,15 @@ async def complete_stage(
                 message=f"{job.job_number} — {job.title} was handed over to {job.handover_to_name}.",
                 notification_type="electrical_job_handed_over", entity_type="electrical_job", entity_id=job.id,
             )
+        notify_job_event(
+            db, background_tasks, "job_handed_over", job, title="RRV Electrical Handed Over",
+            message=f"{job.job_number} — {job.title} was handed over to {job.handover_to_name or 'the customer'}. "
+                    "Close the job once its records are complete.",
+            actor=user, skip={job.lead_engineer_id},
+        )
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, user)
 
 
 @router.post("/{job_id}/stages/{stage_key}/not-applicable", response_model=ElectricalJobDetail)
@@ -442,9 +607,9 @@ async def mark_stage_not_applicable(
     job_id: int, stage_key: str,
     payload: ElectricalJobReasonPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(_CAN_EDIT),
+    user: User = Depends(_CAN_STAGES),
 ):
-    job = get_job_or_404(db, job_id, lock=True)
+    job = get_job_or_404(db, job_id, lock=True, user=user)
     require_working(job, "change stages")
     stage = _get_stage(job, stage_key)
     label = ELECTRICAL_STAGE_LABELS[stage_key]
@@ -458,12 +623,12 @@ async def mark_stage_not_applicable(
     stage.remarks = f"Not applicable: {payload.reason.strip()}"
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, user)
 
 
 @router.post("/{job_id}/stages/{stage_key}/reopen", response_model=ElectricalJobDetail)
-async def reopen_stage(job_id: int, stage_key: str, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
-    job = get_job_or_404(db, job_id, lock=True)
+async def reopen_stage(job_id: int, stage_key: str, db: Session = Depends(get_db), _perm: User = Depends(_CAN_STAGES)):
+    job = get_job_or_404(db, job_id, lock=True, user=_perm)
     if job.status not in ELECTRICAL_WORKING_STATUSES:
         raise HTTPException(status_code=409, detail=f"Job {job.job_number} is {JOB_STATUS_PHRASE.get(job.status, job.status)} — its stages can't be reopened.")
     stage = _get_stage(job, stage_key)
@@ -480,4 +645,4 @@ async def reopen_stage(job_id: int, stage_key: str, db: Session = Depends(get_db
         job.handed_over_at = None
     db.commit()
     db.refresh(job)
-    return _to_detail(db, job)
+    return _to_detail(db, job, _perm)

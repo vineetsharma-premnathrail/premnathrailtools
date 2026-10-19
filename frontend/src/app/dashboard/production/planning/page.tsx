@@ -8,8 +8,10 @@ import { ProductionMaterialRequirement, ProductionPlanning } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import ProductionNav from '@/components/production/ProductionNav'
+import StockRequirementsDrawer from '@/components/production/StockRequirementsDrawer'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { recordHref, recordPath } from '@/lib/recordRef'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B' }
@@ -33,6 +35,7 @@ export default function ProductionPlanningPage() {
   const [includeDraft, setIncludeDraft] = useState(true)
   const [shortOnly, setShortOnly] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const [md04Item, setMd04Item] = useState<number | null>(null)
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -57,12 +60,17 @@ export default function ProductionPlanningPage() {
   const canRaisePr = !!user?.apps?.includes('p2p')
   const prLink = (r: ProductionMaterialRequirement) => {
     const params = new URLSearchParams({
-      item_name: r.item_name || r.item_code || '',
-      part_code: r.item_code || '',
-      unit: r.uom || '',
+      store_item_id: String(r.item_id),
       quantity: String(Math.ceil(r.shortage_qty)),
       remarks: `Material shortage for Production work order(s) ${r.orders.map((o) => o.wo_number).join(', ')}.`,
     })
+    // Every short order works for the same Order Project vehicle / lot → the PR line is for it too.
+    const elements = new Set(r.orders.map((o) => o.order_project_element_id ?? null))
+    const only = r.orders[0]
+    if (elements.size === 1 && only?.order_project_element_id && only.order_project_id) {
+      params.set('order_project_id', String(only.order_project_id))
+      params.set('order_project_element_id', String(only.order_project_element_id))
+    }
     return `/dashboard/p2p/new?${params.toString()}`
   }
 
@@ -72,12 +80,16 @@ export default function ProductionPlanningPage() {
     <div>
       <ProductionNav />
 
-      <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-          Production Module
-        </p>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Production Planning</h1>
+      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div>
+          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
+            Production Module
+          </p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Production Planning</h1>
+        </div>
+        <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/production/planning/mrp')}>MRP &amp; Planned Orders →</button>
       </div>
+      <StockRequirementsDrawer itemId={md04Item} onClose={() => setMd04Item(null)} />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -87,7 +99,7 @@ export default function ProductionPlanningPage() {
 
       {data && (
         <>
-          <div style={sectionStyle}>
+          <div data-tour="production-plan-requirements" style={sectionStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
               <div>
                 <p style={sectionTitle}>Material Requirements vs Stock</p>
@@ -96,10 +108,10 @@ export default function ProductionPlanningPage() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 14, fontSize: 13, color: TEXT.secondary }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <label data-tour="production-plan-include-draft" style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                   <input type="checkbox" checked={includeDraft} onChange={(e) => setIncludeDraft(e.target.checked)} /> Include draft orders
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <label data-tour="production-plan-short-only" style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                   <input type="checkbox" checked={shortOnly} onChange={(e) => setShortOnly(e.target.checked)} /> Shortages only
                 </label>
               </div>
@@ -112,7 +124,9 @@ export default function ProductionPlanningPage() {
                     <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>{shortOnly ? 'No shortages — Store can cover every open work order.' : 'No outstanding material on open work orders.'}</td></tr>
                   ) : requirements.map((r) => (
                     <tr key={r.item_id}>
-                      <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{r.item_code} — {r.item_name}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>
+                        <span onClick={() => setMd04Item(r.item_id)} style={{ cursor: 'pointer' }} title="Stock / requirements list (MD04)">{r.item_code} — {r.item_name}</span>
+                      </td>
                       <td style={tdStyle}>{fmtQty(r.outstanding_qty)} {r.uom || ''}</td>
                       <td style={tdStyle}>{fmtQty(r.reserved_qty)}</td>
                       <td style={tdStyle}>{fmtQty(r.available_qty)}</td>
@@ -121,7 +135,7 @@ export default function ProductionPlanningPage() {
                       <td style={tdStyle}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {r.orders.map((o) => (
-                            <span key={o.work_order_id} onClick={() => router.push(`/dashboard/production/work-orders/${o.work_order_id}`)}
+                            <span key={o.work_order_id} onClick={() => router.push(recordPath('/dashboard/production/work-orders', o, 'work_order_id'))}
                               style={{ ...pill(STATUS_HEX[o.status] || '#78716c'), cursor: 'pointer' }} title={STATUS_LABELS[o.status]}>
                               {o.wo_number}: {fmtQty(o.outstanding_qty)}
                             </span>
@@ -130,13 +144,13 @@ export default function ProductionPlanningPage() {
                       </td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                         {r.shortage_qty > 0 && r.make_bom_id && (
-                          <button type="button" style={actionBtn} title="This item has its own active BOM — build the shortfall"
-                            onClick={() => router.push(`/dashboard/production/work-orders/new?bom_id=${r.make_bom_id}&quantity=${fmtQty(r.shortage_qty)}`)}>
+                          <button data-tour="production-plan-build-btn" type="button" style={actionBtn} title="This item has its own active BOM — build the shortfall"
+                            onClick={() => router.push(recordHref('/dashboard/production/work-orders/new', r, 'make_bom_id', { quantity: fmtQty(r.shortage_qty) }, 'bom_id'))}>
                             Build
                           </button>
                         )}
                         {r.shortage_qty > 0 && !r.make_bom_id && canRaisePr && (
-                          <button type="button" style={actionBtn} onClick={() => router.push(prLink(r))}>Raise PR</button>
+                          <button data-tour="production-plan-pr-btn" type="button" style={actionBtn} onClick={() => router.push(prLink(r))}>Raise PR</button>
                         )}
                       </td>
                     </tr>
@@ -151,7 +165,7 @@ export default function ProductionPlanningPage() {
             )}
           </div>
 
-          <div style={sectionStyle}>
+          <div data-tour="production-plan-load" style={sectionStyle}>
             <p style={sectionTitle}>Workstation Load</p>
             <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>Remaining planned hours of open operations on released and in-progress orders, in working days at each workstation&apos;s daily capacity.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -175,7 +189,7 @@ export default function ProductionPlanningPage() {
             </div>
           </div>
 
-          <div style={sectionStyle}>
+          <div data-tour="production-plan-schedule" style={sectionStyle}>
             <p style={sectionTitle}>Schedule</p>
             <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>Open work orders on their planned dates. The orange line is today.</p>
             {data.schedule.length === 0 ? (
@@ -198,7 +212,7 @@ export default function ProductionPlanningPage() {
                   const width = timeline && startMs != null ? Math.max(((endMs - startMs) / timeline.span) * 100, 1.5) : 0
                   return (
                     <div key={s.work_order_id} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <span onClick={() => router.push(`/dashboard/production/work-orders/${s.work_order_id}`)}
+                      <span onClick={() => router.push(recordPath('/dashboard/production/work-orders', s, 'work_order_id'))}
                         style={{ flex: '0 0 200px', fontSize: 12.5, cursor: 'pointer', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s.product_name || ''}>
                         <b style={{ color: TEXT.heading }}>{s.wo_number}</b> <span style={{ color: TEXT.muted }}>{s.product_name}</span>
                       </span>

@@ -10,6 +10,8 @@ import { secondaryBtnStyle } from '@/components/crm/ui'
 import { stripHtml } from '@/components/RichTextEditor'
 import { formatDate } from '@/lib/format'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { extractErrorMessages } from '@/lib/validation'
+import { recordHref } from '@/lib/recordRef'
 
 type Bucket = 'open' | 'overdue' | 'today'
 
@@ -49,7 +51,7 @@ export default function FollowUpsPage() {
     const params = bucket === 'overdue' ? { overdue: true } : bucket === 'today' ? { due_today: true } : { status: 'Open' }
     crmApi.listActivities(params)
       .then(setActivities)
-      .catch(() => setError('Failed to load follow-ups.'))
+      .catch((err) => setError(extractErrorMessages(err, 'Could not load follow-ups — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
       .finally(() => setLoading(false))
   }, [isAuthorized, bucket])
 
@@ -59,8 +61,8 @@ export default function FollowUpsPage() {
   )
 
   const openRow = (a: CrmActivity) => {
-    if (a.related_module === 'inquiry' && a.related_id) router.push(`/dashboard/crm/inquiries?id=${a.related_id}&type=inquiry`)
-    else if (a.related_module === 'tender' && a.related_id) router.push(`/dashboard/crm/inquiries?id=${a.related_id}&type=tender`)
+    if (a.related_module === 'inquiry' && a.related_id) router.push(recordHref('/dashboard/crm/inquiries', a, 'related_id', { type: 'inquiry' }))
+    else if (a.related_module === 'tender' && a.related_id) router.push(recordHref('/dashboard/crm/inquiries', a, 'related_id', { type: 'tender' }))
   }
 
   if (isLoading || !isAuthorized) return null
@@ -109,7 +111,7 @@ export default function FollowUpsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
-              {['Type', 'Related', 'Organization', 'Due Date', 'Assigned To', 'Remarks', 'Status'].map((label) => (
+              {['Type', 'Related', 'Customer Organization', 'Due Date', 'Assigned To', 'Remarks', 'Status'].map((label) => (
                 <th key={label} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {label}
                 </th>
@@ -132,7 +134,7 @@ export default function FollowUpsPage() {
                     {a.remarks ? stripHtml(a.remarks) : '—'}
                   </td>
                   <td style={{ padding: '7px 16px', whiteSpace: 'nowrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: a.status === 'Open' ? 'rgba(16,185,129,0.12)' : 'rgba(120,113,108,0.12)', color: a.status === 'Open' ? '#10b981' : '#78716c' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: a.status === 'Open' ? 'rgba(37,99,235,0.1)' : 'rgba(120,113,108,0.12)', color: a.status === 'Open' ? '#1d4ed8' : '#78716c' }}>
                       {a.status}
                     </span>
                   </td>

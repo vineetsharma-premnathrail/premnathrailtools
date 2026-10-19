@@ -5,6 +5,7 @@
 // tables stay visually consistent. Styles are built from theme tokens, same
 // as every other module's local consts.
 import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
+import { FormSheet, SheetIconName } from '@/components/shared/FormSheet'
 
 export const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -54,33 +55,36 @@ export function ActiveBadge({ active }: { active: boolean }) {
   )
 }
 
-export function Modal({ open, title, onClose, children, width = 480, busy }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode; width?: number; busy?: boolean }) {
+/** Master add/edit popup on the app-wide FormSheet (portal to <body>, icon
+ * header, Cancel + primary footer). `bare` skips the padded body wrapper. */
+export function Modal({ open, title, onClose, children, width = 580, busy, icon = 'edit', iconColor, subtitle = '', footer, tour, bare = false }: {
+  open: boolean; title: string; onClose: () => void; children: React.ReactNode; width?: number; busy?: boolean
+  icon?: SheetIconName; iconColor?: string; subtitle?: string; footer?: React.ReactNode; tour?: string; bare?: boolean
+}) {
   if (!open) return null
   return (
-    <div onClick={() => !busy && onClose()} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, maxWidth: width, width: '100%', padding: 24, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto' }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 16px 0', color: TEXT.heading }}>{title}</h2>
-        {children}
-      </div>
-    </div>
+    <FormSheet width={width} icon={icon} iconColor={iconColor} title={title} subtitle={subtitle} onClose={onClose} busy={!!busy} tour={tour} footer={footer}>
+      {bare ? children : <div style={{ padding: '20px 24px' }}>{children}</div>}
+    </FormSheet>
   )
 }
 
 export function MasterToolbar({ search, onSearch, showInactive, onToggleInactive, addLabel, onAdd, placeholder }: {
   search: string; onSearch: (v: string) => void; showInactive: boolean; onToggleInactive: (v: boolean) => void
-  addLabel: string; onAdd: () => void; placeholder: string
+  addLabel: string; onAdd?: () => void; placeholder: string
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-      <input style={searchInputStyle} value={search} onChange={(e) => onSearch(e.target.value)} placeholder={placeholder} />
-      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: TEXT.secondary, cursor: 'pointer' }}>
+      <input data-tour="hr-mst-search" style={searchInputStyle} value={search} onChange={(e) => onSearch(e.target.value)} placeholder={placeholder} />
+      <label data-tour="hr-mst-show-inactive" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: TEXT.secondary, cursor: 'pointer' }}>
         <input type="checkbox" checked={showInactive} onChange={(e) => onToggleInactive(e.target.checked)} />
         Show inactive
       </label>
       <div style={{ flex: 1 }} />
-      <button type="button" onClick={onAdd} style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#FF7A45,#FF6A2A)', color: '#fff', cursor: 'pointer' }}>
+      {/* onAdd omitted = the user lacks Create on HR › Masters: no button. */}
+      {onAdd && <button type="button" data-tour="hr-mst-add-btn" onClick={onAdd} style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#FF7A45,#FF6A2A)', color: '#fff', cursor: 'pointer' }}>
         <span style={{ fontSize: 16, lineHeight: 1, marginRight: 6 }}>+</span>{addLabel}
-      </button>
+      </button>}
     </div>
   )
 }
@@ -119,13 +123,33 @@ export function Avatar({ name, url, size = 32, id }: { name?: string | null; url
 }
 
 export const EMPLOYMENT_STATUS_LABELS: Record<string, string> = {
-  onboarding: 'Onboarding', probation: 'Probation', active: 'Active', notice: 'On Notice', exited: 'Exited',
+  onboarding: 'Onboarding', active: 'Active', notice: 'On Notice', exited: 'Exited',
+}
+export const PROBATION_STATUS_LABELS: Record<string, string> = { not_applicable: 'Not applicable', on_probation: 'On probation', confirmed: 'Confirmed' }
+export const VERIFICATION_HEX: Record<string, string> = { pending: '#CA8A04', verified: '#16A34A', rejected: '#DC2626' }
+export const LOGIN_STATUS_LABELS: Record<string, string> = {
+  linked: 'Linked to portal account', pending_first_sign_in: 'Waiting for first sign-in', not_provisioned: 'Not provisioned', not_required: 'HR record only — no login',
 }
 export const EMPLOYMENT_STATUS_HEX: Record<string, string> = {
-  onboarding: '#2563EB', probation: '#CA8A04', active: '#16A34A', notice: '#EA580C', exited: '#64748B',
+  onboarding: '#2563EB', probation: '#CA8A04', active: '#16A34A', notice: '#DC2626', exited: '#64748B',
 }
+// Workforce type (backend WORKER_TYPES). Not the same as employment type:
+// 'contract' here is a contractor's worker, not our fixed-term employee.
+export const WORKER_TYPE_LABELS: Record<string, string> = {
+  office: 'Office staff', factory: 'Factory / workshop', housekeeping: 'Housekeeping / cleaning', contract: 'Contract labour', other: 'Other',
+}
+export const WORKER_TYPE_HEX: Record<string, string> = {
+  office: '#2563EB', factory: '#EA580C', housekeeping: '#0D9488', contract: '#7C3AED', other: '#64748B',
+}
+// Dynamic workforce form record state (backend workforce_rules.record_status).
+export const RECORD_STATUS_LABELS: Record<string, string> = { draft: 'Draft', incomplete: 'Incomplete', complete: 'Complete' }
+export const RECORD_STATUS_HEX: Record<string, string> = { draft: '#64748B', incomplete: '#CA8A04', complete: '#16A34A' }
+export const ATTENDANCE_POLICY_LABELS: Record<string, string> = {
+  biometric: 'Biometric punch', supervisor: 'Marked by supervisor', self: 'Self-service (portal)', exempt: 'Exempt from attendance',
+}
+
 export const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
-  permanent: 'Permanent', probation: 'Probation', contract: 'Contract', trainee: 'Trainee', intern: 'Intern', consultant: 'Consultant',
+  permanent: 'Permanent', fixed_term: 'Fixed-term', contract: 'Contractual', trainee: 'Trainee / Apprentice', intern: 'Intern', consultant: 'Consultant',
 }
 
 export function StatusPill({ label, hex }: { label: string; hex: string }) {

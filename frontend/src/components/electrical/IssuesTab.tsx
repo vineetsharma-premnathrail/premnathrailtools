@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { electricalApi } from '@/lib/api'
-import { useAuth } from '@/hooks/useAuth'
+import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import {
   ElectricalCable, ElectricalIssue, ElectricalIssueSeverity, ElectricalJobDetail, ElectricalLookupOption,
   ElectricalMeta, ElectricalPanel, ElectricalTest,
@@ -13,10 +13,12 @@ import { formatDate, formatDateTime } from '@/lib/format'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import {
-  inputStyle, labelStyle, sectionStyle, sectionTitle, primaryBtn, smallBtn, smallDangerBtn, mutedText,
-  Pill, ErrorBanner, NoticeBanner, Modal, F, rowStyle,
-  TEST_RESULT_LABELS, SEVERITY_LABELS, SEVERITY_HEX, ISSUE_STATUS_LABELS, ISSUE_STATUS_HEX, toOptions, strOrNull,
+  sectionStyle, sectionTitle, primaryBtn, smallBtn, smallDangerBtn, mutedText,
+  Pill, ErrorBanner, useLookupErrors, NoticeBanner, Modal, ModalFooter, F, rowStyle,
+  TEST_RESULT_LABELS, SEVERITY_LABELS, SEVERITY_HEX, ISSUE_STATUS_LABELS, ISSUE_STATUS_HEX, toOptions, strOrNull, useJobFeatures,
 } from '@/components/electrical/shared'
+import { useCan } from '@/lib/permissions'
+import { SheetColumns, SheetSection, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 
 type Filter = 'open' | 'all'
 
@@ -49,10 +51,21 @@ const detailLabel: React.CSSProperties = { fontSize: 11, fontWeight: 600, letter
 const detailText: React.CSSProperties = { fontSize: 13, color: TEXT.body, whiteSpace: 'pre-wrap', margin: 0 }
 
 export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: ElectricalJobDetail; meta: ElectricalMeta; canEdit: boolean; onChanged: () => void }) {
-  const { user } = useAuth()
+  const { can, canDelete } = useCan()
+  // The job page passes canEdit = job still open; the backend also needs the
+  // job's Troubleshooting feature (default: Jobs › Edit) or the Troubleshooting tab's action.
+  const { jf, sees } = useJobFeatures()
+  // Pickers load only what the role may see (job Panels / Cables features).
+  const seePanels = sees('panels')
+  const seeCables = sees('cables')
+  const seeTests = sees('tests') || can('electrical', 'testing', 'view')
+  const canLog = canEdit && (jf('issues', 'create') || can('electrical', 'troubleshooting', 'create'))
+  const canWork = canEdit && (jf('issues', 'edit') || can('electrical', 'troubleshooting', 'edit'))
+  const canRemove = jf('issues', 'delete') || can('electrical', 'troubleshooting', 'delete')
   const [issues, setIssues] = useState<ElectricalIssue[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
+  const [lookupErrors, addLookupError] = useLookupErrors()
   const [notice, setNotice] = useState('')
   const [filter, setFilter] = useState<Filter>('open')
 
@@ -60,6 +73,8 @@ export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: Elec
   const [panels, setPanels] = useState<ElectricalPanel[]>([])
   const [cables, setCables] = useState<ElectricalCable[]>([])
   const [users, setUsers] = useState<ElectricalLookupOption[]>([])
+  // Role "Assign to" rule (Role & Permissions › Electrical › RRV Electrical Jobs › Troubleshooting).
+  const allowAssignee = useAssigneeFilter('electrical:jobs.issues')
 
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<ElectricalIssue | null>(null)
@@ -83,17 +98,21 @@ export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: Elec
   ), [job.id])
 
   const loadTests = useCallback(() => (
-    electricalApi.listJobTests(job.id).then((d) => setTests(Array.isArray(d) ? d : [])).catch(() => setTests([]))
-  ), [job.id])
+    !seeTests ? Promise.resolve() : electricalApi.listJobTests(job.id).then((d) => setTests(Array.isArray(d) ? d : [])).catch((err) => addLookupError(extractErrorMessages(err,
+      "Couldn't load this job's tests for the 'Raised from test' picker — you can still log issues without linking a test, or refresh to try again.")))
+  ), [job.id, seeTests])
 
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
     loadTests()
-    electricalApi.listPanels(job.id).then((d) => setPanels(Array.isArray(d) ? d : [])).catch(() => setPanels([]))
-    electricalApi.listCables(job.id).then((d) => setCables(Array.isArray(d) ? d : [])).catch(() => setCables([]))
-    electricalApi.lookupUsers().then((d) => setUsers(Array.isArray(d) ? d : [])).catch(() => setUsers([]))
-  }, [job.id, loadTests])
+    if (seePanels) electricalApi.listPanels(job.id).then((d) => setPanels(Array.isArray(d) ? d : [])).catch((err) => addLookupError(extractErrorMessages(err,
+      "Couldn't load this job's panels for the Panel picker — you can still log issues without a panel, or refresh to try again.")))
+    if (seeCables) electricalApi.listCables(job.id).then((d) => setCables(Array.isArray(d) ? d : [])).catch((err) => addLookupError(extractErrorMessages(err,
+      "Couldn't load this job's cable schedule for the Cable picker — you can still log issues without a cable, or refresh to try again.")))
+    electricalApi.lookupUsers().then((d) => setUsers(Array.isArray(d) ? d : [])).catch((err) => addLookupError(extractErrorMessages(err,
+      "Couldn't load users for the 'Assigned to' picker — you can still log issues unassigned, or refresh to try again.")))
+  }, [job.id, loadTests, seePanels, seeCables])
 
   const openCount = useMemo(() => issues.filter((i) => OPEN_STATUSES.includes(i.status)).length, [issues])
   const visible = useMemo(() => (filter === 'open' ? issues.filter((i) => OPEN_STATUSES.includes(i.status)) : issues), [issues, filter])
@@ -107,7 +126,8 @@ export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: Elec
     { value: '', label: '— None —' },
     ...cables.map((c) => ({ value: String(c.id), label: `${c.cable_tag} · ${c.from_point} → ${c.to_point}` })),
   ]
-  const userOptions = toOptions(users, '— Unassigned —')
+  // The issue's current assignee stays listed while editing.
+  const userOptions = toOptions(users.filter((u) => u.id === editing?.assigned_to_id || allowAssignee(u.id)), '— Unassigned —')
 
   const set = <K extends keyof IssueForm>(key: K, value: IssueForm[K]) => setForm((f) => ({ ...f, [key]: value }))
 
@@ -232,21 +252,23 @@ export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: Elec
     }
   }
 
-  const canDelete = (i: ElectricalIssue) => OPEN_STATUSES.includes(i.status) && !!user && (user.role === 'admin' || i.reported_by_id === user.id)
+  // Company delete rule: 'Delete' on Troubleshooting AND the person who logged it (admins always).
+  const mayDelete = (i: ElectricalIssue) => OPEN_STATUSES.includes(i.status) && canRemove && canDelete('electrical', 'troubleshooting', i.reported_by_id ?? null)
 
   return (
     <div>
       <ErrorBanner error={error} />
+      <ErrorBanner error={lookupErrors} />
       <NoticeBanner notice={notice} />
 
       <div style={sectionStyle}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <h3 style={{ ...sectionTitle, margin: '0 8px 0 0' }}>Troubleshooting Log</h3>
-            <button type="button" onClick={() => setFilter('open')} style={filterBtn(filter === 'open')}>Open ({openCount})</button>
-            <button type="button" onClick={() => setFilter('all')} style={filterBtn(filter === 'all')}>All ({issues.length})</button>
+            <button data-tour="elec-issues-filter-open" type="button" onClick={() => setFilter('open')} style={filterBtn(filter === 'open')}>Open ({openCount})</button>
+            <button data-tour="elec-issues-filter-all" type="button" onClick={() => setFilter('all')} style={filterBtn(filter === 'all')}>All ({issues.length})</button>
           </div>
-          {canEdit && <button type="button" onClick={openCreate} style={primaryBtn}>+ Log Issue</button>}
+          {canLog && <button data-tour="elec-issues-add-btn" type="button" onClick={openCreate} style={primaryBtn}>+ Log Issue</button>}
         </div>
         <p style={{ ...smallMuted, margin: '0 0 14px' }}>Troubleshooting stage completes once no issue is open or investigating.</p>
 
@@ -257,7 +279,7 @@ export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: Elec
             {filter === 'open'
               ? (issues.length ? 'No open issues — every logged fault has been resolved.' : 'No issues logged on this job.')
               : 'No issues logged on this job.'}
-            {canEdit && !issues.length ? ' Use "+ Log Issue" when a fault is found.' : ''}
+            {canLog && !issues.length ? ' Use "+ Log Issue" when a fault is found.' : ''}
           </p>
         ) : visible.map((i) => {
           const isOpen = OPEN_STATUSES.includes(i.status)
@@ -268,7 +290,7 @@ export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: Elec
           ].filter(Boolean).join(' · ')
           const busy = busyId === i.id
           return (
-            <div key={i.id} style={{ ...cardStyle, borderLeft: `3px solid ${SEVERITY_HEX[i.severity] || '#78716c'}` }}>
+            <div key={i.id} data-tour="elec-issue-card" style={{ ...cardStyle, borderLeft: `3px solid ${SEVERITY_HEX[i.severity] || '#78716c'}` }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ minWidth: 0, flex: '1 1 320px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -284,14 +306,14 @@ export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: Elec
                     {i.resolved_by_name && <span>Resolved by {i.resolved_by_name}{i.resolved_at ? ` · ${formatDateTime(i.resolved_at)}` : ''}</span>}
                   </div>
                 </div>
-                {canEdit && (
+                {(canWork || (canEdit && mayDelete(i))) && (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    {i.status === 'open' && <button type="button" disabled={busy} onClick={() => runAction(i, 'investigate')} style={smallBtn}>Start investigating</button>}
-                    {isOpen && <button type="button" disabled={busy} onClick={() => openResolve(i)} style={smallBtn}>Resolve</button>}
-                    {isOpen && <button type="button" disabled={busy} onClick={() => openEdit(i)} style={smallBtn}>Edit</button>}
-                    {i.status === 'resolved' && <button type="button" disabled={busy} onClick={() => runAction(i, 'close')} style={smallBtn}>Close</button>}
-                    {!isOpen && <button type="button" disabled={busy} onClick={() => runAction(i, 'reopen')} style={smallBtn}>Reopen</button>}
-                    {canDelete(i) && <button type="button" disabled={busy} onClick={() => setDeleteTarget(i)} style={smallDangerBtn}>Delete</button>}
+                    {canWork && i.status === 'open' && <button data-tour="elec-issue-investigate-btn" type="button" disabled={busy} onClick={() => runAction(i, 'investigate')} style={smallBtn}>Start investigating</button>}
+                    {canWork && isOpen && <button data-tour="elec-issue-resolve-btn" type="button" disabled={busy} onClick={() => openResolve(i)} style={smallBtn}>Resolve</button>}
+                    {canWork && isOpen && <button data-tour="elec-issue-edit-btn" type="button" disabled={busy} onClick={() => openEdit(i)} style={smallBtn}>Edit</button>}
+                    {canWork && i.status === 'resolved' && <button data-tour="elec-issue-close-btn" type="button" disabled={busy} onClick={() => runAction(i, 'close')} style={smallBtn}>Close</button>}
+                    {canWork && !isOpen && <button data-tour="elec-issue-reopen-btn" type="button" disabled={busy} onClick={() => runAction(i, 'reopen')} style={smallBtn}>Reopen</button>}
+                    {mayDelete(i) && <button data-tour="elec-issue-delete-btn" type="button" disabled={busy} onClick={() => setDeleteTarget(i)} style={smallDangerBtn}>Delete</button>}
                   </div>
                 )}
               </div>
@@ -323,69 +345,86 @@ export default function IssuesTab({ job, meta, canEdit, onChanged }: { job: Elec
         })}
       </div>
 
-      <Modal open={formOpen} title={editing ? `Edit Issue ${editing.issue_number}` : 'Log Issue'} onClose={closeForm} width={680}>
-        <ErrorBanner error={formError} />
-        <div style={rowStyle}>
-          <F label="Title *" basis={320} grow>
-            <input style={inputStyle} value={form.title} maxLength={255} placeholder="e.g. Tail lamp flickers under load" onChange={(e) => set('title', e.target.value)} />
-          </F>
-          <F label="Severity" basis={140}>
-            <select style={inputStyle} value={form.severity} onChange={(e) => set('severity', e.target.value as ElectricalIssueSeverity)}>
-              {Object.entries(SEVERITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={labelStyle}>Symptom</label>
-          <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical', fontFamily: 'inherit' }} value={form.symptom} placeholder="What was observed, when, and under what conditions" onChange={(e) => set('symptom', e.target.value)} />
-        </div>
-        <div style={rowStyle}>
-          <F label="Linked Test" basis={260} grow max={360}>
-            <select style={inputStyle} value={form.test_id} onChange={(e) => set('test_id', e.target.value)}>
-              <option value="">— None —</option>
-              {testOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </F>
-          <F label="Panel" basis={200} grow max={300}>
-            <select style={inputStyle} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
-              <option value="">— None —</option>
-              {panels.map((p) => <option key={p.id} value={String(p.id)}>{p.panel_tag} — {p.name}</option>)}
-            </select>
-          </F>
-        </div>
-        <div style={{ ...rowStyle, marginBottom: 16 }}>
-          <F label="Cable" basis={260} grow max={380}>
-            <SearchableSelect value={form.cable_id} onChange={(v) => set('cable_id', v)} options={cableOptions} placeholder={cables.length ? 'Select cable…' : 'No cables in this job'} />
-          </F>
-          <F label="Assigned To" basis={220} grow max={320}>
-            <SearchableSelect value={form.assigned_to_id} onChange={(v) => set('assigned_to_id', v)} options={userOptions} placeholder="— Unassigned —" />
-          </F>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" onClick={closeForm} style={smallBtn} disabled={saving}>Cancel</button>
-          <button type="button" onClick={saveForm} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }} disabled={saving}>
-            {saving ? 'Saving…' : editing ? 'Save Changes' : 'Log Issue'}
-          </button>
-        </div>
+      <Modal
+        open={formOpen} width={960} flush busy={saving} tour="elec-issue-form"
+        icon={editing ? 'edit' : 'alert'} iconColor={editing ? undefined : '#DC2626'}
+        title={editing ? `Edit Issue ${editing.issue_number}` : 'Log Issue'}
+        subtitle={editing ? `${editing.title} — ${job.job_number}` : `A fault found on ${job.job_number} — it stays open until resolved.`}
+        onClose={closeForm}
+        footer={<ModalFooter onCancel={closeForm} onSubmit={saveForm} busy={saving} icon={editing ? 'check' : 'plus'}
+          label={editing ? 'Save Changes' : 'Log Issue'} cancelTour="elec-issue-form-cancel" submitTour="elec-issue-form-save" />}
+      >
+        <SheetColumns
+          left={<>
+            <ErrorBanner error={formError} />
+            <SheetSection icon="alert" title="The Fault">
+              <div style={rowStyle}>
+                <F tour="elec-issue-title" label="Title" req basis={280} grow>
+                  <input style={sheetInput} value={form.title} maxLength={255} placeholder="e.g. Tail lamp flickers under load" onChange={(e) => set('title', e.target.value)} />
+                </F>
+                <F tour="elec-issue-severity" label="Severity" basis={130}>
+                  <select style={sheetInput} value={form.severity} onChange={(e) => set('severity', e.target.value as ElectricalIssueSeverity)}>
+                    {Object.entries(SEVERITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </F>
+              </div>
+              <div data-tour="elec-issue-symptom">
+                <label style={sheetLabel}>Symptom</label>
+                <textarea style={{ ...sheetInput, minHeight: 90, resize: 'vertical' }} value={form.symptom} placeholder="What was observed, when, and under what conditions" onChange={(e) => set('symptom', e.target.value)} />
+              </div>
+            </SheetSection>
+            <SheetSection icon="user" title="Assignment">
+              <div data-tour="elec-issue-assignee">
+                <label style={sheetLabel}>Assigned To</label>
+                <SearchableSelect value={form.assigned_to_id} onChange={(v) => set('assigned_to_id', v)} options={userOptions} placeholder="— Unassigned —" />
+              </div>
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="link" title="Where It Was Found" extra={<Optional />}>
+              <div style={rowStyle}>
+                <F tour="elec-issue-test" label="Linked Test" basis={240} grow>
+                  <select style={sheetInput} value={form.test_id} onChange={(e) => set('test_id', e.target.value)}>
+                    <option value="">— None —</option>
+                    {testOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </F>
+              </div>
+              <div style={rowStyle}>
+                <F tour="elec-issue-panel" label="Panel" basis={240} grow>
+                  <select style={sheetInput} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
+                    <option value="">— None —</option>
+                    {panels.map((p) => <option key={p.id} value={String(p.id)}>{p.panel_tag} — {p.name}</option>)}
+                  </select>
+                </F>
+              </div>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-issue-cable" label="Cable" basis={240} grow>
+                  <SearchableSelect value={form.cable_id} onChange={(v) => set('cable_id', v)} options={cableOptions} placeholder={cables.length ? 'Select cable…' : 'No cables in this job'} />
+                </F>
+              </div>
+            </SheetSection>
+          </>}
+        />
       </Modal>
 
-      <Modal open={!!resolving} title={resolving ? `Resolve Issue ${resolving.issue_number}` : 'Resolve Issue'} onClose={() => setResolving(null)} width={600}>
+      <Modal
+        open={!!resolving} width={580} busy={saving} icon="check" iconColor="#16A34A"
+        title={resolving ? `Resolve Issue ${resolving.issue_number}` : 'Resolve Issue'}
+        subtitle={resolving ? resolving.title : ''}
+        onClose={() => setResolving(null)}
+        footer={<ModalFooter onCancel={() => setResolving(null)} onSubmit={saveResolve} busy={saving} color="#16A34A" label="Resolve Issue" />}
+      >
         <ErrorBanner error={resolveError} />
-        {resolving && <p style={{ ...mutedText, marginBottom: 12 }}>{resolving.title}</p>}
-        <div style={{ marginBottom: 12 }}>
-          <label style={labelStyle}>Root Cause *</label>
-          <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical', fontFamily: 'inherit' }} value={rootCause} placeholder="What actually caused the fault" onChange={(e) => setRootCause(e.target.value)} />
-        </div>
-        <div style={{ marginBottom: 16 }}>
-          <label style={labelStyle}>Corrective Action *</label>
-          <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical', fontFamily: 'inherit' }} value={corrective} placeholder="What was done to fix it (and any retest recorded)" onChange={(e) => setCorrective(e.target.value)} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" onClick={() => setResolving(null)} style={smallBtn} disabled={saving}>Cancel</button>
-          <button type="button" onClick={saveResolve} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }} disabled={saving}>
-            {saving ? 'Saving…' : 'Resolve Issue'}
-          </button>
-        </div>
+        <SheetSection icon="search" title="Root Cause">
+          <label style={sheetLabel}>What actually caused the fault <Req /></label>
+          <textarea style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={rootCause} placeholder="What actually caused the fault" onChange={(e) => setRootCause(e.target.value)} autoFocus />
+        </SheetSection>
+        <SheetSection icon="tool" title="Corrective Action">
+          <label style={sheetLabel}>What was done to fix it <Req /></label>
+          <textarea style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={corrective} placeholder="What was done to fix it (and any retest recorded)" onChange={(e) => setCorrective(e.target.value)} />
+          <p style={sheetHint}>The issue moves to Resolved; close it once the fix is confirmed.</p>
+        </SheetSection>
       </Modal>
 
       <ConfirmDialog

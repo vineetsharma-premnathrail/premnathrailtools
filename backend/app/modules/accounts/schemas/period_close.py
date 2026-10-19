@@ -24,3 +24,7 @@ class PeriodCloseResponse(BaseModel):
     reopened_by_name: str | None = None
     reopened_at: datetime | None = None
     reopen_reason: str | None = None
+    # Central approval engine: latest request of this record (None = never submitted).
+    approval_status: str | None = None
+    approval_stage: str | None = None
+    approval_request_id: int | None = None

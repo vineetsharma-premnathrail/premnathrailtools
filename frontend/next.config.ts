@@ -31,9 +31,11 @@ const nextConfig: NextConfig = {
     // Slow uploads over the proxy were being cut off mid-request (~100 s).
     proxyTimeout: 10 * 60 * 1000,
   },
+  // Dev only: how long `next dev` keeps a compiled page before discarding it.
+  // 25 s / 5 pages made every page recompile (~60 s) after a short pause.
   onDemandEntries: {
-    maxInactiveAge: 25 * 1000,
-    pagesBufferLength: 5,
+    maxInactiveAge: 60 * 60 * 1000,
+    pagesBufferLength: 100,
   },
   // In production both apps run in the same container — the backend binds
   // only to 127.0.0.1:8000 (not exposed externally) and this server-side
@@ -52,6 +54,10 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: [
           { key: "Content-Security-Policy", value: `frame-ancestors ${FRAME_ANCESTORS};` },
+          // Page URLs carry record ids (?id=124): other sites only ever see our origin.
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
         ],
       },
     ];

@@ -34,3 +34,29 @@ class MaintenanceRequest(Base, TimestampMixin):
     # The work order a converted request became is MaintenanceWorkOrder.request_id
     # (one direction only, so the two tables don't FK each other).
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# Data-scope helpers (core/data_scope.py, see maintenance/access.py): the
+# plant and department of the asset this record is about — the record has no
+# plant column of its own. Deferred SQL expressions, not DB columns (no
+# migration); computed only when a scope filter uses them.
+def _scope_columns() -> None:
+    from sqlalchemy import select
+    from sqlalchemy.orm import column_property
+    from app.modules.maintenance.models.asset import MaintenanceAsset
+    from app.modules.organization.models.department import Department
+
+    MaintenanceRequest.scope_branch_id = column_property(
+        select(MaintenanceAsset.branch_id).where(MaintenanceAsset.id == MaintenanceRequest.asset_id)
+        .correlate_except(MaintenanceAsset).scalar_subquery(),
+        deferred=True,
+    )
+    MaintenanceRequest.scope_department = column_property(
+        select(Department.name).join(MaintenanceAsset, MaintenanceAsset.department_id == Department.id)
+        .where(MaintenanceAsset.id == MaintenanceRequest.asset_id)
+        .correlate_except(MaintenanceAsset, Department).scalar_subquery(),
+        deferred=True,
+    )
+
+
+_scope_columns()

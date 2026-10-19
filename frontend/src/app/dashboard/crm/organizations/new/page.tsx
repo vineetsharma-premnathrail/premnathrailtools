@@ -5,6 +5,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
 import CrmNav from '@/components/crm/CrmNav'
 import OrganizationForm from '@/components/crm/OrganizationForm'
+import { recordPath } from '@/lib/recordRef'
 
 export default function NewOrganizationPage() {
   const { isAuthorized, isLoading } = useRequireApp('crm')
@@ -13,17 +14,14 @@ export default function NewOrganizationPage() {
   if (isLoading || !isAuthorized) return null
 
   return (
-    <div>
-      <CrmNav />
-
       <OrganizationForm
-        title="Add Organization"
-        breadcrumb={<><span onClick={() => router.push('/dashboard/crm/organizations')} style={{ cursor: 'pointer' }}>Organizations</span> › New</>}
-        submitLabel="Save Organization"
+        nav={<CrmNav />}
+        title="Add Customer Organization"
+        breadcrumb={<><span onClick={() => router.push('/dashboard/crm/organizations')} style={{ cursor: 'pointer' }}>Customer Organizations</span> › New</>}
+        submitLabel="Save Customer Organization"
         onCancel={() => router.push('/dashboard/crm/organizations')}
         onSubmit={(payload) => crmApi.createOrganization(payload)}
-        onSaved={(org) => router.push(`/dashboard/crm/organizations/${org.id}`)}
+        onSaved={(org) => router.push(recordPath('/dashboard/crm/organizations', org))}
       />
-    </div>
   )
 }

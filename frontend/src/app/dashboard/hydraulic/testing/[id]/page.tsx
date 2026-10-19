@@ -8,25 +8,25 @@ import { HydTest } from '@/types'
 import { TEXT, DANGER, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle, InfoRow } from '@/components/shared/ui'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import TestForm from '@/components/hydraulic/TestForm'
 import HydDocumentsPanel from '@/components/hydraulic/HydDocumentsPanel'
 import { SYSTEM_TYPE_LABELS, TEST_TYPE_LABELS, withUnit } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
+import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 
-const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', completed: 'Completed' }
-const STATUS_HEX: Record<string, string> = { planned: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A' }
+const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', under_review: 'Awaiting Sign-off', completed: 'Completed' }
+const STATUS_HEX: Record<string, string> = { planned: '#2563EB', in_progress: '#F59E0B', under_review: '#9333EA', completed: '#16A34A' }
 const RESULT_LABELS: Record<string, string> = { pending: 'Pending', pass: 'Pass', fail: 'Fail', conditional: 'Conditional' }
 const RESULT_HEX: Record<string, string> = { pending: '#78716c', pass: '#16A34A', fail: '#DC2626', conditional: '#F59E0B' }
 const READING_LABELS: Record<string, string> = { pass: 'Pass', fail: 'Fail', na: 'N/A' }
 const READING_HEX: Record<string, string> = { pass: '#16A34A', fail: '#DC2626', na: '#78716c' }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 const cardStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
@@ -54,9 +54,19 @@ const limitText = (min?: number | null, max?: number | null) => {
 
 export default function HydTestDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('hydraulic')
+  const { can, canDelete, canFeature } = useCan()
+  // Testing › Approve signs a result off directly; Testing › Submit sends it
+  // to a signer through the approval engine (Organization › Approval Workflows).
+  const canSignOff = can('hydraulic', 'testing', 'approve')
+  const canSubmitResult = can('hydraulic', 'testing', 'submit')
+  // Saving / starting needs testing:edit; a re-test is a new test (testing:create).
+  const canEditTest = can('hydraulic', 'testing', 'edit')
+  const canRetest = canFeature('hydraulic', 'testing', 'retest', 'create')  // Raise re-test feature (default: testing:create)
   const router = useRouter()
   const params = useParams()
-  const testId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedId, error: linkError } = useRecordId(ref)
+  const testId = resolvedId ?? 0
 
   const [test, setTest] = useState<HydTest | null>(null)
   const [error, setError] = useState<string | string[]>('')
@@ -69,12 +79,14 @@ export default function HydTestDetailPage() {
   const [completeRemarks, setCompleteRemarks] = useState('')
   const [completeError, setCompleteError] = useState<string | string[]>('')
 
+  // Bumped after a decision in the approval panel to re-read the test.
+  const [reloadKey, setReloadKey] = useState(0)
   useEffect(() => {
     if (!isAuthorized || !testId) return
     hydraulicApi.getTest(testId)
       .then(setTest)
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load test.')))
-  }, [isAuthorized, testId])
+  }, [isAuthorized, testId, reloadKey])
 
   const failedParams = test?.readings.filter((r) => r.result === 'fail').map((r) => r.parameter) || []
 
@@ -106,10 +118,15 @@ export default function HydTestDetailPage() {
     }
     setBusy(true)
     try {
-      const done = await hydraulicApi.completeTest(testId, completeResult, completeRemarks.trim() || undefined)
+      const remarks = completeRemarks.trim() || undefined
+      const done: HydTest = canSignOff
+        ? await hydraulicApi.completeTest(testId, completeResult, remarks)
+        : await hydraulicApi.submitTestResult(testId, completeResult, remarks)
       setTest(done)
       setShowComplete(false)
-      setSaved(`Test completed — ${RESULT_LABELS[done.result] || done.result}.`)
+      setSaved(done.status === 'completed'
+        ? `Test completed — ${RESULT_LABELS[done.result] || done.result}.`
+        : `Result (${RESULT_LABELS[done.result] || done.result}) sent for sign-off — the approvers have been notified.`)
     } catch (err) {
       setCompleteError(extractErrorMessages(err, 'Failed to complete test.'))
     } finally {
@@ -122,7 +139,7 @@ export default function HydTestDetailPage() {
     setBusy(true)
     try {
       const next = await hydraulicApi.retest(testId)
-      router.push(`/dashboard/hydraulic/testing/${next.id}`)
+      router.push(recordPath('/dashboard/hydraulic/testing', next))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to raise a re-test.'))
       setBusy(false)
@@ -140,8 +157,15 @@ export default function HydTestDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/testing" listLabel="Back to tests" /></div>)
+  if (!resolvedId) return <div><HydraulicNav /></div>
 
   const completed = test?.status === 'completed'
+  const underReview = (test?.status as string | undefined) === 'under_review'  // shared HydTestStatus type predates the sign-off step
+  // Pending central sign-off request; the result is locked while it waits.
+  const approvalRequestId = (test as (HydTest & { approval_request_id?: number | null }) | null)?.approval_request_id ?? null
+  const canFinish = underReview ? (canSignOff && !approvalRequestId) : (canSignOff || canSubmitResult)
+  const finishLabel = canSignOff ? 'Complete Test' : 'Submit Result for Sign-off'
   const subject = test ? [
     test.system_number ? `${test.system_number}${test.system_name ? ` — ${test.system_name}` : ''}` : null,
     test.component_code ? `${test.component_code}${test.component_name ? ` — ${test.component_name}` : ''}` : null,
@@ -158,7 +182,7 @@ export default function HydTestDetailPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>{test ? `${test.test_number} — ${test.title}` : 'Test'}</h1>
           {test && (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
+            <div data-tour="hyd-testd-badges" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 20 }}>
               <span style={pill(STATUS_HEX[test.status])}>{STATUS_LABELS[test.status] || test.status}</span>
               <span style={pill(RESULT_HEX[test.result])}>{RESULT_LABELS[test.result] || test.result}</span>
               <span style={{ fontSize: 13, color: TEXT.secondary }}>{TEST_TYPE_LABELS[test.test_type] || test.test_type} · {SYSTEM_TYPE_LABELS[test.system_type] || test.system_type}</span>
@@ -168,20 +192,20 @@ export default function HydTestDetailPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {test && !completed && (
             <>
-              {test.status === 'planned' && (
-                <button type="button" onClick={handleStart} disabled={busy || dirty} title={dirty ? 'Save your changes first' : undefined}
+              {test.status === 'planned' && canEditTest && (
+                <button data-tour="hyd-testd-start-btn" type="button" onClick={handleStart} disabled={busy || dirty} title={dirty ? 'Save your changes first' : undefined}
                   style={{ ...secondaryBtnStyle, ...disabledStyle(busy || dirty) }}>
                   Start Test
                 </button>
               )}
-              <button type="button" onClick={openComplete} disabled={busy} style={{ ...primaryBtn, ...disabledStyle(busy) }}>Complete Test</button>
-              <button type="button" onClick={() => setConfirmDelete(true)} style={{ ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }}>Delete</button>
+              {canFinish && <button data-tour="hyd-testd-complete-btn" type="button" onClick={openComplete} disabled={busy} style={{ ...primaryBtn, ...disabledStyle(busy) }}>{finishLabel}</button>}
+              {canDelete('hydraulic', 'testing', (test as { created_by_id?: number | null } | null)?.created_by_id ?? null) && <button data-tour="hyd-testd-delete-btn" type="button" onClick={() => setConfirmDelete(true)} style={{ ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }}>Delete</button>}
             </>
           )}
-          {test && completed && (
-            <button type="button" onClick={handleRetest} disabled={busy} style={{ ...primaryBtn, ...disabledStyle(busy) }}>Raise Re-test</button>
+          {test && completed && canRetest && (
+            <button data-tour="hyd-testd-retest-btn" type="button" onClick={handleRetest} disabled={busy} style={{ ...primaryBtn, ...disabledStyle(busy) }}>Raise Re-test</button>
           )}
-          <button onClick={() => router.push('/dashboard/hydraulic/testing')} type="button" style={secondaryBtnStyle}>← Back</button>
+          <button data-tour="hyd-testd-back-btn" onClick={() => router.push('/dashboard/hydraulic/testing')} type="button" style={secondaryBtnStyle}>← Back</button>
         </div>
       </div>
 
@@ -192,57 +216,77 @@ export default function HydTestDetailPage() {
         </div>
       )}
 
-      {test && showComplete && !completed && (
-        <div style={{ ...cardStyle, border: '1px solid rgba(255,122,69,0.4)' }}>
-          <p style={sectionTitle}>Complete {test.test_number}</p>
-          {completeError && <div style={errorBanner}>{Array.isArray(completeError) ? completeError.join(' ') : completeError}</div>}
-          {dirty && (
-            <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)', color: '#92400E', fontSize: 13 }}>
-              You have unsaved changes below. Completing uses the saved readings — click &quot;Save Changes&quot; first.
-            </div>
-          )}
-          {test.readings.length === 0 && (
-            <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)', color: '#92400E', fontSize: 13 }}>
-              No readings are saved yet. Record at least one reading (parameter and measured value) and save before completing.
-            </div>
-          )}
-          <label style={labelStyle}>Result *</label>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            {(['pass', 'fail', 'conditional'] as const).map((r) => {
-              const disabled = r === 'pass' && failedParams.length > 0
-              const active = completeResult === r
-              return (
-                <button key={r} type="button" disabled={disabled} onClick={() => setCompleteResult(r)}
-                  style={{
-                    ...secondaryBtnStyle, ...disabledStyle(disabled),
-                    ...(active ? { background: `${RESULT_HEX[r]}1a`, color: RESULT_HEX[r], borderColor: RESULT_HEX[r] } : {}),
-                  }}>
-                  {RESULT_LABELS[r]}
-                </button>
-              )
-            })}
-          </div>
-          {failedParams.length > 0 && (
-            <p style={{ fontSize: 12.5, color: DANGER.primary, margin: '0 0 12px' }}>
-              Pass isn&apos;t available — {failedParams.length} reading(s) are outside their limits: {failedParams.join(', ')}. Mark it Failed, or Conditional with remarks explaining the concession.
-            </p>
-          )}
-          <label style={labelStyle}>Remarks {completeResult === 'conditional' ? '*' : ''}</label>
-          <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={completeRemarks} onChange={(e) => setCompleteRemarks(e.target.value)}
-            placeholder={completeResult === 'conditional' ? 'The condition or concession, and who agreed it…' : 'Optional'} />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-            <button type="button" onClick={() => setShowComplete(false)} style={secondaryBtnStyle}>Cancel</button>
-            <button type="button" onClick={handleComplete} disabled={busy || dirty || test.readings.length === 0}
-              style={{ ...primaryBtn, ...disabledStyle(busy || dirty || test.readings.length === 0) }}>
-              {busy ? 'Completing…' : 'Complete Test'}
-            </button>
-          </div>
-        </div>
+      {test && (
+        <ApprovalPanel
+          key={`${test.id}-${test.status}-${approvalRequestId}`}
+          entityType="hyd_test"
+          entityId={test.id}
+          title="Result sign-off"
+          onChanged={() => setReloadKey((k) => k + 1)}
+        />
       )}
 
-      {test && !completed && (
+      {test && showComplete && !completed && canFinish && (
+        <FormSheet
+          width={580} icon="check" iconColor="#16A34A" tour="hyd-testd-complete-form"
+          title={`${canSignOff ? 'Complete' : 'Submit result of'} ${test.test_number}`}
+          subtitle={canSignOff ? 'Signs the result off — the test is then locked.' : 'Sends the result to a signer — the approvers are notified.'}
+          onClose={() => setShowComplete(false)} busy={busy}
+          footer={<>
+            <button data-tour="hyd-testd-complete-cancel-btn" type="button" onClick={() => setShowComplete(false)} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+            <button data-tour="hyd-testd-complete-submit-btn" type="button" onClick={handleComplete} disabled={busy || dirty || test.readings.length === 0}
+              style={sheetBtn('primary', '#16A34A', busy || dirty || test.readings.length === 0)}>
+              <SheetIcon name="check" size={16} />{busy ? 'Saving…' : finishLabel}
+            </button>
+          </>}
+        >
+          <div style={{ padding: '20px 24px' }}>
+            {completeError && <div style={errorBanner}>{Array.isArray(completeError) ? completeError.join(' ') : completeError}</div>}
+            {dirty && (
+              <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)', color: '#92400E', fontSize: 13 }}>
+                You have unsaved changes on the page. Completing uses the saved readings — close this, click &quot;Save Changes&quot; first.
+              </div>
+            )}
+            {test.readings.length === 0 && (
+              <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)', color: '#92400E', fontSize: 13 }}>
+                No readings are saved yet. Record at least one reading (parameter and measured value) and save before completing.
+              </div>
+            )}
+            <SheetSection icon="flag" title="Result">
+              <div data-tour="hyd-testd-complete-result" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {(['pass', 'fail', 'conditional'] as const).map((r) => {
+                  const disabled = r === 'pass' && failedParams.length > 0
+                  const active = completeResult === r
+                  return (
+                    <button key={r} type="button" disabled={disabled} onClick={() => setCompleteResult(r)}
+                      style={{
+                        ...sheetBtn('secondary', SHEET.INK, disabled),
+                        ...(active ? { background: `${RESULT_HEX[r]}1a`, color: RESULT_HEX[r], borderColor: RESULT_HEX[r] } : {}),
+                      }}>
+                      {RESULT_LABELS[r]}
+                    </button>
+                  )
+                })}
+              </div>
+              {failedParams.length > 0 && (
+                <p style={{ ...sheetHint, color: DANGER.primary }}>
+                  Pass isn&apos;t available — {failedParams.length} reading(s) are outside their limits: {failedParams.join(', ')}. Mark it Failed, or Conditional with remarks explaining the concession.
+                </p>
+              )}
+            </SheetSection>
+            <SheetSection icon="chat" title="Remarks" extra={completeResult === 'conditional' ? <Req /> : <Optional />}>
+              <textarea data-tour="hyd-testd-complete-remarks" style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={completeRemarks} onChange={(e) => setCompleteRemarks(e.target.value)}
+                placeholder={completeResult === 'conditional' ? 'The condition or concession, and who agreed it…' : 'Optional'} aria-label="Remarks" />
+            </SheetSection>
+          </div>
+        </FormSheet>
+      )}
+
+      {test && !completed && !underReview && canEditTest && (
         <TestForm
           key={test.updated_at || test.id}
+          title={`Edit ${test.test_number}`}
+          subtitle="Conditions and readings — save before starting or completing the test."
           initial={test}
           submitLabel="Save Changes"
           onDirtyChange={setDirty}
@@ -255,9 +299,9 @@ export default function HydTestDetailPage() {
         />
       )}
 
-      {test && completed && (
+      {test && (completed || underReview || !canEditTest) && (
         <>
-          <div style={cardStyle}>
+          <div data-tour="hyd-testd-record" style={cardStyle}>
             <p style={sectionTitle}>Test Record</p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px 28px' }}>
               {([
@@ -279,7 +323,7 @@ export default function HydTestDetailPage() {
             </div>
           </div>
 
-          <div style={{ ...cardStyle, padding: 0, overflow: 'auto' }}>
+          <div data-tour="hyd-testd-readings" style={{ ...cardStyle, padding: 0, overflow: 'auto' }}>
             <p style={{ ...sectionTitle, padding: '20px 20px 0' }}>
               Readings ({test.readings.length}){test.failed_readings > 0 && <span style={{ color: DANGER.primary, marginLeft: 8 }}>{test.failed_readings} failed</span>}
             </p>
@@ -325,7 +369,9 @@ export default function HydTestDetailPage() {
       {test && (
         <div style={{ marginTop: completed ? 0 : 20 }}>
           <HydDocumentsPanel entityType="test" entityId={test.id} title="Test Certificates & Reports" defaultDocType="test_certificate"
-            currentUserId={user?.id} isAdmin={user?.role === 'admin'} />
+            currentUserId={user?.id} isAdmin={user?.role === 'admin'}
+            readOnly={completed}
+            readOnlyNote="This test is completed and locked — its certificates can't be added or removed. Raise a re-test to attach a new certificate." />
         </div>
       )}
 

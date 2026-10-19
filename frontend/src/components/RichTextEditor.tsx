@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ListBullets, ListNumbers, WarningCircle } from '@phosphor-icons/react'
 
 const ALLOWED_TAGS = new Set(['B', 'STRONG', 'I', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'UL', 'OL', 'LI', 'BR', 'DIV', 'P', 'SPAN'])
 const SAFE_FONT_SIZE = /^\d{1,2}px$/
@@ -212,10 +213,10 @@ export default function RichTextEditor({
         </select>
         <div style={{ width: 1, alignSelf: 'stretch', margin: '0 4px', background: 'rgba(0,0,0,0.08)' }} />
         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('insertUnorderedList')} title="Bullet list" {...(tourId ? { 'data-tour': `${tourId}-bullet` } : {})} style={{ ...TOOLBAR_BTN_STYLE, ...activeBtnStyle(activeStates.ul) }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="9" y1="6" x2="20" y2="6" /><line x1="9" y1="12" x2="20" y2="12" /><line x1="9" y1="18" x2="20" y2="18" /><circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" /><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" /><circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" /></svg>
+          <ListBullets size={15} />
         </button>
         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('insertOrderedList')} title="Numbered list" {...(tourId ? { 'data-tour': `${tourId}-numbered` } : {})} style={{ ...TOOLBAR_BTN_STYLE, ...activeBtnStyle(activeStates.ol) }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="10" y1="6" x2="21" y2="6" /><line x1="10" y1="12" x2="21" y2="12" /><line x1="10" y1="18" x2="21" y2="18" /><text x="1" y="8.5" fontSize="7" fill="currentColor" stroke="none">1</text><text x="1" y="14.5" fontSize="7" fill="currentColor" stroke="none">2</text><text x="1" y="20.5" fontSize="7" fill="currentColor" stroke="none">3</text></svg>
+          <ListNumbers size={15} />
         </button>
         <div style={{ width: 1, alignSelf: 'stretch', margin: '0 4px', background: 'rgba(0,0,0,0.08)' }} />
         <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec('bold')} title="Bold" {...(tourId ? { 'data-tour': `${tourId}-bold` } : {})} style={{ ...TOOLBAR_BTN_STYLE, fontStyle: 'normal', ...activeBtnStyle(activeStates.bold) }}>B</button>
@@ -247,7 +248,7 @@ export default function RichTextEditor({
           borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(245,158,11,0.08)',
           fontSize: 11.5, color: '#92400e',
         }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+          <WarningCircle size={13} style={{ flex: 'none' }} />
           {notice}
         </div>
       )}

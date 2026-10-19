@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.permissions import require_app_access, require_tab_access
@@ -13,6 +13,7 @@ from app.modules.electrical.models.job import ElectricalJob, ELECTRICAL_PHASES
 from app.modules.electrical.routes.jobs import _to_responses
 from app.modules.electrical.schemas.insights import ElectricalDashboardResponse
 from app.modules.electrical.service import ELECTRICAL_APP, OPEN_JOB_STATUSES, open_failure_ids
+from app.modules.electrical.access import job_scope_expr
 from app.modules.main.models.user import User
 from app.modules.quality.models.inspection import QualityInspection
 
@@ -29,6 +30,9 @@ async def get_dashboard(
 ):
     today = date.today()
     live = ElectricalJob.is_deleted == False  # noqa: E712
+    scope = job_scope_expr(db, _tab)
+    if scope is not None:  # every count below hangs off the jobs in the user's data scope
+        live = and_(live, scope)
     counts = dict(db.query(ElectricalJob.status, func.count(ElectricalJob.id)).filter(live).group_by(ElectricalJob.status).all())
 
     open_jobs = db.query(ElectricalJob).options(selectinload(ElectricalJob.stages)).filter(

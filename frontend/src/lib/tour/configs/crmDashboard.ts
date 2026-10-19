@@ -11,9 +11,9 @@ const config: TourConfig = {
     },
     {
       target: 'crm-nav-building',
-      title: 'Organizations',
+      title: 'Customer Organizations',
       purpose: 'The list of every company, railway zone, or government body you deal with, and where you create new ones.',
-      after: 'Click to see the full Organizations list — search, filter, add new, or open an existing one to edit its details/contacts.',
+      after: 'Click to see the full Customer Organizations list — search, filter, add new, or open an existing one to edit its details/contacts.',
     },
     {
       target: 'crm-nav-file',
@@ -22,15 +22,21 @@ const config: TourConfig = {
       after: 'Click to see both lists — this is also where you create a new Inquiry or Tender.',
     },
     {
+      target: 'crm-nav-settings',
+      title: 'Settings',
+      purpose: 'The lists quotations and inquiries pick from (Products, Product Categories, Payment Terms) and the notification rules — who is told when an customer organization, inquiry or tender is created or a Discussion message is posted.',
+      after: 'Click to open CRM Settings.',
+    },
+    {
       target: 'crm-nav-bell',
       title: 'Notifications',
       purpose: 'Alerts you when something needs your attention — a follow-up is due, a quotation status changed, a task was assigned to you.',
     },
     {
       target: 'dash-stat-organizations',
-      title: 'Organizations (count)',
-      purpose: 'Total organizations on record.',
-      after: 'Click the card to jump straight to the Organizations list.',
+      title: 'Customer Organizations (count)',
+      purpose: 'Total customer organizations on record.',
+      after: 'Click the card to jump straight to the Customer Organizations list.',
     },
     {
       target: 'dash-stat-inquiries',
@@ -67,20 +73,20 @@ const config: TourConfig = {
     },
     {
       target: 'dash-recent-organizations',
-      title: 'Recent Organizations',
-      purpose: 'The most recently added/updated organizations, for quick access without a full search.',
-      after: 'Click a row to open that organization\'s detail page; "View all" opens the full list. Shows "No records yet" until at least one organization exists.',
+      title: 'Recently Viewed Customer Organizations',
+      purpose: 'The last 5 customer organizations you opened, newest first, for quick access without a full search. Until you open one, the newest customer organizations are shown.',
+      after: 'Click a row to open that customer organization\'s detail page; "View all" opens the full list. Shows "No records yet" until at least one customer organization exists.',
     },
     {
       target: 'dash-recent-inquiries',
-      title: 'Recent Inquiries',
-      purpose: 'The most recently active inquiries, with their current status badge (e.g. Requirement Received, Quotation Sent, Negotiation).',
+      title: 'Recently Viewed Inquiries',
+      purpose: 'The last 5 inquiries you opened, newest first. Until you open one, the newest inquiries are shown.',
       after: 'Click a row to open that inquiry — quotations, documents, and follow-ups are managed from tabs there. Shows "No records yet" until at least one inquiry exists.',
     },
     {
       target: 'dash-recent-tenders',
-      title: 'Recent Tenders',
-      purpose: 'The most recently active tenders and their status.',
+      title: 'Recently Viewed Tenders',
+      purpose: 'The last 5 tenders you opened, newest first. Until you open one, the newest tenders are shown.',
       after: 'Click a row to open that tender\'s detail page. Shows "No records yet" until at least one tender exists.',
     },
     {

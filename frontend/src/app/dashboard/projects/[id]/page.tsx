@@ -9,12 +9,14 @@ import { TEXT } from '@/lib/theme'
 import ProjectsNav from '@/components/projects/ProjectsNav'
 import ProjectWorkspace from './ProjectWorkspace'
 import { extractErrorMessages } from '@/lib/validation'
+import { useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 export default function ProjectDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('projects')
   const params = useParams()
   const router = useRouter()
-  const projectId = Number(params.id)
+  const { id: projectId, error: linkError } = useRecordId(params.id as string)
 
   const [project, setProject] = useState<PmProject | null>(null)
   const [loading, setLoading] = useState(true)
@@ -36,12 +38,15 @@ export default function ProjectDetailPage() {
   }, [isAuthorized, load])
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><ProjectsNav /><InvalidRecordLink message={linkError} listHref="/dashboard/projects/all" listLabel="Back to projects" /></div>)
 
   return (
     <div>
       <ProjectsNav />
 
-      {loading ? (
+      {/* Only the first load replaces the workspace: a refresh after an edit or
+          delete keeps it mounted, so the open tab (WBS, Documents…) stays put. */}
+      {loading && !project ? (
         <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>
       ) : error && !project ? (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

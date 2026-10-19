@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     # own machine.
     TRUSTED_LOCAL_DEV: bool = False
 
+    # Data access for a module when a user's roles set none for it
+    # (core/data_scope.py). "assigned" = own + assigned + anything they approve,
+    # so changing a record id in the URL never opens a colleague's record unless
+    # an admin widened the role (Organization › Role & Permissions).
+    DEFAULT_DATA_SCOPE: str = "assigned"
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",") if o.strip()]

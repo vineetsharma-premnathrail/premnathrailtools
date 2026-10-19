@@ -13,14 +13,13 @@ from datetime import date, datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.modules.main.models.user import User
-from app.modules.quality.models.capa import QualityCapa
 from app.modules.quality.models.inspection_lot import QualityInspectionLot
 from app.modules.quality.models.masters import QualityDispositionCode, QualityDefectCode, QUALITY_DISPOSITION_TYPE_LABELS
 from app.modules.quality.models.ncr import (
     QualityNcr, QualityNcrApproval, QUALITY_NCR_SEVERITIES, QUALITY_NCR_APPROVAL_ROLE_LABELS,
 )
-from app.modules.quality.services import access
-from app.modules.quality.services.settings import get_setting, active_master_values
+from app.modules.quality.services import access, role_events
+from app.modules.quality.services.settings import active_master_values
 from app.modules.quality.service import generate_ncr_number
 from app.modules.store.models.item import StoreItem
 from app.modules.store.services.stock_ledger import post_stock_transaction
@@ -82,6 +81,8 @@ def _alert_new(db: Session, ncr: QualityNcr, actor_id: int | None) -> None:
             notify_user(db, user_id=uid, title="Critical NCR — Action Needed" if teams else "NCR Raised", message=msg,
                         notification_type="quality_ncr_critical" if teams else "quality_ncr_raised",
                         entity_type="quality_ncr", entity_id=ncr.id, teams=teams)
+    role_events.fire(db, "ncr_raised", record=ncr, entity_type="quality_ncr", skip={actor_id, *recipients},
+                     title=f"NCR raised: {ncr.ncr_number}", message=msg)
 
 
 def raise_from_lot(db: Session, lot: QualityInspectionLot, *, quantity: float, user: User, deviation: bool) -> QualityNcr:
@@ -130,7 +131,14 @@ def raise_from_lot(db: Session, lot: QualityInspectionLot, *, quantity: float, u
         ncr.status = "action_done"
     db.flush()
     _alert_new(db, ncr, user.id)
+    _capa_triggers(db, ncr, user.id)
     return ncr
+
+
+def _capa_triggers(db: Session, ncr: QualityNcr, user_id: int | None) -> None:
+    """Phase 3: Major / Critical NCR and repeat-defect CAPA triggers."""
+    from app.modules.quality.services.capa import on_ncr_raised
+    on_ncr_raised(db, ncr, user_id)
 
 
 def create_manual(db: Session, data: dict, user: User) -> QualityNcr:
@@ -175,6 +183,8 @@ def create_manual(db: Session, data: dict, user: User) -> QualityNcr:
         # Material found non-conforming in FREE stock is moved to BLOCKED.
         _stock(db, ncr, "free_block", user.id, f"{ncr.ncr_number} raised — moved from Free to Blocked stock")
     _alert_new(db, ncr, user.id)
+    if not data.get("skip_capa_triggers"):
+        _capa_triggers(db, ncr, user.id)
     return ncr
 
 
@@ -183,6 +193,10 @@ def create_manual(db: Session, data: dict, user: User) -> QualityNcr:
 # ---------------------------------------------------------------------------
 
 def required_roles(db: Session, ncr: QualityNcr) -> list[str]:
+    """Pre-engine role table — only for dispositions proposed before Quality
+    moved to the central approval engine (no engine request). New proposals
+    are routed by the 'quality.ncr_disposition' workflow (services/authz.py)."""
+    from app.modules.quality.services.authz import scrap_partner_limit
     t = ncr.disposition_type
     roles = {
         "use_as_is": ["quality_head", "design"],
@@ -192,8 +206,8 @@ def required_roles(db: Session, ncr: QualityNcr) -> list[str]:
         "scrap": ["quality_head"],
     }.get(t, [])
     if t == "scrap":
-        limit = float(get_setting(db, "scrap_value_limit"))
-        if (ncr.estimated_value or 0) > limit:
+        limit = scrap_partner_limit(db)
+        if limit is not None and (ncr.estimated_value or 0) > limit:
             roles = roles + ["partner"]
     return list(roles)
 
@@ -235,31 +249,16 @@ def _require(ncr: QualityNcr, statuses: tuple[str, ...], action: str) -> None:
                        + (" Closed NCRs are never edited." if ncr.status == "closed" else ""))
 
 
-def _notify_approvers(db: Session, ncr: QualityNcr, actor: User) -> None:
-    from app.modules.main.models.user import User as U
-    pending = pending_roles(db, ncr)
-    if not pending:
-        return
-    label = QUALITY_DISPOSITION_TYPE_LABELS.get(ncr.disposition_type, ncr.disposition_type)
-    users: dict[int, str] = {}
-    for role in pending:
-        if role == "quality_head":
-            cands = access.quality_heads(db)
-        elif role == "quality_engineer":
-            cands = access.quality_engineers(db)
-        elif role == "partner":
-            cands = access.partners(db)
-        else:
-            cands = [u for u in db.query(U).filter(U.is_active.is_(True)).all() if _role_holder(u, role) and u.role != "admin"]
-        for u in cands:
-            users.setdefault(u.id, QUALITY_NCR_APPROVAL_ROLE_LABELS[role])
-    for uid, role_label in users.items():
-        if uid == actor.id:
-            continue
-        notify_user(db, user_id=uid, title="NCR Disposition Approval Needed",
-                    message=f"{ncr.ncr_number} ({ncr.severity}): '{label}' proposed by {_name(actor)} for "
-                            f"{ncr.quantity or 0:g} {ncr.uom or ''} {ncr.item_name} — your approval as {role_label} is needed.",
-                    notification_type="quality_ncr_approval_needed", entity_type="quality_ncr", entity_id=ncr.id, teams=True)
+def engine_request(db: Session, ncr: QualityNcr):
+    """The NCR's latest central approval request (None for dispositions
+    proposed before the engine — those finish on the legacy path)."""
+    from app.modules.organization.services.approval_engine import latest_request
+    from app.modules.quality.services.authz import NCR_ENTITY
+    return latest_request(db, NCR_ENTITY, ncr.id)
+
+
+def uses_legacy_approval(db: Session, ncr: QualityNcr) -> bool:
+    return ncr.disposition_status == "pending_approval" and engine_request(db, ncr) is None
 
 
 def propose_disposition(db: Session, ncr: QualityNcr, *, disposition_code_id: int, remarks: str | None,
@@ -274,6 +273,10 @@ def propose_disposition(db: Session, ncr: QualityNcr, *, disposition_code_id: in
         raise NcrError(f"Enter the NCR quantity before proposing '{code.name}'.", 422)
     if code.disposition_type == "return_to_vendor" and not ncr.vendor_name:
         raise NcrError("Return to vendor needs the vendor on the NCR — this NCR has no vendor.", 422)
+    if (customer_approval_required and code.disposition_type in ("use_as_is", "repair")
+            and not (customer_approval_reference or "").strip()):
+        raise NcrError("The contract needs customer approval for this disposition — enter the customer's approval "
+                       "reference before proposing it (the approvers sign against it).", 422)
     for a in active_approvals(ncr):
         a.superseded = True
     ncr.disposition_code_id = code.id
@@ -286,7 +289,17 @@ def propose_disposition(db: Session, ncr: QualityNcr, *, disposition_code_id: in
     ncr.disposition_status = "pending_approval"
     ncr.estimated_value = _estimated_value(db, ncr.item_id, ncr.quantity) or ncr.estimated_value
     db.flush()
-    _notify_approvers(db, ncr, user)
+    # Routed by Organization › Approval Workflows ('NCR disposition'); the
+    # engine notifies the approvers and calls authz._ncr_decided at the end.
+    from app.modules.quality.services.authz import submit_ncr_disposition
+    req = submit_ncr_disposition(db, ncr, user)
+    if getattr(req, "status", None) == "pending":
+        label = code.name or ncr.disposition_type
+        role_events.fire(db, "ncr_disposition_waiting", record=ncr, entity_type="quality_ncr", actor=user,
+                         skip=role_events.pending_approver_ids(req),
+                         title=f"NCR disposition waiting: {ncr.ncr_number}",
+                         message=f"{user.name or user.email} proposed '{label}' for {ncr.ncr_number} ({ncr.quantity or 0:g} {ncr.uom or ''} "
+                                 f"of {ncr.item_name}). Approvers sign it in the Disposition approval panel.")
     return ncr
 
 
@@ -294,6 +307,10 @@ def approve_disposition(db: Session, ncr: QualityNcr, *, role: str, approve: boo
     _require(ncr, ("open",), "approve its disposition")
     if ncr.disposition_status != "pending_approval":
         raise NcrError(f"{ncr.ncr_number} has no disposition waiting for approval.")
+    req = engine_request(db, ncr)
+    if req is not None:
+        return _approve_via_engine(db, ncr, req, role=role, approve=approve, remarks=remarks, user=user)
+    # Legacy path: a disposition proposed before the central approval engine.
     needed = pending_roles(db, ncr)
     if role not in needed:
         raise NcrError(f"'{QUALITY_NCR_APPROVAL_ROLE_LABELS.get(role, role)}' approval isn't pending on {ncr.ncr_number} "
@@ -338,10 +355,51 @@ def approve_disposition(db: Session, ncr: QualityNcr, *, role: str, approve: boo
     return ncr
 
 
-def on_return_to_vendor(db: Session, ncr: QualityNcr, user: User) -> None:
-    """Hook: create the P2P vendor return / debit note here once P2P has one.
-    Today the RTV / debit note number typed on the NCR is the record."""
-    return None
+def _approve_via_engine(db: Session, ncr: QualityNcr, req, *, role: str | None, approve: bool, remarks: str | None,
+                        user: User) -> QualityNcr:
+    """Compatibility for the old 'approve as <role>' endpoint: checks the
+    role the caller picked, then decides the engine step (the NCR page uses
+    the central Approval panel)."""
+    from app.modules.organization.services import approval_engine as engine
+    from app.modules.quality.services.authz import NCR_STAGE_ROLE, ncr_engine_roles
+
+    if req.status != "pending":
+        raise NcrError(f"{ncr.ncr_number}'s disposition approval is already {req.status} — reload the page.")
+    _required, needed = ncr_engine_roles(req)
+    current = [NCR_STAGE_ROLE.get(s.stage_name, s.stage_name) for s in req.steps
+               if s.sequence == req.current_sequence and s.status == "pending"]
+    role = role or (current[0] if current else None)
+    label = QUALITY_NCR_APPROVAL_ROLE_LABELS.get(role, role)
+    if role not in needed:
+        raise NcrError(f"'{label}' approval isn't pending on {ncr.ncr_number} "
+                       f"(pending: {', '.join(QUALITY_NCR_APPROVAL_ROLE_LABELS.get(r, r) for r in needed) or 'none'}).", 422)
+    if role in QUALITY_NCR_APPROVAL_ROLE_LABELS and not _role_holder(user, role) and user.role != "admin":
+        raise NcrError(f"You can't approve as {label} — "
+                       + ("Partner approval is limited to Partners (Company Info → Partners)." if role == "partner"
+                          else "ask an admin for that authority."), 403)
+    _check_segregation(db, ncr, role, user)
+    if role not in current:
+        waiting = QUALITY_NCR_APPROVAL_ROLE_LABELS.get(current[0], current[0]) if current else "the previous stage"
+        raise NcrError(f"{ncr.ncr_number} is waiting for {waiting} approval first — the stages are signed in order "
+                       f"(Organization › Approval Workflows › NCR disposition).")
+    engine.decide(db, req.id, user, "approve" if approve else "reject", remarks)
+    return ncr
+
+
+def _check_segregation(db: Session, ncr: QualityNcr, role: str, user: User) -> None:
+    if role in ("quality_engineer", "quality_head") and ncr.severity in ("major", "critical") and user.id in _lot_recorders(db, ncr):
+        raise NcrError(f"You recorded the inspection results behind this {ncr.severity} NCR, so you can't approve its "
+                       "disposition — another Quality engineer/head must (segregation of duties).", 403)
+
+
+def on_return_to_vendor(db: Session, ncr: QualityNcr, user: User) -> str | None:
+    """Hook: records the P2P Return to Vendor (RTV) document against the GRN
+    line the rejected lot came from (the NCR already moved the Blocked stock
+    out). NCRs not raised from a GRN lot have no RTV — the reference typed on
+    the NCR stays the record."""
+    from app.modules.p2p.routes.vendor_returns import record_ncr_return
+    rtv = record_ncr_return(db, ncr, user)
+    return rtv.rtv_number if rtv is not None else None
 
 
 def execute_action(db: Session, ncr: QualityNcr, *, action_reference: str, remarks: str | None, user: User) -> QualityNcr:
@@ -377,11 +435,10 @@ def execute_action(db: Session, ncr: QualityNcr, *, action_reference: str, remar
     elif t in ("return_to_vendor", "scrap") and has_stock:
         _stock(db, ncr, "quarantine_out", user.id,
                f"{ncr.ncr_number} {'returned to vendor' if t == 'return_to_vendor' else 'scrapped'} ({ref})")
-    if t == "return_to_vendor":
-        on_return_to_vendor(db, ncr, user)
+    rtv_number = on_return_to_vendor(db, ncr, user) if t == "return_to_vendor" else None
     ncr.stock_blocked = False if has_stock else ncr.stock_blocked
     ncr.action_reference = ref
-    ncr.action_remarks = (remarks or "").strip() or None
+    ncr.action_remarks = " ".join(x for x in ((remarks or "").strip(), f"Return to Vendor {rtv_number}." if rtv_number else "") if x) or None
     ncr.action_done_by_id = user.id
     ncr.action_done_at = _now()
     ncr.status = "action_done"
@@ -419,11 +476,10 @@ def close(db: Session, ncr: QualityNcr, *, material_cost: float | None, rework_c
     for label, v in (("Material cost", material_cost), ("Rework cost", rework_cost), ("Other cost", other_cost)):
         if v is not None and v < 0:
             raise NcrError(f"{label} can't be negative.", 422)
-    if ncr.severity in ("major", "critical"):
-        capa = db.query(QualityCapa).filter(QualityCapa.ncr_id == ncr.id, QualityCapa.is_deleted == False).first()  # noqa: E712
-        if not capa:
-            raise NcrError(f"{ncr.ncr_number} is {ncr.severity}: rule 6 needs a CAPA raised against it before closure. "
-                           "Raise one in Quality → CAPA and link this NCR.")
+    from app.modules.quality.services.capa import ncr_closure_problem
+    problem = ncr_closure_problem(db, ncr)
+    if problem:
+        raise NcrError(problem)
     if root_cause is not None and root_cause.strip():
         ncr.root_cause = root_cause.strip()
     ncr.material_cost = material_cost
@@ -432,6 +488,10 @@ def close(db: Session, ncr: QualityNcr, *, material_cost: float | None, rework_c
     ncr.status = "closed"
     ncr.closed_by_id = user.id
     ncr.closed_at = _now()
+    role_events.fire(db, "ncr_closed", record=ncr, entity_type="quality_ncr", actor=user,
+                     title=f"NCR closed: {ncr.ncr_number}",
+                     message=f"{user.name or user.email} closed {ncr.ncr_number} ({ncr.item_name})"
+                             + (f" — root cause: {ncr.root_cause[:160]}" if ncr.root_cause else "") + ".")
     return ncr
 
 
@@ -439,6 +499,9 @@ def cancel(db: Session, ncr: QualityNcr, *, reason: str, user: User) -> QualityN
     _require(ncr, ("open",), "cancel it")
     if not access.is_quality_head(user):
         raise NcrError("Only a Quality head can cancel an NCR.", 403)
+    if ncr.disposition_status == "pending_approval":
+        raise NcrError(f"{ncr.ncr_number} has a disposition waiting for approval — the proposer withdraws it (Approval "
+                       "panel → Withdraw approval request) or an approver rejects it before the NCR can be cancelled.")
     if ncr.stock_blocked:
         raise NcrError(f"{ncr.ncr_number} holds {ncr.quantity:g} in Blocked stock — it needs a disposition (e.g. use as is) "
                        "instead of a cancellation, so the stock is accounted for.")

@@ -5,11 +5,13 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydSparePart } from '@/types'
-import { TEXT, DANGER, GLASS, SHADOWS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import SparePartForm from '@/components/hydraulic/SparePartForm'
-import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import RetiredBanner from '@/components/hydraulic/RetiredBanner'
 import { CRITICALITY_LABELS, CRITICALITY_HEX } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -29,12 +31,13 @@ export default function HydSparePartDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
   const params = useParams()
-  const spareId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedId, error: linkError } = useRecordId(ref)
+  const spareId = resolvedId ?? 0
 
   const [spare, setSpare] = useState<HydSparePart | null>(null)
   const [error, setError] = useState<string | string[]>('')
   const [saved, setSaved] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     if (!isAuthorized || !spareId) return
@@ -43,17 +46,9 @@ export default function HydSparePartDetailPage() {
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load spare part.')))
   }, [isAuthorized, spareId])
 
-  const handleDelete = async () => {
-    setConfirmDelete(false)
-    try {
-      await hydraulicApi.deleteSpare(spareId)
-      router.push('/dashboard/hydraulic/spares')
-    } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to delete spare part.'))
-    }
-  }
-
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/spares" listLabel="Back to spare parts" /></div>)
+  if (!resolvedId) return <div><HydraulicNav /></div>
 
   const linked = !!spare && spare.stock_status !== 'not_linked'
   const stockHex = spare ? STOCK_HEX[spare.stock_status] : '#78716c'
@@ -71,12 +66,11 @@ export default function HydSparePartDetailPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>{spare ? `${spare.part_code} — ${spare.name}` : 'Spare Part'}</h1>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {spare && (
-            <button type="button" onClick={() => setConfirmDelete(true)} style={{ ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }}>Delete</button>
-          )}
-          <button onClick={() => router.push('/dashboard/hydraulic/spares')} type="button" style={secondaryBtnStyle}>← Back</button>
+          <button data-tour="hyd-spared-back-btn" onClick={() => router.push('/dashboard/hydraulic/spares')} type="button" style={secondaryBtnStyle}>← Back</button>
         </div>
       </div>
+
+      <RetiredBanner what="Hydraulic spare parts" />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -92,10 +86,10 @@ export default function HydSparePartDetailPage() {
       {spare && (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start', marginBottom: 20 }}>
-            <div style={{ ...cardStyle, flex: '1 1 440px', marginBottom: 0, borderLeft: `4px solid ${stockHex}` }}>
+            <div data-tour="hyd-spared-stock" style={{ ...cardStyle, flex: '1 1 440px', marginBottom: 0, borderLeft: `4px solid ${stockHex}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
                 <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Stock</h2>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div data-tour="hyd-spared-badges" style={{ display: 'flex', gap: 8 }}>
                   <span style={pill(CRITICALITY_HEX[spare.criticality])}>{CRITICALITY_LABELS[spare.criticality] || spare.criticality}</span>
                   <span style={pill(stockHex)}>{STOCK_LABELS[spare.stock_status] || spare.stock_status}</span>
                 </div>
@@ -123,7 +117,7 @@ export default function HydSparePartDetailPage() {
               )}
             </div>
 
-            <div style={{ ...cardStyle, flex: '1 1 320px', marginBottom: 0 }}>
+            <div data-tour="hyd-spared-used-in" style={{ ...cardStyle, flex: '1 1 320px', marginBottom: 0 }}>
               <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 12px' }}>Used in Systems ({spare.used_in_systems.length})</h2>
               {!spare.component_id ? (
                 <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Pick the component this spare is for — systems whose released BOM carries that component then appear here.</p>
@@ -132,7 +126,7 @@ export default function HydSparePartDetailPage() {
                   No released BOM uses {spare.component_code} yet.
                 </p>
               ) : spare.used_in_systems.map((u) => (
-                <div key={u.system_id} onClick={() => router.push(`/dashboard/hydraulic/systems/${u.system_id}`)}
+                <div key={u.system_id} onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', u, 'system_id'))}
                   style={{ display: 'flex', gap: 12, padding: '9px 0', borderTop: `1px solid ${BORDER.light}`, cursor: 'pointer', flexWrap: 'wrap', fontSize: 13 }}>
                   <span style={{ fontWeight: 600, color: TEXT.heading, minWidth: 110 }}>{u.system_number}</span>
                   <span style={{ flex: '1 1 160px', color: TEXT.body }}>{u.system_name}</span>
@@ -144,6 +138,8 @@ export default function HydSparePartDetailPage() {
 
           <SparePartForm
             key={spare.updated_at}
+            title="Spare Part Details"
+            subtitle="Retired record — kept readable; the server refuses changes (410)."
             initial={spare}
             submitLabel="Save Changes"
             onSubmit={async (payload) => {
@@ -155,16 +151,6 @@ export default function HydSparePartDetailPage() {
           />
         </>
       )}
-
-      <ConfirmDialog
-        open={confirmDelete}
-        title="Delete spare part?"
-        message={`${spare?.part_code} will be removed from the spares list and pickers. Completed service jobs keep their history, and the Store item itself isn't touched.`}
-        confirmLabel="Delete"
-        danger
-        onConfirm={handleDelete}
-        onCancel={() => setConfirmDelete(false)}
-      />
     </div>
   )
 }

@@ -8,6 +8,7 @@ class ProductionWorkstationCreate(BaseModel):
     workstation_type: str = "machine"
     branch_id: int | None = None
     department_id: int | None = None
+    cost_center_id: int | None = None  # cost centre bearing it (CO rates / allocation)
     capacity_hours_per_day: float = Field(8.0, ge=0, le=24)
     hourly_rate: float = Field(0.0, ge=0)
     status: str = "active"
@@ -20,6 +21,7 @@ class ProductionWorkstationUpdate(BaseModel):
     workstation_type: str | None = None
     branch_id: int | None = None
     department_id: int | None = None
+    cost_center_id: int | None = None  # cost centre bearing it (CO rates / allocation)
     capacity_hours_per_day: float | None = Field(None, ge=0, le=24)
     hourly_rate: float | None = Field(None, ge=0)
     status: str | None = None
@@ -35,6 +37,7 @@ class ProductionWorkstationResponse(BaseModel):
     workstation_type: str
     branch_id: int | None = None
     department_id: int | None = None
+    cost_center_id: int | None = None  # cost centre bearing it (CO rates / allocation)
     capacity_hours_per_day: float
     hourly_rate: float
     status: str

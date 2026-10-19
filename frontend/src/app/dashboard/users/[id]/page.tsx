@@ -1,17 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useRequireAdmin } from '@/hooks/useAuth'
-import { usersApi, modulesApi, organizationApi } from '@/lib/api'
-import { User, ModuleMeta, BranchUserAssignment, Branch, Department, UserSession, UserActivity, UserDocument, PermissionRegistry } from '@/types'
+import { useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
+import { approvalsApi, usersApi, organizationApi, rolesApi, securityApi } from '@/lib/api'
+import { User, BranchUserAssignment, Branch, Department, UserSession, UserActivity, UserDocument, PermissionRegistry, Role, EffectivePermissions, UserDataScopeRow, ApprovesInUser } from '@/types'
+import PermissionMatrixEditor from '@/components/organization/PermissionMatrixEditor'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import Checkbox from '@/components/Checkbox'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import FileUploadField from '@/components/shared/FileUploadField'
+import TourButton from '@/components/tour/TourButton'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+import { useSodGuard } from '@/components/organization/useSodGuard'
+import AccessGovernancePanel from '@/components/organization/AccessGovernancePanel'
+import ApprovesInPanel from '@/components/organization/ApprovesInPanel'
+import { governedUsersApi } from '@/lib/basisApi'
+import DateField from '@/components/erp/DateField'
+import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -23,7 +34,6 @@ const inputStyle: React.CSSProperties = {
   width: '100%', padding: '9px 11px', borderRadius: 9, border: `1px solid ${BORDER.normal}`,
   background: '#fff', fontSize: 13, outline: 'none', color: TEXT.body,
 }
-const fieldLabelStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 700, color: TEXT.secondary, marginBottom: 5, display: 'block' }
 const cardRowStyle: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px', borderRadius: 12,
   background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.normal}`,
@@ -35,20 +45,44 @@ const primaryBtnStyle: React.CSSProperties = {
 const linkBtnStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }
 const dangerLinkStyle: React.CSSProperties = { ...linkBtnStyle, color: '#b91c1c' }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><label style={fieldLabelStyle}>{label}</label>{children}</div>
-}
+const sheetErrBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
 
-const TABS = ['User Details', 'Assignments', 'User Permissions', 'Permission Matrix', 'Permission History', 'Login History', 'User Activity', 'User Documents'] as const
+/** A label + control cell inside a FormSheet row; `grow` cells share the leftover width. */
+function SheetField({ label, req, tour, basis = 200, children }: { label: string; req?: boolean; tour?: string; basis?: number; children: React.ReactNode }) {
+  return (
+    <div data-tour={tour} style={{ flex: `1 1 ${basis}px`, minWidth: 0 }}>
+      <label style={sheetLabel}>{label} {req ? <Req /> : <Optional />}</label>
+      {children}
+    </div>
+  )
+}
+const sheetRow: React.CSSProperties = { display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }
+
+const TABS = ['User Details', 'Assignments', 'Roles & Permissions', 'Data Access', 'Permission History', 'Login History', 'User Activity', 'User Documents'] as const
 
 export default function UserDetailPage() {
-  const { user: currentUser, isAuthorized, isLoading } = useRequireAdmin()
+  const { user: currentUser, isAuthorized, isLoading } = useRequireOrgTab('users')
+  const { can, canFeature } = useCan()
+  // The permission registry / roles tab needs Organization › Role & Permissions 'View'.
+  const canViewRoles = can('organization', 'roles', 'view')
+  // User tabs are features (core/features/organization.py): users.assignments / documents /
+  // login_history / activity, and roles.data_access for the Data Access tab.
+  const seeTab = (t: typeof TABS[number]) => ({
+    'User Details': true,
+    Assignments: canFeature('organization', 'users', 'assignments', 'view'),
+    'Roles & Permissions': canViewRoles,
+    'Data Access': canFeature('organization', 'roles', 'data_access', 'view'),
+    'Permission History': canFeature('organization', 'users', 'activity', 'view'),
+    'Login History': canFeature('organization', 'users', 'login_history', 'view'),
+    'User Activity': canFeature('organization', 'users', 'activity', 'view'),
+    'User Documents': canFeature('organization', 'users', 'documents', 'view'),
+  } as Record<typeof TABS[number], boolean>)[t]
   const params = useParams()
   const router = useRouter()
-  const userId = Number(params.id)
+  const { id: recordId, error: linkError } = useRecordId(params.id as string)
+  const userId = recordId ?? 0
 
   const [user, setUser] = useState<User | null>(null)
-  const [apps, setApps] = useState<{ id: string; label: string }[]>([])
   const [assignments, setAssignments] = useState<BranchUserAssignment[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
@@ -64,23 +98,21 @@ export default function UserDetailPage() {
     setError('')
     Promise.all([
       usersApi.getUser(userId),
-      modulesApi.list(),
-      usersApi.listUserAssignments(userId),
+      seeTab('Assignments') ? usersApi.listUserAssignments(userId) : Promise.resolve([]),
       organizationApi.listBranches(),
       organizationApi.listDepartments(),
-      usersApi.listUserSessions(userId),
-      usersApi.listUserActivity(userId),
-      usersApi.listUserDocuments(userId),
-      usersApi.getPermissionRegistry(),
-      usersApi.listPermissionHistory(userId),
+      seeTab('Login History') ? usersApi.listUserSessions(userId) : Promise.resolve([]),
+      seeTab('User Activity') ? usersApi.listUserActivity(userId) : Promise.resolve([]),
+      seeTab('User Documents') ? usersApi.listUserDocuments(userId) : Promise.resolve([]),
+      canViewRoles ? usersApi.getPermissionRegistry() : Promise.resolve(null),
+      seeTab('Permission History') ? usersApi.listPermissionHistory(userId) : Promise.resolve([]),
     ])
-      .then(([u, mods, a, b, d, s, act, docs, reg, permHist]) => {
+      .then(([u, a, b, d, s, act, docs, reg, permHist]) => {
         setUser(u)
-        setApps((mods as ModuleMeta[]).map((m) => ({ id: m.key, label: m.label })))
         setAssignments(a); setBranches(b); setDepartments(d); setSessions(s); setActivity(act); setDocuments(docs)
         setRegistry(reg); setPermissionHistory(permHist)
       })
-      .catch(() => setError('Failed to load user.'))
+      .catch((err: unknown) => setError(extractErrorMessages(err, 'Could not load this user (profile, sessions, activity, documents or permission matrix). Reload the page; if it keeps failing, check the user still exists in Users & Roles.').join(' ')))
   }
 
   useEffect(() => {
@@ -89,6 +121,7 @@ export default function UserDetailPage() {
   }, [isAuthorized, userId])
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return <InvalidRecordLink message={linkError} listHref="/dashboard/users" listLabel="Back to users" />
 
   if (error) {
     return (
@@ -108,20 +141,24 @@ export default function UserDetailPage() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{user.name}</h1>
-            <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: user.is_active ? 'rgba(16,185,129,0.12)' : 'rgba(220,38,38,0.1)', color: user.is_active ? '#047857' : '#b91c1c' }}>
+            <span data-tour="org-user-status" style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: user.is_active ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)', color: user.is_active ? '#047857' : '#64748B' }}>
               {user.is_active ? 'Active' : 'Inactive'}
             </span>
           </div>
           <p style={{ fontSize: 12, color: TEXT.secondary, margin: '8px 0 0 0' }}>{user.email}</p>
         </div>
-        <button type="button" onClick={() => router.push('/dashboard/users')} style={secondaryBtnStyle}>← Back</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <TourButton variant="icon" />
+          <button type="button" data-tour="org-user-back" onClick={() => router.push('/dashboard/users')} style={secondaryBtnStyle}>← Back</button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
-        {TABS.map((t) => (
+        {TABS.filter(seeTab).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
+            data-tour={`org-user-tab-${t.toLowerCase().replace(/ /g, '-')}`}
             style={{
               padding: '10px 6px', marginRight: 16, border: 'none', borderRadius: 0, boxShadow: 'none', outline: 'none',
               background: 'transparent', borderBottom: tab === t ? `2px solid ${BRAND.primary}` : '2px solid transparent',
@@ -133,14 +170,14 @@ export default function UserDetailPage() {
         ))}
       </div>
 
-      {tab === 'User Details' && <UserDetailsTab user={user} isSelf={isSelf} onRefresh={load} />}
-      {tab === 'Assignments' && <AssignmentsTab user={user} assignments={assignments} branches={branches} departments={departments} onRefresh={load} />}
-      {tab === 'User Permissions' && <UserPermissionsTab user={user} apps={apps} onRefresh={load} />}
-      {tab === 'Permission Matrix' && registry && <PermissionMatrixTab user={user} registry={registry} onRefresh={load} />}
-      {tab === 'Permission History' && <PermissionHistoryTab history={permissionHistory} />}
-      {tab === 'Login History' && <LoginHistoryTab sessions={sessions} />}
-      {tab === 'User Activity' && <UserActivityTab activity={activity} />}
-      {tab === 'User Documents' && <UserDocumentsTab userId={userId} documents={documents} onRefresh={load} />}
+      {(tab === 'User Details' || !seeTab(tab)) && <UserDetailsTab user={user} isSelf={isSelf} onRefresh={load} />}
+      {tab === 'Assignments' && seeTab(tab) && <AssignmentsTab user={user} assignments={assignments} branches={branches} departments={departments} onRefresh={load} />}
+      {tab === 'Roles & Permissions' && registry && <RolesPermissionsTab user={user} registry={registry} onRefresh={load} />}
+      {tab === 'Permission History' && seeTab(tab) && <PermissionHistoryTab history={permissionHistory} />}
+      {tab === 'Data Access' && seeTab(tab) && <DataAccessTab userId={userId} />}
+      {tab === 'Login History' && seeTab(tab) && <LoginHistoryTab userId={userId} sessions={sessions} onRefresh={load} />}
+      {tab === 'User Activity' && seeTab(tab) && <UserActivityTab activity={activity} />}
+      {tab === 'User Documents' && seeTab(tab) && <UserDocumentsTab userId={userId} documents={documents} onRefresh={load} />}
     </div>
   )
 }
@@ -152,8 +189,28 @@ export default function UserDetailPage() {
 function UserDetailsTab({ user, isSelf, onRefresh }: { user: User; isSelf: boolean; onRefresh: () => void }) {
   const [error, setError] = useState('')
   const [toggling, setToggling] = useState(false)
+  const { can } = useCan()
+  // Approval stages this person takes part in (read-only; set up in Approval Workflows).
+  const [approvesIn, setApprovesIn] = useState<ApprovesInUser | null>(null)
+  const [approvesErr, setApprovesErr] = useState('')
+  const [askDeactivate, setAskDeactivate] = useState(false)
 
-  const toggleActive = async () => {
+  useEffect(() => {
+    approvalsApi.approvesInUser(user.id).then(setApprovesIn)
+      .catch((err) => setApprovesErr(extractErrorMessages(err, 'Could not load the approvals this person takes part in.').join(' ')))
+  }, [user.id])
+
+  // Deactivating someone who is the only approver of a stage, or who has
+  // approvals waiting on them, leaves documents stuck — say so first.
+  const soleStages = (approvesIn?.stages || []).filter((r) => r.sole && r.kind === 'approver' && r.workflow_active)
+  const deactivateWarning = [
+    soleStages.length ? `${user.name} is the only approver of: ${soleStages.map((r) => `${r.module_label} › ${r.document} (stage ${r.stage_sequence} “${r.stage_name}”)`).join('; ')} — those documents will be refused on submit until another approver is set in Organization › Approval Workflows.` : '',
+    approvesIn?.pending_steps ? `${approvesIn.pending_steps} approval(s) are waiting on ${user.name} now. They stay with them until escalation or an admin acts — if they are leaving or moving, complete their exit / transfer in HR › Lifecycle first, which hands them to the handover person.` : '',
+  ].filter(Boolean).join(' ')
+
+  const toggleActive = async (confirmed = false) => {
+    if (!confirmed && user.is_active && deactivateWarning) { setAskDeactivate(true); return }
+    setAskDeactivate(false)
     setToggling(true)
     try {
       if (user.is_active) await usersApi.deactivate(user.id)
@@ -170,17 +227,20 @@ function UserDetailsTab({ user, isSelf, onRefresh }: { user: User; isSelf: boole
     <div style={sectionStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', margin: 0 }}>User Details</h2>
-        <button
-          onClick={toggleActive}
+        {can('organization', 'users', 'edit') && <button
+          onClick={() => toggleActive()}
+          data-tour="org-user-toggle-active"
           disabled={isSelf || toggling}
           style={{ fontSize: 12.5, fontWeight: 600, padding: '9px 16px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: '#fff', color: user.is_active ? '#b91c1c' : '#047857', cursor: isSelf ? 'not-allowed' : 'pointer', opacity: isSelf ? 0.5 : 1 }}
         >
           {user.is_active ? 'Deactivate User' : 'Activate User'}
-        </button>
+        </button>}
       </div>
       <MessageDialog open={!!error} variant="error" title="User Error" message={error} onClose={() => setError('')} />
+      <ConfirmDialog open={askDeactivate} title="Deactivate an approver?" confirmLabel="Deactivate anyway"
+        message={deactivateWarning} onConfirm={() => toggleActive(true)} onCancel={() => setAskDeactivate(false)} />
       <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '0 0 16px' }}>Name, email, designation, department, and office location are synced from Azure AD and aren&apos;t editable here.</p>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div data-tour="org-user-details-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
         <div><div style={labelStyle}>Full Name</div><div style={valueStyle}>{user.name}</div></div>
         <div><div style={labelStyle}>Email</div><div style={valueStyle}>{user.email}</div></div>
         <div><div style={labelStyle}>Designation</div><div style={valueStyle}>{user.designation || '—'}</div></div>
@@ -192,6 +252,12 @@ function UserDetailsTab({ user, isSelf, onRefresh }: { user: User; isSelf: boole
         <div><div style={labelStyle}>Role</div><div style={{ ...valueStyle, textTransform: 'capitalize' }}>{user.role}</div></div>
         <div><div style={labelStyle}>Date of Joining</div><div style={valueStyle}>{user.date_of_joining || '—'}</div></div>
       </div>
+      <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', margin: '24px 0 4px' }}>Approves in</h2>
+      <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '0 0 10px' }}>
+        Read-only — the approval stages this person can decide, from Organization › Approval Workflows (the only place approvals are set up).
+        {approvesIn?.pending_steps ? ` ${approvesIn.pending_steps} approval(s) are waiting on them now.` : ''}
+      </p>
+      <ApprovesInPanel rows={approvesIn ? approvesIn.stages : null} error={approvesErr} empty="Not an approver in any workflow." />
     </div>
   )
 }
@@ -208,26 +274,33 @@ function AssignmentsTab({ user, assignments, branches, departments, onRefresh }:
   user: User; assignments: BranchUserAssignment[]; branches: Branch[]; departments: Department[]; onRefresh: () => void
 }) {
   const [editing, setEditing] = useState<BranchUserAssignment | null>(null)
+  const [formOpen, setFormOpen] = useState(false)
   const [form, setForm] = useState(emptyAssignment())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [formError, setFormError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<BranchUserAssignment | null>(null)
+  const { canFeature } = useCan()
+  // Same rule as the backend: User › Assignments 'Edit' or Plant › Users 'Edit' maintains plant assignments.
+  const canEditAsg = canFeature('organization', 'users', 'assignments', 'edit') || canFeature('organization', 'branches', 'user_assignments', 'edit')
 
+  const startAdd = () => { setEditing(null); setForm(emptyAssignment()); setFormError(''); setFormOpen(true) }
   const startEdit = (a: BranchUserAssignment) => {
     setEditing(a)
+    setFormError('')
+    setFormOpen(true)
     setForm({
       branch_id: String(a.branch_id), employee_id: a.employee_id || '', department_id: a.department_id ? String(a.department_id) : '',
       designation: a.designation || '', role: a.role || '', access_level: a.access_level || '',
       is_primary_branch: a.is_primary_branch, effective_from: a.effective_from || '', effective_to: a.effective_to || '', status: a.status,
     })
   }
-  const cancel = () => { setEditing(null); setForm(emptyAssignment()) }
+  const cancel = () => { setEditing(null); setForm(emptyAssignment()); setFormOpen(false) }
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!form.branch_id) { setError('Branch is required'); return }
+  const submit = async () => {
+    if (!form.branch_id) { setFormError('Branch is required'); return }
     setSaving(true)
-    setError('')
+    setFormError('')
     try {
       const payload = {
         ...form,
@@ -242,7 +315,7 @@ function AssignmentsTab({ user, assignments, branches, departments, onRefresh }:
       onRefresh()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to save assignment.')
+      setFormError(detail || 'Failed to save assignment.')
     } finally {
       setSaving(false)
     }
@@ -264,56 +337,80 @@ function AssignmentsTab({ user, assignments, branches, departments, onRefresh }:
 
   return (
     <div style={sectionStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{editing ? 'Edit Assignment' : 'Add Assignment'}</h2>
-        {editing && <button type="button" style={linkBtnStyle} onClick={cancel}>Cancel edit</button>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
+        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Assignments</h2>
+        {canEditAsg && <button type="button" data-tour="org-user-asg-add" onClick={startAdd} style={primaryBtnStyle}>+ Add Assignment</button>}
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Assignment Error" message={error} onClose={() => setError('')} />
       <ConfirmDialog open={!!deleteTarget} title="Remove this assignment?" message={`Remove this branch assignment for "${user.name}"? This cannot be undone.`} onConfirm={doDelete} onCancel={() => setDeleteTarget(null)} />
 
-      <form onSubmit={submit} style={{ marginBottom: 20, padding: 16, borderRadius: 12, background: 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.normal}`, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-        <Field label="Branch *">
-          <select style={inputStyle} value={form.branch_id} onChange={(e) => setForm((f) => ({ ...f, branch_id: e.target.value }))} disabled={!!editing}>
-            <option value="">— Select —</option>
-            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Employee ID"><input style={inputStyle} value={form.employee_id} onChange={(e) => setForm((f) => ({ ...f, employee_id: e.target.value }))} /></Field>
-        <Field label="Department">
-          <select style={inputStyle} value={form.department_id} onChange={(e) => setForm((f) => ({ ...f, department_id: e.target.value }))}>
-            <option value="">— Select —</option>
-            {departmentsForBranch.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Designation"><input style={inputStyle} value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} /></Field>
-        <Field label="Role"><input style={inputStyle} value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} /></Field>
-        <Field label="Access Level">
-          <select style={inputStyle} value={form.access_level} onChange={(e) => setForm((f) => ({ ...f, access_level: e.target.value }))}>
-            <option value="">— Select —</option>
-            <option value="view">View</option>
-            <option value="edit">Edit</option>
-            <option value="admin">Admin</option>
-          </select>
-        </Field>
-        <Field label="Effective From"><input type="date" style={inputStyle} value={form.effective_from} onChange={(e) => setForm((f) => ({ ...f, effective_from: e.target.value }))} /></Field>
-        <Field label="Effective To"><input type="date" style={inputStyle} value={form.effective_to} onChange={(e) => setForm((f) => ({ ...f, effective_to: e.target.value }))} /></Field>
-        <Field label="Status">
-          <select style={inputStyle} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-        </Field>
-        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: TEXT.body }}><input type="checkbox" checked={form.is_primary_branch} onChange={(e) => setForm((f) => ({ ...f, is_primary_branch: e.target.checked }))} /> Primary Branch</label>
-        </div>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : editing ? 'Save Changes' : 'Save Assignment'}</button>
-        </div>
-      </form>
+      {canEditAsg && formOpen && (
+        <FormSheet width={640} icon="building" title={editing ? 'Edit Assignment' : 'Add Assignment'}
+          subtitle={editing ? `${user.name} at ${branches.find((b) => b.id === editing.branch_id)?.name || `Branch #${editing.branch_id}`}` : `Post ${user.name} to a branch`}
+          onClose={cancel} busy={saving}
+          footer={<>
+            <button type="button" data-tour="org-user-asg-cancel" onClick={cancel} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+            <button type="button" data-tour="org-user-asg-save" onClick={submit} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+              <SheetIcon name="check" size={16} />{saving ? 'Saving…' : editing ? 'Save Changes' : 'Save Assignment'}
+            </button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {formError && <div style={sheetErrBox}>{formError}</div>}
+            <SheetSection icon="building" title="Branch & post">
+              <div style={sheetRow}>
+                <SheetField label="Branch" req>
+                  <select data-tour="org-user-asg-branch" style={sheetInput} value={form.branch_id} onChange={(e) => setForm((f) => ({ ...f, branch_id: e.target.value }))} disabled={!!editing}>
+                    <option value="">— Select —</option>
+                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </SheetField>
+                <SheetField label="Employee ID"><input data-tour="org-user-asg-empid" style={sheetInput} value={form.employee_id} onChange={(e) => setForm((f) => ({ ...f, employee_id: e.target.value }))} /></SheetField>
+              </div>
+              {editing && <p style={{ ...sheetHint, margin: '-8px 0 14px' }}>Branch is locked while editing — remove and re-add to move someone to a different branch.</p>}
+              <div style={sheetRow}>
+                <SheetField label="Department">
+                  <select data-tour="org-user-asg-dept" style={sheetInput} value={form.department_id} onChange={(e) => setForm((f) => ({ ...f, department_id: e.target.value }))}>
+                    <option value="">— Select —</option>
+                    {departmentsForBranch.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </SheetField>
+                <SheetField label="Designation"><input data-tour="org-user-asg-designation" style={sheetInput} value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} /></SheetField>
+              </div>
+              <div style={{ ...sheetRow, marginBottom: 0 }}>
+                <SheetField label="Role"><input data-tour="org-user-asg-role" style={sheetInput} value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))} /></SheetField>
+                <SheetField label="Access Level">
+                  <select data-tour="org-user-asg-access" style={sheetInput} value={form.access_level} onChange={(e) => setForm((f) => ({ ...f, access_level: e.target.value }))}>
+                    <option value="">— Select —</option>
+                    <option value="view">View</option>
+                    <option value="edit">Edit</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </SheetField>
+              </div>
+            </SheetSection>
+            <SheetSection icon="calendar" title="Validity & status">
+              <div style={sheetRow}>
+                <SheetField label="Effective From" tour="org-user-asg-from" basis={160}><DateField value={form.effective_from} onChange={(v) => setForm((f) => ({ ...f, effective_from: v }))} /></SheetField>
+                <SheetField label="Effective To" tour="org-user-asg-to" basis={160}><DateField value={form.effective_to} onChange={(v) => setForm((f) => ({ ...f, effective_to: v }))} /></SheetField>
+                <SheetField label="Status" req basis={140}>
+                  <select data-tour="org-user-asg-status" style={sheetInput} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </SheetField>
+              </div>
+              <div data-tour="org-user-asg-primary">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: SHEET.BODY }}><input type="checkbox" checked={form.is_primary_branch} onChange={(e) => setForm((f) => ({ ...f, is_primary_branch: e.target.checked }))} /> Primary Branch</label>
+                <p style={sheetHint}>Tick for the person&apos;s main branch (one per person). Leave Effective To blank if open-ended.</p>
+              </div>
+            </SheetSection>
+          </div>
+        </FormSheet>
+      )}
 
       {assignments.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No branch assignments yet.</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div data-tour="org-user-asg-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {assignments.map((a) => (
             <div key={a.id} style={cardRowStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
@@ -325,10 +422,10 @@ function AssignmentsTab({ user, assignments, branches, departments, onRefresh }:
                   </div>
                   <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{[a.designation, a.department_name, a.access_level, a.employee_id].filter(Boolean).join(' · ') || '—'}</p>
                 </div>
-                <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+                {canEditAsg && <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
                   <button type="button" style={linkBtnStyle} onClick={() => startEdit(a)}>Edit</button>
                   <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(a)}>Remove</button>
-                </div>
+                </div>}
               </div>
             </div>
           ))}
@@ -339,273 +436,200 @@ function AssignmentsTab({ user, assignments, branches, departments, onRefresh }:
 }
 
 // ---------------------------------------------------------------------------
-// User Permissions
+// Roles & Permissions
 // ---------------------------------------------------------------------------
 
-const ERP_PERMISSION_GROUPS: { label: string; icon: string; perms: { id: string; label: string }[] }[] = [
-  { label: 'Projects', icon: '📁', perms: [{ id: 'project_view', label: 'View' }, { id: 'project_create', label: 'Create' }, { id: 'project_edit', label: 'Edit' }, { id: 'project_delete', label: 'Delete' }] },
-  { label: 'Service Requests', icon: '🔧', perms: [{ id: 'sr_view', label: 'View' }, { id: 'sr_create', label: 'Create' }, { id: 'sr_edit', label: 'Edit' }, { id: 'sr_delete', label: 'Delete' }] },
+// Approval-routing flags — who an approval goes to, not what a user may do
+// (that comes from roles). Workflow stages pick approvers by these flags
+// (Organization › Workflows, rule "Users with a flag"). Partner is set only in
+// Company Info › Partners, so it is shown read-only below.
+const APPROVAL_ROLE_FLAGS: { key: string; label: string; hex: string; hint: string }[] = [
+  { key: 'is_director', label: 'Director', hex: '#7c3aed', hint: 'Director stages (e.g. large sales orders) and project management' },
+  { key: 'is_department_head', label: 'Department Head', hex: '#0f766e', hint: 'Flag-based stages and Sales Head fallback. "Department head" stages use the heads set in Organization › Department' },
+  { key: 'is_plant_head', label: 'Plant Head', hex: '#0f766e', hint: 'Flag-based stages. "Plant head" stages use the head set on the plant (Organization › Branches)' },
+  { key: 'is_project_head', label: 'Project Head', hex: '#0f766e', hint: 'Flag-based approval stages' },
+  { key: 'is_purchase_head', label: 'Purchase Head', hex: '#1d4ed8', hint: 'Purchase stage of NCR disposition and flag-based stages' },
+  { key: 'is_finance_manager', label: 'Finance Manager', hex: '#1d4ed8', hint: 'Purchase-invoice variances, period close, depreciation and year-end close' },
+  { key: 'is_purchase_manager', label: 'Purchase Manager', hex: '#1d4ed8', hint: 'Flag-based approval stages' },
+  { key: 'is_store_manager', label: 'Store Manager', hex: '#1d4ed8', hint: 'Flag-based approval stages (store-specific approvals use the store location manager)' },
+  { key: 'is_production_manager', label: 'Production Manager', hex: '#b45309', hint: 'RRV build sign-off and flag-based stages' },
+  { key: 'is_design_manager', label: 'Design Manager', hex: '#b45309', hint: 'Flag-based approval stages' },
+  { key: 'is_rnd_manager', label: 'R&D Manager', hex: '#b45309', hint: 'Flag-based approval stages' },
+  { key: 'is_project_manager', label: 'Project Manager', hex: '#b45309', hint: 'Flag-based approval stages' },
 ]
 
-const P2P_PERMISSION_GROUPS: { label: string; icon: string; perms: { id: string; label: string }[] }[] = [
-  { label: 'Purchase Requisition', icon: '📝', perms: [{ id: 'pr_create', label: 'Create' }] },
-  { label: 'Approval', icon: '✅', perms: [{ id: 'approval_view', label: 'View' }, { id: 'approval_action', label: 'Action' }] },
-  { label: 'RFQ', icon: '📄', perms: [{ id: 'rfq_view', label: 'View' }, { id: 'rfq_action', label: 'Action' }] },
-  { label: 'GRN', icon: '📦', perms: [{ id: 'grn_view', label: 'View' }, { id: 'grn_action', label: 'Action' }] },
-]
-
-// Approval-role flags an admin can grant. The manager roles drive P.O
-// approval fan-out (a PO goes to every holder of its role set, any one
-// approves); P.R approvers are picked freely per requisition. Purchase Head
-// and MD only matter for PRs raised before the matrix and are kept so those
-// can still finish their old Purchase Head → Director → MD chain.
-const APPROVAL_ROLE_FLAGS: { key: string; label: string; hex: string }[] = [
-  { key: 'is_director', label: 'Director', hex: '#7c3aed' },
-]
-
-function UserPermissionsTab({ user, apps, onRefresh }: { user: User; apps: { id: string; label: string }[]; onRefresh: () => void }) {
+function RolesPermissionsTab({ user, registry, onRefresh }: { user: User; registry: PermissionRegistry; onRefresh: () => void }) {
+  const router = useRouter()
   const isAdminRole = user.role === 'admin'
-  const [selected, setSelected] = useState<string[]>(user.assigned_apps || [])
-  const [erpPerms, setErpPerms] = useState<string[]>(user.erp_permissions || [])
+  const { can, user: me } = useCan()
+  // Mirrors the backend: nobody but an admin changes their own roles, extras or approval flags.
+  const meIsAdmin = me?.role === 'admin' || !!(me as { is_azure_admin?: boolean } | null)?.is_azure_admin
+  const selfLocked = !meIsAdmin && me?.id === user.id
+  // Roles / Extra permissions are features of Role & Permissions (core/features/organization.py).
+  const { canFeature } = useCan()
+  const canEditRoles = canFeature('organization', 'roles', 'members', 'edit') && !selfLocked
+  const canEditExtras = canFeature('organization', 'roles', 'extra_permissions', 'edit') && !selfLocked
+  const seeExtras = canFeature('organization', 'roles', 'extra_permissions', 'view')
+  const canEditFlags = can('organization', 'users', 'edit') && !selfLocked
+  const [roles, setRoles] = useState<Role[]>([])
+  const [effective, setEffective] = useState<EffectivePermissions | null>(null)
+  const [roleIds, setRoleIds] = useState<number[]>(user.role_ids || [])
+  const [extras, setExtras] = useState<string[]>(user.granular_permissions || [])
   const [roleFlags, setRoleFlags] = useState<Record<string, boolean>>(
     Object.fromEntries(APPROVAL_ROLE_FLAGS.map((f) => [f.key, !!(user as unknown as Record<string, boolean>)[f.key]]))
   )
-  const [saving, setSaving] = useState(false)
+  const [showExtras, setShowExtras] = useState((user.granular_permissions || []).length > 0)
+  const [roleQuery, setRoleQuery] = useState('')
+  const [saving, setSaving] = useState('')
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  // GRC: SoD conflict warning / mitigation reason before saving roles or extras.
+  const sod = useSodGuard()
 
-  const toggleRole = (key: string) => setRoleFlags((prev) => ({ ...prev, [key]: !prev[key] }))
+  const loadEffective = () => usersApi.getEffectivePermissions(user.id).then(setEffective)
 
-  const toggle = (app: string) => setSelected((prev) => (prev.includes(app) ? prev.filter((a) => a !== app) : [...prev, app]))
-  // Unticking Procurement also drops its Purchase Team access level.
-  const toggleModule = (app: string) => setSelected((prev) => (
-    prev.includes(app)
-      ? prev.filter((a) => a !== app && !(app === 'p2p' && a === 'purchase'))
-      : [...prev, app]
-  ))
-  const togglePerm = (perm: string) => setErpPerms((prev) => (prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm]))
+  useEffect(() => {
+    Promise.all([rolesApi.list(), usersApi.getEffectivePermissions(user.id)])
+      .then(([r, eff]) => { setRoles(r); setEffective(eff) })
+      .catch((err) => setError(extractErrorMessages(err, 'Could not load roles for this user. Reload the page.').join(' ')))
+  }, [user.id])
 
-  const save = async () => {
-    setSaving(true)
-    setError('')
+  const run = async (what: string, fn: () => Promise<unknown>, ok: string) => {
+    setSaving(what); setError('')
     try {
-      await usersApi.updateModuleAccess(user.id, selected, erpPerms, roleFlags)
+      await fn()
+      await loadEffective()
       onRefresh()
+      setNotice(ok)
     } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to save module access.').join(' '))
+      setError(extractErrorMessages(err, `Could not save ${what}.`).join(' '))
     } finally {
-      setSaving(false)
+      setSaving('')
     }
   }
 
-  return (
-    <div style={sectionStyle}>
-      <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 16px' }}>User Permissions</h2>
-      <MessageDialog open={!!error} variant="error" title="Cannot Save Module Access" message={error} onClose={() => setError('')} />
+  // Grants that come from roles (locked in the extras editor).
+  const fromRoles = useMemo(() => {
+    const out: Record<string, string[]> = {}
+    Object.entries(effective?.grants || {}).forEach(([g, src]) => {
+      const roleSrc = src.filter((x) => x !== 'Extra')
+      if (roleSrc.length) out[g] = roleSrc
+    })
+    return out
+  }, [effective])
 
-      <p style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 10px' }}>Module Access</p>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {/* 'purchase' is not a module of its own — it's the Purchase Team
-            access level inside Procurement (p2p), shown below that module. */}
-        {apps.filter((a) => a.id !== 'purchase').map((a) => (
-          <span key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, opacity: isAdminRole ? 0.5 : 1, fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-            <Checkbox disabled={isAdminRole} checked={isAdminRole || selected.includes(a.id)} onChange={() => toggleModule(a.id)} />
-            {a.id === 'p2p' ? 'Procurement' : a.label}
-          </span>
-        ))}
+  const assignable = roles.filter((r) => !r.is_default && (r.is_active || roleIds.includes(r.id)))
+  const q = roleQuery.trim().toLowerCase()
+  const shown = assignable.filter((r) => roleIds.includes(r.id) || !q || r.name.toLowerCase().includes(q))
+  const everyone = roles.filter((r) => r.is_default && r.is_active)
+  const rolesChanged = JSON.stringify([...roleIds].sort()) !== JSON.stringify([...(user.role_ids || [])].sort())
+  const extrasChanged = JSON.stringify([...extras].sort()) !== JSON.stringify([...(user.granular_permissions || [])].sort())
+
+  if (isAdminRole) {
+    return (
+      <div style={sectionStyle}>
+        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Roles &amp; Permissions</h2>
+        <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{user.name} is an <b>Admin</b> — admins can see and do everything in every module, so roles don&apos;t apply. Change their role to User on the User Details tab to manage their access with roles.</p>
       </div>
-      <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '10px 0 0' }}>Admins have access to all modules automatically.</p>
+    )
+  }
 
-      {!isAdminRole && selected.includes('p2p') && (
-        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: selected.includes('purchase') ? '1px solid #FF7A45' : `1px solid ${BORDER.normal}`, background: selected.includes('purchase') ? 'rgba(244,113,59,0.05)' : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-            <Checkbox checked={selected.includes('purchase')} onChange={() => toggle('purchase')} />
-            Purchase Team
-          </span>
-          <span style={{ fontSize: 11.5, color: TEXT.muted }}>
-            Procurement alone lets this user raise and track their own PRs. Purchase Team also lets them process every PR — RFQ, PO and GRN.
-          </span>
+  return (
+    <div>
+      <MessageDialog open={!!error} variant="error" title="Roles & Permissions" message={error} onClose={() => setError('')} />
+      <MessageDialog open={!!notice} variant="success" title="Saved" message={notice} onClose={() => setNotice('')} />
+
+      <div style={sectionStyle} data-tour="org-user-roles">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Roles</h2>
+          <button type="button" onClick={() => router.push('/dashboard/organization/roles')} style={linkBtnStyle}>Manage roles →</button>
         </div>
-      )}
-
-      <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)' }}>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 6px' }}>Approval Roles</p>
-        <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '0 0 10px' }}>
-          Director approves every P.O (any one approval approves it).
+        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>
+          Tick the roles this person holds; their access is everything those roles allow.
+          {everyone.length > 0 && <> Everyone also gets: <b>{everyone.map((r) => r.name).join(', ')}</b>.</>}
         </p>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <input value={roleQuery} onChange={(e) => setRoleQuery(e.target.value)} placeholder="Search roles…" style={{ ...inputStyle, maxWidth: 280, marginBottom: 10 }} />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', maxHeight: 260, overflowY: 'auto' }}>
+          {shown.map((r) => {
+            const on = roleIds.includes(r.id)
+            return (
+              <span key={r.id} title={r.description || undefined} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 10, border: on ? `1px solid ${BRAND.primary}` : `1px solid ${BORDER.normal}`, background: on ? 'rgba(244,113,59,0.05)' : '#fff', fontSize: 12.5, fontWeight: 600, color: TEXT.heading, opacity: r.is_active ? 1 : 0.55 }}>
+                <Checkbox checked={on} onChange={() => setRoleIds((ids) => (on ? ids.filter((x) => x !== r.id) : [...ids, r.id]))} />
+                {r.name}{r.is_system && <span style={{ fontSize: 10, color: '#1d4ed8' }}>BUILT-IN</span>}
+              </span>
+            )
+          })}
+        </div>
+        {selfLocked && <p style={{ fontSize: 12, color: '#b45309', margin: '10px 0 0' }}>This is your own account — only an admin can change your roles, extra permissions or approval flags.</p>}
+        {canEditRoles && <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+          <button type="button" data-tour="org-user-roles-save" disabled={!!saving || !rolesChanged}
+            onClick={() => run('roles', () => sod.guard(user.id, { role_ids: roleIds }, (reason) => governedUsersApi.updateRoles(user.id, roleIds, reason)), 'Roles saved — the user gets the new access on their next page load.')}
+            style={{ ...primaryBtnStyle, padding: '10px 24px', opacity: saving || !rolesChanged ? 0.6 : 1 }}>
+            {saving === 'roles' ? 'Saving…' : 'Save Roles'}
+          </button>
+        </div>}
+      </div>
+
+      <div style={sectionStyle} data-tour="org-user-perm-approval-roles">
+        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 6px' }}>Approval Roles</h2>
+        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 10px' }}>
+          Who approvals are routed to — not a permission. Approval workflows (Organization › Workflows) pick approvers by these flags; hover a flag to see where it is used. Partners are set in Company Info › Partners.
+        </p>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Partner is set only in Company Info › Partners (one place for top authority) — shown here read-only. */}
+          <span data-tour="org-user-partner" title="Set in Organization › Info › Partners"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: user.is_partner ? '1px solid #b45309' : `1px solid ${BORDER.normal}`, background: user.is_partner ? 'rgba(180,83,9,0.06)' : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
+            {user.is_partner ? '✓ Partner' : 'Not a Partner'}
+            <button type="button" onClick={() => router.push('/dashboard/organization/info')} style={{ ...linkBtnStyle, fontSize: 11 }}>change in Company Info →</button>
+          </span>
           {APPROVAL_ROLE_FLAGS.map((f) => (
-            <span key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: roleFlags[f.key] ? `1px solid ${f.hex}` : `1px solid ${BORDER.normal}`, background: roleFlags[f.key] ? `${f.hex}0f` : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
-              <Checkbox checked={!!roleFlags[f.key]} onChange={() => toggleRole(f.key)} />
+            <span key={f.key} title={f.hint} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', borderRadius: 10, border: roleFlags[f.key] ? `1px solid ${f.hex}` : `1px solid ${BORDER.normal}`, background: roleFlags[f.key] ? `${f.hex}0f` : '#fff', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
+              <Checkbox checked={!!roleFlags[f.key]} disabled={!canEditFlags} onChange={() => setRoleFlags((prev) => ({ ...prev, [f.key]: !prev[f.key] }))} />
               {f.label}
             </span>
           ))}
+          {canEditFlags && <button type="button" disabled={!!saving}
+            onClick={() => run('approval roles', () => usersApi.updateApprovalRoles(user.id, roleFlags), 'Approval roles saved.')}
+            style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>
+            {saving === 'approval roles' ? 'Saving…' : 'Save'}
+          </button>}
         </div>
       </div>
 
-      {!isAdminRole && selected.includes('erp') && (
-        <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)' }}>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 12px' }}>ERP Permissions</p>
-          {ERP_PERMISSION_GROUPS.map((group) => (
-            <div key={group.label} style={{ marginBottom: 12 }}>
-              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 6px' }}>{group.icon} {group.label}</p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {group.perms.map((p) => (
-                  <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: erpPerms.includes(p.id) ? '1px solid #FF7A45' : `1px solid ${BORDER.normal}`, background: erpPerms.includes(p.id) ? 'rgba(244,113,59,0.05)' : '#fff', color: erpPerms.includes(p.id) ? '#FF7A45' : TEXT.heading, fontSize: 12.5, fontWeight: 600 }}>
-                    <Checkbox checked={erpPerms.includes(p.id)} onChange={() => togglePerm(p.id)} />
-                    {p.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
+      {seeExtras && <div style={sectionStyle} data-tour="org-user-extras">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Extra permissions (this user only)</h2>
+          <button type="button" onClick={() => setShowExtras((v) => !v)} style={linkBtnStyle}>{showExtras ? 'Hide' : `Show${extras.length ? ` (${extras.length})` : ''}`}</button>
         </div>
-      )}
-
-      {!isAdminRole && selected.includes('p2p') && (
-        <div style={{ marginTop: 16, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)' }}>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 12px' }}>Procurement Permissions</p>
-          {P2P_PERMISSION_GROUPS.map((group) => (
-            <div key={group.label} style={{ marginBottom: 12 }}>
-              <p style={{ fontSize: 12.5, fontWeight: 600, color: TEXT.heading, margin: '0 0 6px' }}>{group.icon} {group.label}</p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {group.perms.map((p) => (
-                  <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 8, border: erpPerms.includes(p.id) ? '1px solid #FF7A45' : `1px solid ${BORDER.normal}`, background: erpPerms.includes(p.id) ? 'rgba(244,113,59,0.05)' : '#fff', color: erpPerms.includes(p.id) ? '#FF7A45' : TEXT.heading, fontSize: 12.5, fontWeight: 600 }}>
-                    <Checkbox checked={erpPerms.includes(p.id)} onChange={() => togglePerm(p.id)} />
-                    {p.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
-        <button onClick={save} disabled={saving} style={{ ...primaryBtnStyle, padding: '10px 24px', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save Permissions'}</button>
-      </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Permission Matrix
-// ---------------------------------------------------------------------------
-
-const ACTION_LABELS: Record<string, string> = {
-  view: 'View', create: 'Create', edit: 'Edit', delete: 'Delete', approve: 'Approve',
-  reject: 'Reject', export: 'Export', print: 'Print', import: 'Import',
-}
-const SCOPE_LABELS: Record<string, string> = {
-  own: 'Own Records', department: 'Department', branch: 'Branch', company: 'Company-wide', all: 'All',
-}
-
-function PermissionMatrixTab({ user, registry, onRefresh }: { user: User; registry: PermissionRegistry; onRefresh: () => void }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set(user.granular_permissions || []))
-  const [scopes, setScopes] = useState<Record<string, string>>(user.data_access_scopes || {})
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  const toggle = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const toggleAllForRow = (ids: string[]) => {
-    const allOn = ids.every((id) => selected.has(id))
-    setSelected((prev) => {
-      const next = new Set(prev)
-      ids.forEach((id) => (allOn ? next.delete(id) : next.add(id)))
-      return next
-    })
-  }
-
-  const save = async () => {
-    setSaving(true)
-    setError('')
-    try {
-      await usersApi.updatePermissions(user.id, Array.from(selected), scopes)
-      onRefresh()
-    } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to save permission matrix.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const moduleCount = Object.keys(registry.modules).filter((mk) => Array.from(selected).some((id) => id.startsWith(`${mk}:`))).length
-
-  return (
-    <div style={sectionStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Permission Matrix</h2>
-        <button onClick={save} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save Matrix'}</button>
-      </div>
-      <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '0 0 16px' }}>
-        {selected.size} action permission(s) granted across {moduleCount} module(s). Additive to the Module Access checklist on the User Permissions tab — nothing outside this admin screen reads these grants yet.
-      </p>
-      <MessageDialog open={!!error} variant="error" title="Permission Matrix Error" message={error} onClose={() => setError('')} />
-
-      {Object.entries(registry.modules).map(([moduleKey, mod]) => {
-        const subtabEntries = Object.keys(mod.subtabs).length > 0 ? Object.entries(mod.subtabs) : [['', mod.label] as [string, string]]
-        return (
-          <div key={moduleKey} style={{ marginBottom: 18, borderRadius: 12, border: `1px solid ${BORDER.normal}`, overflow: 'hidden' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'rgba(244,113,59,0.06)' }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading }}>{mod.label}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, color: TEXT.muted }}>Data Access Scope</span>
-                <select
-                  style={{ ...inputStyle, width: 'auto', padding: '5px 8px', fontSize: 12 }}
-                  value={scopes[moduleKey] || ''}
-                  onChange={(e) => setScopes((s) => ({ ...s, [moduleKey]: e.target.value }))}
-                >
-                  <option value="">— Default —</option>
-                  {registry.scopes.map((s) => <option key={s} value={s}>{SCOPE_LABELS[s] || s}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-                <thead>
-                  <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
-                    <th style={{ textAlign: 'left', padding: '8px 14px', fontSize: 10.5, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase' }}>Section</th>
-                    {registry.actions.map((a) => (
-                      <th key={a} style={{ padding: '8px 6px', fontSize: 10.5, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', textAlign: 'center' }}>{ACTION_LABELS[a] || a}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {subtabEntries.map(([subtabKey, subtabLabel]) => {
-                    const rowIds = registry.actions.map((a) => `${moduleKey}:${subtabKey}:${a}`)
-                    return (
-                      <tr key={subtabKey} style={{ borderTop: `1px solid ${BORDER.normal}` }}>
-                        <td style={{ padding: '8px 14px', fontSize: 12.5, color: TEXT.body }}>
-                          <span style={{ cursor: 'pointer', textDecoration: 'underline dotted' }} onClick={() => toggleAllForRow(rowIds)} title="Toggle all actions in this row">{subtabLabel}</span>
-                        </td>
-                        {registry.actions.map((a) => {
-                          const id = `${moduleKey}:${subtabKey}:${a}`
-                          return (
-                            <td key={a} style={{ padding: '6px', textAlign: 'center' }}>
-                              <input type="checkbox" checked={selected.has(id)} onChange={() => toggle(id)} />
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+        <p style={{ fontSize: 12, color: TEXT.muted, margin: '6px 0 0' }}>
+          For a one-off exception on top of their roles. If several people need the same thing, make a role instead. Faded ticks come from roles.
+        </p>
+        {showExtras && (
+          <div style={{ marginTop: 12 }}>
+            <PermissionMatrixEditor registry={registry} value={extras} onChange={setExtras} inherited={fromRoles} />
+            {canEditExtras && <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+              <button type="button" disabled={!!saving || !extrasChanged}
+                onClick={() => run('extra permissions', () => sod.guard(user.id, { granular_permissions: extras }, (reason) => governedUsersApi.updatePermissions(user.id, extras, reason)), 'Extra permissions saved.')}
+                style={{ ...primaryBtnStyle, padding: '10px 24px', opacity: saving || !extrasChanged ? 0.6 : 1 }}>
+                {saving === 'extra permissions' ? 'Saving…' : 'Save Extra Permissions'}
+              </button>
+            </div>}
           </div>
-        )
-      })}
+        )}
+      </div>}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button onClick={save} disabled={saving} style={{ ...primaryBtnStyle, padding: '10px 24px', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save Matrix'}</button>
+      {sod.dialog}
+      <AccessGovernancePanel userId={user.id} canEdit={canEditRoles} canViewTrace={can('organization', 'monitor', 'view')}
+        roles={roles.filter((r) => (user.role_ids || []).includes(r.id)).map((r) => ({ id: r.id, name: r.name }))}
+        extras={user.granular_permissions || []} />
+
+      <div style={sectionStyle} data-tour="org-user-effective">
+        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 6px' }}>Effective access</h2>
+        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>
+          Everything {user.name} can do right now (saved roles + extras). Hover a tick to see which role gives it.
+          Modules: {effective ? (effective.apps.length ? effective.apps.join(', ') : 'none') : '…'}
+        </p>
+        {effective && <PermissionMatrixEditor registry={registry} value={[]} inherited={effective.grants} readOnly onlyGranted />}
       </div>
     </div>
   )
@@ -614,7 +638,7 @@ function PermissionMatrixTab({ user, registry, onRefresh }: { user: User; regist
 function PermissionHistoryTab({ history }: { history: UserActivity[] }) {
   return (
     <div style={sectionStyle}>
-      <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Permission History</h2>
+      <h2 data-tour="org-user-perm-history" style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Permission History</h2>
       {history.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No permission changes recorded yet.</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {history.map((h) => (
@@ -633,19 +657,103 @@ function PermissionHistoryTab({ history }: { history: UserActivity[] }) {
 // Login History / User Activity (read-only)
 // ---------------------------------------------------------------------------
 
-function LoginHistoryTab({ sessions }: { sessions: UserSession[] }) {
+const SCOPE_OPTIONS: [string, string][] = [
+  ['', 'Follow roles'], ['own', 'Own records'], ['assigned', 'Own + assigned'], ['department', 'Department'],
+  ['plant', 'Plant / branch'], ['multi_plant', 'Multiple plants'], ['organization', 'Entire organization'],
+]
+
+/** Personal data-scope overrides — beat whatever the user's roles give for a module. */
+function DataAccessTab({ userId }: { userId: number }) {
+  const { canFeature } = useCan()
+  const canEdit = canFeature('organization', 'roles', 'data_access', 'edit')
+  const [rows, setRows] = useState<UserDataScopeRow[]>([])
+  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    securityApi.userDataScopes(userId)
+      .then((r) => { setRows(r); setDraft(Object.fromEntries(r.filter((x) => x.override).map((x) => [x.module_key, x.override as string]))) })
+      .catch((err) => setError(extractErrorMessages(err, 'Could not load data access.').join(' ')))
+  }, [userId])
+
+  const save = async () => {
+    try {
+      const r = await securityApi.saveUserDataScopes(userId, draft)
+      setRows(r)
+      setNotice('Data access saved. It applies on the user\u2019s next page load.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not save data access.').join(' '))
+    }
+  }
+
   return (
     <div style={sectionStyle}>
-      <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Login History</h2>
+      <MessageDialog open={!!error} variant="error" title="Data access" message={error} onClose={() => setError('')} />
+      <MessageDialog open={!!notice} variant="success" title="Saved" message={notice} onClose={() => setNotice('')} />
+      <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 6 }}>Data Access</h2>
+      <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: '0 0 12px' }}>
+        Which records this person sees in each module. Normally it comes from their roles (widest wins); set a personal
+        override only for exceptions. Modules they can&apos;t open at all are unaffected.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 680 }}>
+        {rows.map((r) => (
+          <div key={r.module_key} style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ flex: '1 1 200px', fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{r.module_label}</span>
+            <select style={{ ...inputStyle, width: 200 }} disabled={!canEdit} value={draft[r.module_key] || ''}
+              onChange={(e) => setDraft((d) => { const n = { ...d }; if (e.target.value) n[r.module_key] = e.target.value; else delete n[r.module_key]; return n })}>
+              {SCOPE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <span style={{ width: 190, fontSize: 12, color: TEXT.muted }}>now: {r.effective_label}</span>
+          </div>
+        ))}
+      </div>
+      {canEdit && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+          <button type="button" onClick={save} style={{ ...secondaryBtnStyle, borderColor: BRAND.primary, color: BRAND.primary }}>Save data access</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const REVOKE_REASON: Record<string, string> = { logout: 'SIGNED OUT', admin: 'SIGNED OUT BY ADMIN', idle: 'IDLE TIMEOUT', rotated: 'RENEWED', limit: 'DEVICE LIMIT', deactivated: 'DEACTIVATED' }
+
+function LoginHistoryTab({ userId, sessions, onRefresh }: { userId: number; sessions: UserSession[]; onRefresh: () => void }) {
+  const { can } = useCan()
+  const [ask, setAsk] = useState(false)
+  const [msg, setMsg] = useState('')
+  const live = sessions.filter((s) => !s.revoked_at && new Date(s.expires_at) > new Date()).length
+  const signOutAll = async () => {
+    setAsk(false)
+    try {
+      const r = await securityApi.revokeAll(userId)
+      setMsg(`Signed out of ${r.revoked} session(s).`)
+      onRefresh()
+    } catch (err) {
+      setMsg(extractErrorMessages(err, 'Could not sign the user out.').join(' '))
+    }
+  }
+  return (
+    <div style={sectionStyle}>
+      <ConfirmDialog open={ask} title="Sign out everywhere?" confirmLabel="Sign out" message="End every live session of this user? They will have to sign in again."
+        onConfirm={signOutAll} onCancel={() => setAsk(false)} />
+      <MessageDialog open={!!msg} variant="success" title="Sessions" message={msg} onClose={() => setMsg('')} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+        <h2 data-tour="org-user-login-history" style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', margin: 0 }}>Login History · {live} live</h2>
+        {live > 0 && can('organization', 'security', 'edit') && (
+          <button type="button" style={secondaryBtnStyle} onClick={() => setAsk(true)}>Sign out everywhere</button>
+        )}
+      </div>
       {sessions.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No sessions recorded yet.</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sessions.map((s) => (
             <div key={s.id} style={cardRowStyle}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{new Date(s.created_at).toLocaleString()}</span>
-                {s.revoked_at && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#b91c1c' }}>REVOKED</span>}
+                {s.revoked_at && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#b91c1c' }}>{REVOKE_REASON[s.revoked_reason || ''] || 'REVOKED'}</span>}
               </div>
-              <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>Last used {new Date(s.last_used_at).toLocaleString()} · Expires {new Date(s.expires_at).toLocaleString()}{s.user_agent ? ` · ${s.user_agent}` : ''}</p>
+              <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>Last used {new Date(s.last_used_at).toLocaleString()} · Expires {new Date(s.expires_at).toLocaleString()}{s.ip_address ? ` · IP ${s.ip_address}` : ''}{s.user_agent ? ` · ${s.user_agent}` : ''}</p>
             </div>
           ))}
         </div>
@@ -657,7 +765,7 @@ function LoginHistoryTab({ sessions }: { sessions: UserSession[] }) {
 function UserActivityTab({ activity }: { activity: UserActivity[] }) {
   return (
     <div style={sectionStyle}>
-      <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>User Activity</h2>
+      <h2 data-tour="org-user-activity" style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>User Activity</h2>
       {activity.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No activity recorded yet.</p> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {activity.map((a) => (
@@ -691,22 +799,29 @@ function UserDocumentsTab({ userId, documents, onRefresh }: { userId: number; do
   const [meta, setMeta] = useState(emptyDocumentMeta())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [formOpen, setFormOpen] = useState(false)
+  const [formError, setFormError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<UserDocument | null>(null)
+  const { canFeature } = useCan()
+  const canEditDocs = canFeature('organization', 'users', 'documents', 'create')
+  const canDeleteDocs = canFeature('organization', 'users', 'documents', 'delete')
+  const canOpenDocs = canFeature('organization', 'users', 'documents', 'export')
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!file) { setError('Select a file to upload'); return }
-    if (!meta.document_name.trim()) { setError('Document Name is required'); return }
+  const openAdd = () => { setFile(null); setMeta(emptyDocumentMeta()); setFormError(''); setFormOpen(true) }
+  const submit = async () => {
+    if (!file) { setFormError('Select a file to upload'); return }
+    if (!meta.document_name.trim()) { setFormError('Document Name is required'); return }
     setSaving(true)
-    setError('')
+    setFormError('')
     try {
       await usersApi.uploadUserDocument(userId, file, meta)
       setFile(null)
       setMeta(emptyDocumentMeta())
+      setFormOpen(false)
       onRefresh()
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to upload document.')
+      setFormError(detail || 'Failed to upload document.')
     } finally {
       setSaving(false)
     }
@@ -726,37 +841,67 @@ function UserDocumentsTab({ userId, documents, onRefresh }: { userId: number; do
 
   return (
     <div style={sectionStyle}>
-      <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Add User Document</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
+        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>User Documents</h2>
+        {canEditDocs && <button type="button" data-tour="org-user-doc-add" onClick={openAdd} style={primaryBtnStyle}>+ Add Document</button>}
+      </div>
 
       <MessageDialog open={!!error} variant="error" title="Document Error" message={error} onClose={() => setError('')} />
       <ConfirmDialog open={!!deleteTarget} title="Delete this document?" message={`Delete "${deleteTarget?.document_name}"? This cannot be undone.`} onConfirm={doDelete} onCancel={() => setDeleteTarget(null)} />
 
-      <form onSubmit={submit} style={{ marginBottom: 20, padding: 16, borderRadius: 12, background: 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.normal}`, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-        <div style={{ gridColumn: '1 / -1' }}><Field label="Document File *"><FileUploadField file={file} onChange={setFile} onRemove={() => setFile(null)} uploading={saving} /></Field></div>
-        <Field label="Document Type *">
-          <select style={inputStyle} value={meta.document_type} onChange={(e) => setMeta((m) => ({ ...m, document_type: e.target.value }))}>
-            {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </Field>
-        <Field label="Document Name *"><input style={inputStyle} value={meta.document_name} onChange={(e) => setMeta((m) => ({ ...m, document_name: e.target.value }))} /></Field>
-        <Field label="Document Number"><input style={inputStyle} value={meta.document_number} onChange={(e) => setMeta((m) => ({ ...m, document_number: e.target.value }))} /></Field>
-        <Field label="Issue Date"><input type="date" style={inputStyle} value={meta.issue_date} onChange={(e) => setMeta((m) => ({ ...m, issue_date: e.target.value }))} /></Field>
-        <Field label="Expiry Date"><input type="date" style={inputStyle} value={meta.expiry_date} onChange={(e) => setMeta((m) => ({ ...m, expiry_date: e.target.value }))} /></Field>
-        <Field label="Issuing Authority"><input style={inputStyle} value={meta.issuing_authority} onChange={(e) => setMeta((m) => ({ ...m, issuing_authority: e.target.value }))} /></Field>
-        <Field label="Confidentiality">
-          <select style={inputStyle} value={meta.confidentiality} onChange={(e) => setMeta((m) => ({ ...m, confidentiality: e.target.value }))}>
-            {CONFIDENTIALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </Field>
-        <Field label="Tags (comma separated)"><input style={inputStyle} value={meta.tags} onChange={(e) => setMeta((m) => ({ ...m, tags: e.target.value }))} /></Field>
-        <div style={{ gridColumn: '1 / -1' }}><Field label="Remarks"><input style={inputStyle} value={meta.remarks} onChange={(e) => setMeta((m) => ({ ...m, remarks: e.target.value }))} /></Field></div>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'Uploading…' : 'Save Document'}</button>
-        </div>
-      </form>
+      {canEditDocs && formOpen && (
+        <FormSheet width={640} icon="doc" title="Add User Document" subtitle="ID proof, offer letter, certificate or agreement — stored in SharePoint"
+          onClose={() => setFormOpen(false)} busy={saving}
+          footer={<>
+            <button type="button" data-tour="org-user-doc-cancel" onClick={() => setFormOpen(false)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+            <button type="button" data-tour="org-user-doc-save" onClick={submit} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+              <SheetIcon name="upload" size={16} />{saving ? 'Uploading…' : 'Save Document'}
+            </button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {formError && <div style={sheetErrBox}>{formError}</div>}
+            <SheetSection icon="clip" title="File">
+              <div data-tour="org-user-doc-file">
+                <label style={sheetLabel}>Document File <Req /></label>
+                <FileUploadField file={file} onChange={setFile} onRemove={() => setFile(null)} uploading={saving} />
+              </div>
+            </SheetSection>
+            <SheetSection icon="doc" title="Details">
+              <div style={sheetRow}>
+                <SheetField label="Document Type" req basis={160}>
+                  <select data-tour="org-user-doc-type" style={sheetInput} value={meta.document_type} onChange={(e) => setMeta((m) => ({ ...m, document_type: e.target.value }))}>
+                    {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </SheetField>
+                <SheetField label="Document Name" req basis={240}><input data-tour="org-user-doc-name" style={sheetInput} value={meta.document_name} onChange={(e) => setMeta((m) => ({ ...m, document_name: e.target.value }))} placeholder="e.g. PAN Card" /></SheetField>
+              </div>
+              <div style={sheetRow}>
+                <SheetField label="Document Number"><input data-tour="org-user-doc-number" style={sheetInput} value={meta.document_number} onChange={(e) => setMeta((m) => ({ ...m, document_number: e.target.value }))} /></SheetField>
+                <SheetField label="Issuing Authority"><input data-tour="org-user-doc-authority" style={sheetInput} value={meta.issuing_authority} onChange={(e) => setMeta((m) => ({ ...m, issuing_authority: e.target.value }))} /></SheetField>
+              </div>
+              <div style={{ ...sheetRow, marginBottom: 0 }}>
+                <SheetField label="Issue Date" tour="org-user-doc-issue" basis={160}><DateField value={meta.issue_date} onChange={(v) => setMeta((m) => ({ ...m, issue_date: v }))} /></SheetField>
+                <SheetField label="Expiry Date" tour="org-user-doc-expiry" basis={160}><DateField value={meta.expiry_date} onChange={(v) => setMeta((m) => ({ ...m, expiry_date: v }))} /></SheetField>
+              </div>
+              <p style={sheetHint}>Fill the expiry date for documents that expire (passport, licence) so renewals show in the list.</p>
+            </SheetSection>
+            <SheetSection icon="tag" title="Classification">
+              <div style={sheetRow}>
+                <SheetField label="Confidentiality" req basis={160}>
+                  <select data-tour="org-user-doc-confidentiality" style={sheetInput} value={meta.confidentiality} onChange={(e) => setMeta((m) => ({ ...m, confidentiality: e.target.value }))}>
+                    {CONFIDENTIALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </SheetField>
+                <SheetField label="Tags (comma separated)" basis={240}><input data-tour="org-user-doc-tags" style={sheetInput} value={meta.tags} onChange={(e) => setMeta((m) => ({ ...m, tags: e.target.value }))} placeholder="e.g. kyc, joining" /></SheetField>
+              </div>
+              <SheetField label="Remarks"><input data-tour="org-user-doc-remarks" style={sheetInput} value={meta.remarks} onChange={(e) => setMeta((m) => ({ ...m, remarks: e.target.value }))} /></SheetField>
+            </SheetSection>
+          </div>
+        </FormSheet>
+      )}
 
       {documents.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted }}>No documents uploaded yet.</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div data-tour="org-user-doc-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {documents.map((d) => (
             <div key={d.id} style={cardRowStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
@@ -768,8 +913,8 @@ function UserDocumentsTab({ userId, documents, onRefresh }: { userId: number; do
                   <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{d.filename}{d.expiry_date ? ` · Expires ${d.expiry_date}` : ''}</p>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-                  {d.sharepoint_url && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a>}
-                  <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(d)}>Delete</button>
+                  {d.sharepoint_url && canOpenDocs && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a>}
+                  {canDeleteDocs && <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(d)}>Delete</button>}
                 </div>
               </div>
             </div>

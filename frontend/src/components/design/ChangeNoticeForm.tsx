@@ -3,27 +3,27 @@
 import { useEffect, useMemo, useState } from 'react'
 import { designApi } from '@/lib/api'
 import { DesignChangeNotice, DesignLookupOption } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
-import { ECN_PRIORITY_LABELS, ECN_REASON_LABELS, toOptions } from '@/components/design/designMeta'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
+import { DISPOSITION_LABELS, ECN_EFFECTIVITY_LABELS, ECN_PRIORITY_LABELS, ECN_REASON_LABELS, toOptions } from '@/components/design/designMeta'
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
+const inputStyle = sheetInput
+const labelStyle = sheetLabel
+const fullBlock: React.CSSProperties = { padding: '20px 24px 0', borderTop: `1px solid ${SHEET.LINE}` }
+const dropStyle: React.CSSProperties = { position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4, borderRadius: 10, border: `1px solid ${SHEET.LINE}`, background: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: 280, overflowY: 'auto' }
+const optionStyle: React.CSSProperties = { padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderTop: `1px solid ${SHEET.LINE}` }
+const lineRow: React.CSSProperties = { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 12px', borderRadius: 10, border: `1px solid ${SHEET.LINE}`, background: SHEET.SOFT }
+const removeBtn: React.CSSProperties = { border: 'none', background: 'transparent', color: '#DC2626', cursor: 'pointer', display: 'inline-flex', padding: 4 }
+const lineLabel: React.CSSProperties = { flex: '0 1 320px', fontSize: 13, fontWeight: 600, color: SHEET.INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+const lineInput: React.CSSProperties = { ...sheetInput, flex: '1 1 260px', width: 'auto', padding: '7px 10px', fontSize: 13 }
 
 type AffectedRow = { document_id: number; label: string; change_description: string }
+type AffectedBomRow = { bom_id: number; label: string; change_description: string }
 
 export default function ChangeNoticeForm({
   initial, currentUserId, submitLabel, saving, onSubmit, onCancel, onError,
+  error, title: pageTitle, subtitle, nav, onBack, backTour, tour,
 }: {
   initial?: DesignChangeNotice | null
   currentUserId?: number
@@ -32,11 +32,24 @@ export default function ChangeNoticeForm({
   onSubmit: (payload: Record<string, unknown>) => void
   onCancel: () => void
   onError: (message: string) => void
+  /** Shown in the banner at the top of the form. */
+  error?: string | string[]
+  /** FormPage heading. */
+  title: string
+  subtitle: string
+  /** Module sub-nav — rendered above the form header. */
+  nav?: React.ReactNode
+  /** "← Back" pill in the header row. */
+  onBack?: () => void
+  /** data-tour on the Back pill. */
+  backTour?: string
+  tour?: string
 }) {
   const [users, setUsers] = useState<DesignLookupOption[]>([])
   const [projects, setProjects] = useState<DesignLookupOption[]>([])
   const [machines, setMachines] = useState<DesignLookupOption[]>([])
   const [documents, setDocuments] = useState<DesignLookupOption[]>([])
+  const [bomOptions, setBomOptions] = useState<DesignLookupOption[]>([])
 
   const [title, setTitle] = useState(initial?.title || '')
   const [reason, setReason] = useState(initial?.reason || 'design_improvement')
@@ -51,10 +64,21 @@ export default function ChangeNoticeForm({
     (initial?.documents || []).map((d) => ({ document_id: d.document_id, label: `${d.doc_number} — ${d.title}`, change_description: d.change_description || '' })),
   )
   const [search, setSearch] = useState('')
+  const [bomRows, setBomRows] = useState<AffectedBomRow[]>(
+    (initial?.boms || []).map((b) => ({ bom_id: b.bom_id, label: `${b.bom_number || `BOM #${b.bom_id}`} — ${b.title || ''}`, change_description: b.change_description || '' })),
+  )
+  const [bomSearch, setBomSearch] = useState('')
+  const [effectivityType, setEffectivityType] = useState<string>(initial?.effectivity_type || 'immediate')
+  const [effectivityDate, setEffectivityDate] = useState(initial?.effectivity_date || '')
+  const [effectivitySerial, setEffectivitySerial] = useState(initial?.effectivity_serial || '')
+  const [effectivityNote, setEffectivityNote] = useState(initial?.effectivity_note || '')
+  const [stockDisposition, setStockDisposition] = useState<string>(initial?.stock_disposition || 'not_applicable')
+  const [wipDisposition, setWipDisposition] = useState<string>(initial?.wip_disposition || 'not_applicable')
+  const [dispositionNote, setDispositionNote] = useState(initial?.disposition_note || '')
 
   useEffect(() => {
-    Promise.all([designApi.lookupUsers(), designApi.lookupProjects(), designApi.lookupMachines(), designApi.lookupDocuments()])
-      .then(([u, p, m, d]) => { setUsers(u); setProjects(p); setMachines(m); setDocuments(d) })
+    Promise.all([designApi.lookupUsers(), designApi.lookupProjects(), designApi.lookupMachines(), designApi.lookupDocuments(), designApi.lookupBoms()])
+      .then(([u, p, m, d, b]) => { setUsers(u); setProjects(p); setMachines(m); setDocuments(d); setBomOptions(b) })
       .catch(() => onError('Failed to load the form options — refresh the page to try again.'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -65,116 +89,232 @@ export default function ChangeNoticeForm({
     if (!q) return []
     return documents.filter((d) => !rows.some((r) => r.document_id === d.id) && d.label.toLowerCase().includes(q)).slice(0, 8)
   }, [search, documents, rows])
+  const bomMatches = useMemo(() => {
+    const q = bomSearch.trim().toLowerCase()
+    if (!q) return []
+    return bomOptions.filter((b) => !bomRows.some((r) => r.bom_id === b.id) && b.label.toLowerCase().includes(q)).slice(0, 8)
+  }, [bomSearch, bomOptions, bomRows])
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (title.trim().length < 3) { onError('Give the change notice a title (at least 3 characters).'); return }
+    if (effectivityType === 'date' && !effectivityDate) { onError('Effectivity is "From a date" — pick the date the change takes effect, or choose another effectivity.'); return }
+    if (effectivityType === 'serial' && !effectivitySerial.trim()) { onError('Effectivity is "From a serial number" — enter the first serial number the change applies to.'); return }
     onSubmit({
       title: title.trim(), reason, priority, description: description.trim() || null, impact_assessment: impact.trim() || null,
       target_date: targetDate || null, pm_project_id: pmProjectId ? Number(pmProjectId) : null,
       erp_project_id: erpProjectId ? Number(erpProjectId) : null, approver_id: approverId ? Number(approverId) : null,
       documents: rows.map((r) => ({ document_id: r.document_id, change_description: r.change_description.trim() || null })),
+      boms: bomRows.map((r) => ({ bom_id: r.bom_id, change_description: r.change_description.trim() || null })),
+      effectivity_type: effectivityType,
+      effectivity_date: effectivityType === 'date' ? effectivityDate || null : null,
+      effectivity_serial: effectivityType === 'serial' ? effectivitySerial.trim() || null : null,
+      effectivity_note: effectivityNote.trim() || null,
+      stock_disposition: stockDisposition, wip_disposition: wipDisposition,
+      disposition_note: dispositionNote.trim() || null,
     })
   }
 
+  const hasError = !!error && (!Array.isArray(error) || error.length > 0)
+
   return (
     <form onSubmit={submit}>
-      <div style={sectionStyle}>
-        <p style={sectionTitle}>Change</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 320px', maxWidth: 560 }}>
-            <label style={labelStyle}>Title *</label>
-            <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Increase bogie gusset thickness" maxLength={255} />
-          </div>
-          <div style={{ flex: '0 1 200px', minWidth: 180 }}>
-            <label style={labelStyle}>Reason</label>
-            <select style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)}>
-              {Object.entries(ECN_REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div style={{ flex: '0 1 130px', minWidth: 120 }}>
-            <label style={labelStyle}>Priority</label>
-            <select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value)}>
-              {Object.entries(ECN_PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 160 }}>
-            <label style={labelStyle}>Target date</label>
-            <DateField value={targetDate} onChange={setTargetDate} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
-          <div style={{ flex: '1 1 320px' }}>
-            <label style={labelStyle}>Description — what is changing</label>
-            <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
-          <div style={{ flex: '1 1 320px' }}>
-            <label style={labelStyle}>Impact — production, stock, cost, in-service units</label>
-            <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={impact} onChange={(e) => setImpact(e.target.value)} />
-          </div>
-        </div>
-      </div>
-
-      <div style={sectionStyle}>
-        <p style={sectionTitle}>Associations & approval</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
-            <label style={labelStyle}>Project</label>
-            <SearchableSelect value={pmProjectId} onChange={setPmProjectId} options={toOptions(projects, 'None')} placeholder="Select project…" />
-          </div>
-          <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
-            <label style={labelStyle}>Machine</label>
-            <SearchableSelect value={erpProjectId} onChange={setErpProjectId} options={toOptions(machines, 'None')} placeholder="Select machine…" />
-          </div>
-          <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
-            <label style={labelStyle}>Approver</label>
-            <SearchableSelect value={approverId} onChange={setApproverId} options={approverOptions} placeholder="Select approver…" />
-          </div>
-        </div>
-      </div>
-
-      <div style={sectionStyle}>
-        <p style={sectionTitle}>Affected documents</p>
-        <div style={{ position: 'relative', maxWidth: 520 }}>
-          <input style={inputStyle} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search active documents by number or title to add…" />
-          {matches.length > 0 && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, marginTop: 4, borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
-              {matches.map((d) => (
-                <div key={d.id} onClick={() => { setRows((prev) => [...prev, { document_id: d.id, label: d.label, change_description: '' }]); setSearch('') }}
-                  style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderTop: `1px solid ${BORDER.light}` }}>
-                  {d.label}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        {rows.length === 0 ? (
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: '10px 0 0' }}>No documents added yet — an ECN needs at least one affected document before it can be submitted.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-            {rows.map((r, idx) => (
-              <div key={r.document_id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '8px 12px', borderRadius: 10, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.55)' }}>
-                <span style={{ flex: '0 1 320px', fontSize: 13, fontWeight: 600, color: TEXT.heading, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
-                <input style={{ ...inputStyle, flex: '1 1 260px', padding: '7px 10px', fontSize: 13 }} value={r.change_description}
-                  onChange={(e) => setRows((prev) => prev.map((p, i) => (i === idx ? { ...p, change_description: e.target.value } : p)))}
-                  placeholder="What changes in this document" />
-                <button type="button" onClick={() => setRows((prev) => prev.filter((_, i) => i !== idx))}
-                  style={{ border: 'none', background: 'transparent', color: '#DC2626', cursor: 'pointer', fontSize: 16 }} aria-label="Remove document">×</button>
+      <FormPage nav={nav} tour={tour} icon={initial ? 'edit' : 'doc'} title={pageTitle} subtitle={subtitle} onBack={onBack} backTour={backTour}
+        footer={<>
+          <button type="button" data-tour="design-ecnform-cancel-btn" onClick={onCancel} style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving}>Cancel</button>
+          <button type="submit" data-tour="design-ecnform-save-btn" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+            <SheetIcon name="check" size={16} />{saving ? 'Saving…' : submitLabel}
+          </button>
+        </>}>
+        {hasError && <div style={{ padding: '20px 24px 0' }}><SheetError error={error || ''} /></div>}
+        <SheetColumns
+          left={
+            <SheetSection icon="edit" title="Change">
+              <div data-tour="design-ecnform-title">
+                <label style={labelStyle}>Title <Req /></label>
+                <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Increase bogie gusset thickness" maxLength={255} />
               </div>
-            ))}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
+                <div data-tour="design-ecnform-reason" style={{ flex: '1 1 190px', maxWidth: 260 }}>
+                  <label style={labelStyle}>Reason</label>
+                  <select style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)}>
+                    {Object.entries(ECN_REASON_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div data-tour="design-ecnform-priority" style={{ flex: '0 1 130px', minWidth: 120 }}>
+                  <label style={labelStyle}>Priority</label>
+                  <select style={inputStyle} value={priority} onChange={(e) => setPriority(e.target.value)}>
+                    {Object.entries(ECN_PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div data-tour="design-ecnform-target-date" style={{ flex: '0 1 170px', minWidth: 160 }}>
+                  <label style={labelStyle}>Target date</label>
+                  <DateField value={targetDate} onChange={setTargetDate} />
+                </div>
+              </div>
+              <div data-tour="design-ecnform-description" style={{ marginTop: 14 }}>
+                <label style={labelStyle}>Description — what is changing</label>
+                <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} />
+              </div>
+              <div data-tour="design-ecnform-impact" style={{ marginTop: 14 }}>
+                <label style={labelStyle}>Impact — production, stock, cost, in-service units</label>
+                <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={impact} onChange={(e) => setImpact(e.target.value)} />
+              </div>
+            </SheetSection>
+          }
+          right={
+            <SheetSection icon="link" title="Associations & approval" extra={<Optional />}>
+              <div data-tour="design-ecnform-project">
+                <label style={labelStyle}>Project</label>
+                <SearchableSelect value={pmProjectId} onChange={setPmProjectId} options={toOptions(projects, 'None')} placeholder="Select project…" />
+              </div>
+              <div data-tour="design-ecnform-machine" style={{ marginTop: 14 }}>
+                <label style={labelStyle}>Machine</label>
+                <SearchableSelect value={erpProjectId} onChange={setErpProjectId} options={toOptions(machines, 'None')} placeholder="Select machine…" />
+              </div>
+              <div data-tour="design-ecnform-approver" style={{ marginTop: 14 }}>
+                <label style={labelStyle}>Approver</label>
+                <SearchableSelect value={approverId} onChange={setApproverId} options={approverOptions} placeholder="Select approver…" />
+                <p style={sheetHint}>Decides the ECN once it is submitted — the person raising it can&apos;t be the approver.</p>
+              </div>
+            </SheetSection>
+          }
+        />
+
+        <div style={fullBlock}>
+          <SheetSection icon="doc" title="Affected documents">
+            <div style={{ position: 'relative', maxWidth: 520 }}>
+              <input data-tour="design-ecnform-docs-search" style={inputStyle} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search active documents by number or title to add…" />
+              {matches.length > 0 && (
+                <div style={dropStyle}>
+                  {matches.map((d) => (
+                    <div key={d.id} onClick={() => { setRows((prev) => [...prev, { document_id: d.id, label: d.label, change_description: '' }]); setSearch('') }} style={optionStyle}>
+                      {d.label}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {rows.length === 0 ? (
+              <p style={{ ...sheetHint, marginTop: 10 }}>No drawings added yet — an ECN needs at least one affected drawing or BOM before it can be submitted.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                {rows.map((r, idx) => (
+                  <div key={r.document_id} style={lineRow}>
+                    <span style={lineLabel}>{r.label}</span>
+                    <input style={lineInput} value={r.change_description}
+                      onChange={(e) => setRows((prev) => prev.map((p, i) => (i === idx ? { ...p, change_description: e.target.value } : p)))}
+                      placeholder="What changes in this document" />
+                    <button type="button" onClick={() => setRows((prev) => prev.filter((_, i) => i !== idx))} style={removeBtn} aria-label="Remove document"><SheetIcon name="trash" size={16} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SheetSection>
+
+          <SheetSection icon="box" title="Affected BOMs">
+            <div style={{ position: 'relative', maxWidth: 520 }}>
+              <input data-tour="design-ecnform-boms-search" style={inputStyle} value={bomSearch} onChange={(e) => setBomSearch(e.target.value)} placeholder="Search BOMs by number or title to add…" />
+              {bomMatches.length > 0 && (
+                <div style={dropStyle}>
+                  {bomMatches.map((b) => (
+                    <div key={b.id} onClick={() => { setBomRows((prev) => [...prev, { bom_id: b.id, label: b.label, change_description: '' }]); setBomSearch('') }} style={optionStyle}>
+                      {b.label}{b.extra ? <span style={{ color: SHEET.MUTED }}> · {b.extra}</span> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {bomRows.length === 0 ? (
+              <p style={{ ...sheetHint, marginTop: 10 }}>No BOMs added — add each BOM whose lines change; a new BOM revision is raised under this ECN for it.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                {bomRows.map((r, idx) => (
+                  <div key={r.bom_id} style={lineRow}>
+                    <span style={lineLabel}>{r.label}</span>
+                    <input style={lineInput} value={r.change_description}
+                      onChange={(e) => setBomRows((prev) => prev.map((p, i) => (i === idx ? { ...p, change_description: e.target.value } : p)))}
+                      placeholder="What changes in this BOM" />
+                    <button type="button" onClick={() => setBomRows((prev) => prev.filter((_, i) => i !== idx))} style={removeBtn} aria-label="Remove BOM"><SheetIcon name="trash" size={16} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SheetSection>
+
+          <SheetSection icon="calendar" title="Effectivity & disposition">
+            <EffectivityFields
+              tours
+              value={{ effectivityType, effectivityDate, effectivitySerial, effectivityNote, stockDisposition, wipDisposition, dispositionNote }}
+              set={{ setEffectivityType, setEffectivityDate, setEffectivitySerial, setEffectivityNote, setStockDisposition, setWipDisposition, setDispositionNote }}
+            />
+          </SheetSection>
+        </div>
+      </FormPage>
+    </form>
+  )
+}
+
+export type EffValue = {
+  effectivityType: string; effectivityDate: string; effectivitySerial: string; effectivityNote: string
+  stockDisposition: string; wipDisposition: string; dispositionNote: string
+}
+export type EffSetters = {
+  setEffectivityType: (v: string) => void; setEffectivityDate: (v: string) => void; setEffectivitySerial: (v: string) => void
+  setEffectivityNote: (v: string) => void; setStockDisposition: (v: string) => void; setWipDisposition: (v: string) => void
+  setDispositionNote: (v: string) => void
+}
+
+/** Effectivity + stock/WIP disposition fields — used by the ECN form and by the
+ * ECN detail page's "Edit effectivity" popup. `tours` adds the form's data-tour ids;
+ * `extra` is rendered after the date/serial field (the popup puts Target date there). */
+export function EffectivityFields({ value: v, set, tours, extra }: { value: EffValue; set: EffSetters; tours?: boolean; extra?: React.ReactNode }) {
+  return (
+    <>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+        <div data-tour={tours ? 'design-ecnform-effectivity' : undefined} style={{ flex: '0 1 250px', minWidth: 220 }}>
+          <label style={labelStyle}>Change takes effect</label>
+          <select style={inputStyle} value={v.effectivityType} onChange={(e) => set.setEffectivityType(e.target.value)}>
+            {Object.entries(ECN_EFFECTIVITY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </div>
+        {v.effectivityType === 'date' && (
+          <div style={{ flex: '0 1 170px', minWidth: 160 }}>
+            <label style={labelStyle}>Effective from <Req /></label>
+            <DateField value={v.effectivityDate} onChange={set.setEffectivityDate} />
           </div>
         )}
+        {v.effectivityType === 'serial' && (
+          <div style={{ flex: '0 1 200px', minWidth: 170 }}>
+            <label style={labelStyle}>From serial no. <Req /></label>
+            <input style={inputStyle} value={v.effectivitySerial} onChange={(e) => set.setEffectivitySerial(e.target.value)} maxLength={100} placeholder="e.g. RRV-0045" />
+          </div>
+        )}
+        {extra}
+        <div data-tour={tours ? 'design-ecnform-effectivity-note' : undefined} style={{ flex: '1 1 260px', maxWidth: 520 }}>
+          <label style={labelStyle}>Effectivity note</label>
+          <input style={inputStyle} value={v.effectivityNote} onChange={(e) => set.setEffectivityNote(e.target.value)}
+            placeholder={v.effectivityType === 'project' ? 'Applies to the Project / Machine above' : 'e.g. units already dispatched are not retrofitted'} />
+        </div>
       </div>
-
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-        <button type="button" onClick={onCancel} style={secondaryBtnStyle} disabled={saving}>Cancel</button>
-        <button type="submit" disabled={saving} style={{
-          padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'wait' : 'pointer',
-          background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`, opacity: saving ? 0.7 : 1,
-        }}>
-          {saving ? 'Saving…' : submitLabel}
-        </button>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
+        <div data-tour={tours ? 'design-ecnform-stock-disposition' : undefined} style={{ flex: '0 1 170px', minWidth: 150 }}>
+          <label style={labelStyle}>Stock on hand</label>
+          <select style={inputStyle} value={v.stockDisposition} onChange={(e) => set.setStockDisposition(e.target.value)}>
+            {Object.entries(DISPOSITION_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </div>
+        <div data-tour={tours ? 'design-ecnform-wip-disposition' : undefined} style={{ flex: '0 1 170px', minWidth: 150 }}>
+          <label style={labelStyle}>Work in progress</label>
+          <select style={inputStyle} value={v.wipDisposition} onChange={(e) => set.setWipDisposition(e.target.value)}>
+            {Object.entries(DISPOSITION_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </div>
+        <div data-tour={tours ? 'design-ecnform-disposition-note' : undefined} style={{ flex: '1 1 260px', maxWidth: 520 }}>
+          <label style={labelStyle}>Disposition note</label>
+          <input style={inputStyle} value={v.dispositionNote} onChange={(e) => set.setDispositionNote(e.target.value)} placeholder="e.g. rework the 12 brackets in stock by adding the gusset" />
+        </div>
       </div>
-    </form>
+    </>
   )
 }

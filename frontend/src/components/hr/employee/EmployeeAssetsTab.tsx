@@ -8,6 +8,7 @@ import type { HrAssetAssignment } from '@/types'
 import { ASSET_CATEGORY_LABELS, ASSET_CONDITION_LABELS } from '@/components/hr/admin/AssetDialogs'
 import { ErrorBanner, EmptyRow, Pill, sectionStyle, thStyle, tdStyle, fmtDate, linkActionStyle } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
+import { recordPath } from '@/lib/recordRef'
 
 // Assets tab on the HR employee detail page: what the employee holds now
 // (open assignments) and everything they held before.
@@ -37,14 +38,14 @@ export default function EmployeeAssetsTab({ userId }: { userId: number }) {
             {loading ? 'Loading…' : holding.length ? `${holding.length} asset${holding.length > 1 ? 's' : ''} currently issued — all must be returned before exit.` : 'No assets currently issued.'}
           </p>
         </div>
-        <button type="button" style={linkActionStyle} onClick={() => router.push('/dashboard/hr/assets')}>Open asset register →</button>
+        <button type="button" data-tour="hr-emp-assets-register" style={linkActionStyle} onClick={() => router.push('/dashboard/hr/assets')}>Open asset register →</button>
       </div>
       <div style={{ padding: error.length ? '0 20px' : 0 }}><ErrorBanner error={error} /></div>
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+      <table data-tour="hr-emp-assets-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
         <thead><tr>{['Asset', 'Category', 'Serial', 'Issued', 'Returned', 'Condition (out → in)', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
         <tbody>
           {loading ? <EmptyRow colSpan={7} text="Loading…" /> : rows.length === 0 ? <EmptyRow colSpan={7} text="No assets have ever been issued to this employee." /> : rows.map((r) => (
-            <tr key={r.id} onClick={() => router.push(`/dashboard/hr/assets/${r.asset_id}`)} style={{ cursor: 'pointer' }}>
+            <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/hr/assets', r, 'asset_id'))} style={{ cursor: 'pointer' }}>
               <td style={tdStyle}><b>{r.asset_code}</b> — {r.asset_name}</td>
               <td style={tdStyle}>{r.asset_category ? ASSET_CATEGORY_LABELS[r.asset_category] || r.asset_category : '—'}</td>
               <td style={{ ...tdStyle, fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{r.asset_serial_number || '—'}</td>
@@ -54,7 +55,7 @@ export default function EmployeeAssetsTab({ userId }: { userId: number }) {
                 {r.condition_on_issue ? ASSET_CONDITION_LABELS[r.condition_on_issue] || r.condition_on_issue : '—'} → {r.condition_on_return ? ASSET_CONDITION_LABELS[r.condition_on_return] || r.condition_on_return : '—'}
               </td>
               <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                <span onClick={() => router.push(`/dashboard/hr/assets/${r.asset_id}`)} style={linkActionStyle}>View</span>
+                <span onClick={() => router.push(recordPath('/dashboard/hr/assets', r, 'asset_id'))} style={linkActionStyle}>View</span>
               </td>
             </tr>
           ))}

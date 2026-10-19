@@ -5,43 +5,62 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
+import NavSettingsGear from '@/components/shared/NavSettingsGear'
+import TourButton from '@/components/tour/TourButton'
+import { ArrowsClockwise, Blueprint, BookOpen, ChartBar, Gear, Kanban, ListChecks, SealCheck, SquaresFour, Stack, Tray, type Icon } from '@phosphor-icons/react'
 
 const TABS = [
   { href: '/dashboard/design', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
-  { href: '/dashboard/design/documents', label: 'Documents', icon: 'file', subtabKey: 'documents' },
-  { href: '/dashboard/design/tasks', label: 'My Tasks', icon: 'check', subtabKey: 'tasks' },
-  { href: '/dashboard/design/change-notices', label: 'Change Notices', icon: 'refresh', subtabKey: 'change_notices' },
+  { href: '/dashboard/design/project-work', label: 'Requests', icon: 'pm-work', subtabKey: 'project_work' },
+  { href: '/dashboard/design/requirements', label: 'Requirements', icon: 'rnd-inbox', subtabKey: 'requirements' },
+  { href: '/dashboard/design/tasks', label: 'My Work', icon: 'check', subtabKey: 'tasks' },
+  { href: '/dashboard/design/documents', label: 'Drawings', icon: 'file', subtabKey: 'documents' },
+  { href: '/dashboard/design/boms', label: 'BOMs', icon: 'layers', subtabKey: 'boms' },
+  { href: '/dashboard/design/reviews', label: 'Reviews & Approvals', icon: 'stamp', subtabKey: 'reviews' },
+  { href: '/dashboard/design/change-notices', label: 'Changes', icon: 'refresh', subtabKey: 'change_notices' },
+  { href: '/dashboard/design/library', label: 'Library', icon: 'book', subtabKey: 'library' },
   { href: '/dashboard/design/reports', label: 'Reports', icon: 'bar-chart', subtabKey: 'reports' },
+  { href: '/dashboard/design/settings', label: 'Settings', icon: 'settings', subtabKey: 'settings' },
 ] as const
 
+// Tab icon key -> Phosphor icon (Regular weight). The key also feeds the
+// tab's data-tour id, so keys stay as they are.
+const TAB_ICONS: Record<string, Icon> = {
+  dashboard: SquaresFour,
+  file: Blueprint,
+  check: ListChecks,
+  refresh: ArrowsClockwise,
+  'bar-chart': ChartBar,
+  layers: Stack,
+  stamp: SealCheck,
+  book: BookOpen,
+  settings: Gear,
+  'pm-work': Kanban,
+  'rnd-inbox': Tray,
+}
+
 function TabIcon({ name }: { name: string }) {
-  const common = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  switch (name) {
-    case 'dashboard':
-      return <svg {...common}><rect x="3" y="3" width="7" height="9" /><rect x="14" y="3" width="7" height="5" /><rect x="14" y="12" width="7" height="9" /><rect x="3" y="16" width="7" height="5" /></svg>
-    case 'file':
-      return <svg {...common}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>
-    case 'check':
-      return <svg {...common}><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" /></svg>
-    case 'refresh':
-      return <svg {...common}><polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" /></svg>
-    case 'bar-chart':
-      return <svg {...common}><line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" /></svg>
-    default:
-      return null
-  }
+  const Cmp = TAB_ICONS[name]
+  return Cmp ? <Cmp size={15} /> : null
 }
 
 export default function DesignNav() {
   const pathname = usePathname()
   const { user } = useAuth()
-  const visibleTabs = filterTabsByAccess('design', TABS, user)
+  // Settings sits as a gear next to the bell, not as a tab (same as R&D).
+  const allowedTabs = filterTabsByAccess('design', TABS, user)
+  const visibleTabs = allowedTabs.filter((t) => t.href !== '/dashboard/design/settings')
+  const settingsTab = allowedTabs.find((t) => t.href === '/dashboard/design/settings')
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
         {visibleTabs.map((tab) => {
-          const isActive = tab.href === '/dashboard/design' ? pathname === tab.href : pathname.startsWith(tab.href)
+          // ECR pages live under change-requests and request detail under requests,
+          // but belong to the Changes / Requests tabs.
+          const key = 'subtabKey' in tab ? tab.subtabKey : null
+          const extra = key === 'change_notices' ? '/dashboard/design/change-requests' : key === 'project_work' ? '/dashboard/design/requests' : null
+          const isActive = tab.href === '/dashboard/design' ? pathname === tab.href : pathname.startsWith(tab.href) || (!!extra && pathname.startsWith(extra))
           return (
             <Link
               key={tab.href}
@@ -71,6 +90,10 @@ export default function DesignNav() {
         })}
       </div>
       <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+        {settingsTab && (
+          <NavSettingsGear href={settingsTab.href} active={pathname.startsWith(settingsTab.href)} label="Design settings" tour="design-nav-settings" />
+        )}
+        <TourButton variant="icon" />
         <div data-tour="design-nav-bell">
           <NotificationBell />
         </div>

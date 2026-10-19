@@ -6,36 +6,42 @@ import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
+import { useP2PApproverFlags } from '@/components/p2p/useP2PApproverFlags'
+import NavSettingsGear from '@/components/shared/NavSettingsGear'
+import { ChartBar, CheckCircle, ClipboardText, FileText, Gear, Kanban, PaperPlaneTilt, Truck, User, type Icon } from '@phosphor-icons/react'
 
 const TABS = [
   { href: '/dashboard/p2p', label: 'Purchase Requisitions', icon: 'file', purchaseOnly: false, subtabKey: 'purchase_requisitions' },
-  { href: '/dashboard/p2p/approval', label: 'P.R Approval', icon: 'check', purchaseOnly: false, subtabKey: 'pr_approval' },
+  // Vendors come before the RFQ: the RFQ picks its vendors from this master.
+  { href: '/dashboard/p2p/vendors', label: 'Vendors', icon: 'users', purchaseOnly: true, subtabKey: 'vendors' },
   { href: '/dashboard/p2p/rfq', label: 'R.F.Q', icon: 'send', purchaseOnly: true, subtabKey: 'rfq' },
-  { href: '/dashboard/p2p/po-approval', label: 'P.O Approval', icon: 'clipboard', purchaseOnly: false, subtabKey: 'po_approval' },
-  { href: '/dashboard/p2p/po-tracking', label: 'P.O Tracking', icon: 'truck', purchaseOnly: true },
-  { href: '/dashboard/p2p/mis', label: 'M.I.S Report', icon: 'chart', purchaseOnly: true },
+  // Create PO + PO approval + PO tracking, as views of one tab (2026-10-08).
+  { href: '/dashboard/p2p/purchase-orders', label: 'Purchase Orders', icon: 'clipboard', purchaseOnly: false, subtabKey: 'purchase_orders' },
+  // ME11/ME01/ME1P: vendor + item prices, approved sources, price history (part of the vendor master).
+  { href: '/dashboard/p2p/info-records', label: 'Item Rates', icon: 'chart', purchaseOnly: true, subtabKey: 'vendors' },
+  { href: '/dashboard/p2p/mis', label: 'M.I.S Report', icon: 'chart', purchaseOnly: true, subtabKey: 'mis' },
+  // PR approval lives on the Purchase Requisitions page; the project is picked on the PR itself,
+  // so there is no Project Work tab here (2026-10-07).
+  { href: '/dashboard/p2p/settings', label: 'Settings', icon: 'gear', purchaseOnly: false, subtabKey: 'settings' },
 ] as const
 
+// Tab icon key -> Phosphor icon (Regular weight). The key also feeds the
+// tab's data-tour id, so keys stay as they are.
+const TAB_ICONS: Record<string, Icon> = {
+  file: FileText,
+  check: CheckCircle,
+  send: PaperPlaneTilt,
+  clipboard: ClipboardText,
+  truck: Truck,
+  users: User,
+  gear: Gear,
+  'pm-work': Kanban,
+  chart: ChartBar,
+}
+
 function TabIcon({ name }: { name: string }) {
-  const common = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  switch (name) {
-    case 'file':
-      return <svg {...common}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-    case 'check':
-      return <svg {...common}><path d="M22 11.08V12a10 10 0 11-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>
-    case 'send':
-      return <svg {...common}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
-    case 'clipboard':
-      return <svg {...common}><path d="M9 2h6a1 1 0 011 1v2H8V3a1 1 0 011-1z" /><rect x="4" y="4" width="16" height="18" rx="2" /><line x1="9" y1="12" x2="15" y2="12" /><line x1="9" y1="16" x2="15" y2="16" /></svg>
-    case 'truck':
-      return <svg {...common}><rect x="1" y="3" width="15" height="13" /><path d="M16 8h4l3 3v5h-7V8z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
-    case 'users':
-      return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg>
-    case 'chart':
-      return <svg {...common}><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>
-    default:
-      return null
-  }
+  const Cmp = TAB_ICONS[name]
+  return Cmp ? <Cmp size={15} /> : null
 }
 
 export default function P2PNav() {
@@ -43,21 +49,26 @@ export default function P2PNav() {
   const { user } = useAuth()
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
   const isAdmin = user?.role === 'admin'
-  const visibleTabs = filterTabsByAccess('p2p', TABS.filter((tab) => {
+  const approverFlags = useP2PApproverFlags()
+  const allowedTabs = filterTabsByAccess('p2p', TABS.filter((tab) => {
+    // Vendors: the purchase team or Finance (one shared vendor master).
+    if (tab.href === '/dashboard/p2p/vendors') return isPurchaseTeam || !!user?.apps?.includes('accounts') || isAdmin
     if (tab.purchaseOnly && !isPurchaseTeam) return false
-    // The approval tabs are pure action queues: P.R Approval only for users
-    // named as an approver somewhere, P.O Approval only for PO-role holders
-    // (admin sees both) — see is_pr_approver/is_po_approver on /auth/me.
-    if (tab.href === '/dashboard/p2p/approval') return !!user?.is_pr_approver || isAdmin
-    if (tab.href === '/dashboard/p2p/po-approval') return !!user?.is_po_approver || isAdmin
+    // P.O Approval is a pure action queue for PO approvers / Partners (admin
+    // sees it too) — old routing tables or the approval engine.
+    if (tab.href === '/dashboard/p2p/purchase-orders') return isPurchaseTeam || approverFlags.is_po_approver
     return true
   }), user)
+  // Settings sits as a gear next to the bell, not in the tab row (same as R&D).
+  const visibleTabs = allowedTabs.filter((t) => t.icon !== 'gear')
+  const settingsTab = allowedTabs.find((t) => t.icon === 'gear')
+  const isTabActive = (href: string) => (href === '/dashboard/p2p' ? pathname === href : pathname.startsWith(href))
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
         {visibleTabs.map((tab) => {
-          const isActive = tab.href === '/dashboard/p2p' ? pathname === tab.href : pathname.startsWith(tab.href)
+          const isActive = isTabActive(tab.href)
           return (
             <Link
               key={tab.href}
@@ -87,6 +98,9 @@ export default function P2PNav() {
         })}
       </div>
       <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+        {settingsTab && (
+          <NavSettingsGear href={settingsTab.href} active={isTabActive(settingsTab.href)} label="Purchase settings" tour="p2p-nav-settings" />
+        )}
         <TourButton variant="icon" />
         <div data-tour="p2p-nav-bell">
           <NotificationBell />

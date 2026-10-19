@@ -5,6 +5,8 @@ import { hydraulicApi } from '@/lib/api'
 import { HydDocument, HydDocumentEntity } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
+import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
 import { DOCUMENT_TYPE_LABELS } from '@/components/hydraulic/labels'
 
@@ -13,11 +15,6 @@ const TYPE_HEX: Record<string, string> = {
   test_certificate: '#16A34A', test_report: '#0f766e', manual: '#F59E0B', photo: '#db2777', other: '#78716c',
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 11px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
@@ -26,6 +23,10 @@ const errorBanner: React.CSSProperties = {
   padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: 'rgba(220,38,38,0.08)',
   border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13,
 }
+
+// entity → the tab whose Documents feature governs its files
+// (hydraulic:<tab>.documents:view / create / delete; default: the tab's view / edit).
+const EDIT_TAB: Partial<Record<HydDocumentEntity, string>> = { system: 'systems', component: 'components', circuit: 'circuits', test: 'testing' }
 
 const fmtSize = (n?: number | null) => (n == null ? '' : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
 
@@ -62,9 +63,20 @@ export default function HydDocumentsPanel({
   const [deletingDoc, setDeletingDoc] = useState<HydDocument | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
+  // Seeing / adding / removing files needs the parent tab's Documents feature
+  // (backend _ensure_can_view / _require_edit_right); service-record files are
+  // retired and read-only. Without the parent tab's View the files stay
+  // visible as before features existed.
+  const { can, canFeature } = useCan()
+  const editTab = EDIT_TAB[entityType]
+  const hidden = !!editTab && can('hydraulic', editTab, 'view') && !canFeature('hydraulic', editTab, 'documents', 'view')
+  const canAdd = !!editTab && canFeature('hydraulic', editTab, 'documents', 'create')
+  const canRemove = !!editTab && canFeature('hydraulic', editTab, 'documents', 'delete')
+  const locked = readOnly || !editTab || (!canAdd && !canRemove)
 
   useEffect(() => {
     let cancelled = false
+    if (hidden) return  // the panel renders nothing then
     hydraulicApi.listDocuments(entityType, entityId)
       .then((data) => {
         if (cancelled) return
@@ -77,7 +89,7 @@ export default function HydDocumentsPanel({
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityType, entityId, reloadKey])
+  }, [entityType, entityId, reloadKey, hidden])
 
   const handleUpload = async () => {
     setUploadError('')
@@ -127,77 +139,35 @@ export default function HydDocumentsPanel({
     }
   }
 
+  if (hidden) return null
+
   return (
-    <div style={sectionStyle}>
+    <div data-tour="hyd-docs-panel" style={sectionStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{title} ({docs.length})</h2>
-        {!readOnly && (
+        {!locked && canAdd && (
           <button
+            data-tour="hyd-docs-upload-btn"
             type="button"
-            onClick={() => { setShowUpload((v) => !v); setUploadError('') }}
-            style={{ padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: showUpload ? 'rgba(0,0,0,0.06)' : GRADIENTS.primary, color: showUpload ? TEXT.secondary : '#fff', fontSize: 12.5, fontWeight: 600 }}
+            onClick={() => { setDocTitle(''); setDescription(''); setFiles([]); setDocType(defaultDocType); setUploadError(''); setShowUpload(true) }}
+            style={{ padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 12.5, fontWeight: 600 }}
           >
-            {showUpload ? 'Cancel' : '+ Upload'}
+            + Upload
           </button>
         )}
       </div>
-      {readOnly && readOnlyNote && <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>{readOnlyNote}</p>}
+      {locked && readOnly && readOnlyNote && <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>{readOnlyNote}</p>}
 
       {error && <div style={errorBanner}>{Array.isArray(error) ? error.join(' ') : error}</div>}
-
-      {showUpload && !readOnly && (
-        <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.45)', marginBottom: 14 }}>
-          {uploadError && <div style={errorBanner}>{Array.isArray(uploadError) ? uploadError.join(' ') : uploadError}</div>}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
-            <div style={{ flex: '1 1 240px', minWidth: 200, maxWidth: 360 }}>
-              <label style={labelStyle}>Title *</label>
-              <input style={inputStyle} value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="e.g. Power pack circuit — sheet 1" />
-            </div>
-            <div style={{ flex: '0 1 190px', minWidth: 170 }}>
-              <label style={labelStyle}>Type</label>
-              <select style={inputStyle} value={docType} onChange={(e) => setDocType(e.target.value)}>
-                {Object.entries(DOCUMENT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            </div>
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
-            <div style={{ flex: '1 1 280px', minWidth: 220 }}>
-              <label style={labelStyle}>Files *</label>
-              <input
-                ref={fileRef}
-                type="file"
-                multiple
-                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.step,.stp,.zip"
-                onChange={(e) => setFiles(Array.from(e.target.files || []))}
-                style={inputStyle}
-              />
-            </div>
-            <div style={{ flex: '1 1 280px', minWidth: 220 }}>
-              <label style={labelStyle}>Description</label>
-              <input style={inputStyle} value={description} onChange={(e) => setDescription(e.target.value)} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              onClick={handleUpload}
-              disabled={uploading}
-              style={{ padding: '10px 22px', borderRadius: 12, border: 'none', cursor: uploading ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 13.5, fontWeight: 600, opacity: uploading ? 0.6 : 1 }}
-            >
-              {uploading ? 'Uploading…' : `Upload${files.length > 1 ? ` ${files.length} files` : ''}`}
-            </button>
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p>
       ) : docs.length === 0 ? (
         <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No files attached yet.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto' }}>
+        <div data-tour="hyd-docs-list" style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto' }}>
           {docs.map((d) => {
-            const canDelete = !readOnly && (isAdmin || (currentUserId != null && d.uploaded_by_id === currentUserId))
+            const canDelete = !locked && canRemove && (isAdmin || (currentUserId != null && d.uploaded_by_id === currentUserId))
             return (
               <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.5)', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${TYPE_HEX[d.doc_type] || '#78716c'}1a`, color: TYPE_HEX[d.doc_type] || '#78716c', whiteSpace: 'nowrap', flex: 'none' }}>
@@ -220,6 +190,52 @@ export default function HydDocumentsPanel({
             )
           })}
         </div>
+      )}
+
+      {showUpload && !locked && canAdd && (
+        <FormSheet
+          width={580} icon="upload" title={`Upload to ${title}`} subtitle="Files are stored in SharePoint against this record."
+          onClose={() => setShowUpload(false)} busy={uploading} tour="hyd-docs-form"
+          footer={<>
+            <button type="button" onClick={() => setShowUpload(false)} disabled={uploading} style={sheetBtn('secondary', SHEET.INK, uploading)}>Cancel</button>
+            <button data-tour="hyd-docs-submit-btn" type="button" onClick={handleUpload} disabled={uploading} style={sheetBtn('primary', SHEET.BLUE, uploading)}>
+              <SheetIcon name="upload" size={16} />{uploading ? 'Uploading…' : `Upload${files.length > 1 ? ` ${files.length} files` : ''}`}
+            </button>
+          </>}
+        >
+          <div style={{ padding: '20px 24px' }}>
+            {uploadError && <div style={errorBanner}>{Array.isArray(uploadError) ? uploadError.join(' ') : uploadError}</div>}
+            <SheetSection icon="doc" title="Document">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+                <div style={{ flex: '1 1 240px', minWidth: 200 }}>
+                  <label style={sheetLabel}>Title <Req /></label>
+                  <input data-tour="hyd-docs-title" style={sheetInput} value={docTitle} onChange={(e) => setDocTitle(e.target.value)} placeholder="e.g. Power pack circuit — sheet 1" autoFocus />
+                </div>
+                <div style={{ flex: '0 1 190px', minWidth: 160 }}>
+                  <label style={sheetLabel}>Type</label>
+                  <select data-tour="hyd-docs-type" style={sheetInput} value={docType} onChange={(e) => setDocType(e.target.value)}>
+                    {Object.entries(DOCUMENT_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+              </div>
+              <label style={sheetLabel}>Description <Optional /></label>
+              <input data-tour="hyd-docs-description" style={sheetInput} value={description} onChange={(e) => setDescription(e.target.value)} />
+            </SheetSection>
+            <SheetSection icon="clip" title="Files">
+              <label style={sheetLabel}>Files <Req /></label>
+              <input
+                data-tour="hyd-docs-files"
+                ref={fileRef}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf,.step,.stp,.zip"
+                onChange={(e) => setFiles(Array.from(e.target.files || []))}
+                style={sheetInput}
+              />
+              <p style={sheetHint}>PDF, image, Word/Excel, DWG/DXF, STEP or ZIP. Several files picked together are saved under the same title and type.</p>
+            </SheetSection>
+          </div>
+        </FormSheet>
       )}
 
       <ConfirmDialog

@@ -69,3 +69,6 @@ class HydCircuitResponse(BaseModel):
     approved_by_name: str | None = None
     document_count: int = 0
     revisions: list[HydCircuitRevisionSummary] = []
+    # Pending central approval request; None on a circuit sent for review
+    # before the approval engine (decided through the old routes).
+    approval_request_id: int | None = None

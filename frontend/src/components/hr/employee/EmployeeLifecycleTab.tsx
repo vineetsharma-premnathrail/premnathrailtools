@@ -6,11 +6,12 @@ import { hrApi } from '@/lib/api'
 import { HrLifecycleEvent } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
+import { recordPath } from '@/lib/recordRef'
 
 const TYPE_LABELS: Record<string, string> = { joining: 'Joining', confirmation: 'Confirmation', transfer: 'Transfer', promotion: 'Promotion', exit: 'Exit' }
 const TYPE_HEX: Record<string, string> = { joining: '#16A34A', confirmation: '#0891B2', transfer: '#2563EB', promotion: '#7C3AED', exit: '#DC2626' }
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' }
-const STATUS_HEX: Record<string, string> = { draft: '#78716C', in_progress: '#F59E0B', completed: '#16A34A', cancelled: '#DC2626' }
+const STATUS_HEX: Record<string, string> = { draft: '#78716C', in_progress: '#F59E0B', completed: '#16A34A', cancelled: '#94A3B8' }
 const NEW_TYPES = [['transfer', 'Transfer'], ['promotion', 'Promotion'], ['confirmation', 'Confirmation'], ['exit', 'Exit']] as const
 
 const sectionStyle: React.CSSProperties = {
@@ -32,7 +33,7 @@ function describe(e: HrLifecycleEvent): string {
 }
 
 /** Employee detail > Lifecycle: every joining / move / exit event for this user. */
-export default function EmployeeLifecycleTab({ userId }: { userId: number }) {
+export default function EmployeeLifecycleTab({ userId, userRef }: { userId: number; userRef: string }) {
   const router = useRouter()
   const [events, setEvents] = useState<HrLifecycleEvent[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,12 +53,12 @@ export default function EmployeeLifecycleTab({ userId }: { userId: number }) {
     <div style={sectionStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Lifecycle</h3>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div data-tour="hr-emp-lc-actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {(latestExit ? ([['joining', 'Rehire (joining)']] as const) : NEW_TYPES).map(([t, label]) => (
             <button
               key={t}
               type="button"
-              onClick={() => router.push(`/dashboard/hr/lifecycle/new?type=${t}&user_id=${userId}`)}
+              onClick={() => router.push(`/dashboard/hr/lifecycle/new?${new URLSearchParams({ type: t, user_id: userRef })}`)}
               style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 9999, border: `1px solid ${TYPE_HEX[t]}55`, background: '#fff', color: TYPE_HEX[t], cursor: 'pointer' }}
             >
               + {label}
@@ -77,12 +78,12 @@ export default function EmployeeLifecycleTab({ userId }: { userId: number }) {
       ) : events.length === 0 ? (
         <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No lifecycle events yet for this employee.</p>
       ) : (
-        <div style={{ position: 'relative', paddingLeft: 18 }}>
+        <div data-tour="hr-emp-lc-timeline" style={{ position: 'relative', paddingLeft: 18 }}>
           <div style={{ position: 'absolute', left: 5, top: 6, bottom: 6, width: 2, background: BORDER.light }} />
           {events.map((e) => (
             <div
               key={e.id}
-              onClick={() => router.push(`/dashboard/hr/lifecycle/${e.id}`)}
+              onClick={() => router.push(recordPath('/dashboard/hr/lifecycle', e))}
               style={{ position: 'relative', padding: '10px 12px', marginBottom: 8, borderRadius: 12, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,0.65)', cursor: 'pointer' }}
             >
               <span style={{ position: 'absolute', left: -18, top: 16, width: 12, height: 12, borderRadius: 9999, background: TYPE_HEX[e.event_type], border: '2px solid #fff' }} />

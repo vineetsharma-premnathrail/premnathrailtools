@@ -22,7 +22,10 @@ from app.modules.hr.schemas.asset import (
     HrAssetAssignmentResponse, HrAssetCreate, HrAssetUpdate, HrAssetIssuePayload,
     HrAssetReturnPayload, HrAssetStatusPayload, HrAssetResponse,
 )
-from app.modules.hr.services.access import require_hr
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.modules.hr.services import approvals as _hr_scope  # noqa: F401 — registers HR data-scope tables
+from app.core.permissions import ensure_can_delete
+from app.modules.hr.services.access import require_hr_tab, require_me_view
 from app.modules.hr.services.admin_common import (
     users_by_id, branches_by_id, display_name, require_active_user, require_branch, require_choice,
 )
@@ -32,6 +35,13 @@ from app.modules.organization.models.branch import Branch
 from app.utils.notifications import notify_user
 
 router = APIRouter(prefix="/hr/assets", tags=["HR"])
+
+# HR-team gate for this file: hr app + Permission Matrix › HR › assets.
+require_hr = require_hr_tab("assets")
+require_hr_create = require_hr_tab("assets", "create")
+require_hr_edit = require_hr_tab("assets", "edit")  # edit / issue / return / status
+# Read-only per-employee history, also shown on Employees › profile › Assets.
+require_hr_assets_read = require_hr_tab(("assets", "employees"))
 
 CATEGORY_LABELS = {c: c.replace("_", " ").title() for c in ASSET_CATEGORIES}
 
@@ -84,7 +94,7 @@ def _to_responses(db: Session, assets: list[HrAsset], with_history: bool = False
     return out
 
 
-def _get_asset(db: Session, asset_id: int, lock: bool = False) -> HrAsset:
+def _get_asset(db: Session, asset_id: int, lock: bool = False, user: User | None = None) -> HrAsset:
     """`lock=True` for issue/return/status changes (SELECT ... FOR UPDATE on
     the asset row) so two concurrent issues can't open two assignments."""
     q = (
@@ -99,6 +109,8 @@ def _get_asset(db: Session, asset_id: int, lock: bool = False) -> HrAsset:
             status_code=404,
             detail=f"Asset #{asset_id} was not found. It may have been deleted — refresh the asset register.",
         )
+    if user is not None:
+        ensure_in_scope(db, user, asset)  # HR data access (Organization › Role & Permissions)
     return asset
 
 
@@ -156,6 +168,8 @@ def _validate_fields(db: Session, data: dict) -> None:
 @router.get("/lookups/branches")
 async def list_branch_lookup(
     db: Session = Depends(get_db),
+    # Plant picker shared by every HR tab's forms: the hr app (router-level
+    # require_hr_module) is enough.
     _user: User = Depends(get_current_user),
 ):
     """Plant list (id/code/name) for HR pickers — the organization branch
@@ -167,7 +181,7 @@ async def list_branch_lookup(
 @router.get("/mine", response_model=list[HrAssetResponse])
 async def list_my_assets(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_view),
 ):
     """Assets currently issued to the signed-in employee."""
     assets = (
@@ -181,7 +195,7 @@ async def list_my_assets(
 @router.get("/mine/history", response_model=list[HrAssetAssignmentResponse])
 async def list_my_asset_history(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_view),
 ):
     rows = (
         db.query(HrAssetAssignment).options(selectinload(HrAssetAssignment.asset))
@@ -206,9 +220,13 @@ async def asset_meta(_user: User = Depends(require_hr)):
 async def list_user_asset_history(
     user_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_hr),
+    _user: User = Depends(require_hr_assets_read),
 ):
     """Every issue/return for one employee (open assignments first)."""
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"User #{user_id} does not exist. They may have been removed — go back to the Employees list and refresh.")
+    _hr_scope.ensure_employee_in_scope(db, _user, target)  # HR data access, same rule as the employee page
     rows = (
         db.query(HrAssetAssignment).options(selectinload(HrAssetAssignment.asset))
         .filter(HrAssetAssignment.user_id == user_id)
@@ -228,7 +246,7 @@ async def list_assets(
     db: Session = Depends(get_db),
     _user: User = Depends(require_hr),
 ):
-    q = db.query(HrAsset).options(selectinload(HrAsset.assignments)).filter(HrAsset.is_deleted == False)  # noqa: E712
+    q = apply_scope(db.query(HrAsset), _user, HrAsset).options(selectinload(HrAsset.assignments)).filter(HrAsset.is_deleted == False)  # noqa: E712
     if category:
         q = q.filter(HrAsset.category == category)
     if status_filter:
@@ -257,14 +275,14 @@ async def get_asset(
     db: Session = Depends(get_db),
     _user: User = Depends(require_hr),
 ):
-    return _to_responses(db, [_get_asset(db, asset_id)], with_history=True)[0]
+    return _to_responses(db, [_get_asset(db, asset_id, user=_user)], with_history=True)[0]
 
 
 @router.post("", response_model=HrAssetResponse, status_code=201)
 async def create_asset(
     payload: HrAssetCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_hr),
+    user: User = Depends(require_hr_create),
 ):
     data = payload.model_dump()
     _validate_fields(db, data)
@@ -284,9 +302,9 @@ async def update_asset(
     asset_id: int,
     payload: HrAssetUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_hr),
+    _user: User = Depends(require_hr_edit),
 ):
-    asset = _get_asset(db, asset_id)
+    asset = _get_asset(db, asset_id, user=_user)
     data = payload.model_dump(exclude_unset=True)
     merged = {
         "purchase_date": data.get("purchase_date", asset.purchase_date),
@@ -315,7 +333,9 @@ async def delete_asset(
     db: Session = Depends(get_db),
     _user: User = Depends(require_hr),
 ):
-    asset = _get_asset(db, asset_id, lock=True)
+    asset = _get_asset(db, asset_id, lock=True, user=_user)
+    # Company delete rule: 'delete' on Assets AND you created the asset.
+    ensure_can_delete(_user, asset, "hr", "assets", what="asset")
     if asset.status == "issued" or asset.current_holder_id:
         holder = db.query(User).filter(User.id == asset.current_holder_id).first()
         raise HTTPException(
@@ -335,9 +355,9 @@ async def issue_asset(
     asset_id: int,
     payload: HrAssetIssuePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_hr),
+    user: User = Depends(require_hr_edit),
 ):
-    asset = _get_asset(db, asset_id, lock=True)
+    asset = _get_asset(db, asset_id, lock=True, user=user)
     if asset.status != "in_stock":
         extra = ""
         if asset.status == "issued":
@@ -383,9 +403,9 @@ async def return_asset(
     asset_id: int,
     payload: HrAssetReturnPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_hr),
+    user: User = Depends(require_hr_edit),
 ):
-    asset = _get_asset(db, asset_id, lock=True)
+    asset = _get_asset(db, asset_id, lock=True, user=user)
     open_row = _open_assignment(asset)
     if asset.status != "issued" or not open_row:
         raise HTTPException(
@@ -429,12 +449,12 @@ async def change_asset_status(
     asset_id: int,
     payload: HrAssetStatusPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_hr),
+    user: User = Depends(require_hr_edit),
 ):
     """Move an asset to in_stock / under_repair / retired / lost. Issuing
     and returning have their own endpoints. Only `lost` is allowed while an
     asset is issued: it closes the open assignment and clears the holder."""
-    asset = _get_asset(db, asset_id, lock=True)
+    asset = _get_asset(db, asset_id, lock=True, user=user)
     target = payload.status
     if target == "issued":
         raise HTTPException(status_code=400, detail="Use 'Issue' to hand an asset to an employee — it records who has it and from when.")

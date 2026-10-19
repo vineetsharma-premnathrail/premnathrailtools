@@ -5,7 +5,8 @@ import { hrApi } from '@/lib/api'
 import { HrLifecycleEvent, HrLifecycleImpact, HrLifecycleMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
-import { Field, secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle } from '@/components/shared/ui'
+import { sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -19,9 +20,10 @@ const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
+const inputStyle: React.CSSProperties = sheetInput
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><label style={sheetLabel}>{label}</label>{children}</div>
 }
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
 const completeBtn: React.CSSProperties = {
@@ -153,7 +155,7 @@ export default function CompletionPanel({
   })()
 
   return (
-    <div style={{ ...sectionStyle, border: t === 'exit' ? '1px solid rgba(220,38,38,0.25)' : sectionStyle.border }}>
+    <div data-tour="hr-lcd-completion" style={{ ...sectionStyle, border: t === 'exit' ? '1px solid rgba(220,38,38,0.25)' : sectionStyle.border }}>
       <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>
         {t === 'exit' ? 'Complete exit' : t === 'joining' ? 'Complete joining' : t === 'confirmation' ? 'Confirm employee' : `Apply ${t}`}
       </h3>
@@ -170,7 +172,7 @@ export default function CompletionPanel({
 
       {/* Joining: link the portal user */}
       {t === 'joining' && !event.user_id && (
-        <div style={{ padding: '12px 14px', borderRadius: 14, border: '1px solid rgba(180,83,9,0.3)', background: 'rgba(245,158,11,0.07)', marginBottom: 16 }}>
+        <div data-tour="hr-lcd-link-user" style={{ padding: '12px 14px', borderRadius: 14, border: '1px solid rgba(180,83,9,0.3)', background: 'rgba(245,158,11,0.07)', marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#92400E', marginBottom: 6 }}>Step 1 — link the portal user</div>
           <p style={{ fontSize: 12.5, color: TEXT.body, margin: '0 0 10px' }}>
             The joiner&apos;s portal account appears after their first Microsoft sign-in (or an admin Azure sync).
@@ -190,19 +192,19 @@ export default function CompletionPanel({
 
       {t === 'joining' && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
-          <div style={{ flex: '0 1 190px', minWidth: 170 }}>
+          <div data-tour="hr-lcd-join-employment-type" style={{ flex: '0 1 190px', minWidth: 170 }}>
             <Field label="Employment type">
               <select style={inputStyle} value={employmentType} onChange={(e) => setEmploymentType(e.target.value)}>
                 {(meta?.employment_types || Object.keys(EMPLOYMENT_TYPE_LABELS)).map((x) => <option key={x} value={x}>{EMPLOYMENT_TYPE_LABELS[x] || x}</option>)}
               </select>
             </Field>
           </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
+          <div data-tour="hr-lcd-join-employee-code" style={{ flex: '0 1 170px', minWidth: 150 }}>
             <Field label="Employee code">
               <input style={inputStyle} value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="e.g. PRL-1042" />
             </Field>
           </div>
-          <div style={{ flex: '0 1 170px', minWidth: 170 }}>
+          <div data-tour="hr-lcd-join-probation-end" style={{ flex: '0 1 170px', minWidth: 170 }}>
             <Field label="Probation ends"><DateField value={probationEnd} onChange={setProbationEnd} /></Field>
           </div>
           <p style={{ flex: '1 1 220px', fontSize: 12, color: TEXT.muted, margin: '22px 0 0' }}>
@@ -215,7 +217,7 @@ export default function CompletionPanel({
       {needsImpact && event.user_id && !impact && impactError.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted }}>Checking what this affects…</p>}
       {needsImpact && impact && (
         <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+          <div data-tour="hr-lcd-impact" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
             {t === 'exit' && (
               <>
                 <ImpactGroup title="Pending checklist items" count={impact.pending_checklist_items.length} tone="block">
@@ -235,6 +237,10 @@ export default function CompletionPanel({
             <ImpactGroup title="Pending P2P approvals" count={impact.pending_p2p_approvals.length} tone="move">
               {impact.pending_p2p_approvals.map((p) => <div key={p.id}>• {p.p2p_number} — {p.roles.join(', ')}{p.requested_by_name ? ` (raised by ${p.requested_by_name})` : ''}</div>)}
             </ImpactGroup>
+            {/* Approval-engine steps in any module (Organization › Approval Workflows) — handed to the successor. */}
+            <ImpactGroup title="Open approvals (all modules)" count={impact.pending_workflow_approvals?.length ?? 0} tone="move">
+              {(impact.pending_workflow_approvals ?? []).map((a) => <div key={`${a.request_id}-${a.stage}`}>• {a.type_label} {a.ref} — {a.stage}{a.requester_name ? ` (raised by ${a.requester_name})` : ''}</div>)}
+            </ImpactGroup>
             <ImpactGroup title="Approval roles" count={impact.role_flags.length} tone={t === 'exit' ? 'move' : 'info'}>
               {impact.role_flags.map((f) => <div key={f.flag}>• {f.label}</div>)}
             </ImpactGroup>
@@ -250,6 +256,20 @@ export default function CompletionPanel({
                   {impact.checklist_items_owned.map((i) => <div key={`i${i.id}`}>• {i.title} ({i.event_no})</div>)}
                   {impact.templates_owned.map((x) => <div key={`t${x.id}`}>• Template: {x.title} ({x.event_type})</div>)}
                 </ImpactGroup>
+                {(() => {
+                  // Added by complete_exit step 9 (backend services/lifecycle.compute_impact).
+                  const acc = impact as typeof impact & { apps?: string[]; permission_grants_count?: number; is_admin?: boolean }
+                  const apps = acc.apps || []
+                  const grants = acc.permission_grants_count || 0
+                  return (
+                    <ImpactGroup title="Module access removed" count={apps.length + (grants ? 1 : 0) + (acc.is_admin ? 1 : 0)} tone="info">
+                      {apps.length > 0 && <div>• Apps: {apps.join(', ')}</div>}
+                      {grants > 0 && <div>• {grants} permission grant(s)</div>}
+                      {acc.is_admin && <div>• Admin role</div>}
+                      <div style={{ color: TEXT.muted }}>A rehire comes back with no modules; an admin re-grants them in Users &amp; Roles.</div>
+                    </ImpactGroup>
+                  )
+                })()}
                 <ImpactGroup title="Their own open requests" count={impact.own_open_requests.length} tone="info">
                   {impact.own_open_requests.map((o) => (
                     <div key={`${o.kind}-${o.id}`}>• {o.label} {o.ref} — {o.status}{' '}
@@ -273,7 +293,7 @@ export default function CompletionPanel({
       {t === 'exit' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 280px', maxWidth: 380 }}>
+            <div data-tour="hr-lcd-exit-handover" style={{ flex: '1 1 280px', maxWidth: 380 }}>
               <Field label={impact?.needs_handover ? 'Handover to (required)' : 'Handover to'}>
                 <SearchableSelect value={handover} onChange={setHandover} options={userOptions} placeholder="— Pick successor or manager —" />
               </Field>
@@ -283,7 +303,7 @@ export default function CompletionPanel({
             )}
           </div>
           {blocked && (
-            <div style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.04)' }}>
+            <div data-tour="hr-lcd-exit-force" style={{ padding: '10px 14px', borderRadius: 12, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.04)' }}>
               <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, fontWeight: 600, color: '#b91c1c', cursor: 'pointer' }}>
                 <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
                 Complete anyway, with items still open
@@ -305,7 +325,7 @@ export default function CompletionPanel({
       {(t === 'transfer' || t === 'promotion') && impact && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
           {impact.role_flags.some((f) => ['is_department_head', 'is_project_head', 'is_plant_head'].includes(f.flag)) && (
-            <div>
+            <div data-tour="hr-lcd-move-clear-flags">
               <div style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, marginBottom: 6 }}>Remove approval roles that don&apos;t carry over</div>
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
                 {impact.role_flags.filter((f) => ['is_department_head', 'is_project_head', 'is_plant_head'].includes(f.flag)).map((f) => (
@@ -322,7 +342,7 @@ export default function CompletionPanel({
             </div>
           )}
           {fromDeptHeaded && (
-            <div>
+            <div data-tour="hr-lcd-move-head-slot">
               <div style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, marginBottom: 6 }}>Head slot in {fromDeptHeaded.name} (the old department)</div>
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
                 {([['keep', 'Keep'], ['remove', 'Remove them'], ['reassign', 'Give it to the successor']] as const).map(([k, label]) => (
@@ -333,14 +353,14 @@ export default function CompletionPanel({
               </div>
             </div>
           )}
-          {impact.pending_p2p_approvals.length > 0 && (
-            <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
+          {(impact.pending_p2p_approvals.length > 0 || (impact.pending_workflow_approvals?.length ?? 0) > 0) && (
+            <label data-tour="hr-lcd-move-reassign-approvals" style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
               <input type="checkbox" checked={reassignApprovals} onChange={(e) => setReassignApprovals(e.target.checked)} />
-              Move the {impact.pending_p2p_approvals.length} pending P2P approval(s) to the successor
+              Move the {impact.pending_p2p_approvals.length + (impact.pending_workflow_approvals?.length ?? 0)} pending approval(s) (P2P and every module&apos;s open approval steps) to the successor
             </label>
           )}
           {(headSlots === 'reassign' || reassignApprovals) && (
-            <div style={{ flex: '1 1 280px', maxWidth: 380 }}>
+            <div data-tour="hr-lcd-move-successor" style={{ flex: '1 1 280px', maxWidth: 380 }}>
               <Field label="Successor">
                 <SearchableSelect value={handover} onChange={setHandover} options={userOptions} placeholder="— Pick successor —" />
               </Field>
@@ -352,6 +372,7 @@ export default function CompletionPanel({
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <button
           type="button"
+          data-tour="hr-lcd-complete-btn"
           disabled={saving || (t === 'joining' && !event.user_id)}
           onClick={openConfirm}
           style={{

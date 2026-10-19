@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.hydraulic.models.bom import HydBom, HydBomItem
 from app.modules.hydraulic.models.component import HydComponent, HYD_COMPONENT_CATEGORIES, HYD_COMPONENT_STATUSES
 from app.modules.hydraulic.models.spare_part import HydSparePart
 from app.modules.hydraulic.schemas.component import HydComponentCreate, HydComponentUpdate, HydComponentResponse
 from app.modules.hydraulic.service import (
-    generate_component_code, check_choice, check_system_type, check_store_item, get_component_or_404,
+    can_see_costs, generate_component_code, check_choice, check_system_type, check_store_item, get_component_or_404,
 )
 from app.modules.main.models.user import User
 from app.modules.store.models.item import StoreItem
@@ -22,7 +22,8 @@ router = APIRouter(
 )
 
 
-def _to_responses(db: Session, comps: list[HydComponent]) -> list[HydComponentResponse]:
+def _to_responses(db: Session, comps: list[HydComponent], user: User) -> list[HydComponentResponse]:
+    show_costs = can_see_costs(user)  # Hydraulic › BOM › Prices & costs
     ids = [c.id for c in comps]
     item_ids = {c.store_item_id for c in comps if c.store_item_id}
     items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_(item_ids)).all()} if item_ids else {}
@@ -42,6 +43,8 @@ def _to_responses(db: Session, comps: list[HydComponent]) -> list[HydComponentRe
         resp.store_item_name = item.item_name if item else None
         resp.bom_usage_count = usage.get(c.id, 0)
         resp.spare_count = spares.get(c.id, 0)
+        if not show_costs:
+            resp.unit_cost = None
         out.append(resp)
     return out
 
@@ -81,7 +84,7 @@ async def list_components(
             HydComponent.code.ilike(like) | HydComponent.name.ilike(like) | HydComponent.manufacturer.ilike(like)
             | HydComponent.model_number.ilike(like) | HydComponent.part_number.ilike(like)
         )
-    return _to_responses(db, query.order_by(HydComponent.code).all())
+    return _to_responses(db, query.order_by(HydComponent.code).all(), _tab)
 
 
 @router.post("", response_model=HydComponentResponse)
@@ -91,6 +94,8 @@ async def create_component(
     user: User = Depends(require_tab_action("hydraulic", "components", "create")),
 ):
     data = payload.model_dump()
+    if not can_see_costs(user):
+        data.pop("unit_cost", None)  # can't see costs → can't set them (stays 0, the column default)
     if data["category"] not in HYD_COMPONENT_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category '{data['category']}'. Use one of: {', '.join(HYD_COMPONENT_CATEGORIES)}.")
     _validate(db, data)
@@ -98,12 +103,15 @@ async def create_component(
     db.add(comp)
     db.commit()
     db.refresh(comp)
-    return _to_responses(db, [comp])[0]
+    return _to_responses(db, [comp], user)[0]
 
 
 @router.get("/{component_id}", response_model=HydComponentResponse)
-async def get_component(component_id: int, db: Session = Depends(get_db)):
-    return _to_responses(db, [get_component_or_404(db, component_id)])[0]
+async def get_component(
+    component_id: int, db: Session = Depends(get_db),
+    _tab: User = Depends(require_tab_access("hydraulic", "components")),
+):
+    return _to_responses(db, [get_component_or_404(db, component_id)], _tab)[0]
 
 
 @router.patch("/{component_id}", response_model=HydComponentResponse)
@@ -115,6 +123,8 @@ async def update_component(
 ):
     comp = get_component_or_404(db, component_id)
     updates = payload.model_dump(exclude_unset=True)
+    if not can_see_costs(_perm):
+        updates.pop("unit_cost", None)  # the form never showed it, so a blank must not wipe the cost
     merged = {c: getattr(comp, c) for c in ("bore_mm", "rod_mm", "rated_pressure_bar", "max_pressure_bar")}
     merged.update(updates)
     _validate(db, merged)
@@ -122,16 +132,17 @@ async def update_component(
         setattr(comp, field, val)
     db.commit()
     db.refresh(comp)
-    return _to_responses(db, [comp])[0]
+    return _to_responses(db, [comp], _perm)[0]
 
 
 @router.delete("/{component_id}")
 async def delete_component(
     component_id: int,
     db: Session = Depends(get_db),
-    _perm: User = Depends(require_tab_action("hydraulic", "components", "delete")),
+    user: User = Depends(require_tab_action("hydraulic", "components", "delete")),
 ):
     comp = get_component_or_404(db, component_id)
+    ensure_can_delete(user, comp, "hydraulic", "components", what="component")
     draft_boms = db.query(HydBom.bom_number).join(HydBomItem, HydBomItem.bom_id == HydBom.id).filter(
         HydBomItem.component_id == comp.id, HydBom.is_deleted == False, HydBom.status == "draft",  # noqa: E712
     ).distinct().all()

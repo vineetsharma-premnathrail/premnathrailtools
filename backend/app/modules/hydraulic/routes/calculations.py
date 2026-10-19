@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.hydraulic.calculations import CALC_TYPES, CalculationError, calc_type_catalog, run_calculation
 from app.modules.hydraulic.models.calculation import HydCalculation
@@ -112,7 +112,10 @@ async def save_calculation(
 
 
 @router.get("/{calc_id}", response_model=HydCalculationResponse)
-async def get_calculation(calc_id: int, db: Session = Depends(get_db)):
+async def get_calculation(
+    calc_id: int, db: Session = Depends(get_db),
+    _tab: User = Depends(require_tab_access("hydraulic", "calculations")),
+):
     return _to_responses(db, [_get_or_404(db, calc_id)])[0]
 
 
@@ -140,9 +143,10 @@ async def update_calculation(
 async def delete_calculation(
     calc_id: int,
     db: Session = Depends(get_db),
-    _perm: User = Depends(require_tab_action("hydraulic", "calculations", "delete")),
+    user: User = Depends(require_tab_action("hydraulic", "calculations", "delete")),
 ):
     calc = _get_or_404(db, calc_id)
+    ensure_can_delete(user, calc, "hydraulic", "calculations", what="calculation")
     calc.is_deleted = True
     calc.deleted_at = datetime.now(timezone.utc)
     db.commit()

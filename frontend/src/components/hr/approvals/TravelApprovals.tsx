@@ -44,7 +44,7 @@ export default function TravelApprovals() {
   if (rows.length === 0 && !error.length && !notice) return null
 
   return (
-    <div style={sectionStyle}>
+    <div style={sectionStyle} data-tour="hr-appr-travel-section">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: 0 }}>Travel requests</p>
         <span style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B' }}>{rows.length} pending</span>
@@ -65,7 +65,7 @@ export default function TravelApprovals() {
               </div>
               <div style={{ flex: '1 1 280px' }}><TravelSummary t={t} /></div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button type="button" style={{ ...primaryActionStyle, padding: '8px 16px' }} onClick={() => setPending({ kind: 'approve', t })}>Approve</button>
+                <button type="button" data-tour="hr-appr-travel-approve" style={{ ...primaryActionStyle, padding: '8px 16px' }} onClick={() => setPending({ kind: 'approve', t })}>Approve</button>
                 <button type="button" style={dangerBtnStyle} onClick={() => setPending({ kind: 'reject', t })}>Reject</button>
               </div>
             </div>

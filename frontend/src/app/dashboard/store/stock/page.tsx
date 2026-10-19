@@ -3,18 +3,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
-import { StoreDocType, StoreItem, StoreLocation, StoreStockBalance } from '@/types'
+import { StoreItem, StoreLocation, StoreStockBalance } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
-import SearchableSelect from '@/components/erp/SearchableSelect'
 import StockImportDialog from '@/components/store/StockImportDialog'
+import StockAsOfPanel from '@/components/store/StockAsOfPanel'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
-// Entry types come from Store → Settings → Stock Entry Types. Adjustments
-// are not posted here — they go through Store → Adjustments (approval +
-// adjustment number) so every one shows in that list.
+// No hand-made stock posting here (2026-10-12, SAP standard): every movement
+// has its own document — GRN, Issues, Returns, Transfers, Adjustments,
+// Physical Count. Opening stock at go-live is the admin-only Opening Stock
+// Import. Blocked stock is still disposed of with Clear Quarantine.
 
 const QUARANTINE_DISPOSITIONS = [
   { value: 'scrap', label: 'Scrap — write it off' },
@@ -22,32 +25,33 @@ const QUARANTINE_DISPOSITIONS = [
   { value: 'release', label: 'Release to usable stock (passed re-inspection)' },
 ]
 
+
 export default function StoreStockPage() {
-  const { isAuthorized, isLoading } = useRequireApp('store')
+  const { isAuthorized, isLoading, user } = useRequireApp('store')
+  // Opening Stock Import (stock already on the shelves at go-live) is admin only.
+  const isAdmin = user?.role === 'admin'
+  const { can, canFeature } = useCan()
+  // Stock is view / export only in the Permission Matrix — clearing blocked
+  // stock is Adjustments › Clear blocked stock › Create.
+  const canPost = canFeature('store', 'adjustments', 'quarantine_clear', 'create')
+  // Store › Items › Stock value & rates (sensitive): the ₹ tiles / columns.
+  const seeValues = canFeature('store', 'items', 'stock_values', 'view')
+  const seeAsOf = canFeature('store', 'stock', 'as_of', 'view')
+  const summaryCols = seeValues ? 7 : 5
   const [balances, setBalances] = useState<StoreStockBalance[]>([])
   const [items, setItems] = useState<StoreItem[]>([])
   const [locations, setLocations] = useState<StoreLocation[]>([])
+  const [inTransit, setInTransit] = useState<number | null>(null)
+  const [myPlants, setMyPlants] = useState<{ restricted: boolean; plant_names: string[] } | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
-  const [showModal, setShowModal] = useState(false)
-  const [entryTypes, setEntryTypes] = useState<StoreDocType[]>([])
-  const [txnType, setTxnType] = useState('')
   const [clearing, setClearing] = useState<StoreStockBalance | null>(null)
   const [clearQty, setClearQty] = useState('')
   const [clearDisposition, setClearDisposition] = useState('scrap')
   const [clearRemarks, setClearRemarks] = useState('')
   const [clearErrors, setClearErrors] = useState<string[]>([])
-  const [itemId, setItemId] = useState('')
-  const [locationId, setLocationId] = useState('')
-  const [quantity, setQuantity] = useState('')
-  const [batchNumber, setBatchNumber] = useState('')
-  const [referenceNumber, setReferenceNumber] = useState('')
-  const [vendorName, setVendorName] = useState('')
-  const [vendorOptions, setVendorOptions] = useState<string[]>([])
-  const [remarks, setRemarks] = useState('')
   const [saving, setSaving] = useState(false)
-  const [formErrors, setFormErrors] = useState<string[]>([])
   const [showImport, setShowImport] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState('')
@@ -84,6 +88,59 @@ export default function StoreStockPage() {
   }
   const filteredBalances = balances.filter(matches)
   const hasFilters = !!(search || filterLocation || filterCategory || filterSubcategory)
+
+  // Overview — different UoMs can't be summed, so store totals are value (₹)
+  // and item counts. Rate = moving average, else standard cost, else last receipt.
+  const [view, setView] = useState<'overview' | 'matrix' | 'balances' | 'asof'>('overview')
+  const rateOf = (itemId: number) => {
+    const it = itemById.get(itemId)
+    return Number(it?.moving_average_cost || it?.standard_cost || it?.last_receipt_rate || 0)
+  }
+  const totalQty = (b: StoreStockBalance) => Number(b.on_hand_qty || 0) + Number(b.reserved_qty || 0) + Number(b.quality_qty || 0) + Number(b.quarantine_qty || 0)
+  const isLow = (b: StoreStockBalance) => {
+    const lvl = itemById.get(b.item_id)?.reorder_level
+    return lvl != null && lvl > 0 && Number(b.available_qty || 0) <= lvl
+  }
+  const storeSummary = useMemo(() => {
+    const byStore = new Map<number, { id: number; name: string; items: number; value: number; available: number; quality: number; blocked: number; low: number; unpriced: number }>()
+    for (const b of filteredBalances) {
+      if (totalQty(b) <= 0) continue
+      const s = byStore.get(b.location_id) || { id: b.location_id, name: b.location_name || `Store ${b.location_id}`, items: 0, value: 0, available: 0, quality: 0, blocked: 0, low: 0, unpriced: 0 }
+      const rate = rateOf(b.item_id)
+      s.items += 1
+      s.value += totalQty(b) * rate
+      s.available += Number(b.available_qty || 0) * rate
+      if ((b.quality_qty || 0) > 0) s.quality += 1
+      if (b.quarantine_qty > 0) s.blocked += 1
+      if (isLow(b)) s.low += 1
+      if (!rate) s.unpriced += 1
+      byStore.set(b.location_id, s)
+    }
+    return Array.from(byStore.values()).sort((a, b) => b.value - a.value)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredBalances, itemById])
+  const totals = storeSummary.reduce(
+    (t, s) => ({ value: t.value + s.value, quality: t.quality + s.quality, blocked: t.blocked + s.blocked, low: t.low + s.low, unpriced: t.unpriced + s.unpriced }),
+    { value: 0, quality: 0, blocked: 0, low: 0, unpriced: 0 },
+  )
+  const distinctItems = new Set(filteredBalances.filter((b) => totalQty(b) > 0).map((b) => b.item_id)).size
+  const matrixStores = useMemo(() => {
+    const ids = new Map<number, string>()
+    for (const b of filteredBalances) ids.set(b.location_id, b.location_name || `Store ${b.location_id}`)
+    return Array.from(ids, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [filteredBalances])
+  const matrixRows = useMemo(() => {
+    const rows = new Map<number, { item_id: number; label: string; uom: string; byStore: Map<number, number>; total: number }>()
+    for (const b of filteredBalances) {
+      const r = rows.get(b.item_id) || { item_id: b.item_id, label: `${b.item_code} — ${b.item_name}`, uom: b.uom || '', byStore: new Map(), total: 0 }
+      const q = Number(b.available_qty || 0)
+      r.byStore.set(b.location_id, (r.byStore.get(b.location_id) || 0) + q)
+      r.total += q
+      rows.set(b.item_id, r)
+    }
+    return Array.from(rows.values()).sort((a, b) => a.label.localeCompare(b.label))
+  }, [filteredBalances])
+  const inr = (n: number) => `₹ ${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
   const clearFilters = () => {
     setSearch(''); setFilterLocation(''); setFilterCategory(''); setFilterSubcategory('')
   }
@@ -114,13 +171,14 @@ export default function StoreStockPage() {
   const load = async () => {
     setLoading(true)
     try {
-      const [b, i, l, e] = await Promise.all([
+      const [b, i, l, mp] = await Promise.all([
         storeApi.listStockBalances(),
         storeApi.listItems(),
         storeApi.listLocations(),
-        storeApi.listDocTypes('stock_entry'),
+        storeApi.getMyPlantAccess().catch(() => null),
       ])
-      setEntryTypes(e)
+      setMyPlants(mp)
+      storeApi.listStockTransfers({ status: 'in_transit' }).then((t: unknown[]) => setInTransit(t.length)).catch(() => setInTransit(null))
       setBalances(b)
       setItems(i)
       setLocations(l)
@@ -135,55 +193,6 @@ export default function StoreStockPage() {
     if (isAuthorized) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
-
-  const openModal = () => {
-    setTxnType(entryTypes[0]?.value || '')
-    setItemId('')
-    setLocationId('')
-    setQuantity('')
-    setBatchNumber('')
-    setReferenceNumber('')
-    setVendorName('')
-    setRemarks('')
-    setFormErrors([])
-    setShowModal(true)
-    storeApi.listStockVendorOptions().then(setVendorOptions).catch(() => setVendorOptions([]))
-  }
-
-  // Vendor applies to stock coming in (receipts and other "in" entry types).
-  const isStockIn = entryTypes.find((t) => t.value === txnType)?.stock_effect === 'in'
-
-  const handleCreate = async () => {
-    const problems: string[] = []
-    if (!txnType) problems.push('Entry type is required — add one under Settings → Stock Entry Types.')
-    if (!itemId) problems.push('Item is required.')
-    if (!locationId) problems.push('Store is required.')
-    if (!quantity || Number(quantity) <= 0) problems.push('Quantity must be greater than zero.')
-    if (problems.length) {
-      setFormErrors(problems)
-      return
-    }
-    setSaving(true)
-    setFormErrors([])
-    try {
-      await storeApi.createStockTransaction({
-        item_id: Number(itemId),
-        location_id: Number(locationId),
-        entry_type: txnType,
-        quantity: Number(quantity),
-        batch_number: batchNumber.trim() || undefined,
-        reference_number: referenceNumber.trim() || undefined,
-        vendor_name: isStockIn ? vendorName.trim() || undefined : undefined,
-        remarks: remarks.trim() || undefined,
-      })
-      setShowModal(false)
-      load()
-    } catch (err) {
-      setFormErrors(extractErrorMessages(err, 'Failed to post stock entry.'))
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const openClear = (b: StoreStockBalance) => {
     setClearing(b)
@@ -226,13 +235,17 @@ export default function StoreStockPage() {
             Store &amp; Inventory
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Stock</h1>
+          {myPlants?.restricted && (
+            <p data-tour="stock-plant-scope" style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 8px' }}>
+              {myPlants.plant_names.length
+                ? <>Showing stock of your plant: <b>{myPlants.plant_names.join(', ')}</b></>
+                : <>No plant is set for you, so no stock is shown — ask an admin to set your plant in Organization › Users, or widen your Store data access in Organization › Role &amp; Permissions.</>}
+            </p>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <button data-tour="stock-export-btn" onClick={exportExcel} disabled={exporting} style={{ ...secondaryBtnStyle, opacity: exporting ? 0.7 : 1 }}>{exporting ? 'Exporting…' : 'Export'}</button>
-          <button data-tour="stock-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>
-          <button data-tour="stock-add-btn" onClick={openModal} style={primaryBtnStyle}>
-            <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> Record Stock Entry
-          </button>
+          {can('store', 'stock', 'export') && <button data-tour="stock-export-btn" onClick={exportExcel} disabled={exporting} style={{ ...secondaryBtnStyle, opacity: exporting ? 0.7 : 1 }}>{exporting ? 'Exporting…' : 'Export'}</button>}
+          {isAdmin && <button data-tour="stock-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Opening Stock Import</button>}
         </div>
       </div>
 
@@ -241,145 +254,168 @@ export default function StoreStockPage() {
 
       <MessageDialog open={!!loadError} variant="error" title="Failed to Load Stock Data" message={loadError} onClose={() => setLoadError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
 
-      {showModal && (
-        <div onClick={() => !saving && setShowModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, maxWidth: 460, width: '100%', padding: 24 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 16px 0', color: TEXT.heading }}>Record Stock Entry</h2>
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Entry Type *</label>
-              <select data-tour="stock-txn-type" style={inputStyle} value={txnType} onChange={(e) => setTxnType(e.target.value)}>
-                {entryTypes.map((t) => <option key={t.value} value={t.value}>{t.label} — {t.stock_effect === 'in' ? 'stock in' : 'stock out'}</option>)}
-              </select>
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Item *</label>
-              <div data-tour="stock-item">
-                <SearchableSelect
-                  value={itemId}
-                  onChange={setItemId}
-                  options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))}
-                  placeholder="— Select —"
-                />
-              </div>
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Store *</label>
-              <select data-tour="stock-location" style={inputStyle} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-                <option value="">— Select —</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Quantity *</label>
-                <input data-tour="stock-quantity" type="number" style={inputStyle} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Batch Number</label>
-                <input style={inputStyle} value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} />
-              </div>
-            </div>
-            {isStockIn && (
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Vendor Name</label>
-                <input data-tour="stock-vendor" list="stock-vendor-options" style={inputStyle} value={vendorName} onChange={(e) => setVendorName(e.target.value)} placeholder="Type or pick the supplier" />
-                <datalist id="stock-vendor-options">
-                  {vendorOptions.map((v) => <option key={v} value={v} />)}
-                </datalist>
-              </div>
-            )}
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Invoice Number</label>
-              <input data-tour="stock-reference" style={inputStyle} value={referenceNumber} onChange={(e) => setReferenceNumber(e.target.value)} placeholder="Supplier invoice / challan number" />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Remarks</label>
-              <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-            </div>
-
-            {formErrors.length > 0 && (
-              <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-                {formErrors.map((e, i) => <div key={i}>{e}</div>)}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowModal(false)} disabled={saving} style={secondaryBtnStyle}>Cancel</button>
-              <button data-tour="stock-save-btn" onClick={handleCreate} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>{saving ? 'Posting…' : 'Post Entry'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {clearing && (
-        <div onClick={() => !saving && setClearing(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, maxWidth: 440, width: '100%', padding: 24 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 4px 0', color: TEXT.heading }}>Clear Quarantine</h2>
-            <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 16px' }}>{clearing.item_code} — {clearing.item_name} at {clearing.location_name} · {clearing.quarantine_qty} {clearing.uom} held</p>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>What happened to it? *</label>
-              <select style={inputStyle} value={clearDisposition} onChange={(e) => setClearDisposition(e.target.value)}>
-                {QUARANTINE_DISPOSITIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-              </select>
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Quantity *</label>
-              <input type="number" style={{ ...inputStyle, maxWidth: 160 }} value={clearQty} onChange={(e) => setClearQty(e.target.value)} />
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Remarks</label>
-              <input style={inputStyle} value={clearRemarks} onChange={(e) => setClearRemarks(e.target.value)} placeholder="Scrap note no. / vendor return challan / QC report" />
-            </div>
+        <FormSheet width={580} icon="shield" iconColor="#d97706" title="Clear Quarantine"
+          subtitle={`${clearing.item_code} — ${clearing.item_name} at ${clearing.location_name} · ${clearing.quarantine_qty} ${clearing.uom || ''} held`}
+          onClose={() => setClearing(null)} busy={saving}
+          footer={<>
+            <button type="button" onClick={() => setClearing(null)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+            <button data-tour="stock-clear-save-btn" type="button" onClick={handleClear} disabled={saving} style={sheetBtn('primary', '#d97706', saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Clear'}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
             {clearErrors.length > 0 && (
-              <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+              <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {clearErrors.map((e, i) => <div key={i}>{e}</div>)}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setClearing(null)} disabled={saving} style={secondaryBtnStyle}>Cancel</button>
-              <button onClick={handleClear} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Clear'}</button>
-            </div>
+            <SheetSection icon="alert" title="Disposition">
+              <label style={sheetLabel}>What happened to it? <Req /></label>
+              <select data-tour="stock-clear-disposition" style={sheetInput} value={clearDisposition} onChange={(e) => setClearDisposition(e.target.value)} autoFocus>
+                {QUARANTINE_DISPOSITIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
+              <div style={{ maxWidth: 180, marginTop: 14 }}>
+                <label style={sheetLabel}>Quantity <Req /></label>
+                <input data-tour="stock-clear-qty" type="number" style={sheetInput} value={clearQty} onChange={(e) => setClearQty(e.target.value)} />
+              </div>
+              <p style={sheetHint}>Up to {clearing.quarantine_qty} {clearing.uom || ''} — what is in quarantine at this store.</p>
+            </SheetSection>
+            <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+              <input data-tour="stock-clear-remarks" style={sheetInput} value={clearRemarks} onChange={(e) => setClearRemarks(e.target.value)} placeholder="Scrap note no. / vendor return challan / QC report" />
+            </SheetSection>
           </div>
-        </div>
+        </FormSheet>
       )}
 
       <div data-tour="stock-filters" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 18 }}>
         <input
+          data-tour="stock-search"
           style={{ ...inputStyle, flex: '2 1 220px', width: 'auto' }}
           placeholder="Search item code, name, store…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)}>
+        <select data-tour="stock-store-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)}>
           <option value="">All stores</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setFilterSubcategory('') }}>
+        <select data-tour="stock-category-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setFilterSubcategory('') }}>
           <option value="">All categories</option>
           {categories.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterSubcategory} onChange={(e) => setFilterSubcategory(e.target.value)}>
+        <select data-tour="stock-subcategory-filter" style={{ ...inputStyle, flex: '1 1 150px', width: 'auto' }} value={filterSubcategory} onChange={(e) => setFilterSubcategory(e.target.value)}>
           <option value="">All subcategories</option>
           {subcategories.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         {hasFilters && <button onClick={clearFilters} style={secondaryBtnStyle}>Clear</button>}
       </div>
 
+      <div data-tour="stock-view-tabs" style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+        {([['overview', 'Store Overview'], ['matrix', 'Item × Store'], ['balances', 'All Balances'], ['asof', 'Stock on Date']] as const).filter(([v]) => v !== 'asof' || seeAsOf).map(([v, label]) => (
+          <button key={v} onClick={() => setView(v)} style={{
+            padding: '7px 14px', borderRadius: 999, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+            border: `1px solid ${view === v ? BRAND.primary : GLASS.border}`,
+            background: view === v ? BRAND.primary : '#fff', color: view === v ? '#fff' : TEXT.secondary,
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {view === 'asof' && seeAsOf && <StockAsOfPanel locationId={filterLocation} search={search} canExport={canFeature('store', 'stock', 'as_of', 'export')} />}
+
+      {view === 'overview' && (
+        <div data-tour="stock-overview">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12, marginBottom: 18 }}>
+            {[
+              ...(seeValues ? [{ label: 'Stock Value', value: loading ? '…' : inr(totals.value), hint: totals.unpriced ? `${totals.unpriced} line(s) have no rate — set standard cost on the item` : 'At moving average / standard cost', color: TEXT.heading }] : []),
+              { label: 'Stores Holding Stock', value: loading ? '…' : String(storeSummary.length), hint: `${distinctItems} distinct item(s)`, color: TEXT.heading },
+              { label: 'At / Below Reorder', value: loading ? '…' : String(totals.low), hint: 'Available ≤ item reorder level', color: totals.low ? '#dc2626' : TEXT.heading },
+              { label: 'In Quality', value: loading ? '…' : String(totals.quality), hint: 'Waiting for inspection decision', color: totals.quality ? '#2563EB' : TEXT.heading },
+              { label: 'Blocked', value: loading ? '…' : String(totals.blocked), hint: 'Quarantined — cannot be issued', color: totals.blocked ? '#d97706' : TEXT.heading },
+              ...(inTransit != null ? [{ label: 'Transfers In Transit', value: String(inTransit), hint: "Dispatched, not yet received — on neither store's balance", color: inTransit ? '#7c3aed' : TEXT.heading }] : []),
+            ].map((k) => (
+              <div key={k.label} style={{ padding: 16, borderRadius: 16, background: GLASS.card, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass() }}>
+                <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{k.label}</p>
+                <p style={{ fontSize: 22, fontWeight: 700, color: k.color, margin: '0 0 4px' }}>{k.value}</p>
+                <p style={{ fontSize: 11.5, color: TEXT.muted, margin: 0 }}>{k.hint}</p>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 10px' }}>Stock by Store</p>
+          <div style={{ borderRadius: 18, background: GLASS.card, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+              <thead>
+                <tr>
+                  {['Store', 'Items', ...(seeValues ? ['Stock Value', 'Available Value'] : []), 'At / Below Reorder', 'In Quality', 'Blocked'].map((h) => (
+                    <th key={h} style={{ background: '#fdf1e6', textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {loading && <tr><td colSpan={summaryCols} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+                {!loading && storeSummary.length === 0 && (
+                  <tr><td colSpan={summaryCols} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet.'}</td></tr>
+                )}
+                {!loading && storeSummary.map((s) => (
+                  <tr key={s.id} title="Show this store's balances" onClick={() => { setFilterLocation(String(s.id)); setView('balances') }} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
+                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{s.name}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{s.items}</td>
+                    {seeValues && <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{inr(s.value)}</td>}
+                    {seeValues && <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: BRAND.primaryActive }}>{inr(s.available)}</td>}
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: s.low ? '#dc2626' : TEXT.muted }}>{s.low || '—'}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: s.quality ? '#2563EB' : TEXT.muted }}>{s.quality || '—'}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: s.blocked ? '#d97706' : TEXT.muted }}>{s.blocked || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {view === 'matrix' && (
+        <div data-tour="stock-matrix" style={{ borderRadius: 18, background: GLASS.card, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 300px)', minHeight: 200 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+            <thead>
+              <tr>
+                {['Item (available qty)', ...matrixStores.map((s) => s.name), 'Total'].map((h, i) => (
+                  <th key={`${h}-${i}`} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: i === 0 ? 'left' : 'right', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && <tr><td colSpan={matrixStores.length + 2} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+              {!loading && matrixRows.length === 0 && (
+                <tr><td colSpan={matrixStores.length + 2} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No stock matches the filters.' : 'No stock recorded yet.'}</td></tr>
+              )}
+              {!loading && matrixRows.map((r) => (
+                <tr key={r.item_id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{r.label}</td>
+                  {matrixStores.map((s) => {
+                    const q = r.byStore.get(s.id)
+                    return <td key={s.id} style={{ padding: '12px 16px', fontSize: 13, textAlign: 'right', color: q ? TEXT.secondary : TEXT.muted, whiteSpace: 'nowrap' }}>{q != null ? `${q} ${r.uom}` : '—'}</td>
+                  })}
+                  <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: BRAND.primaryActive, whiteSpace: 'nowrap' }}>{r.total} {r.uom}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {view === 'balances' && <>
       <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 10px' }}>Current Balances</p>
       <div data-tour="stock-balances-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 300px)', minHeight: 200 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr>
-              {['Item', 'Store', 'On Hand (Free)', 'Reserved', 'Available', 'Quality', 'Blocked'].map((h) => (
+              {['Item', 'Store', 'On Hand (Free)', 'Reserved', 'Available', 'Quality', 'Blocked', 'With Vendor'].map((h) => (
                 <th key={h} style={{ position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '12px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>Loading…</td></tr>}
             {!loading && filteredBalances.length === 0 && (
-              <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No balances match the filters.' : 'No stock recorded yet.'}</td></tr>
+              <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>{hasFilters ? 'No balances match the filters.' : 'No stock recorded yet.'}</td></tr>
             )}
             {!loading && filteredBalances.map((b) => (
               <tr key={b.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
@@ -395,15 +431,19 @@ export default function StoreStockPage() {
                   {b.quarantine_qty > 0 ? (
                     <>
                       {b.quarantine_qty} {b.uom}
-                      <span onClick={() => openClear(b)} style={{ marginLeft: 10, color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Clear</span>
+                      {canPost && <span onClick={() => openClear(b)} style={{ marginLeft: 10, color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Clear</span>}
                     </>
                   ) : '—'}
+                </td>
+                <td title="Sent to a job-work vendor on a challan — still ours and valued, not issuable (Store › Job Work)" style={{ padding: '12px 16px', fontSize: 13, color: (b.vendor_qty || 0) > 0 ? '#7c3aed' : TEXT.muted, whiteSpace: 'nowrap' }}>
+                  {(b.vendor_qty || 0) > 0 ? `${b.vendor_qty} ${b.uom || ''}` : '—'}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      </>}
 
     </div>
   )

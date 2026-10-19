@@ -7,13 +7,13 @@ import { electricalApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { TEXT } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { SheetColumns, SheetSection, sheetInput, sheetHint, Optional } from '@/components/shared/FormSheet'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { ElectricalJobDetail, ElectricalMeta, ElectricalPanel } from '@/types'
 import {
   inputStyle, sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallBtn, smallDangerBtn,
-  tableWrap, Pill, ErrorBanner, NoticeBanner, Modal, F, rowStyle,
-  PANEL_STATUS_LABELS, PANEL_STATUS_HEX, strOrNull,
+  tableWrap, Pill, ErrorBanner, NoticeBanner, Modal, ModalFooter, F, rowStyle,
+  PANEL_STATUS_LABELS, PANEL_STATUS_HEX, strOrNull, useJobFeatures,
 } from './shared'
 
 type Msg = string | string[]
@@ -26,6 +26,10 @@ const small: React.CSSProperties = { fontSize: 11, color: TEXT.muted, marginTop:
 const ASSEMBLED = ['assembled', 'tested', 'installed']
 
 export default function PanelsTab({ job, meta, canEdit, onChanged }: { job: ElectricalJobDetail; meta: ElectricalMeta; canEdit: boolean; onChanged: () => void }) {
+  // Electrical › RRV Electrical Jobs › Panels (canEdit = job open + edit).
+  const { jf } = useJobFeatures()
+  const canAdd = ['draft', 'in_progress', 'handed_over'].includes(job.status) && jf('panels', 'create')
+  const canRemove = ['draft', 'in_progress', 'handed_over'].includes(job.status) && jf('panels', 'delete')
   const [panels, setPanels] = useState<ElectricalPanel[]>([])
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<Msg>('')
@@ -148,13 +152,13 @@ export default function PanelsTab({ job, meta, canEdit, onChanged }: { job: Elec
             {panels.length} panel{panels.length === 1 ? '' : 's'} · {assembledCount} assembled
           </span>
         </div>
-        {canEdit && <button type="button" style={primaryBtn} onClick={openAdd}>+ Add Panel</button>}
+        {canAdd && <button data-tour="elec-panels-add-btn" type="button" style={primaryBtn} onClick={openAdd}>+ Add Panel</button>}
       </div>
 
       <ErrorBanner error={error} />
       <NoticeBanner notice={notice} />
 
-      <div style={tableWrap}>
+      <div data-tour="elec-panels-table" style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: canEdit ? 1100 : 960 }}>
           <thead>
             <tr>{headers.map((h, idx) => <th key={`${h}-${idx}`} style={thStyle}>{h}</th>)}</tr>
@@ -185,7 +189,7 @@ export default function PanelsTab({ job, meta, canEdit, onChanged }: { job: Elec
                   {canEdit ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
                       <Pill value={p.status} labels={PANEL_STATUS_LABELS} hex={PANEL_STATUS_HEX} />
-                      <select aria-label={`Status of panel ${p.panel_tag}`} value={p.status} disabled={busy}
+                      <select data-tour="elec-panel-status-select" aria-label={`Status of panel ${p.panel_tag}`} value={p.status} disabled={busy}
                         onChange={(e) => changeStatus(p, e.target.value)}
                         style={{ ...inputStyle, width: 'auto', padding: '4px 8px', fontSize: 12 }}>
                         {Object.entries(PANEL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -204,8 +208,8 @@ export default function PanelsTab({ job, meta, canEdit, onChanged }: { job: Elec
                 {canEdit && (
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button type="button" style={smallBtn} disabled={busy} onClick={() => openEdit(p)}>Edit</button>
-                      <button type="button" style={smallDangerBtn} disabled={busy} onClick={() => setDeleting(p)}>Delete</button>
+                      <button data-tour="elec-panel-edit-btn" type="button" style={smallBtn} disabled={busy} onClick={() => openEdit(p)}>Edit</button>
+                      {canRemove && <button data-tour="elec-panel-delete-btn" type="button" style={smallDangerBtn} disabled={busy} onClick={() => setDeleting(p)}>Delete</button>}
                     </div>
                   </td>
                 )}
@@ -215,56 +219,67 @@ export default function PanelsTab({ job, meta, canEdit, onChanged }: { job: Elec
         </table>
       </div>
 
-      <Modal open={formOpen} title={editing ? `Edit Panel ${editing.panel_tag}` : 'Add Panel'} onClose={() => setFormOpen(false)} width={700}>
-        <ErrorBanner error={formError} />
-        <div style={rowStyle}>
-          <F label="Panel Tag *" basis={130}>
-            <input style={{ ...inputStyle, textTransform: 'uppercase' }} value={form.panel_tag} maxLength={50}
-              onChange={(e) => set('panel_tag', e.target.value)} placeholder="MCP-01" />
-          </F>
-          <F label="Name *" basis={240} grow max={340}>
-            <input style={inputStyle} value={form.name} maxLength={150} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Main Control Panel" />
-          </F>
-          <F label="Panel Type" basis={170}>
-            <select style={inputStyle} value={form.panel_type} onChange={(e) => set('panel_type', e.target.value)}>
-              {Object.entries(meta.panel_types || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Location on Vehicle" basis={220} grow max={320}>
-            <input style={inputStyle} value={form.location_on_vehicle} maxLength={150} onChange={(e) => set('location_on_vehicle', e.target.value)} placeholder="e.g. Driver cabin, LHS" />
-          </F>
-          <F label="Enclosure Material" basis={180} grow max={260}>
-            <input style={inputStyle} value={form.enclosure_material} maxLength={100} onChange={(e) => set('enclosure_material', e.target.value)} placeholder="e.g. CRCA, SS304" />
-          </F>
-          <F label="IP Rating" basis={100}>
-            <input style={inputStyle} value={form.ip_rating} maxLength={20} onChange={(e) => set('ip_rating', e.target.value)} placeholder="IP65" />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Dimensions" basis={180} grow max={260}>
-            <input style={inputStyle} value={form.dimensions} maxLength={100} onChange={(e) => set('dimensions', e.target.value)} placeholder="W × H × D mm" />
-          </F>
-          <F label="Status" basis={150}>
-            <select style={inputStyle} value={form.status} onChange={(e) => set('status', e.target.value)}>
-              {Object.entries(PANEL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Remarks" basis={300} grow>
-            <textarea style={{ ...inputStyle, minHeight: 56, resize: 'vertical', fontFamily: 'inherit' }} value={form.remarks}
-              onChange={(e) => set('remarks', e.target.value)} />
-          </F>
-        </div>
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>
-          Setting the status to Assembled, Tested or Installed records you as the assembler with today&apos;s date.
-        </p>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" style={secondaryBtnStyle} onClick={() => setFormOpen(false)}>Cancel</button>
-          <button type="button" style={primaryBtn} disabled={busy} onClick={save}>{busy ? 'Saving…' : editing ? 'Save Changes' : 'Add Panel'}</button>
-        </div>
+      <Modal
+        open={formOpen} width={960} flush busy={busy} tour="elec-panel-form"
+        icon={editing ? 'edit' : 'box'} title={editing ? `Edit Panel ${editing.panel_tag}` : 'Add Panel'}
+        subtitle={editing ? `${editing.name} — ${job.job_number}` : `New panel on ${job.job_number}.`}
+        onClose={() => setFormOpen(false)}
+        footer={<ModalFooter onCancel={() => setFormOpen(false)} onSubmit={save} busy={busy} icon={editing ? 'check' : 'plus'}
+          label={editing ? 'Save Changes' : 'Add Panel'} cancelTour="elec-panel-form-cancel" submitTour="elec-panel-form-save" />}
+      >
+        <SheetColumns
+          left={<>
+            <ErrorBanner error={formError} />
+            <SheetSection icon="tag" title="Panel">
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-panel-tag" label="Panel Tag" req basis={120}>
+                  <input style={{ ...sheetInput, textTransform: 'uppercase' }} value={form.panel_tag} maxLength={50}
+                    onChange={(e) => set('panel_tag', e.target.value)} placeholder="MCP-01" />
+                </F>
+                <F tour="elec-panel-name" label="Name" req basis={200} grow max={340}>
+                  <input style={sheetInput} value={form.name} maxLength={150} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Main Control Panel" />
+                </F>
+                <F tour="elec-panel-type" label="Panel Type" basis={160}>
+                  <select style={sheetInput} value={form.panel_type} onChange={(e) => set('panel_type', e.target.value)}>
+                    {Object.entries(meta.panel_types || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </F>
+              </div>
+            </SheetSection>
+            <SheetSection icon="gear" title="Construction">
+              <div style={rowStyle}>
+                <F tour="elec-panel-location" label="Location on Vehicle" basis={200} grow max={320}>
+                  <input style={sheetInput} value={form.location_on_vehicle} maxLength={150} onChange={(e) => set('location_on_vehicle', e.target.value)} placeholder="e.g. Driver cabin, LHS" />
+                </F>
+                <F tour="elec-panel-enclosure" label="Enclosure Material" basis={160} grow max={260}>
+                  <input style={sheetInput} value={form.enclosure_material} maxLength={100} onChange={(e) => set('enclosure_material', e.target.value)} placeholder="e.g. CRCA, SS304" />
+                </F>
+              </div>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-panel-ip" label="IP Rating" basis={100}>
+                  <input style={sheetInput} value={form.ip_rating} maxLength={20} onChange={(e) => set('ip_rating', e.target.value)} placeholder="IP65" />
+                </F>
+                <F tour="elec-panel-dimensions" label="Dimensions" basis={180} grow max={260}>
+                  <input style={sheetInput} value={form.dimensions} maxLength={100} onChange={(e) => set('dimensions', e.target.value)} placeholder="W × H × D mm" />
+                </F>
+              </div>
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="flag" title="Status">
+              <div data-tour="elec-panel-status">
+                <select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)} aria-label="Status">
+                  {Object.entries(PANEL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <p style={sheetHint}>Setting the status to Assembled, Tested or Installed records you as the assembler with today&apos;s date.</p>
+            </SheetSection>
+            <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+              <textarea data-tour="elec-panel-remarks" style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={form.remarks}
+                onChange={(e) => set('remarks', e.target.value)} />
+            </SheetSection>
+          </>}
+        />
       </Modal>
 
       <ConfirmDialog

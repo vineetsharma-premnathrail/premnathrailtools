@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 from pydantic import BaseModel, Field
 
 
@@ -11,6 +12,9 @@ class ProductionTimeLogCreate(BaseModel):
     qty_good: float = Field(0.0, ge=0)
     qty_scrap: float = Field(0.0, ge=0)
     remarks: str | None = None
+    # CO activity type (MCH machine / LAB labour / SET setup hour); blank = a
+    # plain workstation hour (machine + labour rate).
+    activity_type: Literal["MCH", "LAB", "SET"] | None = None
 
 
 class ProductionTimeLogResponse(BaseModel):
@@ -28,6 +32,7 @@ class ProductionTimeLogResponse(BaseModel):
     remarks: str | None = None
     created_by_id: int | None = None
     created_at: datetime | None = None
+    activity_type: str | None = None
 
     # Denormalized display fields, filled in by the route.
     wo_number: str | None = None

@@ -2,94 +2,135 @@
 
 import { useEffect, useState } from 'react'
 import { crmApi } from '@/lib/api'
-import { CrmDocument } from '@/types'
+import { useCan } from '@/lib/permissions'
+import { CrmDocument, ManagedDocumentState, RndRequestAssignment } from '@/types'
 import Checkbox from '@/components/Checkbox'
+import DateField from '@/components/erp/DateField'
+import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
+import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 
-export default function TechnicalOfferPickerDialog({
-  open,
-  relatedModule,
-  relatedId,
-  sending,
-  onSend,
-  onCancel,
-}: {
+
+const todayIso = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+type Props = {
   open: boolean
   relatedModule: 'inquiry' | 'tender'
   relatedId: number
   sending: boolean
-  onSend: (documentIds: number[]) => void
+  onSend: (documentIds: number[], assignment: RndRequestAssignment) => void
   onCancel: () => void
-}) {
+}
+
+// Mounted only while open, so every opening starts fresh.
+export default function TechnicalOfferPickerDialog(props: Props) {
+  if (!props.open) return null
+  return <TorSheet {...props} />
+}
+
+function TorSheet({ relatedModule, relatedId, sending, onSend, onCancel }: Props) {
   const [clientDocs, setClientDocs] = useState<CrmDocument[]>([])
   const [selected, setSelected] = useState<number[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [wordDoc, setWordDoc] = useState<ManagedDocumentState | null>(null)
+  const [dueDate, setDueDate] = useState('')
+  const [remarks, setRemarks] = useState('')
+  const [formError, setFormError] = useState('')
+  // Picking reference documents needs Inquiries & Tenders › Documents › View; without it the list is skipped.
+  const seeDocs = useCan().canFeature('crm', 'inquiries_tenders', 'documents', 'view')
 
   useEffect(() => {
-    if (!open) return
-    setSelected([])
-    setLoading(true)
+    if (!seeDocs) { Promise.resolve().then(() => { setClientDocs([]); setLoading(false) }); return }
     crmApi.listDocuments({ related_module: relatedModule, related_id: relatedId })
       .then((docs: CrmDocument[]) => setClientDocs(docs.filter((d) => d.folder_type === 'client')))
       .catch(() => setClientDocs([]))
       .finally(() => setLoading(false))
-  }, [open, relatedModule, relatedId])
-
-  if (!open) return null
+  }, [relatedModule, relatedId, seeDocs])
 
   const toggle = (id: number) => {
     setSelected((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
   }
 
+  // A draft made for an earlier send is stale: this send needs a fresh one.
+  const wordReady = !!wordDoc && !wordDoc.is_stale
+
+  const submit = () => {
+    if (!wordReady) { setFormError('Create the Technical Offer Word document first ("Create Word" below), review or edit it, then press Send.'); return }
+    if (!dueDate) { setFormError('Set the Response Due Date — the date R&D must reply by.'); return }
+    if (dueDate < todayIso()) { setFormError('Response Due Date is in the past — pick today or a later date.'); return }
+    setFormError('')
+    onSend(selected, { response_due_date: dueDate, remarks: remarks.trim() || undefined })
+  }
+
   return (
-    <div
-      onClick={onCancel}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: 440, background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}
-      >
-        <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 6px' }}>Send Technical Offer Request to R&D</p>
-        <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 16px', lineHeight: 1.6 }}>
-          Optionally include links to already-uploaded Client Documents as reference material in the email.
-        </p>
-
-        {loading ? (
-          <p style={{ fontSize: 13, color: '#a8a29e' }}>Loading client documents…</p>
-        ) : clientDocs.length === 0 ? (
-          <p style={{ fontSize: 13, color: '#a8a29e', fontStyle: 'italic' }}>No client documents uploaded yet.</p>
-        ) : (
-          <div data-tour="tor-doc-picker" style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto', marginBottom: 16 }}>
-            {clientDocs.map((d) => (
-              <div key={d.id} onClick={() => toggle(d.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.08)', cursor: 'pointer', fontSize: 13 }}>
-                <span onClick={(e) => e.stopPropagation()}>
-                  <Checkbox checked={selected.includes(d.id)} onChange={() => toggle(d.id)} />
-                </span>
-                <span style={{ color: '#1f1108' }}>{d.file_name}</span>
+    <FormSheet icon="send" title="Send Technical Requirement to R&D" onClose={onCancel} busy={sending}
+      subtitle="Two steps: 1. Create the Technical Offer Word document (edit it in Word if needed), 2. Send it. The whole R&D team sees it under R&D › Requirements; whoever answers after the due date must give a reason."
+      footer={<>
+        <button type="button" onClick={onCancel} disabled={sending} data-tour="tor-cancel-btn" style={sheetBtn('secondary', SHEET.INK, sending)}>Cancel</button>
+        <button type="button" onClick={submit} disabled={sending || !wordReady} title={wordReady ? undefined : 'Create the Word document first'} data-tour="tor-send-btn"
+          style={sheetBtn('primary', SHEET.BLUE, sending || !wordReady)}>
+          <SheetIcon name="send" size={16} />{sending ? 'Sending…' : 'Send'}
+        </button>
+      </>}>
+      <SheetColumns
+        left={<>
+          <SheetError error={formError} />
+          <SheetSection icon="calendar" title="Response">
+            <div data-tour="tor-due-date" style={{ maxWidth: 200 }}>
+              <label style={sheetLabel}>Response Due Date <Req /></label>
+              <DateField value={dueDate} onChange={setDueDate} />
+            </div>
+            <div data-tour="tor-remarks" style={{ marginTop: 14 }}>
+              <label style={sheetLabel}>Remarks to R&amp;D <Optional /></label>
+              <textarea
+                style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }}
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder="What you need back — e.g. feasibility + drawing, or a technical deviation list"
+              />
+            </div>
+          </SheetSection>
+          <SheetSection icon="clip" title="Reference client documents" extra={<Optional />}>
+            {loading ? (
+              <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>Loading client documents…</p>
+            ) : clientDocs.length === 0 ? (
+              <p style={{ fontSize: 13, color: SHEET.MUTED, fontStyle: 'italic', margin: 0 }}>No client documents uploaded yet.</p>
+            ) : (
+              <div data-tour="tor-doc-picker" style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
+                {clientDocs.map((d) => (
+                  <div key={d.id} onClick={() => toggle(d.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, border: `1px solid ${SHEET.LINE}`, cursor: 'pointer', fontSize: 13, background: '#fff' }}>
+                    <span onClick={(e) => e.stopPropagation()}>
+                      <Checkbox checked={selected.includes(d.id)} onChange={() => toggle(d.id)} />
+                    </span>
+                    <span style={{ color: SHEET.INK }}>{d.file_name}</span>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+          </SheetSection>
+        </>}
+        right={
+          <div data-tour="tor-word-doc">
+            <SheetSection icon="doc" title="Technical Offer document" extra={<Req />}>
+              <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '0 0 10px', lineHeight: 1.5 }}>
+                Press <strong>Create Word</strong>, edit it in Word if needed, then press Send. R&amp;D gets the PDF of this Word file.
+                The sent PDF is saved on SharePoint and filed under the {relatedModule}&apos;s Internal Documents.
+              </p>
+              <ManagedDocumentPanel
+                entityType={`crm_tor_${relatedModule}`}
+                entityId={relatedId}
+                revision={0}
+                canModify
+                recordLabel="requirement"
+                downloadName={`Technical-Offer-${relatedModule}-${relatedId}`}
+                onDocumentChange={setWordDoc}
+              />
+            </SheetSection>
           </div>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button
-            onClick={onCancel}
-            disabled={sending}
-            data-tour="tor-cancel-btn"
-            style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)', background: '#fff', color: '#57534e', cursor: sending ? 'not-allowed' : 'pointer' }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onSend(selected)}
-            disabled={sending}
-            data-tour="tor-send-btn"
-            style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.7 : 1 }}
-          >
-            {sending ? 'Sending…' : 'Send'}
-          </button>
-        </div>
-      </div>
-    </div>
+        }
+      />
+    </FormSheet>
   )
 }

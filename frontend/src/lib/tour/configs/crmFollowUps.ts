@@ -19,7 +19,7 @@ const steps: TourStep[] = [
   {
     target: 'followups-table',
     title: 'Follow-up list',
-    purpose: 'Type, the inquiry/tender it\'s tied to, organization, due date, who it\'s assigned to, remarks, and status. Rows linked to an inquiry or tender are clickable and open that record\'s detail page.',
+    purpose: 'Type, the inquiry/tender it\'s tied to, customer organization, due date, who it\'s assigned to, remarks, and status. Rows linked to an inquiry or tender are clickable and open that record\'s detail page.',
   },
   {
     target: 'followups-back-btn',

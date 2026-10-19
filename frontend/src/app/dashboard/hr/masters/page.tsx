@@ -45,6 +45,7 @@ export default function HrMastersPage() {
             <button
               key={s.key}
               type="button"
+              data-tour={`hr-mst-tab-${s.key}`}
               onClick={() => setActive(s.key)}
               style={{
                 fontSize: 12.5,

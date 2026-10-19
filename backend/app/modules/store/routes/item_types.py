@@ -5,9 +5,10 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access
+from app.core.permissions import ensure_can_delete, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.store.access import require_store_lookup
 from app.modules.store.models.item import StoreItemType, STORE_ITEM_TYPES, STORE_ITEM_TYPE_LABELS, STORE_ITEM_TYPE_PREFIXES
 
 router = APIRouter(prefix="/store/item-types", tags=["Store"])
@@ -65,13 +66,14 @@ def _clean(db: Session, payload: ItemTypeIn, current: StoreItemType | None = Non
     return label, prefix
 
 
+# Cross-module lookup (item pickers in other modules read the type list).
 @router.get("")
-async def list_item_types(db: Session = Depends(get_db), _user: User = Depends(require_app_access("store"))):
+async def list_item_types(db: Session = Depends(get_db), _user: User = Depends(require_store_lookup())):
     return type_options(db)
 
 
 @router.post("")
-async def create_item_type(payload: ItemTypeIn, db: Session = Depends(get_db), _user: User = Depends(require_app_access("store"))):
+async def create_item_type(payload: ItemTypeIn, db: Session = Depends(get_db), _user: User = Depends(require_tab_action("store", "item_types", "create"))):
     item_types(db)
     label, prefix = _clean(db, payload)
     value = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")[:50] or "type"
@@ -84,7 +86,7 @@ async def create_item_type(payload: ItemTypeIn, db: Session = Depends(get_db), _
 
 
 @router.put("/{value}")
-async def update_item_type(value: str, payload: ItemTypeIn, db: Session = Depends(get_db), _user: User = Depends(require_app_access("store"))):
+async def update_item_type(value: str, payload: ItemTypeIn, db: Session = Depends(get_db), _user: User = Depends(require_tab_action("store", "item_types", "edit"))):
     """Renames the type / changes its code prefix. The stored value (what items
     point at) never changes; a new prefix applies to items created from now on."""
     t = db.query(StoreItemType).filter(StoreItemType.value == value).first()
@@ -96,7 +98,7 @@ async def update_item_type(value: str, payload: ItemTypeIn, db: Session = Depend
 
 
 @router.delete("/{value}")
-async def delete_item_type(value: str, db: Session = Depends(get_db), _user: User = Depends(require_app_access("store"))):
+async def delete_item_type(value: str, db: Session = Depends(get_db), user: User = Depends(require_tab_access("store", "item_types"))):
     """Removes an item type no item or category uses yet."""
     from app.modules.store.models.category import StoreItemCategory
     from app.modules.store.models.item import StoreItem
@@ -105,6 +107,7 @@ async def delete_item_type(value: str, db: Session = Depends(get_db), _user: Use
     t = db.query(StoreItemType).filter(StoreItemType.value == value).first()
     if not t:
         raise HTTPException(status_code=404, detail=f"Item type '{value}' wasn't found — it may already be deleted. Reload the page.")
+    ensure_can_delete(user, t, "store", "item_types", what="item type")
     if t.value == "material":
         # New items and item imports fall back to 'material' when no type is given.
         raise HTTPException(status_code=409, detail=f"'{t.label}' is the default item type (used when an item or import row has no type) and can't be deleted — rename it instead.")

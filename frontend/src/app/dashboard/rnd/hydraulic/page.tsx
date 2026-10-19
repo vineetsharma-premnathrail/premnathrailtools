@@ -5,9 +5,11 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
+import { getHistoryFromLink } from '@/components/rnd/historyLink'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
 import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, radioLabelStyle, smBtnStyle, calcButtonStyle, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
+import { extractErrorMessages } from '@/lib/validation'
 
 type CalcMode = 'calc_cc' | 'calc_speed' | 'calc_motor_pressure' | 'calc_gear'
 
@@ -75,7 +77,7 @@ function HydraulicPageInner() {
     if (!isAuthorized) return
     const loadId = searchParams.get('load')
     if (!loadId) return
-    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+    getHistoryFromLink(loadId).then((detail) => {
       const i = detail.inputs as Record<string, any>
       const loadedMode = (i.calc_mode as CalcMode) || mode
       const loadedForm: Record<string, string> = { ...DEFAULTS }
@@ -83,7 +85,7 @@ function HydraulicPageInner() {
       setMode(loadedMode)
       setForm(loadedForm)
       calculate(buildPayload(loadedMode, loadedForm), `Hydraulic — ${loadedMode}`)
-    }).catch(() => setError('Could not load the saved calculation.'))
+    }).catch((err) => setError(extractErrorMessages(err, 'Could not load the saved calculation — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
@@ -127,7 +129,7 @@ function HydraulicPageInner() {
   const renderField = (f: string) => {
     const suggestion = f === 'motor_disp_in' ? suggestedMotorCc : f === 'pump_disp_in' ? suggestedPumpCc : null
     return (
-      <div key={f}>
+      <div key={f} data-tour={`rnd-hyd-field-${f}`}>
         <label style={labelStyle}>{FIELD_LABELS[f]}</label>
         <input style={inputStyle} value={form[f]} onChange={set(f)} />
         {suggestion != null && !Number.isNaN(suggestion) && (
@@ -201,15 +203,15 @@ function HydraulicPageInner() {
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>Pump &amp; Motor calculations · Torque · Efficiency</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={downloadDocx} disabled={busy} style={smBtnStyle('#f8fafc', '#e2e8f0', '#475569')}>Export Report (.docx)</button>
-          <button onClick={downloadPdf} disabled={busy} style={smBtnStyle('#fef2f2', '#fecaca', '#dc2626')}>Download PDF</button>
-          <Link href="/dashboard/rnd/history" style={{ ...smBtnStyle('#f5f3ff', '#ddd6fe', '#7c3aed'), textDecoration: 'none', display: 'inline-flex' }}>History</Link>
+          <button data-tour="rnd-hyd-docx-btn" onClick={downloadDocx} disabled={busy} style={smBtnStyle('#f8fafc', '#e2e8f0', '#475569')}>Export Report (.docx)</button>
+          <button data-tour="rnd-hyd-pdf-btn" onClick={downloadPdf} disabled={busy} style={smBtnStyle('#fef2f2', '#fecaca', '#dc2626')}>Download PDF</button>
+          <Link data-tour="rnd-hyd-history-btn" href="/dashboard/rnd/history" style={{ ...smBtnStyle('#f5f3ff', '#ddd6fe', '#7c3aed'), textDecoration: 'none', display: 'inline-flex' }}>History</Link>
         </div>
       </div>
 
       <div className="hydraulic-main-grid" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 12 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-hyd-mode" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Calculation Mode</span></div>
             <div style={cardBodyStyle}>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -229,14 +231,14 @@ function HydraulicPageInner() {
               <div style={cardStyle}>
                 <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
                   <span style={cardTitleStyle}>Vehicle Data</span>
-                  <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+                  <label data-tour="rnd-hyd-vehicle-csv" style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                     Import CSV
                     <input type="file" accept=".csv" onChange={importVehicleCsv} style={{ display: 'none' }} />
                   </label>
                 </div>
                 <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
                   {['weight', 'axles', 'wheel_diameter', 'speed', 'max_vehicle_rpm', 'pto_gear_ratio', 'engine_gear_ratio', 'axle_gear_box_ratio'].filter((f) => visibleFields.includes(f)).map((f) => (
-                    <div key={f}><label style={labelStyle}>{FIELD_LABELS[f]}</label><input style={inputStyle} value={form[f]} onChange={set(f)} /></div>
+                    <div key={f} data-tour={`rnd-hyd-field-${f}`}><label style={labelStyle}>{FIELD_LABELS[f]}</label><input style={inputStyle} value={form[f]} onChange={set(f)} /></div>
                   ))}
                 </div>
               </div>
@@ -256,14 +258,14 @@ function HydraulicPageInner() {
                 <div style={cardStyle}>
                   <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
                     <span style={cardTitleStyle}>Track Parameters</span>
-                    <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+                    <label data-tour="rnd-hyd-track-csv" style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                       Import CSV
                       <input type="file" accept=".csv" onChange={importTrackCsv} style={{ display: 'none' }} />
                     </label>
                   </div>
                   <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
                     {['slope_percent', 'curve_degree'].filter((f) => visibleFields.includes(f)).map((f) => (
-                      <div key={f}><label style={labelStyle}>{FIELD_LABELS[f]}</label><input style={inputStyle} value={form[f]} onChange={set(f)} /></div>
+                      <div key={f} data-tour={`rnd-hyd-field-${f}`}><label style={labelStyle}>{FIELD_LABELS[f]}</label><input style={inputStyle} value={form[f]} onChange={set(f)} /></div>
                     ))}
                   </div>
                 </div>
@@ -280,10 +282,10 @@ function HydraulicPageInner() {
           </div>
 
           {error && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{error}</p>}
-          <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Execute Calculation'}</button>
+          <button data-tour="rnd-hyd-calculate-btn" onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Execute Calculation'}</button>
         </div>
 
-        <div style={{ position: 'sticky', top: 16, height: 'fit-content' }}>
+        <div data-tour="rnd-hyd-output" style={{ position: 'sticky', top: 16, height: 'fit-content' }}>
           <TerminalPanel title="hydraulic_output.log" text={result?.report || ''} />
         </div>
       </div>

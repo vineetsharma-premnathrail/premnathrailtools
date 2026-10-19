@@ -4,7 +4,8 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
-from app.core.permissions import require_app_access
+from app.core.permissions import ensure_can_delete, ensure_feature_action, ensure_tab_action, require_app_access
+from app.modules.p2p.pricing import mask_for
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
@@ -16,6 +17,7 @@ from app.modules.p2p.models.vendor_quotation import (
     VendorQuotation, VENDOR_QUOTATION_TECHNICAL_STATUSES, VENDOR_QUOTATION_COMMERCIAL_STATUSES,
 )
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
+from app.modules.p2p.item_link import item_category_for
 from app.modules.p2p.schemas.rfq import (
     RFQCreate, RFQUpdate, RFQResponse, RFQAttachmentResponse, RFQAttachmentVendorUpdate,
     VendorQuotationCreate, VendorQuotationUpdate, VendorQuotationEvaluatePayload,
@@ -25,14 +27,33 @@ from app.modules.p2p.schemas.purchase_order import (
     P2PPurchaseOrderCreate, P2PPurchaseOrderDraftUpdatePayload, P2PPurchaseOrderResponse,
 )
 from app.modules.p2p.service import generate_rfq_number, generate_po_number, compute_line_total
-from app.modules.p2p.routes.p2p_requests import (
-    _write_audit as _write_pr_audit, _send_p2p_po_approval_emails_background, po_approver_users,
-)
-from app.modules.p2p.models.p2p_request import P2P_ROLE_LABELS, PO_PICKED_ROLE_SETS
-from app.utils.notifications import notify_user
+from app.modules.p2p import approvals as p2p_approvals
+from app.modules.p2p.access import ensure_pr_in_scope
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.modules.p2p.settings import get_setting as get_p2p_setting
+from app.modules.accounts.models.vendor import Vendor
+from app.core.notify_rules import fire_rule
+from app.modules.p2p.routes.p2p_requests import _write_audit as _write_pr_audit, _send_p2p_po_approval_emails_background
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, download_file_content
 
 router = APIRouter(prefix="/p2p/rfqs", tags=["P2P"])
+
+# PR statuses at which a draft PO can still be edited / sent (ME21N split:
+# other POs of the same PR may already be in approval or released).
+_SPLIT_PO_PR_STATUSES = ("po_drafted", "po_raised", "po_approved", "partially_received", "received")
+
+
+def _purchase_tab(tab: str, action: str):
+    """Purchase-team gate (the `purchase` desk) plus the Permission Matrix
+    action on Procurement › `tab` — RFQ work is the R.F.Q tab, the PO draft
+    built from it is the Purchase Orders tab."""
+    purchase_dep = require_app_access("purchase")
+
+    def _dependency(user: User = Depends(purchase_dep)) -> User:
+        ensure_tab_action(user, "p2p", tab, action)
+        return user
+
+    return _dependency
 
 
 def _is_admin(user: User) -> bool:
@@ -43,12 +64,16 @@ def _write_audit(db: Session, rfq_id: int, action: str, user: User, summary: str
     db.add(AuditLog(entity_type="rfq", entity_id=rfq_id, action=action, performed_by_id=user.id, summary=summary))
 
 
-def _get_rfq_or_404(db: Session, rfq_id: int) -> RFQ:
+def _get_rfq_or_404(db: Session, rfq_id: int, user: User | None = None) -> RFQ:
+    """The RFQ (404 if missing); with `user`, also 403 when it is outside
+    their Procurement data scope (p2p/access.py)."""
     rfq = db.query(RFQ).options(
         selectinload(RFQ.attachments), selectinload(RFQ.vendor_quotations),
     ).filter(RFQ.id == rfq_id).first()
     if not rfq:
         raise HTTPException(status_code=404, detail="RFQ not found")
+    if user is not None:
+        ensure_in_scope(db, user, rfq)
     return rfq
 
 
@@ -102,12 +127,14 @@ def _to_response(db: Session, rfq: RFQ) -> RFQResponse:
 @router.post("", response_model=RFQResponse)
 async def create_rfq(
     payload: RFQCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "create")),
 ):
     pr = db.query(P2PRequest).filter(P2PRequest.id == payload.p2p_request_id).first()
     if not pr:
         raise HTTPException(status_code=404, detail="P2P request not found")
+    ensure_pr_in_scope(db, user, pr)
     if pr.status != "approved":
         raise HTTPException(status_code=409, detail=f"An RFQ can only be raised on an approved PR (current status: {pr.status})")
 
@@ -146,10 +173,15 @@ async def create_rfq(
         status="draft",
         created_by_id=user.id,
         requires_technical_evaluation=payload.requires_technical_evaluation,
+        # Company standard terms from Procurement → Settings; editable on this RFQ.
+        terms_conditions=(get_p2p_setting(db, "company_terms") or None),
     )
     db.add(rfq)
     db.flush()
     _write_audit(db, rfq.id, "created", user, summary=f"{user.name or user.email} started RFQ '{rfq.rfq_number}' for {pr.p2p_number}.")
+    fire_rule(db, background_tasks, "p2p", "rfq_create", "RFQ Created",
+              f"RFQ '{rfq.rfq_number}' was started for PR '{pr.p2p_number}' by {user.name or user.email}.", "p2p_request", pr.id, user,
+              [("RFQ", rfq.rfq_number), ("Requisition", pr.p2p_number), ("Project", pr.project_label or ""), ("By", user.name or user.email)])
     db.commit()
     db.refresh(rfq)
     return _to_response(db, rfq)
@@ -162,25 +194,25 @@ async def list_rfqs(
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=1000),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "view")),
 ):
-    query = db.query(RFQ).options(selectinload(RFQ.attachments))
+    query = apply_scope(db.query(RFQ).options(selectinload(RFQ.attachments)), user, RFQ)
     if p2p_request_id:
         query = query.filter(RFQ.p2p_request_id == p2p_request_id)
     if status:
         query = query.filter(RFQ.status == status)
     rfqs = query.order_by(RFQ.created_at.desc()).offset(skip).limit(limit).all()
-    return [_to_response(db, r) for r in rfqs]
+    return mask_for(user, "rfq", [_to_response(db, r) for r in rfqs])
 
 
 @router.get("/{rfq_id}", response_model=RFQResponse)
 async def get_rfq(
     rfq_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "view")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
-    return _to_response(db, rfq)
+    rfq = _get_rfq_or_404(db, rfq_id, user)
+    return mask_for(user, "rfq", _to_response(db, rfq))
 
 
 @router.patch("/{rfq_id}", response_model=RFQResponse)
@@ -188,9 +220,9 @@ async def update_rfq(
     rfq_id: int,
     payload: RFQUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "edit")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     _assert_editable(rfq, user)
 
     updates = payload.model_dump(exclude_unset=True)
@@ -212,14 +244,21 @@ async def upload_rfq_attachments(
     vendor_tier: str = Form(...),
     vendor_name: str | None = Form(None),
     vendor_contact: str | None = Form(None),
+    vendor_id: int | None = Form(None),
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "edit")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "create")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     _assert_editable(rfq, user)
     if vendor_tier not in RFQ_VENDOR_TIERS:
         raise HTTPException(status_code=400, detail=f"Invalid vendor_tier '{vendor_tier}' — must be one of {RFQ_VENDOR_TIERS}")
+    if vendor_id is not None:
+        # Picked from the vendor master: name / contact come from the master, not the form.
+        vendor = _active_vendor_or_400(db, vendor_id)
+        vendor_name = vendor.name
+        vendor_contact = vendor.contact_phone or vendor.contact_email or vendor_contact
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 
@@ -233,6 +272,7 @@ async def upload_rfq_attachments(
             vendor_tier=vendor_tier,
             vendor_name=vendor_name,
             vendor_contact=vendor_contact,
+            vendor_id=vendor_id,
             filename=result["name"],
             content_type=f.content_type,
             size=result["size"],
@@ -259,14 +299,19 @@ async def update_rfq_attachment_vendor(
     attachment_id: int,
     payload: RFQAttachmentVendorUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "edit")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "edit")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     _assert_editable(rfq, user)
     attachment = db.query(RFQAttachment).filter(RFQAttachment.id == attachment_id, RFQAttachment.rfq_id == rfq_id).first()
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
     updates = payload.model_dump(exclude_unset=True)
+    if updates.get("vendor_id") is not None:
+        vendor = _active_vendor_or_400(db, updates["vendor_id"])
+        updates["vendor_name"] = vendor.name
+        updates.setdefault("vendor_contact", vendor.contact_phone or vendor.contact_email)
     for field, val in updates.items():
         setattr(attachment, field, val)
     db.commit()
@@ -274,18 +319,41 @@ async def update_rfq_attachment_vendor(
     return attachment
 
 
+def _ensure_vendor_can_get_po(db: Session, vendor_id: int) -> None:
+    """Refuses a PO to a vendor that is no longer in the master or is not
+    Active (Blocked / Inactive) — SAP's purchasing block on the vendor."""
+    vendor = db.get(Vendor, vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=409, detail="The vendor on this PO is no longer in the vendor master — pick another quoted vendor, or re-add the vendor in Procurement → Vendors.")
+    if vendor.status != "active":
+        raise HTTPException(status_code=409, detail=f"Vendor {vendor.name} is {vendor.status} in the vendor master, so no purchase order can be raised to it. "
+                                                    "Ask Purchase/Finance to set it Active in Procurement → Vendors, or pick another quoted vendor.")
+
+
+def _active_vendor_or_400(db: Session, vendor_id: int) -> Vendor:
+    vendor = db.get(Vendor, vendor_id)
+    if not vendor:
+        raise HTTPException(status_code=400, detail="That vendor is not in the vendor master any more — pick another one in Procurement → Vendors.")
+    if vendor.status != "active":
+        raise HTTPException(status_code=400, detail=f"Vendor {vendor.name} is {vendor.status} — activate it in Procurement → Vendors or pick another vendor.")
+    return vendor
+
+
 @router.delete("/{rfq_id}/attachments/{attachment_id}")
 async def delete_rfq_attachment(
     rfq_id: int,
     attachment_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "view")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "delete")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     _assert_editable(rfq, user)
     attachment = db.query(RFQAttachment).filter(RFQAttachment.id == attachment_id, RFQAttachment.rfq_id == rfq_id).first()
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    # Company delete rule: 'Delete' on R.F.Q AND only a file you uploaded (admins any).
+    ensure_can_delete(user, attachment, "p2p", "rfq", what="quotation file")
     db.delete(attachment)
     db.commit()
     return {"detail": "Attachment deleted"}
@@ -296,11 +364,12 @@ async def get_rfq_attachment_content(
     rfq_id: int,
     attachment_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "view")),
 ):
     """Raw bytes for in-app preview, fetched via the app-only Graph token —
     never the raw SharePoint webUrl."""
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "view")
+    _get_rfq_or_404(db, rfq_id, user)  # 404 / data-scope check
     attachment = db.query(RFQAttachment).filter(
         RFQAttachment.id == attachment_id, RFQAttachment.rfq_id == rfq_id
     ).first()
@@ -321,11 +390,11 @@ async def get_rfq_attachment_content(
 async def submit_rfq(
     rfq_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "edit")),
 ):
     """Locks the RFQ — no further edits except by an admin. Validates the
     single-quotation and commercial-terms rules before locking."""
-    rfq = _get_rfq_or_404(db, rfq_id)
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     _assert_editable(rfq, user)
 
     tiers_present = {a.vendor_tier for a in rfq.attachments}
@@ -379,10 +448,12 @@ async def submit_rfq(
 async def add_vendor_quotation(
     rfq_id: int,
     payload: VendorQuotationCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "edit")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "create")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     if pr.status != "vendor_quotations":
         raise HTTPException(status_code=409, detail=f"Vendor quotations can only be recorded while the PR is at 'vendor_quotations' (current status: {pr.status})")
@@ -401,6 +472,8 @@ async def add_vendor_quotation(
     db.add(vq)
     _write_pr_audit(db, pr.id, "vendor_quotation_added", user,
                  summary=f"{user.name or user.email} recorded a quotation from '{payload.vendor_name}' for {pr.p2p_number}.")
+    from app.modules.p2p import notify as p2p_notify
+    p2p_notify.vendor_quote_received(db, background_tasks, rfq, pr, user, payload.vendor_name)
     db.commit()
     db.refresh(vq)
     return _to_vq_response(db, vq)
@@ -410,13 +483,14 @@ async def add_vendor_quotation(
 async def list_vendor_quotations(
     rfq_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "view")),
 ):
     """Read-only Quotation Comparison view — every quotation recorded
     against this RFQ, side by side. Not gated on PR status; useful at any
     stage from vendor_quotations through vendor_selected."""
-    rfq = _get_rfq_or_404(db, rfq_id)
-    return [_to_vq_response(db, vq) for vq in rfq.vendor_quotations]
+    ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "view")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
+    return mask_for(user, "rfq", [_to_vq_response(db, vq) for vq in rfq.vendor_quotations])
 
 
 @router.patch("/{rfq_id}/vendor-quotations/{vq_id}", response_model=VendorQuotationResponse)
@@ -425,9 +499,10 @@ async def update_vendor_quotation(
     vq_id: int,
     payload: VendorQuotationUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "edit")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "rfq", "vendor_quotes", "edit")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     if pr.status != "vendor_quotations":
         raise HTTPException(status_code=409, detail=f"A vendor quotation can only be edited while the PR is at 'vendor_quotations' (current status: {pr.status})")
@@ -444,10 +519,12 @@ async def update_vendor_quotation(
 @router.post("/{rfq_id}/start-technical-evaluation", response_model=RFQResponse)
 async def start_technical_evaluation(
     rfq_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "edit")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "rfq", "evaluation", "edit")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     if pr.status != "vendor_quotations":
         raise HTTPException(status_code=409, detail=f"Technical evaluation can only start from 'vendor_quotations' (current status: {pr.status})")
@@ -461,6 +538,8 @@ async def start_technical_evaluation(
     _write_pr_audit(db, pr.id, "technical_evaluation_started", user,
                  summary=f"{user.name or user.email} started Technical Evaluation for {pr.p2p_number}.",
                  old_status=old_status, new_status="technical_evaluation")
+    from app.modules.p2p import notify as p2p_notify
+    p2p_notify.rfq_evaluation_waiting(db, background_tasks, rfq, pr, user, "technical")
     db.commit()
     db.refresh(rfq)
     return _to_response(db, rfq)
@@ -472,14 +551,21 @@ async def evaluate_technical(
     vq_id: int,
     payload: VendorQuotationEvaluatePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "view")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     if pr.status != "technical_evaluation":
         raise HTTPException(status_code=409, detail=f"Technical evaluation can only be recorded while the PR is at 'technical_evaluation' (current status: {pr.status})")
     if payload.status not in ("qualified", "disqualified"):
         raise HTTPException(status_code=400, detail=f"Invalid technical status '{payload.status}' — must be one of {VENDOR_QUOTATION_TECHNICAL_STATUSES[1:]}")
+    # An evaluation is a decision with no named approver: qualifying needs
+    # 'Approve' on R.F.Q, disqualifying needs 'Reject'.
+    ensure_tab_action(user, "p2p", "rfq", "approve" if payload.status == "qualified" else "reject")
+    if payload.status == "qualified":
+        ensure_feature_action(user, "p2p", "rfq", "evaluation", "approve")
+    else:
+        ensure_feature_action(user, "p2p", "rfq", "evaluation", "reject")
     vq = _get_vendor_quotation_or_404(db, rfq_id, vq_id)
 
     vq.technical_status = payload.status
@@ -496,10 +582,12 @@ async def evaluate_technical(
 @router.post("/{rfq_id}/start-commercial-evaluation", response_model=RFQResponse)
 async def start_commercial_evaluation(
     rfq_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "edit")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "rfq", "evaluation", "edit")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
 
     if rfq.requires_technical_evaluation:
@@ -520,6 +608,8 @@ async def start_commercial_evaluation(
     _write_pr_audit(db, pr.id, "commercial_evaluation_started", user,
                  summary=f"{user.name or user.email} started Commercial Evaluation for {pr.p2p_number}.",
                  old_status=old_status, new_status="commercial_evaluation")
+    from app.modules.p2p import notify as p2p_notify
+    p2p_notify.rfq_evaluation_waiting(db, background_tasks, rfq, pr, user, "commercial")
     db.commit()
     db.refresh(rfq)
     return _to_response(db, rfq)
@@ -531,14 +621,19 @@ async def evaluate_commercial(
     vq_id: int,
     payload: VendorQuotationEvaluatePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "view")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     if pr.status != "commercial_evaluation":
         raise HTTPException(status_code=409, detail=f"Commercial evaluation can only be recorded while the PR is at 'commercial_evaluation' (current status: {pr.status})")
     if payload.status not in ("approved", "rejected"):
         raise HTTPException(status_code=400, detail=f"Invalid commercial status '{payload.status}' — must be one of {VENDOR_QUOTATION_COMMERCIAL_STATUSES[1:]}")
+    ensure_tab_action(user, "p2p", "rfq", "approve" if payload.status == "approved" else "reject")
+    if payload.status == "approved":
+        ensure_feature_action(user, "p2p", "rfq", "evaluation", "approve")
+    else:
+        ensure_feature_action(user, "p2p", "rfq", "evaluation", "reject")
     vq = _get_vendor_quotation_or_404(db, rfq_id, vq_id)
     if rfq.requires_technical_evaluation and vq.technical_status != "qualified":
         raise HTTPException(status_code=409, detail="Only technically qualified vendor quotations can be commercially evaluated")
@@ -559,9 +654,10 @@ async def select_vendor_quotation(
     rfq_id: int,
     payload: VendorQuotationSelectPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("rfq", "edit")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "rfq", "award", "edit")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     if pr.status != "commercial_evaluation":
         raise HTTPException(status_code=409, detail=f"A vendor can only be selected while the PR is at 'commercial_evaluation' (current status: {pr.status})")
@@ -597,7 +693,7 @@ async def create_po_draft(
     rfq_id: int,
     payload: P2PPurchaseOrderCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("purchase_orders", "create")),
 ):
     """Creates an editable draft PO (status='draft'). Most RFQs go through
     formal vendor selection first (pr.status == 'vendor_selected'), but the
@@ -605,21 +701,35 @@ async def create_po_draft(
     issued outside the system directly from 'vendor_quotations' — the buyer
     supplies vendor_name (and optionally po_number) by hand instead of
     picking a selected VendorQuotation. Line prices are then filled in on the
-    draft (PATCH below); submit-po-draft refuses to send it into the
-    Purchase Head -> Director -> MD approval chain until every line is priced
-    (see p2p_requests.py approve_po)."""
-    rfq = _get_rfq_or_404(db, rfq_id)
+    draft (PATCH below); submit-po-draft refuses to send it into PO
+    approval (p2p/approvals.py) until every line is priced."""
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     if pr.status not in ("vendor_quotations", "vendor_selected"):
         raise HTTPException(status_code=409, detail=f"A PO draft can only be created while the PR is at 'vendor_quotations' or 'vendor_selected' (current status: {pr.status})")
 
     selected = next((vq for vq in rfq.vendor_quotations if vq.is_selected), None)
-    # The PO always goes to the L1 (lowest) vendor quoted on the RFQ.
-    l1 = next((a for a in rfq.attachments if a.vendor_tier == "L1" and a.vendor_name), None)
-    if not selected and l1:
-        payload.vendor_name = l1.vendor_name
+    # The PO goes to the RFQ quote the buyer picks — L1 (lowest) by default;
+    # any other tier must carry a reason (standard control on non-L1 buying).
+    tier = (payload.vendor_tier or "L1").upper()
+    chosen = next((a for a in rfq.attachments if a.vendor_tier == tier and a.vendor_name), None)
+    if payload.vendor_tier and not chosen:
+        raise HTTPException(status_code=400, detail=f"There is no {tier} quote on RFQ {rfq.rfq_number} — pick one of the vendors quoted on it.")
+    reason = (payload.selection_reason or "").strip()
+    if tier != "L1" and not reason:
+        raise HTTPException(status_code=400, detail=f"You picked the {tier} vendor instead of L1 (lowest) — give the reason (e.g. L1 can't meet the delivery date).")
+    if not selected and chosen:
+        payload.vendor_name = chosen.vendor_name
+        # Linked to the vendor master → the vendor invoice can be matched to this PO in Finance.
+        if chosen.vendor_id:
+            payload.vendor_id = chosen.vendor_id
     if not selected and not (payload.vendor_name or "").strip():
         raise HTTPException(status_code=400, detail="A vendor name is required to create the PO")
+    # Vendor master posting block: a vendor set Blocked / Inactive in
+    # Procurement → Vendors (shared with Finance) gets no new PO.
+    _po_vendor_id = selected.vendor_id if selected else payload.vendor_id
+    if _po_vendor_id:
+        _ensure_vendor_can_get_po(db, _po_vendor_id)
 
     if payload.po_number:
         if db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.po_number == payload.po_number).first():
@@ -639,28 +749,57 @@ async def create_po_draft(
         delivery_terms=payload.delivery_terms or (selected.payment_terms if selected else None),
         created_by_id=user.id,
     )
+    po.terms_conditions = _po_terms(db, rfq, po.vendor_id)
+    # PR account assignment: an internal order carries to the PO (CO commitment).
+    if getattr(pr, "internal_order_id", None) and not po.internal_order_id:
+        po.internal_order_id = pr.internal_order_id
     db.add(po)
     db.flush()
 
-    # Default to the PR's own line items (editable afterwards) when the
-    # buyer doesn't supply an explicit item breakdown. Items already
-    # fulfilled from existing store stock (see issue_item_from_stock in
-    # p2p_requests.py) are excluded — otherwise the same requirement could
-    # be issued from stock AND ordered on a PO, double-fulfilling it.
-    source_items = payload.items if payload.items else [
+    # PO lines are always the PR's own lines (prices filled on the draft) —
+    # each carries its Item Master id forward to the GRN. A free-typed line
+    # list is refused: what is ordered must be what was requisitioned.
+    # Items already fulfilled from existing store stock (see
+    # issue_item_from_stock in p2p_requests.py) are excluded — otherwise the
+    # same requirement could be issued from stock AND ordered on a PO.
+    if payload.items:
+        db.rollback()
+        raise HTTPException(status_code=422, detail="A PO's lines come from its requisition's lines — they can't be typed in. "
+                                                    "To order something else, raise a requisition for it (picked from the Item Master).")
+    source_items = [
         type("Item", (), {
-            "item_name": i.item_name, "make": i.make, "part_code": i.part_code,
+            "store_item_id": i.store_item_id, "item_name": i.item_name, "make": i.make, "part_code": i.part_code,
             "unit": i.unit, "quantity": i.quantity - (i.issued_qty or 0), "unit_price": None, "tax_rate": None,
+            "pr_item_id": i.id,
         })()
         for i in pr.items
         if i.fulfillment_status != "stock_issued" and i.quantity - (i.issued_qty or 0) > 0
     ]
+
+    # Quality: a vendor BLOCKED on the approved vendor list gets no PO for
+    # those items (services/supplier_quality.ensure_po_allowed).
+    from app.modules.quality.services.supplier_quality import ensure_po_allowed, SupplierError
+    try:
+        ensure_po_allowed(db, po.vendor_name, [i.store_item_id for i in source_items])
+    except SupplierError as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=str(e))
+
+    # ME01 source list + ME11 info record (keyed by vendor + Item Master id,
+    # never by name): refuse a non-approved source, pre-price from the record.
+    from app.modules.p2p import info_records
+    info_records.ensure_source_allowed(db, po.vendor_id, [i.store_item_id for i in source_items], po.po_date, po.vendor_name)
+    for item in source_items:
+        if item.unit_price is None:
+            item.unit_price = info_records.default_price(db, po.vendor_id, item.store_item_id, po.po_date)
+            item.price_source = "info_record" if item.unit_price else None
 
     po_items: list[P2PPurchaseOrderItem] = []
     for item in source_items:
         line_total = compute_line_total(item.quantity, item.unit_price, item.tax_rate)
         po_item = P2PPurchaseOrderItem(
             purchase_order_id=po.id,
+            store_item_id=item.store_item_id,
             item_name=item.item_name,
             make=item.make,
             part_code=item.part_code,
@@ -669,6 +808,9 @@ async def create_po_draft(
             unit_price=item.unit_price,
             tax_rate=item.tax_rate,
             line_total=line_total,
+            item_category=item_category_for(db, item.store_item_id),
+            pr_item_id=item.pr_item_id,
+            price_source=getattr(item, "price_source", None),
         )
         db.add(po_item)
         po_items.append(po_item)
@@ -682,7 +824,8 @@ async def create_po_draft(
     pr.status = "po_drafted"
     pr.po_number = po.po_number
     _write_pr_audit(db, pr.id, "po_draft_created", user,
-                 summary=f"{user.name or user.email} created draft PO '{po.po_number}' for {pr.p2p_number}.",
+                 summary=f"{user.name or user.email} created draft PO '{po.po_number}' for {pr.p2p_number} to {po.vendor_name} ({tier})."
+                         + (f" Reason for not using L1: {reason}" if tier != "L1" else ""),
                  old_status=old_status, new_status="po_drafted")
 
     db.commit()
@@ -698,19 +841,22 @@ async def update_po_draft(
     po_id: int,
     payload: P2PPurchaseOrderDraftUpdatePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("purchase_orders", "edit")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     po = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(
         P2PPurchaseOrder.id == po_id, P2PPurchaseOrder.p2p_request_id == pr.id
     ).first()
     if not po:
         raise HTTPException(status_code=404, detail="Draft PO not found")
-    if pr.status != "po_drafted" or po.status != "draft":
+    # ME21N split: a PR can carry several POs, so the PO's own status decides.
+    if po.status != "draft" or pr.status not in _SPLIT_PO_PR_STATUSES:
         raise HTTPException(status_code=409, detail="This PO draft is no longer editable")
 
     updates = payload.model_dump(exclude_unset=True, exclude={"items"})
+    # Any edit makes the managed Word PO out of date (it compares this revision).
+    po.revision = (po.revision or 0) + 1
     for field, val in updates.items():
         setattr(po, field, val)
 
@@ -723,6 +869,8 @@ async def update_po_draft(
             item = items_by_id[pricing.id]
             item.unit_price = pricing.unit_price
             item.tax_rate = pricing.tax_rate
+            if "specification" in pricing.model_fields_set:
+                item.specification = (pricing.specification or "").strip() or None
             item.line_total = compute_line_total(item.quantity, item.unit_price, item.tax_rate)
         po.total_value = _derive_po_total(po.items)
 
@@ -744,20 +892,21 @@ async def upload_po_document(
     po_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("purchase_orders", "edit")),
 ):
     """One-time upload of the signed PO document. Only allowed while the PO
     is still an editable draft, and only once — after upload (and at every
     later stage, including PO approval) the document is permanently locked;
     there is no replace/delete route by design."""
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "purchase_orders", "po_document", "create")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     po = db.query(P2PPurchaseOrder).filter(
         P2PPurchaseOrder.id == po_id, P2PPurchaseOrder.p2p_request_id == pr.id
     ).first()
     if not po:
         raise HTTPException(status_code=404, detail="Draft PO not found")
-    if pr.status != "po_drafted" or po.status != "draft":
+    if po.status != "draft" or pr.status not in _SPLIT_PO_PR_STATUSES:
         raise HTTPException(status_code=409, detail="The PO document can only be uploaded while the PO is still a draft.")
     if po.document_filename:
         raise HTTPException(status_code=409, detail="A PO document has already been uploaded and cannot be changed.")
@@ -791,9 +940,10 @@ async def get_po_document_content(
     rfq_id: int,
     po_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("purchase_orders", "view")),
 ):
-    rfq = _get_rfq_or_404(db, rfq_id)
+    ensure_feature_action(user, "p2p", "purchase_orders", "po_document", "view")
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     po = db.query(P2PPurchaseOrder).filter(
         P2PPurchaseOrder.id == po_id, P2PPurchaseOrder.p2p_request_id == pr.id
@@ -817,19 +967,20 @@ async def submit_po_draft(
     po_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_purchase_tab("purchase_orders", "submit")),
 ):
-    """Finalizes the draft PO and hands the PR off to PO approval — the
-    manager-role set for the PR's project type, any one of whom approves
-    (legacy PRs keep the Purchase Head -> Director -> MD chain)."""
-    rfq = _get_rfq_or_404(db, rfq_id)
+    """Finalizes the draft PO and sends it into PO approval — the "Purchase
+    order" workflow of the central approval engine (Organization › Approval
+    Workflows; default: the PO approvers, then any one Partner). Also how a PO
+    returned for changes goes back for approval."""
+    rfq = _get_rfq_or_404(db, rfq_id, user)
     pr = _get_pr_for_rfq(db, rfq)
     po = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(
         P2PPurchaseOrder.id == po_id, P2PPurchaseOrder.p2p_request_id == pr.id
     ).first()
     if not po:
         raise HTTPException(status_code=404, detail="Draft PO not found")
-    if pr.status != "po_drafted" or po.status != "draft":
+    if po.status != "draft" or pr.status not in _SPLIT_PO_PR_STATUSES:
         raise HTTPException(status_code=409, detail=f"Only a drafted PO on a 'po_drafted' PR can be submitted (current status: {pr.status})")
     # Approvers must see — and sign off on — a real value. Without this the
     # chain approved blank POs and AP's 3-way match then accepted any amount.
@@ -841,19 +992,12 @@ async def submit_po_draft(
             status_code=400,
             detail=f"Enter a unit price for every line before sending the PO for approval — missing: {', '.join(unpriced)}.",
         )
-    if pr.project_type in PO_PICKED_ROLE_SETS:
-        picked = {a.role for a in pr.po_approvers}
-        missing = [P2P_ROLE_LABELS.get(r, r) for r in PO_PICKED_ROLE_SETS[pr.project_type] if r not in picked]
-        if missing:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Pick the PO approvers before sending the PO for approval — missing: {', '.join(missing)}.",
-            )
+    # The vendor may have been blocked in the vendor master since the draft was made.
+    if po.vendor_id:
+        _ensure_vendor_can_get_po(db, po.vendor_id)
     po.total_value = _derive_po_total(po.items)
 
     old_status = pr.status
-    po.status = "issued"
-    pr.status = "po_raised"
     pr.po_date = po.po_date
     pr.po_value = po.total_value
     pr.expected_delivery = po.expected_delivery
@@ -861,21 +1005,33 @@ async def submit_po_draft(
     _write_pr_audit(db, pr.id, "po_raised", user,
                  summary=f"{user.name or user.email} submitted PO '{po.po_number}' for {pr.p2p_number} — entering PO approval.",
                  old_status=old_status, new_status="po_raised")
+    # PR → po_raised, PO → issued. The engine resolves and notifies the
+    # approvers (bell + Teams; the full-PO email goes after commit), or
+    # refuses with the reason when a stage has nobody to approve.
+    p2p_approvals.submit_po(db, pr, po, user)
+    # ME21N split: the PR's status / value roll up from all its POs.
+    from app.modules.p2p.po_split import rollup_pr_status
+    rollup_pr_status(db, pr, user.id)
 
-    # Tell everyone the PO goes to (bell + Teams, and an email with the full
-    # PO after commit) — any one of them approves.
-    for approver, role in po_approver_users(db, pr):
-        notify_user(
-            db, user_id=approver.id,
-            title="Purchase Order Awaiting Approval",
-            message=f"PO '{po.po_number}' for PR '{pr.p2p_number}' awaits your approval as {P2P_ROLE_LABELS.get(role, role)}.",
-            notification_type="p2p_po_approval_pending", entity_type="p2p_request", entity_id=pr.id,
-            teams=True,
-        )
-
+    fire_rule(db, background_tasks, "p2p", "po_raised", "Purchase Order Raised",
+              f"PO '{po.po_number}' ({po.vendor_name}, {po.total_value:,.2f}) for PR '{pr.p2p_number}' was sent for approval by {user.name or user.email}.",
+              "p2p_request", pr.id, user,
+              [("PO", po.po_number), ("Vendor", po.vendor_name or ""), ("Value", f"{po.total_value:,.2f}" if po.total_value else ""),
+               ("Requisition", pr.p2p_number), ("By", user.name or user.email)])
     db.commit()
     background_tasks.add_task(_send_p2p_po_approval_emails_background, pr.id)
     db.refresh(po)
     resp = P2PPurchaseOrderResponse.model_validate(po)
     resp.p2p_request_number = pr.p2p_number
     return resp
+
+
+def _po_terms(db: Session, rfq: RFQ, vendor_id: int | None) -> str | None:
+    """Terms printed on the PO: the RFQ's company terms, then the vendor's own terms."""
+    parts = []
+    if rfq.terms_conditions:
+        parts.append(f"Company terms:\n{rfq.terms_conditions.strip()}")
+    vendor = db.get(Vendor, vendor_id) if vendor_id else None
+    if vendor and vendor.terms_conditions:
+        parts.append(f"Vendor terms ({vendor.name}):\n{vendor.terms_conditions.strip()}")
+    return "\n\n".join(parts) or None

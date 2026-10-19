@@ -67,6 +67,7 @@ class ActivityResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    mom_revision: int = 0
     activity_type: str | None = None
     subject: str | None = None
     org_id: int | None = None

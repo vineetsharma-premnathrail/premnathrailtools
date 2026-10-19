@@ -2,50 +2,26 @@ import { TourConfig, TourStep } from '../types'
 
 const steps: TourStep[] = [
   {
+    target: 'rfq-detail-back',
+    title: '← Back',
+    purpose: 'Returns to the R.F.Q list.',
+  },
+  {
     target: 'rfq-detail-vendor-quotations',
     title: 'Supplier / Vendor Quotations',
     purpose: 'Every vendor quotation attached when this RFQ was raised, one card per vendor (L1–L4 Vendor), each with its own document link.',
   },
   {
-    target: 'rfq-detail-po-vendor-name',
-    title: 'L1 Vendor',
-    purpose: 'The PO is always placed with the L1 vendor quoted on this RFQ — filled in automatically and not editable.',
+    target: 'rfq-detail-po-create-btn',
+    title: 'Select Vendor & Create PO',
+    purpose: 'The next step once the quotations are in: opens Purchase Orders with the vendor picker ready. L1 (lowest) is pre-selected; picking another quoted vendor needs a reason.',
+    why: 'The PO is created in the application — its number is generated and its document is built on the company letterhead, so nothing is typed in or attached by hand.',
+    after: 'The PO opens on the Purchase Orders page to price the lines and edit the Word document; saving it there sends it for approval. Nothing is sent for approval from the RFQ.',
   },
   {
-    target: 'rfq-detail-po-number',
-    title: 'PO Number',
-    purpose: 'The Purchase Order number, if one has already been issued outside the system.',
-    required: false,
-    whatToEnter: 'Leave blank to auto-generate a PO number.',
-  },
-  {
-    target: 'rfq-detail-po-doc-file',
-    title: 'PO Document',
-    purpose: 'The actual Purchase Order document, agreed and issued outside the system.',
-  },
-  {
-    target: 'rfq-detail-po-attach-btn',
-    title: 'Attach PO',
-    purpose: 'Records this PO against the requisition and uploads its document — this is a simple record-keeping step, not the full vendor-selection workflow.',
-    after: 'Moves this requisition into the "PO Draft" stage below.',
-  },
-  {
-    target: 'rfq-detail-po-upload-btn',
-    title: 'Upload',
-    purpose: 'Attaches the PO document if it wasn\'t uploaded in the previous step.',
-  },
-  {
-    target: 'rfq-detail-po-approvers',
-    title: 'PO Approvers',
-    purpose: 'Who approves this PO. Existing project: a Production, Purchase and Project Manager; new project: an R&D, Purchase and Production Manager. Every Director also gets the PO.',
-    required: true,
-    whatToEnter: 'Search by name or email in each role\'s picker. Directors are added automatically.',
-  },
-  {
-    target: 'rfq-detail-po-send-approval-btn',
-    title: 'Send for Approval',
-    purpose: 'Saves the PO approvers picked above and sends this PO to them and to every Director for approval.',
-    why: 'Once submitted, the PO can no longer be edited from this page.',
+    target: 'rfq-detail-open-po',
+    title: 'Open in Purchase Orders',
+    purpose: 'Opens this requisition\'s PO on the Purchase Orders page, where the PO is priced and its Word document generated — saving the PO there sends it for approval.',
   },
   {
     target: 'rfq-detail-po-view-approval-btn',

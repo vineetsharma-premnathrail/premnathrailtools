@@ -5,34 +5,44 @@ import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
+import TourButton from '@/components/tour/TourButton'
+import { useMarkPmOrigin } from '@/components/projects/work/pmOrigin'
+import { ChartBar, CheckSquare, Folders, SquaresFour, User, UsersThree, type Icon } from '@phosphor-icons/react'
 
+// Dashboard and All Projects need the Project Management app. Department
+// heads, milestone leads and assistants work from the Ongoing Projects tab
+// inside their own module (Design, Electrical, Hydraulic, R&D, ...); My Tasks
+// is everyone's cross-module list of tasks assigned to them.
 const TABS = [
-  { href: '/dashboard/projects', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
-  { href: '/dashboard/projects/all', label: 'All Projects', icon: 'grid', subtabKey: 'all_projects' },
-  { href: '/dashboard/projects/my', label: 'My Projects', icon: 'user', subtabKey: 'my_projects' },
-  { href: '/dashboard/projects/reports', label: 'Project Reports', icon: 'chart', subtabKey: 'project_reports' },
+  { href: '/dashboard/projects', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard', pmOnly: true },
+  { href: '/dashboard/projects/all', label: 'All Projects', icon: 'grid', subtabKey: 'all_projects', pmOnly: true },
+  // Everyone's own work — no app or tab grant needed (also a card on the Dashboard home).
+  { href: '/dashboard/projects/my-tasks', label: 'My Tasks', icon: 'check', pmOnly: false },
 ] as const
 
+// Tab icon key -> Phosphor icon (Regular weight). The key also feeds the
+// tab's data-tour id, so keys stay as they are.
+const TAB_ICONS: Record<string, Icon> = {
+  dashboard: SquaresFour,
+  grid: Folders,
+  user: User,
+  team: UsersThree,
+  check: CheckSquare,
+  chart: ChartBar,
+}
+
 function TabIcon({ name }: { name: string }) {
-  const common = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  switch (name) {
-    case 'dashboard':
-      return <svg {...common}><rect x="3" y="3" width="7" height="9" /><rect x="14" y="3" width="7" height="5" /><rect x="14" y="12" width="7" height="9" /><rect x="3" y="16" width="7" height="5" /></svg>
-    case 'grid':
-      return <svg {...common}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
-    case 'user':
-      return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-6 8-6s8 2 8 6" /></svg>
-    case 'chart':
-      return <svg {...common}><line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" /></svg>
-    default:
-      return null
-  }
+  const Cmp = TAB_ICONS[name]
+  return Cmp ? <Cmp size={15} /> : null
 }
 
 export default function ProjectsNav() {
   const pathname = usePathname()
   const { user } = useAuth()
-  const visibleTabs = filterTabsByAccess('projects', TABS, user)
+  const hasPm = !!user?.apps?.includes('projects')
+  const visibleTabs = filterTabsByAccess('projects', TABS, user).filter((t) => hasPm || !t.pmOnly)
+  // Inside Project Management, WBS / task pages belong here, not to a module.
+  useMarkPmOrigin(null)
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
@@ -43,6 +53,7 @@ export default function ProjectsNav() {
             <Link
               key={tab.href}
               href={tab.href}
+              data-tour={`pm-nav-${tab.icon}`}
               className="nav-tab-link"
               style={{
                 display: 'flex',
@@ -66,8 +77,11 @@ export default function ProjectsNav() {
           )
         })}
       </div>
-      <div style={{ paddingBottom: 8, flex: 'none' }}>
-        <NotificationBell />
+      <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <TourButton variant="icon" />
+        <div data-tour="pm-nav-bell">
+          <NotificationBell />
+        </div>
       </div>
     </div>
   )

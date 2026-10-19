@@ -1,7 +1,9 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import {
   HrAttendanceImportResult, HrAttendanceLookups, HrAttendanceMonth, HrAttendanceRegister, HrAttendanceRegisterRow,
@@ -10,12 +12,16 @@ import {
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle, primaryBtnStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
+import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import AttendanceCalendar, { AttendanceLegend, MonthPicker, MONTH_NAMES } from '@/components/hr/attendance/AttendanceCalendar'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
+import RosterPanel from '@/components/hr/attendance/RosterPanel'
+import PunchImportPanel from '@/components/hr/attendance/PunchImportPanel'
+import PeriodsPanel from '@/components/hr/attendance/PeriodsPanel'
 
 const ATT_LABELS: Record<string, string> = {
   present: 'Present', absent: 'Absent', half_day: 'Half day', on_leave: 'On leave', holiday: 'Holiday',
@@ -34,7 +40,6 @@ const inputStyle: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
 }
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 const td: React.CSSProperties = { padding: '9px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
 const tableWrap: React.CSSProperties = { borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }
@@ -61,17 +66,6 @@ function Banner({ errors, ok }: { errors?: string[]; ok?: string }) {
   if (ok) return <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.25)', color: '#166534', fontSize: 13 }}>{ok}</div>
   return null
 }
-function Modal({ open, title, onClose, children, width = 520 }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode; width?: number }) {
-  if (!open) return null
-  return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, maxWidth: width, width: '100%', padding: 24, maxHeight: 'calc(100vh - 40px)', overflowY: 'auto' }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 16px 0', color: TEXT.heading }}>{title}</h2>
-        {children}
-      </div>
-    </div>
-  )
-}
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -86,13 +80,25 @@ const TABS = [
   { key: 'summary', label: 'Monthly summary' },
   { key: 'import', label: 'Import' },
   { key: 'corrections', label: 'Corrections' },
+  { key: 'roster', label: 'Shift roster' },
+  { key: 'punches', label: 'Biometric punches' },
+  { key: 'periods', label: 'Payroll periods' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
-type EditState = { user_id: number; user_name: string; date: string; id: number | null; source: string | null; status: string; check_in: string; check_out: string; remarks: string }
+type EditState = { user_id: number; user_name: string; date: string; id: number | null; source: string | null; status: string; check_in: string; check_out: string; remarks: string; marked_by_id: number | null }
 
 export default function HrAttendancePage() {
   const { isAuthorized, isLoading } = useRequireApp('hr')
+  const { can, canDelete, canFeature } = useCan()
+  // Marking / correcting the register is 'edit' on HR › Attendance.
+  const canMark = can('hr', 'attendance', 'edit')
+  // Sub-tabs behind HR › Attendance features (Organization › Role & Permissions).
+  const tabOk = (k: string) => k === 'import' ? can('hr', 'attendance', 'import')
+    : k === 'punches' ? canFeature('hr', 'attendance', 'punches', 'import')
+    : k === 'roster' ? canFeature('hr', 'attendance', 'roster', 'view')
+    : k === 'periods' ? canFeature('hr', 'attendance', 'periods', 'view')
+    : true
   const now = new Date()
   const [tab, setTab] = useState<TabKey>('register')
   const [lookups, setLookups] = useState<HrAttendanceLookups | null>(null)
@@ -200,11 +206,13 @@ export default function HrAttendancePage() {
   const departments = useMemo(() => (lookups?.departments || []).filter((d) => !branchId || !d.branch_id || String(d.branch_id) === branchId), [lookups, branchId])
   const visibleRows = useMemo(() => (register?.items || []).filter((r) => !statusFilter || r.status === statusFilter), [register, statusFilter])
 
-  const openEdit = (userId: number, userName: string, day: { date: string; id: number | null; source: string | null; status: string | null; computed: boolean; check_in_time: string | null; check_out_time: string | null; remarks: string | null }) => {
+  const openEdit = (userId: number, userName: string, day: { date: string; id: number | null; source: string | null; status: string | null; computed: boolean; check_in_time: string | null; check_out_time: string | null; remarks: string | null; marked_by_id?: number | null }) => {
+    if (!canMark) return
     setEditErrors([])
     setEdit({
       user_id: userId, user_name: userName, date: day.date, id: day.id, source: day.source,
       status: !day.computed && day.status ? day.status : 'present', check_in: day.check_in_time || '', check_out: day.check_out_time || '', remarks: day.remarks || '',
+      marked_by_id: day.marked_by_id ?? null,
     })
   }
 
@@ -293,15 +301,15 @@ export default function HrAttendancePage() {
 
   const filterBar = (
     <>
-      <select style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={branchId} onChange={(e) => { setBranchId(e.target.value); setDeptId('') }}>
+      <select data-tour="hr-att-plant-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={branchId} onChange={(e) => { setBranchId(e.target.value); setDeptId('') }}>
         <option value="">All plants</option>
         {lookups?.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
       </select>
-      <select style={{ ...inputStyle, width: 'auto', flex: '0 1 190px' }} value={deptId} onChange={(e) => setDeptId(e.target.value)}>
+      <select data-tour="hr-att-dept-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 190px' }} value={deptId} onChange={(e) => setDeptId(e.target.value)}>
         <option value="">All departments</option>
         {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
       </select>
-      <input style={{ ...inputStyle, flex: '1 1 200px', maxWidth: 260 }} placeholder="Search name, email, code…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <input data-tour="hr-att-search" style={{ ...inputStyle, flex: '1 1 200px', maxWidth: 260 }} placeholder="Search name, email, code…" value={search} onChange={(e) => setSearch(e.target.value)} />
     </>
   )
 
@@ -319,13 +327,14 @@ export default function HrAttendancePage() {
         <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>
           Mark and correct attendance, import biometric exports and pull the monthly summary. Dashed badges are worked out from the calendar — nothing is stored for those days.
         </p>
+        <Link href="/dashboard/hr/attendance/time-evaluation" style={{ display: 'inline-block', marginTop: 6, fontSize: 13, fontWeight: 600, color: '#FF6A2A' }}>Time evaluation &amp; overtime (worked hours, OT approvals, ADP export) →</Link>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {TABS.map((t) => {
+        {TABS.filter((t) => tabOk(t.key)).map((t) => {
           const active = t.key === tab
           return (
-            <button key={t.key} type="button" onClick={() => { setTab(t.key); setError([]); setNotice('') }} style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer', border: active ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)', background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)', color: active ? '#e0521a' : '#57534e' }}>
+            <button key={t.key} type="button" data-tour={`hr-att-tab-${t.key}`} onClick={() => { setTab(t.key); setError([]); setNotice('') }} style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer', border: active ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)', background: active ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)', color: active ? '#e0521a' : '#57534e' }}>
               {t.label}
             </button>
           )
@@ -337,15 +346,15 @@ export default function HrAttendancePage() {
       {tab === 'register' && (
         <>
           <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ flex: '0 1 160px', minWidth: 150 }}><DateField value={regDate} onChange={(v) => v && setRegDate(v)} /></div>
+            <div data-tour="hr-att-reg-date" style={{ flex: '0 1 160px', minWidth: 150 }}><DateField value={regDate} onChange={(v) => v && setRegDate(v)} /></div>
             {filterBar}
-            <select style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <select data-tour="hr-att-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 160px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">All statuses</option>
               {Object.entries(ATT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           {register && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            <div data-tour="hr-att-reg-counts" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
               <span style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.secondary, padding: '4px 0' }}>{register.total} employees:</span>
               {Object.entries(register.counts).filter(([, n]) => n > 0).map(([k, n]) => (
                 <button key={k} type="button" onClick={() => setStatusFilter(statusFilter === k ? '' : k)} style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, border: statusFilter === k ? `1px solid ${ATT_HEX[k]}` : '1px solid transparent', background: `${ATT_HEX[k]}1a`, color: ATT_HEX[k], cursor: 'pointer' }}>
@@ -354,8 +363,8 @@ export default function HrAttendancePage() {
               ))}
             </div>
           )}
-          {selected.length > 0 && (
-            <div style={{ ...sectionStyle, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {selected.length > 0 && canMark && (
+            <div data-tour="hr-att-bulk-bar" style={{ ...sectionStyle, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading }}>{selected.length} selected</span>
               <span style={{ fontSize: 13, color: TEXT.muted }}>Mark as</span>
               <select style={{ ...inputStyle, width: 'auto' }} value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
@@ -365,12 +374,12 @@ export default function HrAttendancePage() {
               <button type="button" style={secondaryBtnStyle} onClick={() => setSelected([])}>Clear selection</button>
             </div>
           )}
-          <div style={tableWrap}>
+          <div data-tour="hr-att-register-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>
                 <tr>
                   <th style={{ ...th, width: 36 }}>
-                    <input type="checkbox" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? visibleRows.map((r) => r.user_id) : [])} aria-label="Select all" />
+                    <input type="checkbox" data-tour="hr-att-select-all" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? visibleRows.map((r) => r.user_id) : [])} aria-label="Select all" />
                   </th>
                   {['Employee', 'Department / plant', 'Shift', 'Status', 'In', 'Out', 'Source', ''].map((h) => <th key={h} style={th}>{h}</th>)}
                 </tr>
@@ -391,7 +400,7 @@ export default function HrAttendancePage() {
                     </td>
                     <td style={{ ...td, fontSize: 12.5 }}>{r.department_name || '—'}<div style={{ fontSize: 11.5, color: TEXT.muted }}>{r.branch_name || ''}</div></td>
                     <td style={{ ...td, fontSize: 12.5 }}>{r.shift_name || '—'}</td>
-                    <td style={td}>
+                    <td data-tour="hr-att-status-badge" style={td}>
                       <Badge status={r.status} computed={r.computed} />
                       {r.holiday_name && <div style={{ fontSize: 11, color: TEXT.muted, marginTop: 3 }}>{r.holiday_name}</div>}
                     </td>
@@ -402,7 +411,7 @@ export default function HrAttendancePage() {
                     <td style={td}>{r.check_out_time || '—'}</td>
                     <td style={{ ...td, fontSize: 12 }}>{r.source ? SOURCE_LABELS[r.source] || r.source : '—'}</td>
                     <td style={td}>
-                      {r.source !== 'leave' && <button type="button" style={linkBtn('#E85A1F')} onClick={() => openEdit(r.user_id, r.user_name, r)}>{r.id ? 'Edit' : 'Mark'}</button>}
+                      {canMark && r.source !== 'leave' && <button type="button" data-tour="hr-att-mark-btn" style={linkBtn('#E85A1F')} onClick={() => openEdit(r.user_id, r.user_name, r)}>{r.id ? 'Edit' : 'Mark'}</button>}
                     </td>
                   </tr>
                 ))}
@@ -415,7 +424,7 @@ export default function HrAttendancePage() {
       {tab === 'month' && (
         <>
           <div style={{ display: 'flex', gap: 12, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ flex: '1 1 320px', maxWidth: 460 }}>
+            <div data-tour="hr-att-month-employee" style={{ flex: '1 1 320px', maxWidth: 460 }}>
               <SearchableSelect value={monthUser} onChange={setMonthUser} options={employeeOptions} placeholder="Pick an employee…" />
             </div>
             <MonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m) }} />
@@ -435,7 +444,7 @@ export default function HrAttendancePage() {
                 year={year}
                 month={month}
                 days={monthData.days}
-                onDayClick={(d) => { if (d.source !== 'leave') openEdit(monthData.user_id, monthData.user_name, d) }}
+                onDayClick={(d) => { if (canMark && d.source !== 'leave') openEdit(monthData.user_id, monthData.user_name, d) }}
               />
             </>
           ) : (
@@ -450,8 +459,9 @@ export default function HrAttendancePage() {
             <MonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m) }} />
             {filterBar}
             <div style={{ flex: 1 }} />
-            <button
+            {can('hr', 'attendance', 'export') && <button
               type="button"
+              data-tour="hr-att-export-btn"
               style={secondaryBtnStyle}
               onClick={async () => {
                 try {
@@ -463,9 +473,9 @@ export default function HrAttendancePage() {
               }}
             >
               Export CSV
-            </button>
+            </button>}
           </div>
-          <div style={tableWrap}>
+          <div data-tour="hr-att-summary-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
               <thead>
                 <tr>{['Employee', 'Department', 'Present', 'Half day', 'Absent', 'Leave', 'On duty', 'WFH', 'Holiday', 'Weekly off', 'Not marked', 'Late', 'Present eq.'].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
@@ -510,6 +520,7 @@ export default function HrAttendancePage() {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
             <button
               type="button"
+              data-tour="hr-att-import-template-btn"
               style={secondaryBtnStyle}
               onClick={async () => {
                 try { downloadBlob(await hrApi.getAttendanceImportTemplate(), 'attendance_import_template.csv') } catch (err) { setError(extractErrorMessages(err, 'The template could not be downloaded.')) }
@@ -518,8 +529,8 @@ export default function HrAttendancePage() {
               Download template
             </button>
             <input type="file" accept=".csv,text/csv" onChange={(e) => { setImportFile(e.target.files?.[0] || null); setImportResult(null) }} style={{ ...inputStyle, width: 'auto', flex: '1 1 260px', maxWidth: 380 }} />
-            <button type="button" style={secondaryBtnStyle} disabled={importing} onClick={() => runImport(true)}>{importing ? 'Checking…' : 'Validate'}</button>
-            <button type="button" style={{ ...primaryBtnStyle, opacity: importing ? 0.7 : 1 }} disabled={importing} onClick={() => runImport(false)}>{importing ? 'Importing…' : 'Import'}</button>
+            <button type="button" data-tour="hr-att-validate-btn" style={secondaryBtnStyle} disabled={importing} onClick={() => runImport(true)}>{importing ? 'Checking…' : 'Validate'}</button>
+            <button type="button" data-tour="hr-att-import-btn" style={{ ...primaryBtnStyle, opacity: importing ? 0.7 : 1 }} disabled={importing} onClick={() => runImport(false)}>{importing ? 'Importing…' : 'Import'}</button>
           </div>
           {importResult && (
             <>
@@ -548,15 +559,18 @@ export default function HrAttendancePage() {
         </div>
       )}
 
+      {tab === 'roster' && tabOk('roster') && <RosterPanel />}
+      {tab === 'punches' && tabOk('punches') && <PunchImportPanel />}
+      {tab === 'periods' && tabOk('periods') && <PeriodsPanel />}
       {tab === 'corrections' && (
         <>
           <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-            <select style={{ ...inputStyle, width: 'auto' }} value={regsStatus} onChange={(e) => setRegsStatus(e.target.value)}>
+            <select data-tour="hr-att-corr-status-filter" style={{ ...inputStyle, width: 'auto' }} value={regsStatus} onChange={(e) => setRegsStatus(e.target.value)}>
               <option value="">All statuses</option>
               {Object.entries(REG_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
-          <div style={tableWrap}>
+          <div data-tour="hr-att-corr-table" style={tableWrap}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
               <thead><tr>{['Request', 'Employee', 'Date', 'Currently', 'Asked for', 'Times', 'Reason', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>
@@ -589,43 +603,41 @@ export default function HrAttendancePage() {
         </>
       )}
 
-      <Modal open={!!edit} title={edit ? `${edit.user_name} · ${dmy(edit.date)}` : ''} onClose={() => !saving && setEdit(null)} width={560}>
-        {edit && (
-          <>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-              <div style={{ flex: '1 1 180px', maxWidth: 220 }}>
-                <label style={labelStyle}>Status *</label>
-                <select style={inputStyle} value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>
-                  {MARKABLE.map((s) => <option key={s} value={s}>{ATT_LABELS[s]}</option>)}
-                </select>
-              </div>
-              <div style={{ flex: '0 1 120px', minWidth: 110 }}>
-                <label style={labelStyle}>Check-in</label>
-                <input type="time" style={inputStyle} value={edit.check_in} onChange={(e) => setEdit({ ...edit, check_in: e.target.value })} />
-              </div>
-              <div style={{ flex: '0 1 120px', minWidth: 110 }}>
-                <label style={labelStyle}>Check-out</label>
-                <input type="time" style={inputStyle} value={edit.check_out} onChange={(e) => setEdit({ ...edit, check_out: e.target.value })} />
-              </div>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={labelStyle}>Remarks</label>
-              <input style={inputStyle} value={edit.remarks} onChange={(e) => setEdit({ ...edit, remarks: e.target.value })} placeholder="Optional" />
-            </div>
-            <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>
-              {edit.id ? `Currently stored (${SOURCE_LABELS[edit.source || ''] || edit.source}).` : 'Nothing stored for this day yet.'} Leave days can only be changed by cancelling the leave request.
-            </p>
+      {edit && (
+        <FormSheet width={580} tour="hr-att-edit-sheet" icon="calendar" title={`${edit.user_name} · ${dmy(edit.date)}`}
+          subtitle={edit.id ? `Currently stored (${SOURCE_LABELS[edit.source || ''] || edit.source}).` : 'Nothing stored for this day yet.'}
+          onClose={() => setEdit(null)} busy={saving}
+          footer={<>
+            {edit.id && canDelete('hr', 'attendance', edit.marked_by_id) && <button type="button" data-tour="hr-att-edit-clear" style={{ ...sheetBtn('secondary', '#b91c1c', saving), color: '#b91c1c', marginRight: 'auto' }} disabled={saving} onClick={() => setClearConfirm(true)}><SheetIcon name="trash" size={15} />Clear entry</button>}
+            <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving} onClick={() => setEdit(null)}>Cancel</button>
+            <button type="button" data-tour="hr-att-edit-save" style={sheetBtn('primary', SHEET.BLUE, saving)} disabled={saving} onClick={saveEdit}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save'}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
             <Banner errors={editErrors} />
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between' }}>
-              <div>{edit.id && <button type="button" style={{ ...secondaryBtnStyle, color: '#b91c1c' }} disabled={saving} onClick={() => setClearConfirm(true)}>Clear entry</button>}</div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button type="button" style={secondaryBtnStyle} disabled={saving} onClick={() => setEdit(null)}>Cancel</button>
-                <button type="button" style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }} disabled={saving} onClick={saveEdit}>{saving ? 'Saving…' : 'Save'}</button>
+            <SheetSection icon="clock" title="Attendance">
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 180px', maxWidth: 220 }}>
+                  <label style={sheetLabel}>Status <Req /></label>
+                  <select data-tour="hr-att-edit-status" style={sheetInput} value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}>
+                    {MARKABLE.map((s) => <option key={s} value={s}>{ATT_LABELS[s]}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: '0 1 120px', minWidth: 110 }}>
+                  <label style={sheetLabel}>Check-in</label>
+                  <input type="time" data-tour="hr-att-edit-in" style={sheetInput} value={edit.check_in} onChange={(e) => setEdit({ ...edit, check_in: e.target.value })} />
+                </div>
+                <div style={{ flex: '0 1 120px', minWidth: 110 }}>
+                  <label style={sheetLabel}>Check-out</label>
+                  <input type="time" data-tour="hr-att-edit-out" style={sheetInput} value={edit.check_out} onChange={(e) => setEdit({ ...edit, check_out: e.target.value })} />
+                </div>
               </div>
-            </div>
-          </>
-        )}
-      </Modal>
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks <Optional /></label>
+              <input data-tour="hr-att-edit-remarks" style={sheetInput} value={edit.remarks} onChange={(e) => setEdit({ ...edit, remarks: e.target.value })} />
+              <p style={sheetHint}>Leave days can only be changed by cancelling the leave request.</p>
+            </SheetSection>
+          </div>
+        </FormSheet>
+      )}
 
       <ConfirmDialog
         open={clearConfirm}

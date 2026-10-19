@@ -2,16 +2,17 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useRequireAdmin } from '@/hooks/useAuth'
+import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi } from '@/lib/api'
-import { TEXT, BRAND, BORDER } from '@/lib/theme'
+import { SHEET } from '@/components/shared/FormSheet'
 import OrganizationNav from '@/components/organization/OrganizationNav'
+import { recordPath } from '@/lib/recordRef'
 import PlantForm from '@/components/organization/PlantForm'
 
 const TABS = ['Basic', 'Address', 'Operational Configuration', 'Branch Users', 'Branch Departments', 'Branch Stores', 'Branch Cost Centers', 'Branch Documents'] as const
 
 export default function NewPlantPage() {
-  const { isAuthorized, isLoading } = useRequireAdmin()
+  const { isAuthorized, isLoading } = useRequireOrgTab('branches', 'create')
   const router = useRouter()
   const [showSaveFirst, setShowSaveFirst] = useState(false)
 
@@ -19,7 +20,7 @@ export default function NewPlantPage() {
 
   const tabBar = (
     <div>
-      <div data-tour="org-plant-form-tabs" style={{ display: 'flex', gap: 8, marginBottom: 8, borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
+      <div data-tour="org-plant-form-tabs" style={{ display: 'flex', gap: 8, borderBottom: `1px solid ${SHEET.LINE}`, flexWrap: 'wrap' }}>
         {TABS.map((t) => {
           const isBasic = t === 'Basic'
           return (
@@ -29,9 +30,9 @@ export default function NewPlantPage() {
               disabled={!isBasic}
               onClick={() => { if (!isBasic) setShowSaveFirst(true) }}
               style={{
-                padding: '10px 6px', marginRight: 16, border: 'none', borderRadius: 0, boxShadow: 'none', outline: 'none',
-                background: 'transparent', borderBottom: isBasic ? `2px solid ${BRAND.primary}` : '2px solid transparent',
-                color: isBasic ? BRAND.primary : TEXT.muted, fontWeight: 600, fontSize: 13,
+                padding: '10px 4px', marginRight: 16, marginBottom: -1, borderTop: 'none', borderLeft: 'none', borderRight: 'none', borderRadius: 0, boxShadow: 'none', outline: 'none',
+                background: 'transparent', borderBottom: isBasic ? `2px solid ${SHEET.BLUE}` : '2px solid transparent',
+                color: isBasic ? SHEET.BLUE : SHEET.MUTED, fontWeight: 600, fontSize: 13, fontFamily: 'inherit',
                 cursor: isBasic ? 'default' : 'not-allowed', whiteSpace: 'nowrap', opacity: isBasic ? 1 : 0.55,
               }}
             >
@@ -41,7 +42,7 @@ export default function NewPlantPage() {
         })}
       </div>
       {showSaveFirst && (
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 16px' }}>
+        <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '10px 0 0' }}>
           Save this branch first — Address, Users, Stores, Cost Centers, and Documents can be added from the Edit page once the branch exists.
         </p>
       )}
@@ -49,17 +50,15 @@ export default function NewPlantPage() {
   )
 
   return (
-    <div>
-      <OrganizationNav />
-      <PlantForm
-        title="Add Branch"
-        breadcrumb={<><span onClick={() => router.push('/dashboard/organization/plants')} style={{ cursor: 'pointer' }}>Branches</span> › New</>}
-        tabBar={tabBar}
-        submitLabel="Save Branch"
-        onCancel={() => router.push('/dashboard/organization/plants')}
-        onSubmit={(payload) => organizationApi.createBranch(payload)}
-        onSaved={(plant) => router.push(`/dashboard/organization/plants/${plant.id}/edit`)}
-      />
-    </div>
+    <PlantForm
+      nav={<OrganizationNav />}
+      title="Add Branch"
+      subtitle="Branches › New — fill the basic information and save; the other tabs open once the branch exists."
+      tabBar={tabBar}
+      submitLabel="Save Branch"
+      onCancel={() => router.push('/dashboard/organization/plants')}
+      onSubmit={(payload) => organizationApi.createBranch(payload)}
+      onSaved={(plant) => router.push(`${recordPath('/dashboard/organization/plants', plant)}/edit`)}
+    />
   )
 }

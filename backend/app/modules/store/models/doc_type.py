@@ -36,14 +36,25 @@ STORE_DOC_TYPE_DEFAULTS: dict[str, list[dict]] = {
         {"value": "issue", "label": "Issue", "stock_effect": "out"},
         {"value": "damage", "label": "Damage / write-off", "stock_effect": "out"},
     ],
+    # Fixed in code (2026-10-12, user decision): where / why material leaves
+    # the store. What each type asks for is store/issue_forms.py. Labels can
+    # be renamed only.
     "issue": [
         {"value": "production", "label": "Production"},
         {"value": "maintenance", "label": "Maintenance"},
         {"value": "project", "label": "Project / Site"},
         {"value": "general", "label": "General / Office"},
+        {"value": "rework", "label": "Rework"},
+        {"value": "testing", "label": "Testing"},
+        {"value": "job_work", "label": "Job Work / Subcontracting"},
+        {"value": "scrap", "label": "Scrap / Disposal"},
+        {"value": "customer_sample", "label": "Customer Sample / Trial"},
         # Finished goods leaving for a customer — Quality's dispatch release
-        # (final inspection + third-party certificate, rule 8) applies.
+        # (final inspection + third-party certificate, rule 8) applies. Kept
+        # until a Sales dispatch document replaces it.
         {"value": "dispatch", "label": "Dispatch to customer"},
+        # Spares sent to a customer site against a service request (ERP).
+        {"value": "service", "label": "Service / Spares to site"},
     ],
     "return_source": [
         {"value": "issue", "label": "Against a Material Issue", "requires_issue": True, "approver_rule": "none"},

@@ -8,12 +8,14 @@ import csv
 import io
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.core.audit import record_audit
+from app.core.data_scope import apply_scope
+from app.modules.hr.services import approvals as hr_approvals
 from app.core.sequential_id import next_sequential_id
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -31,7 +33,14 @@ from app.modules.hr.schemas.attendance import (
     HrAttendanceRegularizationResponse,
     HrAttendanceResponse,
 )
-from app.modules.hr.services.access import can_decide, ensure_can_decide, is_hr, require_hr
+from types import SimpleNamespace
+
+from app.core.permissions import ensure_can_delete
+from app.modules.hr.services.access import (
+    can_decide, can_hr, ensure_can_decide, ensure_self_or_hr, is_hr_for, require_hr_tab,
+    require_me_create, require_me_edit, require_me_view,
+)
+from app.modules.hr.services.access import require_hr as require_hr_app
 from app.modules.hr.services.attendance import (
     IMPORT_TEMPLATE,
     STATUS_ALIASES,
@@ -52,10 +61,17 @@ from app.modules.hr.services.attendance import (
 )
 from app.modules.hr.services.calendar import CalendarCache, EmployeeContext, active_employees, now_ist, today_ist
 from app.modules.hr.services.leave import fmt_date
+from app.modules.hr.services import period_lock
 from app.modules.hr.services.lookup import department_names, profiles_by_user, user_department_name, users_by_id
 from app.utils.notifications import notify_user
 
 router = APIRouter(prefix="/hr/attendance", tags=["HR"])
+
+# HR-team gate for this file: hr app + Permission Matrix › HR › attendance.
+require_hr = require_hr_tab("attendance")
+require_hr_edit = require_hr_tab("attendance", "edit")      # mark / bulk-mark the register
+require_hr_import = require_hr_tab("attendance", "import")
+require_hr_export = require_hr_tab("attendance", "export")
 
 SELF_ATTENDANCE_MSG = (
     "You can't mark or change your own attendance here. Ask another HR user to do it, "
@@ -75,11 +91,19 @@ def _row_response(row: HrAttendance, cache: CalendarCache | None = None, ctx: Em
     })
 
 
-def _employees(db: Session, cache: CalendarCache, branch_id: int | None, department_id: int | None, search: str | None, user_id: int | None = None) -> list[EmployeeContext]:
+def _employees(db: Session, cache: CalendarCache, branch_id: int | None, department_id: int | None, search: str | None,
+               user_id: int | None = None, viewer: User | None = None) -> list[EmployeeContext]:
+    """`viewer`: keep only employees inside the viewer's HR data access."""
     term = (search or "").strip().lower()
+    allowed: set[int] | None = None
+    scope = hr_approvals.employee_scope_filter(db, viewer) if viewer is not None else None
+    if scope is not None:
+        allowed = {r[0] for r in db.query(User.id).filter(scope).all()}
     out = []
     for user, profile in active_employees(db):
         if user_id and user.id != user_id:
+            continue
+        if allowed is not None and user.id not in allowed:
             continue
         ctx = cache.context(user, profile, load_profile=False)
         if branch_id and ctx.branch_id != branch_id:
@@ -118,8 +142,9 @@ def _leave_row_guard(row: HrAttendance | None, who: str, d: date) -> None:
 
 # ─────────────────────────────── Lookups ───────────────────────────────
 @router.get("/lookups")
-async def attendance_lookups(db: Session = Depends(get_db), _user: User = Depends(require_hr)):
-    """Filters and employee pickers for the HR leave/attendance screens."""
+async def attendance_lookups(db: Session = Depends(get_db), _user: User = Depends(require_hr_app)):
+    """Filters and employee pickers for the HR leave/attendance screens
+    (shared by both tabs, so only the hr app is checked here)."""
     cache = CalendarCache(db)
     branches = _branch_map(db)
     employees = [_employee_brief(cache.context(u, p, load_profile=False), branches) for u, p in active_employees(db)]
@@ -155,12 +180,12 @@ def _today_payload(db: Session, user: User) -> dict:
 
 
 @router.get("/me/today")
-async def my_today(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def my_today(db: Session = Depends(get_db), user: User = Depends(require_me_view)):
     return _today_payload(db, user)
 
 
 @router.post("/me/check-in")
-async def my_check_in(payload: HrAttendanceCheckPayload | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def my_check_in(payload: HrAttendanceCheckPayload | None = None, db: Session = Depends(get_db), user: User = Depends(require_me_create)):
     today = today_ist()
     cache = CalendarCache(db)
     ctx = cache.context(user)
@@ -183,7 +208,7 @@ async def my_check_in(payload: HrAttendanceCheckPayload | None = None, db: Sessi
             remarks = f"Worked on {'holiday ' + name if name else 'weekly off'}"
         row = HrAttendance(
             user_id=user.id, attendance_date=today, status="present", source="self",
-            check_in=now, shift_id=ctx.shift.id if ctx.shift else None, remarks=remarks, marked_by_id=user.id,
+            check_in=now, shift_id=(cache.shift_on(ctx, today) or SimpleNamespace(id=None)).id, remarks=remarks, marked_by_id=user.id,
         )
         db.add(row)
     else:
@@ -201,7 +226,7 @@ async def my_check_in(payload: HrAttendanceCheckPayload | None = None, db: Sessi
 
 
 @router.post("/me/check-out")
-async def my_check_out(payload: HrAttendanceCheckPayload | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def my_check_out(payload: HrAttendanceCheckPayload | None = None, db: Session = Depends(get_db), user: User = Depends(require_me_edit)):
     today = today_ist()
     row = db.query(HrAttendance).filter(HrAttendance.user_id == user.id, HrAttendance.attendance_date == today).first()
     if not row or not row.check_in:
@@ -229,7 +254,7 @@ def _month_payload(db: Session, target: User, year: int, month: int) -> dict:
 
 
 @router.get("/me/month")
-async def my_month(year: int | None = Query(None), month: int | None = Query(None), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def my_month(year: int | None = Query(None), month: int | None = Query(None), db: Session = Depends(get_db), user: User = Depends(require_me_view)):
     t = today_ist()
     return _month_payload(db, user, year or t.year, month or t.month)
 
@@ -246,8 +271,11 @@ async def employee_month(
     target = db.get(User, user_id)
     if not target:
         raise HTTPException(status_code=404, detail=f"Employee #{user_id} doesn't exist. Pick the employee again from the list.")
-    if target.id != user.id and not is_hr(user) and target.reporting_manager_id != user.id:
+    # Read-only: also shown on Employees › profile › Attendance and to HR approvers.
+    if target.id != user.id and not is_hr_for(user, ("attendance", "employees", "approvals")) and target.reporting_manager_id != user.id:
         raise HTTPException(status_code=403, detail="You can see attendance only for yourself and your direct reports. Ask HR for anyone else's.")
+    if target.id != user.id and target.reporting_manager_id != user.id:
+        hr_approvals.ensure_employee_in_scope(db, user, target)
     t = today_ist()
     return _month_payload(db, target, year or t.year, month or t.month)
 
@@ -264,7 +292,7 @@ async def date_register(
     d = attendance_date or today_ist()
     cache = CalendarCache(db)
     branches = _branch_map(db)
-    emps = _employees(db, cache, branch_id, department_id, search)
+    emps = _employees(db, cache, branch_id, department_id, search, viewer=_user)
     rows = rows_for(db, [c.user.id for c in emps], d, d)
     today = today_ist()
     items = []
@@ -279,12 +307,13 @@ async def date_register(
 
 
 @router.put("/entries", response_model=HrAttendanceResponse)
-async def mark_attendance(payload: HrAttendanceCreate, db: Session = Depends(get_db), user: User = Depends(require_hr)):
+async def mark_attendance(payload: HrAttendanceCreate, db: Session = Depends(get_db), user: User = Depends(require_hr_edit)):
     target = db.get(User, payload.user_id)
     if not target:
         raise HTTPException(status_code=404, detail=f"Employee #{payload.user_id} doesn't exist. Pick the employee again from the list.")
     if target.id == user.id:
         raise HTTPException(status_code=403, detail=SELF_ATTENDANCE_MSG)
+    hr_approvals.ensure_employee_in_scope(db, user, target)
     if payload.attendance_date > today_ist() and payload.status not in ("on_duty", "work_from_home", "absent"):
         raise HTTPException(
             status_code=400,
@@ -317,15 +346,20 @@ async def delete_attendance(entry_id: int, db: Session = Depends(get_db), _user:
         raise HTTPException(status_code=404, detail=f"Attendance entry #{entry_id} doesn't exist. Refresh the register — it may already be cleared.")
     if row.user_id == _user.id:
         raise HTTPException(status_code=403, detail=SELF_ATTENDANCE_MSG)
+    hr_approvals.ensure_scope_unless_party(db, _user, row)  # HR data access (Organization › Role & Permissions)
+    # Company delete rule: 'delete' on Attendance AND you marked this entry
+    # yourself (marked_by_id is the entry's creator; user_id is the employee).
+    ensure_can_delete(_user, SimpleNamespace(created_by_id=row.marked_by_id), "hr", "attendance", what="attendance entry")
     target = db.get(User, row.user_id)
     _leave_row_guard(row, target.name if target else "This employee", row.attendance_date)
+    period_lock.assert_open(db, row.user_id, row.attendance_date)  # payroll period lock
     db.delete(row)
     db.commit()
     return {"ok": True}
 
 
 @router.put("/register/bulk")
-async def bulk_mark(payload: HrAttendanceBulkPayload, db: Session = Depends(get_db), user: User = Depends(require_hr)):
+async def bulk_mark(payload: HrAttendanceBulkPayload, db: Session = Depends(get_db), user: User = Depends(require_hr_edit)):
     if payload.status == "on_leave":
         raise HTTPException(status_code=400, detail="Leave days come from approved leave requests so balances stay right. Pick another status for bulk marking.")
     if payload.attendance_date > today_ist() and payload.status not in ("on_duty", "work_from_home", "absent", "holiday", "weekly_off"):
@@ -334,12 +368,17 @@ async def bulk_mark(payload: HrAttendanceBulkPayload, db: Session = Depends(get_
     users = users_by_id(db, payload.user_ids)
     profiles = profiles_by_user(db, payload.user_ids)
     existing = rows_for(db, list(users.keys()), payload.attendance_date, payload.attendance_date)
+    scope = hr_approvals.employee_scope_filter(db, user)
+    in_scope = None if scope is None else {r[0] for r in db.query(User.id).filter(scope, User.id.in_(payload.user_ids)).all()}
     updated = created = 0
     skipped: list[dict] = []
     for uid in payload.user_ids:
         u = users.get(uid)
         if not u:
             skipped.append({"user_id": uid, "user_name": None, "reason": "Employee not found."})
+            continue
+        if in_scope is not None and uid not in in_scope:
+            skipped.append({"user_id": uid, "user_name": u.name, "reason": "Outside your HR data access — ask an admin to widen it in Organization › Role & Permissions."})
             continue
         if uid == user.id:
             skipped.append({"user_id": uid, "user_name": u.name, "reason": "You can't mark your own attendance. Ask another HR user to do it."})
@@ -350,6 +389,9 @@ async def bulk_mark(payload: HrAttendanceBulkPayload, db: Session = Depends(get_
             continue
         if row is not None and not payload.overwrite_existing:
             skipped.append({"user_id": uid, "user_name": u.name, "reason": f"Already marked {STATUS_LABELS.get(row.status, row.status)}."})
+            continue
+        if period_lock.is_locked(db, uid, payload.attendance_date):
+            skipped.append({"user_id": uid, "user_name": u.name, "reason": "This month is locked for payroll for their plant. Ask HR to unlock the period first."})
             continue
         ctx = cache.context(u, profiles.get(uid), load_profile=False)
         _, was_created = upsert_attendance(
@@ -365,7 +407,7 @@ async def bulk_mark(payload: HrAttendanceBulkPayload, db: Session = Depends(get_
 
 # ─────────────────────────────── Import ───────────────────────────────
 @router.get("/import/template")
-async def import_template(_user: User = Depends(require_hr)):
+async def import_template(_user: User = Depends(require_hr_import)):
     return Response(
         content=IMPORT_TEMPLATE, media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="attendance_import_template.csv"'},
@@ -377,7 +419,7 @@ async def import_attendance(
     file: UploadFile = File(...),
     dry_run: bool = Query(False),
     db: Session = Depends(get_db),
-    user: User = Depends(require_hr),
+    user: User = Depends(require_hr_import),
 ):
     name = (file.filename or "").lower()
     if not name.endswith(".csv"):
@@ -400,7 +442,7 @@ async def import_attendance(
 
     by_email = {u.email.lower(): u for u in db.query(User).all() if u.email}
     by_code = {}
-    for p in db.query(HrEmployeeProfile).filter(HrEmployeeProfile.employee_code.isnot(None)).all():
+    for p in db.query(HrEmployeeProfile).filter(HrEmployeeProfile.employee_code.isnot(None), HrEmployeeProfile.user_id.isnot(None)).all():
         by_code[p.employee_code.strip().lower()] = p.user_id
     cache = CalendarCache(db)
     ctx_cache: dict[int, EmployeeContext] = {}
@@ -408,6 +450,10 @@ async def import_attendance(
     errors: list[dict] = []
     created = updated = 0
     seen: set[tuple[int, date]] = set()
+    # HR data access (Organization › Role & Permissions): an import may only
+    # touch employees the importer could mark one by one.
+    scope = hr_approvals.employee_scope_filter(db, user)
+    in_scope = None if scope is None else {r[0] for r in db.query(User.id).filter(scope).all()}
 
     for idx, r in enumerate(rows, start=2):  # row 1 is the header
         ident = r.get("email") or r.get("employee_code") or ""
@@ -430,6 +476,9 @@ async def import_attendance(
             continue
         if target.id == user.id:
             err("This row is your own attendance, which you can't import yourself. Remove it and ask another HR user to import it.")
+            continue
+        if in_scope is not None and target.id not in in_scope:
+            err(f"{target.name} is outside your HR data access, so you can't import their attendance. Remove the row, or ask an admin to widen your data access in Organization › Role & Permissions.")
             continue
         d = parse_date_cell(r.get("date", ""))
         if not d:
@@ -466,6 +515,9 @@ async def import_attendance(
         if existing is not None and existing.source == "leave":
             err(f"{target.name} is on approved leave on {fmt_date(d)} ({existing.remarks}). Cancel the leave to change this day.")
             continue
+        if period_lock.is_locked(db, target.id, d):
+            err(f"{fmt_date(d)} is in a month locked for payroll for {target.name}'s plant. Ask HR to unlock the period, or remove the row.")
+            continue
         if dry_run:
             created += int(existing is None)
             updated += int(existing is not None)
@@ -488,11 +540,12 @@ async def import_attendance(
 
 
 # ─────────────────────────────── Summary ───────────────────────────────
-def _summary(db: Session, year: int, month: int, branch_id: int | None, department_id: int | None, search: str | None) -> dict:
+def _summary(db: Session, year: int, month: int, branch_id: int | None, department_id: int | None, search: str | None,
+             viewer: User | None = None) -> dict:
     start, end = month_bounds(year, month)
     cache = CalendarCache(db)
     branches = _branch_map(db)
-    emps = _employees(db, cache, branch_id, department_id, search)
+    emps = _employees(db, cache, branch_id, department_id, search, viewer=viewer)
     rows = rows_for(db, [c.user.id for c in emps], start, end)
     items = []
     for ctx in emps:
@@ -512,7 +565,7 @@ async def monthly_summary(
     _user: User = Depends(require_hr),
 ):
     t = today_ist()
-    return _summary(db, year or t.year, month or t.month, branch_id, department_id, search)
+    return _summary(db, year or t.year, month or t.month, branch_id, department_id, search, viewer=_user)
 
 
 @router.get("/summary/export")
@@ -523,10 +576,10 @@ async def export_summary(
     department_id: int | None = Query(None),
     search: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_hr),
+    _user: User = Depends(require_hr_export),
 ):
     t = today_ist()
-    data = _summary(db, year or t.year, month or t.month, branch_id, department_id, search)
+    data = _summary(db, year or t.year, month or t.month, branch_id, department_id, search, viewer=_user)
     buf = io.StringIO()
     w = csv.writer(buf)
     cols = ["present", "absent", "half_day", "on_leave", "on_duty", "work_from_home", "holiday", "weekly_off", "unmarked", "late_days", "present_equivalent"]
@@ -538,8 +591,19 @@ async def export_summary(
 
 
 # ─────────────────────────────── Regularizations ───────────────────────────────
+def _reg_can_decide(db: Session, viewer: User, r: HrAttendanceRegularization, areqs: dict) -> bool:
+    """Engine-routed: whoever the engine lets act now. Pre-engine requests:
+    the legacy access.can_decide."""
+    if r.status != "pending":
+        return False
+    if r.id in areqs:
+        return hr_approvals.can_decide_engine(db, viewer, areqs[r.id])
+    return can_decide(viewer, r.approver_id, r.user_id)
+
+
 def _reg_responses(db: Session, rows: list[HrAttendanceRegularization], viewer: User) -> list[HrAttendanceRegularizationResponse]:
     users = users_by_id(db, [r.user_id for r in rows] + [r.approver_id for r in rows] + [r.decided_by_id for r in rows])
+    areqs = hr_approvals.latest_by_entity(db, REG_ENTITY, [r.id for r in rows])
     profiles = profiles_by_user(db, [r.user_id for r in rows])
     depts = department_names(db)
     current: dict[tuple[int, date], str] = {}
@@ -559,8 +623,11 @@ def _reg_responses(db: Session, rows: list[HrAttendanceRegularization], viewer: 
             "employee_code": p.employee_code if p else None, "department_name": user_department_name(u, p, depts),
             "approver_name": a.name if a else None, "decided_by_name": d.name if d else None,
             "current_status": current.get((r.user_id, r.attendance_date)),
-            "can_decide": r.status == "pending" and can_decide(viewer, r.approver_id, r.user_id),
-            "can_cancel": r.status == "pending" and (viewer.id == r.user_id or is_hr(viewer)),
+            "can_decide": _reg_can_decide(db, viewer, r, areqs),
+            "approval_request_id": areqs[r.id].id if r.id in areqs else None,
+            "can_cancel": r.status == "pending" and (
+                can_hr(viewer, "me", "edit") if viewer.id == r.user_id else can_hr(viewer, "attendance", "edit")
+            ),
         }))
     return out
 
@@ -581,7 +648,8 @@ def _load_reg(db: Session, reg_id: int, lock: bool = False) -> HrAttendanceRegul
 
 
 @router.post("/regularizations", response_model=HrAttendanceRegularizationResponse)
-async def request_regularization(payload: HrAttendanceRegularizationCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def request_regularization(payload: HrAttendanceRegularizationCreate, db: Session = Depends(get_db), user: User = Depends(require_me_create),
+                                 background_tasks: BackgroundTasks = None):
     today = today_ist()
     d = payload.attendance_date
     if d > today:
@@ -598,6 +666,16 @@ async def request_regularization(payload: HrAttendanceRegularizationCreate, db: 
         raise HTTPException(
             status_code=400,
             detail=f"You're on approved leave on {fmt_date(d)} ({existing.remarks}). If you actually worked that day, cancel the leave (if not started) or ask HR.",
+        )
+    if existing is not None and existing.source == "leave" and payload.requested_status != "half_day":
+        # Half-day leave: the day must stay a half day, or the 0.5 day already
+        # deducted from the balance no longer matches the register.
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"You have an approved half-day leave on {fmt_date(d)} ({existing.remarks}), so that day can only be "
+                "regularized as 'Half day'. If you didn't take the leave, ask HR to correct the leave and your balance."
+            ),
         )
     dup = db.query(HrAttendanceRegularization).filter(
         HrAttendanceRegularization.user_id == user.id,
@@ -617,19 +695,29 @@ async def request_regularization(payload: HrAttendanceRegularizationCreate, db: 
     )
     db.add(reg)
     db.flush()
-    if reg.approver_id:
-        notify_user(
-            db, reg.approver_id, "Attendance correction waiting for you",
-            f"{user.name} asked to mark {fmt_date(d)} as {STATUS_LABELS[payload.requested_status]} ({reg.request_no}).",
-            NOTIFY_TYPE, REG_ENTITY, reg.id, teams=True,
-        )
+    # Route through Organization › Approval Workflows (default: reporting
+    # manager + HR approvers). The engine notifies the approvers and refuses
+    # with the exact reason when nobody can approve.
+    appr = hr_approvals.submit(
+        db, hr_approvals.REGULARIZATION_KEY, entity_id=reg.id, requester=user,
+        title=f"Attendance correction — {user.name}, {fmt_date(d)} as {STATUS_LABELS[payload.requested_status]}",
+        reference=reg.request_no, context={"requested_status": payload.requested_status},
+    )
+    from app.modules.hr.services import role_events
+    role_events.fire(
+        db, background_tasks, "regularization_submitted", title=f"Attendance correction waiting — {reg.request_no}",
+        message=(f"{user.name} asks to mark {fmt_date(d)} as {STATUS_LABELS[payload.requested_status]}. "
+                 f"Reason: {reg.reason}. Approve or reject it under HR › Approvals."),
+        entity_type=REG_ENTITY, entity_id=reg.id, actor=user, can_open=role_events.employee_opener(db, user),
+        skip=role_events.approver_ids(appr),
+    )
     db.commit()
     db.refresh(reg)
     return _reg_responses(db, [reg], user)[0]
 
 
 @router.get("/regularizations/me", response_model=list[HrAttendanceRegularizationResponse])
-async def my_regularizations(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def my_regularizations(db: Session = Depends(get_db), user: User = Depends(require_me_view)):
     rows = (
         db.query(HrAttendanceRegularization)
         .filter(HrAttendanceRegularization.user_id == user.id)
@@ -644,10 +732,15 @@ async def regularizations_pending_for_me(db: Session = Depends(get_db), user: Us
     q = db.query(HrAttendanceRegularization).filter(
         HrAttendanceRegularization.status == "pending", HrAttendanceRegularization.user_id != user.id,
     )
-    if is_hr(user):
-        q = q.filter(or_(HrAttendanceRegularization.approver_id == user.id, HrAttendanceRegularization.approver_id.is_(None)))
+    # Engine-routed: the engine's inbox. Pre-engine: the captured approver,
+    # plus HR for requests with no approver.
+    if is_hr_for(user, "approvals"):
+        legacy = or_(HrAttendanceRegularization.approver_id == user.id, HrAttendanceRegularization.approver_id.is_(None))
     else:
-        q = q.filter(HrAttendanceRegularization.approver_id == user.id)
+        legacy = HrAttendanceRegularization.approver_id == user.id
+    legacy = and_(legacy, HrAttendanceRegularization.id.notin_(hr_approvals.engine_tracked_ids(REG_ENTITY)))
+    engine_ids = hr_approvals.inbox_ids(db, user, REG_ENTITY)
+    q = q.filter(or_(legacy, HrAttendanceRegularization.id.in_(engine_ids)) if engine_ids else legacy)
     return _reg_responses(db, q.order_by(HrAttendanceRegularization.attendance_date.asc()).all(), user)
 
 
@@ -660,7 +753,7 @@ async def list_regularizations(
     db: Session = Depends(get_db),
     user: User = Depends(require_hr),
 ):
-    q = db.query(HrAttendanceRegularization)
+    q = apply_scope(db.query(HrAttendanceRegularization), user, HrAttendanceRegularization)
     if status:
         if status not in REGULARIZATION_STATUSES:
             raise HTTPException(status_code=400, detail=f"Unknown status '{status}'. Use one of: {', '.join(REGULARIZATION_STATUSES)}.")
@@ -680,15 +773,7 @@ def _reg_pending_or_400(reg: HrAttendanceRegularization, verb: str) -> None:
         raise HTTPException(status_code=400, detail=f"{reg.request_no} is already {reg.status}, so it can't be {verb}. Refresh the page to see its latest status.")
 
 
-@router.post("/regularizations/{reg_id}/approve", response_model=HrAttendanceRegularizationResponse)
-async def approve_regularization(
-    reg_id: int,
-    payload: HrAttendanceRegularizationDecisionPayload | None = None,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    reg = _load_reg(db, reg_id, lock=True)
-    ensure_can_decide(user, reg.approver_id, reg.user_id, "attendance regularization")
+def _approve_reg(db: Session, reg: HrAttendanceRegularization, user: User, remarks: str | None, notify: bool = True) -> None:
     _reg_pending_or_400(reg, "approved")
     requester = db.get(User, reg.user_id)
     existing = db.query(HrAttendance).filter(HrAttendance.user_id == reg.user_id, HrAttendance.attendance_date == reg.attendance_date).first()
@@ -696,6 +781,15 @@ async def approve_regularization(
         raise HTTPException(
             status_code=409,
             detail=f"{requester.name} is on approved leave on {fmt_date(reg.attendance_date)} ({existing.remarks}). Reject this request, or cancel that leave first.",
+        )
+    if existing is not None and existing.source == "leave" and reg.requested_status != "half_day":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{requester.name} has an approved half-day leave on {fmt_date(reg.attendance_date)} ({existing.remarks}); "
+                f"approving this would mark the day {STATUS_LABELS.get(reg.requested_status)} while the half day stays "
+                "deducted from their balance. Reject it, or ask HR to correct the leave first."
+            ),
         )
     cache = CalendarCache(db)
     ctx = cache.context(requester)
@@ -707,18 +801,70 @@ async def approve_regularization(
     reg.status = "approved"
     reg.decided_by_id = user.id
     reg.decided_at = datetime.now(timezone.utc)
-    reg.decision_remarks = ((payload.remarks or "").strip() or None) if payload else None
+    reg.decision_remarks = (remarks or "").strip() or None
     record_audit(
         db, entity_type=REG_ENTITY, entity_id=reg.id, action="approved", module_key="hr",
         summary=f"Approved {reg.request_no} for {requester.name} ({fmt_date(reg.attendance_date)} → {STATUS_LABELS.get(reg.requested_status)})",
         user_id=user.id,
     )
-    notify_user(
-        db, reg.user_id, "Attendance correction approved",
-        f"{user.name} approved {reg.request_no}: {fmt_date(reg.attendance_date)} is now {STATUS_LABELS.get(reg.requested_status)}."
-        + (f" Remarks: {reg.decision_remarks}" if reg.decision_remarks else ""),
-        NOTIFY_TYPE, REG_ENTITY, reg.id,
-    )
+    if notify:
+        notify_user(
+            db, reg.user_id, "Attendance correction approved",
+            f"{user.name} approved {reg.request_no}: {fmt_date(reg.attendance_date)} is now {STATUS_LABELS.get(reg.requested_status)}."
+            + (f" Remarks: {reg.decision_remarks}" if reg.decision_remarks else ""),
+            NOTIFY_TYPE, REG_ENTITY, reg.id,
+        )
+
+
+def _reject_reg(db: Session, reg: HrAttendanceRegularization, user: User, remarks: str, notify: bool = True, returned: bool = False) -> None:
+    _reg_pending_or_400(reg, "rejected")
+    reg.status = "rejected"
+    reg.decided_by_id = user.id
+    reg.decided_at = datetime.now(timezone.utc)
+    # No draft to edit: "returned for changes" ends it like a rejection; the employee raises a new request.
+    reg.decision_remarks = f"Returned for changes: {remarks}" if returned else remarks
+    record_audit(db, entity_type=REG_ENTITY, entity_id=reg.id, action="rejected", module_key="hr", summary=f"{'Returned' if returned else 'Rejected'} {reg.request_no}: {remarks}", user_id=user.id)
+    if notify:
+        notify_user(db, reg.user_id, "Attendance correction rejected", f"{user.name} rejected {reg.request_no} for {fmt_date(reg.attendance_date)}. Reason: {remarks}", NOTIFY_TYPE, REG_ENTITY, reg.id)
+
+
+def _on_reg_decided(db: Session, areq, outcome: str, actor: User) -> None:
+    """Approval engine callback (hr.attendance_regularisation). The engine has
+    already notified the employee, so no second notification here."""
+    reg = _load_reg(db, areq.entity_id, lock=True)
+    comment = hr_approvals.decision_comment(areq, actor)
+    if outcome == "approved":
+        _approve_reg(db, reg, actor, comment, notify=False)
+    elif outcome in ("rejected", "returned"):
+        _reject_reg(db, reg, actor, comment or "", notify=False, returned=outcome == "returned")
+    elif outcome == "cancelled" and reg.status == "pending":
+        reg.status = "cancelled"
+
+
+hr_approvals.register_hr_type(
+    hr_approvals.REGULARIZATION_KEY, "attendance", "Attendance regularization", REG_ENTITY, "/dashboard/hr/approvals",
+    _on_reg_decided,
+    description="An employee's correction of a past day's attendance (My HR › Attendance). Approving updates the register.",
+    context_fields={"requested_status": {"label": "Requested status", "type": "choice", "choices": list(STATUS_LABELS)}},
+)
+
+
+@router.post("/regularizations/{reg_id}/approve", response_model=HrAttendanceRegularizationResponse)
+async def approve_regularization(
+    reg_id: int,
+    payload: HrAttendanceRegularizationDecisionPayload | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    reg = _load_reg(db, reg_id, lock=True)
+    remarks = ((payload.remarks or "").strip() or None) if payload else None
+    # Engine-routed: the engine checks who may act and calls _on_reg_decided.
+    if not hr_approvals.decide(db, REG_ENTITY, reg.id, user, True, remarks, what="attendance regularization", record_pending=reg.status == "pending"):
+        # Pre-engine request: routed approver passes on routing alone; anyone
+        # else needs hr:approvals:approve (Attendance has no approve action).
+        ensure_can_decide(user, reg.approver_id, reg.user_id, "attendance regularization", "approve")
+        hr_approvals.ensure_scope_unless_party(db, user, reg, reg.user_id, reg.approver_id)  # HR deciders: data access
+        _approve_reg(db, reg, user, remarks)
     db.commit()
     db.refresh(reg)
     return _reg_responses(db, [reg], user)[0]
@@ -732,17 +878,13 @@ async def reject_regularization(
     user: User = Depends(get_current_user),
 ):
     reg = _load_reg(db, reg_id, lock=True)
-    ensure_can_decide(user, reg.approver_id, reg.user_id, "attendance regularization")
-    _reg_pending_or_400(reg, "rejected")
     remarks = (payload.remarks or "").strip()
     if not remarks:
         raise HTTPException(status_code=400, detail="Give a reason for rejecting so the employee knows what to fix. Add remarks and try again.")
-    reg.status = "rejected"
-    reg.decided_by_id = user.id
-    reg.decided_at = datetime.now(timezone.utc)
-    reg.decision_remarks = remarks
-    record_audit(db, entity_type=REG_ENTITY, entity_id=reg.id, action="rejected", module_key="hr", summary=f"Rejected {reg.request_no}: {remarks}", user_id=user.id)
-    notify_user(db, reg.user_id, "Attendance correction rejected", f"{user.name} rejected {reg.request_no} for {fmt_date(reg.attendance_date)}. Reason: {remarks}", NOTIFY_TYPE, REG_ENTITY, reg.id)
+    if not hr_approvals.decide(db, REG_ENTITY, reg.id, user, False, remarks, what="attendance regularization", record_pending=reg.status == "pending"):
+        ensure_can_decide(user, reg.approver_id, reg.user_id, "attendance regularization", "reject")
+        hr_approvals.ensure_scope_unless_party(db, user, reg, reg.user_id, reg.approver_id)  # HR deciders: data access
+        _reject_reg(db, reg, user, remarks)
     db.commit()
     db.refresh(reg)
     return _reg_responses(db, [reg], user)[0]
@@ -751,9 +893,14 @@ async def reject_regularization(
 @router.post("/regularizations/{reg_id}/cancel", response_model=HrAttendanceRegularizationResponse)
 async def cancel_regularization(reg_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     reg = _load_reg(db, reg_id, lock=True)
-    if user.id != reg.user_id and not is_hr(user):
-        raise HTTPException(status_code=403, detail="Only the employee who raised this request (or HR) can cancel it.")
+    if user.id != reg.user_id and not is_hr_for(user, "attendance"):
+        raise HTTPException(status_code=403, detail="Only the employee who raised this request (or HR with access to HR & Administration › Attendance) can cancel it.")
+    # Withdrawing your own = hr:me:edit; HR cancelling someone else's = hr:attendance:edit.
+    ensure_self_or_hr(user, reg.user_id, "edit", "attendance", "edit")
+    hr_approvals.ensure_scope_unless_party(db, user, reg, reg.user_id)
     _reg_pending_or_400(reg, "cancelled")
+    # Close the live approval so it leaves every approver's inbox.
+    hr_approvals.withdraw(db, REG_ENTITY, reg.id, user)
     reg.status = "cancelled"
     db.commit()
     db.refresh(reg)

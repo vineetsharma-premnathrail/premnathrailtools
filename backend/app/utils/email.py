@@ -175,8 +175,8 @@ async def send_team_sr_notification(db: Session, sr, project, actor_id: int, act
 
     proj_name = f"{project.serial_number} — {project.model_name}" if project else f"Project #{sr.project_id}"
     client_company = (project.client_company if project else None) or "—"
-    priority_colors = {"critical": "#dc2626", "high": "#f97316", "medium": "#eab308", "low": "#22c55e"}
-    priority_color = priority_colors.get((sr.priority or "medium").lower(), "#64748b")
+    priority_colors = {"urgent": "#dc2626", "standard": "#2563eb"}
+    priority_color = priority_colors.get((sr.priority or "standard").lower(), "#64748b")
     assigned = sr.assigned_to_name or "—"
     exp_attend = sr.expected_date_to_attend.strftime("%d %b %Y") if sr.expected_date_to_attend else "—"
 
@@ -221,7 +221,7 @@ async def send_team_sr_notification(db: Session, sr, project, actor_id: int, act
       <p style="color:#94a3b8;font-size:11px;margin:0 0 4px;text-transform:uppercase;letter-spacing:1px">{header_label}</p>
       <h2 style="color:#fff;margin:0;font-size:20px;font-weight:700">{sr.request_number}</h2>
     </div>
-    <span style="background:{priority_color};color:#fff;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;text-transform:uppercase">{(sr.priority or 'medium').upper()}</span>
+    <span style="background:{priority_color};color:#fff;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;text-transform:uppercase">{(sr.priority or 'standard').upper()}</span>
   </div>
   <div style="padding:28px">{body_content}</div>
   <div style="background:#f8fafc;padding:14px 28px;border-top:1px solid #e2e8f0">
@@ -417,7 +417,7 @@ async def send_p2p_pr_approval_email(db: Session, pr, approver, role_label: str)
 
 
 async def send_p2p_po_approval_email(db: Session, pr, po, approver, role_label: str) -> bool:
-    """Emails a PO approver (Purchase Head / Director / MD) that a purchase
+    """Emails a PO approver (Purchase Head / Director / Partner) that a purchase
     order raised against a PR is awaiting their sign-off, with the full PO +
     line-item detail inline. Called from a BackgroundTask right after the PO
     is raised — best-effort, failure is logged to the PR's audit trail but

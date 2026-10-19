@@ -59,6 +59,9 @@ class QualityInspectionLotCreate(BaseModel):
     source_reference: str | None = None
     assigned_to_id: int | None = None
     remarks: str | None = None
+    # Sales › Order Projects: the vehicle / lot this inspection is for.
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
 
 
 class QualityLotRecordResultsPayload(BaseModel):
@@ -102,6 +105,8 @@ class QualityInspectionLotResponse(BaseModel):
     source_reference: str | None = None
     grn_item_id: int | None = None
     ncr_id: int | None = None
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
     item_id: int
     item_code: str | None = None
     item_name: str
@@ -115,6 +120,7 @@ class QualityInspectionLotResponse(BaseModel):
     plan_revision: int | None = None
     sampling_severity: str
     sample_size: int | None = None
+    skip_lot: bool = False
     test_certificate_required: bool
     test_certificate_received: bool
     test_certificate_reference: str | None = None
@@ -151,3 +157,8 @@ class QualityInspectionLotResponse(BaseModel):
     photos: list[dict] = []
     first_article: dict | None = None
     gate: dict | None = None
+    # Order Project link display.
+    op_number: str | None = None
+    element_no: str | None = None
+    element_label: str | None = None
+    so_number: str | None = None

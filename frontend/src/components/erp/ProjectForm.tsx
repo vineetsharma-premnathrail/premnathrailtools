@@ -8,8 +8,8 @@ import PhoneField, { isPhoneValid } from './PhoneField'
 import YearField, { isFinancialYearValid } from './YearField'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, isValidGST, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
-import MessageDialog from '@/components/erp/MessageDialog'
-import { inputStyle, Field, Section, Row } from '@/components/shared/ui'
+import { Row } from '@/components/shared/ui'
+import { FormPage, SheetSection, SheetIcon, SHEET, Optional, Req, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import SharePicker, { useShareSelection } from './SharePicker'
 import Checkbox from '@/components/Checkbox'
 
@@ -148,12 +148,20 @@ export default function ProjectForm({
   currentUserId,
   onSubmit,
   onCancel,
+  title,
+  subtitle,
+  nav,
 }: {
   initial?: Partial<Project>
   submitLabel: string
   currentUserId?: number
   onSubmit: (payload: Record<string, unknown>, files: File[], shareOptions?: ProjectAttachmentShareOptions) => Promise<void>
+  /** "← Back" pill (top-right) and the footer Cancel. */
   onCancel: () => void
+  title: string
+  subtitle: string
+  /** Module sub-nav, rendered above the header. */
+  nav?: React.ReactNode
 }) {
   const [tabIndex, setTabIndex] = useState(0)
   const [form, setForm] = useState<FormState>(() => toFormState(initial))
@@ -172,8 +180,15 @@ export default function ProjectForm({
   const fileRef = useRef<HTMLInputElement>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const errorRef = useRef<HTMLDivElement>(null)
+  // Bring a new error banner into view — the submit button sits in the sticky footer.
+  useEffect(() => { if (error) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
   const [directory, setDirectory] = useState<DirectoryUser[]>([])
   const share = useShareSelection()
+  // Existing CRM customer / Product links are kept as-is on edit; they are
+  // no longer picked in this form.
+  const customerId: number | null = initial?.customer_id ?? null
+  const productId: number | null = initial?.product_id ?? null
 
   useEffect(() => {
     usersApi.directory().then(setDirectory).catch(() => setDirectory([]))
@@ -240,9 +255,16 @@ export default function ProjectForm({
         extended_warranty_end: extendedWarranty ? extendedWarrantyEnd : '',
         warranty_start_date: warrantyStatus === 'active' ? form.warranty_start_date : '',
         warranty_end_date: warrantyStatus === 'active' ? form.warranty_end_date : '',
+        customer_id: customerId ?? '',
+        product_id: productId ?? '',
       }
+      // Create: leave blanks out. Edit: a blank must CLEAR the stored value
+      // (e.g. switching to "No warranty"), so send null — the PATCH only
+      // touches keys it receives.
       Object.keys(payload).forEach((k) => {
-        if (payload[k] === '') delete payload[k]
+        if (payload[k] !== '') return
+        if (initial) payload[k] = null
+        else delete payload[k]
       })
       await onSubmit(payload, queuedFiles, {
         isPrivate: share.isPrivate,
@@ -250,7 +272,7 @@ export default function ProjectForm({
         sharedDepartments: share.departments,
         sharedDesignations: share.designations,
       })
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save project.'))
     } finally {
       setSaving(false)
@@ -260,25 +282,38 @@ export default function ProjectForm({
   const goNext = () => setTabIndex((i) => Math.min(TABS.length - 1, i + 1))
   const goPrev = () => setTabIndex((i) => Math.max(0, i - 1))
 
+  const errorText = Array.isArray(error) ? error.join(' ') : error
+
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)', flexWrap: 'wrap' }}>
+    <form onSubmit={handleSubmit}>
+      <FormPage tour="erp-pf-page" icon={initial ? 'edit' : 'truck'} title={title} subtitle={subtitle} onBack={onCancel} backTour="erp-pf-back" nav={nav}
+        footer={<>
+          <button type="button" onClick={onCancel} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)} data-tour="erp-pf-cancel-btn">Cancel</button>
+          {tabIndex > 0 && <button type="button" onClick={goPrev} style={sheetBtn('secondary', SHEET.INK)}><SheetIcon name="left" size={14} />Previous</button>}
+          {tabIndex < TABS.length - 1 && <button type="button" onClick={goNext} style={sheetBtn('secondary', SHEET.INK)}>Next<SheetIcon name="right" size={14} /></button>}
+          <button type="submit" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)} data-tour="erp-pf-submit-btn">
+            <SheetIcon name="check" size={16} />{saving ? 'Saving…' : submitLabel}
+          </button>
+        </>}>
+      <div style={{ display: 'flex', gap: 4, padding: '0 24px', borderBottom: `1px solid ${SHEET.LINE}`, flexWrap: 'wrap' }}>
         {TABS.map((t, i) => (
           <button
             key={t}
             type="button"
+            data-tour={`erp-pf-tab-${i}`}
             onClick={() => setTabIndex(i)}
             style={{
-              padding: '10px 6px',
+              padding: '12px 6px',
               marginRight: 16,
               border: 'none',
               background: 'transparent',
-              borderBottom: tabIndex === i ? '2px solid #FF7A45' : '2px solid transparent',
-              color: tabIndex === i ? '#FF7A45' : '#78716c',
+              borderBottom: tabIndex === i ? `2px solid ${SHEET.BLUE}` : '2px solid transparent',
+              color: tabIndex === i ? SHEET.BLUE : SHEET.MUTED,
               fontWeight: 600,
               fontSize: 13,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
+              fontFamily: 'inherit',
             }}
           >
             {t}
@@ -286,58 +321,61 @@ export default function ProjectForm({
         ))}
       </div>
 
-      <MessageDialog open={!!error} variant="error" title="Cannot Save Machine/Project" message={error} onClose={() => setError('')} />
-
-      <form onSubmit={handleSubmit}>
+      <div style={{ padding: '20px 24px' }}>
+        {errorText && (
+          <div ref={errorRef} style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+            <b>Cannot save the machine:</b> {errorText}
+          </div>
+        )}
         {tabIndex === 0 && (
-          <Section title="Machine Asset Identity">
+          <SheetSection icon="truck" title="Machine Asset Identity">
             <Grid3>
-              <Field label="Serial Number *"><input value={form.serial_number} onChange={(e) => set('serial_number', e.target.value)} placeholder="e.g. PNR-RR-2026-88" style={inputStyle} /></Field>
-              <Field label="Model Name"><input value={form.model_name} onChange={(e) => set('model_name', e.target.value)} placeholder="e.g. Catenary Track Car Pro" style={inputStyle} /></Field>
+              <Field label="Serial Number" req><input value={form.serial_number} onChange={(e) => set('serial_number', e.target.value)} placeholder="e.g. PNR-RR-2026-88" style={sheetInput} data-tour="erp-pf-serial" /></Field>
+              <Field label="Model Name"><input value={form.model_name} onChange={(e) => set('model_name', e.target.value)} placeholder="e.g. Catenary Track Car Pro" style={sheetInput} data-tour="erp-pf-model" /></Field>
               <Field label="Machine Classification">
-                <select value={form.machine_type} onChange={(e) => set('machine_type', e.target.value)} style={inputStyle}>
+                <select value={form.machine_type} onChange={(e) => set('machine_type', e.target.value)} style={sheetInput} data-tour="erp-pf-machine-type">
                   <option value="">-- Select Machine Type --</option>
                   {MACHINE_TYPES.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </Field>
 
               {form.machine_type === 'Other' && (
-                <Field label="Custom Class Specification *">
-                  <input value={machineTypeCustom} onChange={(e) => setMachineTypeCustom(e.target.value)} placeholder="Specify other classification" style={inputStyle} />
+                <Field label="Custom Class Specification" req>
+                  <input value={machineTypeCustom} onChange={(e) => setMachineTypeCustom(e.target.value)} placeholder="Specify other classification" style={sheetInput} />
                 </Field>
               )}
-              <Field label="Engine Number"><input value={form.engine_number} onChange={(e) => set('engine_number', e.target.value)} placeholder="Optional Engine ID" style={inputStyle} /></Field>
-              <Field label="Chassis Number"><input value={form.chassis_number} onChange={(e) => set('chassis_number', e.target.value)} placeholder="Optional Chassis ID" style={inputStyle} /></Field>
+              <Field label="Engine Number"><input value={form.engine_number} onChange={(e) => set('engine_number', e.target.value)} placeholder="Optional Engine ID" style={sheetInput} data-tour="erp-pf-engine" /></Field>
+              <Field label="Chassis Number"><input value={form.chassis_number} onChange={(e) => set('chassis_number', e.target.value)} placeholder="Optional Chassis ID" style={sheetInput} data-tour="erp-pf-chassis" /></Field>
 
-              <Field label="Year of Manufacture"><YearField value={form.year_of_manufacture} onChange={(v) => set('year_of_manufacture', v)} style={inputStyle} /></Field>
+              <Field label="Year of Manufacture"><div data-tour="erp-pf-year"><YearField value={form.year_of_manufacture} onChange={(v) => set('year_of_manufacture', v)} style={sheetInput} /></div></Field>
               <Field label="Operational Status">
-                <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
+                <select value={form.status} onChange={(e) => set('status', e.target.value)} style={sheetInput} data-tour="erp-pf-status">
                   {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </Field>
               <Field label="Application Type">
-                <select value={form.application_type} onChange={(e) => set('application_type', e.target.value)} style={inputStyle}>
+                <select value={form.application_type} onChange={(e) => set('application_type', e.target.value)} style={sheetInput} data-tour="erp-pf-app-type">
                   <option value="">-- Select Application Type --</option>
                   {APPLICATION_TYPES.map((a) => <option key={a} value={a}>{a}</option>)}
                 </select>
               </Field>
 
               {form.application_type === 'Other' && (
-                <Field label="Custom Application Specifications *">
-                  <input value={applicationTypeCustom} onChange={(e) => setApplicationTypeCustom(e.target.value)} placeholder="Enter custom application specifications" style={inputStyle} />
+                <Field label="Custom Application Specifications" req>
+                  <input value={applicationTypeCustom} onChange={(e) => setApplicationTypeCustom(e.target.value)} placeholder="Enter custom application specifications" style={sheetInput} />
                 </Field>
               )}
             </Grid3>
             <Field label="Production Notes & Core Details">
-              <textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={3} placeholder="Enter other critical identity comments..." style={{ ...inputStyle, resize: 'vertical' }} />
+              <textarea value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={3} placeholder="Enter other critical identity comments..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-notes" />
             </Field>
-          </Section>
+          </SheetSection>
         )}
 
         {tabIndex === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <Section title="Operational Site Location">
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e' }}>
+            <SheetSection icon="building" title="Operational Site Location">
+              <span data-tour="erp-pf-export" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: SHEET.BODY }}>
                 <Checkbox
                   checked={isExport}
                   onChange={(e) => {
@@ -353,83 +391,83 @@ export default function ProjectForm({
                 International / Export Deployment
               </span>
               <Row>
-                <Field label="Site Name"><input value={form.site_name} onChange={(e) => set('site_name', e.target.value)} placeholder="Enter railway station/site name" style={inputStyle} /></Field>
-                <Field label="Site Location"><input value={form.site_location} onChange={(e) => set('site_location', e.target.value)} placeholder="City or Division" style={inputStyle} /></Field>
+                <Field label="Site Name"><input value={form.site_name} onChange={(e) => set('site_name', e.target.value)} placeholder="Enter railway station/site name" style={sheetInput} data-tour="erp-pf-site-name" /></Field>
+                <Field label="Site Location"><input value={form.site_location} onChange={(e) => set('site_location', e.target.value)} placeholder="City or Division" style={sheetInput} data-tour="erp-pf-site-location" /></Field>
               </Row>
               <Row>
                 {isExport ? (
                   <Field label="Country">
-                    <input value={form.site_country} onChange={(e) => set('site_country', e.target.value)} placeholder="Enter country name" style={inputStyle} />
+                    <input value={form.site_country} onChange={(e) => set('site_country', e.target.value)} placeholder="Enter country name" style={sheetInput} />
                   </Field>
                 ) : (
                   <Field label="State">
-                    <select value={form.site_state} onChange={(e) => set('site_state', e.target.value)} style={inputStyle}>
+                    <select value={form.site_state} onChange={(e) => set('site_state', e.target.value)} style={sheetInput} data-tour="erp-pf-state">
                       <option value="">-- Select State / UT --</option>
                       {INDIA_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </Field>
                 )}
-                <Field label="Pincode"><input value={form.site_pincode} onChange={(e) => set('site_pincode', e.target.value)} placeholder="6-digit PIN code" style={inputStyle} /></Field>
+                <Field label="Pincode"><input value={form.site_pincode} onChange={(e) => set('site_pincode', e.target.value)} placeholder="6-digit PIN code" style={sheetInput} data-tour="erp-pf-pincode" /></Field>
               </Row>
-              <Field label="Zone"><input value={form.zone} onChange={(e) => set('zone', e.target.value)} placeholder="e.g. Northern Railway (NR)" style={inputStyle} /></Field>
-            </Section>
+              <Field label="Zone"><input value={form.zone} onChange={(e) => set('zone', e.target.value)} placeholder="e.g. Northern Railway (NR)" style={sheetInput} data-tour="erp-pf-zone" /></Field>
+            </SheetSection>
 
-            <Section title="Client Details">
-              <Field label="Client Company *"><input value={form.client_company} onChange={(e) => set('client_company', e.target.value)} placeholder="Enter client company name" style={inputStyle} /></Field>
-              <Field label="Contact Person"><input value={form.client_name} onChange={(e) => set('client_name', e.target.value)} placeholder="Enter contact person name" style={inputStyle} /></Field>
-              <Field label="Designation"><input value={form.client_designation} onChange={(e) => set('client_designation', e.target.value)} placeholder="e.g. Chief Engineer" style={inputStyle} /></Field>
-              <Field label="Email"><ValidatedInput type="email" value={form.client_email} onChange={(v) => set('client_email', v)} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="Enter email address" style={inputStyle} /></Field>
+            <SheetSection icon="users" title="Client Details">
+              <Field label="Client Company" req><input value={form.client_company} onChange={(e) => set('client_company', e.target.value)} placeholder="Enter client company name" style={sheetInput} data-tour="erp-pf-client-company" /></Field>
+              <Field label="Contact Person"><input value={form.client_name} onChange={(e) => set('client_name', e.target.value)} placeholder="Enter contact person name" style={sheetInput} data-tour="erp-pf-client-contact" /></Field>
+              <Field label="Designation"><input value={form.client_designation} onChange={(e) => set('client_designation', e.target.value)} placeholder="e.g. Chief Engineer" style={sheetInput} /></Field>
+              <Field label="Email"><ValidatedInput type="email" value={form.client_email} onChange={(v) => set('client_email', v)} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="Enter email address" style={sheetInput} /></Field>
               <Row>
-                <Field label="Phone"><PhoneField value={form.client_phone} onChange={(v) => set('client_phone', v)} style={inputStyle} /></Field>
-                <Field label="Alternate Phone"><PhoneField value={form.client_phone_alt} onChange={(v) => set('client_phone_alt', v)} style={inputStyle} /></Field>
+                <Field label="Phone"><PhoneField value={form.client_phone} onChange={(v) => set('client_phone', v)} style={sheetInput} /></Field>
+                <Field label="Alternate Phone"><PhoneField value={form.client_phone_alt} onChange={(v) => set('client_phone_alt', v)} style={sheetInput} /></Field>
               </Row>
-              <Field label="GST Number"><ValidatedInput value={form.client_gst} onChange={(v) => set('client_gst', v.toUpperCase())} validator={isValidGST} errorMessage={VALIDATION_MESSAGES.gst} placeholder="15-digit GSTIN" style={inputStyle} /></Field>
+              <Field label="GST Number"><div data-tour="erp-pf-client-gst"><ValidatedInput value={form.client_gst} onChange={(v) => set('client_gst', v.toUpperCase())} validator={isValidGST} errorMessage={VALIDATION_MESSAGES.gst} placeholder="15-digit GSTIN" style={sheetInput} /></div></Field>
               <Field label="Address">
-                <textarea value={form.client_address} onChange={(e) => set('client_address', e.target.value)} rows={2} placeholder="Client corporate/billing address..." style={{ ...inputStyle, resize: 'vertical' }} />
+                <textarea value={form.client_address} onChange={(e) => set('client_address', e.target.value)} rows={2} placeholder="Client corporate/billing address..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-client-address" />
               </Field>
-            </Section>
+            </SheetSection>
 
-            <Section title="Operator Details">
-              <Field label="Operator Name"><input value={form.operator_name} onChange={(e) => set('operator_name', e.target.value)} placeholder="Enter machine operator name" style={inputStyle} /></Field>
+            <SheetSection icon="user" title="Operator Details" extra={<Optional />}>
+              <Field label="Operator Name"><input value={form.operator_name} onChange={(e) => set('operator_name', e.target.value)} placeholder="Enter machine operator name" style={sheetInput} data-tour="erp-pf-operator" /></Field>
               <Row>
-                <Field label="Phone"><PhoneField value={form.operator_phone} onChange={(v) => set('operator_phone', v)} style={inputStyle} /></Field>
-                <Field label="Email"><ValidatedInput type="email" value={form.operator_email} onChange={(v) => set('operator_email', v)} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="Enter email address" style={inputStyle} /></Field>
+                <Field label="Phone"><PhoneField value={form.operator_phone} onChange={(v) => set('operator_phone', v)} style={sheetInput} /></Field>
+                <Field label="Email"><ValidatedInput type="email" value={form.operator_email} onChange={(v) => set('operator_email', v)} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="Enter email address" style={sheetInput} /></Field>
               </Row>
-              <Field label="Qualification"><input value={form.operator_qualification} onChange={(e) => set('operator_qualification', e.target.value)} placeholder="e.g. Certified Loco Pilot" style={inputStyle} /></Field>
-            </Section>
+              <Field label="Qualification"><input value={form.operator_qualification} onChange={(e) => set('operator_qualification', e.target.value)} placeholder="e.g. Certified Loco Pilot" style={sheetInput} /></Field>
+            </SheetSection>
           </div>
         )}
 
         {tabIndex === 2 && (
-          <Section title="Technical Specifications">
+          <SheetSection icon="gear" title="Technical Specifications" extra={<Optional />}>
             <Field label="Specifications">
-              <textarea value={form.specifications} onChange={(e) => set('specifications', e.target.value)} rows={3} placeholder="List model engine power, capacity, and key metrics..." style={{ ...inputStyle, resize: 'vertical' }} />
+              <textarea value={form.specifications} onChange={(e) => set('specifications', e.target.value)} rows={3} placeholder="List model engine power, capacity, and key metrics..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-specs" />
             </Field>
             <Field label="Installed Options">
-              <textarea value={form.installed_options} onChange={(e) => set('installed_options', e.target.value)} rows={3} placeholder="Any specialized modular items installed..." style={{ ...inputStyle, resize: 'vertical' }} />
+              <textarea value={form.installed_options} onChange={(e) => set('installed_options', e.target.value)} rows={3} placeholder="Any specialized modular items installed..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-options" />
             </Field>
-            <Field label="Software Version"><input value={form.software_version} onChange={(e) => set('software_version', e.target.value)} placeholder="e.g. v2.4.1" style={inputStyle} /></Field>
+            <Field label="Software Version"><input value={form.software_version} onChange={(e) => set('software_version', e.target.value)} placeholder="e.g. v2.4.1" style={sheetInput} data-tour="erp-pf-software" /></Field>
             <Field label="Notes">
-              <textarea value={form.tech_notes} onChange={(e) => set('tech_notes', e.target.value)} rows={2} placeholder="Additional engineering notes..." style={{ ...inputStyle, resize: 'vertical' }} />
+              <textarea value={form.tech_notes} onChange={(e) => set('tech_notes', e.target.value)} rows={2} placeholder="Additional engineering notes..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-pf-tech-notes" />
             </Field>
-          </Section>
+          </SheetSection>
         )}
 
         {tabIndex === 3 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <Section title="Procurement & Delivery Information">
+            <SheetSection icon="cart" title="Procurement & Delivery Information">
               <Grid3>
-                <Field label="PO Number"><input value={form.po_number} onChange={(e) => set('po_number', e.target.value)} placeholder="Purchase Order Ref" style={inputStyle} /></Field>
+                <Field label="PO Number"><input value={form.po_number} onChange={(e) => set('po_number', e.target.value)} placeholder="Purchase Order Ref" style={sheetInput} data-tour="erp-pf-po" /></Field>
                 <Field label="PO Date"><DateField value={form.po_date} onChange={(v) => set('po_date', v)} /></Field>
-                <Field label="Dispatch Date"><DateField value={form.delivery_date} onChange={(v) => set('delivery_date', v)} /></Field>
-                <Field label="Commissioning Date"><DateField value={form.commissioning_date} onChange={(v) => set('commissioning_date', v)} /></Field>
-                <Field label="Handover Date"><DateField value={form.handover_date} onChange={(v) => set('handover_date', v)} /></Field>
+                <Field label="Dispatch Date"><div data-tour="erp-pf-dispatch-date"><DateField value={form.delivery_date} onChange={(v) => set('delivery_date', v)} /></div></Field>
+                <Field label="Commissioning Date"><div data-tour="erp-pf-commissioning-date"><DateField value={form.commissioning_date} onChange={(v) => set('commissioning_date', v)} /></div></Field>
+                <Field label="Handover Date"><div data-tour="erp-pf-handover-date"><DateField value={form.handover_date} onChange={(v) => set('handover_date', v)} /></div></Field>
               </Grid3>
-            </Section>
+            </SheetSection>
 
-            <Section title="Warranty Coverage Details">
+            <SheetSection icon="shield" title="Warranty Coverage Details">
               <Field label="Warranty Status">
-                <select value={warrantyStatus} onChange={(e) => setWarrantyStatus(e.target.value)} style={inputStyle}>
+                <select value={warrantyStatus} onChange={(e) => setWarrantyStatus(e.target.value)} style={sheetInput} data-tour="erp-pf-warranty-status">
                   {WARRANTY_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </Field>
@@ -440,9 +478,9 @@ export default function ProjectForm({
                 </Row>
               )}
               <Field label="Warranty Terms & Scope">
-                <input value={form.warranty_override} onChange={(e) => set('warranty_override', e.target.value)} placeholder="Clauses, limit conditions" style={inputStyle} />
+                <input value={form.warranty_override} onChange={(e) => set('warranty_override', e.target.value)} placeholder="Clauses, limit conditions" style={sheetInput} data-tour="erp-pf-warranty-terms" />
               </Field>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#57534e' }}>
+              <span data-tour="erp-pf-extended-warranty" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: SHEET.BODY }}>
                 <Checkbox checked={extendedWarranty} onChange={(e) => setExtendedWarranty(e.target.checked)} />
                 Extended Warranty
               </span>
@@ -452,37 +490,38 @@ export default function ProjectForm({
                 </Field>
               )}
               <Field label="AMC Service Status">
-                <select value={form.amc_status} onChange={(e) => set('amc_status', e.target.value)} style={inputStyle}>
+                <select value={form.amc_status} onChange={(e) => set('amc_status', e.target.value)} style={sheetInput} data-tour="erp-pf-amc-status">
                   {AMC_STATUS_OPTIONS.map((o) => <option key={o.label} value={o.value}>{o.label}</option>)}
                 </select>
               </Field>
               {form.amc_status && (
                 <Field label="AMC End Date"><DateField value={form.amc_end_date} onChange={(v) => set('amc_end_date', v)} /></Field>
               )}
-            </Section>
+            </SheetSection>
           </div>
         )}
 
         {tabIndex === 4 && (
-          <Section title="Attachments & Documents">
-            <p style={{ fontSize: 12.5, color: '#78716c', margin: '-6px 0 4px' }}>PDFs, Office files, images, and videos — max 10GB each</p>
+          <SheetSection icon="clip" title="Attachments & Documents">
+            <p style={{ ...sheetHint, margin: '0 0 10px' }}>PDFs, Office files, images, and videos — max 10GB each</p>
             <div
+              data-tour="erp-pf-attachments"
               onClick={() => fileRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
               onDragLeave={() => setDragOver(false)}
               onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
               style={{
-                padding: '32px 20px',
-                borderRadius: 14,
-                border: `2px dashed ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.15)'}`,
-                background: dragOver ? 'rgba(244,113,59,0.05)' : '#fff',
+                padding: '24px 16px',
+                borderRadius: 12,
+                border: `1.5px dashed ${dragOver ? SHEET.BLUE : '#cbd5e1'}`,
+                background: dragOver ? '#eff6ff' : '#fff',
                 textAlign: 'center',
                 cursor: 'pointer',
               }}
             >
               <input ref={fileRef} type="file" multiple hidden onChange={(e) => addFiles(e.target.files)} />
-              <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: '0 0 4px' }}>Drag &amp; drop files here</p>
-              <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>or click to browse</p>
+              <SheetIcon name="clip" size={22} color={SHEET.BLUE} />
+              <div style={{ fontSize: 13, color: SHEET.BODY, marginTop: 6 }}>Drag and drop files here, or <span style={{ color: SHEET.BLUE, fontWeight: 600 }}>click to browse</span></div>
               <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
                 {['PDF', 'DOCX', 'XLSX', 'JPG/PNG', 'MP4'].map((t) => (
                   <span key={t} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 6, background: 'rgba(0,0,0,0.05)', color: '#78716c' }}>{t}</span>
@@ -490,7 +529,7 @@ export default function ProjectForm({
               </div>
             </div>
             {queuedFiles.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
                 {queuedFiles.map((f, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderRadius: 8, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
                     <span style={{ fontSize: 12.5, color: '#57534e' }}>{f.name}</span>
@@ -500,7 +539,7 @@ export default function ProjectForm({
               </div>
             )}
             {queuedFiles.length > 0 && (
-              <div style={{ marginTop: 6, padding: 14, borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
+              <div style={{ marginTop: 10, padding: 14, borderRadius: 12, background: '#fff', border: `1px solid ${SHEET.LINE}` }}>
                 <SharePicker
                   directory={directory}
                   currentUserId={currentUserId}
@@ -515,21 +554,12 @@ export default function ProjectForm({
                 />
               </div>
             )}
-          </Section>
+          </SheetSection>
         )}
 
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', marginTop: 20 }}>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-            {tabIndex > 0 && <button type="button" onClick={goPrev} style={secondaryBtnStyle}>Previous</button>}
-            {tabIndex < TABS.length - 1 && <button type="button" onClick={goNext} style={secondaryBtnStyle}>Next</button>}
-          </div>
-          <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
-            {saving ? 'Saving…' : submitLabel}
-          </button>
-        </div>
-      </form>
-    </div>
+      </div>
+      </FormPage>
+    </form>
   )
 }
 
@@ -537,26 +567,12 @@ function Grid3({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 12 }}>{children}</div>
 }
 
-const primaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '10px 22px',
-  borderRadius: 10,
-  border: 'none',
-  background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
-  color: '#fff',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-}
-
-const secondaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '10px 18px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.1)',
-  background: '#fff',
-  color: '#57534e',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
+/** Labelled field in the sheet style (label above, optional required star). */
+function Field({ label, req, children }: { label: string; req?: boolean; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 12, minWidth: 0 }}>
+      <label style={sheetLabel}>{label} {req && <Req />}</label>
+      {children}
+    </div>
+  )
 }

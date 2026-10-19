@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { qualityApi } from '@/lib/api'
 import { QualityFirstArticle } from '@/types'
 import { TEXT } from '@/lib/theme'
@@ -20,6 +22,7 @@ const TRIGGER_LABELS: Record<string, string> = { new_item: 'New item', new_revis
 export default function FirstArticlesPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
   const router = useRouter()
+  const { can } = useCan()
   const [rows, setRows] = useState<QualityFirstArticle[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
@@ -45,7 +48,7 @@ export default function FirstArticlesPage() {
     <div>
       <QualityNav />
       <PageHeader title="First Article Inspection">
-        <button type="button" onClick={() => router.push('/dashboard/quality/first-articles/new')} style={primaryBtnStyle}>+ New FAI</button>
+        {can('quality', 'first_article', 'create') && (<button type="button" onClick={() => router.push('/dashboard/quality/first-articles/new')} style={primaryBtnStyle}>+ New FAI</button>)}
       </PageHeader>
       <p style={{ fontSize: 13, color: TEXT.muted, margin: '-8px 0 16px', maxWidth: 900 }}>
         Rule 9: a new item, a new drawing revision or a new vendor gets a full-drawing first article check. The first GRN / job work receipt / production output of it becomes the FAI lot automatically; regular lots of that item and source can&apos;t be accepted until a Quality engineer approves the FAI.
@@ -67,7 +70,7 @@ export default function FirstArticlesPage() {
             ) : rows.length === 0 ? (
               <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No first article inspections found.</td></tr>
             ) : rows.map((f) => (
-              <tr key={f.id} onClick={() => router.push(`/dashboard/quality/first-articles/${f.id}`)} style={{ cursor: 'pointer' }}>
+              <tr key={f.id} onClick={() => router.push(recordPath('/dashboard/quality/first-articles', f))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{f.fai_number}</td>
                 <td style={tdStyle}>{f.item_code ? `${f.item_code} — ` : ''}{f.item_name}</td>
                 <td style={tdStyle}>{f.vendor_name || 'In-house'}<div style={{ fontSize: 11.5, color: TEXT.muted }}>{f.source_reference || ''}</div></td>
@@ -77,7 +80,7 @@ export default function FirstArticlesPage() {
                 <td style={tdStyle}><Pill text={STATUS_LABELS[f.status] || f.status} hex={STATUS_HEX[f.status]} /></td>
                 <td style={tdStyle}>{f.decided_by_name ? `${f.decided_by_name}, ${fmtDate(f.decided_at)}` : '—'}</td>
                 <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                  <span onClick={() => router.push(`/dashboard/quality/first-articles/${f.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                  <span onClick={() => router.push(recordPath('/dashboard/quality/first-articles', f))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

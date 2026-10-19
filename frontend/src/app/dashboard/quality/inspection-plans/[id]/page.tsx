@@ -2,28 +2,36 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { recordPath, useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
 import { QualityCharacteristic, QualityInspectionPlan, QualityInspectionPlanLine } from '@/types'
-import { TEXT, BORDER } from '@/lib/theme'
+import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { Field, Section, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
-import { Pill, PageHeader, ErrorBanner, fmtDate, INSPECTION_TYPE_LABELS, PLAN_STATUS_HEX, SEVERITY_HEX } from '@/components/quality/QualityBits'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import { Section, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { Pill, PageHeader, ErrorBanner, ActionSheet, SheetBlock, fmtDate, INSPECTION_TYPE_LABELS, PLAN_STATUS_HEX, SEVERITY_HEX } from '@/components/quality/QualityBits'
+import { SheetIcon, sheetInput, sheetLabel, sheetHint, sheetBtn, Req, SHEET } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 type LineDraft = { characteristic_id: number; sequence: number; nominal: string; min_value: string; max_value: string; classification: string; method: string; aql: string }
 
-const cell: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
-const head: React.CSSProperties = { ...cell, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, borderTop: 'none' }
+const inputStyle: React.CSSProperties = { ...sheetInput, padding: '8px 10px', fontSize: 13 }
+const cell: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: SHEET.BODY, borderTop: `1px solid ${SHEET.LINE}` }
+const head: React.CSSProperties = { ...cell, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: SHEET.MUTED, borderTop: 'none' }
 const AQLS = ['', '0.065', '0.10', '0.15', '0.25', '0.40', '0.65', '1.0', '1.5', '2.5', '4.0', '6.5', '10.0']
 const s = (v?: number | null) => (v === null || v === undefined ? '' : String(v))
 const n = (v: string) => (v.trim() === '' ? null : Number(v))
 
 export default function InspectionPlanDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
+  const { can, canDelete } = useCan()
   const router = useRouter()
-  const planId = Number(useParams().id)
+  const { id: recordId, error: linkError } = useRecordId(useParams().id as string)
+  const planId = recordId ?? 0
   const [plan, setPlan] = useState<QualityInspectionPlan | null>(null)
   const [chars, setChars] = useState<QualityCharacteristic[]>([])
   const [lines, setLines] = useState<LineDraft[]>([])
@@ -31,6 +39,7 @@ export default function InspectionPlanDetailPage() {
   const [error, setError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState<'obsolete' | 'delete' | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
 
   const apply = (p: QualityInspectionPlan) => {
     setPlan(p)
@@ -61,6 +70,7 @@ export default function InspectionPlanDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/inspection-plans" listLabel="Back to inspection plans" /></div>)
   if (!plan) {
     return (
       <div>
@@ -71,7 +81,10 @@ export default function InspectionPlanDetailPage() {
     )
   }
 
-  const draft = plan.status === 'draft'
+  // Draft lines need quality:inspection_plans:edit (PATCH); a new revision needs create; obsolete is a Quality head's (approve).
+  const canEditPlan = can('quality', 'inspection_plans', 'edit')
+  const draft = plan.status === 'draft' && canEditPlan
+  const isDraft = plan.status === 'draft'
   const charById = Object.fromEntries(chars.map((c) => [c.id, c]))
   const setLine = (i: number, patch: Partial<LineDraft>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)))
   const save = () => run(() => qualityApi.updateInspectionPlan(plan.id, {
@@ -92,7 +105,7 @@ export default function InspectionPlanDetailPage() {
         onConfirm={async () => { setConfirm(null); try { await qualityApi.deleteInspectionPlan(plan.id); router.push('/dashboard/quality/inspection-plans') } catch (e) { setError(extractErrorMessages(e, 'Failed to delete the draft.')) } }} />
 
       <PageHeader title={`${plan.plan_number} · rev ${plan.revision}`} subtitle={`Inspection plan · ${INSPECTION_TYPE_LABELS[plan.inspection_type] || plan.inspection_type}`}>
-        <Pill text={plan.status} hex={PLAN_STATUS_HEX[plan.status]} />
+        <Pill text={plan.status === 'pending_approval' ? 'waiting for approval' : plan.status} hex={PLAN_STATUS_HEX[plan.status]} />
         <button type="button" onClick={() => router.push('/dashboard/quality/inspection-plans')} style={secondaryBtnStyle}>← Back</button>
       </PageHeader>
       <ErrorBanner error={error} />
@@ -107,19 +120,28 @@ export default function InspectionPlanDetailPage() {
         </div>
         {!plan.item_id && <p style={{ fontSize: 12.5, color: '#b45309', margin: 0 }}>Legacy plan with no Item Master link — it can&apos;t be approved. Create a new plan for the item instead.</p>}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {draft && <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => run(() => qualityApi.approveInspectionPlan(plan.id), 'Failed to approve the plan.')}>Approve (Quality head)</button>}
-          {draft && <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setConfirm('delete')}>Delete draft</button>}
-          {plan.status === 'approved' && (
+          {isDraft && can('quality', 'inspection_plans', 'submit') && <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => run(() => qualityApi.submitInspectionPlan(plan.id), 'Failed to submit the plan for approval.')}>Submit for approval</button>}
+          {isDraft && can('quality', 'inspection_plans', 'approve') && <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => run(() => qualityApi.approveInspectionPlan(plan.id), 'Failed to approve the plan.')}>Approve now (Quality head)</button>}
+          {isDraft && canDelete('quality', 'inspection_plans', (plan as { created_by_id?: number | null } | null)?.created_by_id ?? null) && <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setConfirm('delete')}>Delete draft</button>}
+          {plan.status === 'approved' && can('quality', 'inspection_plans', 'create') && (
             <button type="button" disabled={busy} style={primaryBtnStyle}
-              onClick={() => run(() => qualityApi.reviseInspectionPlan(plan.id), 'Failed to start a new revision.', (p) => router.push(`/dashboard/quality/inspection-plans/${p.id}`))}>
+              onClick={() => run(() => qualityApi.reviseInspectionPlan(plan.id), 'Failed to start a new revision.', (p) => router.push(recordPath('/dashboard/quality/inspection-plans', p)))}>
               New revision
             </button>
           )}
-          {plan.status !== 'obsolete' && !draft && <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setConfirm('obsolete')}>Make obsolete</button>}
+          {plan.status !== 'obsolete' && plan.status !== 'pending_approval' && !isDraft && can('quality', 'inspection_plans', 'approve') && <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setConfirm('obsolete')}>Make obsolete</button>}
         </div>
+        {plan.status === 'pending_approval' && <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Waiting for approval — the approvers decide below (Organization › Approval Workflows › Inspection plan). Returned or withdrawn plans come back as drafts.</p>}
       </Section>
 
-      <Section title="Characteristics" style={{ marginBottom: 20 }}>
+      <ApprovalPanel key={plan.status} entityType="quality_inspection_plan" entityId={plan.id}
+        onChanged={() => { qualityApi.getInspectionPlan(plan.id).then(apply).catch((e) => setError(extractErrorMessages(e, 'Failed to reload the plan.'))) }} />
+
+      <SheetBlock icon="list" title="Characteristics"
+        extra={draft ? <>
+          <button type="button" style={sheetBtn('secondary')} onClick={() => { setAddChar(''); setAddOpen(true) }}><SheetIcon name="plus" size={14} />Add characteristic</button>
+          <button type="button" disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)} onClick={save}><SheetIcon name="check" size={14} />{busy ? 'Saving…' : 'Save draft'}</button>
+        </> : undefined}>
         <div style={{ overflow: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
             <thead><tr>{['#', 'Characteristic', 'Type', 'Class', 'Nominal', 'Min', 'Max', 'AQL', 'Method', ''].map((h) => <th key={h} style={head}>{h}</th>)}</tr></thead>
@@ -158,32 +180,28 @@ export default function InspectionPlanDetailPage() {
                       ) : (l.aql || 'Plan')}
                     </td>
                     <td style={cell}>{draft ? <input style={{ ...inputStyle, width: 160 }} value={l.method} placeholder={ch?.method || ''} onChange={(e) => setLine(i, { method: e.target.value })} /> : (l.method || ch?.method || '—')}</td>
-                    <td style={cell}>{draft && <span onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} style={{ color: '#DC2626', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>Remove</span>}</td>
+                    <td style={cell}>{draft && <button type="button" aria-label={`Remove ${name}`} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} style={sheetBtn('ghost', '#DC2626')}><SheetIcon name="trash" size={15} /></button>}</td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
         </div>
-        {draft && (
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 280px', maxWidth: 420 }}>
-              <Field label="Add characteristic">
-                <select style={inputStyle} value={addChar} onChange={(e) => setAddChar(e.target.value)}>
-                  <option value="">Select…</option>
-                  {chars.filter((c) => !lines.some((l) => l.characteristic_id === c.id)).map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name} ({c.classification})</option>)}
-                </select>
-              </Field>
-            </div>
-            <button type="button" style={secondaryBtnStyle} disabled={!addChar}
-              onClick={() => { setLines((ls) => [...ls, { characteristic_id: Number(addChar), sequence: (ls.length + 1) * 10, nominal: '', min_value: '', max_value: '', classification: '', method: '', aql: '' }]); setAddChar('') }}>
-              + Add
-            </button>
-            <button type="button" disabled={busy} style={primaryBtnStyle} onClick={save}>{busy ? 'Saving…' : 'Save draft'}</button>
-            <span style={{ fontSize: 12, color: TEXT.muted }}>Missing a characteristic? Add it in Quality → Masters.</span>
-          </div>
-        )}
-      </Section>
+        {draft && <p style={{ ...sheetHint, margin: '10px 0 18px' }}>Missing a characteristic? Add it in Quality → Masters. Changes are kept only after “Save draft”.</p>}
+      </SheetBlock>
+
+      {addOpen && (
+        <ActionSheet icon="plus" title="Add characteristic" subtitle={`${plan.plan_number} · rev ${plan.revision} · ${plan.item_name}`}
+          onClose={() => setAddOpen(false)} busy={false} submitLabel="Add to plan" disabled={!addChar}
+          onSubmit={() => { setLines((ls) => [...ls, { characteristic_id: Number(addChar), sequence: (ls.length + 1) * 10, nominal: '', min_value: '', max_value: '', classification: '', method: '', aql: '' }]); setAddChar(''); setAddOpen(false) }}>
+          <label style={sheetLabel}>Characteristic <Req /></label>
+          <select style={sheetInput} value={addChar} onChange={(e) => setAddChar(e.target.value)} autoFocus>
+            <option value="">Select…</option>
+            {chars.filter((c) => !lines.some((l) => l.characteristic_id === c.id)).map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name} ({c.classification})</option>)}
+          </select>
+          <p style={sheetHint}>Set the nominal / limits, class override, AQL and method in the grid, then “Save draft”. Missing one? Add it in Quality → Masters.</p>
+        </ActionSheet>
+      )}
     </div>
   )
 }

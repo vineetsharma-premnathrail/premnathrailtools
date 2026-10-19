@@ -195,12 +195,14 @@ def test_only_named_people_decide(client, team):
     r = client.post(f"{API}/revisions/{rid}/approve", json={"decision": "pass"}, headers=auth(team["approver"]))
     assert r.status_code == 409 and "not awaiting approval" in r.json()["detail"]
 
-    # Admin stands in for the checker…
+    # Admin stands in for the checker — the approval engine wants the reason…
     r = client.post(f"{API}/revisions/{rid}/review", json={"decision": "pass"}, headers=auth(team["admin"]))
+    assert r.status_code == 422 and "comment" in r.json()["detail"]
+    r = client.post(f"{API}/revisions/{rid}/review", json={"decision": "pass", "comment": "Checker on leave"}, headers=auth(team["admin"]))
     assert r.status_code == 200, r.text
     # …so the admin can't also approve it.
-    r = client.post(f"{API}/revisions/{rid}/approve", json={"decision": "pass"}, headers=auth(team["admin"]))
-    assert r.status_code == 403 and "You checked" in r.json()["detail"]
+    r = client.post(f"{API}/revisions/{rid}/approve", json={"decision": "pass", "comment": "Standing in"}, headers=auth(team["admin"]))
+    assert r.status_code == 403 and ("You checked" in r.json()["detail"] or "different person" in r.json()["detail"])
     r = client.post(f"{API}/revisions/{rid}/approve", json={"decision": "pass"}, headers=auth(team["approver"]))
     assert r.status_code == 200
     assert r.json()["display_status"] == "released"

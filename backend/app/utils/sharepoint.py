@@ -271,6 +271,7 @@ async def upload_file_to_sharepoint(site_id: str, folder_path: str, upload_file:
         "path": f"{folder_path}/{filename}",
         "webUrl": data.get("webUrl"),
         "size": file_size,
+        "item_id": data.get("id"),
     }
 
 
@@ -486,3 +487,102 @@ async def get_download_url(site_id: str, file_path: str) -> str:
     if not url:
         raise HTTPException(status_code=502, detail=f"SharePoint returned no download link for {file_path}.")
     return url
+
+
+# ---------------------------------------------------------------------------
+# Item-level helpers for managed (generated, then edited) documents — see
+# app/modules/main/services/managed_documents.py. All use the app-only token,
+# so callers MUST authorize the user first.
+# ---------------------------------------------------------------------------
+
+def _item_url(site_id: str, item_id: str) -> str:
+    return f"{GRAPH_API}/sites/{site_id}/drive/items/{quote(item_id, safe='')}"
+
+
+async def replace_item_content(site_id: str, item_id: str, data: bytes, content_type: str) -> dict:
+    """Overwrite a file's bytes in place. SharePoint keeps the previous bytes
+    as a version, so nothing is lost."""
+    token = await get_app_graph_token()
+    async with httpx.AsyncClient(timeout=120) as client:
+        response = await client.put(
+            f"{_item_url(site_id, item_id)}/content",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": content_type}, content=data,
+        )
+    if response.status_code == 423:
+        raise HTTPException(status_code=409, detail="The document is open and locked in Word right now. Ask the person editing it to close it (or wait a minute), then try again.")
+    if response.status_code not in (200, 201):
+        raise HTTPException(status_code=502, detail=f"SharePoint could not save the new version: {response.text[:300]}")
+    return response.json()
+
+
+async def grant_item_edit_access(site_id: str, item_id: str, email: str) -> None:
+    """Give one person (by their M365 sign-in email) edit rights on one file,
+    without sending Microsoft's invitation email. Edits they then make in Word
+    Online show up in the version history under their own name."""
+    token = await get_app_graph_token()
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            f"{_item_url(site_id, item_id)}/invite",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"recipients": [{"email": email}], "roles": ["write"], "requireSignIn": True, "sendInvitation": False},
+        )
+    if response.status_code not in (200, 201):
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not give {email} edit access in SharePoint ({response.status_code}). Check that this email is a Microsoft 365 account in the company tenant. Details: {response.text[:300]}",
+        )
+
+
+async def list_item_versions(site_id: str, item_id: str) -> list[dict]:
+    """Newest first: [{version, modified_at, modified_by, size}]. modified_by
+    is the editor's display name, or "System" for versions the portal wrote."""
+    token = await get_app_graph_token()
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.get(f"{_item_url(site_id, item_id)}/versions", headers={"Authorization": f"Bearer {token}"})
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Could not read the document's version history from SharePoint: {response.text[:300]}")
+    out = []
+    for v in response.json().get("value", []):
+        by = v.get("lastModifiedBy") or {}
+        who = (by.get("user") or {}).get("displayName")
+        out.append({
+            "version": v.get("id"),
+            "modified_at": v.get("lastModifiedDateTime"),
+            "modified_by": who or "System",
+            "size": v.get("size"),
+        })
+    return out
+
+
+async def download_item(site_id: str, item_id: str, as_pdf: bool = False) -> bytes:
+    """A file's current bytes; as_pdf=True has SharePoint render a Word file
+    to PDF server-side (same engine as Word Online, so the output matches
+    what editors saw)."""
+    token = await get_app_graph_token()
+    async with httpx.AsyncClient(timeout=180, follow_redirects=True) as client:
+        response = await client.get(
+            f"{_item_url(site_id, item_id)}/content",
+            params={"format": "pdf"} if as_pdf else None,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail="The document file is missing from SharePoint — it may have been deleted there directly. Generate the document again.")
+    if response.status_code != 200:
+        what = "convert the document to PDF" if as_pdf else "download the document"
+        raise HTTPException(status_code=502, detail=f"SharePoint could not {what}: {response.text[:300]}")
+    return response.content
+
+
+async def download_item_version(site_id: str, item_id: str, version_id: str) -> bytes:
+    """Bytes of one older version of a file (SharePoint keeps them on every
+    save). The current version isn't served by this endpoint — use
+    download_item for that."""
+    token = await get_app_graph_token()
+    async with httpx.AsyncClient(timeout=180, follow_redirects=True) as client:
+        response = await client.get(
+            f"{_item_url(site_id, item_id)}/versions/{quote(version_id, safe='')}/content",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"SharePoint could not return version {version_id} of the document: {response.text[:300]}")
+    return response.content

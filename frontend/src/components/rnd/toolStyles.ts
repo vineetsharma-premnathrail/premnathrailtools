@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import axios from 'axios'
+import { extractErrorMessages } from '@/lib/validation'
 import { COLORS, RADII, BORDERS, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 
 export const inputStyle: CSSProperties = {
@@ -55,21 +56,29 @@ export function downloadBlob(blob: Blob, filename: string) {
 }
 
 // Backend errors on responseType:'blob' requests arrive as a Blob (not JSON),
-// so axios can't auto-parse them. This reads the blob body to surface the real
-// FastAPI `detail` message instead of a generic fallback string.
+// so axios can't auto-parse them. This reads the blob body and hands the parsed
+// JSON to extractErrorMessages, so the user sees the real FastAPI `detail` - or
+// every field error in a 422's `errors[]` - instead of axios's raw status text.
 export async function getErrorMessage(err: unknown, fallback: string): Promise<string> {
-  if (axios.isAxiosError(err)) {
-    const data = err.response?.data
-    if (data instanceof Blob) {
-      try {
-        const parsed = JSON.parse(await data.text())
-        if (parsed?.detail) return String(parsed.detail)
-      } catch {
-        // response body wasn't JSON — fall through to fallback
-      }
-    } else if (data && typeof data === 'object' && 'detail' in data) {
-      return String((data as { detail: unknown }).detail)
+  if (axios.isAxiosError(err) && err.response?.data instanceof Blob) {
+    let parsed: unknown = null
+    try {
+      parsed = JSON.parse(await err.response.data.text())
+    } catch {
+      // body wasn't JSON (e.g. a proxy HTML page) - use the specific fallback
+      return fallback
     }
+    if (!parsed || typeof parsed !== 'object') return fallback
+    return extractErrorMessages({ ...err, message: undefined, response: { ...err.response, data: parsed } }, fallback).join(' ')
   }
-  return fallback
+  if (axios.isAxiosError(err) && err.response) {
+    // A server reply without a structured body (Starlette's plain-text 500, a
+    // proxy 502/504 HTML page) must show the specific fallback, never axios's
+    // raw "Request failed with status code ..." text.
+    const data = err.response.data as { detail?: unknown; errors?: unknown } | null
+    if (!data || typeof data !== 'object' || (!data.detail && !data.errors)) return fallback
+    return extractErrorMessages({ ...err, message: undefined }, fallback).join(' ')
+  }
+  // No response at all: network failure or timeout - extractErrorMessages words these.
+  return extractErrorMessages(err, fallback).join(' ')
 }

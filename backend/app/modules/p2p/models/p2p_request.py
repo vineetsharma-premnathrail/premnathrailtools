@@ -38,7 +38,20 @@ P2P_REQUEST_STATUSES = (
     "po_raised", "po_approved",
     "partially_received", "received", "closed",
     "rejected", "cancelled",
+    # An approver sent the requisition back for changes (or the requester
+    # withdrew it from approval) — the requester resubmits or cancels it.
+    "returned",
+    # Saved by the requester without submitting (2026-10-13): visible only to
+    # them, no approval started, no validation beyond category. Submitted
+    # later from the edit form.
+    "draft",
 )
+
+# A requisition's content (header + lines) can be edited until purchasing
+# starts work on it — i.e. until an RFQ exists for it. Editing one that is in
+# approval or already approved withdraws that approval: the changed PR is
+# saved as a draft or sent for approval afresh (see edit_p2p_request).
+P2P_EDITABLE_STATUSES = ("draft", "returned", "submitted", "approved")
 
 P2P_REQUEST_PRIORITIES = ("low", "medium", "high")
 
@@ -93,7 +106,7 @@ P2P_REQUIREMENT_TYPES = ("Material", "Service", "Material + Service", "Capital E
 # in the set, and ANY ONE approval approves the PO.
 #
 # PRs created before this matrix have project_type = NULL and keep the legacy
-# flow (Department/Project/Plant Head columns; Purchase Head -> Director -> MD
+# flow (Department/Project/Plant Head columns; Purchase Head -> Director -> Partner
 # PO chain) until they finish.
 P2P_PROJECT_TYPES = ("existing", "new")
 
@@ -119,10 +132,10 @@ P2P_ROLE_FLAGS: dict[str, str] = {
 }
 
 # Every User flag that makes someone a PO approver on SOME PR: the union of
-# both matrix role sets plus the legacy Purchase Head / MD flags carried by
+# both matrix role sets plus the legacy Purchase Head / Partner flags carried by
 # in-flight pre-matrix PRs. Drives the P.O Approval tab visibility
 # (is_po_approver on /auth/me).
-P2P_PO_APPROVER_FLAGS: tuple[str, ...] = ("is_director", "is_md", "is_purchase_head")
+P2P_PO_APPROVER_FLAGS: tuple[str, ...] = ("is_director", "is_partner", "is_purchase_head")
 
 # The PO-approval roles the requester fills with a named person on the New
 # PR form — every role in the set except Director, which is a user flag and
@@ -145,8 +158,23 @@ P2P_ROLE_LABELS: dict[str, str] = {
     "project_head": "Project Head",
     "plant_head": "Plant Head",
     "purchase_head": "Purchase Head",
-    "md": "MD",
+    "partner": "Partner",
+    # Settings scheme slots (approval_scheme == "settings"): one row per person
+    # in Procurement → Settings, keyed pr_approver_1.. / po_approver_1..
+    **{f"pr_approver_{i}": "PR Approver" for i in range(1, 51)},
+    **{f"po_approver_{i}": "PO Approver" for i in range(1, 51)},
 }
+
+# approval_scheme value for requisitions whose approvers come from
+# Procurement → Settings (2026-10-07): all PR approvers must approve; the PO
+# needs every Settings PO approver, then any ONE Partner (partner_* columns).
+SETTINGS_SCHEME = "settings"
+# approval_scheme for requisitions approved through the central approval
+# engine (Organization › Approval Workflows, 2026-10-08) — every new PR, and
+# every PR whose PO goes for approval after the move. Their approval state
+# lives in approval_requests, not in the p2p_request_approvals /
+# p2p_request_po_approvers tables (see app/modules/p2p/approvals.py).
+ENGINE_SCHEME = "engine"
 
 
 class P2PRequest(Base, TimestampMixin):
@@ -162,9 +190,25 @@ class P2PRequest(Base, TimestampMixin):
 
     # Request Details
     project_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Account assignment (SAP ME51N account assignment category): what the
+    # purchase is charged to. One of P2P_ACCOUNT_ASSIGNMENTS; exactly the
+    # matching FK below is set. project_label stays as the display text.
+    account_assignment: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    sales_order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("sales_orders.id"), nullable=True)
+    cost_center_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("cost_centers.id"), nullable=True)
+    work_order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("production_work_orders.id"), nullable=True)
+    internal_order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("internal_orders.id"), nullable=True)
+    # Order Project (2026-10-17): set when charged to 'order_project', and also
+    # filled from the sales order's project when charged to a 'sales_order'.
+    # The default for the lines; each line carries its own element.
+    order_project_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), nullable=True, index=True)
     # 'existing' | 'new' — picks the approval role sets above. NULL on PRs
     # from before the manager-role matrix (legacy approval flow).
     project_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 'settings' = approvers from Procurement → Settings (SETTINGS_SCHEME); NULL = the older
+    # requester-picked matrix / legacy flows, kept for requisitions raised before it.
+    approval_scheme: Mapped[str | None] = mapped_column(String(20), nullable=True)
     required_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     requirement_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     request_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -191,7 +235,7 @@ class P2PRequest(Base, TimestampMixin):
     plant_head_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     plant_head_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     # PO approvers aren't assigned upfront the way the three heads above are —
-    # whoever holds the purchase-head/director/MD flag at the time acts — so
+    # whoever holds the purchase-head/director/Partner flag at the time acts — so
     # the actor's name is stamped here as each stage is approved, otherwise
     # the PO Approval panel can only say a stage was approved, not by whom.
     purchase_head_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -200,9 +244,9 @@ class P2PRequest(Base, TimestampMixin):
     director_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     director_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     director_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    md_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    md_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
-    md_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    partner_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    partner_approved_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    partner_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Manager-matrix PO approval (project_type set): ALL roles must approve
     # (production_manager, purchase_manager, project_manager, director).
     # Named roles: tracked in po_approvers.approved_at. Director role:
@@ -303,6 +347,15 @@ class P2PRequest(Base, TimestampMixin):
 
     @property
     def pending_po_approval_roles(self) -> list[str]:
+        if self.approval_scheme == ENGINE_SCHEME:
+            # Tracked by the approval engine; the PR status says it all.
+            return []
+        if self.approval_scheme == SETTINGS_SCHEME:
+            # Level 1: every Settings PO approver; level 2: any one Partner.
+            pending = [a.role for a in self.po_approvers if a.approved_at is None]
+            if self.partner_approved_at is None:
+                pending.append("partner")
+            return pending
         # Manager matrix: ALL roles must approve (production_manager,
         # purchase_manager, project_manager, director). Check which are still pending.
         if self.project_type in PO_APPROVAL_ROLE_SETS:
@@ -318,6 +371,6 @@ class P2PRequest(Base, TimestampMixin):
                         pending.append(role)
             return pending
         return [
-            role for role in ("purchase_head", "director", "md")
+            role for role in ("purchase_head", "director", "partner")
             if getattr(self, f"{role}_approved_at") is None
         ]

@@ -1,3 +1,5 @@
+from datetime import date
+
 from pydantic import BaseModel
 
 
@@ -32,6 +34,14 @@ class StoreItemCreate(BaseModel):
     safety_stock: float | None = None
     reorder_quantity: float | None = None
     standard_cost: float | None = None
+    # Purchase lead time, calendar days (0–730); v3 / Tally code.
+    lead_time_days: int | None = None
+    legacy_code: str | None = None
+    min_order_qty: float | None = None
+    gst_rate: float | None = None
+    preferred_vendor_id: int | None = None
+    purchase_gl_account_id: int | None = None
+    sales_gl_account_id: int | None = None
     plant: str | None = None
     preferred_warehouse_id: int | None = None
     preferred_supplier: str | None = None
@@ -67,7 +77,15 @@ class StoreItemUpdate(BaseModel):
     safety_stock: float | None = None
     reorder_quantity: float | None = None
     standard_cost: float | None = None
-    moving_average_cost: float | None = None
+    # moving_average_cost is not accepted: it is the system weighted average
+    # (read-only mirror of store_item_valuations, foundation plan §3.4).
+    lead_time_days: int | None = None
+    legacy_code: str | None = None
+    min_order_qty: float | None = None
+    gst_rate: float | None = None
+    preferred_vendor_id: int | None = None
+    purchase_gl_account_id: int | None = None
+    sales_gl_account_id: int | None = None
     status: str | None = None
     plant: str | None = None
     preferred_warehouse_id: int | None = None
@@ -109,6 +127,23 @@ class StoreItemResponse(BaseModel):
     reorder_quantity: float | None = None
     standard_cost: float | None = None
     moving_average_cost: float | None = None
+    lead_time_days: int | None = None
+    legacy_code: str | None = None
+    min_order_qty: float | None = None
+    gst_rate: float | None = None
+    preferred_vendor_id: int | None = None
+    purchase_gl_account_id: int | None = None
+    sales_gl_account_id: int | None = None
+    # Display (names resolved from the ids above).
+    preferred_vendor_name: str | None = None
+    purchase_gl_account_name: str | None = None
+    sales_gl_account_name: str | None = None
+    # Ledger that will actually be used, and where it comes from
+    # ('item' / 'category' / 'default' / 'none') — services/item_accounts.py.
+    effective_purchase_gl: str | None = None
+    effective_purchase_gl_source: str | None = None
+    effective_sales_gl: str | None = None
+    effective_sales_gl_source: str | None = None
     status: str
     has_photo: bool = False
     plant: str | None = None
@@ -116,3 +151,6 @@ class StoreItemResponse(BaseModel):
     preferred_warehouse_name: str | None = None
     preferred_supplier: str | None = None
     remarks: str | None = None
+    # Last priced receipt (store_item_valuations) — shown next to the read-only average.
+    last_receipt_rate: float | None = None
+    last_receipt_date: date | None = None

@@ -1,7 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core import assignee_rules
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permissions import require_app_access, require_feature_action, require_tab_access, require_tab_action
+from app.modules.maintenance import sensitive as maint_sensitive
+from app.modules.maintenance.role_events import role_event
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
@@ -27,6 +31,11 @@ from app.modules.maintenance.service import (
     generate_work_order_number, sync_asset_status, recompute_costs, close_downtime, user_names,
     now_utc, minutes_between, notify_many, _aware,
 )
+from app.modules.maintenance.settings import requester_confirmation_required
+from app.modules.maintenance.access import (  # registers the data scopes + the close-out approval type
+    apply_close, apply_reopen, live_close_out, submit_close_out,
+)
+from app.modules.organization.services import approval_engine as engine
 
 router = APIRouter(
     prefix="/maintenance/work-orders", tags=["Maintenance"],
@@ -38,13 +47,18 @@ STATUS_LABEL = {
     "completed": "Completed", "closed": "Closed", "cancelled": "Cancelled",
 }
 SPARE_ACTIVE_STATUSES = ("assigned", "in_progress", "on_hold")
+# Role assign-to rules (core/assignee_rules.PICKERS — Role & Permissions › Maintenance › Work Orders).
+ASSIGN_RULE = "maintenance:work_orders.assign"
+LABOUR_RULE = "maintenance:work_orders.labour"
 
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
 
-def _get_or_404(db: Session, wo_id: int) -> MaintenanceWorkOrder:
+def _get_or_404(db: Session, wo_id: int, user: User | None = None) -> MaintenanceWorkOrder:
+    """`user` given = the caller is acting on this job, so it must be inside
+    their Maintenance data scope (403 with the reason otherwise)."""
     wo = (
         db.query(MaintenanceWorkOrder)
         .options(selectinload(MaintenanceWorkOrder.tasks), selectinload(MaintenanceWorkOrder.spares), selectinload(MaintenanceWorkOrder.labour_logs))
@@ -52,6 +66,8 @@ def _get_or_404(db: Session, wo_id: int) -> MaintenanceWorkOrder:
     )
     if not wo:
         raise HTTPException(status_code=404, detail=f"Maintenance work order #{wo_id} not found.")
+    if user is not None:
+        ensure_in_scope(db, user, wo)
     return wo
 
 
@@ -89,7 +105,10 @@ def _after_change(db: Session, wo: MaintenanceWorkOrder) -> None:
         sync_asset_status(db, asset)
 
 
-def _to_response(db: Session, wo: MaintenanceWorkOrder) -> MaintenanceWorkOrderResponse:
+def _to_response(db: Session, wo: MaintenanceWorkOrder, plan_codes: dict[int, str] | None = None,
+                 user: User | None = None) -> MaintenanceWorkOrderResponse:
+    """plan_codes: prefetched {pm_plan_id: plan_code} from a list call. `user`
+    given = money blanked unless they hold maintenance:work_orders.costs:view."""
     resp = MaintenanceWorkOrderResponse.model_validate(wo)
     asset = _asset(db, wo)
     if asset:
@@ -125,10 +144,29 @@ def _to_response(db: Session, wo: MaintenanceWorkOrder) -> MaintenanceWorkOrderR
         s.location_name = locs.get(s.location_id)
         s.available_qty = _available(db, s.store_item_id, s.location_id)
         s.net_cost = round(max(0.0, s.qty_issued - s.qty_returned) * s.unit_cost, 2)
-    resp.awaiting_confirmation = bool(req and wo.status == "completed" and not wo.requester_confirmed_at)
+    if wo.pm_plan_id:
+        if plan_codes is not None:
+            resp.pm_plan_code = plan_codes.get(wo.pm_plan_id)
+        else:
+            from app.modules.maintenance.models.pm_plan import MaintenancePmPlan
+            resp.pm_plan_code = db.query(MaintenancePmPlan.plan_code).filter(MaintenancePmPlan.id == wo.pm_plan_id).scalar()
+    resp.awaiting_confirmation = bool(req and wo.status == "completed" and not wo.requester_confirmed_at
+                                      and requester_confirmation_required(db))
     if wo.machine_down and wo.downtime_start and not wo.downtime_end:
         resp.live_downtime_minutes = minutes_between(wo.downtime_start, now_utc())
-    return resp
+    if asset:
+        resp.asset_meter_unit, resp.asset_meter_reading = asset.meter_unit, asset.current_meter_reading
+    from app.modules.maintenance.permits import active_permit, open_permits
+    live = open_permits(db, wo.id)
+    resp.open_permit_count = len(live)
+    act = active_permit(db, wo.id)
+    resp.active_permit_number = act.permit_number if act else None
+    return maint_sensitive.mask_work_order(user, resp)
+
+
+def _permit_default(db: Session, criticality: str | None) -> bool:
+    from app.modules.maintenance.permits import permit_default
+    return permit_default(db, criticality)
 
 
 def _check_user(db: Session, user_id: int, label: str) -> User:
@@ -193,12 +231,19 @@ async def list_work_orders(
                 (MaintenanceWorkOrder.wo_number.ilike(like)) | (MaintenanceWorkOrder.title.ilike(like))
                 | (MaintenanceAsset.asset_code.ilike(like)) | (MaintenanceAsset.name.ilike(like))
             )
-    return [_to_response(db, w) for w in query.order_by(MaintenanceWorkOrder.created_at.desc()).all()]
+    query = apply_scope(query, user, MaintenanceWorkOrder)
+    wos = query.order_by(MaintenanceWorkOrder.created_at.desc()).all()
+    from app.modules.maintenance.models.pm_plan import MaintenancePmPlan
+    plan_ids = {w.pm_plan_id for w in wos if w.pm_plan_id}
+    plan_codes = dict(db.query(MaintenancePmPlan.id, MaintenancePmPlan.plan_code).filter(
+        MaintenancePmPlan.id.in_(plan_ids)).all()) if plan_ids else {}
+    return [_to_response(db, w, plan_codes, user=user) for w in wos]
 
 
 @router.post("", response_model=MaintenanceWorkOrderResponse)
 async def create_work_order(
     payload: MaintenanceWorkOrderCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_tab_action("maintenance", "work_orders", "create")),
 ):
@@ -212,7 +257,7 @@ async def create_work_order(
     if asset.status == "decommissioned":
         raise HTTPException(status_code=400, detail=f"{asset.asset_code} is decommissioned; work orders can't be raised on it.")
     if payload.assigned_to_id:
-        _check_user(db, payload.assigned_to_id, "Technician")
+        assignee_rules.ensure_allowed(db, user, ASSIGN_RULE, _check_user(db, payload.assigned_to_id, "Technician"))
     downtime_start = (_aware(payload.downtime_start) or now_utc()) if payload.machine_down else None
     if downtime_start and downtime_start > now_utc():
         raise HTTPException(status_code=400, detail="Downtime start can't be in the future.")
@@ -231,6 +276,8 @@ async def create_work_order(
         planned_start=payload.planned_start,
         planned_end=payload.planned_end,
         estimated_hours=payload.estimated_hours,
+        permit_required=(payload.permit_required if payload.permit_required is not None
+                         else _permit_default(db, asset.criticality)),
         created_by_id=user.id,
     )
     for idx, t in enumerate(payload.tasks, start=1):
@@ -243,23 +290,32 @@ async def create_work_order(
     if wo.assigned_to_id:
         notify_many(db, [wo.assigned_to_id], f"{wo.wo_number} assigned to you", f"{asset.asset_code}: {wo.title}",
                     "maintenance_wo_assigned", "maintenance_work_order", wo.id, exclude_user_id=user.id)
+        tech_name = (db.get(User, wo.assigned_to_id).name if db.get(User, wo.assigned_to_id) else "a technician")
+        role_event(db, background_tasks, "wo_assigned", title=f"{wo.wo_number} assigned",
+                   message=f"{user.name or user.email} assigned {wo.wo_number} ({asset.asset_code}: {wo.title}) to {tech_name}.",
+                   entity_type="maintenance_work_order", entity_id=wo.id, actor=user, record=wo, skip_user_ids={wo.assigned_to_id})
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.get("/{wo_id}", response_model=MaintenanceWorkOrderResponse)
-async def get_work_order(wo_id: int, db: Session = Depends(get_db)):
-    return _to_response(db, _get_or_404(db, wo_id))
+async def get_work_order(wo_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("maintenance"))):
+    wo = _get_or_404(db, wo_id, user)
+    from app.modules.maintenance.procurement import refresh_procured_cost
+    if refresh_procured_cost(db, wo):  # a vendor bill for its outside service was posted
+        db.commit()
+    return _to_response(db, wo, user=user)
 
 
 @router.patch("/{wo_id}", response_model=MaintenanceWorkOrderResponse)
 async def update_work_order(
     wo_id: int, payload: MaintenanceWorkOrderUpdate, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_editable(wo, "edit it")
     data = payload.model_dump(exclude_unset=True)
+    maint_sensitive.ensure_may_enter(user, data, wo, ("external_cost",), "external cost")
     if "title" in data and not (data["title"] or "").strip():
         raise HTTPException(status_code=400, detail="Work order title can't be empty.")
     merged = {"planned_start": wo.planned_start, "planned_end": wo.planned_end, **data}
@@ -270,7 +326,7 @@ async def update_work_order(
         wo.external_cost = 0.0
     _after_change(db, wo)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 # ---------------------------------------------------------------------------
@@ -279,13 +335,15 @@ async def update_work_order(
 
 @router.post("/{wo_id}/assign", response_model=MaintenanceWorkOrderResponse)
 async def assign(
-    wo_id: int, payload: MaintenanceWorkOrderAssignPayload, db: Session = Depends(get_db),
-    user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    wo_id: int, payload: MaintenanceWorkOrderAssignPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "assign", "edit")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_status(wo, MAINTENANCE_WO_OPEN_STATUSES, "assign")
     tech = _check_user(db, payload.assigned_to_id, "Technician")
     changed = wo.assigned_to_id != tech.id
+    if changed:
+        assignee_rules.ensure_allowed(db, user, ASSIGN_RULE, tech)
     wo.assigned_to_id = tech.id
     if wo.status == "draft":
         wo.status = "assigned"
@@ -293,33 +351,39 @@ async def assign(
         asset = _asset(db, wo)
         notify_many(db, [tech.id], f"{wo.wo_number} assigned to you", f"{asset.asset_code if asset else ''}: {wo.title}",
                     "maintenance_wo_assigned", "maintenance_work_order", wo.id, exclude_user_id=user.id)
+        tech_name = tech.name or tech.email
+        role_event(db, background_tasks, "wo_assigned", title=f"{wo.wo_number} assigned",
+                   message=f"{user.name or user.email} assigned {wo.wo_number} ({(asset.asset_code + ': ') if asset else ''}{wo.title}) to {tech_name}.",
+                   entity_type="maintenance_work_order", entity_id=wo.id, actor=user, record=wo, skip_user_ids={wo.assigned_to_id})
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.post("/{wo_id}/start", response_model=MaintenanceWorkOrderResponse)
 async def start(
     wo_id: int, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     if wo.status == "draft":
         raise HTTPException(status_code=409, detail=f"Can't start {wo.wo_number}: assign a technician first.")
     _require_status(wo, ("assigned",), "start")
+    from app.modules.maintenance.permits import ensure_can_start
+    ensure_can_start(db, wo)  # permit-to-work (WCM)
     wo.status = "in_progress"
     wo.actual_start = wo.actual_start or now_utc()
     wo.hold_reason = None
     _after_change(db, wo)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.post("/{wo_id}/hold", response_model=MaintenanceWorkOrderResponse)
 async def hold(
     wo_id: int, payload: MaintenanceWorkOrderReasonPayload, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_status(wo, ("in_progress",), "put on hold")
     if not payload.reason.strip():
         raise HTTPException(status_code=400, detail="Say why the job is on hold (e.g. waiting for spares / service engineer).")
@@ -327,32 +391,33 @@ async def hold(
     wo.hold_reason = payload.reason.strip()
     _after_change(db, wo)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.post("/{wo_id}/resume", response_model=MaintenanceWorkOrderResponse)
 async def resume(
     wo_id: int, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_status(wo, ("on_hold",), "resume")
     wo.status = "in_progress"
     wo.actual_start = wo.actual_start or now_utc()
     _after_change(db, wo)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.post("/{wo_id}/complete", response_model=MaintenanceWorkOrderResponse)
 async def complete(
-    wo_id: int, payload: MaintenanceWorkOrderCompletePayload, db: Session = Depends(get_db),
+    wo_id: int, payload: MaintenanceWorkOrderCompletePayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
     user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_status(wo, ("in_progress",), "complete", "Start the job first.")
     data = payload.model_dump(exclude_unset=True)
     handed_back_at = _aware(data.pop("handed_back_at", None))
+    meter_reading = data.pop("meter_reading", None)
     _validate_details(db, data)
     for field, val in data.items():
         if val is not None:
@@ -364,6 +429,16 @@ async def complete(
                 status_code=400,
                 detail=f"A {wo.wo_type} work order needs {', '.join(missing)} before it can be completed — these feed the repeat-failure reports.",
             )
+    from app.modules.maintenance.permits import ensure_can_complete
+    ensure_can_complete(db, wo)  # every permit closed, isolation removed
+    asset_for_meter = _asset(db, wo)
+    if asset_for_meter is not None and asset_for_meter.meter_unit and meter_reading is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{asset_for_meter.asset_code} has a {asset_for_meter.meter_unit} counter — enter the reading at completion "
+                   f"(last: {asset_for_meter.current_meter_reading if asset_for_meter.current_meter_reading is not None else 'none'}). "
+                   "It feeds the counter-based PM plans and the reading history.",
+        )
     open_tasks = [t.description for t in wo.tasks if not t.result]
     if open_tasks:
         raise HTTPException(
@@ -376,6 +451,11 @@ async def complete(
             raise HTTPException(status_code=400, detail="Hand-back time can't be in the future.")
         if wo.downtime_start and handed_back_at < _aware(wo.downtime_start):
             raise HTTPException(status_code=400, detail="Hand-back time can't be before the machine went down.")
+    if meter_reading is not None and asset_for_meter is not None and asset_for_meter.meter_unit:
+        from app.modules.maintenance.counters import post_reading
+        post_reading(db, asset_for_meter, meter_reading, user, source="wo_completion", work_order_id=wo.id,
+                     remarks=f"Reading at completion of {wo.wo_number}", trigger_pm=False)
+        wo.meter_reading_at_completion = meter_reading
     wo.status = "completed"
     wo.actual_end = now
     wo.completed_by_id = user.id
@@ -388,60 +468,82 @@ async def complete(
                     "maintenance_wo_completed", "maintenance_request", req.id, exclude_user_id=user.id)
     notify_many(db, [wo.created_by_id], f"{wo.wo_number} completed", wo.action_taken or wo.title,
                 "maintenance_wo_completed", "maintenance_work_order", wo.id, exclude_user_id=user.id)
+    # Close-out verification goes through the central approval engine — now,
+    # or once the requester confirms the machine is OK (requests.confirm_repair).
+    close_req = submit_close_out(db, wo, user)
+    told = {wo.created_by_id, req.raised_by_id if req else None}
+    try:
+        told |= {s.approver_id for s in (close_req.steps if close_req is not None else []) if s.approver_id}
+    except Exception:  # noqa: BLE001
+        pass
+    role_event(db, background_tasks, "wo_completed", title=f"{wo.wo_number} completed — verify & close",
+               message=f"{user.name or user.email} completed {wo.wo_number} ({wo.title}). "
+                       + ("Waiting for the requester to confirm the machine, then verify and close it." if req and not wo.requester_confirmed_at
+                          else "Verify the work and close it."),
+               entity_type="maintenance_work_order", entity_id=wo.id, actor=user, record=wo, skip_user_ids=told)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.post("/{wo_id}/reopen", response_model=MaintenanceWorkOrderResponse)
 async def reopen(
     wo_id: int, payload: MaintenanceWorkOrderReasonPayload, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "approve")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "close_out", "edit")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_status(wo, ("completed",), "reopen")
     if not payload.reason.strip():
         raise HTTPException(status_code=400, detail="Say why the job is being reopened.")
-    wo.status = "in_progress"
-    wo.actual_end = None
-    wo.requester_confirmed_at = None
-    wo.requester_comment = payload.reason.strip()
-    if wo.machine_down:
-        wo.downtime_end = None
-        wo.downtime_minutes = None
-    _after_change(db, wo)
+    req = live_close_out(db, wo.id)
+    if req is not None:
+        # Waiting for close-out approval: reopening = sending it back (or, for
+        # the person who submitted it, withdrawing it). The engine's
+        # on_decided reopens the job.
+        if req.requester_id == user.id:
+            engine.cancel(db, req.id, user, payload.reason.strip())
+        else:
+            engine.decide(db, req.id, user, "return", payload.reason.strip())
+    else:
+        # Completed before the approval engine took over (or no approver
+        # could be resolved at completion): the old path, unchanged.
+        apply_reopen(db, wo, payload.reason.strip())
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.post("/{wo_id}/close", response_model=MaintenanceWorkOrderResponse)
 async def close(
     wo_id: int, db: Session = Depends(get_db),
-    user: User = Depends(require_tab_action("maintenance", "work_orders", "approve")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "close_out", "approve")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_status(wo, ("completed",), "close", "Mark it Completed first.")
-    if wo.request_id and not wo.requester_confirmed_at:
+    if wo.request_id and not wo.requester_confirmed_at and requester_confirmation_required(db):
         req = db.query(MaintenanceRequest).filter(MaintenanceRequest.id == wo.request_id).first()
         who = user_names(db, [req.raised_by_id]).get(req.raised_by_id) if req else None
         raise HTTPException(
             status_code=409,
             detail=f"Can't close {wo.wo_number} yet: waiting for {who or 'the requester'} to confirm the machine is OK on request {req.request_number if req else ''}.",
         )
-    wo.status = "closed"
-    wo.verified_by_id = user.id
-    wo.verified_at = now_utc()
-    wo.closed_at = wo.verified_at
-    _after_change(db, wo)
+    req = live_close_out(db, wo.id)
+    if req is not None:
+        # Close-out runs through the central approval engine; approving the
+        # last stage closes the job (access._close_out_decided).
+        engine.decide(db, req.id, user, "approve")
+    else:
+        # Completed before the approval engine took over (or no approver
+        # could be resolved at completion): the old path, unchanged.
+        apply_close(db, wo, user)  # also rolls a PM job's plan to the next due date
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.post("/{wo_id}/cancel", response_model=MaintenanceWorkOrderResponse)
 async def cancel(
     wo_id: int, payload: MaintenanceWorkOrderReasonPayload, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "approve")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "close_out", "cancel")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_status(wo, ("draft", "assigned", "on_hold"), "cancel", "An in-progress job has to be put On Hold first.")
     if not payload.reason.strip():
         raise HTTPException(status_code=400, detail="Give a reason for cancelling.")
@@ -460,7 +562,7 @@ async def cancel(
             req.status = "acknowledged"
     _after_change(db, wo)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 # ---------------------------------------------------------------------------
@@ -470,24 +572,24 @@ async def cancel(
 @router.post("/{wo_id}/tasks", response_model=MaintenanceWorkOrderResponse)
 async def add_task(
     wo_id: int, payload: MaintenanceWorkOrderTaskPayload, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "checklist", "create")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_editable(wo, "add a checklist line")
     if not payload.description.strip():
         raise HTTPException(status_code=400, detail="Checklist line needs a description.")
     seq = payload.sequence or ((max((t.sequence for t in wo.tasks), default=0)) + 10)
     wo.tasks.append(MaintenanceWorkOrderTask(sequence=seq, description=payload.description.strip(), expected_value=payload.expected_value))
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.patch("/{wo_id}/tasks/{task_id}", response_model=MaintenanceWorkOrderResponse)
 async def update_task(
     wo_id: int, task_id: int, payload: MaintenanceWorkOrderTaskUpdate, db: Session = Depends(get_db),
-    user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "checklist", "edit")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_editable(wo, "update the checklist")
     task = next((t for t in wo.tasks if t.id == task_id), None)
     if not task:
@@ -502,22 +604,22 @@ async def update_task(
     if "result" in data:
         task.done_by_id = user.id if data["result"] else None
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.delete("/{wo_id}/tasks/{task_id}", response_model=MaintenanceWorkOrderResponse)
 async def delete_task(
     wo_id: int, task_id: int, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "checklist", "delete")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_editable(wo, "remove a checklist line")
     task = next((t for t in wo.tasks if t.id == task_id), None)
     if not task:
         raise HTTPException(status_code=404, detail=f"Checklist line #{task_id} isn't on {wo.wo_number}.")
     wo.tasks.remove(task)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 # ---------------------------------------------------------------------------
@@ -541,9 +643,9 @@ def _unit_cost(item: StoreItem) -> float:
 @router.post("/{wo_id}/spares", response_model=MaintenanceWorkOrderResponse)
 async def plan_spare(
     wo_id: int, payload: MaintenanceWorkOrderSparePlanPayload, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "spares", "create")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_editable(wo, "plan spares")
     if payload.qty_planned <= 0:
         raise HTTPException(status_code=400, detail="Planned quantity must be greater than 0.")
@@ -557,15 +659,15 @@ async def plan_spare(
             unit_cost=_unit_cost(item), remarks=payload.remarks,
         ))
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.delete("/{wo_id}/spares/{spare_id}", response_model=MaintenanceWorkOrderResponse)
 async def remove_spare(
     wo_id: int, spare_id: int, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "spares", "delete")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_editable(wo, "remove a spare line")
     spare = next((s for s in wo.spares if s.id == spare_id), None)
     if not spare:
@@ -574,15 +676,15 @@ async def remove_spare(
         raise HTTPException(status_code=409, detail="This spare was already issued from Store, so the line can't be removed. Return the unused quantity instead.")
     wo.spares.remove(spare)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.post("/{wo_id}/spares/issue", response_model=MaintenanceWorkOrderResponse)
 async def issue_spare(
     wo_id: int, payload: MaintenanceWorkOrderSpareIssuePayload, db: Session = Depends(get_db),
-    user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "spares", "create")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_status(wo, SPARE_ACTIVE_STATUSES, "issue spares for")
     if payload.quantity is None or payload.quantity <= 0:
         raise HTTPException(status_code=400, detail="Issue quantity must be greater than 0.")
@@ -623,15 +725,19 @@ async def issue_spare(
     spare.qty_issued += payload.quantity
     _after_change(db, wo)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    # Critical spare now under its Store minimum → remind the planners.
+    from app.modules.maintenance.service import check_spare_below_min
+    if check_spare_below_min(db, item.id, wo):
+        db.commit()
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.post("/{wo_id}/spares/return", response_model=MaintenanceWorkOrderResponse)
 async def return_spare(
     wo_id: int, payload: MaintenanceWorkOrderSpareReturnPayload, db: Session = Depends(get_db),
-    user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "spares", "edit")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_editable(wo, "return spares")
     spare = next((s for s in wo.spares if s.id == payload.spare_id), None)
     if not spare:
@@ -649,7 +755,7 @@ async def return_spare(
     spare.qty_returned += payload.quantity
     _after_change(db, wo)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 # ---------------------------------------------------------------------------
@@ -659,11 +765,14 @@ async def return_spare(
 @router.post("/{wo_id}/labour", response_model=MaintenanceWorkOrderResponse)
 async def add_labour(
     wo_id: int, payload: MaintenanceLabourLogPayload, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "labour", "create")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_status(wo, ("assigned", "in_progress", "on_hold", "completed"), "log labour on")
-    _check_user(db, payload.technician_id, "Technician")
+    tech = _check_user(db, payload.technician_id, "Technician")
+    if tech.id != user.id:  # logging your own time is always allowed
+        assignee_rules.ensure_allowed(db, user, LABOUR_RULE, tech)
+    maint_sensitive.ensure_may_enter(user, payload.model_dump(), None, ("hourly_rate",), "hourly rate")
     start, end = _aware(payload.start_time), _aware(payload.end_time)
     if start and end and end <= start:
         raise HTTPException(status_code=400, detail="Labour end time must be after the start time.")
@@ -684,15 +793,15 @@ async def add_labour(
     ))
     _after_change(db, wo)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)
 
 
 @router.delete("/{wo_id}/labour/{log_id}", response_model=MaintenanceWorkOrderResponse)
 async def delete_labour(
     wo_id: int, log_id: int, db: Session = Depends(get_db),
-    _user: User = Depends(require_tab_action("maintenance", "work_orders", "edit")),
+    user: User = Depends(require_feature_action("maintenance", "work_orders", "labour", "delete")),
 ):
-    wo = _get_or_404(db, wo_id)
+    wo = _get_or_404(db, wo_id, user)
     _require_editable(wo, "remove a labour entry")
     log = next((l for l in wo.labour_logs if l.id == log_id), None)
     if not log:
@@ -700,4 +809,4 @@ async def delete_labour(
     wo.labour_logs.remove(log)
     _after_change(db, wo)
     db.commit()
-    return _to_response(db, _get_or_404(db, wo.id))
+    return _to_response(db, _get_or_404(db, wo.id), user=user)

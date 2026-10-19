@@ -5,12 +5,13 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hrApi } from '@/lib/api'
 import { HrLifecycleEventType, HrLifecycleMeta } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
-import { Field, secondaryBtnStyle } from '@/components/shared/ui'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import HrNav from '@/components/hr/HrNav'
 import EventFields, { EMPTY_EVENT_FORM, EventFormState, formToPayload } from '@/components/hr/lifecycle/EventFields'
+import { recordPath, useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 const TYPES: { value: HrLifecycleEventType; label: string; hint: string; hex: string }[] = [
   { value: 'joining', label: 'Joining', hint: 'New hire or rehire — onboarding checklist', hex: '#16A34A' },
@@ -19,16 +20,6 @@ const TYPES: { value: HrLifecycleEventType; label: string; hint: string; hex: st
   { value: 'promotion', label: 'Promotion', hint: 'New designation or grade', hex: '#7C3AED' },
   { value: 'exit', label: 'Exit', hint: 'Resignation, termination… — offboarding', hex: '#DC2626' },
 ]
-
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
-}
-const h3: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }
 
 function NewEventInner() {
   const { isAuthorized, isLoading, user } = useRequireApp('hr')
@@ -40,16 +31,19 @@ function NewEventInner() {
   const [meta, setMeta] = useState<HrLifecycleMeta | null>(null)
   const [metaError, setMetaError] = useState<string[]>([])
   const [subjectMode, setSubjectMode] = useState<'candidate' | 'user'>(search.get('user_id') ? 'user' : 'candidate')
-  const [userId, setUserId] = useState(search.get('user_id') || '')
+  // ?user_id= carries a signed record ref (lib/recordRef.ts).
+  const { id: presetUserId, error: userLinkError, loading: userLinkLoading } = useRecordId(search.get('user_id'))
+  const [userId, setUserId] = useState('')
+  useEffect(() => { if (presetUserId) setUserId(String(presetUserId)) }, [presetUserId])
   const [form, setForm] = useState<EventFormState>(EMPTY_EVENT_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string[]>([])
 
   useEffect(() => {
-    if (!isAuthorized) return
-    const includeId = Number(search.get('user_id')) || undefined
+    if (!isAuthorized || userLinkLoading) return
+    const includeId = presetUserId || undefined
     hrApi.getLifecycleMeta(includeId ? { include_user_id: includeId } : {}).then(setMeta).catch((err) => setMetaError(extractErrorMessages(err, 'Could not load the form lists.')))
-  }, [isAuthorized, search])
+  }, [isAuthorized, presetUserId, userLinkLoading])
 
   const userOptions = useMemo(
     () => (meta?.users || []).filter((u) => u.id !== user?.id).map((u) => ({ value: String(u.id), label: `${u.name} — ${u.email}` })),
@@ -74,7 +68,7 @@ function NewEventInner() {
       if (needsUser) payload.user_id = Number(userId)
       if (type === 'joining' && subjectMode === 'user') { payload.candidate_name = null; payload.candidate_email = null }
       const ev = await hrApi.createLifecycleEvent(payload)
-      router.push(`/dashboard/hr/lifecycle/${ev.id}`)
+      router.push(recordPath('/dashboard/hr/lifecycle', ev))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not create the lifecycle event.'))
       setSaving(false)
@@ -82,131 +76,128 @@ function NewEventInner() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (userLinkError) return (<div><HrNav /><InvalidRecordLink message={userLinkError} listHref="/dashboard/hr/lifecycle" listLabel="Back to lifecycle" /></div>)
+  if (userLinkLoading) return <div><HrNav /></div>
+
+  const activeType = TYPES.find((t) => t.value === type) || TYPES[0]
 
   return (
     <div>
-      <HrNav />
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            HR &amp; Administration · Lifecycle
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>New Lifecycle Event</h1>
-          <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>The checklist is copied from the templates in HR &gt; Masters &gt; Checklist Templates.</p>
-        </div>
-        <button onClick={() => router.push('/dashboard/hr/lifecycle')} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
-
-      {(error.length > 0 || metaError.length > 0) && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {[...metaError, ...error].join(' ')}
-        </div>
-      )}
-
-      <div style={sectionStyle}>
-        <h3 style={h3}>Event type</h3>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-          {TYPES.map((t) => {
-            const active = t.value === type
-            return (
-              <button
-                key={t.value}
-                type="button"
-                onClick={() => setType(t.value)}
-                style={{
-                  flex: '1 1 170px', maxWidth: 240, textAlign: 'left', padding: '12px 14px', borderRadius: 14, cursor: 'pointer',
-                  border: active ? `1.5px solid ${t.hex}` : `1px solid ${BORDER.normal}`,
-                  background: active ? `${t.hex}12` : 'rgba(255,255,255,0.7)',
-                }}
-              >
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: active ? t.hex : TEXT.heading }}>{t.label}</div>
-                <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 2 }}>{t.hint}</div>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div style={sectionStyle}>
-        <h3 style={h3}>{type === 'joining' ? 'New joiner' : 'Employee'}</h3>
-        {type === 'joining' && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-            {([['candidate', 'Not in the portal yet'], ['user', 'Already has a portal account']] as const).map(([k, label]) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setSubjectMode(k)}
-                style={{
-                  fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer',
-                  border: subjectMode === k ? '1px solid #FF6A2A' : '1px solid rgba(0,0,0,0.1)',
-                  background: subjectMode === k ? 'rgba(255,106,42,0.1)' : 'rgba(255,255,255,0.7)',
-                  color: subjectMode === k ? '#e0521a' : '#57534e',
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        {type === 'joining' && subjectMode === 'candidate' ? (
-          <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-              <div style={{ flex: '1 1 240px', maxWidth: 340 }}>
-                <Field label="Full name *">
-                  <input style={inputStyle} value={form.candidate_name} onChange={(e) => setForm({ ...form, candidate_name: e.target.value })} placeholder="As on the offer letter" />
-                </Field>
+      <FormPage nav={<HrNav />} tour="hr-lcn-form" icon="flag" iconColor={activeType.hex} title="New Lifecycle Event"
+        subtitle="The checklist is copied from the templates in HR > Masters > Checklist Templates."
+        onBack={() => router.push('/dashboard/hr/lifecycle')} backTour="hr-lcn-back"
+        footer={<>
+          <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving} onClick={() => router.push('/dashboard/hr/lifecycle')}>Cancel</button>
+          <button type="button" data-tour="hr-lcn-draft-btn" disabled={saving || !meta} onClick={() => submit('draft')} style={sheetBtn('secondary', SHEET.INK, saving || !meta)}><SheetIcon name="doc" size={15} />Save as draft</button>
+          <button type="button" data-tour="hr-lcn-start-btn" disabled={saving || !meta} onClick={() => submit('in_progress')} style={sheetBtn('primary', SHEET.BLUE, saving || !meta)}>
+            <SheetIcon name="check" size={16} />{saving ? 'Creating…' : 'Create & start checklist'}
+          </button>
+        </>}>
+        <SheetColumns
+          left={<>
+            {(error.length > 0 || metaError.length > 0) && (
+              <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                {[...metaError, ...error].join(' ')}
               </div>
-              <div style={{ flex: '1 1 260px', maxWidth: 340 }}>
-                <Field label="Work email">
-                  <input style={inputStyle} value={form.candidate_email} onChange={(e) => setForm({ ...form, candidate_email: e.target.value })} placeholder="name@premnathrail.com" />
-                </Field>
-              </div>
-            </div>
-            <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>
-              Once IT creates the Microsoft account and the joiner signs in once, use <b>Link user</b> on the event — the portal user is found by this email.
-            </p>
-          </>
-        ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 300px', maxWidth: 420 }}>
-              <Field label="Employee *">
-                <SearchableSelect value={userId} onChange={setUserId} options={userOptions} placeholder={meta ? 'Search by name or email…' : 'Loading…'} />
-              </Field>
-            </div>
-            {picked && (
-              <p style={{ flex: '1 1 240px', fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>
-                Currently: {[picked.designation, picked.department].filter(Boolean).join(' · ') || 'no designation or department on record'}
-              </p>
             )}
-          </div>
-        )}
-      </div>
 
-      <div style={sectionStyle}>
-        <h3 style={h3}>Details</h3>
-        {meta ? (
-          <EventFields type={type} form={form} setForm={setForm} meta={meta} subjectUserId={needsUser && userId ? Number(userId) : null} />
-        ) : (
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{metaError.length ? 'The form lists could not be loaded.' : 'Loading…'}</p>
-        )}
-      </div>
+            <SheetSection icon="flag" title="Event Type">
+              <div data-tour="hr-lcn-type" style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                {TYPES.map((t) => {
+                  const active = t.value === type
+                  return (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => setType(t.value)}
+                      style={{
+                        flex: '1 1 150px', maxWidth: 220, textAlign: 'left', padding: '10px 12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
+                        border: active ? `1.5px solid ${t.hex}` : `1px solid ${SHEET.LINE}`,
+                        background: active ? `${t.hex}12` : '#fff',
+                      }}
+                    >
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: active ? t.hex : SHEET.INK }}>{t.label}</div>
+                      <div style={{ fontSize: 11.5, color: SHEET.MUTED, marginTop: 2 }}>{t.hint}</div>
+                    </button>
+                  )
+                })}
+              </div>
+            </SheetSection>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-        <button type="button" disabled={saving || !meta} onClick={() => submit('draft')} style={secondaryBtnStyle}>Save as draft</button>
-        <button
-          type="button"
-          disabled={saving || !meta}
-          onClick={() => submit('in_progress')}
-          style={{
-            padding: '11px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'wait' : 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-            opacity: saving || !meta ? 0.7 : 1,
-          }}
-        >
-          {saving ? 'Creating…' : 'Create & start checklist'}
-        </button>
-      </div>
+            <SheetSection icon="user" title={type === 'joining' ? 'New Joiner' : 'Employee'}>
+              {type === 'joining' && (
+                <div data-tour="hr-lcn-subject-mode" style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                  {([['candidate', 'Not in the portal yet'], ['user', 'Already has a portal account']] as const).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setSubjectMode(k)}
+                      style={{
+                        fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer', fontFamily: 'inherit',
+                        border: subjectMode === k ? `1px solid ${SHEET.BLUE}` : `1px solid ${SHEET.LINE}`,
+                        background: subjectMode === k ? '#eff6ff' : '#fff',
+                        color: subjectMode === k ? SHEET.BLUE : SHEET.BODY,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {type === 'joining' && subjectMode === 'candidate' ? (
+                <>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                    <div data-tour="hr-lcn-candidate-name" style={{ flex: '1 1 240px', maxWidth: 340 }}>
+                      <label style={sheetLabel}>Full name <Req /></label>
+                      <input style={sheetInput} value={form.candidate_name} onChange={(e) => setForm({ ...form, candidate_name: e.target.value })} placeholder="As on the offer letter" />
+                    </div>
+                    <div data-tour="hr-lcn-candidate-email" style={{ flex: '1 1 260px', maxWidth: 340 }}>
+                      <label style={sheetLabel}>Work email</label>
+                      <input style={sheetInput} value={form.candidate_email} onChange={(e) => setForm({ ...form, candidate_email: e.target.value })} placeholder="name@premnathrail.com" />
+                    </div>
+                  </div>
+                  <p style={sheetHint}>
+                    Once IT creates the Microsoft account and the joiner signs in once, use <b>Link user</b> on the event — the portal user is found by this email.
+                  </p>
+                </>
+              ) : (
+                <div data-tour="hr-lcn-employee" style={{ maxWidth: 420 }}>
+                  <label style={sheetLabel}>Employee <Req /></label>
+                  <SearchableSelect value={userId} onChange={setUserId} options={userOptions} placeholder={meta ? 'Search by name or email…' : 'Loading…'} />
+                </div>
+              )}
+            </SheetSection>
+
+            <SheetSection icon="list" title="Details">
+              {meta ? (
+                <EventFields type={type} form={form} setForm={setForm} meta={meta} subjectUserId={needsUser && userId ? Number(userId) : null} />
+              ) : (
+                <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>{metaError.length ? 'The form lists could not be loaded.' : 'Loading…'}</p>
+              )}
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="flag" title="Summary" color={activeType.hex}>
+              <div style={{ fontSize: 13, color: SHEET.BODY, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div><span style={{ color: SHEET.MUTED }}>Type: </span><b style={{ color: activeType.hex }}>{activeType.label}</b> — {activeType.hint}</div>
+                <div>
+                  <span style={{ color: SHEET.MUTED }}>{type === 'joining' && subjectMode === 'candidate' ? 'Joiner: ' : 'Employee: '}</span>
+                  <b style={{ color: SHEET.INK }}>{type === 'joining' && subjectMode === 'candidate' ? (form.candidate_name.trim() || '—') : (picked?.name || '—')}</b>
+                </div>
+                {picked && needsUser && (
+                  <div><span style={{ color: SHEET.MUTED }}>Currently: </span>{[picked.designation, picked.department].filter(Boolean).join(' · ') || 'no designation or department on record'}</div>
+                )}
+              </div>
+            </SheetSection>
+            <SheetSection icon="list" title="What Happens Next">
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: SHEET.MUTED, lineHeight: 1.6 }}>
+                <li><b>Create &amp; start checklist</b> copies the {activeType.label.toLowerCase()} checklist and notifies each task owner.</li>
+                <li><b>Save as draft</b> keeps the event without starting the checklist.</li>
+              </ul>
+            </SheetSection>
+          </>}
+        />
+      </FormPage>
     </div>
   )
 }

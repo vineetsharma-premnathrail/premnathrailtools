@@ -3,20 +3,28 @@
 import { useEffect, useRef, useState, Fragment } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 
-import { p2pApi, rfqApi, purchaseOrdersApi } from '@/lib/api'
+import { p2pApi, rfqApi, purchaseOrdersApi, storeApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { P2PRequest, RFQ, P2PPurchaseOrder, P2PRequestItemStockCheck } from '@/types'
+import { P2PRequest, RFQ, P2PPurchaseOrder, P2PRequestItemStockCheck, StoreItem } from '@/types'
+import SearchableSelect from '@/components/erp/SearchableSelect'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
-import PromptDialog from '@/components/erp/PromptDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { userPoRoles, p2pRoleLabel } from '@/lib/p2pRoles'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import ServiceEntriesPanel from '@/components/p2p/ServiceEntriesPanel'
+import PoDeliveryCostsPanel from '@/components/p2p/PoDeliveryCostsPanel'
+import { useRecordId, recordHref, recordPath } from '@/lib/recordRef'
+import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { FormSheet, SheetSection, SheetIcon, SheetIconName, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 const FULFILLMENT_LABELS: Record<string, string> = {
   pending: 'Awaiting Decision', stock_issued: 'Issued from Stock', sent_to_procurement: 'In Procurement',
@@ -26,15 +34,39 @@ const FULFILLMENT_HEX: Record<string, string> = {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  submitted: 'Submitted', approved: 'Approved', po_raised: 'PO Raised', po_approved: 'PO Approved',
+  submitted: 'Submitted', approved: 'Approved',
+  vendor_quotations: 'RFQ / Quotations', technical_evaluation: 'Technical Evaluation',
+  commercial_evaluation: 'Commercial Evaluation', vendor_selected: 'Vendor Selected', po_drafted: 'PO Draft',
+  po_raised: 'PO Raised', po_approved: 'PO Approved',
   partially_received: 'Partially Received', received: 'Received',
-  closed: 'Closed', rejected: 'Rejected', cancelled: 'Cancelled',
+  closed: 'Closed', rejected: 'Rejected', cancelled: 'Cancelled', returned: 'Returned for changes', draft: 'Draft',
 }
 const STATUS_HEX: Record<string, string> = {
-  submitted: '#3b82f6', approved: '#22c55e', po_raised: '#f59e0b', po_approved: '#22c55e',
-  partially_received: '#f97316', received: '#0ea5e9', closed: '#22c55e',
-  rejected: '#dc2626', cancelled: '#94a3b8',
+  submitted: '#3b82f6', approved: '#22c55e',
+  vendor_quotations: '#6366f1', technical_evaluation: '#8b5cf6', commercial_evaluation: '#a855f7',
+  vendor_selected: '#0ea5e9', po_drafted: '#64748b',
+  po_raised: '#f59e0b', po_approved: '#22c55e',
+  partially_received: '#d97706', received: '#16a34a', closed: '#22c55e',
+  rejected: '#dc2626', cancelled: '#94a3b8', returned: '#7c3aed', draft: '#64748b',
 }
+// Statuses a requisition can still be cancelled from (backend
+// cancel_p2p_request refuses po_raised — the PO must be rejected — and
+// receipts; po_approved is Purchase-only, see canCancel).
+const CANCELLABLE_STATUSES = ['submitted', 'returned', 'approved', 'vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected', 'po_drafted']
+
+// Extra fields the single-PR GET carries beyond the shared P2PRequest type:
+// the latest PO with its lines (approvers usually can't call the Purchase
+// Orders API) and per-role approval state on the PO Approval panel.
+type PoPanelEntry = {
+  role: string; role_label: string; people: { id: number; name?: string | null }[]
+  approved_at?: string | null; approved_by_name?: string | null; comment?: string | null
+}
+type P2PRequestDetail = Omit<P2PRequest, 'po_approval_panel'> & {
+  purchase_order?: P2PPurchaseOrder | null
+  po_approval_panel?: PoPanelEntry[]
+}
+
+const money = (v?: number | null) => (v == null ? '—' : `₹ ${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
 
 // A submitted PR where some (but not all) assigned approvers have signed off
 // gets its own purple "Partially Approved" display — distinct from the
@@ -65,8 +97,11 @@ const primaryBtn: React.CSSProperties = {
   padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
   background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
 }
-const STOCK_LABELS: Record<string, string> = { in_stock: 'In Stock', partial: 'Partial', not_in_stock: 'Not in Stock', no_match: 'Not in Item Master' }
+const STOCK_LABELS: Record<string, string> = { in_stock: 'In Stock', partial: 'Partial', not_in_stock: 'Not in Stock', no_match: 'Not linked to Item Master' }
 const STOCK_HEX: Record<string, string> = { in_stock: '#16a34a', partial: '#f59e0b', not_in_stock: '#dc2626', no_match: '#94a3b8' }
+
+const sheetErr: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
+type PromptKind = 'cancel' | 'reject' | 'approve' | 'approve-po' | 'short-close' | 'issue'
 
 const dangerBtn: React.CSSProperties = {
   fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10,
@@ -84,15 +119,18 @@ export default function MyP2PRequestDetailPage() {
   const searchParams = useSearchParams()
   const fromApproval = searchParams.get('from') === 'approval'
   const fromPoApproval = searchParams.get('from') === 'po-approval'
-  const prId = Number(params.id)
+  const { id: resolvedPrId, error: linkError } = useRecordId(params.id as string)
+  const prId = resolvedPrId ?? 0
 
-  const [pr, setPr] = useState<P2PRequest | null>(null)
+  const [pr, setPr] = useState<P2PRequestDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
 
   const [activePanel, setActivePanel] = useState<'' | 'edit'>('')
-  const [promptAction, setPromptAction] = useState<'' | 'cancel' | 'reject' | 'approve' | 'approve-po'>('')
+  const [promptAction, setPromptAction] = useState<'' | PromptKind>('')
+  const [promptText, setPromptText] = useState('')
+  const [sheetError, setSheetError] = useState('')
 
   const [editProjectLabel, setEditProjectLabel] = useState('')
   const [editRequiredDate, setEditRequiredDate] = useState('')
@@ -110,36 +148,74 @@ export default function MyP2PRequestDetailPage() {
   const [issueQtyByItem, setIssueQtyByItem] = useState<Record<number, string>>({})
   const [issueLocByItem, setIssueLocByItem] = useState<Record<number, string>>({})
   const [confirmProcurementItemId, setConfirmProcurementItemId] = useState<number | null>(null)
+  const [confirmClose, setConfirmClose] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
 
   const isPurchaseTeam = !!user?.apps?.includes('purchase')
+  const { can, canFeature } = useCan()
+  // Working a PR (edit / cancel / close / stock decisions) needs 'Edit' on
+  // Purchase Requisitions; named approvers act through routing with View only.
+  const canEditPr = can('p2p', 'purchase_requisitions', 'edit')
+  // Purchase Requisitions features (role editor). PO approvers who open the
+  // PR through Purchase Orders › View alone aren't governed by them, and see
+  // prices per the Purchase Orders tab's switch (as the backend does).
+  const viaPrTab = can('p2p', 'purchase_requisitions', 'view')
+  const prFeature = (feature: string, action: 'view' | 'create' | 'edit' | 'delete') =>
+    !viaPrTab || canFeature('p2p', 'purchase_requisitions', feature, action)
+  const seePrices = viaPrTab ? canFeature('p2p', 'purchase_requisitions', 'prices', 'view') : canFeature('p2p', 'purchase_orders', 'prices', 'view')
+  const seePoBlock = prFeature('purchase_order', 'view')
+  const seeAttachments = prFeature('attachments', 'view')
+  const seeStockCheck = prFeature('fulfilment', 'view')
   // Issuing from store stock is the Store Manager's job (admins too); the
   // Purchase team sees the stock result and decides what to procure.
-  const canIssueStock = user?.role === 'admin' || (pr?.approvals || []).some((a) => a.role === 'store_manager' && a.approver_id === user?.id)
+  const canIssueStock = (user?.role === 'admin' || (pr?.approvals || []).some((a) => a.role === 'store_manager' && a.approver_id === user?.id))
+    && prFeature('fulfilment', 'create')
   const [issuePrompt, setIssuePrompt] = useState<{ itemId: number; locationId: number; qty: number } | null>(null)
+  // Older PO lines (raised before lines were picked from the Item Master)
+  // are linked once to their item here, before goods can be received.
+  const [linkingLineId, setLinkingLineId] = useState<number | null>(null)
+  const [linkChoice, setLinkChoice] = useState('')
+  const [linkItems, setLinkItems] = useState<StoreItem[]>([])
+  const startLink = (lineId: number) => {
+    setLinkingLineId(lineId)
+    setLinkChoice('')
+    setSheetError('')
+    if (!linkItems.length) {
+      storeApi.listItems({ status: 'active' }).then(setLinkItems)
+        .catch((err) => setError(extractErrorMessages(err, 'Could not load the Item Master list.')))
+    }
+  }
+
+  // Edit-panel fields mirror the saved PR; Discard puts them back.
+  const resetEditFields = (data: P2PRequestDetail) => {
+    setEditProjectLabel(data.project_label || '')
+    setEditRequiredDate(data.required_date || '')
+    setEditRequirementType(data.requirement_type || '')
+    setEditPriority(data.priority || 'medium')
+    setEditRemarks(data.remarks || '')
+  }
 
   const load = async () => {
     setLoading(true)
     setError('')
     try {
-      const data = await p2pApi.get(prId)
+      const data: P2PRequestDetail = await p2pApi.get(prId)
       // Stock may have moved since the last look (e.g. a line was just
       // issued) — drop cached checks so remaining pending lines re-check.
       stockCheckFetched.current = new Set()
       setStockCheckResults({})
       setStockCheckErrors({})
       setPr(data)
-      setEditProjectLabel(data.project_label || '')
-      setEditRequiredDate(data.required_date || '')
-      setEditRequirementType(data.requirement_type || '')
-      setEditPriority(data.priority || 'medium')
-      setEditRemarks(data.remarks || '')
+      resetEditFields(data)
 
       const [rfqList, poList] = await Promise.all([
         rfqApi.list({ p2p_request_id: data.id }).catch(() => []),
         purchaseOrdersApi.list({ p2p_request_id: data.id }).catch(() => []),
       ])
       setRfq(rfqList[0] || null)
-      setPo(poList[0] || null)
+      // Approvers without the Purchase app get a 403 on the PO list — fall
+      // back to the PO the PR itself carries so they see what they sign.
+      setPo(poList[0] || data.purchase_order || null)
     } catch (err) {
       setError(extractErrorMessages(err, 'Purchase requisition not found, or you do not have access to it.').join(' '))
     } finally {
@@ -161,34 +237,70 @@ export default function MyP2PRequestDetailPage() {
       await fn()
       setActivePanel('')
       await load()
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Action failed.'))
     } finally {
       setBusy(false)
     }
   }
 
-  const approve = () => setPromptAction('approve')
-  const reject = () => setPromptAction('reject')
+  // Every action that needs a comment / reason opens one popup; a failure
+  // stays inside it (real reason shown) so the typed text isn't lost.
+  const openPrompt = (kind: PromptKind) => { setPromptText(''); setSheetError(''); setPromptAction(kind) }
+  const approve = () => openPrompt('approve')
+  const reject = () => openPrompt('reject')
+  const closePrompt = () => { if (!busy) { setPromptAction(''); setIssuePrompt(null) } }
+
+  const runInSheet = async (fn: () => Promise<unknown>, fallback: string, onDone: () => void) => {
+    setBusy(true)
+    setSheetError('')
+    try {
+      await fn()
+      onDone()
+      await load()
+    } catch (err) {
+      setSheetError(extractErrorMessages(err, fallback).join(' '))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const promptActionDo = (value: string) => {
     const action = promptAction
-    setPromptAction('')
-    if (action === 'cancel') runAction(() => p2pApi.cancel(prId, value || undefined))
-    if (action === 'reject') runAction(() => p2pApi.reject(prId, value || undefined))
-    if (action === 'approve') runAction(() => p2pApi.approve(prId, value || undefined))
-    if (action === 'approve-po') runAction(() => p2pApi.approvePO(prId, value || undefined))
+    const done = () => { setPromptAction(''); setIssuePrompt(null) }
+    if (action === 'cancel') runInSheet(() => p2pApi.cancel(prId, value || undefined), 'Could not cancel the requisition.', done)
+    if (action === 'reject') runInSheet(() => p2pApi.reject(prId, value || undefined), 'Could not reject.', done)
+    if (action === 'approve') runInSheet(() => p2pApi.approve(prId, value || undefined), 'Could not approve the requisition.', done)
+    if (action === 'approve-po') runInSheet(() => p2pApi.approvePO(prId, value || undefined), 'Could not approve the PO.', done)
+    if (action === 'short-close') runInSheet(() => p2pApi.close(prId, value), 'Could not short-close the requisition.', done)
+    if (action === 'issue' && issuePrompt) {
+      const p = issuePrompt
+      runInSheet(() => p2pApi.issueItemFromStock(prId, p.itemId, { location_id: p.locationId, quantity: p.qty > 0 ? p.qty : undefined, comment: value }), 'Could not issue from stock.', done)
+    }
   }
 
-  const saveEdit = () => runAction(() =>
+  const resubmit = () => runAction(() => p2pApi.resubmit(prId))
+  const discardDraft = async () => {
+    setConfirmDiscard(false)
+    setBusy(true)
+    setError('')
+    try {
+      await p2pApi.discardDraft(prId)
+      router.push('/dashboard/p2p')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not discard the draft.'))
+      setBusy(false)
+    }
+  }
+
+  const saveEdit = () => runInSheet(() =>
     p2pApi.update(prId, {
       project_label: editProjectLabel || undefined,
       required_date: editRequiredDate || undefined,
       requirement_type: editRequirementType || undefined,
       priority: editPriority,
       remarks: editRemarks || undefined,
-    })
-  )
+    }), 'Could not save the changes.', () => setActivePanel(''))
 
   // The stock check runs automatically for every still-undecided line the
   // buyer can act on — availability is visible immediately, with no
@@ -196,7 +308,7 @@ export default function MyP2PRequestDetailPage() {
   useEffect(() => {
     if (!pr || !user) return
     const canManage = (!!user.apps?.includes('purchase') || user.role === 'admin' || !!user.is_store_manager)
-      && pr.status !== 'submitted' && pr.status !== 'rejected' && pr.status !== 'cancelled'
+      && seeStockCheck && pr.status !== 'submitted' && pr.status !== 'rejected' && pr.status !== 'cancelled'
     if (!canManage) return
     for (const it of pr.items) {
       if (it.fulfillment_status !== 'pending' || stockCheckFetched.current.has(it.id)) continue
@@ -207,17 +319,13 @@ export default function MyP2PRequestDetailPage() {
           setStockCheckResults((prev) => ({ ...prev, [it.id]: result }))
           setIssueQtyByItem((prev) => ({ ...prev, [it.id]: String(result.requested_qty) }))
         })
-        .catch((err: any) => {
+        .catch((err) => {
           setStockCheckErrors((prev) => ({ ...prev, [it.id]: extractErrorMessages(err, 'Stock check failed.').join(' ') }))
         })
         .finally(() => setStockCheckLoading((prev) => ({ ...prev, [it.id]: false })))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pr, user])
-
-  const issueFromStock = (itemId: number, locationId: number, qty: number, comment: string) => runAction(async () => {
-    await p2pApi.issueItemFromStock(prId, itemId, { location_id: locationId, quantity: qty > 0 ? qty : undefined, comment })
-  })
 
   const sendToProcurement = (itemId: number) => runAction(async () => {
     await p2pApi.sendItemToProcurement(prId, itemId)
@@ -227,6 +335,7 @@ export default function MyP2PRequestDetailPage() {
 
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p" listLabel="Back to purchase requisitions" /></div>)
   if (loading) return <p style={{ fontSize: 13, color: TEXT.secondary }}>Loading…</p>
   if (error && !pr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
   if (!pr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>Not found.</p>
@@ -248,7 +357,7 @@ export default function MyP2PRequestDetailPage() {
   const poApprovalRoles = [
     { role: 'purchase_head', label: 'Purchase Head', name: pr.purchase_head_approved_by_name, approvedAt: pr.purchase_head_approved_at, comment: pr.purchase_head_comment },
     { role: 'director', label: 'Director', name: pr.director_approved_by_name, approvedAt: pr.director_approved_at, comment: pr.director_comment },
-    { role: 'md', label: 'MD', name: pr.md_approved_by_name, approvedAt: pr.md_approved_at, comment: pr.md_comment },
+    { role: 'partner', label: 'Partner', name: pr.partner_approved_by_name, approvedAt: pr.partner_approved_at, comment: pr.partner_comment },
   ]
   const isMatrixPr = !!pr.project_type
   // The PO Approval panel only appears once the PR has reached the RFQ
@@ -268,7 +377,7 @@ export default function MyP2PRequestDetailPage() {
   // Rejections by an admin or the purchase team at large belong to no role
   // row above, and a cancellation records no role at all — both get their own
   // cell at the end of the Approval grid instead, in that same shape.
-  const roleRows = [...approvalRoles.map((r) => r.role), 'purchase_head', 'director', 'md']
+  const roleRows = [...approvalRoles.map((r) => r.role), 'purchase_head', 'director', 'partner']
   const terminalNote = pr.status === 'cancelled'
     ? { label: 'Cancelled', bg: 'rgba(148,163,184,0.15)', color: '#64748b', reason: pr.cancelled_reason, name: undefined }
     : pr.status === 'rejected' && !roleRows.includes(rejectedByRole || '')
@@ -277,23 +386,83 @@ export default function MyP2PRequestDetailPage() {
 
   const hasAssignedHeads = approvalRoles.some((r) => r.id != null)
   const myPendingRole = approvalRoles.find((r) => r.id != null && r.id === user?.id && !r.approvedAt)
-  const canApproveOrReject = pr.status === 'submitted' && (hasAssignedHeads ? (!!myPendingRole || isAdmin) : isPurchaseTeam)
-  const canRejectAccess = pr.status === 'submitted' && (hasAssignedHeads ? (approvalRoles.some((r) => r.id != null && r.id === user?.id) || isAdmin) : isPurchaseTeam)
-  const canApproveReject = fromApproval && canApproveOrReject
-  const canRejectStill = fromApproval && canRejectAccess
+  // No named approvers (legacy PR): a purchase-team decision, so the matrix
+  // Approve / Reject grant applies; named approvers need only View.
+  const canApproveOrReject = pr.status === 'submitted' && (hasAssignedHeads ? (!!myPendingRole || isAdmin) : isPurchaseTeam && can('p2p', 'purchase_requisitions', 'approve'))
+  const canRejectAccess = pr.status === 'submitted' && (hasAssignedHeads ? (approvalRoles.some((r) => r.id != null && r.id === user?.id) || isAdmin) : isPurchaseTeam && can('p2p', 'purchase_requisitions', 'reject'))
+  // Approvals through the central approval engine (Organization › Approval
+  // Workflows) are decided in the Approval panels below; the buttons in the
+  // header stay only for requisitions / POs still on the old approval path.
+  const engine = pr.engine_approval || null
+  const prViaEngine = !!engine?.pr_request_id
+  const poViaEngine = !!engine?.po_id
+  const canApproveReject = fromApproval && canApproveOrReject && !prViaEngine
+  const canRejectStill = fromApproval && canRejectAccess && !prViaEngine
   // Which of this PR's PO-approval roles the viewer holds (matrix or legacy).
   const myPoRoles = userPoRoles(user, pr).filter((r) => (pr.pending_po_approval_roles || []).includes(r))
-  const canApprovePo = fromPoApproval && pr.status === 'po_raised' && myPoRoles.length > 0
+  const canApprovePo = fromPoApproval && pr.status === 'po_raised' && myPoRoles.length > 0 && !poViaEngine
   // Say why Approve PO is missing instead of silently hiding it.
-  const poApproveBlockedReason = !fromPoApproval || pr.status !== 'po_raised' || canApprovePo ? null
+  const poApproveBlockedReason = poViaEngine || !fromPoApproval || pr.status !== 'po_raised' || canApprovePo ? null
     : userPoRoles(user, pr).length === 0 ? 'Only the PO approvers picked on this requisition, or a Director, can approve this PO.'
     : 'You have already acted on this PO, or it is no longer pending your approval.'
-  const canRejectPo = fromPoApproval && pr.status === 'po_raised' && (userPoRoles(user, pr).length > 0 || isAdmin)
+  const canRejectPo = fromPoApproval && pr.status === 'po_raised' && (userPoRoles(user, pr).length > 0 || isAdmin) && !poViaEngine
   // Once a PR is approved, the buyer can check store stock per item and
   // decide item-by-item whether to issue it from stock or send it to
   // procurement — not available once the request has been rejected/cancelled
   // (nothing left to decide) or before it's even approved (submitted).
-  const canManageStock = (isPurchaseTeam || canIssueStock) && pr.status !== 'submitted' && pr.status !== 'rejected' && pr.status !== 'cancelled'
+  const canManageStock = seeStockCheck && ((isPurchaseTeam && canEditPr) || canIssueStock) && !['draft', 'submitted', 'returned', 'rejected', 'cancelled', 'closed'].includes(pr.status)
+  // An approved PO already sits with the vendor: only Purchase can call it
+  // off (with a reason), and the PO is cancelled with the requisition.
+  const cancelAfterPoApproval = pr.status === 'po_approved'
+  const canCancel = can('p2p', 'purchase_requisitions', 'cancel') && (cancelAfterPoApproval
+    ? isPurchaseTeam
+    : (isPurchaseTeam || pr.requested_by_id === user?.id) && CANCELLABLE_STATUSES.includes(pr.status))
+  // Partially received = short-close: the vendor won't supply the balance.
+  const isShortClose = pr.status === 'partially_received'
+  // Sent back by an approver (or withdrawn): the requester resubmits it.
+  const canResubmit = pr.status === 'returned' && can('p2p', 'purchase_requisitions', 'submit')
+    && (isPurchaseTeam || pr.requested_by_id === user?.id)
+  // A draft is private to its requester: they submit it, edit it or throw it away.
+  const isDraft = pr.status === 'draft'
+  const isMyDraft = isDraft && pr.requested_by_id === user?.id
+  // Full edit of header + lines (server decides: until an RFQ is raised).
+  const canEditContent = !!pr.can_edit
+  // Before an RFQ, saying why editing is locked helps; after, the status says it.
+  const editLockNote = !pr.can_edit && pr.edit_block_reason && ['submitted', 'approved', 'returned', 'draft'].includes(pr.status)
+    ? pr.edit_block_reason : null
+  const canClose = isPurchaseTeam && canEditPr && prFeature('close', 'edit') && (pr.status === 'received' || isShortClose)
+  // Purchase's quick header edit — same lock as the full edit (no changes once an RFQ is raised).
+  const canEdit = isPurchaseTeam && canEditPr && !isDraft && !!pr.can_edit
+  // An approver who came from an approval queue usually lacks the p2p app,
+  // so Back must return to that queue, not the p2p-gated main list.
+  const backHref = fromApproval ? '/dashboard/p2p/approval' : fromPoApproval ? '/dashboard/p2p/po-approval' : '/dashboard/p2p'
+  const poLines = po?.items || []
+  const canLinkPoLines = !!po && isPurchaseTeam && can('p2p', 'purchase_orders', 'edit') && canFeature('p2p', 'purchase_orders', 'link_item', 'edit') && !['fulfilled', 'cancelled'].includes(po.status)
+  const saveLink = (lineId: number) => {
+    if (!po) return
+    if (!linkChoice) { setSheetError('Pick the Item Master item this PO line is.'); return }
+    runInSheet(() => purchaseOrdersApi.linkItem(po.id, lineId, Number(linkChoice)), 'Could not link the line to the Item Master.', () => setLinkingLineId(null))
+  }
+  const poLinesTotal = po?.total_value ?? (poLines.length ? poLines.reduce((sum, l) => sum + (l.line_total || 0), 0) : pr.po_value ?? null)
+
+  const promptMeta: Record<PromptKind, { icon: SheetIconName; color: string; title: string; label: string; placeholder: string; hint?: string; submit: string; busy: string; required: boolean }> = {
+    approve: { icon: 'check', color: '#16a34a', title: 'Approve this Purchase Requisition?', label: 'Comment', placeholder: 'e.g. Needed for the Q3 build — quantities checked', hint: 'Your comment is recorded on the approval trail.', submit: 'Approve', busy: 'Approving…', required: true },
+    'approve-po': { icon: 'check', color: '#16a34a', title: 'Approve this PO?', label: 'Comment', placeholder: 'e.g. Rates checked against the last PO — OK', hint: 'Your comment is recorded on the approval trail.', submit: 'Approve PO', busy: 'Approving…', required: true },
+    reject: { icon: 'x', color: '#dc2626', title: 'Reject this Purchase Requisition?', label: 'Reason for rejecting', placeholder: 'Why it is rejected — the requester sees this', submit: 'Reject', busy: 'Rejecting…', required: false },
+    cancel: { icon: 'x', color: '#dc2626', title: 'Cancel this Purchase Requisition?', label: 'Reason for cancelling', placeholder: 'Why it is no longer needed',
+      hint: cancelAfterPoApproval ? 'The PO is already approved and with the vendor. Cancelling also cancels the PO — tell the vendor. The reason is recorded on the PO and the requisition history.' : undefined,
+      submit: 'Cancel Requisition', busy: 'Cancelling…', required: cancelAfterPoApproval },
+    'short-close': { icon: 'flag', color: '#d97706', title: 'Short-close this Requisition?', label: 'Reason', placeholder: "e.g. vendor can't supply the balance",
+      hint: "Only part of the order has been received. Short-closing writes off the balance: no more goods can be received against this PO, and the requisition can't be reopened.", submit: 'Short-close', busy: 'Closing…', required: true },
+    issue: { icon: 'box', color: SHEET.BLUE, title: 'Issue from Store Stock?', label: 'Comment', placeholder: 'e.g. handed to whom / where',
+      hint: 'Stock is deducted from the selected store. Your comment is recorded on the material issue and the requisition history.', submit: 'Issue', busy: 'Issuing…', required: true },
+  }
+  const m = promptAction ? promptMeta[promptAction] : null
+  const submitPrompt = () => {
+    if (!m) return
+    if (m.required && !promptText.trim()) { setSheetError(`${m.label} is required.`); return }
+    promptActionDo(promptText.trim())
+  }
 
   return (
     <div>
@@ -303,24 +472,47 @@ export default function MyP2PRequestDetailPage() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{pr.p2p_number}</h1>
-            <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${statusColor}1a`, color: statusColor }}>
+            <span data-tour="pr-detail-status" style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${statusColor}1a`, color: statusColor }}>
               {status.label}
             </span>
           </div>
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{pr.category_label || pr.category_code} · {pr.project_label || 'No project specified'}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button data-tour="pr-detail-back" onClick={() => router.push('/dashboard/p2p')} type="button" style={secondaryBtnStyle}>
+          <button data-tour="pr-detail-back" onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>
             ← Back
           </button>
           {canApproveReject && (
             <button data-tour="pr-detail-approve" disabled={busy} onClick={approve} style={primaryBtn}>Approve</button>
           )}
           {canApprovePo && (
-            <button data-tour="pr-detail-approve-po" disabled={busy} onClick={() => setPromptAction('approve-po')} style={primaryBtn}>Approve PO</button>
+            <button data-tour="pr-detail-approve-po" disabled={busy} onClick={() => openPrompt('approve-po')} style={primaryBtn}>Approve PO</button>
           )}
           {(canRejectStill || canRejectPo) && (
             <button data-tour="pr-detail-reject" disabled={busy} onClick={reject} style={dangerBtn}>Reject</button>
+          )}
+          {canResubmit && (
+            <button data-tour="pr-detail-resubmit" type="button" disabled={busy} onClick={resubmit} style={primaryBtn}>Resubmit for Approval</button>
+          )}
+          {isMyDraft && (
+            <button data-tour="pr-detail-submit-draft" type="button" disabled={busy} onClick={resubmit} style={primaryBtn}>Submit for Approval</button>
+          )}
+          {canEditContent && (
+            <button data-tour="pr-detail-edit-content" type="button" disabled={busy} onClick={() => router.push(recordHref('/dashboard/p2p/new', pr, 'id', undefined, 'edit'))} style={secondaryBtnStyle}>
+              {isDraft ? 'Edit Draft' : 'Edit Requisition'}
+            </button>
+          )}
+          {isMyDraft && (
+            <button data-tour="pr-detail-discard-draft" type="button" disabled={busy} onClick={() => setConfirmDiscard(true)} style={dangerBtn}>Discard Draft</button>
+          )}
+          {canEdit && activePanel !== 'edit' && (
+            <button data-tour="pr-detail-edit" type="button" disabled={busy} onClick={() => { if (pr) resetEditFields(pr); setSheetError(''); setActivePanel('edit') }} style={secondaryBtnStyle}>Quick Edit</button>
+          )}
+          {canClose && (
+            <button data-tour="pr-detail-close" type="button" disabled={busy} onClick={() => (isShortClose ? openPrompt('short-close') : setConfirmClose(true))} style={primaryBtn}>{isShortClose ? 'Short-close Requisition' : 'Close Requisition'}</button>
+          )}
+          {canCancel && (
+            <button data-tour="pr-detail-cancel" type="button" disabled={busy} onClick={() => openPrompt('cancel')} style={dangerBtn}>Cancel Requisition</button>
           )}
         </div>
       </div>
@@ -333,37 +525,52 @@ export default function MyP2PRequestDetailPage() {
 
       <MessageDialog open={!!error} variant="error" title="Cannot Complete Action" message={error} onClose={() => setError('')} />
 
-      {activePanel === 'edit' && (
-        <div style={sectionStyle}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Edit Details</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
-            <div>
-              <label style={labelStyle}>Project</label>
-              <input style={inputStyle} value={editProjectLabel} onChange={(e) => setEditProjectLabel(e.target.value)} />
-            </div>
-            <div>
-              <label style={labelStyle}>Required Date</label>
-              <DateField value={editRequiredDate} onChange={setEditRequiredDate} />
-            </div>
-            <div>
-              <label style={labelStyle}>Requirement Type</label>
-              <input style={inputStyle} value={editRequirementType} onChange={(e) => setEditRequirementType(e.target.value)} />
-            </div>
-            <div>
-              <label style={labelStyle}>Priority</label>
-              <select style={inputStyle} value={editPriority} onChange={(e) => setEditPriority(e.target.value)}>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={labelStyle}>Remarks</label>
-              <textarea style={{ ...inputStyle, minHeight: 60 }} value={editRemarks} onChange={(e) => setEditRemarks(e.target.value)} />
-            </div>
-          </div>
-          <button disabled={busy} onClick={saveEdit} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>Save Changes</button>
+      {isDraft && (
+        <div data-tour="pr-detail-draft-note" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(100,116,139,0.08)', border: '1px solid rgba(100,116,139,0.25)', color: TEXT.secondary, fontSize: 13 }}>
+          This is a draft — only you can see it, and nobody has been asked to approve it. Click <b>Submit for Approval</b> when it&apos;s ready.
         </div>
+      )}
+      {editLockNote && (
+        <div data-tour="pr-detail-edit-lock" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: '#92400e', fontSize: 13 }}>
+          Editing is locked: {editLockNote}
+        </div>
+      )}
+
+      {activePanel === 'edit' && (
+        <FormSheet width={580} icon="edit" title={`Quick Edit — ${pr.p2p_number}`} subtitle="Header details only. Lines are changed with Edit Requisition."
+          onClose={() => { if (!busy) setActivePanel('') }} busy={busy}
+          footer={<>
+            <button type="button" disabled={busy} onClick={() => { resetEditFields(pr); setActivePanel('') }} style={sheetBtn('secondary', SHEET.INK, busy)}>Discard</button>
+            <button type="button" disabled={busy} onClick={saveEdit} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Changes'}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {sheetError && <div style={sheetErr}>{sheetError}</div>}
+            <SheetSection icon="list" title="Request Details">
+              <label style={sheetLabel}>Project</label>
+              <input style={sheetInput} value={editProjectLabel} onChange={(e) => setEditProjectLabel(e.target.value)} autoFocus />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
+                <div style={{ flex: '1 1 200px' }}>
+                  <label style={sheetLabel}>Requirement Type</label>
+                  <input style={sheetInput} value={editRequirementType} onChange={(e) => setEditRequirementType(e.target.value)} />
+                </div>
+                <div style={{ flex: '0 1 130px' }}>
+                  <label style={sheetLabel}>Priority</label>
+                  <select style={sheetInput} value={editPriority} onChange={(e) => setEditPriority(e.target.value)}>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                </div>
+              </div>
+            </SheetSection>
+            <SheetSection icon="calendar" title="Schedule & Remarks">
+              <label style={sheetLabel}>Required Date</label>
+              <DateField value={editRequiredDate} onChange={setEditRequiredDate} />
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks</label>
+              <textarea style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} value={editRemarks} onChange={(e) => setEditRemarks(e.target.value)} />
+            </SheetSection>
+          </div>
+        </FormSheet>
       )}
 
       <div data-tour="pr-detail-request-info" style={sectionStyle}>
@@ -380,13 +587,65 @@ export default function MyP2PRequestDetailPage() {
         {pr.remarks && <div style={{ marginTop: 10 }}><InfoRow label="Remarks" value={pr.remarks} /></div>}
       </div>
 
-      {po && (
+      {po && seePoBlock && (
         <div data-tour="pr-detail-po-info" style={sectionStyle}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Order</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 14 }}>
             <InfoRow label="PO Number" value={po.po_number} />
             <InfoRow label="Vendor" value={po.vendor_name || '—'} />
+            <InfoRow label="PO Date" value={formatDate(po.po_date)} />
+            <InfoRow label="Expected Delivery" value={formatDate(po.expected_delivery)} />
+            {seePrices && <InfoRow label="PO Value (incl. tax)" value={money(poLinesTotal)} />}
           </div>
+          {poLines.length > 0 && (
+            <div style={{ overflow: 'auto', marginBottom: 14 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+                <thead>
+                  <tr>
+                    {(seePrices ? ['SL', 'Item', 'Qty', 'Unit Price', 'Tax %', 'Line Total'] : ['SL', 'Item', 'Qty', 'Tax %']).map((h) => (
+                      <th key={h} style={{ textAlign: h === 'SL' || h === 'Item' ? 'left' : 'right', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {poLines.map((l, idx) => (
+                    <tr key={l.id} style={{ borderTop: `1px solid ${BORDER.light}` }}>
+                      <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{idx + 1}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 13 }}>
+                        {l.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>{l.item_code} — </span>}
+                        {l.item_name}{l.make ? <span style={{ color: TEXT.muted }}> · {l.make}</span> : null}
+                        {l.category && l.category !== 'stock' && (
+                          <span title={l.category === 'service' ? 'Service — confirmed on a service entry, never store stock' : 'Asset — received on the GRN, capitalised by Finance, never store stock'}
+                            style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 9999, background: `${l.category === 'service' ? '#7c3aed' : '#0891b2'}1a`, color: l.category === 'service' ? '#7c3aed' : '#0891b2' }}>
+                            {l.category === 'service' ? 'Service' : 'Asset'}
+                          </span>
+                        )}
+                        {!l.store_item_id && (
+                          <div data-tour="pr-detail-po-link-item" style={{ marginTop: 6 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 9999, background: '#f59e0b1a', color: '#b45309' }}>Not linked to Item Master</span>
+                            {canLinkPoLines && (
+                              <button type="button" onClick={() => startLink(l.id)} style={{ marginLeft: 8, border: 'none', background: 'none', padding: 0, fontSize: 12, fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}>Link to Item Master</button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right' }}>{l.quantity} {l.unit || ''}</td>
+                      {seePrices && <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right' }}>{money(l.unit_price)}</td>}
+                      <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right' }}>{l.tax_rate != null ? `${l.tax_rate}%` : '—'}</td>
+                      {seePrices && <td style={{ padding: '8px 10px', fontSize: 13, textAlign: 'right', fontWeight: 600 }}>{money(l.line_total)}</td>}
+                    </tr>
+                  ))}
+                  {seePrices && (
+                  <tr style={{ borderTop: `1px solid ${BORDER.normal}` }}>
+                    <td colSpan={5} style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: TEXT.heading }}>Total</td>
+                    <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700, textAlign: 'right', color: TEXT.heading }}>{money(poLinesTotal)}</td>
+                  </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {canFeature('p2p', 'purchase_orders', 'po_document', 'view') && (
           <div>
             <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>PO Document</p>
             {po.document_filename && rfq ? (
@@ -401,10 +660,19 @@ export default function MyP2PRequestDetailPage() {
               <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>No document attached.</p>
             )}
           </div>
+          )}
         </div>
       )}
 
-      {rfq && rfq.attachments.length > 0 && (
+      {po && po.status !== 'cancelled' && canFeature('p2p', 'purchase_orders', 'delivery_costs', 'view') && poLines.some((l) => (l.category || 'stock') === 'stock') && (
+        <PoDeliveryCostsPanel poId={po.id} onChanged={load} />
+      )}
+
+      {po && canFeature('p2p', 'purchase_orders', 'service_entries', 'view') && poLines.some((l) => l.category === 'service') && (
+        <ServiceEntriesPanel poId={po.id} poOpen={['issued', 'acknowledged', 'partially_fulfilled'].includes(po.status)} onChanged={load} />
+      )}
+
+      {rfq && rfq.attachments.length > 0 && canFeature('p2p', 'rfq', 'vendor_quotes', 'view') && (
         <div data-tour="pr-detail-vendor-quotations" style={sectionStyle}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Vendor Quotations</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
@@ -425,44 +693,66 @@ export default function MyP2PRequestDetailPage() {
         </div>
       )}
 
-      {showPoApproval && (
+      {poViaEngine && engine?.po_id ? (
+        <div data-tour="pr-detail-po-approval">
+          <ApprovalPanel entityType="p2p_purchase_order" entityId={engine.po_id} onChanged={load} title="PO Approval" />
+        </div>
+      ) : showPoApproval && (pr.approval_scheme === 'engine' && !poRaised ? (
+        <div data-tour="pr-detail-po-approval" style={sectionStyle}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>PO Approval</h2>
+          <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— PO not sent for approval yet. It goes through the &ldquo;Purchase order&rdquo; workflow (Organization › Approval Workflows).</p>
+        </div>
+      ) : (
       <div data-tour="pr-detail-po-approval" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>PO Approval</h2>
         {isMatrixPr ? (
           !poRaised ? (
-            <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— PO not raised yet. It will go to {(pr.po_approval_role_labels || []).join(', ')}; any one approval approves it.</p>
-          ) : pr.po_approved_at ? (
-            <div>
-              <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: TEXT.body, flexWrap: 'wrap' }}>
-                {pr.po_approved_by_name || '—'}
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(34,197,94,0.12)', color: '#16a34a' }}>
-                  Approved as {pr.po_approved_role_label || p2pRoleLabel(pr.po_approved_role)}
-                </span>
-              </p>
-              {pr.po_approval_comment && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{pr.po_approval_comment}&quot;</p>}
-            </div>
-          ) : pr.status === 'rejected' ? (
-            <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: TEXT.body, flexWrap: 'wrap' }}>
-              {pr.rejected_by_name || '—'}
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#dc2626' }}>
-                Rejected{pr.rejected_by_role ? ` as ${p2pRoleLabel(pr.rejected_by_role)}` : ''}
-              </span>
-            </p>
+            <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— PO not raised yet. It will go to {(pr.po_approval_role_labels || []).join(', ')}; all of them must approve (any one Director).</p>
           ) : (
             <div>
-              <p style={{ fontSize: 13.5, color: TEXT.body, margin: '0 0 12px' }}>Awaiting approval — any one of these approves the PO.</p>
+              <p style={{ fontSize: 13.5, color: TEXT.body, margin: '0 0 12px' }}>All of these must approve the PO (any one Director).</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-                {(pr.po_approval_panel || []).map((a) => (
-                  <div key={a.role}>
-                    <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{a.role_label}</p>
-                    {a.people.length ? a.people.map(({ id, name: n }) => (
-                      <p key={id} style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
-                        {n}
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(148,163,184,0.15)', color: '#64748b' }}>Pending</span>
-                      </p>
-                    )) : <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— nobody holds this role</p>}
+                {(pr.po_approval_panel || []).map((a) => {
+                  const rejectedHere = pr.status === 'rejected' && rejectedByRole === a.role
+                  const pill = rejectedHere
+                    ? { text: 'Rejected', bg: 'rgba(220,38,38,0.1)', color: '#dc2626' }
+                    : a.approved_at
+                    ? { text: 'Approved', bg: 'rgba(34,197,94,0.12)', color: '#16a34a' }
+                    : { text: 'Pending', bg: 'rgba(148,163,184,0.15)', color: '#64748b' }
+                  const actor = rejectedHere ? pr.rejected_by_name : a.approved_by_name
+                  const note = rejectedHere ? pr.rejected_reason : a.comment
+                  return (
+                    <div key={a.role}>
+                      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>{a.role_label}</p>
+                      {actor ? (
+                        <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                          {actor}
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: pill.bg, color: pill.color }}>{pill.text}</span>
+                        </p>
+                      ) : a.people.length ? (
+                        <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body, flexWrap: 'wrap' }}>
+                          {a.people.map((p) => p.name || `User #${p.id}`).join(a.role === 'director' ? ' / ' : ', ')}
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: pill.bg, color: pill.color }}>{pill.text}</span>
+                        </p>
+                      ) : (
+                        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>— nobody holds this role</p>
+                      )}
+                      {note && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{note}&quot;</p>}
+                    </div>
+                  )
+                })}
+                {pr.status === 'rejected' && !(pr.po_approval_panel || []).some((a) => a.role === rejectedByRole) && (
+                  <div>
+                    <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 3px' }}>Rejected</p>
+                    <p style={{ fontSize: 13.5, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: TEXT.body }}>
+                      {pr.rejected_by_name || '—'}
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#dc2626' }}>
+                        Rejected{pr.rejected_by_role ? ` as ${p2pRoleLabel(pr.rejected_by_role)}` : ''}
+                      </span>
+                    </p>
+                    {pr.rejected_reason && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '4px 0 0', fontStyle: 'italic' }}>&quot;{pr.rejected_reason}&quot;</p>}
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )
@@ -494,8 +784,13 @@ export default function MyP2PRequestDetailPage() {
         </div>
         )}
       </div>
-      )}
+      ))}
 
+      {prViaEngine ? (
+        <div data-tour="pr-detail-approval">
+          <ApprovalPanel entityType="p2p_request" entityId={pr.id} onChanged={load} title="Approval" />
+        </div>
+      ) : (
       <div data-tour="pr-detail-approval" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Approval</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
@@ -535,6 +830,7 @@ export default function MyP2PRequestDetailPage() {
           )}
         </div>
       </div>
+      )}
 
       <div data-tour="pr-detail-items" style={{ ...sectionStyle, overflow: 'hidden' }}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Item Details</h2>
@@ -563,12 +859,21 @@ export default function MyP2PRequestDetailPage() {
               <Fragment key={it.id}>
                 <tr style={{ borderTop: `1px solid ${BORDER.light}` }}>
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{idx + 1}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13 }}>{it.item_name}</td>
+                <td style={{ padding: '8px 10px', fontSize: 13 }}>{it.item_code && <span style={{ fontWeight: 700, color: TEXT.heading }}>{it.item_code} — </span>}{it.item_name}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.make || '—'}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.part_code || '—'}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.unit || '—'}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13 }}>{it.quantity}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.project_inhouse || '—'}</td>
+                <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>
+                  {it.project_inhouse || '—'}
+                  {it.order_project_number && (
+                    <div style={{ marginTop: 4 }}>
+                      <OrderProjectChip opNumber={it.order_project_number} elementNo={it.order_project_element_no} label={it.order_project_element_label}
+                        title={it.order_project_display || undefined}
+                        onClick={can('sales', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/sales/order-projects', it, 'order_project_id')) : undefined} />
+                    </div>
+                  )}
+                </td>
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.category || '—'}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary }}>{it.ship_to || '—'}</td>
                 <td style={{ padding: '8px 10px', fontSize: 12.5 }}>
@@ -586,8 +891,8 @@ export default function MyP2PRequestDetailPage() {
                   )}
                 </td>
                 <td style={{ padding: '8px 10px', fontSize: 12.5 }}>
-                  {it.attachments.length === 0 && <span style={{ color: TEXT.muted }}>—</span>}
-                  {it.attachments.map((a) => (
+                  {(it.attachments.length === 0 || !seeAttachments) && <span style={{ color: TEXT.muted }}>—</span>}
+                  {seeAttachments && it.attachments.map((a) => (
                     <a
                       key={a.id}
                       href="#"
@@ -661,6 +966,7 @@ export default function MyP2PRequestDetailPage() {
                                     <div>
                                       <label style={{ ...labelStyle, marginBottom: 4 }}>Issue From</label>
                                       <select
+                                        data-tour="pr-detail-issue-from"
                                         value={selectedLocId ?? ''}
                                         onChange={(e) => setIssueLocByItem((prev) => ({ ...prev, [it.id]: e.target.value }))}
                                         style={{ ...inputStyle, width: 'auto', minWidth: 180, padding: '7px 10px' }}
@@ -673,6 +979,7 @@ export default function MyP2PRequestDetailPage() {
                                     <div>
                                       <label style={{ ...labelStyle, marginBottom: 4 }}>Issue Qty</label>
                                       <input
+                                        data-tour="pr-detail-issue-qty"
                                         type="number"
                                         min={0}
                                         max={maxIssue}
@@ -689,16 +996,18 @@ export default function MyP2PRequestDetailPage() {
                                   )}
                                   {selectedLocId != null && canIssueStock && (
                                     <button
+                                      data-tour="pr-detail-issue-btn"
                                       type="button"
                                       disabled={busy}
-                                      onClick={() => setIssuePrompt({ itemId: it.id, locationId: selectedLocId, qty: issueQty })}
+                                      onClick={() => { setIssuePrompt({ itemId: it.id, locationId: selectedLocId, qty: issueQty }); openPrompt('issue') }}
                                       style={{ ...primaryBtn, padding: '8px 14px', fontSize: 12.5 }}
                                     >
                                       {buyQty > 0 ? `Issue ${issueQty} & Buy ${buyQty}` : 'Issue from Stock'}
                                     </button>
                                   )}
-                                  {!fullyCovered && (isPurchaseTeam || isAdmin) && (
+                                  {!fullyCovered && ((isPurchaseTeam && canEditPr) || isAdmin) && prFeature('fulfilment', 'edit') && (
                                     <button
+                                      data-tour="pr-detail-send-procurement-btn"
                                       type="button"
                                       disabled={busy}
                                       onClick={() => setConfirmProcurementItemId(it.id)}
@@ -726,7 +1035,7 @@ export default function MyP2PRequestDetailPage() {
 
 
 
-      {pr.attachments.length > 0 && (
+      {pr.attachments.length > 0 && seeAttachments && (
         <div data-tour="pr-detail-attachments" style={sectionStyle}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Attachments</h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -744,54 +1053,52 @@ export default function MyP2PRequestDetailPage() {
         </div>
       )}
 
-      <PromptDialog
-        open={promptAction === 'approve'}
-        title="Approve this Purchase Requisition?"
-        message="Your comment is recorded on the approval trail."
-        placeholder="Comment (required)"
-        confirmLabel="Approve"
+      {promptAction && m && (
+      <FormSheet width={580} icon={m.icon} iconColor={m.color} title={m.title} subtitle={`${pr.p2p_number} · ${pr.category_label || pr.category_code}`} onClose={closePrompt} busy={busy}
+        footer={<>
+          <button type="button" onClick={closePrompt} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Close</button>
+          <button type="button" onClick={submitPrompt} disabled={busy} style={sheetBtn('primary', m.color, busy)}><SheetIcon name={m.icon} size={16} />{busy ? m.busy : m.submit}</button>
+        </>}>
+        <div style={{ padding: '20px 24px' }}>
+          {sheetError && <div style={sheetErr}>{sheetError}</div>}
+          <label style={sheetLabel}>{m.label} {m.required ? <Req /> : <Optional />}</label>
+          <textarea style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={promptText} onChange={(e) => setPromptText(e.target.value)} placeholder={m.placeholder} autoFocus />
+          {m.hint && <p style={sheetHint}>{m.hint}</p>}
+        </div>
+      </FormSheet>
+      )}
+      {linkingLineId != null && canLinkPoLines && (
+        <FormSheet width={580} icon="link" title="Link to Item Master" subtitle={poLines.find((x) => x.id === linkingLineId)?.item_name || 'PO line'}
+          onClose={() => { if (!busy) setLinkingLineId(null) }} busy={busy}
+          footer={<>
+            <button type="button" onClick={() => setLinkingLineId(null)} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+            <button type="button" onClick={() => saveLink(linkingLineId)} disabled={busy || !linkChoice} style={sheetBtn('primary', SHEET.BLUE, busy || !linkChoice)}><SheetIcon name="link" size={16} />{busy ? 'Linking…' : 'Link'}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {sheetError && <div style={sheetErr}>{sheetError}</div>}
+            <label style={sheetLabel}>Item Master item <Req /></label>
+            <SearchableSelect value={linkChoice} onChange={setLinkChoice} placeholder="Search item code, name or part no…"
+              options={linkItems.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}${i.part_number ? ` · ${i.part_number}` : ''}` }))} />
+            <p style={sheetHint}>The line then carries the Item Master id — the GRN receives it into that item&apos;s stock.</p>
+          </div>
+        </FormSheet>
+      )}
+      <ConfirmDialog
+        open={confirmDiscard}
+        title="Discard this draft?"
+        message={`Draft ${pr.p2p_number} and everything in it will be deleted. This can't be undone.`}
+        confirmLabel="Discard Draft"
+        onConfirm={discardDraft}
+        onCancel={() => setConfirmDiscard(false)}
+      />
+      <ConfirmDialog
+        open={confirmClose}
+        title="Close this Requisition?"
+        message="Every ordered item has been received. Closing marks the requisition complete — it can't be reopened."
+        confirmLabel="Close Requisition"
         danger={false}
-        requireValue
-        onConfirm={promptActionDo}
-        onCancel={() => setPromptAction('')}
-      />
-      <PromptDialog
-        open={promptAction === 'approve-po'}
-        title="Approve this PO?"
-        message="Your comment is recorded on the approval trail."
-        placeholder="Comment (required)"
-        confirmLabel="Approve PO"
-        danger={false}
-        requireValue
-        onConfirm={promptActionDo}
-        onCancel={() => setPromptAction('')}
-      />
-      <PromptDialog
-        open={promptAction === 'cancel'}
-        title="Cancel this Purchase Requisition?"
-        placeholder="Reason for cancelling (optional)"
-        confirmLabel="Cancel Requisition"
-        onConfirm={promptActionDo}
-        onCancel={() => setPromptAction('')}
-      />
-      <PromptDialog
-        open={promptAction === 'reject'}
-        title="Reject this Purchase Requisition?"
-        placeholder="Reason for rejecting (optional)"
-        confirmLabel="Reject"
-        onConfirm={promptActionDo}
-        onCancel={() => setPromptAction('')}
-      />
-      <PromptDialog
-        open={!!issuePrompt}
-        title="Issue from Store Stock?"
-        message="Stock is deducted from the selected store. Your comment is recorded on the material issue and the requisition history."
-        placeholder="Comment (required) — e.g. handed to whom / where"
-        confirmLabel="Issue"
-        danger={false}
-        requireValue
-        onConfirm={(value) => { const p = issuePrompt; setIssuePrompt(null); if (p) issueFromStock(p.itemId, p.locationId, p.qty, value) }}
-        onCancel={() => setIssuePrompt(null)}
+        onConfirm={() => { setConfirmClose(false); runAction(() => p2pApi.close(prId)) }}
+        onCancel={() => setConfirmClose(false)}
       />
       <ConfirmDialog
         open={confirmProcurementItemId != null}

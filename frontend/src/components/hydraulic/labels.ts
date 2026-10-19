@@ -3,6 +3,7 @@
 // and a detail page. Keys must match the backend's constants in
 // backend/app/modules/hydraulic/models/*. Status label/colour maps stay
 // local to each page, per the app-wide convention.
+import { useCan } from '@/lib/permissions'
 
 export const SYSTEM_TYPE_LABELS: Record<string, string> = { hydraulic: 'Hydraulic', pneumatic: 'Pneumatic' }
 export const MEDIA_TYPE_LABELS: Record<string, string> = { hydraulic: 'Hydraulic', pneumatic: 'Pneumatic', both: 'Both' }
@@ -75,4 +76,12 @@ export function withUnit(value: number | null | undefined, unit: string): string
 /** Flow is L/min for oil and Nl/min (free air) for pneumatic systems. */
 export function flowUnit(systemType?: string | null): string {
   return systemType === 'pneumatic' ? 'Nl/min' : 'L/min'
+}
+
+/** Hydraulic & Pneumatic › BOM › Prices & costs (sensitive; backend
+ * service.can_see_costs). Without BOM › View the costs stay visible, as
+ * before features existed. The backend blanks them (null) otherwise. */
+export function useHydCosts(): boolean {
+  const { can, canFeature } = useCan()
+  return canFeature('hydraulic', 'bom', 'costs', 'view') || !can('hydraulic', 'bom', 'view')
 }

@@ -3,33 +3,31 @@
 import { useEffect, useState } from 'react'
 import { productionApi } from '@/lib/api'
 import { ProductionLookupOption, ProductionWorkstation } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
+import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 export const WORKSTATION_TYPE_LABELS: Record<string, string> = {
   machine: 'Machine', work_center: 'Work Center', assembly_bay: 'Assembly Bay',
   test_bench: 'Test Bench', paint_booth: 'Paint Booth', other: 'Other',
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
+const inputStyle = sheetInput
+const labelStyle = sheetLabel
 
 export default function WorkstationForm({
   initial,
   submitLabel,
   onSubmit,
+  onCancel,
+  cancelTour,
 }: {
   initial?: ProductionWorkstation | null
   submitLabel: string
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
+  onCancel: () => void
+  /** data-tour on the footer Cancel button. */
+  cancelTour?: string
 }) {
   const [code, setCode] = useState(initial?.code || '')
   const [name, setName] = useState(initial?.name || '')
@@ -50,8 +48,7 @@ export default function WorkstationForm({
     productionApi.lookupDepartments().then(setDepartments).catch((err) => setError(extractErrorMessages(err, 'Failed to load departments.')))
   }, [])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async () => {
     setError('')
     if (!code.trim() || !name.trim()) {
       setError('Code and Name are required.')
@@ -88,79 +85,87 @@ export default function WorkstationForm({
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
-
-      <div style={sectionStyle}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-            <label style={labelStyle}>Code *</label>
-            <input style={inputStyle} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="WELD-01" maxLength={30} />
-          </div>
-          <div style={{ flex: '1 1 240px', maxWidth: 340 }}>
-            <label style={labelStyle}>Name *</label>
-            <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Welding Bay 1" maxLength={150} />
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Type</label>
-            <select style={inputStyle} value={workstationType} onChange={(e) => setWorkstationType(e.target.value)}>
-              {Object.entries(WORKSTATION_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div style={{ flex: '0 1 180px', minWidth: 160 }}>
-            <label style={labelStyle}>Status</label>
-            <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="active">Active</option>
-              <option value="under_maintenance">Under Maintenance</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-          <div style={{ flex: '1 1 220px', maxWidth: 300 }}>
-            <label style={labelStyle}>Plant</label>
-            <SearchableSelect value={branchId} onChange={setBranchId} placeholder="Select plant…"
-              options={[{ value: '', label: '— None —' }, ...branches.map((b) => ({ value: String(b.id), label: b.label }))]} />
-          </div>
-          <div style={{ flex: '1 1 220px', maxWidth: 300 }}>
-            <label style={labelStyle}>Department</label>
-            <SearchableSelect value={departmentId} onChange={setDepartmentId} placeholder="Select department…"
-              options={[{ value: '', label: '— None —' }, ...departments.map((d) => ({ value: String(d.id), label: d.label }))]} />
-          </div>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
-            <label style={labelStyle}>Capacity (hrs/day)</label>
-            <input style={inputStyle} type="number" min={0} max={24} step="0.5" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
-            <label style={labelStyle}>Hourly Rate (₹)</label>
-            <input style={inputStyle} type="number" min={0} step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} />
-          </div>
-        </div>
-
-        <div style={{ marginTop: 14 }}>
-          <label style={labelStyle}>Description</label>
-          <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)}
-            placeholder="Machine make/model, capabilities, tooling…" />
-        </div>
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>
-          The hourly rate turns hours booked on this workstation into a work order&apos;s labour/machine cost.
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button type="submit" disabled={saving} style={{
-          padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-          background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
-          boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-        }}>
-          {saving ? 'Saving…' : submitLabel}
+    <FormSheet tour="production-ws-form" icon={initial ? 'edit' : 'tool'} title={initial ? `Edit ${initial.code}` : 'New Workstation'}
+      subtitle={initial ? `${initial.name} — changes apply to routing, scheduling and costs from now on.` : 'A machine or work center that routing operations run on.'}
+      onClose={onCancel} busy={saving}
+      footer={<>
+        <button data-tour={cancelTour} type="button" onClick={onCancel} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+        <button data-tour="production-ws-form-submit-btn" type="button" onClick={handleSubmit} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+          <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
         </button>
-      </div>
-    </form>
+      </>}>
+      <SheetColumns
+        left={<>
+          {error && (
+            <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+              {Array.isArray(error) ? error.join(' ') : error}
+            </div>
+          )}
+          <SheetSection icon="tool" title="Basic Information">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              <div data-tour="production-ws-form-code" style={{ flex: '0 1 150px', minWidth: 130 }}>
+                <label style={labelStyle}>Code <Req /></label>
+                <input style={inputStyle} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="WELD-01" maxLength={30} autoFocus={!initial} />
+              </div>
+              <div data-tour="production-ws-form-name" style={{ flex: '1 1 220px', maxWidth: 340 }}>
+                <label style={labelStyle}>Name <Req /></label>
+                <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Welding Bay 1" maxLength={150} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
+              <div data-tour="production-ws-form-type" style={{ flex: '0 1 180px', minWidth: 150 }}>
+                <label style={labelStyle}>Type</label>
+                <select style={inputStyle} value={workstationType} onChange={(e) => setWorkstationType(e.target.value)}>
+                  {Object.entries(WORKSTATION_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div data-tour="production-ws-form-status" style={{ flex: '0 1 190px', minWidth: 160 }}>
+                <label style={labelStyle}>Status</label>
+                <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
+                  <option value="active">Active</option>
+                  <option value="under_maintenance">Under Maintenance</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+          </SheetSection>
+          <SheetSection icon="building" title="Location">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              <div data-tour="production-ws-form-plant" style={{ flex: '1 1 200px', maxWidth: 300 }}>
+                <label style={labelStyle}>Plant</label>
+                <SearchableSelect value={branchId} onChange={setBranchId} placeholder="Select plant…"
+                  options={[{ value: '', label: '— None —' }, ...branches.map((b) => ({ value: String(b.id), label: b.label }))]} />
+              </div>
+              <div data-tour="production-ws-form-department" style={{ flex: '1 1 200px', maxWidth: 300 }}>
+                <label style={labelStyle}>Department</label>
+                <SearchableSelect value={departmentId} onChange={setDepartmentId} placeholder="Select department…"
+                  options={[{ value: '', label: '— None —' }, ...departments.map((d) => ({ value: String(d.id), label: d.label }))]} />
+              </div>
+            </div>
+          </SheetSection>
+          <SheetSection icon="clock" title="Capacity & Cost">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              <div data-tour="production-ws-form-capacity" style={{ flex: '0 1 160px', minWidth: 140 }}>
+                <label style={labelStyle}>Capacity (hrs/day)</label>
+                <input style={inputStyle} type="number" min={0} max={24} step="0.5" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+              </div>
+              <div data-tour="production-ws-form-rate" style={{ flex: '0 1 160px', minWidth: 140 }}>
+                <label style={labelStyle}>Hourly Rate (₹)</label>
+                <input style={inputStyle} type="number" min={0} step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} />
+              </div>
+            </div>
+            <p style={sheetHint}>The hourly rate turns hours booked on this workstation into a work order&apos;s labour/machine cost.</p>
+          </SheetSection>
+        </>}
+        right={
+          <SheetSection icon="chat" title="Description" extra={<Optional />}>
+            <div data-tour="production-ws-form-description">
+              <textarea style={{ ...inputStyle, minHeight: 140, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)}
+                placeholder="Machine make/model, capabilities, tooling…" />
+            </div>
+          </SheetSection>
+        }
+      />
+    </FormSheet>
   )
 }

@@ -72,6 +72,8 @@ export function extractErrorMessages(err: any, fallback = 'Something went wrong.
 
 // One entry of a FastAPI/Pydantic validation-error array -> "Issue title: Field required".
 function describeFieldError(d: any): string {
+  // Business-rule checks (e.g. "Can't submit SO-…:" + gaps) send plain strings.
+  if (typeof d === 'string') return d
   const field = Array.isArray(d?.loc) ? d.loc[d.loc.length - 1] : d?.loc
   const label = typeof field === 'string' && field !== 'body'
     ? field.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())

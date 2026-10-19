@@ -1,6 +1,8 @@
 from datetime import date, datetime
 from pydantic import BaseModel, Field
 
+from app.modules.p2p.schemas.purchase_order import P2PPurchaseOrderResponse
+
 
 class P2PRequestAttachmentResponse(BaseModel):
     model_config = {"from_attributes": True}
@@ -19,7 +21,13 @@ class P2PRequestItemPayload(BaseModel):
     # project_inhouse must be "Project" or "Inhouse" — enforced with a
     # per-line message in create_p2p_request (kept optional here so the route
     # can name the offending line instead of a bare pydantic 422).
-    item_name: str
+    # store_item_id is the line's identity (picked from the Item Master; the
+    # route 422s a line without one). item_name / part_code / unit / category
+    # are filled in from the master by the server — anything sent is ignored.
+    # id: on edit, the existing line this row updates (keeps its attachments).
+    id: int | None = None
+    store_item_id: int | None = None
+    item_name: str = ""
     make: str | None = None
     part_code: str | None = None
     unit: str | None = None
@@ -27,12 +35,18 @@ class P2PRequestItemPayload(BaseModel):
     project_inhouse: str | None = None
     category: str | None = None
     ship_to: str | None = None
+    # Order Project vehicle / lot this line is bought for. Required on a
+    # 'Project' line when the PR is charged to a sales order / order project
+    # that has one; auto-filled when derivable (p2p/order_project_links.py).
+    order_project_element_id: int | None = None
 
 
 class P2PRequestItemResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    store_item_id: int | None = None
+    item_code: str | None = None
     item_name: str
     make: str | None = None
     part_code: str | None = None
@@ -48,6 +62,13 @@ class P2PRequestItemResponse(BaseModel):
     issued_from_location_id: int | None = None
     issued_qty: float | None = None
     material_issue_id: int | None = None
+    # Order Project element (vehicle / lot) this line is for — OrderProjectChip.
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
+    order_project_number: str | None = None
+    order_project_element_no: str | None = None
+    order_project_element_label: str | None = None
+    order_project_display: str | None = None
     attachments: list[P2PRequestAttachmentResponse] = Field(default_factory=list)
 
     # Denormalized display fields, filled in by the route.
@@ -85,22 +106,31 @@ class P2PRequestIssueFromStockPayload(BaseModel):
 
 class P2PRequestCreate(BaseModel):
     project_label: str | None = None
+    # Account assignment (p2p/account_assignment.py): one category + its FK.
+    account_assignment: str | None = None
+    sales_order_id: int | None = None
+    cost_center_id: int | None = None
+    work_order_id: int | None = None
+    internal_order_id: int | None = None
+    order_project_id: int | None = None
     category_code: str
     required_date: date | None = None
     requirement_type: str | None = None
     priority: str = "medium"
-    # 'existing' | 'new' — picks the manager-role approval sets (see
-    # PR_APPROVAL_ROLE_SETS on the model). `approvers` maps each role key in
-    # that set to the picked user's id; all roles required, none may be the
-    # requester, and each user must hold the role flag (enforced by
-    # service.resolve_pr_approvers, which gives clearer errors than bare
-    # pydantic "field required").
-    project_type: str
-    approvers: dict[str, int] = Field(default_factory=dict)
-    # PO approvers picked per role (PO_PICKED_ROLE_SETS) — Director excluded.
-    po_approvers: dict[str, int] = Field(default_factory=dict)
+    # 'existing' | 'new'. Who approves is the approval engine's business
+    # (Organization › Approval Workflows); project_type is available to its
+    # stage conditions. Approver names sent by older clients are ignored.
+    # Optional only so a draft can be saved without it — submit 400s when blank.
+    project_type: str | None = None
     remarks: str | None = None
     items: list[P2PRequestItemPayload] = Field(default_factory=list)
+    # True = keep as a private draft (no approval, light validation).
+    save_as_draft: bool = False
+
+
+class P2PRequestEdit(P2PRequestCreate):
+    """Full re-write of a requisition's header + lines (edit_p2p_request).
+    Lines are replaced wholesale. save_as_draft=False sends it for approval."""
 
 
 class P2PRequestUpdate(BaseModel):
@@ -185,7 +215,16 @@ class P2PRequestResponse(BaseModel):
     category_code: str
     category_label: str | None = None
     project_label: str | None = None
+    account_assignment: str | None = None
+    sales_order_id: int | None = None
+    cost_center_id: int | None = None
+    work_order_id: int | None = None
+    internal_order_id: int | None = None
+    order_project_id: int | None = None
+    order_project_number: str | None = None
+    account_assignment_label: str | None = None
     project_type: str | None = None
+    approval_scheme: str | None = None
     required_date: date | None = None
     requirement_type: str | None = None
     request_date: date
@@ -210,9 +249,9 @@ class P2PRequestResponse(BaseModel):
     director_approved_at: datetime | None = None
     director_approved_by_name: str | None = None
     director_comment: str | None = None
-    md_approved_at: datetime | None = None
-    md_approved_by_name: str | None = None
-    md_comment: str | None = None
+    partner_approved_at: datetime | None = None
+    partner_approved_by_name: str | None = None
+    partner_comment: str | None = None
     # Manager-matrix PRs (project_type set): the per-role approver slots, and
     # the any-one-approves PO stamp. Legacy PRs leave these empty and use the
     # per-role columns above instead.
@@ -274,3 +313,17 @@ class P2PRequestResponse(BaseModel):
     # Denormalized display fields, filled in by the route.
     requested_by_name: str | None = None
     assigned_buyer_name: str | None = None
+    # The latest non-cancelled PO with its lines — filled on the single-PR
+    # GET so PO approvers (who usually lack the 'purchase' app and so can't
+    # call /p2p/purchase-orders) see exactly what they are signing.
+    purchase_order: P2PPurchaseOrderResponse | None = None
+    # The central approval engine's view of this requisition for the viewer
+    # (app/modules/p2p/approvals.py approval_info): request_id, entity_type /
+    # entity_id (p2p_request or p2p_purchase_order), status, stage, waiting_on,
+    # can_decide, can_stand_in, pr_request_id, po_id. None = no engine request
+    # (an item still on the old approval path, or not loaded for this row).
+    engine_approval: dict | None = None
+    # Whether the viewer may edit the requisition's content now (single-PR
+    # GET only) — and, when not but it's theirs, why (e.g. RFQ started).
+    can_edit: bool = False
+    edit_block_reason: str | None = None

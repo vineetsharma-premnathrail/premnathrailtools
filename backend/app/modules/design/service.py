@@ -12,6 +12,8 @@ from fastapi import HTTPException
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.core import assignee_rules
+from app.modules.design.access import check_signatory_role
 from app.modules.design.models.change_notice import DesignChangeNotice
 from app.modules.design.models.document import (
     DesignDocument, DesignDocumentRevision, DESIGN_DOCUMENT_TYPES, DESIGN_OPEN_REVISION_STATUSES,
@@ -29,15 +31,18 @@ REVISION_STATUS_PHRASE = {
     "draft": "still a draft",
     "in_review": "in review",
     "in_approval": "awaiting approval",
+    "approved": "approved and waiting for the customer's approval",
     "released": "released",
     "superseded": "superseded",
+    "customer_rejected": "rejected by the customer",
 }
 ECN_STATUS_PHRASE = {
     "draft": "still a draft",
     "submitted": "awaiting approval",
     "approved": "approved",
     "rejected": "rejected",
-    "implemented": "implemented",
+    "implemented": "released",
+    "closed": "closed",
     "cancelled": "cancelled",
 }
 
@@ -101,6 +106,21 @@ def is_admin(user: User) -> bool:
     return user.role == "admin"
 
 
+def may_delete(user: User, record, tab: str) -> bool:
+    """The company delete rule (see app.core.permissions.ensure_can_delete)
+    as a yes/no, for the `actions` list the detail pages read: 'Delete' on
+    the Design tab AND the user created the record (admins always may)."""
+    from app.core.permissions import record_owner_id
+    from app.core.permission_registry import can_perform, is_admin_user
+
+    if not can_perform(user, "design", tab, "delete"):
+        return False
+    if is_admin_user(user):
+        return True
+    owner = record_owner_id(record)
+    return owner is None or owner == user.id
+
+
 def user_name(user: User | None) -> str | None:
     return (user.name or user.email) if user else None
 
@@ -128,6 +148,11 @@ def released_revision(doc: DesignDocument) -> DesignDocumentRevision | None:
     return next((r for r in live_revisions(doc) if r.status == "released"), None)
 
 
+def latest_revision(doc: DesignDocument) -> DesignDocumentRevision | None:
+    revs = live_revisions(doc)
+    return max(revs, key=lambda r: r.revision_index) if revs else None
+
+
 def ever_released(doc: DesignDocument) -> bool:
     return any(r.status in ("released", "superseded") for r in live_revisions(doc))
 
@@ -141,6 +166,10 @@ def display_status(doc: DesignDocument) -> str:
     current = open_revision(doc)
     if released and current:
         return "revising"
+    if not released and not current:
+        latest = latest_revision(doc)
+        if latest and latest.status == "customer_rejected":
+            return "customer_rejected"
     if released:
         return "released"
     return current.status if current else "draft"
@@ -149,22 +178,28 @@ def display_status(doc: DesignDocument) -> str:
 def add_event(
     db: Session, action: str, actor: User | None, *, document_id: int | None = None,
     revision_id: int | None = None, ecn_id: int | None = None, comment: str | None = None,
+    bom_id: int | None = None, bom_revision_id: int | None = None, ecr_id: int | None = None,
+    submission_id: int | None = None, request_id: int | None = None,
 ) -> None:
     db.add(DesignEvent(
         action=action, actor_id=actor.id if actor else None, document_id=document_id,
         revision_id=revision_id, ecn_id=ecn_id, comment=(comment or "").strip() or None,
+        bom_id=bom_id, bom_revision_id=bom_revision_id, ecr_id=ecr_id, submission_id=submission_id,
+        request_id=request_id,
     ))
 
 
 def notify(
     db: Session, user_id: int | None, actor: User, title: str, message: str,
-    notification_type: str, entity_type: str, entity_id: int,
+    notification_type: str, entity_type: str, entity_id: int, *, teams: bool = False,
 ) -> None:
     """notify_user, minus the self-notification when the actor is the
-    recipient (e.g. an admin approving their own team's request)."""
+    recipient (e.g. an admin approving their own team's request).
+    `teams=True` only for approval requests (app-wide rule: Teams push is
+    for approvals and reminders; returned/released/approved stay bell-only)."""
     if not user_id or user_id == actor.id:
         return
-    notify_user(db, user_id, title, message, notification_type, entity_type=entity_type, entity_id=entity_id)
+    notify_user(db, user_id, title, message, notification_type, entity_type=entity_type, entity_id=entity_id, teams=teams)
 
 
 def get_workflow_user(db: Session, user_id: int, role: str) -> User:
@@ -184,9 +219,24 @@ def get_workflow_user(db: Session, user_id: int, role: str) -> User:
     return person
 
 
+def ensure_assignee_rule(db: Session, user: User, key: str, person_id: int | None, current_id: int | None = None) -> None:
+    """The role's "Assign to" rule for this field (core/assignee_rules.py,
+    keys in core/features/design.py) — checked only when `user` actually
+    names someone new (not a default the system filled in)."""
+    if not person_id or person_id == current_id:
+        return
+    person = db.query(User).filter(User.id == person_id).first()
+    if person:
+        assignee_rules.ensure_allowed(db, user, key, person)
+
+
 def validate_signatories(db: Session, author_id: int | None, reviewer_id: int | None, approver_id: int | None) -> None:
     """Four-eyes rule for whatever is set: checker and approver are two
-    different people with Design access, and neither is the author."""
+    different people with Design access, and neither is the author. With a
+    Design team set up, the checker must be a reviewer/head and the approver
+    (who releases) the Design head."""
+    check_signatory_role(db, reviewer_id, "checker", "checker")
+    check_signatory_role(db, approver_id, "approver", "approver")
     author = db.query(User).filter(User.id == author_id).first() if author_id else None
     author_label = user_name(author) or "the author"
     if reviewer_id:
@@ -284,15 +334,34 @@ def check_new_revision(user: User, doc: DesignDocument) -> Denied | None:
     current = open_revision(doc)
     if current:
         return Denied(409, f"{ref(doc, current)} is already open ({REVISION_STATUS_PHRASE.get(current.status, current.status)}). Finish or discard it before starting another revision.")
-    if not released_revision(doc):
-        return Denied(409, f"{doc.doc_number} has no released revision yet — a new revision can only be started from a released one.")
+    latest = latest_revision(doc)
+    if not released_revision(doc) and not (latest and latest.status == "customer_rejected"):
+        return Denied(409, f"{doc.doc_number} has no released revision yet — a new revision can only be started from a released one (or one the customer rejected).")
+    return None
+
+
+def check_release(user: User, doc: DesignDocument, rev: DesignDocumentRevision, can_release: bool) -> Denied | None:
+    """Releasing a revision that stopped at `approved` because the customer
+    must approve it first. `can_release`: the user is the Design head, the
+    revision's approver or an admin (resolved by the caller)."""
+    if rev.status != "approved":
+        return Denied(409, f"{ref(doc, rev)} is {REVISION_STATUS_PHRASE.get(rev.status, rev.status)} — only an approved revision waiting on the customer can be released here.")
+    if not can_release:
+        return Denied(403, f"Only the Design head, the approver of {ref(doc, rev)} or an admin can release it.")
     return None
 
 
 def check_discard_revision(user: User, doc: DesignDocument, rev: DesignDocumentRevision) -> Denied | None:
     if rev.status != "draft":
         return Denied(409, f"{ref(doc, rev)} is {REVISION_STATUS_PHRASE.get(rev.status, rev.status)} — only a draft revision can be discarded. Recall it first if it's in review.")
-    if rev.revision_index == 0 or not ever_released(doc):
+    # A later revision can be discarded when an earlier one was released —
+    # or rejected by the customer (otherwise R1 drafted after a customer
+    # rejection of R0 could be neither discarded nor deleted).
+    earlier = any(
+        r.revision_index < rev.revision_index and r.status in ("released", "superseded", "customer_rejected")
+        for r in live_revisions(doc)
+    )
+    if rev.revision_index == 0 or not earlier:
         return Denied(409, f"{ref(doc, rev)} is the document's first revision — delete the document instead of discarding it.")
     if not (_is_doc_manager(user, doc) or user.id == rev.created_by_id):
         return Denied(403, f"Only the author of {ref(doc, rev)}, the document owner, or an admin can discard it.")
@@ -302,7 +371,7 @@ def check_discard_revision(user: User, doc: DesignDocument, rev: DesignDocumentR
 def check_obsolete(user: User, doc: DesignDocument) -> Denied | None:
     if doc.status == "obsolete":
         return Denied(409, f"{doc.doc_number} is already obsolete.")
-    if not ever_released(doc):
+    if not ever_released(doc) and not any(r.status == "customer_rejected" for r in live_revisions(doc)):
         return Denied(409, f"{doc.doc_number} was never released, so there's nothing to withdraw from use — delete it instead.")
     current = open_revision(doc)
     if current:
@@ -323,6 +392,8 @@ def check_reactivate(user: User, doc: DesignDocument) -> Denied | None:
 def check_delete_document(user: User, doc: DesignDocument) -> Denied | None:
     if ever_released(doc):
         return Denied(409, f"{doc.doc_number} has been released, so it's a controlled record and can't be deleted. Mark it obsolete instead.")
+    if any(r.status in ("approved", "customer_rejected") for r in live_revisions(doc)):
+        return Denied(409, f"{doc.doc_number} has been approved and sent towards the customer, so it's kept on record. Mark it obsolete instead.")
     current = open_revision(doc)
     if current and current.status != "draft":
         return Denied(409, f"{ref(doc, current)} is {REVISION_STATUS_PHRASE.get(current.status, current.status)}. Recall it to draft before deleting the document.")
@@ -331,10 +402,13 @@ def check_delete_document(user: User, doc: DesignDocument) -> Denied | None:
     return None
 
 
-def allowed_document_actions(user: User, doc: DesignDocument) -> list[str]:
+def allowed_document_actions(user: User, doc: DesignDocument, *, viewer: bool = False, head: bool = False) -> list[str]:
     """What the detail page may offer `user` right now. Revision-level
-    actions refer to the open revision."""
-    actions: list[str] = ["comment"]
+    actions refer to the open revision. A viewer (not on the Design team)
+    may only comment and raise an ECR."""
+    actions: list[str] = ["comment", "raise_ecr"]
+    if viewer:
+        return actions
     if not check_edit_document(user, doc):
         actions.append("edit")
     if not check_new_revision(user, doc):
@@ -343,13 +417,13 @@ def allowed_document_actions(user: User, doc: DesignDocument) -> list[str]:
         actions.append("obsolete")
     if not check_reactivate(user, doc):
         actions.append("reactivate")
-    if not check_delete_document(user, doc):
+    if not check_delete_document(user, doc) and may_delete(user, doc, "documents"):
         actions.append("delete")
     current = open_revision(doc)
     if current:
         if not check_manage_draft(user, doc, current):
             actions += ["edit_revision", "manage_files", "submit"]
-        if not check_discard_revision(user, doc, current):
+        if not check_discard_revision(user, doc, current) and may_delete(user, current, "documents"):
             actions.append("discard_revision")
         if not check_recall(user, doc, current):
             actions.append("recall")
@@ -357,6 +431,8 @@ def allowed_document_actions(user: User, doc: DesignDocument) -> list[str]:
             actions.append("review")
         if current.status == "in_approval" and not check_approve(user, doc, current, None):
             actions.append("approve")
+        if current.status == "approved" and not check_release(user, doc, current, head or is_admin(user) or user.id == current.approver_id):
+            actions.append("release")
     return actions
 
 
@@ -394,11 +470,34 @@ def check_ecn_implement(user: User, ecn: DesignChangeNotice) -> Denied | None:
     return None
 
 
-def check_ecn_cancel(user: User, ecn: DesignChangeNotice) -> Denied | None:
-    if ecn.status not in ("draft", "submitted"):
-        return Denied(409, f"{ecn.ecn_number} is {_phrase(ecn)} — only a draft or submitted ECN can be cancelled.")
-    if not (is_admin(user) or user.id == ecn.created_by_id):
-        return Denied(403, f"Only the person who raised {ecn.ecn_number} or an admin can cancel it.")
+def check_ecn_cancel(
+    user: User, ecn: DesignChangeNotice, *, head: bool = False, released_refs=(), in_flight_refs=(),
+) -> Denied | None:
+    """Draft/submitted ECNs can always be cancelled. An approved ECN can be
+    cancelled while nothing raised under it is released yet (e.g. an affected
+    drawing went obsolete, so it could never be implemented). `head`: the user
+    is the Design head; `released_refs`: revisions under this ECN already
+    released; `in_flight_refs`: revisions under it still moving through
+    check/approval/customer approval (both resolved by the caller) — those
+    must be recalled or settled first, or they could release under a
+    cancelled ECN."""
+    if ecn.status not in ("draft", "submitted", "approved"):
+        return Denied(409, f"{ecn.ecn_number} is {_phrase(ecn)} — only a draft, submitted or approved (not yet released) ECN can be cancelled.")
+    if ecn.status == "approved" and released_refs:
+        return Denied(
+            409,
+            f"{ecn.ecn_number} can't be cancelled — {', '.join(released_refs)} is already released under it. "
+            "Finish the remaining revisions and mark the ECN implemented, or raise a new ECR to reverse the change.",
+        )
+    if ecn.status == "approved" and in_flight_refs:
+        return Denied(
+            409,
+            f"{ecn.ecn_number} can't be cancelled yet — {'; '.join(in_flight_refs)} under it. "
+            "Recall revisions that are in review or awaiting approval back to draft; for a drawing waiting on the customer, "
+            "record the customer's response on its submission first. Then cancel the ECN.",
+        )
+    if not (is_admin(user) or head or user.id == ecn.created_by_id):
+        return Denied(403, f"Only the person who raised {ecn.ecn_number}, the Design head or an admin can cancel it.")
     return None
 
 
@@ -410,7 +509,9 @@ def check_ecn_delete(user: User, ecn: DesignChangeNotice) -> Denied | None:
     return None
 
 
-def allowed_ecn_actions(user: User, ecn: DesignChangeNotice) -> list[str]:
+def allowed_ecn_actions(
+    user: User, ecn: DesignChangeNotice, *, head: bool = False, released_refs=(), in_flight_refs=(),
+) -> list[str]:
     actions: list[str] = ["comment"]
     if not check_ecn_edit(user, ecn):
         actions += ["edit", "submit"]
@@ -418,8 +519,8 @@ def allowed_ecn_actions(user: User, ecn: DesignChangeNotice) -> list[str]:
         actions += ["approve", "reject"]
     if not check_ecn_implement(user, ecn):
         actions.append("implement")
-    if not check_ecn_cancel(user, ecn):
+    if not check_ecn_cancel(user, ecn, head=head, released_refs=released_refs, in_flight_refs=in_flight_refs):
         actions.append("cancel")
-    if not check_ecn_delete(user, ecn):
+    if not check_ecn_delete(user, ecn) and may_delete(user, ecn, "change_notices"):
         actions.append("delete")
     return actions

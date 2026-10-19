@@ -2,196 +2,164 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useRequireApp } from '@/hooks/useAuth'
+import { useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useRequireApp, useAuth } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
-import { QualitySupplierScorecard, QualitySupplierScorecardStatus } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { QualityApprovedVendor } from '@/types'
+import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
-import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import { Section, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import { Pill, PageHeader, ErrorBanner, ActionSheet, fmtDate, AVL_STATUS_LABELS, AVL_STATUS_HEX, SAMPLING_LABELS } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+import { sheetInput, sheetLabel, sheetHint, Req } from '@/components/shared/FormSheet'
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
+type Prompt = null | { action: 'approve' | 'watch' | 'release-watch' | 'request-block' | 'request-unblock' | 'reject-pending'; title: string; message: string; label: string }
 
-export default function QualitySupplierScorecardDetailPage() {
+export default function AvlDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
+  const { user } = useAuth()
   const router = useRouter()
-  const params = useParams()
-  const scorecardId = Number(params.id)
-
-  const [scorecard, setScorecard] = useState<QualitySupplierScorecard | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  const [vendorId, setVendorId] = useState('')
-  const [period, setPeriod] = useState('')
-  const [qualityScore, setQualityScore] = useState('')
-  const [onTimeDeliveryScore, setOnTimeDeliveryScore] = useState('')
-  const [rejectionCount, setRejectionCount] = useState('')
-  const [ncrCount, setNcrCount] = useState('')
-  const [status, setStatus] = useState<QualitySupplierScorecardStatus>('draft')
-  const [notes, setNotes] = useState('')
-
-  const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const { id: recordId, error: linkError } = useRecordId(useParams().id as string)
+  const id = recordId ?? 0
+  const [a, setA] = useState<QualityApprovedVendor | null>(null)
   const [error, setError] = useState<string | string[]>('')
+  const [busy, setBusy] = useState(false)
+  const [prompt, setPrompt] = useState<Prompt>(null)
+  const [reason, setReason] = useState('')
+  const { can } = useCan()
+  // Approve / watch / block requests need quality:supplier_quality:edit (route) and a Quality head's
+  // quality:supplier_quality:approve (service can_approve_vendor).
+  const canManage = can('quality', 'supplier_quality', 'edit') && can('quality', 'supplier_quality', 'approve')
 
   useEffect(() => {
-    if (!isAuthorized || !scorecardId) return
-    ;(async () => {
-      try {
-        const s = await qualityApi.getSupplierScorecard(scorecardId)
-        setScorecard(s)
-        setVendorId(s.vendor_id ? String(s.vendor_id) : '')
-        setPeriod(s.period)
-        setQualityScore(s.quality_score !== undefined && s.quality_score !== null ? String(s.quality_score) : '')
-        setOnTimeDeliveryScore(s.on_time_delivery_score !== undefined && s.on_time_delivery_score !== null ? String(s.on_time_delivery_score) : '')
-        setRejectionCount(s.rejection_count !== undefined && s.rejection_count !== null ? String(s.rejection_count) : '')
-        setNcrCount(s.ncr_count !== undefined && s.ncr_count !== null ? String(s.ncr_count) : '')
-        setStatus(s.status)
-        setNotes(s.notes || '')
-      } catch (err: any) {
-        setError(extractErrorMessages(err, 'Failed to load scorecard.'))
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [isAuthorized, scorecardId])
+    if (!isAuthorized || !id) return
+    qualityApi.getAvl(id).then(setA).catch((e) => setError(extractErrorMessages(e, 'Failed to load this vendor entry.')))
+  }, [isAuthorized, id])
+  const reload = () => { qualityApi.getAvl(id).then(setA).catch((e) => setError(extractErrorMessages(e, 'Failed to reload this vendor entry.'))) }
+
+  const run = async (fn: () => Promise<QualityApprovedVendor>, fallback: string) => {
+    setError('')
+    setBusy(true)
+    try {
+      setA(await fn())
+      setPrompt(null)
+    } catch (err) {
+      setError(extractErrorMessages(err, fallback))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   if (isLoading || !isAuthorized) return null
-  if (loading || !scorecard) return null
-
-  const handleSave = async () => {
-    setError('')
-    if (!period.trim()) { setError('Period is required.'); return }
-
-    setSaving(true)
-    try {
-      const updated = await qualityApi.updateSupplierScorecard(scorecardId, {
-        vendor_id: vendorId ? Number(vendorId) : undefined,
-        period: period.trim(),
-        quality_score: qualityScore !== '' ? Number(qualityScore) : undefined,
-        on_time_delivery_score: onTimeDeliveryScore !== '' ? Number(onTimeDeliveryScore) : undefined,
-        rejection_count: rejectionCount !== '' ? Number(rejectionCount) : undefined,
-        ncr_count: ncrCount !== '' ? Number(ncrCount) : undefined,
-        status,
-        notes: notes.trim() || undefined,
-      })
-      setScorecard(updated)
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to save scorecard.'))
-    } finally {
-      setSaving(false)
-    }
+  if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/supplier-quality" listLabel="Back to supplier quality" /></div>)
+  if (!a) {
+    return (
+      <div>
+        <QualityNav />
+        <PageHeader title="Approved vendor"><button type="button" onClick={() => router.push('/dashboard/quality/supplier-quality')} style={secondaryBtnStyle}>← Back</button></PageHeader>
+        <ErrorBanner error={error} />
+        {!error && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>}
+      </div>
+    )
   }
-
-  const handleDelete = async () => {
-    setConfirmOpen(false)
-    setError('')
-    setDeleting(true)
-    try {
-      await qualityApi.deleteSupplierScorecard(scorecardId)
-      router.push('/dashboard/quality/supplier-quality')
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to delete scorecard.'))
-      setDeleting(false)
-    }
-  }
+  const isPartner = Boolean((user as { is_partner?: boolean } | null)?.is_partner)
 
   return (
-    <div style={{ width: '100%' }}>
+    <div>
       <QualityNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Quality Module
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>{scorecard.vendor_name || `Vendor #${scorecard.vendor_id ?? '—'}`} — {scorecard.period}</h1>
-        </div>
-        <button onClick={() => router.push('/dashboard/quality/supplier-quality')} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
+      {prompt && (
+        <ActionSheet icon={prompt.action === 'approve' || prompt.action === 'release-watch' ? 'check' : prompt.action === 'reject-pending' ? 'x' : 'alert'}
+          iconColor={prompt.action === 'approve' || prompt.action === 'release-watch' ? '#16A34A' : '#DC2626'}
+          title={prompt.title} subtitle={`${a.vendor_name} — ${a.item_name}`} onClose={() => { if (!busy) { setPrompt(null); setError('') } }}
+          busy={busy} error={error} submitLabel={prompt.label} disabled={!reason.trim()}
+          onSubmit={() => {
+            const p = prompt
+            if (p.action === 'reject-pending') run(() => qualityApi.avlDecision(a.id, false, reason), 'Failed to record the decision.')
+            else run(() => qualityApi.avlAction(a.id, p.action as 'approve', reason), 'Failed to update the vendor.')
+          }}>
+          <p style={{ ...sheetHint, margin: '0 0 14px' }}>{prompt.message}</p>
+          <label style={sheetLabel}>Reason <Req /></label>
+          <textarea style={{ ...sheetInput, minHeight: 80 }} value={reason} onChange={(ev) => setReason(ev.target.value)} autoFocus />
+        </ActionSheet>
       )}
 
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Scorecard Details</h2>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Vendor ID</label>
-            <input type="number" style={inputStyle} value={vendorId} onChange={(e) => setVendorId(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 160px', minWidth: 140 }}>
-            <label style={labelStyle}>Period *</label>
-            <input style={inputStyle} placeholder="e.g. 2026-Q1" value={period} onChange={(e) => setPeriod(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-            <label style={labelStyle}>Quality Score</label>
-            <input type="number" min={0} max={100} style={inputStyle} value={qualityScore} onChange={(e) => setQualityScore(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>On-Time Delivery Score</label>
-            <input type="number" min={0} max={100} style={inputStyle} value={onTimeDeliveryScore} onChange={(e) => setOnTimeDeliveryScore(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 140px', minWidth: 120 }}>
-            <label style={labelStyle}>Rejection Count</label>
-            <input type="number" min={0} style={inputStyle} value={rejectionCount} onChange={(e) => setRejectionCount(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 130px', minWidth: 110 }}>
-            <label style={labelStyle}>NCR Count</label>
-            <input type="number" min={0} style={inputStyle} value={ncrCount} onChange={(e) => setNcrCount(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-            <label style={labelStyle}>Status</label>
-            <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as QualitySupplierScorecardStatus)}>
-              <option value="draft">Draft</option>
-              <option value="final">Final</option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label style={labelStyle}>Notes</label>
-          <textarea style={{ ...inputStyle, minHeight: 70 }} value={notes} onChange={(e) => setNotes(e.target.value)} />
-        </div>
-        <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '14px 0 0' }}>
-          Created by {scorecard.created_by_name || '—'}{scorecard.created_at ? ` on ${scorecard.created_at.slice(0, 10)}` : ''}
-        </p>
-      </div>
+      <PageHeader title={`${a.vendor_name} — ${a.item_name}`} subtitle="Quality · Approved vendor list">
+        <Pill text={AVL_STATUS_LABELS[a.status]} hex={AVL_STATUS_HEX[a.status]} />
+        <button type="button" onClick={() => router.push('/dashboard/quality/supplier-quality')} style={secondaryBtnStyle}>← Back</button>
+      </PageHeader>
+      {!prompt && <ErrorBanner error={error} />}
 
-      <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <button
-          onClick={() => setConfirmOpen(true)}
-          disabled={deleting}
-          type="button"
-          style={{ padding: '12px 22px', borderRadius: 12, border: `1px solid ${DANGER.border}`, background: DANGER.light, color: DANGER.text, fontSize: 14, fontWeight: 600, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}
-        >
-          {deleting ? 'Deleting…' : 'Delete Scorecard'}
-        </button>
-        <button onClick={handleSave} disabled={saving} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.6 : 1 }}>
-          {saving ? 'Saving…' : 'Save Changes'}
-        </button>
-      </div>
+      {a.pending_action && (
+        <Section title={`${a.pending_action === 'block' ? 'Block' : 'Unblock'} waiting for a Partner`} style={{ marginBottom: 20 }}>
+          <InfoRow label="Reason" value={a.pending_reason || '—'} />
+          <InfoRow label="Requested" value={`${a.pending_requested_by_name || '—'} · ${fmtDate(a.pending_requested_at)}`} />
+          {!a.legacy_pending ? (
+            <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Approvers decide in the Approval panel below (Organization › Approval Workflows › Vendor block / unblock).</p>
+          ) : isPartner ? (
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" disabled={busy} style={a.pending_action === 'block' ? dangerBtnStyle : primaryBtnStyle}
+                onClick={() => run(() => qualityApi.avlDecision(a.id, true, ''), 'Failed to record the decision.')}>Approve {a.pending_action}</button>
+              <button type="button" disabled={busy} style={secondaryBtnStyle}
+                onClick={() => { setReason(''); setError(''); setPrompt({ action: 'reject-pending', title: `Reject the ${a.pending_action}?`, message: 'Give the reason.', label: 'Reject' }) }}>Reject</button>
+            </div>
+          ) : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Only a Partner (Company Info → Partners) can decide this.</p>}
+        </Section>
+      )}
 
-      <ConfirmDialog
-        open={confirmOpen}
-        title="Delete this scorecard?"
-        message={`This permanently deletes the scorecard for "${scorecard.vendor_name || 'this vendor'}" (${scorecard.period}). This cannot be undone.`}
-        confirmLabel="Delete"
-        onConfirm={handleDelete}
-        onCancel={() => setConfirmOpen(false)}
-      />
+      <ApprovalPanel key={`${a.status}-${a.pending_action || ''}`} entityType="quality_approved_vendor" entityId={a.id} onChanged={reload} title="Approval workflow" />
+
+      <Section title="Approval" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
+          <InfoRow label="Item" value={`${a.item_code || ''} ${a.item_name || ''}`.trim()} />
+          <InfoRow label="Status reason" value={a.status_reason || '—'} />
+          <InfoRow label="Approved" value={a.approved_at ? `${fmtDate(a.approved_at)} · ${a.approved_by_name || '—'}` : '—'} />
+          <InfoRow label="First article" value={a.fai_number || '—'} />
+          <InfoRow label="Valid until" value={`${fmtDate(a.valid_until)}${a.expired ? ' — re-evaluation due' : ''}`} />
+          <InfoRow label="Last rating" value={a.last_score != null ? `${a.last_score.toFixed(1)} (${a.last_rated_period})` : '—'} />
+        </div>
+        {canManage && <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {a.status === 'trial' && (
+            <button type="button" disabled={busy} style={primaryBtnStyle}
+              onClick={() => { setReason(''); setError(''); setPrompt({ action: 'approve', title: 'Approve this vendor for the item?', message: 'Record the basis (sample report, audit, trial order). Inspection-controlled items are approved by their first article instead.', label: 'Approve' }) }}>Approve vendor</button>
+          )}
+          {['trial', 'approved'].includes(a.status) && (
+            <button type="button" disabled={busy} style={secondaryBtnStyle}
+              onClick={() => { setReason(''); setError(''); setPrompt({ action: 'watch', title: 'Put the vendor on watch?', message: 'Lots switch to tightened sampling and a vendor CAPA is raised. Give the reason.', label: 'Put on watch' }) }}>Put on watch</button>
+          )}
+          {a.status === 'on_watch' && (
+            <button type="button" disabled={busy} style={secondaryBtnStyle}
+              onClick={() => { setReason(''); setError(''); setPrompt({ action: 'release-watch', title: 'Take the vendor off watch?', message: 'Needs the vendor CAPA closed. Give the reason.', label: 'Back to approved' }) }}>Take off watch</button>
+          )}
+          {a.status !== 'blocked' && !a.pending_action && (
+            <button type="button" disabled={busy} style={dangerBtnStyle}
+              onClick={() => { setReason(''); setError(''); setPrompt({ action: 'request-block', title: 'Request a block?', message: 'A Partner must approve. A blocked vendor gets no PO lines and no lot acceptance for this item. Give the reason.', label: 'Request block' }) }}>Request block</button>
+          )}
+          {a.status === 'blocked' && !a.pending_action && (
+            <button type="button" disabled={busy} style={secondaryBtnStyle}
+              onClick={() => { setReason(''); setError(''); setPrompt({ action: 'request-unblock', title: 'Request an unblock?', message: 'A Partner must approve; the vendor returns On watch. Give the reason.', label: 'Request unblock' }) }}>Request unblock</button>
+          )}
+        </div>}
+      </Section>
+
+      <Section title="Sampling (ISO 2859-1 switching)" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
+          <InfoRow label="Current state" value={`${SAMPLING_LABELS[a.sampling_state]}${a.skip_lot_active ? ' · skip-lot active' : ''}`} />
+          <InfoRow label="Accepted in a row" value={String(a.consecutive_accepted)} />
+          <InfoRow label="Recent lots (oldest → newest)" value={(a.recent_lots || []).map((x) => (x ? '✓' : '✗')).join(' ') || '—'} />
+        </div>
+      </Section>
+
+      <Section title="History" style={{ marginBottom: 20 }}>
+        {a.events.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No history.</p> : a.events.map((e) => (
+          <p key={e.id} style={{ fontSize: 12.5, margin: 0 }}>
+            {fmtDate(e.created_at)} · {e.event.replace(/_/g, ' ')}{e.from_status !== e.to_status && e.to_status ? ` (${AVL_STATUS_LABELS[e.from_status || ''] || e.from_status} → ${AVL_STATUS_LABELS[e.to_status] || e.to_status})` : ''}
+            {e.reason ? ` — ${e.reason}` : ''} · {e.user_name || 'System'}
+          </p>
+        ))}
+      </Section>
     </div>
   )
 }

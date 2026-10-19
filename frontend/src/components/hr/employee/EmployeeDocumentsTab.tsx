@@ -4,14 +4,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { UserDocument } from '@/types'
 import { TEXT, BORDER, BRAND } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle } from '@/components/shared/ui'
+import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import FileUploadField from '@/components/shared/FileUploadField'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
+import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
-import { sectionStyle, labelStyle, hintStyle, linkActionStyle, dangerActionStyle, ErrorBanner, formatDate } from '@/components/hr/masters/masterUi'
+import { sectionStyle, linkActionStyle, dangerActionStyle, ErrorBanner, formatDate } from '@/components/hr/masters/masterUi'
 
 const DOCUMENT_TYPES = [
   'ID Proof', 'Address Proof', 'PAN Card', 'Aadhaar Card', 'Passport', 'Driving Licence', 'Offer Letter', 'Appointment Letter',
@@ -45,6 +47,10 @@ function formatSize(bytes?: number | null) {
  * `userId`; `mode="self"` = the signed-in employee's own documents, read-only. */
 export default function EmployeeDocumentsTab({ userId, mode = 'hr' }: { userId: number; mode?: 'hr' | 'self' }) {
   const isHrMode = mode === 'hr'
+  const { canDelete, canFeature } = useCan()
+  // HR › Employees › Documents feature (upload = create, download = export).
+  const canUpload = isHrMode && canFeature('hr', 'employees', 'documents', 'create')
+  const canOpen = !isHrMode || canFeature('hr', 'employees', 'documents', 'export')
   const [docs, setDocs] = useState<UserDocument[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string[]>([])
@@ -93,6 +99,8 @@ export default function EmployeeDocumentsTab({ userId, mode = 'hr' }: { userId: 
     }
   }
 
+  const cancelForm = () => { setShowForm(false); setFile(null); setMeta(emptyMeta()); setFormErrors([]) }
+
   const openDoc = async (d: UserDocument) => {
     setOpening(d.id)
     try {
@@ -127,8 +135,8 @@ export default function EmployeeDocumentsTab({ userId, mode = 'hr' }: { userId: 
               : 'Documents HR holds on your record. To add or replace one, send it to HR.'}
           </p>
         </div>
-        {isHrMode && !showForm && (
-          <button type="button" style={primaryBtnStyle} onClick={() => { setShowForm(true); setFormErrors([]) }}>
+        {canUpload && (
+          <button type="button" data-tour="hr-doc-upload-btn" style={primaryBtnStyle} onClick={() => { setShowForm(true); setFormErrors([]) }}>
             <span style={{ fontSize: 16, lineHeight: 1, marginRight: 6 }}>+</span>Upload Document
           </button>
         )}
@@ -145,65 +153,83 @@ export default function EmployeeDocumentsTab({ userId, mode = 'hr' }: { userId: 
         onCancel={() => setDeleteTarget(null)}
       />
 
-      {isHrMode && showForm && (
-        <div style={{ marginBottom: 18, padding: 16, borderRadius: 12, background: 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.light}` }}>
-          <div style={{ marginBottom: 12 }}>
-            <label style={labelStyle}>File *</label>
-            <FileUploadField file={file} onChange={setFile} onRemove={() => setFile(null)} uploading={saving} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" />
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-            <div style={{ flex: '0 1 220px', minWidth: 190 }}>
-              <label style={labelStyle}>Document Type *</label>
-              <select style={inputStyle} value={meta.document_type} onChange={(e) => setMeta({ ...meta, document_type: e.target.value })}>
-                {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
-              <label style={labelStyle}>Document Name *</label>
-              <input style={inputStyle} value={meta.document_name} onChange={(e) => setMeta({ ...meta, document_name: e.target.value })} placeholder="PAN card" />
-            </div>
-            <div style={{ flex: '0 1 200px', minWidth: 170 }}>
-              <label style={labelStyle}>Document Number</label>
-              <input style={inputStyle} value={meta.document_number} onChange={(e) => setMeta({ ...meta, document_number: e.target.value })} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-            <div style={{ flex: '0 1 160px', minWidth: 150 }}>
-              <label style={labelStyle}>Issue Date</label>
-              <DateField value={meta.issue_date} onChange={(v) => setMeta({ ...meta, issue_date: v })} />
-            </div>
-            <div style={{ flex: '0 1 160px', minWidth: 150 }}>
-              <label style={labelStyle}>Expiry Date</label>
-              <DateField value={meta.expiry_date} onChange={(v) => setMeta({ ...meta, expiry_date: v })} />
-            </div>
-            <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
-              <label style={labelStyle}>Issuing Authority</label>
-              <input style={inputStyle} value={meta.issuing_authority} onChange={(e) => setMeta({ ...meta, issuing_authority: e.target.value })} />
-            </div>
-            <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-              <label style={labelStyle}>Visibility</label>
-              <select style={inputStyle} value={meta.confidentiality} onChange={(e) => setMeta({ ...meta, confidentiality: e.target.value })}>
-                {CONFIDENTIALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-          <p style={{ ...hintStyle, margin: '-4px 0 12px' }}>&quot;HR Only&quot; documents are hidden from the employee&apos;s own My HR page.</p>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-            <div style={{ flex: '0 1 220px', minWidth: 180 }}>
-              <label style={labelStyle}>Tags (comma separated)</label>
-              <input style={inputStyle} value={meta.tags} onChange={(e) => setMeta({ ...meta, tags: e.target.value })} />
-            </div>
-            <div style={{ flex: '1 1 260px', maxWidth: 480 }}>
-              <label style={labelStyle}>Remarks</label>
-              <input style={inputStyle} value={meta.remarks} onChange={(e) => setMeta({ ...meta, remarks: e.target.value })} />
-            </div>
-          </div>
-          <ErrorBanner errors={formErrors} />
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button type="button" style={secondaryBtnStyle} disabled={saving} onClick={() => { setShowForm(false); setFile(null); setMeta(emptyMeta()); setFormErrors([]) }}>Cancel</button>
-            <button type="button" style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }} disabled={saving} onClick={submit}>{saving ? 'Uploading…' : 'Save Document'}</button>
-          </div>
-        </div>
+      {canUpload && showForm && (
+        <FormSheet tour="hr-doc-form" icon="upload" title="Upload document"
+          subtitle="Stored in SharePoint. Documents with an expiry date trigger reminders 30 and 7 days before, and on the day."
+          onClose={cancelForm} busy={saving}
+          footer={<>
+            <button type="button" data-tour="hr-doc-cancel" style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving} onClick={cancelForm}>Cancel</button>
+            <button type="button" data-tour="hr-doc-save" style={sheetBtn('primary', SHEET.BLUE, saving)} disabled={saving} onClick={submit}><SheetIcon name="upload" size={16} />{saving ? 'Uploading…' : 'Save Document'}</button>
+          </>}>
+          <SheetColumns
+            left={<>
+              <ErrorBanner errors={formErrors} />
+              <SheetSection icon="doc" title="Document">
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <div data-tour="hr-doc-type" style={{ flex: '0 1 220px', minWidth: 190 }}>
+                    <label style={sheetLabel}>Document Type <Req /></label>
+                    <select style={sheetInput} value={meta.document_type} onChange={(e) => setMeta({ ...meta, document_type: e.target.value })}>
+                      {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div data-tour="hr-doc-name" style={{ flex: '1 1 200px', maxWidth: 300 }}>
+                    <label style={sheetLabel}>Document Name <Req /></label>
+                    <input style={sheetInput} value={meta.document_name} onChange={(e) => setMeta({ ...meta, document_name: e.target.value })} placeholder="PAN card" />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div data-tour="hr-doc-number" style={{ flex: '0 1 200px', minWidth: 170 }}>
+                    <label style={sheetLabel}>Document Number</label>
+                    <input style={sheetInput} value={meta.document_number} onChange={(e) => setMeta({ ...meta, document_number: e.target.value })} />
+                  </div>
+                  <div data-tour="hr-doc-authority" style={{ flex: '1 1 200px', maxWidth: 280 }}>
+                    <label style={sheetLabel}>Issuing Authority</label>
+                    <input style={sheetInput} value={meta.issuing_authority} onChange={(e) => setMeta({ ...meta, issuing_authority: e.target.value })} />
+                  </div>
+                </div>
+              </SheetSection>
+              <SheetSection icon="calendar" title="Validity">
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div data-tour="hr-doc-issue-date" style={{ flex: '0 1 160px', minWidth: 150 }}>
+                    <label style={sheetLabel}>Issue Date</label>
+                    <DateField value={meta.issue_date} onChange={(v) => setMeta({ ...meta, issue_date: v })} />
+                  </div>
+                  <div data-tour="hr-doc-expiry-date" style={{ flex: '0 1 160px', minWidth: 150 }}>
+                    <label style={sheetLabel}>Expiry Date</label>
+                    <DateField value={meta.expiry_date} onChange={(v) => setMeta({ ...meta, expiry_date: v })} />
+                  </div>
+                </div>
+              </SheetSection>
+            </>}
+            right={<>
+              <SheetSection icon="clip" title="File">
+                <div data-tour="hr-doc-file">
+                  <label style={sheetLabel}>File <Req /></label>
+                  <FileUploadField file={file} onChange={setFile} onRemove={() => setFile(null)} uploading={saving} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" />
+                  <p style={sheetHint}>Up to 25 MB.</p>
+                </div>
+              </SheetSection>
+              <SheetSection icon="shield" title="Visibility">
+                <div data-tour="hr-doc-visibility">
+                  <select style={sheetInput} value={meta.confidentiality} onChange={(e) => setMeta({ ...meta, confidentiality: e.target.value })}>
+                    {CONFIDENTIALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <p style={sheetHint}>&quot;HR Only&quot; documents are hidden from the employee&apos;s own My HR page.</p>
+                </div>
+              </SheetSection>
+              <SheetSection icon="tag" title="Notes" extra={<Optional />}>
+                <div data-tour="hr-doc-tags">
+                  <label style={sheetLabel}>Tags (comma separated)</label>
+                  <input style={sheetInput} value={meta.tags} onChange={(e) => setMeta({ ...meta, tags: e.target.value })} />
+                </div>
+                <div data-tour="hr-doc-remarks" style={{ marginTop: 12 }}>
+                  <label style={sheetLabel}>Remarks</label>
+                  <input style={sheetInput} value={meta.remarks} onChange={(e) => setMeta({ ...meta, remarks: e.target.value })} />
+                </div>
+              </SheetSection>
+            </>}
+          />
+        </FormSheet>
       )}
 
       <ErrorBanner errors={loadError} />
@@ -213,7 +239,7 @@ export default function EmployeeDocumentsTab({ userId, mode = 'hr' }: { userId: 
       ) : docs.length === 0 ? (
         <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{isHrMode ? 'No documents on this employee’s record yet.' : 'HR has not added any documents to your record yet.'}</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div data-tour="hr-doc-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {docs.map((d) => {
             const exp = expiryInfo(d.expiry_date)
             return (
@@ -231,8 +257,8 @@ export default function EmployeeDocumentsTab({ userId, mode = 'hr' }: { userId: 
                   {d.remarks && <p style={{ fontSize: 12, color: TEXT.secondary, margin: '3px 0 0' }}>{d.remarks}</p>}
                 </div>
                 <div style={{ display: 'flex', gap: 14, flex: 'none' }}>
-                  <button type="button" style={linkActionStyle} disabled={opening === d.id} onClick={() => openDoc(d)}>{opening === d.id ? 'Opening…' : 'Open'}</button>
-                  {isHrMode && <button type="button" style={dangerActionStyle} onClick={() => setDeleteTarget(d)}>Delete</button>}
+                  {canOpen && <button type="button" data-tour="hr-doc-open" style={linkActionStyle} disabled={opening === d.id} onClick={() => openDoc(d)}>{opening === d.id ? 'Opening…' : 'Open'}</button>}
+                  {isHrMode && canDelete('hr', 'employees', d.created_by_id ?? null) && canFeature('hr', 'employees', 'documents', 'delete') && <button type="button" data-tour="hr-doc-delete" style={dangerActionStyle} onClick={() => setDeleteTarget(d)}>Delete</button>}
                 </div>
               </div>
             )

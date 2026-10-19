@@ -2,15 +2,21 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access
+from app.core.permissions import require_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.modules.store.services.plant_access import ensure_location_allowed
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_reservation import STORE_RESERVATION_STATUSES, StoreStockReservation
 from app.modules.store.schemas.stock_reservation import StoreStockReservationCreate, StoreStockReservationResponse
 from app.modules.store.service import generate_stock_reservation_number
 from app.modules.store.services.stock_ledger import adjust_reserved_qty
+from app.modules.store.services.project_stock import element_info
+# Registers the Order Project hooks / 360 provider at startup (this module is
+# always imported by main.py).
+from app.modules.store import order_project_links  # noqa: F401
 
 router = APIRouter(prefix="/store/stock-reservations", tags=["Store"])
 
@@ -25,6 +31,7 @@ def _to_response(db: Session, reservation: StoreStockReservation) -> StoreStockR
         "uom": item.uom if item else None,
         "location_name": location.name if location else None,
         "reserved_by_name": reserver.name if reserver else None,
+        **element_info(db, reservation.order_project_element_id),
     })
 
 
@@ -33,10 +40,21 @@ async def list_stock_reservations(
     item_id: int | None = Query(None),
     location_id: int | None = Query(None),
     status: str | None = Query(None),
+    order_project_id: int | None = Query(None),
+    order_project_element_id: int | None = Query(None),
+    project_stock: bool | None = Query(None, description="true = only holds for an Order Project element; false = only others"),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_access("store", "reservations")),
 ):
-    query = db.query(StoreStockReservation)
+    query = apply_scope(db.query(StoreStockReservation), user, StoreStockReservation)
+    if order_project_id is not None:
+        query = query.filter(StoreStockReservation.order_project_id == order_project_id)
+    if order_project_element_id is not None:
+        query = query.filter(StoreStockReservation.order_project_element_id == order_project_element_id)
+    if project_stock is True:
+        query = query.filter(StoreStockReservation.order_project_element_id.isnot(None))
+    elif project_stock is False:
+        query = query.filter(StoreStockReservation.order_project_element_id.is_(None))
     if item_id is not None:
         query = query.filter(StoreStockReservation.item_id == item_id)
     if location_id is not None:
@@ -51,11 +69,12 @@ async def list_stock_reservations(
 async def get_stock_reservation(
     reservation_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_access("store", "reservations")),
 ):
     reservation = db.query(StoreStockReservation).filter(StoreStockReservation.id == reservation_id).first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Stock reservation not found")
+    ensure_in_scope(db, user, reservation)
     return _to_response(db, reservation)
 
 
@@ -63,7 +82,7 @@ async def get_stock_reservation(
 async def create_stock_reservation(
     payload: StoreStockReservationCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_action("store", "reservations", "create")),
 ):
     if payload.quantity <= 0:
         raise HTTPException(status_code=422, detail="Quantity must be greater than zero")
@@ -71,6 +90,17 @@ async def create_stock_reservation(
         raise HTTPException(status_code=404, detail="Item not found")
     if not db.query(StoreLocation).filter(StoreLocation.id == payload.location_id).first():
         raise HTTPException(status_code=404, detail="Store not found")
+    ensure_location_allowed(db, user, payload.location_id)
+    project_id = element_id = None
+    if payload.order_project_element_id:
+        from app.modules.sales.order_projects import resolve_element
+        project, element = resolve_element(db, payload.order_project_element_id, project_id=payload.order_project_id)
+        project_id, element_id = project.id, element.id
+    elif payload.order_project_id:
+        from app.modules.sales.order_projects import resolve_project
+        project = resolve_project(db, payload.order_project_id)
+        raise HTTPException(status_code=422, detail=f"Pick the vehicle / lot of {project.op_number} the stock is held for — "
+                                                    "project stock is reserved for one element, not the project as a whole.")
 
     try:
         adjust_reserved_qty(db, item_id=payload.item_id, location_id=payload.location_id, delta=payload.quantity)
@@ -89,6 +119,10 @@ async def create_stock_reservation(
         required_date=payload.required_date,
         status="active",
         remarks=payload.remarks,
+        order_project_id=project_id,
+        order_project_element_id=element_id,
+        source_type="manual",
+        original_qty=payload.quantity,
     )
     db.add(reservation)
     db.commit()
@@ -110,17 +144,20 @@ def _release_reservation(db: Session, reservation: StoreStockReservation, new_st
     return _to_response(db, reservation)
 
 
+# Cancelling releases the hold but keeps the record (status change), so it
+# is an edit, not a delete.
 @router.post("/{reservation_id}/cancel", response_model=StoreStockReservationResponse)
 async def cancel_stock_reservation(
     reservation_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_action("store", "reservations", "edit")),
 ):
     # Locked so a double-click can't release the same hold twice (the second
     # release would eat into another reservation's reserved quantity).
     reservation = db.query(StoreStockReservation).filter(StoreStockReservation.id == reservation_id).with_for_update().first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Stock reservation not found")
+    ensure_in_scope(db, user, reservation)
     return _release_reservation(db, reservation, "cancelled", user)
 
 
@@ -128,7 +165,7 @@ async def cancel_stock_reservation(
 async def fulfill_stock_reservation(
     reservation_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_action("store", "reservations", "edit")),
 ):
     """Marks the reservation as consumed and releases its earmark. Does NOT
     itself reduce on-hand stock — issue the material through a Material
@@ -139,6 +176,7 @@ async def fulfill_stock_reservation(
     reservation = db.query(StoreStockReservation).filter(StoreStockReservation.id == reservation_id).with_for_update().first()
     if not reservation:
         raise HTTPException(status_code=404, detail="Stock reservation not found")
+    ensure_in_scope(db, user, reservation)
     return _release_reservation(db, reservation, "fulfilled", user)
 
 

@@ -14,6 +14,8 @@ class CurrentUserResponse(BaseModel):
     name: str
     role: str
     is_active: bool
+    # Azure Global Administrator: admin everywhere like role == "admin".
+    is_azure_admin: bool = False
     designation: str | None = None
     department: str | None = None
     phone: str | None = None
@@ -25,7 +27,7 @@ class CurrentUserResponse(BaseModel):
     is_plant_head: bool = False
     is_purchase_head: bool = False
     is_director: bool = False
-    is_md: bool = False
+    is_partner: bool = False
     is_finance_manager: bool = False
     is_design_manager: bool = False
     is_rnd_manager: bool = False
@@ -39,3 +41,7 @@ class CurrentUserResponse(BaseModel):
     is_po_approver: bool = False
     notifications_enabled: bool = True
     tab_access: dict[str, list[str]] = {}
+    # Effective `module:tab:action` grants (roles + extras); empty for admins,
+    # who may do everything — the frontend's can() checks role first.
+    permissions: list[str] = []
+    roles: list[str] = []

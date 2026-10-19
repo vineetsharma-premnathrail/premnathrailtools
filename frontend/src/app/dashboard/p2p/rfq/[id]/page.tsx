@@ -3,28 +3,25 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
-import { rfqApi, purchaseOrdersApi, p2pApi, usersApi } from '@/lib/api'
+import { rfqApi, purchaseOrdersApi } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
-import { RFQ, P2PPurchaseOrder, DirectoryUser } from '@/types'
-import SearchableSelect from '@/components/erp/SearchableSelect'
-import { PO_PICKED_ROLE_SETS, P2P_ROLE_LABELS, P2PProjectType } from '@/lib/p2pRoles'
+import { RFQ, P2PPurchaseOrder } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
 import MessageDialog from '@/components/erp/MessageDialog'
-import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
+const textArea: React.CSSProperties = { ...sheetInput, minHeight: 60, resize: 'vertical' }
 const primaryBtn: React.CSSProperties = {
   padding: '10px 20px', borderRadius: 10, border: 'none', cursor: 'pointer',
   background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
@@ -48,7 +45,9 @@ const PO_WORKFLOW_STAGE_LABELS: Record<string, string> = {
 
 const RFQ_STATUS_HEX: Record<string, string> = { draft: '#f59e0b', locked: '#22c55e' }
 const RFQ_STATUS_LABELS: Record<string, string> = { draft: 'Draft', locked: 'Locked' }
-const BRAND_PO_HEX = '#f59e0b'
+// Amber while the PO is still pending/awaiting approval, grey for a draft,
+// green once the PO is approved (incl. receipt stages after it).
+const PO_STAGE_HEX = (label: string) => label === 'PO Approved' ? '#16a34a' : label === 'PO Draft' ? '#64748b' : '#d97706'
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -63,14 +62,24 @@ export default function RfqDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('p2p')
   const params = useParams()
   const router = useRouter()
-  const rfqId = Number(params.id)
+  const { id: rfqId, error: linkError } = useRecordId(params.id as string)
   const isAdmin = user?.role === 'admin'
+  // Purchase Orders and the quote comparison are Purchase-desk pages (they redirect anyone else).
+  const isPurchaseDesk = isAdmin || !!user?.apps?.includes('purchase')
+  const { can, canFeature } = useCan()
+  // R.F.Q features (role editor): vendor quotation files, the comparison page, and prices.
+  const seeVendorQuotes = canFeature('p2p', 'rfq', 'vendor_quotes', 'view')
+  const seeComparison = canFeature('p2p', 'rfq', 'comparison', 'view')
+  const seePoPrices = canFeature('p2p', 'purchase_orders', 'prices', 'view') || can('p2p', 'purchase_orders', 'edit')
+  // The PO built from this RFQ is Procurement › Purchase Orders work.
+  const canCreatePo = isPurchaseDesk && can('p2p', 'purchase_orders', 'create')
 
   const [rfq, setRfq] = useState<RFQ | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [editError, setEditError] = useState('')
 
   const [paymentTerms, setPaymentTerms] = useState('')
   const [deliveryLeadTime, setDeliveryLeadTime] = useState('')
@@ -78,28 +87,18 @@ export default function RfqDetailPage() {
   const [singleQuotationReason, setSingleQuotationReason] = useState('')
   const [comments, setComments] = useState('')
 
-  // --- Purchase Order: the PO already exists outside the system — just record
-  // its number/vendor, attach the document, and send it for approval.
+  // --- Purchase Order: created in the application (Purchase Orders page —
+  // vendor pick, auto PO number, generated Word document), then priced and
+  // sent for approval.
   const [poVendorName, setPoVendorName] = useState('')
-  const [poNumber, setPoNumber] = useState('')
   const [poDraft, setPoDraft] = useState<P2PPurchaseOrder | null>(null)
   const [poDraftLoading, setPoDraftLoading] = useState(false)
-  const [poDocFile, setPoDocFile] = useState<File | null>(null)
-  const [confirmSubmitPo, setConfirmSubmitPo] = useState(false)
-  // Per-line PO prices, keyed by PO item id. Every line must be priced before
-  // the PO can go for approval — the approvers sign off on this value and
-  // Finance's 3-way match pays against it.
-  const [linePrices, setLinePrices] = useState<Record<number, { unitPrice: string; taxRate: string }>>({})
-  // PO approvers are picked here, right before the PO goes for approval.
-  const [prProjectType, setPrProjectType] = useState<P2PProjectType | null>(null)
-  const [poApproverIds, setPoApproverIds] = useState<Record<string, string>>({})
-  const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([])
 
   const load = async () => {
     setLoading(true)
     setError('')
     try {
-      const data = await rfqApi.get(rfqId)
+      const data = await rfqApi.get(rfqId!)
       setRfq(data)
       setPaymentTerms(data.payment_terms || '')
       setDeliveryLeadTime(data.delivery_lead_time || '')
@@ -115,7 +114,6 @@ export default function RfqDetailPage() {
       } else {
         setPoDraft(null)
       }
-      if (data.p2p_status === 'po_drafted') loadPoApproverPicker(data.p2p_request_id)
     } catch (err) {
       setError(extractErrorMessages(err, 'RFQ not found, or you do not have access to it.').join(' '))
     } finally {
@@ -129,10 +127,6 @@ export default function RfqDetailPage() {
       const list = await purchaseOrdersApi.list({ p2p_request_id: p2pRequestId })
       const po: P2PPurchaseOrder | null = list[0] || null
       setPoDraft(po)
-      setLinePrices(Object.fromEntries((po?.items || []).map((i) => [i.id, {
-        unitPrice: i.unit_price != null ? String(i.unit_price) : '',
-        taxRate: i.tax_rate != null ? String(i.tax_rate) : '',
-      }])))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not load the purchase order for this RFQ.'))
     } finally {
@@ -140,117 +134,30 @@ export default function RfqDetailPage() {
     }
   }
 
-  const loadPoApproverPicker = async (p2pRequestId: number) => {
-    try {
-      const [pr, directory] = await Promise.all([p2pApi.get(p2pRequestId), usersApi.directory()])
-      setDirectoryUsers(directory)
-      setPrProjectType(pr.project_type || null)
-      const picked: Record<string, string> = {}
-      for (const slot of pr.po_approval_panel || []) {
-        if (slot.role !== 'director' && slot.people?.[0]) picked[slot.role] = String(slot.people[0].id)
-      }
-      setPoApproverIds(picked)
-    } catch (err) {
-      setError(extractErrorMessages(err, 'Could not load the PO approver list for this requisition.'))
-    }
-  }
-
-  const poApprovalRoles = prProjectType ? PO_PICKED_ROLE_SETS[prProjectType] : []
-  const missingPoApprovers = poApprovalRoles.filter((role) => !poApproverIds[role])
-  const approverOptions = directoryUsers.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})${u.department ? ` — ${u.department}` : ''}` }))
-
   useEffect(() => {
     if (isAuthorized && rfqId) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, rfqId])
 
-  const runPoAction = async (fn: () => Promise<unknown>) => {
-    setBusy(true)
-    setError('')
-    try {
-      await fn()
-      await load()
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Action failed.'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // The PO itself is agreed/issued outside the system — this just records
-  // it (number/vendor, both optional except vendor) and attaches the
-  // document, without the formal Vendor Quotations -> Evaluation -> Vendor
-  // Selection pipeline the backend otherwise expects.
-  const attachPo = () => {
-    if (!rfq) return
-    runPoAction(async () => {
-      const created = await rfqApi.createPoDraft(rfq.id, {
-        vendor_name: poVendorName.trim() || undefined,
-        po_number: poNumber.trim() || undefined,
-      })
-      if (poDocFile) {
-        await rfqApi.uploadPoDocument(rfq.id, created.id, poDocFile)
-        setPoDocFile(null)
-      }
-    })
-  }
-
-  const uploadPoDocument = () => {
-    if (!rfq || !poDraft || !poDocFile) return
-    runPoAction(async () => {
-      await rfqApi.uploadPoDocument(rfq.id, poDraft.id, poDocFile)
-      setPoDocFile(null)
-    })
-  }
-
-  const unpricedLines = (poDraft?.items || []).filter((i) => !(Number(linePrices[i.id]?.unitPrice) > 0))
-  const draftTotal = (poDraft?.items || []).reduce((sum, i) => {
-    const unit = Number(linePrices[i.id]?.unitPrice) || 0
-    const tax = Number(linePrices[i.id]?.taxRate) || 0
-    return sum + i.quantity * unit * (1 + tax / 100)
-  }, 0)
-
-  const pricingPayload = () => ({
-    items: (poDraft?.items || []).map((i) => ({
-      id: i.id,
-      unit_price: Number(linePrices[i.id]?.unitPrice),
-      tax_rate: linePrices[i.id]?.taxRate !== '' ? Number(linePrices[i.id]?.taxRate) : null,
-    })),
-  })
-
-  const savePrices = () => {
-    if (!rfq || !poDraft) return
-    if (unpricedLines.length) { setError(`Enter a unit price greater than zero for: ${unpricedLines.map((i) => i.item_name).join(', ')}.`); return }
-    runPoAction(() => rfqApi.updatePoDraft(rfq.id, poDraft.id, pricingPayload()))
-  }
-
-  const requestSubmitPo = () => {
-    if (unpricedLines.length) { setError(`Enter a unit price for every line before sending the PO for approval — missing: ${unpricedLines.map((i) => i.item_name).join(', ')}.`); return }
-    if (missingPoApprovers.length) { setError(`Pick the PO approvers before sending the PO for approval — missing: ${missingPoApprovers.map((r) => P2P_ROLE_LABELS[r]).join(', ')}.`); return }
-    setConfirmSubmitPo(true)
-  }
-
-  const confirmSubmitPoDo = () => {
-    setConfirmSubmitPo(false)
-    if (!rfq || !poDraft) return
-    // Save the prices on screen first, so what's approved is what was entered.
-    runPoAction(async () => {
-      await rfqApi.updatePoDraft(rfq.id, poDraft.id, pricingPayload())
-      if (poApprovalRoles.length) {
-        await p2pApi.setPoApprovers(rfq.p2p_request_id, Object.fromEntries(poApprovalRoles.map((r) => [r, Number(poApproverIds[r])])))
-      }
-      await rfqApi.submitPoDraft(rfq.id, poDraft.id)
-    })
-  }
-
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p/rfq" listLabel="Back to RFQs" /></div>)
   if (loading) return <p style={{ fontSize: 13, color: TEXT.secondary }}>Loading…</p>
   if (error && !rfq) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
   if (!rfq) return null
 
+  const openAdminEdit = () => {
+    setPaymentTerms(rfq.payment_terms || '')
+    setDeliveryLeadTime(rfq.delivery_lead_time || '')
+    setLateDeliveryClause(rfq.late_delivery_clause || '')
+    setSingleQuotationReason(rfq.single_quotation_reason || '')
+    setComments(rfq.comments || '')
+    setEditError('')
+    setEditing(true)
+  }
+
   const saveAdminEdit = async () => {
     setBusy(true)
-    setError('')
+    setEditError('')
     try {
       await rfqApi.update(rfq.id, {
         payment_terms: paymentTerms.trim() || undefined,
@@ -261,8 +168,8 @@ export default function RfqDetailPage() {
       })
       setEditing(false)
       await load()
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to update RFQ.'))
+    } catch (err) {
+      setEditError(extractErrorMessages(err, 'Failed to update RFQ.').join(' '))
     } finally {
       setBusy(false)
     }
@@ -289,17 +196,18 @@ export default function RfqDetailPage() {
             ← Back
           </button>
           {rfq.status === 'locked' && isAdmin && (
-            <button data-tour="rfq-detail-admin-edit-btn" disabled={busy} onClick={() => setEditing((e) => !e)} style={ghostBtn}>{editing ? 'Close Edit' : 'Admin Edit'}</button>
+            <button data-tour="rfq-detail-admin-edit-btn" disabled={busy} onClick={openAdminEdit} style={ghostBtn}>Admin Edit</button>
           )}
         </div>
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Cannot Update RFQ" message={error} onClose={() => setError('')} />
 
+      {seeVendorQuotes && (
       <div data-tour="rfq-detail-vendor-quotations" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Supplier / Vendor Quotations</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
-          {(['L1', 'L2', 'L3', 'L4'] as const).map((tier, i) => {
+          {(['L1', 'L2', 'L3', 'L4'] as const).map((tier) => {
             const attachment = rfq.attachments.find((a) => a.vendor_tier === tier)
             if (!attachment) return null
             return (
@@ -319,199 +227,114 @@ export default function RfqDetailPage() {
           })}
         </div>
       </div>
+      )}
 
       {rfq.status === 'locked' && rfq.p2p_status && rfq.p2p_status !== 'approved' && (
         <div style={sectionStyle}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Purchase Order</h2>
-            <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${BRAND_PO_HEX}1a`, color: BRAND_PO_HEX }}>
-              {PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || rfq.p2p_status}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${PO_STAGE_HEX(PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || '')}1a`, color: PO_STAGE_HEX(PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || '') }}>
+                {PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || rfq.p2p_status}
+              </span>
+              {/* PO creation, pricing and approval now live under Purchase Orders. */}
+              {isPurchaseDesk && <button type="button" data-tour="rfq-detail-open-po" onClick={() => router.push(recordHref('/dashboard/p2p/purchase-orders/new', rfq, 'id', undefined, 'rfq'))} style={ghostBtn}>Open in Purchase Orders →</button>}
+            </div>
           </div>
 
-          {/* Not yet attached — the PO was already made outside the system: just record its
-              number/vendor/value and attach the document. No evaluation/selection ceremony. */}
+          {/* No PO yet — next step is creating it in the application: pick the vendor from
+              the quotes (L1 by default), the PO number is generated, the PO document is
+              built on the letterhead. Nothing is typed in or attached here. */}
           {!['po_drafted', 'po_raised', 'po_approved', 'partially_received', 'received', 'closed'].includes(rfq.p2p_status) && (
             <>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
-                <div data-tour="rfq-detail-po-vendor-name" style={{ flex: '1 1 200px', minWidth: 180, maxWidth: 320 }}>
-                  <label style={labelStyle}>L1 Vendor</label>
-                  <input style={{ ...inputStyle, background: 'rgba(148,163,184,0.08)' }} value={poVendorName} readOnly />
-                </div>
-                <div data-tour="rfq-detail-po-number" style={{ flex: '0 1 180px', minWidth: 150 }}>
-                  <label style={labelStyle}>PO Number</label>
-                  <input style={inputStyle} value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="Auto-generated if blank" />
-                </div>
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>PO Document</label>
-                <input data-tour="rfq-detail-po-doc-file" type="file" onChange={(e) => setPoDocFile(e.target.files?.[0] || null)} style={inputStyle} />
-              </div>
-              <button data-tour="rfq-detail-po-attach-btn" disabled={busy} onClick={attachPo} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>Attach PO</button>
+              <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 14px' }}>
+                Next: select the vendor and create the PO. L1 {poVendorName ? `(${poVendorName}) ` : ''}is pre-selected; the PO number and
+                PO document are generated by the system.
+              </p>
+              {canCreatePo
+                ? <button data-tour="rfq-detail-po-create-btn" onClick={() => router.push(recordHref('/dashboard/p2p/purchase-orders/new', rfq, 'id', { create: 1 }, 'rfq'))} style={primaryBtn}>Select Vendor &amp; Create PO →</button>
+                : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Creating the PO needs Create access on Procurement › Purchase Orders.</p>}
+              {/* ME47/ME49: per-line vendor prices, comparison, line-level award, and one PO per vendor. */}
+              {isPurchaseDesk && seeComparison && <button type="button" onClick={() => router.push(`${recordPath('/dashboard/p2p/rfq', rfq)}/comparison`)} style={{ ...ghostBtn, marginLeft: 10 }}>Line quotes &amp; comparison (split by vendor) →</button>}
             </>
           )}
 
-          {/* Stage: po_drafted — attach the PO document (if not already done), then send for approval */}
+          {/* Stage: po_drafted — the PO is priced and saved on the Purchase Orders page;
+              saving it there sends it for approval. Nothing is sent from the RFQ. */}
           {rfq.p2p_status === 'po_drafted' && (
             poDraftLoading ? (
               <p style={{ fontSize: 13, color: TEXT.secondary }}>Loading PO…</p>
-            ) : !poDraft ? (
-              <p style={{ fontSize: 13, color: TEXT.secondary }}>PO not found.</p>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 16 }}>
-                  <InfoRow label="PO Number" value={poDraft.po_number} />
-                  <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
-                </div>
-
-                <div data-tour="rfq-detail-po-line-prices" style={{ marginBottom: 16 }}>
-                  <p style={labelStyle}>Line Prices *</p>
-                  <div style={{ overflow: 'auto', border: `1px solid ${BORDER.normal}`, borderRadius: 10 }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
-                      <thead>
-                        <tr>
-                          {['Item', 'Qty', 'Unit Price *', 'Tax %', 'Line Total'].map((h) => (
-                            <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {poDraft.items.map((i) => {
-                          const unit = Number(linePrices[i.id]?.unitPrice) || 0
-                          const tax = Number(linePrices[i.id]?.taxRate) || 0
-                          return (
-                            <tr key={i.id} style={{ borderTop: `1px solid ${BORDER.normal}` }}>
-                              <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body }}>{i.item_name}{i.part_code ? ` (${i.part_code})` : ''}</td>
-                              <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{i.quantity} {i.unit || ''}</td>
-                              <td style={{ padding: '6px 10px', width: 140 }}>
-                                <input type="number" min="0" step="0.01" style={{ ...inputStyle, padding: '7px 10px' }} value={linePrices[i.id]?.unitPrice ?? ''}
-                                  onChange={(e) => setLinePrices((prev) => ({ ...prev, [i.id]: { ...prev[i.id], unitPrice: e.target.value } }))} />
-                              </td>
-                              <td style={{ padding: '6px 10px', width: 100 }}>
-                                <input type="number" min="0" max="100" step="0.01" style={{ ...inputStyle, padding: '7px 10px' }} value={linePrices[i.id]?.taxRate ?? ''}
-                                  onChange={(e) => setLinePrices((prev) => ({ ...prev, [i.id]: { ...prev[i.id], taxRate: e.target.value } }))} />
-                              </td>
-                              <td style={{ padding: '8px 10px', fontSize: 13, color: TEXT.body, whiteSpace: 'nowrap' }}>{unit > 0 ? (i.quantity * unit * (1 + tax / 100)).toFixed(2) : '—'}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, gap: 10, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13, color: TEXT.body }}>
-                      PO value (incl. tax): <strong>{unpricedLines.length ? '—' : draftTotal.toFixed(2)}</strong>
-                      {unpricedLines.length > 0 && <span style={{ color: '#b91c1c', marginLeft: 8 }}>{unpricedLines.length} line(s) still need a price</span>}
-                    </span>
-                    <button data-tour="rfq-detail-po-save-prices-btn" disabled={busy} onClick={savePrices} style={{ ...ghostBtn, padding: '8px 16px', opacity: busy ? 0.7 : 1 }}>Save Prices</button>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: 16 }}>
-                  <p style={labelStyle}>PO Document</p>
-                  {poDraft.document_filename ? (
-                    <a
-                      href="#"
-                      onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => rfqApi.getPoDocumentBlob(rfq.id, poDraft.id), poDraft.document_filename!) }}
-                      style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}
-                    >
-                      {poDraft.document_filename}
-                    </a>
-                  ) : (
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <input data-tour="rfq-detail-po-doc-file" type="file" onChange={(e) => setPoDocFile(e.target.files?.[0] || null)} style={inputStyle} />
-                      <button data-tour="rfq-detail-po-upload-btn" disabled={busy || !poDocFile} onClick={uploadPoDocument} style={{ ...ghostBtn, opacity: busy || !poDocFile ? 0.7 : 1 }}>Upload</button>
-                    </div>
-                  )}
-                </div>
-
-                {poApprovalRoles.length > 0 && (
-                  <div data-tour="rfq-detail-po-approvers" style={{ marginBottom: 16 }}>
-                    <p style={{ ...labelStyle, marginBottom: 2 }}>PO Approvers *</p>
-                    <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 10px' }}>
-                      The PO goes to the people picked below and to every Director once you send it for approval.
-                    </p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-                      {poApprovalRoles.map((role) => (
-                        <div key={role} style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 340 }}>
-                          <label style={labelStyle}>{P2P_ROLE_LABELS[role]} *</label>
-                          <SearchableSelect
-                            value={poApproverIds[role] || ''}
-                            onChange={(v) => setPoApproverIds((prev) => ({ ...prev, [role]: v }))}
-                            options={approverOptions}
-                            placeholder={`Search ${P2P_ROLE_LABELS[role].toLowerCase()}…`}
-                          />
-                        </div>
-                      ))}
-                      <div style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 340 }}>
-                        <label style={labelStyle}>Director</label>
-                        <p style={{ fontSize: 13, color: TEXT.secondary, margin: '10px 0 0' }}>Every Director — set on the user</p>
-                      </div>
-                    </div>
+                {poDraft && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
+                    <InfoRow label="PO Number" value={poDraft.po_number} />
+                    <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
                   </div>
                 )}
-
-                <button data-tour="rfq-detail-po-send-approval-btn" disabled={busy} onClick={requestSubmitPo} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>Send for Approval</button>
+                <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>
+                  PO created. Enter the prices and save it on the Purchase Orders page — saving sends it for approval. Use “Open in Purchase Orders →”.
+                </p>
               </>
             )
           )}
 
-          {/* Stage: po_raised and beyond — the existing Purchase Head / Director / MD approval chain takes over */}
+          {/* Stage: po_raised and beyond — PO approval through the approval engine takes over */}
           {['po_raised', 'po_approved', 'partially_received', 'received', 'closed'].includes(rfq.p2p_status) && (
             <div>
               {poDraft?.po_number && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14, marginBottom: 14 }}>
                   <InfoRow label="PO Number" value={poDraft.po_number} />
                   <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
-                  <InfoRow label="PO Value (incl. tax)" value={poDraft.total_value != null ? poDraft.total_value.toFixed(2) : '—'} />
+                  {seePoPrices && <InfoRow label="PO Value (incl. tax)" value={poDraft.total_value != null ? poDraft.total_value.toFixed(2) : '—'} />}
                 </div>
               )}
               <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 12px' }}>
                 {rfq.p2p_status === 'po_raised'
-                  ? 'This PO has been sent for approval — any one of the requisition’s PO approvers can approve it.'
+                  ? 'This PO has been sent for approval — the requisition page shows who it is waiting for.'
                   : 'This PO has been approved.'}
               </p>
-              <button data-tour="rfq-detail-po-view-approval-btn" onClick={() => router.push(`/dashboard/p2p/${rfq.p2p_request_id}?from=po-approval`)} style={ghostBtn}>View Approval Status</button>
+              <button data-tour="rfq-detail-po-view-approval-btn" onClick={() => router.push(`${recordPath('/dashboard/p2p', rfq, 'p2p_request_id')}?from=po-approval`)} style={ghostBtn}>View Approval Status</button>
             </div>
           )}
         </div>
       )}
 
-      {editing ? (
-        <div style={sectionStyle}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Admin Edit</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
-            <div>
-              <label style={labelStyle}>Payment Terms</label>
-              <input data-tour="rfq-edit-payment-terms" style={inputStyle} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} />
-            </div>
-            <div>
-              <label style={labelStyle}>Delivery Lead Time</label>
-              <input data-tour="rfq-edit-delivery-lead-time" style={inputStyle} value={deliveryLeadTime} onChange={(e) => setDeliveryLeadTime(e.target.value)} />
-            </div>
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={labelStyle}>Late Delivery Clause</label>
-              <textarea data-tour="rfq-edit-late-delivery-clause" style={{ ...inputStyle, minHeight: 60 }} value={lateDeliveryClause} onChange={(e) => setLateDeliveryClause(e.target.value)} />
-            </div>
+      {editing && (
+        <FormSheet width={580} icon="edit" title={`Admin Edit — ${rfq.rfq_number}`} subtitle="Correct the commercial terms of a locked RFQ. The quotations stay as attached."
+          onClose={() => { if (!busy) setEditing(false) }} busy={busy}
+          footer={<>
+            <button type="button" onClick={() => setEditing(false)} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+            <button type="button" data-tour="rfq-edit-save" onClick={saveAdminEdit} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="check" size={16} />{busy ? 'Saving…' : 'Save Changes'}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {editError && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{editError}</div>}
+            <SheetSection icon="rupee" title="L1 Vendor Commercial Terms">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                <div style={{ flex: '1 1 220px' }}>
+                  <label style={sheetLabel}>Payment Terms</label>
+                  <input data-tour="rfq-edit-payment-terms" style={sheetInput} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} autoFocus />
+                </div>
+                <div style={{ flex: '1 1 160px' }}>
+                  <label style={sheetLabel}>Delivery Lead Time</label>
+                  <input data-tour="rfq-edit-delivery-lead-time" style={sheetInput} value={deliveryLeadTime} onChange={(e) => setDeliveryLeadTime(e.target.value)} />
+                </div>
+              </div>
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Late Delivery Clause</label>
+              <textarea data-tour="rfq-edit-late-delivery-clause" style={textArea} value={lateDeliveryClause} onChange={(e) => setLateDeliveryClause(e.target.value)} />
+            </SheetSection>
             {rfq.is_single_quotation && (
-              <>
-                <div>
-                  <label style={labelStyle}>Reason for Single Quotation</label>
-                  <textarea data-tour="rfq-edit-single-reason" style={{ ...inputStyle, minHeight: 60 }} value={singleQuotationReason} onChange={(e) => setSingleQuotationReason(e.target.value)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Comments</label>
-                  <textarea data-tour="rfq-edit-comments" style={{ ...inputStyle, minHeight: 60 }} value={comments} onChange={(e) => setComments(e.target.value)} />
-                </div>
-              </>
+              <SheetSection icon="alert" title="Single Quotation" color="#d97706">
+                <label style={sheetLabel}>Reason for Single Quotation</label>
+                <textarea data-tour="rfq-edit-single-reason" style={textArea} value={singleQuotationReason} onChange={(e) => setSingleQuotationReason(e.target.value)} />
+                <label style={{ ...sheetLabel, marginTop: 14 }}>Comments</label>
+                <textarea data-tour="rfq-edit-comments" style={textArea} value={comments} onChange={(e) => setComments(e.target.value)} />
+              </SheetSection>
             )}
-            <div style={{ gridColumn: '1 / -1' }}>
-              <button data-tour="rfq-edit-save" disabled={busy} onClick={saveAdminEdit} style={{ ...primaryBtn, opacity: busy ? 0.7 : 1 }}>Save Changes</button>
-            </div>
           </div>
-        </div>
-      ) : (
-        <>
+        </FormSheet>
+      )}
+      <>
           {rfq.is_single_quotation && (
             <div data-tour="rfq-detail-single-quotation" style={sectionStyle}>
               <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Single Quotation</h2>
@@ -532,8 +355,7 @@ export default function RfqDetailPage() {
               </div>
             </div>
           </div>
-        </>
-      )}
+      </>
 
       <div data-tour="rfq-detail-meta" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Details</h2>
@@ -544,15 +366,6 @@ export default function RfqDetailPage() {
         </div>
       </div>
 
-      <ConfirmDialog
-        open={confirmSubmitPo}
-        title="Send this PO for approval?"
-        message={`The PO value of ${draftTotal.toFixed(2)} (incl. tax) will be sent to the requisition's PO approvers — any one of them approving approves it — and the PO can no longer be edited here.`}
-        confirmLabel="Send for Approval"
-        danger={false}
-        onConfirm={confirmSubmitPoDo}
-        onCancel={() => setConfirmSubmitPo(false)}
-      />
     </div>
   )
 }

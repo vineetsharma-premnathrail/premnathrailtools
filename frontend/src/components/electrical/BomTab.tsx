@@ -5,21 +5,23 @@
 // (rating + spec text) and Purchase Requirement (procurement status + the
 // P2P purchase requisition the line is bought on).
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { electricalApi } from '@/lib/api'
+import { useRecordId } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { useAuth } from '@/hooks/useAuth'
 import { TEXT } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { SheetColumns, SheetSection, sheetInput, sheetLabel, sheetHint, Req } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import {
   ElectricalBomItem, ElectricalJobDetail, ElectricalLookupOption, ElectricalMeta, ElectricalPanel,
 } from '@/types'
 import {
-  inputStyle, sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallBtn, smallDangerBtn, linkStyle,
-  tableWrap, mutedText, Pill, ErrorBanner, NoticeBanner, Modal, F, rowStyle,
-  SELECTION_LABELS, SELECTION_HEX, PROCUREMENT_LABELS, PROCUREMENT_HEX, numOrNull, strOrNull,
+  sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallBtn, smallDangerBtn, linkStyle,
+  tableWrap, Pill, ErrorBanner, NoticeBanner, Modal, ModalFooter, F, rowStyle,
+  SELECTION_LABELS, SELECTION_HEX, PROCUREMENT_LABELS, PROCUREMENT_HEX, numOrNull, strOrNull, useJobFeatures,
 } from './shared'
 
 type Msg = string | string[]
@@ -29,17 +31,32 @@ type BomForm = {
   panel_id: string; selection_status: string; procurement_status: string; remarks: string
 }
 
-const fetchBom = (jobId: number) =>
-  Promise.all([electricalApi.listBom(jobId), electricalApi.listPanels(jobId)]) as Promise<[ElectricalBomItem[], ElectricalPanel[]]>
+// Panels feed the Panel picker; skipped for a role without the job's Panels feature.
+const fetchBom = (jobId: number, withPanels: boolean) =>
+  Promise.all([electricalApi.listBom(jobId), withPanels ? electricalApi.listPanels(jobId) : Promise.resolve([])]) as Promise<[ElectricalBomItem[], ElectricalPanel[]]>
 
 const fmtQty = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 3 })
 const fmtMoney = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 const small: React.CSSProperties = { fontSize: 11, color: TEXT.muted, marginTop: 2 }
+// Pending central approval request of a line's component selection (Organization › Approval Workflows).
+const approvalRequestId = (i: ElectricalBomItem) => (i as ElectricalBomItem & { approval_request_id?: number | null }).approval_request_id ?? null
 
 export default function BomTab({ job, meta, canEdit, onChanged }: { job: ElectricalJobDetail; meta: ElectricalMeta; canEdit: boolean; onChanged: () => void }) {
   const router = useRouter()
   const { user } = useAuth()
   const canRaisePr = !!user?.apps?.includes('p2p')
+  // Electrical › RRV Electrical Jobs › BOM / BOM costs (canEdit = job open + BOM edit).
+  const { jf, sees } = useJobFeatures()
+  const isOpen = ['draft', 'in_progress', 'handed_over'].includes(job.status)
+  const canSubmit = jf('bom', 'submit')
+  const canApprove = jf('bom', 'approve')
+  const canAdd = isOpen && jf('bom', 'create')
+  const canRemove = isOpen && jf('bom', 'delete')
+  const seeCosts = sees('costs')
+  const seePanels = sees('panels')
+  // ?focus=<line id> (from an approval link) opens that line's approval.
+  const { id: focusId } = useRecordId(useSearchParams().get('focus'))
+  const [reviewing, setReviewing] = useState<ElectricalBomItem | null>(null)
 
   const [items, setItems] = useState<ElectricalBomItem[]>([])
   const [panels, setPanels] = useState<ElectricalPanel[]>([])
@@ -69,25 +86,35 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
   const [prOptions, setPrOptions] = useState<ElectricalLookupOption[]>([])
   const [prChoice, setPrChoice] = useState('')
   const [linkError, setLinkError] = useState<Msg>('')
+  // Server-side search for the pickers — the lookups return only the first
+  // 500 Store items / newest 100 PRs, so typing here reaches the rest.
+  const [storeSearch, setStoreSearch] = useState('')
+  const [prSearch, setPrSearch] = useState('')
 
   useEffect(() => {
     let cancelled = false
-    fetchBom(job.id)
-      .then(([b, p]) => { if (!cancelled) { setItems(b); setPanels(p) } })
+    fetchBom(job.id, seePanels)
+      .then(([b, p]) => {
+        if (cancelled) return
+        setItems(b)
+        setPanels(p)
+        const hit = focusId ? b.find((i) => i.id === focusId) : undefined
+        if (hit) setReviewing(hit)
+      })
       .catch((err) => { if (!cancelled) setError(extractErrorMessages(err, `Could not load the electrical BOM for ${job.job_number}.`)) })
       .finally(() => { if (!cancelled) setLoaded(true) })
     return () => { cancelled = true }
-  }, [job.id, job.job_number])
+  }, [job.id, job.job_number, focusId, seePanels])
 
   const reload = useCallback(async () => {
     try {
-      const [b, p] = await fetchBom(job.id)
+      const [b, p] = await fetchBom(job.id, seePanels)
       setItems(b)
       setPanels(p)
     } catch (err) {
       setError(extractErrorMessages(err, `Could not reload the electrical BOM for ${job.job_number}.`))
     }
-  }, [job.id, job.job_number])
+  }, [job.id, job.job_number, seePanels])
 
   /** Runs a mutation, then reloads the list and tells the parent to re-fetch the job. */
   const mutate = async (fn: () => Promise<unknown>, fallback: string, opts: { success?: string; onError?: (m: Msg) => void } = {}) => {
@@ -117,19 +144,47 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
 
   const set = (k: keyof BomForm, v: string) => setForm((f) => ({ ...f, [k]: v }))
 
-  const loadStoreItems = () => {
-    if (storeItems !== null) return
-    electricalApi.lookupItems()
-      .then((rows: ElectricalLookupOption[]) => setStoreItems(rows))
-      .catch((err) => { setStoreItems([]); setFormError(extractErrorMessages(err, 'Could not load Store items for the item picker. You can still add the line without linking a Store item.')) })
-  }
+  useEffect(() => {
+    if (!formOpen) return
+    let cancelled = false
+    const q = storeSearch.trim()
+    const t = setTimeout(() => {
+      electricalApi.lookupItems(q || undefined)
+        .then((rows: ElectricalLookupOption[]) => { if (!cancelled) setStoreItems(rows) })
+        .catch((err) => {
+          if (cancelled) return
+          setStoreItems([])
+          setFormError(extractErrorMessages(err, q
+            ? `Could not search Store items for "${q}". Try a different search, or add the line without linking a Store item.`
+            : 'Could not load Store items for the item picker. You can still add the line without linking a Store item.'))
+        })
+    }, q ? 300 : 0)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [formOpen, storeSearch])
+
+  const linkingId = linking?.id
+  useEffect(() => {
+    if (!linkingId) return
+    let cancelled = false
+    const q = prSearch.trim()
+    const t = setTimeout(() => {
+      electricalApi.lookupPurchaseRequisitions(q || undefined)
+        .then((rows: ElectricalLookupOption[]) => { if (!cancelled) setPrOptions(rows) })
+        .catch((err) => {
+          if (!cancelled) setLinkError(extractErrorMessages(err, q
+            ? `Could not search purchase requisitions for "${q}". Check the PR number and try again.`
+            : 'Could not load purchase requisitions from Procurement. Type the PR number in the search box to try again.'))
+        })
+    }, q ? 300 : 0)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [linkingId, prSearch])
 
   const openAdd = () => {
     setEditing(null)
     setForm(blankForm())
     setFormError('')
+    setStoreSearch('')
     setFormOpen(true)
-    loadStoreItems()
   }
 
   const openEdit = (i: ElectricalBomItem) => {
@@ -143,13 +198,13 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
       procurement_status: i.procurement_status, remarks: i.remarks || '',
     })
     setFormError('')
+    setStoreSearch('')
     setFormOpen(true)
-    loadStoreItems()
   }
 
   const storeOptions = useMemo(() => {
     const opts = [{ value: '', label: '— Not a Store item —' }, ...(storeItems || []).map((r) => ({ value: String(r.id), label: r.label }))]
-    // Keep the current link visible even when it falls outside the first 200 lookup rows.
+    // Keep the current link visible even when it isn't in the current lookup rows.
     if (form.store_item_id && !opts.some((o) => o.value === form.store_item_id)) {
       opts.push({ value: form.store_item_id, label: editing?.store_item_code || `Store item #${form.store_item_id}` })
     }
@@ -211,14 +266,29 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
     setPrChoice('')
     setLinkError('')
     setPrOptions([])
-    electricalApi.lookupPurchaseRequisitions()
-      .then((rows: ElectricalLookupOption[]) => setPrOptions(rows))
-      .catch((err) => setLinkError(extractErrorMessages(err, 'Could not load purchase requisitions from Procurement.')))
+    setPrSearch('')
   }
 
-  const prSelectOptions = useMemo(() => prOptions
-    .filter((r) => !!r.code)
-    .map((r) => ({ value: String(r.code), label: r.extra ? `${r.label} · ${r.extra.replace(/_/g, ' ')}` : r.label })), [prOptions])
+  const prSelectOptions = useMemo(() => {
+    const opts = prOptions
+      .filter((r) => !!r.code)
+      .map((r) => ({ value: String(r.code), label: r.extra ? `${r.label} · ${r.extra.replace(/_/g, ' ')}` : r.label }))
+    // Keep the picked PR visible after the search text changes.
+    if (prChoice && !opts.some((o) => o.value === prChoice)) opts.push({ value: prChoice, label: prChoice })
+    return opts
+  }, [prOptions, prChoice])
+
+  // 'PR Raised' / 'Ordered' must be backed by a linked requisition (the
+  // backend enforces it). Without a PR everything except those two is
+  // offered (a Store-held line can still go In Stock → Issued); once linked,
+  // the purchase lifecycle statuses are. The line's current status is always
+  // kept so an older line isn't silently changed.
+  const linkedPr = editing?.p2p_request_id ? (editing.p2p_number || `PR #${editing.p2p_request_id}`) : null
+  const procurementOptions = useMemo(() => {
+    const keys = linkedPr ? ['pr_raised', 'ordered', 'received', 'issued'] : ['required', 'in_stock', 'received', 'issued']
+    if (form.procurement_status && !keys.includes(form.procurement_status)) keys.push(form.procurement_status)
+    return keys.filter((k) => PROCUREMENT_LABELS[k]).map((k) => [k, PROCUREMENT_LABELS[k]] as const)
+  }, [linkedPr, form.procurement_status])
 
   const confirmLink = async () => {
     if (!linking) return
@@ -233,11 +303,14 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
   }
 
   const raisePr = (i: ElectricalBomItem) => {
+    // PR lines are Item Master items: the BOM line must point at one first.
+    if (!i.store_item_id) {
+      setError(`BOM line ${i.line_no} isn't linked to an Item Master item, so a requisition can't be raised for it. Edit the line and pick its Store item (add the item in Store › Item Master first if it's new), then use Raise PR.`)
+      return
+    }
     const params = new URLSearchParams({
-      item_name: i.description,
+      store_item_id: String(i.store_item_id),
       make: i.make || '',
-      part_code: i.part_number || '',
-      unit: i.uom || '',
       quantity: String(Math.ceil(i.quantity)),
       remarks: `Electrical BOM line ${i.line_no} for ${job.job_number} (${job.title}).`,
     })
@@ -251,13 +324,13 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, flexWrap: 'wrap' }}>
           <p style={{ ...sectionTitle, margin: 0 }}>Electrical BOM</p>
-          <span style={{ fontSize: 12, color: TEXT.muted }}>
+          <span data-tour="elec-bom-summary" style={{ fontSize: 12, color: TEXT.muted }}>
             {items.length} line{items.length === 1 ? '' : 's'}
             {' · '}<span style={{ color: stats.toBuy ? '#DC2626' : TEXT.muted, fontWeight: stats.toBuy ? 600 : 400 }}>{stats.toBuy} to buy</span>
-            {' · '}Est. cost <strong style={{ color: TEXT.heading }}>{fmtMoney(stats.cost)}</strong>
+            {seeCosts && <>{' · '}Est. cost <strong style={{ color: TEXT.heading }}>{fmtMoney(stats.cost)}</strong></>}
           </span>
         </div>
-        {canEdit && <button type="button" style={primaryBtn} onClick={openAdd}>+ Add Component</button>}
+        {canAdd && <button data-tour="elec-bom-add-btn" type="button" style={primaryBtn} onClick={openAdd}>+ Add Component</button>}
       </div>
       {canEdit && (
         <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>
@@ -270,7 +343,7 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
       <ErrorBanner error={error} />
       <NoticeBanner notice={notice} />
 
-      <div style={tableWrap}>
+      <div data-tour="elec-bom-table" style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: canEdit ? 1180 : 1000 }}>
           <thead>
             <tr>{headers.map((h, idx) => <th key={`${h}-${idx}`} style={thStyle}>{h}</th>)}</tr>
@@ -302,8 +375,15 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
                 </td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtQty(i.quantity)} {i.uom}</td>
                 <td style={tdStyle}>{i.panel_tag || <span style={{ color: TEXT.muted }}>—</span>}</td>
-                <td style={tdStyle}><Pill value={i.selection_status} labels={SELECTION_LABELS} hex={SELECTION_HEX} /></td>
-                <td style={tdStyle}>
+                <td data-tour="elec-bom-selection-cell" style={tdStyle}>
+                  <Pill value={i.selection_status} labels={SELECTION_LABELS} hex={SELECTION_HEX} />
+                  {approvalRequestId(i) && (
+                    <div style={small}>
+                      <button type="button" style={{ ...linkStyle, fontSize: 11 }} onClick={() => setReviewing(i)}>Awaiting approval · Review</button>
+                    </div>
+                  )}
+                </td>
+                <td data-tour="elec-bom-procurement-cell" style={tdStyle}>
                   <Pill value={i.procurement_status} labels={PROCUREMENT_LABELS} hex={PROCUREMENT_HEX} />
                   {i.p2p_number && (
                     <div style={small}>{i.p2p_number}{i.p2p_status ? ` · ${i.p2p_status.replace(/_/g, ' ')}` : ''}</div>
@@ -312,16 +392,25 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
                 {canEdit && (
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button type="button" style={smallBtn} disabled={busy} onClick={() => openEdit(i)}>Edit</button>
+                      <button data-tour="elec-bom-edit-btn" type="button" style={smallBtn} disabled={busy} onClick={() => openEdit(i)}>Edit</button>
+                      {i.selection_status === 'selected' && !approvalRequestId(i) && canSubmit && (
+                        <button
+                          data-tour="elec-bom-submit-btn" type="button" style={smallBtn} disabled={busy}
+                          title="Send this line's make and part number for approval"
+                          onClick={() => mutate(() => electricalApi.submitBomItem(job.id, i.id), `Could not submit BOM line ${i.line_no} for approval.`, { success: `BOM line ${i.line_no} submitted for approval.` })}
+                        >
+                          Submit for approval
+                        </button>
+                      )}
                       {i.p2p_request_id ? (
-                        <button type="button" style={smallBtn} disabled={busy} onClick={() => setUnlinking(i)}>Unlink PR</button>
+                        <button data-tour="elec-bom-unlink-pr-btn" type="button" style={smallBtn} disabled={busy} onClick={() => setUnlinking(i)}>Unlink PR</button>
                       ) : (
-                        <button type="button" style={smallBtn} disabled={busy} onClick={() => openLink(i)}>Link PR</button>
+                        <button data-tour="elec-bom-link-pr-btn" type="button" style={smallBtn} disabled={busy} onClick={() => openLink(i)}>Link PR</button>
                       )}
                       {i.procurement_status === 'required' && canRaisePr && (
-                        <button type="button" style={linkStyle} onClick={() => raisePr(i)}>Raise PR</button>
+                        <button data-tour="elec-bom-raise-pr-btn" type="button" style={linkStyle} onClick={() => raisePr(i)}>Raise PR</button>
                       )}
-                      <button type="button" style={smallDangerBtn} disabled={busy} onClick={() => setDeleting(i)}>Delete</button>
+                      {canRemove && <button data-tour="elec-bom-delete-btn" type="button" style={smallDangerBtn} disabled={busy} onClick={() => setDeleting(i)}>Delete</button>}
                     </div>
                   </td>
                 )}
@@ -332,101 +421,148 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
       </div>
 
       {/* Add / edit component */}
-      <Modal open={formOpen} title={editing ? `Edit BOM Line ${editing.line_no}` : 'Add Component'} onClose={() => setFormOpen(false)} width={760}>
-        <ErrorBanner error={formError} />
-        <div style={rowStyle}>
-          <F label="Category" basis={190}>
-            <select style={inputStyle} value={form.category} onChange={(e) => set('category', e.target.value)}>
-              {Object.entries(meta.component_categories || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-          <F label="Store Item (optional)" basis={300} grow max={440}>
-            <SearchableSelect value={form.store_item_id} onChange={pickStoreItem} options={storeOptions}
-              placeholder={storeItems === null ? 'Loading Store items…' : 'Search Store items…'} />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Description *" basis={320} grow>
-            <input style={inputStyle} value={form.description} maxLength={255} onChange={(e) => set('description', e.target.value)}
-              placeholder="e.g. MCB 2-pole 16A, Type C" />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Make" basis={200} grow max={280}>
-            <input style={inputStyle} value={form.make} maxLength={150} onChange={(e) => set('make', e.target.value)} placeholder="e.g. Schneider" />
-          </F>
-          <F label="Part Number" basis={200} grow max={280}>
-            <input style={inputStyle} value={form.part_number} maxLength={150} onChange={(e) => set('part_number', e.target.value)} />
-          </F>
-          <F label="Rating" basis={160} grow max={220}>
-            <input style={inputStyle} value={form.rating} maxLength={150} onChange={(e) => set('rating', e.target.value)} placeholder="e.g. 24V DC, 16A" />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Specification" basis={320} grow>
-            <textarea style={{ ...inputStyle, minHeight: 64, resize: 'vertical', fontFamily: 'inherit' }} value={form.specification}
-              onChange={(e) => set('specification', e.target.value)} placeholder="Technical specification — standards, IP rating, mounting, etc." />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Quantity *" basis={100}>
-            <input style={inputStyle} type="number" min={0} step="any" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} />
-          </F>
-          <F label="UOM" basis={90}>
-            <input style={inputStyle} value={form.uom} maxLength={20} onChange={(e) => set('uom', e.target.value)} />
-          </F>
-          <F label="Est. Unit Cost (₹)" basis={140}>
-            <input style={inputStyle} type="number" min={0} step="any" value={form.estimated_unit_cost} onChange={(e) => set('estimated_unit_cost', e.target.value)} />
-          </F>
-          <F label="Panel" basis={180} grow max={260}>
-            <select style={inputStyle} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
-              <option value="">— Not panel-mounted —</option>
-              {panels.map((p) => <option key={p.id} value={String(p.id)}>{p.panel_tag} — {p.name}</option>)}
-            </select>
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Selection" basis={150}>
-            <select style={inputStyle} value={form.selection_status} onChange={(e) => set('selection_status', e.target.value)}>
-              {Object.entries(SELECTION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-          <F label="Procurement" basis={150}>
-            <select style={inputStyle} value={form.procurement_status} onChange={(e) => set('procurement_status', e.target.value)}>
-              {Object.entries(PROCUREMENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-          <F label="Remarks" basis={220} grow>
-            <input style={inputStyle} value={form.remarks} onChange={(e) => set('remarks', e.target.value)} />
-          </F>
-        </div>
-        {!panels.length && (
-          <p style={{ ...mutedText, fontSize: 12, marginBottom: 12 }}>No panels on this job yet — add them on the Panels tab to mount components in a panel.</p>
+      <Modal
+        open={formOpen} width={960} flush busy={busy} tour="elec-bom-form"
+        icon={editing ? 'edit' : 'box'} title={editing ? `Edit BOM Line ${editing.line_no}` : 'Add Component'}
+        subtitle={editing ? `${editing.description} — ${job.job_number}` : `New line on ${job.job_number}'s electrical BOM.`}
+        onClose={() => setFormOpen(false)}
+        footer={<ModalFooter onCancel={() => setFormOpen(false)} onSubmit={save} busy={busy} icon={editing ? 'check' : 'plus'}
+          label={editing ? 'Save Changes' : 'Add Component'} cancelTour="elec-bom-form-cancel" submitTour="elec-bom-form-save" />}
+      >
+        <SheetColumns
+          left={<>
+            <ErrorBanner error={formError} />
+            <SheetSection icon="box" title="Component">
+              <div style={rowStyle}>
+                <F tour="elec-bom-category" label="Category" basis={190}>
+                  <select style={sheetInput} value={form.category} onChange={(e) => set('category', e.target.value)}>
+                    {Object.entries(meta.component_categories || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </F>
+                <F tour="elec-bom-store-item" label="Store Item" optional basis={240} grow>
+                  <input style={{ ...sheetInput, marginBottom: 6 }} value={storeSearch} onChange={(e) => setStoreSearch(e.target.value)}
+                    placeholder="Search Store items by code or name…" aria-label="Search Store items" />
+                  <SearchableSelect value={form.store_item_id} onChange={pickStoreItem} options={storeOptions}
+                    placeholder={storeItems === null ? 'Loading Store items…' : 'Pick a Store item…'} />
+                </F>
+              </div>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-bom-description" label="Description" req basis={320} grow>
+                  <input style={sheetInput} value={form.description} maxLength={255} onChange={(e) => set('description', e.target.value)}
+                    placeholder="e.g. MCB 2-pole 16A, Type C" />
+                </F>
+              </div>
+            </SheetSection>
+            <SheetSection icon="tag" title="Selection & Specification">
+              <div style={rowStyle}>
+                <F tour="elec-bom-make" label="Make" basis={150} grow max={240}>
+                  <input style={sheetInput} value={form.make} maxLength={150} onChange={(e) => set('make', e.target.value)} placeholder="e.g. Schneider" />
+                </F>
+                <F tour="elec-bom-part-number" label="Part Number" basis={150} grow max={240}>
+                  <input style={sheetInput} value={form.part_number} maxLength={150} onChange={(e) => set('part_number', e.target.value)} />
+                </F>
+                <F tour="elec-bom-rating" label="Rating" basis={140} grow max={200}>
+                  <input style={sheetInput} value={form.rating} maxLength={150} onChange={(e) => set('rating', e.target.value)} placeholder="e.g. 24V DC, 16A" />
+                </F>
+              </div>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-bom-specification" label="Specification" basis={320} grow>
+                  <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={form.specification}
+                    onChange={(e) => set('specification', e.target.value)} placeholder="Technical specification — standards, IP rating, mounting, etc." />
+                </F>
+              </div>
+              <p style={sheetHint}>Mark a line Selected only after entering its make and part number.</p>
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="rupee" title="Quantity & Cost">
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-bom-quantity" label="Quantity" req basis={100}>
+                  <input style={sheetInput} type="number" min={0} step="any" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} />
+                </F>
+                <F tour="elec-bom-uom" label="UOM" basis={90}>
+                  <input style={sheetInput} value={form.uom} maxLength={20} onChange={(e) => set('uom', e.target.value)} />
+                </F>
+                {seeCosts && (
+                  <F tour="elec-bom-cost" label="Est. Unit Cost (₹)" basis={140} grow>
+                    <input style={sheetInput} type="number" min={0} step="any" value={form.estimated_unit_cost} onChange={(e) => set('estimated_unit_cost', e.target.value)} />
+                  </F>
+                )}
+              </div>
+            </SheetSection>
+            <SheetSection icon="flag" title="Panel & Status">
+              <div style={rowStyle}>
+                <F tour="elec-bom-panel" label="Panel" basis={240} grow>
+                  <select style={sheetInput} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
+                    <option value="">— Not panel-mounted —</option>
+                    {panels.map((p) => <option key={p.id} value={String(p.id)}>{p.panel_tag} — {p.name}</option>)}
+                  </select>
+                </F>
+              </div>
+              {!panels.length && (
+                <p style={{ ...sheetHint, margin: '-4px 0 12px' }}>No panels on this job yet — add them on the Panels tab to mount components in a panel.</p>
+              )}
+              <div style={rowStyle}>
+                <F tour="elec-bom-selection" label="Selection" basis={130} grow>
+                  <select style={sheetInput} value={form.selection_status} onChange={(e) => set('selection_status', e.target.value)}>
+                    {Object.entries(SELECTION_LABELS)
+                      .filter(([k]) => k !== 'approved' || canApprove || form.selection_status === 'approved')
+                      .map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </F>
+                <F tour="elec-bom-procurement" label="Procurement" basis={130} grow>
+                  <select style={sheetInput} value={form.procurement_status} onChange={(e) => set('procurement_status', e.target.value)}>
+                    {procurementOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </F>
+              </div>
+              <p style={{ ...sheetHint, margin: '-4px 0 12px' }}>
+                {linkedPr ? `Linked to ${linkedPr}` : 'Use Link PR / Raise PR for PR Raised or Ordered'}
+              </p>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-bom-remarks" label="Remarks" basis={240} grow>
+                  <textarea style={{ ...sheetInput, minHeight: 56, resize: 'vertical' }} value={form.remarks} onChange={(e) => set('remarks', e.target.value)} />
+                </F>
+              </div>
+            </SheetSection>
+          </>}
+        />
+      </Modal>
+
+      {/* Approval of a line's component selection */}
+      <Modal
+        open={!!reviewing} width={680} icon="shield" iconColor="#16A34A"
+        title={reviewing ? `Component selection — Line ${reviewing.line_no}` : 'Component selection'}
+        subtitle={reviewing ? `${reviewing.description} · ${reviewing.make || '—'} ${reviewing.part_number || ''} · ${fmtQty(reviewing.quantity)} ${reviewing.uom}` : ''}
+        onClose={() => setReviewing(null)}
+      >
+        {reviewing && (
+          <ApprovalPanel
+            entityType="electrical_bom_item"
+            entityId={reviewing.id}
+            onChanged={() => { reload(); onChanged() }}
+          />
         )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-          <button type="button" style={secondaryBtnStyle} onClick={() => setFormOpen(false)}>Cancel</button>
-          <button type="button" style={primaryBtn} disabled={busy} onClick={save}>{busy ? 'Saving…' : editing ? 'Save Changes' : 'Add Component'}</button>
-        </div>
       </Modal>
 
       {/* Link a P2P purchase requisition */}
-      <Modal open={!!linking} title={linking ? `Link PR — Line ${linking.line_no}` : 'Link PR'} onClose={() => setLinking(null)} width={520}>
+      <Modal
+        open={!!linking} width={580} icon="link" busy={busy}
+        title={linking ? `Link PR — Line ${linking.line_no}` : 'Link PR'}
+        subtitle={linking ? `${linking.description} · ${fmtQty(linking.quantity)} ${linking.uom}` : ''}
+        onClose={() => setLinking(null)}
+        footer={<ModalFooter onCancel={() => setLinking(null)} onSubmit={confirmLink} busy={busy} busyLabel="Linking…" icon="link" label="Link PR" disabled={!prChoice} />}
+      >
         <ErrorBanner error={linkError} />
-        {linking && (
-          <p style={{ ...mutedText, marginBottom: 12 }}>
-            {linking.description} · {fmtQty(linking.quantity)} {linking.uom}
+        <SheetSection icon="cart" title="Purchase Requisition">
+          <label style={sheetLabel}>Requisition <Req /></label>
+          <input style={{ ...sheetInput, marginBottom: 6 }} value={prSearch} onChange={(e) => setPrSearch(e.target.value)}
+            placeholder="Search by PR number or project…" aria-label="Search purchase requisitions" />
+          <SearchableSelect value={prChoice} onChange={setPrChoice} options={prSelectOptions} placeholder="Pick a purchase requisition…" />
+          <p style={sheetHint}>
+            Only live requisitions are listed (Electrical ones first) — search to reach older ones. Linking moves a To Buy / In Stock line to PR Raised.
           </p>
-        )}
-        <div style={{ marginBottom: 14 }}>
-          <SearchableSelect value={prChoice} onChange={setPrChoice} options={prSelectOptions} placeholder="Search purchase requisitions…" />
-        </div>
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>
-          Only live requisitions are listed (Electrical ones first). Linking moves a To Buy / In Stock line to PR Raised.
-        </p>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" style={secondaryBtnStyle} onClick={() => setLinking(null)}>Cancel</button>
-          <button type="button" style={primaryBtn} disabled={busy || !prChoice} onClick={confirmLink}>{busy ? 'Linking…' : 'Link PR'}</button>
-        </div>
+        </SheetSection>
       </Modal>
 
       <ConfirmDialog
@@ -445,7 +581,7 @@ export default function BomTab({ job, meta, canEdit, onChanged }: { job: Electri
       <ConfirmDialog
         open={!!unlinking}
         title="Unlink purchase requisition?"
-        message={unlinking ? `Detach ${unlinking.p2p_number || 'the PR'} from line ${unlinking.line_no} (${unlinking.description})? The requisition itself stays in Procurement; a PR Raised line goes back to To Buy.` : ''}
+        message={unlinking ? `Detach ${unlinking.p2p_number || 'the PR'} from line ${unlinking.line_no} (${unlinking.description})? The requisition itself stays in Procurement; a PR Raised or Ordered line goes back to To Buy.` : ''}
         confirmLabel="Unlink"
         danger
         onCancel={() => setUnlinking(null)}

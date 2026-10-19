@@ -26,6 +26,9 @@ const KPI_CARDS: { key: keyof QualityDashboardKpis; label: string; tone: KpiTone
   { key: 'gate_inspections_pending', label: 'In-process gates pending', tone: 'neutral', href: '/dashboard/quality/in-process-inspection' },
   { key: 'open_first_articles', label: 'First articles open', tone: 'warn', href: '/dashboard/quality/first-articles' },
   { key: 'inspection_calls_next_7_days', label: 'Inspection calls (7 days)', tone: 'neutral', href: '/dashboard/quality/inspection-calls' },
+  { key: 'vendors_on_watch', label: 'Vendors on watch', tone: 'warn', href: '/dashboard/quality/supplier-quality' },
+  { key: 'vendors_blocked', label: 'Vendors blocked', tone: 'bad', href: '/dashboard/quality/supplier-quality' },
+  { key: 'vendor_blocks_pending', label: 'Vendor blocks awaiting Partner', tone: 'warn', href: '/dashboard/quality/supplier-quality' },
 ]
 
 function cardTone(tone: KpiTone) {

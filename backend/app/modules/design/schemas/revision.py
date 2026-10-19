@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, Field
 
+from app.modules.design.schemas.library import DesignChecklistAnswer, DesignReviewResultResponse
+
 
 class DesignRevisionFileResponse(BaseModel):
     model_config = {"from_attributes": True}
@@ -43,8 +45,14 @@ class DesignRevisionSubmitPayload(BaseModel):
 
 class DesignRevisionDecisionPayload(BaseModel):
     """Checker (review) or approver (approve) decision. `return` sends the
-    revision back to its author as a draft and needs a comment."""
+    revision back to its author as a draft and needs a comment. `checklist`
+    = the checker's answers when a review checklist applies."""
     decision: Literal["pass", "return"]
+    comment: str | None = Field(None, max_length=4000)
+    checklist: list[DesignChecklistAnswer] = []
+
+
+class DesignRevisionReleasePayload(BaseModel):
     comment: str | None = Field(None, max_length=4000)
 
 
@@ -75,13 +83,16 @@ class DesignDocumentRevisionResponse(BaseModel):
     released_at: datetime | None = None
     superseded_at: datetime | None = None
     returned_count: int = 0
+    released_by_id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     files: list[DesignRevisionFileResponse] = []
+    review_results: list[DesignReviewResultResponse] = []
 
     created_by_name: str | None = None
     reviewer_name: str | None = None
     approver_name: str | None = None
     reviewed_by_name: str | None = None
     approved_by_name: str | None = None
+    released_by_name: str | None = None
     ecn_number: str | None = None

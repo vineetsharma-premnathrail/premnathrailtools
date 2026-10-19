@@ -1,67 +1,86 @@
 'use client'
 
+import { useState } from 'react'
+import { projectsApi } from '@/lib/api'
 import { PmProject } from '@/types'
-import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { TEXT } from '@/lib/theme'
+import { formatDate } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
+import { extractErrorMessages } from '@/lib/validation'
+import ProjectForm, { formToPayload, projectToForm, validateProjectForm } from '@/components/projects/ProjectForm'
+import {
+  ErrorBanner, actionBtn, sectionStyle,
+} from '@/components/projects/work/pmUi'
+import { FormSheet, SHEET, SheetIcon, sheetBtn } from '@/components/shared/FormSheet'
+import ClosurePanel from './ClosurePanel'
 
-const cardStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 18,
-}
+export default function OverviewTab({ project, onProjectUpdate }: { project: PmProject; onProjectUpdate: () => void }) {
+  const { can } = useCan()
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState(projectToForm(project))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | string[]>('')
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+  const closed = ['closed', 'cancelled'].includes(project.status)
+
+  const save = async () => {
+    const missing = validateProjectForm(form, true)
+    if (missing.length) { setError(missing); return }
+    setSaving(true)
+    setError('')
+    try {
+      await projectsApi.update(project.id, formToPayload(form))
+      setEditing(false)
+      onProjectUpdate()
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not save the project.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const fact = (label: string, value: React.ReactNode) => (
+    <div>
+      <p style={{ fontSize: 11, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', letterSpacing: '.04em', margin: '0 0 3px' }}>{label}</p>
+      <div style={{ fontSize: 13.5, color: TEXT.body }}>{value || '—'}</div>
+    </div>
+  )
+
   return (
     <div>
-      <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>{label}</p>
-      <p style={{ fontSize: 13, color: TEXT.body, margin: 0, whiteSpace: 'pre-wrap' }}>{value}</p>
-    </div>
-  )
-}
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={cardStyle}>
-      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.heading, margin: '0 0 12px' }}>{title}</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
-    </div>
-  )
-}
-
-export default function OverviewTab({ project }: { project: PmProject }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
-        <Card title="Summary">
-          <InfoRow label="Client" value={project.client_name || 'Not provided'} />
-          <InfoRow label="Project Type" value={project.project_type || 'Not provided'} />
-          <InfoRow label="Category" value={project.category || 'Not provided'} />
-        </Card>
-        <Card title="Timeline">
-          <InfoRow label="Start Date" value={project.start_date || 'Not provided'} />
-          <InfoRow label="End Date" value={project.end_date || 'Not provided'} />
-          <InfoRow label="Status" value={project.status} />
-          <InfoRow label="Priority" value={project.priority} />
-        </Card>
-        <Card title="People">
-          <InfoRow label="Project Manager" value={project.project_manager_name || 'Not assigned'} />
-          <InfoRow label="Sponsor" value={project.sponsor_name || 'Not assigned'} />
-          <InfoRow label="Created By" value={project.created_by_name || 'Unknown'} />
-        </Card>
-      </div>
-
-      {(project.description || project.scope_statement || project.objectives) && (
-        <div style={cardStyle}>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.heading, margin: '0 0 12px' }}>Scope</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {project.description && <InfoRow label="Description" value={project.description} />}
-            {project.scope_statement && <InfoRow label="Scope Statement" value={project.scope_statement} />}
-            {project.objectives && <InfoRow label="Objectives" value={project.objectives} />}
-          </div>
+      {/* Details first. % complete lives in the header, handover dates in the header line. */}
+      <div data-tour="pm-ov-details" style={sectionStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Project details</h2>
+          {project.can_manage && can('projects', 'overview', 'edit') && !closed && (
+            <button data-tour="pm-ov-edit-btn" type="button" onClick={() => { setForm(projectToForm(project)); setError(''); setEditing(true) }} style={actionBtn('secondary')}>Edit</button>
+          )}
         </div>
-      )}
-
-      <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
-        Richer cross-tab counts (tasks, issues, budget) will appear here as those tabs ship in later phases.
-      </p>
+        {editing && (
+          <FormSheet width={760} icon="edit" title="Edit Project" subtitle={`${project.project_code} · ${project.name}`} onClose={() => setEditing(false)} busy={saving}
+            footer={<>
+              <button data-tour="pm-proj-edit-cancel" type="button" onClick={() => setEditing(false)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+              <button data-tour="pm-proj-edit-save" type="button" onClick={save} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save'}</button>
+            </>}>
+            <div style={{ padding: '20px 24px' }}>
+              <ErrorBanner error={error} />
+              <ProjectForm value={form} onChange={setForm} codeLocked={project.status !== 'planning'} isEdit />
+            </div>
+          </FormSheet>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+          {fact('Customer', project.client_name)}
+          {fact('Project manager', project.project_manager_name)}
+          {fact('Start date', formatDate(project.start_date))}
+          {fact('Released', project.released_at ? `${formatDate(project.released_at)} by ${project.released_by_name}` : null)}
+          {fact('Created by', project.created_by_name)}
+          {project.closure_date && fact('Closed', `${formatDate(project.closure_date)} by ${project.closed_by_name}`)}
+          <div style={{ gridColumn: '1 / -1' }}>{fact('Description / scope', project.description && <span style={{ whiteSpace: 'pre-wrap' }}>{project.description}</span>)}</div>
+        </div>
+      </div>
+      {/* The closure panel was removed from open projects; a project closed
+          earlier still shows its closure record (read-only). */}
+      {project.status === 'closed' && <ClosurePanel project={project} onProjectUpdate={onProjectUpdate} />}
     </div>
   )
 }

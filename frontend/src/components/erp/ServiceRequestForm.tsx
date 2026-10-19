@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { MinusCircle, Warning } from '@phosphor-icons/react'
 import { useAuth } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
@@ -9,28 +10,21 @@ import SearchableSelect from './SearchableSelect'
 import PhoneField, { isPhoneValid } from './PhoneField'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES } from '@/lib/validation'
-import { inputStyle, Field, Section, Row, Row3 } from '@/components/shared/ui'
-import MessageDialog from '@/components/erp/MessageDialog'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, Optional, Req, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
+import { SERVICE_TYPES } from './serviceTypes'
 
 const PRIORITIES = [
-  { value: 'critical', label: 'Critical', sub: 'Immediate response required', color: '#dc2626', bg: 'rgba(220,38,38,0.1)', icon: 'warning' },
-  { value: 'high', label: 'High', sub: 'Urgent action needed', color: '#d97706', bg: 'rgba(217,119,6,0.1)', icon: 'clock' },
-  { value: 'medium', label: 'Medium', sub: 'Routine service', color: '#2563eb', bg: 'rgba(37,99,235,0.1)', icon: 'minus' },
-  { value: 'low', label: 'Low', sub: 'When time permits', color: '#57534e', bg: 'rgba(0,0,0,0.06)', icon: 'down' },
+  { value: 'standard', label: 'Standard', sub: 'Normal service request', color: '#2563eb', bg: 'rgba(37,99,235,0.1)', icon: 'minus' },
+  { value: 'urgent', label: 'Urgent', sub: 'Needs faster attention', color: '#dc2626', bg: 'rgba(220,38,38,0.1)', icon: 'warning' },
 ] as const
 
 function PriorityIcon({ name }: { name: string }) {
-  const common = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   switch (name) {
     case 'warning':
-      return <svg {...common}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-    case 'clock':
-      return <svg {...common}><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+      return <Warning size={15} />
     case 'minus':
-      return <svg {...common}><circle cx="12" cy="12" r="10" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
-    case 'down':
-      return <svg {...common}><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><polyline points="9 13 12 16 15 13" /></svg>
+      return <MinusCircle size={15} />
     default:
       return null
   }
@@ -55,8 +49,7 @@ type FormState = {
   issue_title: string
   issue_description: string
   issue_category: string
-  sub_category: string
-  failure_mode: string
+  service_type: string
   site_location: string
   priority: string
   status: string
@@ -74,8 +67,7 @@ function toFormState(initial?: Partial<ServiceRequest>): FormState {
     issue_title: initial?.issue_title || '',
     issue_description: initial?.issue_description || '',
     issue_category: initial?.issue_category || '',
-    sub_category: initial?.sub_category || '',
-    failure_mode: initial?.failure_mode || '',
+    service_type: initial?.service_type || '',
     site_location: '',
     priority: initial?.priority || '',
     status: initial?.status || 'open',
@@ -98,13 +90,21 @@ export default function ServiceRequestForm({
   submitLabel,
   onSubmit,
   onCancel,
+  title,
+  subtitle,
+  nav,
 }: {
   initial?: Partial<ServiceRequest>
   /** True in edit mode — the machine a Service Request is raised against can't be changed after creation. */
   lockProject?: boolean
   submitLabel: string
   onSubmit: (payload: Record<string, unknown>, files: File[]) => Promise<void>
+  /** "← Back" pill (top-right) and the footer Cancel. */
   onCancel: () => void
+  title: string
+  subtitle: string
+  /** Module sub-nav, rendered above the header. */
+  nav?: React.ReactNode
 }) {
   const { user } = useAuth()
   const [projects, setProjects] = useState<Project[]>([])
@@ -117,6 +117,9 @@ export default function ServiceRequestForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   const submittingRef = useRef(false)
+  const errorRef = useRef<HTMLDivElement>(null)
+  // Bring a new error banner into view — the submit button sits in the sticky footer.
+  useEffect(() => { if (error) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
 
   // Legacy behavior: the assignee is always auto-filled with the creator's name — there's
   // no picker anywhere in the UI, so we don't invent one here either.
@@ -126,6 +129,17 @@ export default function ServiceRequestForm({
     erpApi.listProjects({ limit: 5000 }).then(setProjects).catch(() => setError('Failed to load machines'))
   }, [])
 
+  // Warranty check (create only): the machine's cover today decides whether
+  // the job is chargeable by default; choosing otherwise needs a reason.
+  const [warranty, setWarranty] = useState<{ label: string; default_chargeable: boolean; warranty_end: string | null } | null>(null)
+  const [overrideCharge, setOverrideCharge] = useState(false)
+  const [chargeReason, setChargeReason] = useState('')
+  useEffect(() => {
+    if (initial || !form.project_id) { const t = setTimeout(() => setWarranty(null), 0); return () => clearTimeout(t) }
+    erpApi.srWarrantyCheck(Number(form.project_id), form.service_type || undefined)
+      .then(setWarranty).catch(() => setWarranty(null))
+  }, [initial, form.project_id, form.service_type])
+
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -133,6 +147,10 @@ export default function ServiceRequestForm({
     if (submittingRef.current) return
     if (!form.project_id) {
       setError('Please select a machine/asset.')
+      return
+    }
+    if (!form.service_type) {
+      setError('Please select a Service Type (e.g. Warranty, AMC, Paid Service).')
       return
     }
     if (!form.issue_title.trim()) {
@@ -170,6 +188,15 @@ export default function ServiceRequestForm({
         project_id: Number(form.project_id),
         assigned_to_name: assignedToName,
       }
+      if (!initial && overrideCharge && warranty) {
+        if (!chargeReason.trim()) {
+          setError('Enter the reason for changing the chargeability — it is kept in the audit trail.')
+          submittingRef.current = false
+          return
+        }
+        payload.is_chargeable = !warranty.default_chargeable
+        payload.chargeable_reason = chargeReason.trim()
+      }
       // On create, drop untouched-empty optional fields entirely. On edit, keep them —
       // an intentionally-cleared field must reach the backend as "" so PATCH's
       // exclude_unset=True actually clears it instead of silently no-op'ing.
@@ -177,9 +204,14 @@ export default function ServiceRequestForm({
         Object.keys(payload).forEach((k) => {
           if (payload[k] === '') delete payload[k]
         })
+      } else {
+        // Date fields are `date | None` on the backend — "" is a 422, so a cleared date is sent as null.
+        for (const k of ['expected_date_to_attend', 'expected_completion_date']) {
+          if (payload[k] === '') payload[k] = null
+        }
       }
       await onSubmit(payload, queuedFiles)
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save service request.'))
       submittingRef.current = false
     } finally {
@@ -187,219 +219,203 @@ export default function ServiceRequestForm({
     }
   }
 
+  const errorText = Array.isArray(error) ? error.join(' ') : error
+
   return (
-    <div>
-      <MessageDialog open={!!error} variant="error" title="Cannot Save Service Request" message={error} onClose={() => setError('')} />
-
-      <form onSubmit={handleSubmit} className="sr-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20, alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <Section title="Issue Information">
-            <Row>
-              <Field label="Asset / Vehicle *">
-                {lockProject ? (
-                  <p style={{ fontSize: 13, color: '#57534e', margin: '10px 0 0' }}>
-                    {projects.find((p) => String(p.id) === form.project_id)?.serial_number || `Project #${form.project_id}`} (can&apos;t be changed after creation)
-                  </p>
-                ) : (
-                  <SearchableSelect
-                    value={form.project_id}
-                    onChange={(v) => set('project_id', v)}
-                    placeholder="Select a vehicle..."
-                    options={projects.map((p) => ({
-                      value: String(p.id),
-                      label: `${p.serial_number}${p.model_name ? ` — ${p.model_name}` : ''}${p.client_company ? ` (${p.client_company})` : ''}`,
-                    }))}
-                  />
-                )}
-              </Field>
-              <Field label="Request Date">
-                <DateField value={requestDate} onChange={() => {}} />
-              </Field>
-            </Row>
-
-            <Field label="Issue Title *">
-              <input value={form.issue_title} onChange={(e) => set('issue_title', e.target.value)} placeholder="Brief summary of the fault..." style={inputStyle} />
-            </Field>
-            <Field label="Detailed Description *">
-              <textarea value={form.issue_description} onChange={(e) => set('issue_description', e.target.value)} rows={4} placeholder="Describe symptoms, context, and impact..." style={{ ...inputStyle, resize: 'vertical' }} />
-            </Field>
-
-            <Row>
-              <Field label="Issue Category">
-                <select value={form.issue_category} onChange={(e) => set('issue_category', e.target.value)} style={inputStyle}>
-                  <option value="">Select Category</option>
-                  {['Mechanical', 'Electrical', 'Hydraulic', 'Pneumatic', 'Engine', 'Software', 'Other'].map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Failure Mode">
-                <input value={form.failure_mode} onChange={(e) => set('failure_mode', e.target.value)} placeholder="e.g., Pressure Drop" style={inputStyle} />
-              </Field>
-            </Row>
-            <Row>
-              <Field label="Sub-Category">
-                <input value={form.sub_category} onChange={(e) => set('sub_category', e.target.value)} placeholder="e.g., Engine, Brakes..." style={inputStyle} />
-              </Field>
-              <Field label="Site / Location">
-                <input value={form.site_location} onChange={(e) => set('site_location', e.target.value)} placeholder="Current location of asset" style={inputStyle} />
-              </Field>
-            </Row>
-          </Section>
-
-          <Section title="Reported By">
-            <Row3>
-              <Field label="Company / Client Name">
-                <input value={form.reported_by_name} onChange={(e) => set('reported_by_name', e.target.value)} placeholder="Enter company or client name" style={inputStyle} />
-              </Field>
-              <Field label="Phone">
-                <PhoneField value={form.reported_by_phone} onChange={(v) => set('reported_by_phone', v)} style={inputStyle} />
-              </Field>
-              <Field label="Email">
-                <ValidatedInput type="email" value={form.reported_by_email} onChange={(v) => set('reported_by_email', v)} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="Email address" style={inputStyle} />
-              </Field>
-            </Row3>
-          </Section>
-
-          <Section title="Attachments">
-            <div
-              onClick={() => fileRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault()
-                setDragOver(false)
-                if (e.dataTransfer.files) setQueuedFiles((prev) => [...prev, ...Array.from(e.dataTransfer.files)])
-              }}
-              style={{
-                padding: '28px 20px',
-                borderRadius: 14,
-                border: `2px dashed ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.15)'}`,
-                background: dragOver ? 'rgba(244,113,59,0.05)' : '#fff',
-                textAlign: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <input
-                ref={fileRef}
-                type="file"
-                multiple
-                hidden
-                onChange={(e) => e.target.files && setQueuedFiles((prev) => [...prev, ...Array.from(e.target.files!)])}
-              />
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FF7A45" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 8px' }}>
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: '0 0 4px' }}>Drag &amp; drop files here</p>
-              <p style={{ fontSize: 12, color: '#a8a29e', margin: 0 }}>or click to browse — images, videos, PDFs, Office documents</p>
-            </div>
-
-            {queuedFiles.length === 0 ? (
-              <p style={{ fontSize: 12.5, color: '#a8a29e', padding: '10px 12px', borderRadius: 8, background: '#faf9f7', margin: 0 }}>No uploaded attachments yet.</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {queuedFiles.map((f, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderRadius: 8, background: '#faf9f7', border: '1px solid rgba(0,0,0,0.05)' }}>
-                    <span style={{ fontSize: 12.5, color: '#57534e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
-                    <button type="button" onClick={() => setQueuedFiles((prev) => prev.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: 11.5, fontWeight: 600, flex: 'none', marginLeft: 10 }}>Remove</button>
-                  </div>
-                ))}
+    <form onSubmit={handleSubmit}>
+      <FormPage tour="erp-srf-page" icon={initial ? 'edit' : 'tool'} title={title} subtitle={subtitle} onBack={onCancel} backTour="erp-srf-back" nav={nav}
+        footer={<>
+          <button type="button" onClick={onCancel} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)} data-tour="erp-srf-cancel-btn">Cancel</button>
+          <button type="submit" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)} data-tour="erp-srf-submit-btn">
+            <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
+          </button>
+        </>}>
+        <SheetColumns
+          left={<>
+            {errorText && (
+              <div ref={errorRef} style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                <b>Cannot save the service request:</b> {errorText}
               </div>
             )}
-          </Section>
-        </div>
+            <SheetSection icon="truck" title="Machine">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                <div data-tour="erp-srf-asset" style={{ flex: '1 1 280px', maxWidth: 440 }}>
+                  <label style={sheetLabel}>Asset / Vehicle <Req /></label>
+                  {lockProject ? (
+                    <p style={{ fontSize: 13, color: SHEET.BODY, margin: '10px 0 0' }}>
+                      {projects.find((p) => String(p.id) === form.project_id)?.serial_number || `Project #${form.project_id}`} (can&apos;t be changed after creation)
+                    </p>
+                  ) : (
+                    <SearchableSelect
+                      value={form.project_id}
+                      onChange={(v) => set('project_id', v)}
+                      placeholder="Select a vehicle..."
+                      options={projects.map((p) => ({
+                        value: String(p.id),
+                        label: `${p.serial_number}${p.model_name ? ` — ${p.model_name}` : ''}${p.client_company ? ` (${p.client_company})` : ''}`,
+                      }))}
+                    />
+                  )}
+                </div>
+                <div data-tour="erp-srf-request-date" style={{ flex: '0 1 170px', minWidth: 150 }}>
+                  <label style={sheetLabel}>Request Date</label>
+                  <DateField value={requestDate} onChange={() => {}} />
+                </div>
+              </div>
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Site / Location <Optional /></label>
+              <input value={form.site_location} onChange={(e) => set('site_location', e.target.value)} placeholder="Current location of asset" style={sheetInput} data-tour="erp-srf-location" />
+            </SheetSection>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <Section title="Priority Level *">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {PRIORITIES.map((p) => (
-                <label
-                  key={p.value}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '10px 8px',
-                    borderRadius: 10,
-                    cursor: 'pointer',
-                    background: form.priority === p.value ? p.bg : 'transparent',
-                  }}
-                >
-                  <input type="radio" name="priority" value={p.value} checked={form.priority === p.value} onChange={() => set('priority', p.value)} style={{ display: 'none' }} />
-                  <span style={{ width: 32, height: 32, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: p.bg, color: p.color }}>
-                    <PriorityIcon name={p.icon} />
-                  </span>
-                  <span>
-                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: '#1f1108' }}>{p.label}</span>
-                    <span style={{ display: 'block', fontSize: 11.5, color: '#a8a29e' }}>{p.sub}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </Section>
+            <SheetSection icon="alert" title="Issue Information">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
+                  <label style={sheetLabel}>Service Type <Req /></label>
+                  <select value={form.service_type} onChange={(e) => set('service_type', e.target.value)} style={sheetInput} data-tour="erp-srf-service-type">
+                    <option value="">Select Service Type</option>
+                    {SERVICE_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ flex: '1 1 180px', maxWidth: 240 }}>
+                  <label style={sheetLabel}>Issue Category</label>
+                  <select value={form.issue_category} onChange={(e) => set('issue_category', e.target.value)} style={sheetInput} data-tour="erp-srf-category">
+                    <option value="">Select Category</option>
+                    {['Mechanical', 'Electrical', 'Hydraulic', 'Pneumatic', 'Engine', 'Software', 'Other'].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {form.service_type && (
+                <p style={sheetHint}>{SERVICE_TYPES.find((t) => t.value === form.service_type)?.hint}</p>
+              )}
+              {!initial && warranty && form.service_type && (
+                <div style={{ margin: '10px 0 0', padding: '10px 12px', borderRadius: 10, background: SHEET.SOFT, border: `1px solid ${SHEET.LINE}`, fontSize: 12.5, color: SHEET.BODY }}>
+                  <div>
+                    Machine: <b>{warranty.label}</b>{warranty.warranty_end ? ` (warranty to ${warranty.warranty_end.split('-').reverse().join('-')})` : ''} —
+                    this job is <b>{(overrideCharge ? !warranty.default_chargeable : warranty.default_chargeable) ? 'chargeable' : 'free of charge'}</b>
+                    {overrideCharge ? ' (override)' : ' by default'}.
+                  </div>
+                  {form.service_type !== 'warranty' && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={overrideCharge} onChange={(e) => setOverrideCharge(e.target.checked)} />
+                      Make it {warranty.default_chargeable ? 'free of charge' : 'chargeable'} instead
+                    </label>
+                  )}
+                  {form.service_type === 'warranty' && warranty.default_chargeable && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={overrideCharge} onChange={(e) => setOverrideCharge(e.target.checked)} />
+                      The machine is not covered — treat as warranty anyway (goodwill)
+                    </label>
+                  )}
+                  {overrideCharge && (
+                    <textarea value={chargeReason} onChange={(e) => setChargeReason(e.target.value)} rows={2} placeholder="Reason (required, kept in the audit trail)"
+                      style={{ ...sheetInput, marginTop: 6, resize: 'vertical' }} />
+                  )}
+                </div>
+              )}
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Issue Title <Req /></label>
+              <input value={form.issue_title} onChange={(e) => set('issue_title', e.target.value)} placeholder="Brief summary of the fault..." style={sheetInput} data-tour="erp-srf-title" />
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Detailed Description <Req /></label>
+              <textarea value={form.issue_description} onChange={(e) => set('issue_description', e.target.value)} rows={4} placeholder="Describe symptoms, context, and impact..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-srf-description" />
+              <label style={{ ...sheetLabel, marginTop: 14 }}>Priority Level <Req /></label>
+              <div data-tour="erp-srf-priority" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {PRIORITIES.map((p) => (
+                  <label
+                    key={p.value}
+                    style={{
+                      flex: '1 1 200px', display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
+                      border: `1px solid ${form.priority === p.value ? p.color : SHEET.LINE}`, background: form.priority === p.value ? p.bg : '#fff',
+                    }}
+                  >
+                    <input type="radio" name="priority" value={p.value} checked={form.priority === p.value} onChange={() => set('priority', p.value)} style={{ display: 'none' }} />
+                    <span style={{ width: 32, height: 32, borderRadius: 10, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', background: p.bg, color: p.color }}>
+                      <PriorityIcon name={p.icon} />
+                    </span>
+                    <span>
+                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: SHEET.INK }}>{p.label}</span>
+                      <span style={{ display: 'block', fontSize: 11.5, color: SHEET.MUTED }}>{p.sub}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </SheetSection>
 
-          <Section title="Assignment">
-            <Field label="Assign To Engineer">
-              <input value={assignedToName} disabled style={{ ...inputStyle, background: '#f5f5f4', color: '#78716c' }} />
-            </Field>
-            <Field label="Expected Attend Date">
-              <DateField value={form.expected_date_to_attend} onChange={(v) => set('expected_date_to_attend', v)} />
-            </Field>
-            <Field label="Expected Close Date">
-              <DateField value={form.expected_completion_date} onChange={(v) => set('expected_completion_date', v)} />
-            </Field>
-            <Field label="Initial Status">
-              <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
-                {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            <SheetSection icon="user" title="Reported By" extra={<Optional />}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
+                  <label style={sheetLabel}>Company / Client Name</label>
+                  <input value={form.reported_by_name} onChange={(e) => set('reported_by_name', e.target.value)} placeholder="Enter company or client name" style={sheetInput} data-tour="erp-srf-reporter-name" />
+                </div>
+                <div style={{ flex: '1 1 180px', maxWidth: 240 }}>
+                  <label style={sheetLabel}>Phone</label>
+                  <div data-tour="erp-srf-reporter-phone"><PhoneField value={form.reported_by_phone} onChange={(v) => set('reported_by_phone', v)} style={sheetInput} /></div>
+                </div>
+                <div style={{ flex: '1 1 220px', maxWidth: 300 }}>
+                  <label style={sheetLabel}>Email</label>
+                  <div data-tour="erp-srf-reporter-email"><ValidatedInput type="email" value={form.reported_by_email} onChange={(v) => set('reported_by_email', v)} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="Email address" style={sheetInput} /></div>
+                </div>
+              </div>
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="calendar" title="Assignment & Schedule">
+              <label style={sheetLabel}>Assign To Engineer</label>
+              <input value={assignedToName} disabled style={{ ...sheetInput, background: SHEET.SOFT, color: SHEET.MUTED }} data-tour="erp-srf-assignee" />
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
+                <div data-tour="erp-srf-attend-date" style={{ flex: '1 1 140px' }}>
+                  <label style={sheetLabel}>Expected Attend Date</label>
+                  <DateField value={form.expected_date_to_attend} onChange={(v) => set('expected_date_to_attend', v)} />
+                </div>
+                <div data-tour="erp-srf-close-date" style={{ flex: '1 1 140px' }}>
+                  <label style={sheetLabel}>Expected Close Date</label>
+                  <DateField value={form.expected_completion_date} onChange={(v) => set('expected_completion_date', v)} />
+                </div>
+              </div>
+              <label style={{ ...sheetLabel, marginTop: 14 }}>{initial ? 'Status' : 'Initial Status'}</label>
+              <select value={form.status} onChange={(e) => set('status', e.target.value)} style={sheetInput} data-tour="erp-srf-status">
+                {/* A new SR starts at an opening step (backend SR_CREATE_STATUSES); Work Completed / Review /
+                    Closed / Cancelled are reached only through the status steps on the SR page */}
+                {STATUS_OPTIONS.filter((s) => initial || !['work_completed', 'review', 'closed', 'cancelled'].includes(s.value)).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
-            </Field>
-            <Field label="Notes">
-              <textarea value={form.service_report_notes} onChange={(e) => set('service_report_notes', e.target.value)} rows={3} placeholder="Any additional notes..." style={{ ...inputStyle, resize: 'vertical' }} />
-            </Field>
-          </Section>
-        </div>
-
-        <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-          <button type="submit" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
-            {saving ? 'Saving…' : submitLabel}
-          </button>
-        </div>
-      </form>
-
-      <style jsx>{`
-        @media (min-width: 768px) {
-          .sr-form-grid {
-            grid-template-columns: 2fr 1fr !important;
-          }
-        }
-      `}</style>
-    </div>
+            </SheetSection>
+            <SheetSection icon="chat" title="Notes" extra={<Optional />}>
+              <textarea value={form.service_report_notes} onChange={(e) => set('service_report_notes', e.target.value)} rows={3} placeholder="Any additional notes..." style={{ ...sheetInput, resize: 'vertical' }} data-tour="erp-srf-notes" />
+            </SheetSection>
+            <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
+              <div
+                data-tour="erp-srf-attachments"
+                onClick={() => fileRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setDragOver(false)
+                  if (e.dataTransfer.files) setQueuedFiles((prev) => [...prev, ...Array.from(e.dataTransfer.files)])
+                }}
+                style={{ border: `1.5px dashed ${dragOver ? SHEET.BLUE : '#cbd5e1'}`, borderRadius: 12, padding: '18px 12px', textAlign: 'center', cursor: 'pointer', background: dragOver ? '#eff6ff' : '#fff' }}
+              >
+                <input ref={fileRef} type="file" multiple hidden
+                  onChange={(e) => { if (e.target.files) setQueuedFiles((prev) => [...prev, ...Array.from(e.target.files!)]); e.target.value = '' }} />
+                <SheetIcon name="clip" size={22} color={SHEET.BLUE} />
+                <div style={{ fontSize: 13, color: SHEET.BODY, marginTop: 6 }}>Drag and drop files here, or <span style={{ color: SHEET.BLUE, fontWeight: 600 }}>click to browse</span></div>
+                <div style={{ fontSize: 11.5, color: SHEET.MUTED, marginTop: 2 }}>Images, videos, PDFs, Office documents</div>
+              </div>
+              {queuedFiles.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {queuedFiles.map((f, i) => (
+                    <span key={`${f.name}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, padding: '4px 10px', borderRadius: 999, background: '#f1f5f9', color: SHEET.BODY, maxWidth: '100%' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                      <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setQueuedFiles((prev) => prev.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0, color: SHEET.MUTED, display: 'inline-flex' }}><SheetIcon name="x" size={12} /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </SheetSection>
+          </>}
+        />
+      </FormPage>
+    </form>
   )
-}
-
-const primaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '10px 22px',
-  borderRadius: 10,
-  border: 'none',
-  background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)',
-  color: '#fff',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-}
-
-const secondaryBtnStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  padding: '10px 18px',
-  borderRadius: 10,
-  border: '1px solid rgba(0,0,0,0.1)',
-  background: '#fff',
-  color: '#57534e',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
 }

@@ -8,7 +8,8 @@ const config: TourConfig = {
       target: 'cat-add-btn',
       title: '+ Add Category',
       purpose: 'A shared list of item categories you can pick when creating or editing an Item Master record.',
-      after: 'Opens a form in a popup dialog.',
+      after: 'Opens a form in a popup dialog — the next steps walk through it.',
+      autoActivateOnAdvance: true,
     },
     {
       target: 'cat-name',
@@ -34,6 +35,12 @@ const config: TourConfig = {
       title: 'Save Category',
       purpose: 'Saves this category to the shared list.',
       after: 'Immediately available in the Category picker on the Item Master form.',
+    },
+    {
+      target: 'cat-cancel-btn',
+      title: 'Cancel',
+      purpose: 'Closes the form without saving.',
+      autoActivateOnAdvance: true,
     },
     {
       target: 'cat-table',

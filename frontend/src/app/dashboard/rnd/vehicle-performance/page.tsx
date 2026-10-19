@@ -4,10 +4,11 @@ import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
+import { getHistoryFromLink } from '@/components/rnd/historyLink'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
 import ChartJsLineChart, { colorForIndex } from '@/components/rnd/ChartJsLineChart'
-import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob } from '@/components/rnd/toolStyles'
+import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface GraphPoint { speed_kmh: number; value: number; slope: number; gear: number }
@@ -101,7 +102,7 @@ function VehiclePerformancePageInner() {
     if (!isAuthorized) return
     const loadId = searchParams.get('load')
     if (!loadId) return
-    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+    getHistoryFromLink(loadId).then((detail) => {
       const i = detail.inputs as Record<string, any>
       if (i.doc_no != null) setDocNo(String(i.doc_no))
       if (i.made_by != null) setMadeBy(String(i.made_by))
@@ -128,7 +129,7 @@ function VehiclePerformancePageInner() {
         setTorqueRows(loadedTorqueRows)
       }
       calculate({ ...i, torque_curve: i.torque_curve } as ReturnType<typeof payload>)
-    }).catch(() => setError('Could not load the saved calculation.'))
+    }).catch((err) => setError(extractErrorMessages(err, 'Could not load the saved calculation — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
@@ -149,8 +150,8 @@ function VehiclePerformancePageInner() {
           calculation_name: `Vehicle Perf. GVW=${locoGvw}kg`,
         }).catch(() => {})
       }
-    } catch {
-      setError('Calculation failed. Check your inputs (especially the torque curve).')
+    } catch (err) {
+      setError(await getErrorMessage(err, 'Calculation failed. Check your inputs (especially the torque curve).'))
     } finally {
       setBusy(false)
     }
@@ -159,7 +160,7 @@ function VehiclePerformancePageInner() {
   const downloadDocx = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadVehiclePerformanceReport(payload()), 'Vehicle_Performance_Report.docx') }
-    catch (err) { setError(extractErrorMessages(err, 'Report generation failed.').join(' ')) } finally { setBusy(false) }
+    catch (err) { setError(await getErrorMessage(err, 'Report generation failed.')) } finally { setBusy(false) }
   }
 
   const exportCsv = () => {
@@ -208,14 +209,14 @@ function VehiclePerformancePageInner() {
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>Tractive effort · Speed vs slope · Shunting capability · Power analysis</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
-          <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Save Doc</button>
-          <a href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
+          <button data-tour="rnd-vp-csv-btn" onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
+          <button data-tour="rnd-vp-docx-btn" onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#166534', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Save Doc</button>
+          <a data-tour="rnd-vp-history-btn" href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
         </div>
       </div>
 
       {result && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
+        <div data-tour="rnd-vp-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
           <SummaryTile label="Max Traction" value={result.traction_snapshot.max_traction_generated_n.toFixed(0)} unit="N" bg="#eff6ff" color="#1d4ed8" />
           <SummaryTile label="Traction (No Slip)" value={result.traction_snapshot.max_traction_slipping_n.toFixed(0)} unit="N" bg="#fff7ed" color="#c2410c" />
           <SummaryTile label="Status" value={result.traction_snapshot.result_message} unit="" bg={slipping ? '#fee2e2' : '#f0fdf4'} color={slipping ? '#991b1b' : '#166534'} />
@@ -225,7 +226,7 @@ function VehiclePerformancePageInner() {
       <div className="rnd-main-grid" style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 12, alignItems: 'start' }}>
         {/* Left column: inputs */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-vp-doc" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Document Details</span></div>
             <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
               <div><label style={labelStyle}>Doc No.</label><input style={inputStyle} value={docNo} onChange={(e) => setDocNo(e.target.value)} /></div>
@@ -239,27 +240,27 @@ function VehiclePerformancePageInner() {
           <div style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Vehicle Data</span></div>
             <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
-              <div><label style={labelStyle}>GVW (kg)</label><input style={inputStyle} type="number" value={locoGvw} onChange={(e) => setLocoGvw(e.target.value)} /></div>
-              <div><label style={labelStyle}>Max Speed (km/h)</label><input style={inputStyle} type="number" value={maxSpeed} onChange={(e) => setMaxSpeed(e.target.value)} /></div>
-              <div><label style={labelStyle}>No. of Axles</label><input style={inputStyle} type="number" value={numAxles} onChange={(e) => setNumAxles(e.target.value)} /></div>
-              <div><label style={labelStyle}>Rear Axle Ratio</label><input style={inputStyle} type="number" step="0.01" value={rearAxleRatio} onChange={(e) => setRearAxleRatio(e.target.value)} /></div>
-              <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Gear Ratios (comma)</label><input style={inputStyle} value={gearRatios} onChange={(e) => setGearRatios(e.target.value)} /></div>
-              <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Shunting Load (t)</label><input style={inputStyle} type="number" step="0.1" value={shuntingLoad} onChange={(e) => setShuntingLoad(e.target.value)} /></div>
+              <div data-tour="rnd-vp-gvw"><label style={labelStyle}>GVW (kg)</label><input style={inputStyle} type="number" value={locoGvw} onChange={(e) => setLocoGvw(e.target.value)} /></div>
+              <div data-tour="rnd-vp-max-speed"><label style={labelStyle}>Max Speed (km/h)</label><input style={inputStyle} type="number" value={maxSpeed} onChange={(e) => setMaxSpeed(e.target.value)} /></div>
+              <div data-tour="rnd-vp-axles"><label style={labelStyle}>No. of Axles</label><input style={inputStyle} type="number" value={numAxles} onChange={(e) => setNumAxles(e.target.value)} /></div>
+              <div data-tour="rnd-vp-axle-ratio"><label style={labelStyle}>Rear Axle Ratio</label><input style={inputStyle} type="number" step="0.01" value={rearAxleRatio} onChange={(e) => setRearAxleRatio(e.target.value)} /></div>
+              <div data-tour="rnd-vp-gears" style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Gear Ratios (comma)</label><input style={inputStyle} value={gearRatios} onChange={(e) => setGearRatios(e.target.value)} /></div>
+              <div data-tour="rnd-vp-shunting-load" style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Shunting Load (t)</label><input style={inputStyle} type="number" step="0.1" value={shuntingLoad} onChange={(e) => setShuntingLoad(e.target.value)} /></div>
             </div>
           </div>
 
           <div style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Track Parameters</span></div>
             <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
-              <div><label style={labelStyle}>Max Curve</label><input style={inputStyle} type="number" value={maxCurve} onChange={(e) => setMaxCurve(e.target.value)} /></div>
-              <div>
+              <div data-tour="rnd-vp-curve"><label style={labelStyle}>Max Curve</label><input style={inputStyle} type="number" value={maxCurve} onChange={(e) => setMaxCurve(e.target.value)} /></div>
+              <div data-tour="rnd-vp-curve-unit">
                 <label style={labelStyle}>Curve Unit</label>
                 <select style={inputStyle} value={curveUnit} onChange={(e) => setCurveUnit(e.target.value as typeof curveUnit)}>
                   <option value="degree">degree</option><option value="m">m (radius)</option>
                 </select>
               </div>
-              <div><label style={labelStyle}>Max Slope</label><input style={inputStyle} type="number" step="0.1" value={maxSlope} onChange={(e) => setMaxSlope(e.target.value)} /></div>
-              <div>
+              <div data-tour="rnd-vp-slope"><label style={labelStyle}>Max Slope</label><input style={inputStyle} type="number" step="0.1" value={maxSlope} onChange={(e) => setMaxSlope(e.target.value)} /></div>
+              <div data-tour="rnd-vp-slope-unit">
                 <label style={labelStyle}>Slope Unit</label>
                 <select style={inputStyle} value={slopeUnit} onChange={(e) => setSlopeUnit(e.target.value as typeof slopeUnit)}>
                   <option value="%">%</option><option value="degree">degree</option>
@@ -271,29 +272,29 @@ function VehiclePerformancePageInner() {
           <div style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>RRV Data</span></div>
             <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
-              <div><label style={labelStyle}>Peak Power (kW)</label><input style={inputStyle} type="number" step="0.1" value={peakPower} onChange={(e) => setPeakPower(e.target.value)} /></div>
-              <div><label style={labelStyle}>Friction Coeff. (μ)</label><input style={inputStyle} type="number" step="0.01" value={frictionMu} onChange={(e) => setFrictionMu(e.target.value)} /></div>
-              <div><label style={labelStyle}>Wheel Dia (m)</label><input style={inputStyle} type="number" step="0.001" value={wheelDia} onChange={(e) => setWheelDia(e.target.value)} /></div>
-              <div><label style={labelStyle}>Min RPM</label><input style={inputStyle} type="number" value={minRpm} onChange={(e) => setMinRpm(e.target.value)} /></div>
-              <div style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Max RPM</label><input style={inputStyle} type="number" value={maxRpm} onChange={(e) => setMaxRpm(e.target.value)} /></div>
+              <div data-tour="rnd-vp-power"><label style={labelStyle}>Peak Power (kW)</label><input style={inputStyle} type="number" step="0.1" value={peakPower} onChange={(e) => setPeakPower(e.target.value)} /></div>
+              <div data-tour="rnd-vp-mu"><label style={labelStyle}>Friction Coeff. (μ)</label><input style={inputStyle} type="number" step="0.01" value={frictionMu} onChange={(e) => setFrictionMu(e.target.value)} /></div>
+              <div data-tour="rnd-vp-wheel-dia"><label style={labelStyle}>Wheel Dia (m)</label><input style={inputStyle} type="number" step="0.001" value={wheelDia} onChange={(e) => setWheelDia(e.target.value)} /></div>
+              <div data-tour="rnd-vp-min-rpm"><label style={labelStyle}>Min RPM</label><input style={inputStyle} type="number" value={minRpm} onChange={(e) => setMinRpm(e.target.value)} /></div>
+              <div data-tour="rnd-vp-max-rpm" style={{ gridColumn: '1 / -1' }}><label style={labelStyle}>Max RPM</label><input style={inputStyle} type="number" value={maxRpm} onChange={(e) => setMaxRpm(e.target.value)} /></div>
             </div>
           </div>
 
           {error && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{error}</p>}
-          <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : '› Calculate Performance'}</button>
+          <button data-tour="rnd-vp-calculate-btn" onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : '› Calculate Performance'}</button>
         </div>
 
         {/* Right column: torque curve, tables, charts, terminal */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-vp-torque" style={cardStyle}>
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Torque Curve</span>
               <div style={{ display: 'flex', gap: 6 }}>
-                <label style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 11.5, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>
+                <label data-tour="rnd-vp-torque-import" style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 11.5, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>
                   Import
                   <input type="file" accept=".csv" onChange={importTorqueCsv} style={{ display: 'none' }} />
                 </label>
-                <button onClick={exportTorqueCsv} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 11.5, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Export</button>
+                <button data-tour="rnd-vp-torque-export" onClick={exportTorqueCsv} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: 11.5, fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Export</button>
               </div>
             </div>
             <div style={{ padding: 12 }}>
@@ -313,12 +314,12 @@ function VehiclePerformancePageInner() {
                   </tbody>
                 </table>
               </div>
-              <button onClick={addTorqueRow} style={{ marginTop: 8, width: '100%', padding: '8px', borderRadius: 6, border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add Row</button>
+              <button data-tour="rnd-vp-torque-add" onClick={addTorqueRow} style={{ marginTop: 8, width: '100%', padding: '8px', borderRadius: 6, border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>+ Add Row</button>
             </div>
           </div>
 
           <div className="rnd-main-grid" style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 12, alignItems: 'start' }}>
-            <div style={cardStyle}>
+            <div data-tour="rnd-vp-speed-slope" style={cardStyle}>
               <div style={cardHeaderStyle}><span style={{ ...cardTitleStyle, fontSize: 11 }}>Speed vs Slope</span></div>
               <div style={{ padding: 10, maxHeight: 300, overflowY: 'auto' }}>
                 {!result ? (
@@ -340,11 +341,11 @@ function VehiclePerformancePageInner() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={cardStyle}>
+              <div data-tour="rnd-vp-te-chart" style={cardStyle}>
                 <div style={cardHeaderStyle}><span style={cardTitleStyle}>Tractive Effort vs Speed</span></div>
                 <div style={{ padding: 12 }}><ChartJsLineChart series={teSeries} xLabel="Speed (km/h)" yLabel="Tractive Effort (N)" /></div>
               </div>
-              <div style={cardStyle}>
+              <div data-tour="rnd-vp-sc-chart" style={cardStyle}>
                 <div style={cardHeaderStyle}><span style={cardTitleStyle}>Shunting Capability vs Speed</span></div>
                 <div style={{ padding: 12 }}><ChartJsLineChart series={scSeries} xLabel="Speed (km/h)" yLabel="Shunting Capability (N)" /></div>
               </div>

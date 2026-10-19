@@ -8,7 +8,11 @@ import { RndExperiment, RndProject } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import RndNav from '@/components/rnd/RndNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath } from '@/lib/recordRef'
+import { projectLinkHref, useUrlProjectId } from '@/components/rnd/projectLink'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { planned: '#78716c', in_progress: '#2563EB', completed: '#16A34A', cancelled: '#DC2626' }
@@ -31,6 +35,7 @@ export default function RndExperimentsListPage() {
 
 function RndExperimentsListPageInner() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const { can } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -39,7 +44,8 @@ function RndExperimentsListPageInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
-  const [projectFilter, setProjectFilter] = useState(searchParams.get('project_id') || '')
+  const [projectFilter, setProjectFilter] = useState('')
+  const projectLink = useUrlProjectId(searchParams.get('project_id'), setProjectFilter)
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [resultFilter, setResultFilter] = useState('')
@@ -52,7 +58,7 @@ function RndExperimentsListPageInner() {
   }, [isAuthorized])
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || projectLink.loading) return
     const params: Record<string, unknown> = {}
     if (projectFilter) params.project_id = Number(projectFilter)
     if (typeFilter) params.experiment_type = typeFilter
@@ -63,11 +69,12 @@ function RndExperimentsListPageInner() {
       .then((data) => setExperiments(Array.isArray(data) ? data : []))
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load experiments.')))
       .finally(() => setLoading(false))
-  }, [isAuthorized, projectFilter, typeFilter, statusFilter, resultFilter, search])
+  }, [isAuthorized, projectLink.loading, projectFilter, typeFilter, statusFilter, resultFilter, search])
 
-  const newHref = projectFilter ? `/dashboard/rnd/experiments/new?project_id=${projectFilter}` : '/dashboard/rnd/experiments/new'
+  const newHref = projectLinkHref('/dashboard/rnd/experiments/new', projects, projectFilter)
 
   if (isLoading || !isAuthorized) return null
+  if (projectLink.error) return (<div><RndNav /><InvalidRecordLink message={projectLink.error} listHref="/dashboard/rnd/experiments" listLabel="Back to experiments" /></div>)
 
   return (
     <div>
@@ -80,16 +87,19 @@ function RndExperimentsListPageInner() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Experiments &amp; Tests</h1>
         </div>
-        <button
-          onClick={() => router.push(newHref)}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New Experiment
-        </button>
+        {can('rnd', 'experiments', 'create') && (
+          <button
+            data-tour="rnd-exp-new-btn"
+            onClick={() => router.push(newHref)}
+            style={{
+              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
+              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
+            }}
+          >
+            + New Experiment
+          </button>
+        )}
       </div>
 
       {error && (
@@ -100,12 +110,13 @@ function RndExperimentsListPageInner() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input
+          data-tour="rnd-exp-search"
           style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }}
           placeholder="Search by experiment number or title…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <div style={{ flex: '1 1 240px', minWidth: 200, maxWidth: 340 }}>
+        <div data-tour="rnd-exp-project-filter" style={{ flex: '1 1 240px', minWidth: 200, maxWidth: 340 }}>
           <SearchableSelect
             value={projectFilter}
             onChange={setProjectFilter}
@@ -116,7 +127,7 @@ function RndExperimentsListPageInner() {
             placeholder="All projects"
           />
         </div>
-        <select style={{ ...inputStyle, flex: '0 1 160px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <select data-tour="rnd-exp-type-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All types</option>
           <option value="research">Research</option>
           <option value="lab_test">Lab Test</option>
@@ -124,14 +135,14 @@ function RndExperimentsListPageInner() {
           <option value="simulation">Simulation</option>
           <option value="validation">Validation</option>
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 160px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="rnd-exp-status-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="planned">Planned</option>
           <option value="in_progress">In Progress</option>
           <option value="completed">Completed</option>
           <option value="cancelled">Cancelled</option>
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 160px' }} value={resultFilter} onChange={(e) => setResultFilter(e.target.value)}>
+        <select data-tour="rnd-exp-result-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={resultFilter} onChange={(e) => setResultFilter(e.target.value)}>
           <option value="">All results</option>
           <option value="pass">Pass</option>
           <option value="fail">Fail</option>
@@ -143,7 +154,7 @@ function RndExperimentsListPageInner() {
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+        <table data-tour="rnd-exp-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
               {['Experiment No.', 'Title', 'Project', 'Type', 'Status', 'Result', 'Date', ''].map((h) => (
@@ -160,7 +171,7 @@ function RndExperimentsListPageInner() {
               <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No experiments found.</td></tr>
             ) : (
               experiments.map((x) => (
-                <tr key={x.id} onClick={() => router.push(`/dashboard/rnd/experiments/${x.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={x.id} onClick={() => router.push(recordPath('/dashboard/rnd/experiments', x))} style={{ cursor: 'pointer' }}>
                   <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: TEXT.heading, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>{x.experiment_number}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{x.title}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }} title={x.project_title || undefined}>{x.project_number || '—'}</td>
@@ -179,7 +190,7 @@ function RndExperimentsListPageInner() {
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>{x.experiment_date || '—'}</td>
                   <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span onClick={() => router.push(`/dashboard/rnd/experiments/${x.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/rnd/experiments', x))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

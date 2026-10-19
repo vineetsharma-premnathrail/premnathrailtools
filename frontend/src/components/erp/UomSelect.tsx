@@ -5,11 +5,13 @@ import SearchableSelect, { SearchableOption } from '@/components/erp/SearchableS
 import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { storeApi } from '@/lib/api'
+import { useAuthStore } from '@/store/authStore'
 import { extractErrorMessages } from '@/lib/validation'
 
 /** UOM dropdown with "+ Add new unit" and a per-unit edit pencil inside the list — the unit list is a shared
  *  master (store_uoms), so changes show up on every UOM picker. Pass manage={false} for pick-only (Store item
- *  form — units there are maintained under Store → Settings → Units of Measure). */
+ *  form — units there are maintained under Store → Settings → Units of Measure). Add/edit is shown only to
+ *  users who hold the Store app (the API requires it); everyone else always gets a pick-only list. */
 export default function UomSelect({
   value,
   onChange,
@@ -23,6 +25,9 @@ export default function UomSelect({
   onOptionsChange: (opts: SearchableOption[]) => void
   manage?: boolean
 }) {
+  const user = useAuthStore((st) => st.user)
+  // `apps` already includes every module for admins — mirrors the backend's require_app_access('store').
+  const canManage = manage && !!user?.apps?.includes('store')
   const [mode, setMode] = useState<'add' | 'edit' | null>(null)
   const [editing, setEditing] = useState('')
   const [code, setCode] = useState('')
@@ -65,7 +70,7 @@ export default function UomSelect({
 
   return (
     <div>
-      {manage
+      {canManage
         ? <SearchableSelect value={value} onChange={onChange} options={opts} placeholder="Select unit…"
             onAdd={openAdd} addLabel="+ Add new unit" onEdit={(v) => listed || v !== value ? openEdit(v) : openAdd(v)} />
         : <SearchableSelect value={value} onChange={onChange} options={opts} placeholder="Select unit…" />}

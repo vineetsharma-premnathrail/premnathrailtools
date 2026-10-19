@@ -92,10 +92,11 @@ class HydComponentResponse(BaseModel):
     temp_min_c: float | None = None
     temp_max_c: float | None = None
     weight_kg: float | None = None
-    unit_cost: float
+    unit_cost: float | None = None  # None = hidden (Hydraulic › BOM › Prices & costs)
     specifications: list[HydComponentSpecPayload] = []
     datasheet_url: str | None = None
     description: str | None = None
+    created_by_id: int | None = None  # the delete button is shown only to the creator
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

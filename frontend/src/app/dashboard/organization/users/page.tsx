@@ -1,22 +1,35 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useRequireAdmin } from '@/hooks/useAuth'
+import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { usersApi, modulesApi } from '@/lib/api'
 import { User, ModuleMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
 
 const APPROVAL_ROLE_FLAGS: { key: keyof User; label: string }[] = [
+  { key: 'is_partner', label: 'Partner' },
   { key: 'is_director', label: 'Director' },
+  { key: 'is_department_head', label: 'Department Head' },
+  { key: 'is_plant_head', label: 'Plant Head' },
+  { key: 'is_project_head', label: 'Project Head' },
+  { key: 'is_purchase_head', label: 'Purchase Head' },
+  { key: 'is_finance_manager', label: 'Finance Manager' },
+  { key: 'is_purchase_manager', label: 'Purchase Manager' },
+  { key: 'is_store_manager', label: 'Store Manager' },
+  { key: 'is_production_manager', label: 'Production Manager' },
+  { key: 'is_design_manager', label: 'Design Manager' },
+  { key: 'is_rnd_manager', label: 'R&D Manager' },
+  { key: 'is_project_manager', label: 'Project Manager' },
 ]
 
 // Read-only: this tab only shows who has what module access and approval
 // roles — actually granting/changing them happens in Organization > Role &
 // Permissions (reuses the existing Users & Roles edit screen), not here.
 export default function OrganizationUsersPage() {
-  const { isAuthorized, isLoading } = useRequireAdmin()
+  const { isAuthorized, isLoading } = useRequireOrgTab('users')
   const [users, setUsers] = useState<User[]>([])
   const [apps, setApps] = useState<{ id: string; label: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -31,7 +44,7 @@ export default function OrganizationUsersPage() {
         setUsers(u)
         setApps(m.map((mm) => ({ id: mm.key, label: mm.label })))
       })
-      .catch(() => setError('Failed to load users.'))
+      .catch((err) => setError(extractErrorMessages(err, 'Could not load users — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
       .finally(() => setLoading(false))
   }, [isAuthorized])
 
@@ -88,7 +101,7 @@ export default function OrganizationUsersPage() {
             {!loading && filtered.length === 0 && (
               <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No users match your search.</td></tr>
             )}
-            {filtered.map((u) => {
+            {filtered.map((u, idx) => {
               const isAdminRole = u.role === 'admin'
               const approvalRoles = APPROVAL_ROLE_FLAGS.filter((f) => u[f.key])
               return (
@@ -97,12 +110,12 @@ export default function OrganizationUsersPage() {
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{u.email}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{u.department || '—'}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary, whiteSpace: 'nowrap' }}>{u.branch_name || '—'}</td>
-                  <td style={{ padding: '12px 16px' }}>
+                  <td style={{ padding: '12px 16px' }} data-tour={idx === 0 ? 'org-users-role-badge' : undefined}>
                     <span style={{ fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 8, textTransform: 'capitalize', whiteSpace: 'nowrap', background: 'rgba(59,130,246,0.08)', color: '#2563eb' }}>
                       {u.role}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 16px' }}>
+                  <td style={{ padding: '12px 16px' }} data-tour={idx === 0 ? 'org-users-modules-cell' : undefined}>
                     {isAdminRole ? (
                       <span style={{ fontSize: 12, color: TEXT.muted }}>All</span>
                     ) : u.apps.length === 0 ? (
@@ -117,7 +130,7 @@ export default function OrganizationUsersPage() {
                       </div>
                     )}
                   </td>
-                  <td style={{ padding: '12px 16px' }}>
+                  <td style={{ padding: '12px 16px' }} data-tour={idx === 0 ? 'org-users-approval-cell' : undefined}>
                     {approvalRoles.length === 0 ? (
                       <span style={{ fontSize: 12, color: TEXT.muted }}>—</span>
                     ) : (
@@ -130,8 +143,8 @@ export default function OrganizationUsersPage() {
                       </div>
                     )}
                   </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, whiteSpace: 'nowrap', color: u.is_active ? '#047857' : '#b91c1c', background: u.is_active ? 'rgba(16,185,129,0.12)' : 'rgba(220,38,38,0.1)' }}>
+                  <td style={{ padding: '12px 16px' }} data-tour={idx === 0 ? 'org-users-status-badge' : undefined}>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, whiteSpace: 'nowrap', color: u.is_active ? '#047857' : '#64748B', background: u.is_active ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)' }}>
                       {u.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>

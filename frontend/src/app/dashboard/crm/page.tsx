@@ -7,8 +7,10 @@ import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { crmApi } from '@/lib/api'
 import { CrmDashboard } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
-import { inquiryStatusColor } from '@/components/crm/constants'
 import { stripHtml } from '@/components/RichTextEditor'
+import { extractErrorMessages } from '@/lib/validation'
+import { getRecentVisits, RecentKind, RecentVisit } from '@/lib/crmShortcuts'
+import { recordPath } from '@/lib/recordRef'
 
 export default function CrmDashboardPage() {
   const { user } = useAuth()
@@ -16,11 +18,24 @@ export default function CrmDashboardPage() {
   const router = useRouter()
   const [data, setData] = useState<CrmDashboard | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string[]>([])
+  const [recent, setRecent] = useState<Record<RecentKind, RecentVisit[]>>({ organization: [], inquiry: [], tender: [] })
 
   useEffect(() => {
     if (!isAuthorized) return
-    crmApi.getDashboard().then(setData).finally(() => setLoading(false))
+    crmApi.getDashboard()
+      .then(setData)
+      .catch((err) => setLoadError(extractErrorMessages(err, 'Could not load the CRM dashboard. Reload the page; if it persists, check your connection and that you still have CRM access.')))
+      .finally(() => setLoading(false))
+
+    setRecent({ organization: getRecentVisits('organization'), inquiry: getRecentVisits('inquiry'), tender: getRecentVisits('tender') })
   }, [isAuthorized])
+
+  const openRecent = (v: RecentVisit) => {
+    const base = v.kind === 'organization' ? 'organizations' : v.kind === 'inquiry' ? 'inquiries' : 'tenders'
+    // Visits saved before signed links existed have no ref — open the list instead.
+    router.push(v.ref ? `/dashboard/crm/${base}/${v.ref}` : (v.kind === 'tender' ? '/dashboard/crm/inquiries?type=tender' : `/dashboard/crm/${base}`))
+  }
 
   if (isLoading || !isAuthorized) return null
 
@@ -32,56 +47,49 @@ export default function CrmDashboardPage() {
         Welcome back, {user?.name || 'there'}. Here is the state of your business development pipeline.
       </p>
 
-      {loading || !data ? (
+      {loadError.length > 0 ? (
+        <div role="alert" style={{ padding: '14px 18px', borderRadius: 12, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>{loadError.map((m, i) => <p key={i} style={{ fontSize: 13, color: '#b91c1c', margin: i ? '4px 0 0' : 0 }}>{m}</p>)}</div>
+          <button type="button" onClick={() => window.location.reload()} style={{ padding: '6px 14px', borderRadius: 999, border: '1px solid rgba(0,0,0,0.12)', background: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Reload</button>
+        </div>
+      ) : loading || !data ? (
         <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14, marginBottom: 20 }}>
-            <StatCard tourId="dash-stat-organizations" label="Organizations" value={data.total_organizations} color="#3b82f6" href="/dashboard/crm/organizations" />
+            <StatCard tourId="dash-stat-organizations" label="Customer Organizations" value={data.total_organizations} color="#3b82f6" href="/dashboard/crm/organizations" />
             <StatCard tourId="dash-stat-inquiries" label="Inquiries" value={data.total_inquiries} color="#FF7A45" href="/dashboard/crm/inquiries" />
-            <StatCard tourId="dash-stat-tenders" label="Tenders" value={data.total_tenders} color="#8b5cf6" href="/dashboard/crm/tenders" />
+            <StatCard tourId="dash-stat-tenders" label="Tenders" value={data.total_tenders} color="#8b5cf6" href="/dashboard/crm/inquiries?type=tender" />
             <StatCard tourId="dash-stat-open-followups" label="Open Follow-ups" value={data.open_followups} color="#10b981" href="/dashboard/crm/followups?bucket=open" />
             <StatCard tourId="dash-stat-overdue-followups" label="Overdue Follow-ups" value={data.overdue_followups} color="#dc2626" href="/dashboard/crm/followups?bucket=overdue" />
             <StatCard tourId="dash-stat-today-followups" label="Today's Follow-ups" value={data.today_activities} color="#06b6d4" href="/dashboard/crm/followups?bucket=today" />
-            <StatCard tourId="dash-stat-pending-tenders" label="Pending Tenders" value={data.pending_tenders} color="#eab308" href="/dashboard/crm/tenders?status=Active" />
+            <StatCard tourId="dash-stat-pending-tenders" label="Pending Tenders" value={data.pending_tenders} color="#eab308" href="/dashboard/crm/inquiries?type=tender" />
           </div>
 
           <div className="grid-3" style={{ gap: 20, marginBottom: 20 }}>
-            <RecentList
+            <RecentlyViewed
               tourId="dash-recent-organizations"
-              title="Recent Organizations"
+              title="Recently Viewed Customer Organizations"
               viewAllHref="/dashboard/crm/organizations"
-              items={data.recent_organizations}
-              renderItem={(o) => (
-                <div key={o.id} onClick={() => router.push(`/dashboard/crm/organizations/${o.id}`)} style={rowStyle}>
-                  <p style={rowTitle}>{o.name}</p>
-                  <p style={rowSub}>{o.city || o.org_type || '—'}</p>
-                </div>
-              )}
+              visits={recent.organization}
+              onOpen={openRecent}
+              fallback={data.recent_organizations.map((o) => ({ id: o.id, title: o.name, sub: o.city || o.org_type || '—', href: recordPath('/dashboard/crm/organizations', o) }))}
             />
-            <RecentList
+            <RecentlyViewed
               tourId="dash-recent-inquiries"
-              title="Recent Inquiries"
+              title="Recently Viewed Inquiries"
               viewAllHref="/dashboard/crm/inquiries"
-              items={data.recent_inquiries}
-              renderItem={(i) => (
-                <div key={i.id} onClick={() => router.push(`/dashboard/crm/inquiries/${i.id}`)} style={rowStyle}>
-                  <p style={rowTitle}>{i.universal_id}</p>
-                  <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: inquiryStatusColor(i.status).bg, color: inquiryStatusColor(i.status).text }}>{i.status}</span>
-                </div>
-              )}
+              visits={recent.inquiry}
+              onOpen={openRecent}
+              fallback={data.recent_inquiries.map((i) => ({ id: i.id, title: i.universal_id, sub: i.status, href: recordPath('/dashboard/crm/inquiries', i) }))}
             />
-            <RecentList
+            <RecentlyViewed
               tourId="dash-recent-tenders"
-              title="Recent Tenders"
-              viewAllHref="/dashboard/crm/tenders"
-              items={data.recent_tenders}
-              renderItem={(t) => (
-                <div key={t.id} onClick={() => router.push(`/dashboard/crm/tenders/${t.id}`)} style={rowStyle}>
-                  <p style={rowTitle}>{t.universal_id}</p>
-                  <p style={rowSub}>{t.status}</p>
-                </div>
-              )}
+              title="Recently Viewed Tenders"
+              viewAllHref="/dashboard/crm/inquiries?type=tender"
+              visits={recent.tender}
+              onOpen={openRecent}
+              fallback={data.recent_tenders.map((t) => ({ id: t.id, title: t.universal_id, sub: t.status, href: recordPath('/dashboard/crm/tenders', t) }))}
             />
           </div>
 
@@ -92,9 +100,9 @@ export default function CrmDashboardPage() {
               items={data.recent_activities}
               renderItem={(a) => {
                 const target = a.related_module === 'tender'
-                  ? `/dashboard/crm/tenders/${a.related_id}`
+                  ? recordPath('/dashboard/crm/tenders', a, 'related_id')
                   : a.related_module === 'inquiry'
-                    ? `/dashboard/crm/inquiries/${a.related_id}`
+                    ? recordPath('/dashboard/crm/inquiries', a, 'related_id')
                     : null
                 return (
                   <div key={a.id} onClick={() => target && router.push(target)} style={{ ...rowStyle, cursor: target ? 'pointer' : 'default' }}>
@@ -111,6 +119,7 @@ export default function CrmDashboardPage() {
   )
 }
 
+const panelStyle: React.CSSProperties = { boxSizing: 'border-box', borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', padding: 16 }
 const rowStyle: React.CSSProperties = { padding: '10px 14px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer', marginBottom: 8 }
 const rowTitle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: '#1f1108', margin: '0 0 2px' }
 const rowSub: React.CSSProperties = { fontSize: 11.5, color: '#78716c', margin: 0 }
@@ -153,4 +162,57 @@ function RecentList<T>({ title, titleColor, viewAllHref, items, renderItem, tour
       )}
     </div>
   )
+}
+
+/** The last 5 records this user opened (newest first) — not removable.
+ * Until they have opened any, it shows the newest records instead, and says so. */
+function RecentlyViewed({ title, viewAllHref, visits, fallback, onOpen, tourId }: {
+  title: string
+  viewAllHref: string
+  visits: RecentVisit[]
+  fallback: { id: number; title: string; sub: string; href: string }[]
+  onOpen: (v: RecentVisit) => void
+  tourId?: string
+}) {
+  const router = useRouter()
+  return (
+    <div data-tour={tourId} style={{ ...panelStyle, height: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <h2 style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: 0 }}>{title}</h2>
+        <Link href={viewAllHref} style={{ fontSize: 11.5, color: '#FF7A45', textDecoration: 'none', fontWeight: 600 }}>View all →</Link>
+      </div>
+      {visits.length > 0 ? (
+        visits.slice(0, 5).map((v) => (
+          <div key={v.id} onClick={() => onOpen(v)} style={{ ...rowStyle, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={rowTitle}>{v.title}</p>
+              <p style={{ ...rowSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.sub || '—'} · {timeAgo(v.at)}</p>
+            </div>
+          </div>
+        ))
+      ) : fallback.length === 0 ? (
+        <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>No records yet.</p>
+      ) : (
+        <>
+          <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '0 0 8px' }}>You haven&apos;t opened any yet — showing the newest.</p>
+          {fallback.slice(0, 5).map((f) => (
+            <div key={f.id} onClick={() => router.push(f.href)} style={rowStyle}>
+              <p style={rowTitle}>{f.title}</p>
+              <p style={rowSub}>{f.sub}</p>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
+function timeAgo(at: number): string {
+  const mins = Math.round((Date.now() - at) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24) return `${hrs} h ago`
+  const days = Math.round(hrs / 24)
+  return days === 1 ? 'yesterday' : `${days} days ago`
 }

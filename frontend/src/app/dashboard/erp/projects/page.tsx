@@ -4,12 +4,16 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { erpApi } from '@/lib/api'
 import { Project, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
-import { inputStyle, Field, pageBtnStyle } from '@/components/shared/ui'
+import { inputStyle, Field } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import BulkImportDialog from '@/components/erp/BulkImportDialog'
+import ExportDialog from '@/components/erp/ExportDialog'
+import { recordPath } from '@/lib/recordRef'
 
 interface FilterOptions {
   statuses: string[]
@@ -17,7 +21,6 @@ interface FilterOptions {
   client_companies: string[]
 }
 
-const PAGE_SIZE = 20
 
 const STATUS_FILTER_OPTIONS = [
   { value: 'active', label: 'Active' },
@@ -47,23 +50,30 @@ export default function ProjectsRegistryPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('erp')
   const canCreate = hasErpPermission(user, 'project_create')
   const canEdit = hasErpPermission(user, 'project_edit')
+  const { can } = useCan()
+  const canExport = can('erp', 'projects', 'export')
+  const canImport = can('erp', 'projects', 'import') && canCreate
   const router = useRouter()
   const [projects, setProjects] = useState<Project[]>([])
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
-  const [page, setPage] = useState(1)
 
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ statuses: [], application_types: [], client_companies: [] })
+  const [filterOptionsError, setFilterOptionsError] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [applicationType, setApplicationType] = useState('all')
   const [clientCompany, setClientCompany] = useState('all')
+  const [customerId, setCustomerId] = useState('all')
+  const [customers, setCustomers] = useState<{ id: number; label: string }[]>([])
 
   // Pending (unapplied) filter draft — mirrors the reference design's Clear/Apply pattern
-  const [draft, setDraft] = useState({ status: 'all', application_type: 'all', client_company: 'all' })
+  const [draft, setDraft] = useState({ status: 'all', application_type: 'all', client_company: 'all', customer_id: 'all' })
+  const [showImport, setShowImport] = useState(false)
+  const [showExport, setShowExport] = useState(false)
 
-  const load = async (params?: { status?: string; application_type?: string; client_company?: string }) => {
+  const load = async (params?: { status?: string; application_type?: string; client_company?: string; customer_id?: string }) => {
     setLoading(true)
     setError('')
     try {
@@ -73,13 +83,13 @@ export default function ProjectsRegistryPage() {
           status: (params?.status ?? status) !== 'all' ? (params?.status ?? status) : undefined,
           application_type: (params?.application_type ?? applicationType) !== 'all' ? (params?.application_type ?? applicationType) : undefined,
           client_company: (params?.client_company ?? clientCompany) !== 'all' ? (params?.client_company ?? clientCompany) : undefined,
+          customer_id: (params?.customer_id ?? customerId) !== 'all' ? Number(params?.customer_id ?? customerId) : undefined,
           limit: 5000,
         }),
         erpApi.listServiceRequests({ limit: 1000 }),
       ])
       setProjects(data)
       setSrs(srData)
-      setPage(1)
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to load the asset register.').join(' '))
     } finally {
@@ -89,7 +99,11 @@ export default function ProjectsRegistryPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
-    erpApi.getProjectFilterOptions().then(setFilterOptions).catch(() => {})
+    erpApi.getProjectFilterOptions().then(setFilterOptions).catch((err) => {
+      setFilterOptionsError(extractErrorMessages(err, 'check your connection and reload the page.').join(' '))
+    })
+    // CRM customers linked to machines (installed base) for the Customer filter.
+    erpApi.getProjectLinkOptions().then((o) => setCustomers(o.customers.map((c) => ({ id: c.id, label: c.label })))).catch(() => setCustomers([]))
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
@@ -105,16 +119,18 @@ export default function ProjectsRegistryPage() {
     setStatus(draft.status)
     setApplicationType(draft.application_type)
     setClientCompany(draft.client_company)
+    setCustomerId(draft.customer_id)
     load(draft)
   }
 
   const clearFilters = () => {
-    setDraft({ status: 'all', application_type: 'all', client_company: 'all' })
+    setDraft({ status: 'all', application_type: 'all', client_company: 'all', customer_id: 'all' })
     setStatus('all')
     setApplicationType('all')
     setClientCompany('all')
+    setCustomerId('all')
     setSearch('')
-    load({ status: 'all', application_type: 'all', client_company: 'all' })
+    load({ status: 'all', application_type: 'all', client_company: 'all', customer_id: 'all' })
   }
 
   const totalActive = useMemo(() => projects.filter((p) => p.status === 'active').length, [projects])
@@ -125,13 +141,12 @@ export default function ProjectsRegistryPage() {
     srs.forEach((s) => map.set(s.project_id, (map.get(s.project_id) || 0) + 1))
     return map
   }, [srs])
-  const totalPages = Math.max(1, Math.ceil(projects.length / PAGE_SIZE))
-  const pagedProjects = projects.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const pagedProjects = projects
 
   if (isLoading || !isAuthorized) return null
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <ErpNav />
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -139,9 +154,17 @@ export default function ProjectsRegistryPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Projects Asset Register</h1>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>Inventory tracking of rolling machinery, catenary cars, and rail accessories.</p>
         </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {canExport && (
+          <button data-tour="erp-proj-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>
+        )}
+        {canImport && (
+          <button data-tour="erp-proj-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>
+        )}
         {canCreate && (
           <Link
             href="/dashboard/erp/projects/new"
+            data-tour="erp-proj-add-btn"
             style={{
               fontSize: 13.5,
               fontWeight: 600,
@@ -156,7 +179,22 @@ export default function ProjectsRegistryPage() {
             + Add New Project
           </Link>
         )}
+        </div>
       </div>
+
+      <BulkImportDialog kind="projects" open={showImport} onClose={() => setShowImport(false)} onImported={() => load()} />
+      {showExport && (
+        <ExportDialog kind="projects" onClose={() => setShowExport(false)} filename="machines" noun="machines"
+          items={projects.map((p) => ({ id: p.id, label: p.serial_number, sub: [p.model_name, p.client_company, p.site_name].filter(Boolean).join(' · ') }))}
+          dateLabel="Dispatch date"
+          filterParams={{
+            search: search || undefined,
+            status: status !== 'all' ? status : undefined,
+            application_type: applicationType !== 'all' ? applicationType : undefined,
+            client_company: clientCompany !== 'all' ? clientCompany : undefined,
+            customer_id: customerId !== 'all' ? customerId : undefined,
+          }} />
+      )}
 
       <MessageDialog
         open={!!error}
@@ -168,7 +206,13 @@ export default function ProjectsRegistryPage() {
         onAction={() => window.location.reload()}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 16 }}>
+      {filterOptionsError && (
+        <p style={{ fontSize: 12.5, color: '#b91c1c', margin: '0 0 12px' }}>
+          Filter options (status, application type, client) could not be loaded, so those dropdowns are empty: {filterOptionsError}
+        </p>
+      )}
+
+      <div data-tour="erp-proj-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 16 }}>
         <StatCard label="Total Machines" value={projects.length} color="#3b82f6" />
         <StatCard label="Total Active Machines" value={totalActive} color="#22c55e" />
         <StatCard label="Under Service" value={totalUnderService} color="#eab308" />
@@ -179,12 +223,12 @@ export default function ProjectsRegistryPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12 }}>
           <div style={{ flex: '1 1 200px', minWidth: 160 }}>
             <Field label="Search Registry">
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Serial, model name…" style={inputStyle} />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Serial, model name…" style={inputStyle} data-tour="erp-proj-search" />
             </Field>
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 150 }}>
             <Field label="Machine Status">
-              <select value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} style={inputStyle}>
+              <select value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))} style={inputStyle} data-tour="erp-proj-status-filter">
                 <option value="all">All Statuses</option>
                 {STATUS_FILTER_OPTIONS.map((s) => (
                   <option key={s.value} value={s.value}>{s.label}</option>
@@ -194,7 +238,7 @@ export default function ProjectsRegistryPage() {
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 150 }}>
             <Field label="Application Type">
-              <select value={draft.application_type} onChange={(e) => setDraft((d) => ({ ...d, application_type: e.target.value }))} style={inputStyle}>
+              <select value={draft.application_type} onChange={(e) => setDraft((d) => ({ ...d, application_type: e.target.value }))} style={inputStyle} data-tour="erp-proj-app-filter">
                 <option value="all">All Applications</option>
                 {APPLICATION_TYPE_FILTER_OPTIONS.map((a) => (
                   <option key={a.value} value={a.value}>{a.label}</option>
@@ -204,7 +248,7 @@ export default function ProjectsRegistryPage() {
           </div>
           <div style={{ flex: '1 1 160px', minWidth: 150 }}>
             <Field label="Client Company">
-              <select value={draft.client_company} onChange={(e) => setDraft((d) => ({ ...d, client_company: e.target.value }))} style={inputStyle}>
+              <select value={draft.client_company} onChange={(e) => setDraft((d) => ({ ...d, client_company: e.target.value }))} style={inputStyle} data-tour="erp-proj-client-filter">
                 <option value="all">All Clients</option>
                 {filterOptions.client_companies.map((c) => (
                   <option key={c} value={c}>{c}</option>
@@ -212,16 +256,26 @@ export default function ProjectsRegistryPage() {
               </select>
             </Field>
           </div>
+          <div style={{ flex: '1 1 160px', minWidth: 150 }}>
+            <Field label="CRM Customer">
+              <select value={draft.customer_id} onChange={(e) => setDraft((d) => ({ ...d, customer_id: e.target.value }))} style={inputStyle}>
+                <option value="all">All Customers</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={String(c.id)}>{c.label}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
           <div style={{ display: 'flex', gap: 10, flex: 'none' }}>
-            <button onClick={clearFilters} style={secondaryBtnStyle}>Clear Filters</button>
-            <button onClick={applyFilters} style={primaryBtnStyle}>Apply Filters</button>
+            <button onClick={clearFilters} style={secondaryBtnStyle} data-tour="erp-proj-clear-btn">Clear Filters</button>
+            <button onClick={applyFilters} style={primaryBtnStyle} data-tour="erp-proj-apply-btn">Apply Filters</button>
           </div>
         </div>
       </div>
 
-      <div style={{ borderRadius: 18, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
-        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
+      <div style={{ borderRadius: 18, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
+        <table data-tour="erp-proj-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
               {['Serial No.', 'Model', 'Machine Type', 'Application Type', 'Client', 'Site', 'Year of Mfg.', 'Dispatch Date', 'Commissioning Date', 'Status', 'SRs', 'Warranty', 'Actions'].map((h) => (
@@ -241,7 +295,7 @@ export default function ProjectsRegistryPage() {
             {pagedProjects.map((p) => (
               <tr
                 key={p.id}
-                onClick={() => router.push(`/dashboard/erp/projects/${p.id}`)}
+                onClick={() => router.push(recordPath('/dashboard/erp/projects', p))}
                 style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
               >
                 <td style={{ padding: '12px 16px' }}>
@@ -263,7 +317,7 @@ export default function ProjectsRegistryPage() {
                 <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                   <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', marginRight: 10 }}>View</span>
                   {canEdit && (
-                    <Link href={`/dashboard/erp/projects/${p.id}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
+                    <Link href={`${recordPath('/dashboard/erp/projects', p)}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
                   )}
                 </td>
               </tr>
@@ -273,33 +327,6 @@ export default function ProjectsRegistryPage() {
         </div>
       </div>
 
-      {!loading && projects.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, flexWrap: 'wrap', gap: 10 }}>
-          <span style={{ fontSize: 12.5, color: '#78716c' }}>
-            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, projects.length)} of {projects.length}
-          </span>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={pageBtnStyle(page === 1)}>‹</button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
-              .reduce<number[]>((acc, p) => {
-                if (acc.length && p - acc[acc.length - 1] > 1) acc.push(-1)
-                acc.push(p)
-                return acc
-              }, [])
-              .map((p, i) =>
-                p === -1 ? (
-                  <span key={`gap-${i}`} style={{ fontSize: 12.5, color: '#a8a29e', padding: '0 4px' }}>…</span>
-                ) : (
-                  <button key={p} onClick={() => setPage(p)} style={{ ...pageBtnStyle(false), background: p === page ? '#FF7A45' : '#fff', color: p === page ? '#fff' : '#57534e' }}>
-                    {p}
-                  </button>
-                )
-              )}
-            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={pageBtnStyle(page === totalPages)}>›</button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

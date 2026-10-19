@@ -33,6 +33,12 @@ class HydSystem(Base, TimestampMixin, SoftDeleteMixin):
     status: Mapped[str] = mapped_column(String(30), default="design", nullable=False)
 
     erp_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("erp_projects.id"), index=True, nullable=True)
+    # Order Project (Sales › Order Projects) — the confirmed order this work is for;
+    # element = one vehicle / lot of it. Nullable, kept when the project closes.
+    order_project_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), index=True, nullable=True)
+    order_project_element_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
     # Branch = "Plant" in the UI.
     branch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("branches.id"), nullable=True)
     equipment_ref: Mapped[str | None] = mapped_column(String(150), nullable=True)

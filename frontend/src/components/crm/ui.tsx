@@ -1,6 +1,7 @@
 'use client'
 
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CaretDown, X } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
 import { COLORS, RADII, BORDERS, GLASS, SHADOWS, TEXT, BRAND, SUCCESS } from '@/lib/theme'
 import { CrmActivityAttachment } from '@/types'
@@ -12,10 +13,7 @@ import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentB
 // replacement used everywhere a remove/close "✕" button is needed.
 export function XIcon({ size = 11 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-      <line x1="18" y1="6" x2="6" y2="18" />
-      <line x1="6" y1="6" x2="18" y2="18" />
-    </svg>
+    <X size={size} />
   )
 }
 
@@ -155,10 +153,13 @@ export function RevisionSelector({ revisions, selectedId, onSelect, tourId }: { 
  * user can jump straight to one. Shared by Inquiry and Tender detail pages
  * (only the `stages` list and current value differ between them).
  */
-export function StageProgress({ stage, stages, canModify, onRequestChange, tourId, style }: {
+export function StageProgress({ stage, stages, canModify, allowBackward = false, onRequestChange, tourId, style }: {
   stage: string
   stages: string[]
   canModify: boolean
+  /** Stages only move forward; earlier stages are clickable only for an admin
+   * correcting a mistake (the caller then asks for a reason). */
+  allowBackward?: boolean
   onRequestChange: (s: string) => void
   tourId?: string
   /** Merged onto the outer wrapper — use to drop the default marginBottom
@@ -211,7 +212,7 @@ export function StageProgress({ stage, stages, canModify, onRequestChange, tourI
           {stages.map((s, i) => {
             const done = i < activeIdx
             const active = i === activeIdx
-            const clickable = canModify && !active
+            const clickable = canModify && !active && (!done || allowBackward)
             const circleBg = done ? SUCCESS.primary : active ? BRAND.primary : '#fff'
             const circleColor = done || active ? '#fff' : COLORS.textFaint2
             const circleBorder = done ? SUCCESS.primary : active ? BRAND.primary : 'rgba(0,0,0,0.15)'
@@ -219,6 +220,7 @@ export function StageProgress({ stage, stages, canModify, onRequestChange, tourI
               <div
                 key={s}
                 onClick={clickable ? () => { onRequestChange(s); setOpen(false) } : undefined}
+                title={done && !clickable && canModify ? 'Stages only move forward — an earlier stage can be restored only by an admin, with a reason.' : undefined}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, cursor: clickable ? 'pointer' : 'default', background: active ? BRAND.primarySoft : 'transparent' }}
                 onMouseEnter={(e) => { if (clickable) e.currentTarget.style.background = 'rgba(0,0,0,0.04)' }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = active ? BRAND.primarySoft : 'transparent' }}
@@ -337,12 +339,10 @@ export function ComboBox({
         data-tour-no-autofocus="true"
         style={{ ...inputStyle, paddingRight: 30 }}
       />
-      <svg
-        width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a8a29e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      <CaretDown
+        size={14} color="#a8a29e"
         style={{ position: 'absolute', right: 10, top: '50%', transform: open ? 'translateY(-50%) rotate(180deg)' : 'translateY(-50%)', pointerEvents: 'none', transition: 'transform .15s' }}
-      >
-        <polyline points="6 9 12 15 18 9" />
-      </svg>
+      />
       {open && pos && createPortal(
         <>
           <div onMouseDown={(e) => e.preventDefault()} onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 999998 }} />
@@ -453,10 +453,17 @@ export function Field({ label, children, tourId }: { label: string; children: Re
   )
 }
 
-export function Section({ title, children, style, contentStyle }: { title: string; children: React.ReactNode; style?: React.CSSProperties; contentStyle?: React.CSSProperties }) {
+// `action` sits at the top-right of the section header (e.g. a "More details" toggle).
+export function Section({ title, children, style, contentStyle, action }: { title: string; children: React.ReactNode; style?: React.CSSProperties; contentStyle?: React.CSSProperties; action?: React.ReactNode }) {
+  const heading = <p className="section-title" style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: action ? 0 : '0 0 14px' }}>{title}</p>
   return (
     <div className="glass-section" style={{ padding: 18, borderRadius: RADII['3xl'], background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), ...style }}>
-      <p className="section-title" style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }}>{title}</p>
+      {action ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', margin: '0 0 14px' }}>
+          {heading}
+          {action}
+        </div>
+      ) : heading}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, ...contentStyle }}>{children}</div>
     </div>
   )
@@ -473,9 +480,9 @@ export function Row3({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>{children}</div>
 }
 
-export function Card({ title, actions, children }: { title: string; actions?: React.ReactNode; children: React.ReactNode }) {
+export function Card({ title, actions, children, style }: { title: string; actions?: React.ReactNode; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ padding: 16, borderRadius: RADII['3xl'], background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass() }}>
+    <div style={{ padding: 16, borderRadius: RADII['3xl'], background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), ...style }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, margin: '0 0 12px' }}>
         <p className="card-title" style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: COLORS.ink, margin: 0 }}>{title}</p>
         {actions}

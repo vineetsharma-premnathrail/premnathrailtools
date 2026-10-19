@@ -4,12 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, R
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.permissions import require_app_access, require_tab_action
+from app.core.permission_registry import can_feature
+from app.core.permissions import require_app_access, require_feature_action
 from app.db.session import get_db
 from app.modules.electrical.models.document import ElectricalDocument, ELECTRICAL_DOCUMENT_CATEGORIES
 from app.modules.electrical.models.job import ELECTRICAL_STAGE_KEYS, ELECTRICAL_STAGE_LABELS
 from app.modules.electrical.schemas.document import ElectricalDocumentResponse
-from app.modules.electrical.service import ELECTRICAL_APP, get_job_or_404, require_working, user_names
+from app.modules.electrical.service import (
+    ELECTRICAL_APP, ensure_job_view, get_job_or_404, inline_file_headers, require_working, user_names,
+)
 from app.modules.main.models.user import User
 from app.utils.sharepoint import (
     upload_file_to_sharepoint, delete_file_from_sharepoint, download_file_content, sanitize_folder_name,
@@ -21,7 +24,12 @@ router = APIRouter(
     dependencies=[Depends(require_app_access(ELECTRICAL_APP))],
 )
 
-_CAN_EDIT = require_tab_action(ELECTRICAL_APP, "jobs", "edit")
+# Any Electrical user — record-level access is the job's data scope.
+_VIEWER = require_app_access(ELECTRICAL_APP)
+
+# Electrical › RRV Electrical Jobs › Documents (app/core/features/electrical.py).
+_CAN_UPLOAD = require_feature_action("electrical", "jobs", "documents", "create")
+_CAN_DELETE = require_feature_action("electrical", "jobs", "documents", "delete")
 
 _STORAGE_NOT_CONFIGURED = (
     "File storage isn't configured on this server (SHAREPOINT_SITE_ID is empty), so electrical documents can't be "
@@ -48,8 +56,9 @@ def _get_doc(db: Session, document_id: int) -> ElectricalDocument:
 
 
 @router.get("/jobs/{job_id}/documents", response_model=list[ElectricalDocumentResponse])
-async def list_documents(job_id: int, category: str | None = None, stage_key: str | None = None, db: Session = Depends(get_db)):
-    get_job_or_404(db, job_id)
+async def list_documents(job_id: int, category: str | None = None, stage_key: str | None = None, db: Session = Depends(get_db), user: User = Depends(_VIEWER)):
+    ensure_job_view(user, can_feature(user, "electrical", "jobs", "documents", "view"), "documents")
+    get_job_or_404(db, job_id, user=user)
     query = db.query(ElectricalDocument).filter(ElectricalDocument.job_id == job_id, ElectricalDocument.is_deleted == False)  # noqa: E712
     if category:
         query = query.filter(ElectricalDocument.category == category)
@@ -67,9 +76,9 @@ async def upload_documents(
     description: str | None = Form(None),
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(_CAN_EDIT),
+    user: User = Depends(_CAN_UPLOAD),
 ):
-    job = get_job_or_404(db, job_id, lock=True)
+    job = get_job_or_404(db, job_id, lock=True, user=user)
     require_working(job, "upload documents")
     if category not in ELECTRICAL_DOCUMENT_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid document category '{category}'. Use one of: {', '.join(ELECTRICAL_DOCUMENT_CATEGORIES)}.")
@@ -100,24 +109,26 @@ async def upload_documents(
 
 
 @router.get("/documents/{document_id}/content")
-async def get_document_content(document_id: int, db: Session = Depends(get_db)):
+async def get_document_content(document_id: int, db: Session = Depends(get_db), user: User = Depends(_VIEWER)):
     """Raw bytes for in-app viewing via the app-only Graph token — never the
     raw SharePoint webUrl, same pattern as rnd/routes/documents.py."""
     doc = _get_doc(db, document_id)
+    ensure_job_view(user, can_feature(user, "electrical", "jobs", "documents", "view"), "documents")
+    get_job_or_404(db, doc.job_id, user=user)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail=_STORAGE_NOT_CONFIGURED)
     content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
     return Response(
         content=content,
         media_type=doc.mime_type or content_type,
-        headers={"Content-Disposition": f'inline; filename="{doc.file_name}"'},
+        headers=inline_file_headers(doc.file_name),
     )
 
 
 @router.delete("/documents/{document_id}")
-async def delete_document(document_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
+async def delete_document(document_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_DELETE)):
     doc = _get_doc(db, document_id)
-    job = get_job_or_404(db, doc.job_id, lock=True)
+    job = get_job_or_404(db, doc.job_id, lock=True, user=user)
     require_working(job, "change its documents")
     if not (user.role == "admin" or doc.uploaded_by_id == user.id):
         raise HTTPException(status_code=403, detail="Only the person who uploaded this document (or an admin) can delete it.")

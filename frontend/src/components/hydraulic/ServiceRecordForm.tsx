@@ -3,23 +3,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { HydLookupOption, HydServiceRecord } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER, WARNING } from '@/lib/theme'
+import { TEXT, BORDER, DANGER, WARNING } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import { SheetSection, sheetInput, sheetLabel, Req, SheetError } from '@/components/shared/FormSheet'
+import HydFormShell, { HydShellProps, SheetBody } from '@/components/hydraulic/HydFormShell'
 import DateField from '@/components/erp/DateField'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { SERVICE_TYPE_LABELS } from '@/components/hydraulic/labels'
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: 0 }
+const inputStyle: React.CSSProperties = sheetInput
+const labelStyle: React.CSSProperties = sheetLabel
 const hintStyle: React.CSSProperties = { fontSize: 12, color: TEXT.muted, margin: '8px 0 0' }
 const rowStyle: React.CSSProperties = {
   display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', padding: 12, borderRadius: 12,
@@ -49,7 +43,8 @@ export default function ServiceRecordForm({
   defaults,
   submitLabel,
   onSubmit,
-}: {
+  mode, title: shellTitle, subtitle, nav, onBack, onCancel,
+}: HydShellProps & {
   initial?: HydServiceRecord | null
   defaults?: { systemId?: string; planId?: string; serviceType?: string }
   submitLabel: string
@@ -131,8 +126,7 @@ export default function ServiceRecordForm({
 
   const updatePart = (key: number, patch: Partial<PartRow>) => setParts((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)))
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async () => {
     setError('')
     if (!initial && !systemId) { setError('Pick the system this service job is for.'); return }
     if (!serviceDate) { setError('Service date is required — pick the date the job was raised or started.'); return }
@@ -184,18 +178,18 @@ export default function ServiceRecordForm({
   const planLabel = initial?.plan_id ? `${initial.plan_number || `#${initial.plan_id}`}${initial.plan_title ? ` — ${initial.plan_title}` : ''}` : '— Not from a plan —'
 
   return (
-    <form onSubmit={handleSubmit}>
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
+    <HydFormShell
+      mode={mode} title={shellTitle} subtitle={subtitle} nav={nav} onBack={onBack} onCancel={onCancel}
+      icon={initial ? 'edit' : 'tool'} busy={saving} submitLabel={submitLabel} submitIcon={initial ? 'check' : 'plus'}
+      onSubmit={handleSubmit} tour="hyd-svcf-form" backTour="hyd-svcf-back-btn" submitTour="hyd-svcf-submit-btn"
+    >
+      <SheetBody>
+        <SheetError error={error} />
 
-      <div style={sectionStyle}>
-        <p style={{ ...sectionTitle, marginBottom: 14 }}>Job</p>
+        <SheetSection icon="tool" title="Job">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 280px', maxWidth: 420 }}>
-            <label style={labelStyle}>System *</label>
+          <div data-tour="hyd-svcf-system" style={{ flex: '1 1 280px', maxWidth: 420 }}>
+            <label style={labelStyle}>System <Req /></label>
             {initial ? (
               <div style={{ ...inputStyle, background: 'rgba(0,0,0,0.03)' }}>{initial.system_number} — {initial.system_name}</div>
             ) : (
@@ -203,7 +197,7 @@ export default function ServiceRecordForm({
                 options={systems.map((s) => ({ value: String(s.id), label: s.label }))} />
             )}
           </div>
-          <div style={{ flex: '1 1 260px', maxWidth: 400 }}>
+          <div data-tour="hyd-svcf-plan" style={{ flex: '1 1 260px', maxWidth: 400 }}>
             <label style={labelStyle}>Maintenance Plan</label>
             {initial ? (
               <div style={{ ...inputStyle, background: 'rgba(0,0,0,0.03)' }}>{planLabel}</div>
@@ -219,21 +213,21 @@ export default function ServiceRecordForm({
           </p>
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-          <div style={{ flex: '0 1 190px', minWidth: 170 }}>
+          <div data-tour="hyd-svcf-type" style={{ flex: '0 1 190px', minWidth: 170 }}>
             <label style={labelStyle}>Service Type</label>
             <select style={inputStyle} value={serviceType} onChange={(e) => setServiceType(e.target.value)}>
               {Object.entries(SERVICE_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
-          <div style={{ flex: '0 1 170px', minWidth: 160 }}>
-            <label style={labelStyle}>Service Date *</label>
+          <div data-tour="hyd-svcf-date" style={{ flex: '0 1 170px', minWidth: 160 }}>
+            <label style={labelStyle}>Service Date <Req /></label>
             <DateField value={serviceDate} onChange={setServiceDate} />
           </div>
-          <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
+          <div data-tour="hyd-svcf-performed-by" style={{ flex: '1 1 220px', maxWidth: 320 }}>
             <label style={labelStyle}>Performed By</label>
             <SearchableSelect value={performedBy} onChange={setPerformedBy} placeholder="Search person…" options={userOptions} />
           </div>
-          <div style={{ flex: '1 1 200px', maxWidth: 300 }}>
+          <div data-tour="hyd-svcf-agency" style={{ flex: '1 1 200px', maxWidth: 300 }}>
             <label style={labelStyle}>External Agency</label>
             <input style={inputStyle} value={externalAgency} onChange={(e) => setExternalAgency(e.target.value)} maxLength={200} placeholder="OEM service engineer, contractor…" />
           </div>
@@ -241,90 +235,86 @@ export default function ServiceRecordForm({
         <p style={{ ...hintStyle, color: isDowntime ? WARNING.text : TEXT.muted, fontWeight: isDowntime ? 600 : 400 }}>
           Breakdown, corrective and overhaul jobs mark an in-service system Under Maintenance until the job is completed or cancelled.
         </p>
-      </div>
+        </SheetSection>
 
-      <div style={sectionStyle}>
-        <p style={{ ...sectionTitle, marginBottom: 14 }}>Findings &amp; Work</p>
+        <SheetSection icon="search" title="Findings & Work">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 300px' }}>
+          <div data-tour="hyd-svcf-problem" style={{ flex: '1 1 300px' }}>
             <label style={labelStyle}>Reported Problem</label>
             <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={reportedProblem} onChange={(e) => setReportedProblem(e.target.value)}
               placeholder="Cylinder drifting under load, pump noisy, pressure not building…" />
           </div>
-          <div style={{ flex: '1 1 300px' }}>
+          <div data-tour="hyd-svcf-root-cause" style={{ flex: '1 1 300px' }}>
             <label style={labelStyle}>Root Cause</label>
             <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={rootCause} onChange={(e) => setRootCause(e.target.value)}
               placeholder="Worn piston seal, clogged suction strainer…" />
           </div>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-          <div style={{ flex: '1 1 300px' }}>
+          <div data-tour="hyd-svcf-work-done" style={{ flex: '1 1 300px' }}>
             <label style={labelStyle}>Work Done</label>
             <textarea style={{ ...inputStyle, minHeight: 90, resize: 'vertical' }} value={workDone} onChange={(e) => setWorkDone(e.target.value)} />
             <p style={hintStyle}>Required before the job can be completed.</p>
           </div>
-          <div style={{ flex: '1 1 300px' }}>
+          <div data-tour="hyd-svcf-checklist" style={{ flex: '1 1 300px' }}>
             <label style={labelStyle}>Checklist</label>
             <textarea style={{ ...inputStyle, minHeight: 90, resize: 'vertical' }} value={checklist} onChange={(e) => setChecklist(e.target.value)}
               placeholder="One task per line" />
             {!initial && <p style={hintStyle}>Leave blank to copy the maintenance plan&apos;s checklist when the job is created.</p>}
           </div>
         </div>
-      </div>
+        </SheetSection>
 
-      <div style={sectionStyle}>
-        <p style={{ ...sectionTitle, marginBottom: 14 }}>Readings &amp; Cost</p>
+        <SheetSection icon="rupee" title="Readings & Cost">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '0 1 170px', minWidth: 160 }}>
+          <div data-tour="hyd-svcf-running-hours" style={{ flex: '0 1 170px', minWidth: 160 }}>
             <label style={labelStyle}>Running Hours (h)</label>
             <input style={inputStyle} type="number" min={0} step="any" value={runningHours} onChange={(e) => setRunningHours(e.target.value)} />
           </div>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
+          <div data-tour="hyd-svcf-downtime" style={{ flex: '0 1 150px', minWidth: 140 }}>
             <label style={labelStyle}>Downtime (h)</label>
             <input style={inputStyle} type="number" min={0} step="any" value={downtimeHours} onChange={(e) => setDowntimeHours(e.target.value)} placeholder="0" />
           </div>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
+          <div data-tour="hyd-svcf-fluid-added" style={{ flex: '0 1 150px', minWidth: 140 }}>
             <label style={labelStyle}>Fluid Added (L)</label>
             <input style={inputStyle} type="number" min={0} step="any" value={fluidAdded} onChange={(e) => setFluidAdded(e.target.value)} placeholder="0" />
           </div>
-          <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
+          <div data-tour="hyd-svcf-oil-condition" style={{ flex: '1 1 240px', maxWidth: 320 }}>
             <label style={labelStyle}>Oil / Air Condition</label>
             <input style={inputStyle} value={oilCondition} onChange={(e) => setOilCondition(e.target.value)} maxLength={100} placeholder="ISO 4406 19/17/14, water 200 ppm" />
           </div>
         </div>
         <p style={hintStyle}>Running hours at completion update the system&apos;s hour meter (if higher) and the plan&apos;s last-done hours.</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
+          <div data-tour="hyd-svcf-labour-cost" style={{ flex: '0 1 150px', minWidth: 140 }}>
             <label style={labelStyle}>Labour Cost (₹)</label>
             <input style={inputStyle} type="number" min={0} step="0.01" value={labourCost} onChange={(e) => setLabourCost(e.target.value)} placeholder="0" />
           </div>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
+          <div data-tour="hyd-svcf-other-cost" style={{ flex: '0 1 150px', minWidth: 140 }}>
             <label style={labelStyle}>Other Cost (₹)</label>
             <input style={inputStyle} type="number" min={0} step="0.01" value={otherCost} onChange={(e) => setOtherCost(e.target.value)} placeholder="0" />
           </div>
-          <div style={{ flex: '0 1 170px', minWidth: 160 }}>
+          <div data-tour="hyd-svcf-next-date" style={{ flex: '0 1 170px', minWidth: 160 }}>
             <label style={labelStyle}>Next Service Date</label>
             <DateField value={nextServiceDate} onChange={setNextServiceDate} />
           </div>
-          <div style={{ flex: '1 1 260px' }}>
+          <div data-tour="hyd-svcf-remarks" style={{ flex: '1 1 260px' }}>
             <label style={labelStyle}>Remarks</label>
             <input style={inputStyle} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
           </div>
         </div>
-      </div>
+        </SheetSection>
 
-      <div style={sectionStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <p style={sectionTitle}>Spare Parts Used ({parts.filter((r) => r.spare_part_id).length})</p>
-          <button type="button" style={secondaryBtnStyle}
+        <SheetSection icon="box" title={`Spare Parts Used (${parts.filter((r) => r.spare_part_id).length})`} extra={
+          <button data-tour="hyd-svcf-add-spare-btn" type="button" style={{ ...secondaryBtnStyle, marginLeft: 'auto' }}
             onClick={() => setParts([...parts, { key: nextKey(), spare_part_id: '', quantity: '1', remarks: '' }])}>
             + Add Spare
           </button>
-        </div>
+        }>
         <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>
           Unit cost is taken from the spare (or its Store item) when saved. Spares linked to a Store item can be issued from a Store location when the job is completed.
         </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div data-tour="hyd-svcf-parts" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {parts.map((r) => (
             <div key={r.key} style={rowStyle}>
               <div style={{ flex: '1 1 300px', maxWidth: 460 }}>
@@ -344,17 +334,9 @@ export default function ServiceRecordForm({
           ))}
           {parts.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No spares on this job yet — add the seal kits, filter elements or hoses used.</p>}
         </div>
-      </div>
+        </SheetSection>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button type="submit" disabled={saving} style={{
-          padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-          background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
-          boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-        }}>
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-      </div>
-    </form>
+      </SheetBody>
+    </HydFormShell>
   )
 }

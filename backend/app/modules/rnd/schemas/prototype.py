@@ -23,7 +23,7 @@ class RndPrototypeBomItemResponse(BaseModel):
     uom: str | None = None
     unit_cost: float | None = None
     remarks: str | None = None
-    line_cost: float = 0
+    line_cost: float | None = 0  # None = hidden (R&D › Prototypes › BOM costs)
 
 
 class RndPrototypeCreate(BaseModel):
@@ -78,7 +78,7 @@ class RndPrototypeResponse(BaseModel):
     # Denormalized display fields, filled in by the route.
     project_number: str | None = None
     project_title: str | None = None
-    bom_cost: float = 0
+    bom_cost: float | None = 0  # None = hidden (R&D › Prototypes › BOM costs)
     experiment_count: int = 0
     document_count: int = 0
     production_bom_number: str | None = None

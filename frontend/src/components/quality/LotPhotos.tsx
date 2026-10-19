@@ -5,15 +5,24 @@ import { qualityApi } from '@/lib/api'
 import { QualityInspectionLot } from '@/types'
 import { TEXT, BORDER } from '@/lib/theme'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { Field, inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+import { ActionSheet } from '@/components/quality/QualityBits'
+import { sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 
 /** Inspection photos of a lot (SharePoint, served through the app). Added /
  *  removed only while the lot is open — after the usage decision they are
  *  part of the record. */
 export default function LotPhotos({ lot, onChange }: { lot: QualityInspectionLot; onChange: (l: QualityInspectionLot) => void }) {
   const photos = lot.photos || []
-  const open = ['created', 'in_inspection', 'results_recorded'].includes(lot.status)
+  // Adding / removing photos needs quality:inspection_lots:edit (backend _CAN_EDIT).
+  const { canFeature } = useCan()
+  // Inspection Lots › Photos feature: add (create) / remove (delete).
+  const live = ['created', 'in_inspection', 'results_recorded'].includes(lot.status)
+  const open = live && canFeature('quality', 'inspection_lots', 'photos', 'create')
+  const canRemove = live && canFeature('quality', 'inspection_lots', 'photos', 'delete')
+  const [adding, setAdding] = useState(false)
   const [urls, setUrls] = useState<Record<number, string>>({})
   const [files, setFiles] = useState<File[]>([])
   const [resultId, setResultId] = useState('')
@@ -44,6 +53,7 @@ export default function LotPhotos({ lot, onChange }: { lot: QualityInspectionLot
       onChange(await qualityApi.uploadLotPhotos(lot.id, files, resultId ? Number(resultId) : null, caption.trim()))
       setFiles([])
       setCaption('')
+      setAdding(false)
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to upload the photos.').join(' '))
     } finally {
@@ -68,7 +78,7 @@ export default function LotPhotos({ lot, onChange }: { lot: QualityInspectionLot
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <ConfirmDialog open={removeId !== null} title="Remove this photo?" message="The photo is removed from the lot." confirmLabel="Remove" danger
         onCancel={() => setRemoveId(null)} onConfirm={remove} />
-      {error && (
+      {error && !adding && (
         <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>
       )}
       {photos.length === 0 ? (
@@ -84,32 +94,30 @@ export default function LotPhotos({ lot, onChange }: { lot: QualityInspectionLot
                 <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption || p.file_name}</div>
                 {p.result_id && <div style={{ color: TEXT.muted }}>{charName(p.result_id)}</div>}
                 <div style={{ color: TEXT.muted }}>{p.uploaded_by_name || ''}</div>
-                {open && <span onClick={() => setRemoveId(p.id)} style={{ color: '#DC2626', cursor: 'pointer', fontWeight: 600 }}>Remove</span>}
+                {canRemove && <span onClick={() => setRemoveId(p.id)} style={{ color: '#DC2626', cursor: 'pointer', fontWeight: 600 }}>Remove</span>}
               </div>
             </div>
           ))}
         </div>
       )}
       {open && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-          <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-            <Field label="Photos">
-              <input type="file" multiple accept="image/*" style={inputStyle} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
-            </Field>
-          </div>
-          <div style={{ flex: '0 1 220px', minWidth: 180 }}>
-            <Field label="Characteristic (optional)">
-              <select style={inputStyle} value={resultId} onChange={(e) => setResultId(e.target.value)}>
-                <option value="">Whole lot</option>
-                {lot.results.map((r) => <option key={r.id} value={r.id}>{r.characteristic_name}</option>)}
-              </select>
-            </Field>
-          </div>
-          <div style={{ flex: '1 1 220px', maxWidth: 300 }}>
-            <Field label="Caption"><input style={inputStyle} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="e.g. Crack at weld toe" /></Field>
-          </div>
-          <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={upload}>{busy ? 'Uploading…' : 'Add photos'}</button>
-        </div>
+        <div><button type="button" style={secondaryBtnStyle} onClick={() => { setFiles([]); setResultId(''); setCaption(''); setError(''); setAdding(true) }}>+ Add photos</button></div>
+      )}
+      {adding && (
+        <ActionSheet icon="upload" title="Add inspection photos" subtitle={`${lot.lot_number} · ${lot.item_name}`}
+          onClose={() => { if (!busy) { setAdding(false); setError('') } }} onSubmit={upload} busy={busy} error={error}
+          submitLabel="Add photos" busyLabel="Uploading…">
+          <label style={sheetLabel}>Photos <Req /></label>
+          <input type="file" multiple accept="image/*" style={sheetInput} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+          <p style={sheetHint}>{files.length ? `${files.length} photo(s) selected.` : 'Images only — defects, markings or the set-up.'}</p>
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Characteristic <Optional /></label>
+          <select style={sheetInput} value={resultId} onChange={(e) => setResultId(e.target.value)}>
+            <option value="">Whole lot</option>
+            {lot.results.map((r) => <option key={r.id} value={r.id}>{r.characteristic_name}</option>)}
+          </select>
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Caption <Optional /></label>
+          <input style={sheetInput} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="e.g. Crack at weld toe" />
+        </ActionSheet>
       )}
     </div>
   )

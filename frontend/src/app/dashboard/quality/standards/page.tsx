@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { qualityApi } from '@/lib/api'
 import { QualityStandard } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
@@ -20,6 +22,7 @@ const inputStyle: React.CSSProperties = {
 export default function QualityStandardsPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
   const router = useRouter()
+  const { can } = useCan()
 
   const [standards, setStandards] = useState<QualityStandard[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,7 +58,7 @@ export default function QualityStandardsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Standards</h1>
         </div>
-        <button
+        {can('quality', 'standards', 'create') && (<button
           onClick={() => router.push('/dashboard/quality/standards/new')}
           style={{
             padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
@@ -64,7 +67,7 @@ export default function QualityStandardsPage() {
           }}
         >
           + New Standard
-        </button>
+        </button>)}
       </div>
 
       {error && (
@@ -109,7 +112,7 @@ export default function QualityStandardsPage() {
               <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No standards found.</td></tr>
             ) : (
               filtered.map((s) => (
-                <tr key={s.id} onClick={() => router.push(`/dashboard/quality/standards/${s.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={s.id} onClick={() => router.push(recordPath('/dashboard/quality/standards', s))} style={{ cursor: 'pointer' }}>
                   <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: TEXT.heading, borderTop: `1px solid ${BORDER.light}` }}>{s.standard_code}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{s.title}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{s.category || '—'}</td>
@@ -120,7 +123,7 @@ export default function QualityStandardsPage() {
                     </span>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span onClick={() => router.push(`/dashboard/quality/standards/${s.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/quality/standards', s))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

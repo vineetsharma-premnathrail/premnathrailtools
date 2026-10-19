@@ -75,31 +75,24 @@ def generate_rejection_number(db: Session) -> str:
 
 
 def generate_capa_number(db: Session) -> str:
-    """CAPA-[YEAR]-[NUMBER], sequence scoped per year."""
-    year = date.today().year
-    prefix = f"CAPA-{year}-"
-    _lock_number_series(db, prefix)
-    last = db.query(func.max(QualityCapa.capa_number)).filter(
-        QualityCapa.capa_number.like(f"{prefix}%")
-    ).scalar()
-    if last:
-        last_num = int(last.rsplit("-", 1)[-1])
-        return f"{prefix}{last_num + 1:04d}"
-    return f"{prefix}0001"
+    """<prefix>-[YEAR]-[NUMBER] (prefix from Quality → Settings, default CAPA)."""
+    from app.modules.quality.services.settings import get_setting
+    return _next_in_series(db, QualityCapa.capa_number, f"{get_setting(db, 'capa_number_prefix')}-{date.today().year}-")
 
 
 def generate_complaint_number(db: Session) -> str:
-    """COMP-[YEAR]-[NUMBER], sequence scoped per year."""
-    year = date.today().year
-    prefix = f"COMP-{year}-"
-    _lock_number_series(db, prefix)
-    last = db.query(func.max(QualityCustomerComplaint.complaint_number)).filter(
-        QualityCustomerComplaint.complaint_number.like(f"{prefix}%")
-    ).scalar()
-    if last:
-        last_num = int(last.rsplit("-", 1)[-1])
-        return f"{prefix}{last_num + 1:04d}"
-    return f"{prefix}0001"
+    """<prefix>-[YEAR]-[NUMBER] (prefix from Quality → Settings, default COMP)."""
+    from app.modules.quality.services.settings import get_setting
+    return _next_in_series(db, QualityCustomerComplaint.complaint_number,
+                           f"{get_setting(db, 'complaint_number_prefix')}-{date.today().year}-")
+
+
+def generate_vendor_audit_number(db: Session) -> str:
+    """<prefix>-[YEAR]-[NUMBER] (prefix from Quality → Settings, default VA)."""
+    from app.modules.quality.models.supplier_quality import QualityVendorAudit
+    from app.modules.quality.services.settings import get_setting
+    return _next_in_series(db, QualityVendorAudit.audit_number,
+                           f"{get_setting(db, 'vendor_audit_number_prefix')}-{date.today().year}-")
 
 
 def generate_inspection_number(db: Session, type_code: str) -> str:

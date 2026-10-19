@@ -12,11 +12,14 @@ from app.db.mixins import TimestampMixin
 # usable → on-hand (return_in), quarantine → the warehouse's quarantine
 # bucket (quarantine_in), cleared later by scrap / vendor return / release.
 
-# Maker-checker: a return whose source/conditions need no approval is
-# `approved` (and posted) at once; otherwise it waits as pending_approval
-# with one StoreMaterialReturnApproval step per required approver group,
-# and posts only once every step is approved.
-STORE_RETURN_STATUSES = ("pending_approval", "approved", "rejected")
+# Maker-checker on the central approval engine (workflow
+# "store.material_return", see app/modules/store/services/approvals.py): a
+# return whose source/conditions need no approval is `approved` (and posted)
+# at once; otherwise it waits as pending_approval and posts only once the
+# engine approves it. `cancelled` = the requester withdrew it. Returns raised
+# before the move keep one StoreMaterialReturnApproval step per approver group
+# (history, and the old decide path for any still pending).
+STORE_RETURN_STATUSES = ("pending_approval", "approved", "rejected", "cancelled")
 
 
 class StoreMaterialReturn(Base, TimestampMixin):
@@ -61,6 +64,9 @@ class StoreMaterialReturnItem(Base, TimestampMixin):
     condition: Mapped[str] = mapped_column(String(50), nullable=False, default="good")
     batch_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # WM: the bin it is put back into; serialised: the units coming back.
+    bin_id: Mapped[int | None] = mapped_column(ForeignKey("store_bins.id"), nullable=True)
+    serial_numbers: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     material_return: Mapped["StoreMaterialReturn"] = relationship("StoreMaterialReturn", back_populates="items")
 

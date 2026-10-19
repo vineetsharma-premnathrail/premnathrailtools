@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import require_app_access
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permissions import ensure_can_delete, ensure_tab_action, require_app_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.quality.models.inspection import (
@@ -33,13 +34,15 @@ def _to_response(db: Session, inspection: QualityInspection) -> QualityInspectio
     return resp
 
 
-def _get_or_404(db: Session, inspection_id: int) -> QualityInspection:
+def _get_or_404(db: Session, inspection_id: int, user: User | None = None) -> QualityInspection:
     inspection = db.query(QualityInspection).options(
         selectinload(QualityInspection.results),
         selectinload(QualityInspection.attachments),
     ).filter(QualityInspection.id == inspection_id, QualityInspection.is_deleted == False).first()  # noqa: E712
     if not inspection:
-        raise HTTPException(status_code=404, detail="Inspection not found")
+        raise HTTPException(status_code=404, detail=f"Inspection #{inspection_id} not found — it may have been deleted. Reload the list.")
+    if user is not None:
+        ensure_in_scope(db, user, inspection)
     return inspection
 
 
@@ -49,11 +52,12 @@ async def list_inspections(
     status_filter: str | None = Query(None, alias="status"),
     search: str | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("quality")),
 ):
-    query = db.query(QualityInspection).options(
+    query = apply_scope(db.query(QualityInspection).options(
         selectinload(QualityInspection.results),
         selectinload(QualityInspection.attachments),
-    ).filter(QualityInspection.is_deleted == False)  # noqa: E712
+    ).filter(QualityInspection.is_deleted == False), user, QualityInspection)  # noqa: E712
     if inspection_type:
         query = query.filter(QualityInspection.inspection_type == inspection_type)
     if status_filter:
@@ -88,6 +92,7 @@ async def create_inspection(
     ).first():
         raise HTTPException(status_code=404, detail=f"Inspection plan #{payload.inspection_plan_id} not found")
 
+    ensure_tab_action(user, "quality", _LEGACY_INSPECTION_TAB.get(payload.inspection_type, "inspection_lots"), "create")
     type_code = _TYPE_CODES[payload.inspection_type]
 
     inspection = QualityInspection(
@@ -131,8 +136,8 @@ async def create_inspection(
 
 
 @router.get("/{inspection_id}", response_model=QualityInspectionResponse)
-async def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
-    inspection = _get_or_404(db, inspection_id)
+async def get_inspection(inspection_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
+    inspection = _get_or_404(db, inspection_id, user)
     return _to_response(db, inspection)
 
 
@@ -140,9 +145,12 @@ async def get_inspection(inspection_id: int, db: Session = Depends(get_db)):
 async def update_inspection(
     inspection_id: int,
     payload: QualityInspectionUpdate,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db), user: User = Depends(require_app_access("quality")),
 ):
-    inspection = _get_or_404(db, inspection_id)
+    inspection = _get_or_404(db, inspection_id, user)
+    # Recording results / changing a legacy inspection needs 'Edit' on the
+    # tab its inspection type belongs to (same mapping as delete below).
+    ensure_tab_action(user, "quality", _LEGACY_INSPECTION_TAB.get(inspection.inspection_type, "inspection_lots"), "edit")
     updates = payload.model_dump(exclude_unset=True)
 
     new_status = updates.get("status")
@@ -153,6 +161,26 @@ async def update_inspection(
         raise HTTPException(status_code=404, detail=f"Inspection plan #{new_plan_id} not found")
 
     results = updates.pop("results", None)
+    if inspection.status in _DECIDED_STATUSES:
+        # A decided inspection is a quality record (it releases a production /
+        # RRV gate): only remarks may still change. The edit form re-sends
+        # every field, so only fields whose value actually changes count.
+        changed = sorted(f for f, v in updates.items() if f != "remarks" and getattr(inspection, f) != v)
+        if results is not None:
+            def _key(r):
+                return (r.get("parameter"), r.get("method"), r.get("acceptance_criteria"), r.get("observed_value"), r.get("result"))
+            old = [_key({c: getattr(r, c) for c in ("parameter", "method", "acceptance_criteria", "observed_value", "result")})
+                   for r in sorted(inspection.results, key=lambda r: (r.sort_order, r.id))]
+            if old != [_key(r) for r in sorted(results, key=lambda r: r.get("sort_order", 0))]:
+                changed.append("results")
+        if changed:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Inspection {inspection.inspection_number} is already {inspection.status.replace('_', ' ')}, so its "
+                       f"{', '.join(c.replace('_', ' ') for c in changed)} can't be changed — a decided inspection is a quality record. "
+                       "Only remarks can be added. If the decision was wrong, request a fresh inspection (re-inspection) instead.",
+            )
+        results = None
     status_changed = new_status is not None and new_status != inspection.status
     for field, val in updates.items():
         setattr(inspection, field, val)
@@ -189,9 +217,31 @@ async def update_inspection(
     return _to_response(db, _get_or_404(db, inspection.id))
 
 
+_DECIDED_STATUSES = ("passed", "failed", "conditionally_passed")
+
+_LEGACY_INSPECTION_TAB = {
+    "incoming": "inspection_lots", "job_work": "inspection_lots", "first_article": "first_article",
+    "in_process": "in_process_inspection", "final": "final_inspection",
+}
+
+
 @router.delete("/{inspection_id}")
-async def delete_inspection(inspection_id: int, db: Session = Depends(get_db)):
-    inspection = _get_or_404(db, inspection_id)
+async def delete_inspection(
+    inspection_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("quality")),
+):
+    inspection = _get_or_404(db, inspection_id, user)
+    # Legacy single inspections: the tab follows the inspection type. They
+    # carry no creator column, so anyone with 'Delete' on that tab may delete.
+    tab = _LEGACY_INSPECTION_TAB.get(inspection.inspection_type, "inspection_lots")
+    ensure_can_delete(user, inspection, "quality", tab, what="inspection")
+    if inspection.status in _DECIDED_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Inspection {inspection.inspection_number} is already {inspection.status.replace('_', ' ')} — a decided "
+                   "inspection is a quality record (it may have released a production / RRV gate) and can't be deleted.",
+        )
     # Soft delete — quality records are retained for audit (ISO 9001 §7.5.3),
     # and the delete itself is logged by app/core/audit.py.
     inspection.is_deleted = True

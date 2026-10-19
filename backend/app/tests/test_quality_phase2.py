@@ -187,9 +187,13 @@ def test_job_work_receipt_goes_to_quality_lot(client, db):
     item, loc = setup_item(db, "Machined hub")
     release_fai(db, item, "Precision Works")
     post_stock_transaction(db, item_id=item.id, location_id=loc.id, transaction_type="receipt", quantity=10)
+    from app.modules.accounts.models.vendor import Vendor
+    vendor = Vendor(code="V-PREC", name="Precision Works", status="active")
+    db.add(vendor)
     db.commit()
     issue = client.post("/api/v1/store/material-issues", json={
-        "location_id": loc.id, "issue_type": "production", "vendor_name": "Precision Works",
+        "location_id": loc.id, "issue_type": "job_work", "vendor_id": vendor.id, "process": "machining",
+        "expected_return_date": (date.today() + timedelta(days=7)).isoformat(), "challan_number": "DC-JW-1",
         "items": [{"item_id": item.id, "quantity": 4}]}, headers=hdr(eng))
     assert issue.status_code == 200, issue.text
     ret = client.post("/api/v1/store/material-returns", json={
@@ -253,6 +257,19 @@ def test_dispatch_needs_final_inspection_and_third_party_certificate(client, db)
     check = client.post(f"{Q}/inspection-calls/dispatch-check", json={"item_id": item.id, "quantity": 1, "batch_number": "WO-9",
                                                                       "erp_project_id": project.id}, headers=hdr(eng)).json()
     assert check["allowed"] is True
+
+
+def test_inspection_call_offer_capped_by_internally_accepted_lot(client, db):
+    eng, head = _team(db, "cap")
+    item, loc = setup_item(db, "Rail clamp")
+    lot = _decided_final_lot(client, db, item, loc, eng, head, qty=5, batch="WO-CAP")
+    body = {"order_reference": "PO-CAP", "item_id": item.id, "agency": "rites", "lot_id": lot.id}
+    r = client.post(f"{Q}/inspection-calls", json={**body, "quantity": 6}, headers=hdr(eng))
+    assert r.status_code == 422 and "at most 5" in r.json()["detail"]
+    assert client.post(f"{Q}/inspection-calls", json={**body, "quantity": 3}, headers=hdr(eng)).status_code == 200
+    r = client.post(f"{Q}/inspection-calls", json={**body, "quantity": 3}, headers=hdr(eng))
+    assert r.status_code == 422 and "at most 2" in r.json()["detail"]
+    assert client.post(f"{Q}/inspection-calls", json={**body, "quantity": 2}, headers=hdr(eng)).status_code == 200
 
 
 def test_rejected_inspection_call_raises_ncr(client, db):

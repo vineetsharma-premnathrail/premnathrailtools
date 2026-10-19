@@ -7,25 +7,49 @@ const config: TourConfig = {
     {
       target: 'org-plants-add-btn',
       title: '+ Add Branch',
-      purpose: 'Creates a new branch/plant — a physical Indian Railways location (a workshop, depot, unit, or office) that departments, stores, cost centers, and users are attached to.',
+      purpose: 'Creates a new branch (plant) — a physical company location such as a manufacturing unit, workshop, depot, or office. Departments, stores, cost centers, and users are all attached to a branch.',
+      why: 'In an ERP every transaction (stock, purchase, cost) is booked against a location. Setting branches up first means stock and costs can later be reported unit-by-unit.',
       after: 'Opens a form for the branch\'s Basic Information. Address, Operational Configuration, Users, Stores, Cost Centers, and Documents can only be added once the branch is saved, from its Edit page.',
     },
     {
       target: 'org-plants-search',
       title: 'Search Branch',
-      purpose: 'Searches across branch name, code, company, branch type, manager, and industry/function at once.',
+      purpose: 'Filters the list across branch name, code, company, branch type, manager, and industry/function at once.',
       whatToEnter: 'Any part of a name, code, or manager\'s name. The list updates as you type.',
+      validExample: 'Unit 3',
     },
     {
       target: 'org-plants-table-rows',
       title: 'Branches table',
-      purpose: 'Every branch in the organization, with its code, company, type, manager, industry/function, status, and dates. Click anywhere on a row to open that branch\'s full detail page.',
+      purpose: 'Every branch in the organization, with its code, company, type, manager, industry/function, status, and created/updated dates. Click anywhere on a row to open that branch\'s full detail page.',
+    },
+    {
+      target: 'org-plants-status-badge',
+      title: 'Status badge',
+      purpose: 'Shows the branch\'s current state.',
+      options: [
+        { value: 'Active', meaning: 'Operating normally — can be picked as a location for new work.' },
+        { value: 'Inactive', meaning: 'Not in use; history is kept but it should not be used for new work.' },
+        { value: 'Under Maintenance', meaning: 'Temporarily out of service.' },
+        { value: 'Under Construction', meaning: 'Being set up — not operational yet.' },
+        { value: 'Closed', meaning: 'Permanently shut down.' },
+      ],
+    },
+    {
+      target: 'org-plants-view-btn',
+      title: 'View',
+      purpose: 'Opens the read-only detail page of this branch (same as clicking the row).',
+    },
+    {
+      target: 'org-plants-edit-btn',
+      title: 'Edit',
+      purpose: 'Opens the branch\'s Edit page directly — basic details plus its Address, Operational Configuration, Users, Stores, Cost Centers, and Documents tabs.',
     },
     {
       target: 'org-plants-toggle-status',
       title: 'Activate / Deactivate',
       purpose: 'Quickly flips a branch between Active and Inactive without opening the Edit page.',
-      why: 'An inactive branch stays in the system (its history, documents, and past records are untouched) but is meant to be excluded from being picked as a location for new work going forward.',
+      why: 'Deactivate instead of delete: an inactive branch keeps its history, documents, and past records, but stops being offered for new work.',
     },
     {
       target: 'org-plants-delete-btn',

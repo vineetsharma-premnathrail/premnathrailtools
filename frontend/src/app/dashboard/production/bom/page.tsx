@@ -8,6 +8,9 @@ import { ProductionBom } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
+import { recordPath } from '@/lib/recordRef'
+import { useCan } from '@/lib/permissions'
+import { DesignSourcesPanel } from '@/components/production/DesignBomLink'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', active: 'Active', obsolete: 'Obsolete' }
 const STATUS_HEX: Record<string, string> = { draft: '#F59E0B', active: '#16A34A', obsolete: '#78716c' }
@@ -21,6 +24,8 @@ const inr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigi
 
 export default function ProductionBomListPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
+  const { can, canFeature } = useCan()
+  const seeCosts = canFeature('production', 'bom', 'costs', 'view')
   const router = useRouter()
 
   const [boms, setBoms] = useState<ProductionBom[]>([])
@@ -53,7 +58,8 @@ export default function ProductionBomListPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>BOM &amp; Routing</h1>
         </div>
-        <button
+        {can('production', 'bom', 'create') && <button
+          data-tour="production-bom-new-btn"
           onClick={() => router.push('/dashboard/production/bom/new')}
           style={{
             padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
@@ -62,7 +68,7 @@ export default function ProductionBomListPage() {
           }}
         >
           + New BOM
-        </button>
+        </button>}
       </div>
 
       {error && (
@@ -71,22 +77,24 @@ export default function ProductionBomListPage() {
         </div>
       )}
 
+      {canFeature('production', 'bom', 'design_link', 'view') && <DesignSourcesPanel canTransfer={canFeature('production', 'bom', 'design_link', 'create')} />}
+
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by BOM number or product…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <input data-tour="production-bom-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by BOM number or product…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="production-bom-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
-      <div style={{
+      <div data-tour="production-bom-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 950 }}>
           <thead>
             <tr>
-              {['BOM Number', 'Product', 'Version', 'Components', 'Operations', 'Std Cost / Unit', 'Work Orders', 'Status', ''].map((h) => (
+              {['BOM Number', 'Product', 'Version', 'Components', 'Operations', ...(seeCosts ? ['Std Cost / Unit'] : []), 'Work Orders', 'Status', ''].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
@@ -100,13 +108,20 @@ export default function ProductionBomListPage() {
               <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No BOMs found.</td></tr>
             ) : (
               boms.map((b) => (
-                <tr key={b.id} onClick={() => router.push(`/dashboard/production/bom/${b.id}`)} style={{ cursor: 'pointer' }}>
-                  <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading }}>{b.bom_number}</td>
+                <tr key={b.id} onClick={() => router.push(recordPath('/dashboard/production/bom', b))} style={{ cursor: 'pointer' }}>
+                  <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading }}>
+                    {b.bom_number}
+                    {b.design_bom_number && (
+                      <div style={{ fontSize: 11.5, fontWeight: 500, color: b.design_outdated ? '#b45309' : TEXT.muted }}>
+                        {b.design_bom_number} {b.design_revision_label}{b.design_outdated ? ` · Design changed (${b.latest_design_revision_label})` : ''}
+                      </div>
+                    )}
+                  </td>
                   <td style={cellStyle}>{b.product_code} — {b.product_name}</td>
                   <td style={cellStyle}>v{b.version}</td>
                   <td style={cellStyle}>{b.items.length}</td>
                   <td style={cellStyle}>{b.operations.length}</td>
-                  <td style={cellStyle}>{inr((b.standard_material_cost + b.standard_labour_cost) / (b.base_quantity || 1))}</td>
+                  {seeCosts && <td style={cellStyle}>{inr(((b.standard_material_cost ?? 0) + (b.standard_labour_cost ?? 0)) / (b.base_quantity || 1))}</td>}
                   <td style={cellStyle}>{b.work_order_count}</td>
                   <td style={cellStyle}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[b.status]}1a`, color: STATUS_HEX[b.status], whiteSpace: 'nowrap' }}>
@@ -114,7 +129,7 @@ export default function ProductionBomListPage() {
                     </span>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/production/bom/${b.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/production/bom', b))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

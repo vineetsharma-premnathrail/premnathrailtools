@@ -6,7 +6,9 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, TooltipItem,
 } from 'chart.js'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { erpApi } from '@/lib/api'
+import { extractErrorMessages } from '@/lib/validation'
 import { ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import { Section } from '@/components/shared/ui'
@@ -25,8 +27,8 @@ const STATUS_LABELS: Record<string, string> = {
   work_completed: 'Work Completed', review: 'Review', closed: 'Closed', cancelled: 'Cancelled',
 }
 const OPEN_STATUSES = new Set(['open', 'acknowledged', 'assigned', 'scheduled', 'in_progress', 'pending_parts', 'on_hold'])
-const PRIORITY_ORDER: ServiceRequest['priority'][] = ['critical', 'high', 'medium', 'low']
-const PRIORITY_COLOR: Record<string, string> = { critical: STATUS_COLOR.critical, high: STATUS_COLOR.serious, medium: STATUS_COLOR.warning, low: STATUS_COLOR.good }
+const PRIORITY_ORDER: ServiceRequest['priority'][] = ['urgent', 'standard']
+const PRIORITY_COLOR: Record<string, string> = { urgent: STATUS_COLOR.critical, standard: STATUS_COLOR.good }
 
 const chartFont = { size: 10.5, family: 'system-ui, -apple-system, "Segoe UI", sans-serif' }
 
@@ -52,9 +54,15 @@ export default function ErpReportsPage() {
   const { isAuthorized, isLoading } = useRequireApp('erp')
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
-    if (isAuthorized) erpApi.listServiceRequests().then(setSrs).finally(() => setLoading(false))
+    if (!isAuthorized) return
+    // Same 1000-row ceiling as the dashboard and list pages — the API default is 50.
+    erpApi.listServiceRequests({ limit: 1000 })
+      .then(setSrs)
+      .catch((err) => setLoadError(extractErrorMessages(err, 'Could not load service requests for the reports — check your connection and reload the page.').join(' ')))
+      .finally(() => setLoading(false))
   }, [isAuthorized])
 
   const thisMonthCount = useMemo(() => {
@@ -68,6 +76,8 @@ export default function ErpReportsPage() {
 
   const openCount = useMemo(() => srs.filter((s) => OPEN_STATUSES.has(s.status)).length, [srs])
   const closedCount = useMemo(() => srs.filter((s) => s.status === 'closed').length, [srs])
+  // Money follows Service Requests › Charges, costs & billing amounts (erp:service_requests.charges:view).
+  const showCharges = useCan().canFeature('erp', 'service_requests', 'charges', 'view')
   const totalBilled = useMemo(() => srs.reduce((sum, s) => sum + (s.total_bill || 0), 0), [srs])
 
   const avgResolutionDays = useMemo(() => {
@@ -148,20 +158,22 @@ export default function ErpReportsPage() {
 
       {loading ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>Loading…</p>
+      ) : loadError ? (
+        <p style={{ fontSize: 13, color: '#b91c1c' }}>{loadError}</p>
       ) : srs.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No data yet.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+          <div data-tour="erp-rep-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
             <KpiTile label="Total Requests" value={String(srs.length)} color="#1f1108" />
             <KpiTile label="This Month" value={String(thisMonthCount)} color="#FF7A45" />
             <KpiTile label="Open" value={String(openCount)} color={STATUS_COLOR.warning} />
             <KpiTile label="Closed" value={String(closedCount)} color={STATUS_COLOR.good} />
             <KpiTile label="Avg Resolution" value={avgResolutionDays === null ? '—' : `${avgResolutionDays.toFixed(1)}d`} color={CATEGORICAL[0]} />
-            <KpiTile label="Total Billed" value={`₹${totalBilled.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} color={CATEGORICAL[6]} />
+            {showCharges && <KpiTile label="Total Billed" value={`₹${totalBilled.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`} color={CATEGORICAL[6]} />}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+          <div data-tour="erp-rep-charts" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
             <ChartCard title="Status Breakdown">
               <Doughnut
                 data={{
@@ -202,7 +214,7 @@ export default function ErpReportsPage() {
               />
             </ChartCard>
 
-            <ChartCard title="Cost Breakdown">
+            {showCharges && <ChartCard title="Cost Breakdown">
               <Doughnut
                 data={{
                   labels: Object.keys(costBreakdown),
@@ -216,11 +228,11 @@ export default function ErpReportsPage() {
                   },
                 }}
               />
-            </ChartCard>
+            </ChartCard>}
           </div>
 
           <Section title="Status Detail">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+            <div data-tour="erp-rep-status-detail" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
               {statusBreakdown.map(([status, count]) => (
                 <div key={status} style={{ padding: 12, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
                   <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: '#78716c', margin: '0 0 4px' }}>{STATUS_LABELS[status] || status}</p>

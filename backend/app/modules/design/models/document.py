@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import datetime
-from sqlalchemy import String, Integer, BigInteger, Text, DateTime, ForeignKey, Index, text
+from sqlalchemy import String, Integer, BigInteger, Boolean, Text, DateTime, ForeignKey, Index, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, SoftDeleteMixin
@@ -18,6 +18,13 @@ DESIGN_DOCUMENT_TYPES: dict[str, str] = {
     "procedure": "PRC",
     "manual": "MAN",
     "bom": "BOM",
+    # Discipline drawings (plan §8 item 1 / §33) — electrical, hydraulic,
+    # pneumatic and panel work each get their own number series.
+    "wiring_diagram": "WD",
+    "harness_drawing": "HRN",
+    "hydraulic_circuit": "HYC",
+    "pneumatic_circuit": "PNC",
+    "panel_layout": "PNL",
     "other": "DOC",
 }
 # Shared with Electrical/Hydraulic later — one table for every discipline,
@@ -30,8 +37,13 @@ DESIGN_DOCUMENT_STATUSES = ("active", "obsolete")
 
 # draft → in_review → in_approval → released → superseded. Returning a
 # revision (checker or approver) or recalling it puts it back to draft.
-DESIGN_REVISION_STATUSES = ("draft", "in_review", "in_approval", "released", "superseded")
-DESIGN_OPEN_REVISION_STATUSES = ("draft", "in_review", "in_approval")
+# Documents flagged customer_approval_required stop at `approved` after the
+# internal approval and are released only once a customer submission records
+# the customer's approval; a customer rejection freezes the revision as
+# `customer_rejected` (what the customer saw stays on record) and the fix
+# goes out as the next revision.
+DESIGN_REVISION_STATUSES = ("draft", "in_review", "in_approval", "approved", "released", "superseded", "customer_rejected")
+DESIGN_OPEN_REVISION_STATUSES = ("draft", "in_review", "in_approval", "approved")
 
 # primary = the controlled print (usually PDF), native = the CAD/Office
 # source it was produced from, supporting = anything else (calcs, photos).
@@ -57,6 +69,15 @@ class DesignDocument(Base, TimestampMixin, SoftDeleteMixin):
     erp_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("erp_projects.id"), index=True, nullable=True)
     store_item_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("store_items.id"), index=True, nullable=True)
     department_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("departments.id"), nullable=True)
+    # Customer the drawing is made for (CRM organization), and whether that
+    # customer/contract requires drawing approval before release.
+    customer_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("crm_organizations.id"), index=True, nullable=True)
+    customer_approval_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    standard_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("design_standards.id"), nullable=True)
+    design_request_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("design_requests.id"), index=True, nullable=True)
+    # Number the drawing carried before it entered this register (migration
+    # of existing drawings). The register number itself is always generated.
+    legacy_number: Mapped[str | None] = mapped_column(String(100), index=True, nullable=True)
 
     owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), index=True, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
@@ -110,6 +131,8 @@ class DesignDocumentRevision(Base, TimestampMixin, SoftDeleteMixin):
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     returned_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Who released an `approved` (customer-approval) revision, if not the approver.
+    released_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
     document: Mapped["DesignDocument"] = relationship("DesignDocument", back_populates="revisions")
     files: Mapped[list["DesignRevisionFile"]] = relationship(

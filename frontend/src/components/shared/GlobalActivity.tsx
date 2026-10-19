@@ -10,7 +10,8 @@ import { getActivitySnapshot, getServerActivitySnapshot, subscribeActivity } fro
 //  * a save/approve/delete (POST/PUT/PATCH/DELETE) running > 150 ms → a
 //    transparent layer over the whole screen swallows clicks and Enter/Space,
 //    so an impatient second click can't submit the same thing twice; after
-//    700 ms a "Saving… please wait" card explains why the screen is paused.
+//    700 ms a "Saving… please wait" card explains why the screen is paused
+//    (the verb comes from the request's `activityLabel`, e.g. "Sending").
 // Delays keep fast requests from flashing anything at all.
 
 const BAR_DELAY_MS = 300
@@ -38,7 +39,7 @@ function formatSize(bytes: number): string {
 }
 
 export default function GlobalActivity() {
-  const { writes, writeSince, anySince, uploads } = useSyncExternalStore(subscribeActivity, getActivitySnapshot, getServerActivitySnapshot)
+  const { writes, writeSince, anySince, uploads, writeLabel } = useSyncExternalStore(subscribeActivity, getActivitySnapshot, getServerActivitySnapshot)
   const writing = writes > 0
   const uploading = uploads.some((u) => u.status === 'uploading')
   const showBar = useSinceAtLeast(anySince, BAR_DELAY_MS)
@@ -112,10 +113,10 @@ export default function GlobalActivity() {
               <span className="pr-activity-spinner" aria-hidden
                 style={{ width: 20, height: 20, flex: 'none', borderRadius: 9999, border: `2.5px solid ${BRAND.primaryGlow}`, borderTopColor: BRAND.primaryHover, animation: 'pr-activity-spin 0.8s linear infinite' }} />
               <div>
-                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: TEXT.heading }}>Saving… please wait</p>
+                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: TEXT.heading }}>{writeLabel}… please wait</p>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: TEXT.muted }}>
                   {slow
-                    ? 'Still working — large uploads can take a few minutes. Don’t close this tab.'
+                    ? 'Still working — attachments and large uploads can take a few minutes. Don’t close this tab.'
                     : 'Don’t click again — the request is being processed.'}
                 </p>
               </div>
@@ -134,7 +135,7 @@ export default function GlobalActivity() {
           </p>
           {uploads.map((u) => {
             const pct = u.total ? Math.floor((u.loaded / u.total) * 100) : 0
-            const hex = u.status === 'failed' ? '#DC2626' : u.status === 'done' ? '#16A34A' : BRAND.primaryHover
+            const hex = u.status === 'failed' ? '#DC2626' : u.status === 'done' ? '#16A34A' : '#2563EB'
             return (
               <div key={u.id} style={{ marginTop: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: TEXT.secondary }}>

@@ -8,6 +8,9 @@ class StoreMaterialReturnItemPayload(BaseModel):
     condition: str = "good"
     batch_number: str | None = None
     remarks: str | None = None
+    # WM: the bin it is put back into; serialised item: the units coming back.
+    bin_id: int | None = None
+    serials: list[str] = []
 
 
 class StoreMaterialReturnItemResponse(BaseModel):
@@ -23,6 +26,8 @@ class StoreMaterialReturnItemResponse(BaseModel):
     condition_label: str | None = None
     batch_number: str | None = None
     remarks: str | None = None
+    bin_id: int | None = None
+    serial_numbers: list[str] | None = None
 
 
 class StoreMaterialReturnApprovalResponse(BaseModel):

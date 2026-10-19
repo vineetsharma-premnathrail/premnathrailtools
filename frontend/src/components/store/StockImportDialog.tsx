@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { storeApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn } from '@/components/shared/FormSheet'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 
 interface ImportResult {
@@ -39,7 +39,7 @@ export default function StockImportDialog({ open, onClose, onImported }: { open:
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'stock_entry_import_template.csv'
+      a.download = 'opening_stock_import_template.csv'
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
@@ -64,40 +64,48 @@ export default function StockImportDialog({ open, onClose, onImported }: { open:
   const failed = !!result && result.errors.length > 0
 
   return (
-    <div onClick={close} className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} className="dialog-panel" style={{ width: '100%', maxWidth: result ? 760 : 480, maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
-        <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 6px' }}>Import Stock Entries</p>
-
+    <FormSheet width={result ? 760 : 580} icon="upload" title="Opening Stock Import"
+      subtitle="Stock already on the shelves at go-live (or when a new store opens) — admin only." onClose={close} busy={busy}
+      footer={!result ? <>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, busy)} onClick={close} disabled={busy}>Cancel</button>
+        <button type="button" style={sheetBtn('primary', SHEET.BLUE, busy)} onClick={upload} disabled={busy}><SheetIcon name="upload" size={16} />{busy ? 'Importing…' : 'Import'}</button>
+      </> : <>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK)} onClick={() => { setResult(null); setFile(null) }}>{failed ? 'Upload fixed file' : 'Import another file'}</button>
+        <button type="button" style={sheetBtn('primary', SHEET.BLUE)} onClick={close}><SheetIcon name="check" size={16} />Done</button>
+      </>}>
+      <div style={{ padding: '20px 24px' }}>
+        {error && (
+          <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>
+        )}
         {!result ? (
           <>
-            <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 14px', lineHeight: 1.6 }}>
-              Upload a CSV or Excel file with columns <b>item_code</b>, <b>warehouse</b> (code or name), <b>entry_type</b> (e.g. Receipt, Issue), <b>quantity</b>,
-              vendor_name, batch_number, reference_number, transaction_date (YYYY-MM-DD, blank = today), remarks. Use it for opening stock or bulk receipts.
-              If <b>any</b> row has a problem, <b>nothing is posted</b> — fix the rows listed and upload the same file again. Adjustments can&apos;t be imported.
-            </p>
-            <button type="button" onClick={downloadTemplate} style={{ ...secondaryBtnStyle, marginBottom: 14 }}>Download template</button>
-            <div
-              onClick={() => fileRef.current?.click()}
-              style={{ border: '1.5px dashed rgba(0,0,0,0.18)', borderRadius: 12, padding: '18px 14px', textAlign: 'center', cursor: 'pointer', fontSize: 13, color: file ? TEXT.heading : TEXT.muted, marginBottom: 14 }}
-            >
-              {file ? file.name : 'Click to choose a .csv or .xlsx file'}
-            </div>
-            <input ref={fileRef} type="file" accept=".csv,.xlsx" style={{ display: 'none' }} onChange={(e) => { setFile(e.target.files?.[0] || null); setError('') }} />
-            {error && <p style={{ fontSize: 12.5, color: '#dc2626', margin: '0 0 12px' }}>{error}</p>}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" style={secondaryBtnStyle} onClick={close} disabled={busy}>Cancel</button>
-              <button type="button" style={{ ...primaryBtnStyle, opacity: busy ? 0.7 : 1 }} onClick={upload} disabled={busy}>{busy ? 'Importing…' : 'Import'}</button>
-            </div>
+            <SheetSection icon="doc" title="File Format">
+              <p style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 12px', lineHeight: 1.6 }}>
+                Columns: <b>item_code</b>, <b>warehouse</b> (code or name), <b>quantity</b>, <b>rate</b> (book value per unit), batch_number, <b>reference_number</b> (e.g. the count
+                sheet OPENING-STOCK-2026), transaction_date (YYYY-MM-DD, blank = today), <b>remarks</b>. Day-to-day stock comes in through GRN, Returns and Transfers.
+                If <b>any</b> row has a problem, <b>nothing is posted</b> — fix the rows listed and upload the same file again.
+              </p>
+              <button type="button" onClick={downloadTemplate} style={sheetBtn('secondary')}><SheetIcon name="doc" size={15} />Download template</button>
+            </SheetSection>
+            <SheetSection icon="upload" title="Upload">
+              <div
+                onClick={() => fileRef.current?.click()}
+                style={{ border: '1.5px dashed #cbd5e1', borderRadius: 12, padding: '18px 14px', textAlign: 'center', cursor: 'pointer', fontSize: 13, color: file ? SHEET.INK : SHEET.MUTED }}
+              >
+                <SheetIcon name="clip" size={22} color={SHEET.BLUE} />
+                <div style={{ marginTop: 6 }}>{file ? file.name : <>Click to choose a <b>.csv</b> or <b>.xlsx</b> file</>}</div>
+              </div>
+              <input ref={fileRef} type="file" accept=".csv,.xlsx" style={{ display: 'none' }} onChange={(e) => { setFile(e.target.files?.[0] || null); setError('') }} />
+            </SheetSection>
           </>
         ) : (
-          <>
-            <p style={{ fontSize: 13, color: failed ? '#dc2626' : '#15803d', fontWeight: 600, margin: '0 0 16px' }}>
+          <SheetSection icon={failed ? 'alert' : 'check'} title={failed ? 'Nothing Posted' : 'Posted'} color={failed ? '#dc2626' : '#15803d'}>
+            <p style={{ fontSize: 13, color: failed ? '#dc2626' : '#15803d', fontWeight: 600, margin: '0 0 14px' }}>
               {failed
                 ? `Nothing was posted — ${result.errors.length} row${result.errors.length === 1 ? ' has a problem' : 's have problems'}. ${result.would_post} other row${result.would_post === 1 ? ' was' : 's were'} fine. Fix the rows below and upload again.`
-                : `${result.posted.length} stock entr${result.posted.length === 1 ? 'y' : 'ies'} posted.`}
+                : `${result.posted.length} opening-stock line${result.posted.length === 1 ? '' : 's'} posted.`}
             </p>
-
-            <div style={{ maxHeight: 340, overflow: 'auto', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, marginBottom: 16 }}>
+            <div style={{ maxHeight: 340, overflow: 'auto', border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 {failed ? (
                   <>
@@ -117,14 +125,9 @@ export default function StockImportDialog({ open, onClose, onImported }: { open:
                 )}
               </table>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" style={secondaryBtnStyle} onClick={() => { setResult(null); setFile(null) }}>{failed ? 'Upload fixed file' : 'Import another file'}</button>
-              <button type="button" style={primaryBtnStyle} onClick={close}>Done</button>
-            </div>
-          </>
+          </SheetSection>
         )}
       </div>
-    </div>
+    </FormSheet>
   )
 }

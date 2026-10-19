@@ -21,3 +21,12 @@ class UserSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Why it ended when revoked: logout | admin | deactivated | idle | rotated | limit
+    revoked_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # App lock (services/app_lock.py): every new sign-in starts 'locked' until
+    # the app password is entered; 'reset' = unlocked by an emailed temporary
+    # password, only allowed to set a new password. Carried over on refresh
+    # rotation. app_activity_at = last real user activity, for the idle lock.
+    app_lock_state: Mapped[str] = mapped_column(String(10), default="locked", server_default="locked")
+    app_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

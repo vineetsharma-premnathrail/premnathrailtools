@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import date, datetime
-from sqlalchemy import String, Integer, Float, Boolean, Date, DateTime, Text, ForeignKey
+from sqlalchemy import String, Integer, Float, Boolean, Date, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -25,11 +25,21 @@ class MaintenanceWorkOrder(Base, TimestampMixin):
     are recomputed by service.recompute_costs and never hand-edited."""
 
     __tablename__ = "maintenance_work_orders"
+    # Exactly one job per PM occurrence — the DB backstop behind
+    # service.generate_pm_work_order's per-plan lock. NULLs (non-PM jobs)
+    # never collide.
+    __table_args__ = (
+        UniqueConstraint("pm_plan_id", "pm_due_date", name="uq_maintenance_wo_pm_occurrence"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     wo_number: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     asset_id: Mapped[int] = mapped_column(Integer, ForeignKey("maintenance_assets.id"), index=True, nullable=False)
     request_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("maintenance_requests.id"), nullable=True)
+    # Set when the PM scheduler generated this job; (pm_plan_id, pm_due_date)
+    # keeps generation idempotent and drives PM-compliance reporting.
+    pm_plan_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("maintenance_pm_plans.id"), index=True, nullable=True)
+    pm_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     wo_type: Mapped[str] = mapped_column(String(20), default="breakdown", nullable=False)
     priority: Mapped[str] = mapped_column(String(10), default="normal", nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -62,6 +72,17 @@ class MaintenanceWorkOrder(Base, TimestampMixin):
     labour_cost: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     spares_cost: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     total_cost: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    # Outside repair / service bought through a PR raised from this job
+    # (routes/wo_procurement.py): posted vendor-invoice value of the PO's
+    # service lines. Refreshed by wo_procurement.refresh_procured_cost.
+    procured_cost: Mapped[float] = mapped_column(Float, default=0.0, server_default="0", nullable=False)
+    # Permit-to-work (models/permit.py): when set the job can't start without
+    # an active permit and can't complete until every permit is closed.
+    permit_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
+    # Main-counter reading captured at completion (performance-based PM).
+    meter_reading_at_completion: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # PM jobs: what triggered the occurrence — "calendar" or "meter".
+    pm_trigger: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     # Requester sign-off: completed jobs raised from a request need the
     # requester to confirm the machine is OK before the planner can close.
@@ -140,3 +161,29 @@ class MaintenanceLabourLog(Base, TimestampMixin):
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     work_order: Mapped[MaintenanceWorkOrder] = relationship(back_populates="labour_logs")
+
+
+# Data-scope helpers (core/data_scope.py, see maintenance/access.py): the
+# plant and department of the asset this record is about — the record has no
+# plant column of its own. Deferred SQL expressions, not DB columns (no
+# migration); computed only when a scope filter uses them.
+def _scope_columns() -> None:
+    from sqlalchemy import select
+    from sqlalchemy.orm import column_property
+    from app.modules.maintenance.models.asset import MaintenanceAsset
+    from app.modules.organization.models.department import Department
+
+    MaintenanceWorkOrder.scope_branch_id = column_property(
+        select(MaintenanceAsset.branch_id).where(MaintenanceAsset.id == MaintenanceWorkOrder.asset_id)
+        .correlate_except(MaintenanceAsset).scalar_subquery(),
+        deferred=True,
+    )
+    MaintenanceWorkOrder.scope_department = column_property(
+        select(Department.name).join(MaintenanceAsset, MaintenanceAsset.department_id == Department.id)
+        .where(MaintenanceAsset.id == MaintenanceWorkOrder.asset_id)
+        .correlate_except(MaintenanceAsset, Department).scalar_subquery(),
+        deferred=True,
+    )
+
+
+_scope_columns()

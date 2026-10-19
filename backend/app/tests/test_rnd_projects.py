@@ -28,7 +28,7 @@ def auth_header(user):
 
 
 def create_project(client, headers, **overrides):
-    payload = {"title": "Rail grinder bogie", "objective": "Lighter bogie frame", "budget_amount": 100000, **overrides}
+    payload = {"title": "Rail grinder bogie", "objective": "Lighter bogie frame", "budget_amount": 100000, "origin": "new_development", "origin_note": "Proposed by R&D head", "attachment_count": 1, **overrides}
     response = client.post(f"{BASE}/projects", json=payload, headers=headers)
     assert response.status_code == 200, response.text
     return response.json()
@@ -58,7 +58,7 @@ def test_create_project_rejects_target_before_start(client, db):
     h = auth_header(make_user(db, "rnd2@premnathrail.com"))
     response = client.post(
         f"{BASE}/projects",
-        json={"title": "X", "objective": "Y", "start_date": "2026-10-10", "target_end_date": "2026-10-01"},
+        json={"title": "X", "objective": "Y", "start_date": "2026-10-10", "target_end_date": "2026-10-01", "origin": "new_development", "origin_note": "Proposed by R&D head", "attachment_count": 1},
         headers=h,
     )
     assert response.status_code == 400
@@ -286,7 +286,8 @@ def test_documents_upload_list_delete(client, db, monkeypatch):
     h_owner_user = make_user(db, "rnd9@premnathrail.com")
     h = auth_header(h_owner_user)
     other = auth_header(make_user(db, "rnd10@premnathrail.com"))
-    pid = create_project(client, h)["id"]
+    # The uploader leads the project — only leads (and admins) delete its files.
+    pid = create_project(client, h, lead_ids=[h_owner_user.id])["id"]
     other_pid = create_project(client, h, title="Other")["id"]
     exp = client.post(f"{BASE}/experiments", json={"project_id": pid, "title": "T"}, headers=h).json()
     files = {"files": ("report.pdf", b"%PDF-1.4 test", "application/pdf")}
@@ -328,9 +329,9 @@ def test_documents_upload_list_delete(client, db, monkeypatch):
     r = client.delete(f"{BASE}/projects/{pid}", headers=h)
     assert r.status_code == 400 and "document" in r.json()["detail"]
 
-    # Only the uploader (or admin) can delete.
+    # Only a project lead (or admin) can delete project files.
     r = client.delete(f"{BASE}/documents/{doc['id']}", headers=other)
-    assert r.status_code == 403 and "uploader" in r.json()["detail"]
+    assert r.status_code == 403 and "Only a project lead of" in r.json()["detail"]
     assert client.delete(f"{BASE}/documents/{doc['id']}", headers=h).status_code == 200
     assert client.get(f"{BASE}/documents", params={"project_id": pid}, headers=h).json() == []
 

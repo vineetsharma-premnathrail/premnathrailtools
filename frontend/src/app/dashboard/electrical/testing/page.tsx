@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { electricalApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { ElectricalMeta, ElectricalTest } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import {
-  inputStyle, thStyle, tdStyle, linkStyle, pill, Pill, ErrorBanner,
+  inputStyle, thStyle, tdStyle, linkStyle, pill, Pill, ErrorBanner, useLookupErrors,
   TEST_RESULT_LABELS, TEST_RESULT_HEX, TEST_PHASE_LABELS,
 } from '@/components/electrical/shared'
 
@@ -31,6 +32,7 @@ export default function ElectricalTestRegisterPage() {
   const [meta, setMeta] = useState<ElectricalMeta | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
+  const [lookupErrors, addLookupError] = useLookupErrors()
   const [phase, setPhase] = useState('')
   const [result, setResult] = useState('')
   const [testType, setTestType] = useState('')
@@ -38,7 +40,8 @@ export default function ElectricalTestRegisterPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
-    electricalApi.getMeta().then(setMeta).catch(() => setMeta(null))
+    electricalApi.getMeta().then(setMeta).catch((err) => { setMeta(null); addLookupError(extractErrorMessages(err,
+      "Couldn't load the test type list for the Test Type filter — the register below still works unfiltered; refresh to try again.")) })
   }, [isAuthorized])
 
   useEffect(() => {
@@ -55,7 +58,7 @@ export default function ElectricalTestRegisterPage() {
   }, [isAuthorized, phase, result, testType, needsRetest])
 
   const typeLabel = (k: string) => meta?.test_types?.[k] || k.replace(/_/g, ' ')
-  const go = (t: ElectricalTest) => router.push(`/dashboard/electrical/jobs/${t.job_id}?tab=tests`)
+  const go = (t: ElectricalTest) => router.push(`${recordPath('/dashboard/electrical/jobs', t, 'job_id')}?tab=tests`)
   const openFailures = tests.filter((t) => t.needs_retest).length
 
   if (isLoading || !isAuthorized) return null
@@ -77,29 +80,30 @@ export default function ElectricalTestRegisterPage() {
       </div>
 
       <ErrorBanner error={error} />
+      <ErrorBanner error={lookupErrors} />
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 170px' }} value={phase} onChange={(e) => setPhase(e.target.value)}>
+        <select data-tour="elec-treg-phase-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 170px' }} value={phase} onChange={(e) => setPhase(e.target.value)}>
           <option value="">All phases</option>
           {Object.entries(TEST_PHASE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 150px' }} value={result} onChange={(e) => setResult(e.target.value)}>
+        <select data-tour="elec-treg-result-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 150px' }} value={result} onChange={(e) => setResult(e.target.value)}>
           <option value="">All results</option>
           {Object.entries(TEST_RESULT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 230px' }} value={testType} onChange={(e) => setTestType(e.target.value)}>
+        <select data-tour="elec-treg-type-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 230px' }} value={testType} onChange={(e) => setTestType(e.target.value)}>
           <option value="">All test types</option>
           {Object.entries(meta?.test_types || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <button type="button" onClick={() => setNeedsRetest((v) => !v)} style={toggleStyle(needsRetest)} aria-pressed={needsRetest}>
+        <button data-tour="elec-treg-retest-toggle" type="button" onClick={() => setNeedsRetest((v) => !v)} style={toggleStyle(needsRetest)} aria-pressed={needsRetest}>
           {needsRetest ? '✓ ' : ''}Needs retest only
         </button>
-        <span style={{ fontSize: 12.5, color: TEXT.muted, marginLeft: 'auto' }}>
+        <span data-tour="elec-treg-count" style={{ fontSize: 12.5, color: TEXT.muted, marginLeft: 'auto' }}>
           {tests.length} {tests.length === 1 ? 'test' : 'tests'}{openFailures ? ` · ${openFailures} awaiting retest` : ''}
         </span>
       </div>
 
-      <div style={{
+      <div data-tour="elec-treg-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>

@@ -6,15 +6,19 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { RndExperiment, RndProject, RndPrototype, RndPrototypeBomItem, RndPrototypeBomItemInput, RndPrototypeStatus, RndStoreItemLookup } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER, DANGER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import RndNav from '@/components/rnd/RndNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import RndDocumentsPanel from '@/components/rnd/RndDocumentsPanel'
 import ReleaseToProductionPanel, { isReleased } from '@/components/rnd/ReleaseToProductionPanel'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 const STATUS_LABELS: Record<string, string> = { design: 'Design', building: 'Building', testing: 'Testing', validated: 'Validated', rejected: 'Rejected' }
 const STATUS_HEX: Record<string, string> = { design: '#78716c', building: '#2563EB', testing: '#7C3AED', validated: '#16A34A', rejected: '#DC2626' }
@@ -22,17 +26,15 @@ const EXP_RESULT_LABELS: Record<string, string> = { pass: 'Pass', fail: 'Fail', 
 const EXP_RESULT_HEX: Record<string, string> = { pass: '#16A34A', fail: '#DC2626', inconclusive: '#F59E0B' }
 const EXP_STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
+const inputStyle = sheetInput
+const labelStyle = sheetLabel
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
 
-const formatInr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+// null = hidden by the server (R&D › Prototypes › BOM costs).
+const formatInr = (n: number | null | undefined) => (n == null ? '—' : `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`)
 
 // ── BOM editor ────────────────────────────────────────────────────────────
 type BomLine = {
@@ -228,9 +230,9 @@ function BomEditor({ lines, onChange, onError }: { lines: BomLine[]; onChange: (
         <button
           type="button"
           onClick={() => onChange([...lines, blankLine()])}
-          style={{ padding: '8px 14px', borderRadius: 10, border: `1px dashed ${BORDER.normal}`, background: 'transparent', color: '#FF6A2A', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+          style={sheetBtn('secondary')}
         >
-          + Add line
+          <SheetIcon name="plus" size={15} color={SHEET.BLUE} />Add line
         </button>
         <div style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading }}>
           BOM Total: {formatInr(total)}
@@ -254,9 +256,11 @@ const toBomLine = (b: RndPrototypeBomItem): BomLine => ({
 // ── Page ──────────────────────────────────────────────────────────────────
 export default function RndPrototypeDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('rnd')
+  const { can, canDelete, canFeature } = useCan()
   const router = useRouter()
   const params = useParams()
-  const prototypeId = Number(params.id)
+  const { id: resolvedId, error: linkError } = useRecordId(params.id as string)
+  const prototypeId = resolvedId ?? 0
 
   const [proto, setProto] = useState<RndPrototype | null>(null)
   const [projects, setProjects] = useState<RndProject[]>([])
@@ -354,6 +358,7 @@ export default function RndPrototypeDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div style={{ width: '100%' }}><RndNav /><InvalidRecordLink message={linkError} listHref="/dashboard/rnd/prototypes" listLabel="Back to prototypes" /></div>)
   if (loading) return null
 
   if (!proto) {
@@ -378,124 +383,168 @@ export default function RndPrototypeDetailPage() {
     )
   }
 
+  const canEdit = can('rnd', 'prototypes', 'edit')
+  // Editors enter the costs, so they always see them (same rule as the server's hide_costs).
+  const seeCosts = canEdit || canFeature('rnd', 'prototypes', 'costs', 'view')
+  const canAddExperiment = can('rnd', 'experiments', 'create')
+  const frozen = isReleased(proto)
+  const draftTotal = bomLines.reduce((sum, l) => sum + lineCost(l), 0)
+
   return (
     <div style={{ width: '100%' }}>
-      <RndNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            R&amp;D Module
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{proto.prototype_number}</h1>
-            <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.secondary }}>{proto.version}</span>
+      <FormPage
+        tour="rnd-ptd-form"
+        nav={<RndNav />}
+        icon="box"
+        title={`${proto.prototype_number} · ${proto.version}`}
+        subtitle={proto.name}
+        onBack={() => router.push('/dashboard/rnd/prototypes')} backTour="rnd-ptd-back-btn"
+        footer={<>
+          {canDelete('rnd', 'prototypes', (proto as { created_by_id?: number | null }).created_by_id ?? null) && (
+            <button
+              data-tour="rnd-ptd-delete-btn"
+              onClick={() => setConfirmOpen(true)}
+              disabled={deleting}
+              type="button"
+              style={{ ...sheetBtn('secondary', DANGER.text, deleting), color: DANGER.text, borderColor: DANGER.border, background: DANGER.light, marginRight: 'auto' }}
+            >
+              <SheetIcon name="trash" size={15} />{deleting ? 'Deleting…' : 'Delete Prototype'}
+            </button>
+          )}
+          <button type="button" onClick={() => router.push('/dashboard/rnd/prototypes')} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+          {canEdit && (
+            <button data-tour="rnd-ptd-save-btn" onClick={handleSave} disabled={saving} type="button" style={sheetBtn('primary', SHEET.BLUE, saving)}>
+              <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          )}
+        </>}
+      >
+        <div style={{ padding: '16px 24px 0' }}>
+          <div data-tour="rnd-ptd-badges" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[proto.status]}1a`, color: STATUS_HEX[proto.status], whiteSpace: 'nowrap' }}>
               {STATUS_LABELS[proto.status] || proto.status}
             </span>
+            <span style={{ fontSize: 13, color: SHEET.MUTED }}>
+              Project:{' '}
+              <Link href={recordPath('/dashboard/rnd/projects', proto, 'project_id')} style={{ color: '#FF6A2A', fontWeight: 600, textDecoration: 'none' }}>
+                {proto.project_number || `#${proto.project_id}`}{proto.project_title ? ` — ${proto.project_title}` : ''}
+              </Link>
+            </span>
           </div>
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: '6px 0 0' }}>
-            Project:{' '}
-            <Link href={`/dashboard/rnd/projects/${proto.project_id}`} style={{ color: '#FF6A2A', fontWeight: 600, textDecoration: 'none' }}>
-              {proto.project_number || `#${proto.project_id}`}{proto.project_title ? ` — ${proto.project_title}` : ''}
-            </Link>
-          </p>
+          {error && (
+            <div style={{ padding: '10px 14px', marginTop: 14, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+              {Array.isArray(error) ? error.join(' ') : error}
+            </div>
+          )}
         </div>
-        <button onClick={() => router.push('/dashboard/rnd/prototypes')} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
+        <SheetColumns
+          left={
+            <div data-tour="rnd-ptd-details">
+              <SheetSection icon="list" title="Prototype Details">
+                <label style={labelStyle}>Project <Req /></label>
+                <SearchableSelect
+                  value={projectId}
+                  onChange={setProjectId}
+                  options={projects.map((p) => ({ value: String(p.id), label: `${p.project_number} — ${p.title}` }))}
+                  placeholder="Search R&D project…"
+                />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
+                  <div style={{ flex: '1 1 220px', minWidth: 180, maxWidth: 360 }}>
+                    <label style={labelStyle}>Name <Req /></label>
+                    <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
+                  </div>
+                  <div style={{ flex: '0 1 110px', minWidth: 90 }}>
+                    <label style={labelStyle}>Version <Req /></label>
+                    <input style={inputStyle} value={version} onChange={(e) => setVersion(e.target.value)} />
+                  </div>
+                </div>
+              </SheetSection>
+              <SheetSection icon="calendar" title="Status & Build">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                  <div data-tour="rnd-ptd-status" style={{ flex: '0 1 170px', minWidth: 140 }}>
+                    <label style={labelStyle}>Status</label>
+                    <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as RndPrototypeStatus)}>
+                      <option value="design">Design</option>
+                      <option value="building">Building</option>
+                      <option value="testing">Testing</option>
+                      <option value="validated">Validated</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: '0 1 170px', minWidth: 150 }}>
+                    <label style={labelStyle}>Build Date</label>
+                    <DateField value={buildDate} onChange={setBuildDate} />
+                  </div>
+                </div>
+                <p style={sheetHint}>Set Validated only after the experiments prove it — that unlocks Release to Production.</p>
+                <label style={{ ...labelStyle, marginTop: 14 }}>Description</label>
+                <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} />
+              </SheetSection>
+            </div>
+          }
+          right={<>
+            <SheetSection icon="chat" title="Findings">
+              <div data-tour="rnd-ptd-findings">
+                <textarea style={{ ...inputStyle, minHeight: 120, resize: 'vertical' }} value={findings} onChange={(e) => setFindings(e.target.value)} placeholder="What did building and testing this prototype show?" />
+              </div>
+            </SheetSection>
+            <SheetSection icon="rupee" title="Summary">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: SHEET.BODY }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>BOM lines</span><b>{frozen ? proto.bom_items.length : bomLines.filter((l) => !isEmptyLine(l)).length}</b></div>
+                {seeCosts && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>BOM total</span><b>{formatInr(frozen ? proto.bom_cost : draftTotal)}</b></div>}
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Experiments</span><b>{experiments.length}</b></div>
+                {proto.created_at && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Created on</span><b>{proto.created_at.slice(0, 10)}</b></div>}
+              </div>
+            </SheetSection>
+          </>}
+        />
+
+        <div data-tour="rnd-ptd-bom" style={{ padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }}>
+          <SheetSection icon="box" title="Prototype BOM">
+            <p style={{ ...sheetHint, margin: '-6px 0 14px' }}>
+              Pick parts from the Item Master, or type a free-text name for parts that aren&apos;t in it yet. Empty lines are ignored.
+            </p>
+            {frozen ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: '#0891B2', margin: '0 0 4px' }}>
+                  Frozen — released to Production as {proto.production_bom_number}.
+                </p>
+                {proto.bom_items.map((l) => (
+                  <div key={l.id} style={{ display: 'flex', gap: 10, padding: '8px 12px', borderRadius: 10, border: `1px solid ${BORDER.light}`, background: SHEET.SOFT, fontSize: 12.5, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 600, color: TEXT.heading, flex: '0 0 110px' }}>{l.item_code || '—'}</span>
+                    <span style={{ color: TEXT.body, flex: '1 1 200px' }}>{l.item_name}</span>
+                    <span style={{ color: TEXT.secondary, flex: '0 0 90px' }}>{l.quantity} {l.uom || ''}</span>
+                    {seeCosts && <span style={{ color: TEXT.secondary, flex: '0 0 110px', textAlign: 'right' }}>{formatInr(l.line_cost)}</span>}
+                  </div>
+                ))}
+                {seeCosts && <p style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, margin: '4px 0 0', textAlign: 'right' }}>BOM Total: {formatInr(proto.bom_cost)}</p>}
+              </div>
+            ) : (
+              <BomEditor lines={bomLines} onChange={setBomLines} onError={setError} />
+            )}
+          </SheetSection>
+        </div>
+      </FormPage>
+
+      {canFeature('rnd', 'prototypes', 'release_production', 'view') && (
+        <div style={{ marginTop: 20 }}>
+          <ReleaseToProductionPanel proto={proto} onReleased={hydrate} />
         </div>
       )}
 
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Prototype Details</h2>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
-          <div style={{ flex: '1 1 300px', minWidth: 240, maxWidth: 460 }}>
-            <label style={labelStyle}>Project *</label>
-            <SearchableSelect
-              value={projectId}
-              onChange={setProjectId}
-              options={projects.map((p) => ({ value: String(p.id), label: `${p.project_number} — ${p.title}` }))}
-              placeholder="Search R&D project…"
-            />
-          </div>
-          <div style={{ flex: '1 1 240px', minWidth: 200, maxWidth: 380 }}>
-            <label style={labelStyle}>Name *</label>
-            <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 110px', minWidth: 90 }}>
-            <label style={labelStyle}>Version *</label>
-            <input style={inputStyle} value={version} onChange={(e) => setVersion(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 160px', minWidth: 140 }}>
-            <label style={labelStyle}>Status</label>
-            <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as RndPrototypeStatus)}>
-              <option value="design">Design</option>
-              <option value="building">Building</option>
-              <option value="testing">Testing</option>
-              <option value="validated">Validated</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Build Date</label>
-            <DateField value={buildDate} onChange={setBuildDate} />
-          </div>
-        </div>
-        <div style={{ marginBottom: 18 }}>
-          <label style={labelStyle}>Description</label>
-          <textarea style={{ ...inputStyle, minHeight: 80 }} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
-        <div>
-          <label style={labelStyle}>Findings</label>
-          <textarea style={{ ...inputStyle, minHeight: 80 }} value={findings} onChange={(e) => setFindings(e.target.value)} placeholder="What did building and testing this prototype show?" />
-        </div>
-        {proto.created_at && (
-          <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '14px 0 0' }}>
-            Created on {proto.created_at.slice(0, 10)}
-          </p>
-        )}
-      </div>
-
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Prototype BOM</h2>
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>
-          Pick parts from the Item Master, or type a free-text name for parts that aren&apos;t in it yet. Empty lines are ignored.
-        </p>
-        {isReleased(proto) ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#0891B2', margin: '0 0 4px' }}>
-              Frozen — released to Production as {proto.production_bom_number}.
-            </p>
-            {proto.bom_items.map((l) => (
-              <div key={l.id} style={{ display: 'flex', gap: 10, padding: '8px 12px', borderRadius: 10, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.5)', fontSize: 12.5, flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 600, color: TEXT.heading, flex: '0 0 110px' }}>{l.item_code || '—'}</span>
-                <span style={{ color: TEXT.body, flex: '1 1 200px' }}>{l.item_name}</span>
-                <span style={{ color: TEXT.secondary, flex: '0 0 90px' }}>{l.quantity} {l.uom || ''}</span>
-                <span style={{ color: TEXT.secondary, flex: '0 0 110px', textAlign: 'right' }}>{formatInr(l.line_cost)}</span>
-              </div>
-            ))}
-            <p style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.heading, margin: '4px 0 0', textAlign: 'right' }}>BOM Total: {formatInr(proto.bom_cost)}</p>
-          </div>
-        ) : (
-          <BomEditor lines={bomLines} onChange={setBomLines} onError={setError} />
-        )}
-      </div>
-
-      <ReleaseToProductionPanel proto={proto} onReleased={hydrate} />
-
-      <div style={sectionStyle}>
+      <div data-tour="rnd-ptd-experiments" style={sectionStyle}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Experiments run on this prototype</h2>
-          <Link
-            href={`/dashboard/rnd/experiments/new?project_id=${proto.project_id}`}
-            style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', textDecoration: 'none' }}
-          >
-            + New Experiment
-          </Link>
+          {canAddExperiment && (
+            <Link
+              data-tour="rnd-ptd-new-exp-link"
+              href={recordHref('/dashboard/rnd/experiments/new', proto, 'project_id', undefined, 'project_id')}
+              style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', textDecoration: 'none' }}
+            >
+              + New Experiment
+            </Link>
+          )}
         </div>
         {experiments.length === 0 ? (
           <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No experiments have been run on this prototype yet.</p>
@@ -507,7 +556,7 @@ export default function RndPrototypeDetailPage() {
               return (
                 <Link
                   key={x.id}
-                  href={`/dashboard/rnd/experiments/${x.id}`}
+                  href={recordPath('/dashboard/rnd/experiments', x)}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
                     padding: '10px 14px', borderRadius: 10, border: `1px solid ${BORDER.light}`,
@@ -533,20 +582,6 @@ export default function RndPrototypeDetailPage() {
         currentUserId={user?.id}
         isAdmin={user?.role === 'admin'}
       />
-
-      <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <button
-          onClick={() => setConfirmOpen(true)}
-          disabled={deleting}
-          type="button"
-          style={{ padding: '12px 22px', borderRadius: 12, border: `1px solid ${DANGER.border}`, background: DANGER.light, color: DANGER.text, fontSize: 14, fontWeight: 600, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}
-        >
-          {deleting ? 'Deleting…' : 'Delete Prototype'}
-        </button>
-        <button onClick={handleSave} disabled={saving} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.6 : 1 }}>
-          {saving ? 'Saving…' : 'Save Changes'}
-        </button>
-      </div>
 
       <ConfirmDialog
         open={confirmOpen}

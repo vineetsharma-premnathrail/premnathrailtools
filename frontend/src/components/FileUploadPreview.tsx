@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { File as FileIcon, X } from '@phosphor-icons/react'
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -48,10 +49,7 @@ export default function FileUploadPreview({
               <img src={previews[i]!} alt={f.name} style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', flex: 'none' }} />
             ) : (
               <div style={{ width: 40, height: 40, borderRadius: 6, background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#78716c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
+                <FileIcon size={18} color="#78716c" />
               </div>
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -64,7 +62,7 @@ export default function FileUploadPreview({
               style={{ border: 'none', background: 'none', cursor: uploading ? 'default' : 'pointer', color: '#a8a29e', display: 'flex', flex: 'none', padding: 4 }}
               aria-label={`Remove ${f.name}`}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              <X size={16} />
             </button>
           </div>
         ))}

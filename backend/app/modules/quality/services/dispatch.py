@@ -43,6 +43,21 @@ def _dispatched(db: Session, *, item_id: int, batch_number: str | None = None, e
     return float(q.scalar() or 0.0)
 
 
+def _dispatched_for_element(db: Session, *, item_id: int, element_id: int, exclude_issue_id: int | None = None) -> float:
+    """Already dispatched for an Order Project element - counted once the
+    Store dispatch issue carries order_project_element_id (0 until then)."""
+    from app.modules.store.models.material_issue import StoreMaterialIssue, StoreMaterialIssueItem
+    if not hasattr(StoreMaterialIssue, "order_project_element_id"):
+        return 0.0
+    q = db.query(func.coalesce(func.sum(StoreMaterialIssueItem.quantity), 0.0)).join(
+        StoreMaterialIssue, StoreMaterialIssue.id == StoreMaterialIssueItem.issue_id,
+    ).filter(StoreMaterialIssue.issue_type == DISPATCH_ISSUE_TYPE, StoreMaterialIssueItem.item_id == item_id,
+             StoreMaterialIssue.order_project_element_id == element_id)
+    if exclude_issue_id:
+        q = q.filter(StoreMaterialIssue.id != exclude_issue_id)
+    return float(q.scalar() or 0.0)
+
+
 def final_inspection_needed(db: Session, item: StoreItem) -> bool:
     from app.modules.quality.services.lots import needs_inspection_on_receipt
     return needs_inspection_on_receipt(db, item, "final")
@@ -50,10 +65,13 @@ def final_inspection_needed(db: Session, item: StoreItem) -> bool:
 
 def check(db: Session, *, item_id: int, quantity: float, batch_number: str | None = None,
           erp_project_id: int | None = None, exclude_issue_id: int | None = None,
-          contract_qty: float | None = None) -> list[str]:
+          contract_qty: float | None = None, order_project_element_id: int | None = None) -> list[str]:
     """Every reason this quantity can't be dispatched yet (empty = allowed).
     contract_qty: the item's total on the whole dispatch (several batches)
-    for the contract check; defaults to quantity."""
+    for the contract check; defaults to quantity.
+    order_project_element_id: the Order Project vehicle / lot being
+    dispatched - the third-party requirement then comes from its Sales Order
+    (single source of truth) instead of the ERP machine."""
     item = db.query(StoreItem).filter(StoreItem.id == item_id).first()
     if not item:
         return [f"Item #{item_id} isn't in the Item Master."]
@@ -95,7 +113,13 @@ def check(db: Session, *, item_id: int, quantity: float, batch_number: str | Non
                                     f"{max(accepted - done, 0):g} can still go, not {quantity:g}.")
 
     # 8b — contract needs a customer / third-party inspection certificate.
-    if erp_project_id:
+    if order_project_element_id:
+        from app.modules.quality.services.order_project_inspection import element_dispatch_problems
+        problems += element_dispatch_problems(
+            db, element_id=order_project_element_id, item_id=item.id, item_name=name, quantity=contract_qty or quantity,
+            dispatched_qty=_dispatched_for_element(db, item_id=item.id, element_id=order_project_element_id,
+                                                   exclude_issue_id=exclude_issue_id))
+    elif erp_project_id:
         from app.modules.erp.models.project import Project
         project = db.query(Project).filter(Project.id == erp_project_id).first()
         if not project:
@@ -133,7 +157,7 @@ def _agency_label(db: Session, value: str | None) -> str:
 
 
 def ensure_dispatch_allowed(db: Session, *, lines: list[dict], erp_project_id: int | None,
-                            exclude_issue_id: int | None = None) -> None:
+                            exclude_issue_id: int | None = None, order_project_element_id: int | None = None) -> None:
     """lines: [{item_id, quantity, batch_number}]. Raises DispatchBlocked
     with every reason at once."""
     problems = []
@@ -152,6 +176,7 @@ def ensure_dispatch_allowed(db: Session, *, lines: list[dict], erp_project_id: i
         contract_checked.add(item_id)
         problems += check(db, item_id=item_id, quantity=qty, batch_number=batch,
                           erp_project_id=erp_project_id if first else None, exclude_issue_id=exclude_issue_id,
-                          contract_qty=item_totals[item_id])
+                          contract_qty=item_totals[item_id],
+                          order_project_element_id=order_project_element_id if first else None)
     if problems:
         raise DispatchBlocked(" ".join(problems))

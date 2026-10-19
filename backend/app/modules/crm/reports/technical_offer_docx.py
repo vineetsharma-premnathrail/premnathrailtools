@@ -250,11 +250,11 @@ def build_technical_offer_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
     subtitle_run.font.color.rgb = MUTED
 
     # 1. Customer / Organization Details
-    _heading(doc, 1, "Customer / Organization Details")
-    org_rows = [("Organization", ctx.get("org_name") or "-")]
+    _heading(doc, 1, "Customer Organization Details")
+    org_rows = [("Customer Organization", ctx.get("org_name") or "-")]
     if ctx.get("org_gst_number"):
         org_rows.append(("GST Number", ctx["org_gst_number"]))
-    org_rows.append(("Organization Type", ctx.get("org_type") or "-"))
+    org_rows.append(("Customer Organization Type", ctx.get("org_type") or "-"))
     city_state = ", ".join(v for v in (ctx.get("org_city"), ctx.get("org_state")) if v)
     if city_state:
         org_rows.append(("City / State", city_state))

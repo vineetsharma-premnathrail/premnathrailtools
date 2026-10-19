@@ -7,15 +7,23 @@ import { rndApi } from '@/lib/api'
 import { RndProject } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
+import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 const STAGE_LABELS: Record<string, string> = { initiation: 'Initiation', research: 'Research', development: 'Development', feasibility: 'Feasibility', handover: 'Handover', closed: 'Closed' }
-const STAGE_HEX: Record<string, string> = { initiation: '#78716c', research: '#2563EB', development: '#7C3AED', feasibility: '#F59E0B', handover: '#0891B2', closed: '#16A34A' }
 const STATUS_LABELS: Record<string, string> = { active: 'Active', on_hold: 'On Hold', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { active: '#16A34A', on_hold: '#F59E0B', cancelled: '#DC2626' }
 const PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', medium: '#2563EB', high: '#F59E0B', critical: '#DC2626' }
-const TYPE_LABELS: Record<string, string> = { new_product: 'New Product', product_improvement: 'Product Improvement', process_development: 'Process Development', technology_research: 'Technology Research' }
+// Why the project exists (Project Origin); 'not_recorded' = saved before origin existed.
+const ORIGIN_LABELS: Record<string, string> = {
+  customer_requirement: 'Customer requirement', product_improvement: 'Product improvement',
+  new_development: 'New product (internal)', process_research: 'Process / tech research', not_recorded: 'Not recorded',
+}
+const ORIGIN_HEX: Record<string, string> = {
+  customer_requirement: '#2563EB', product_improvement: '#D97706', new_development: '#7C3AED', process_research: '#0D9488', not_recorded: '#78716c',
+}
 
 const inputStyle: React.CSSProperties = {
   padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -23,7 +31,6 @@ const inputStyle: React.CSSProperties = {
 }
 const tdStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 
-const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
 
 export default function RndProjectListPage() {
   return (
@@ -35,6 +42,7 @@ export default function RndProjectListPage() {
 
 function RndProjectList() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const { can } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -45,6 +53,7 @@ function RndProjectList() {
   const [stageFilter, setStageFilter] = useState(searchParams.get('stage') || '')
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
+  const [originFilter, setOriginFilter] = useState('')
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -52,12 +61,13 @@ function RndProjectList() {
     if (stageFilter) params.stage = stageFilter
     if (statusFilter) params.status = statusFilter
     if (priorityFilter) params.priority = priorityFilter
+    if (originFilter) params.origin = originFilter
     if (search.trim()) params.search = search.trim()
     rndApi.listProjects(params)
       .then((data) => { setProjects(Array.isArray(data) ? data : []); setError('') })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load R&D projects.')))
       .finally(() => setLoading(false))
-  }, [isAuthorized, stageFilter, statusFilter, priorityFilter, search])
+  }, [isAuthorized, stageFilter, statusFilter, priorityFilter, originFilter, search])
 
   if (isLoading || !isAuthorized) return null
 
@@ -70,14 +80,17 @@ function RndProjectList() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             R&amp;D Module
           </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>R&amp;D Projects</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Prototype / Research</h1>
         </div>
-        <button
-          onClick={() => router.push('/dashboard/rnd/projects/new')}
-          style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
-        >
-          + New Project
-        </button>
+        {can('rnd', 'projects', 'create') && (
+          <button
+            data-tour="rnd-proj-new-btn"
+            onClick={() => router.push('/dashboard/rnd/projects/new')}
+            style={{ padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, boxShadow: `0 8px 20px ${SHADOWS.glowOrange}` }}
+          >
+            + New Project
+          </button>
+        )}
       </div>
 
       {error && (
@@ -88,22 +101,27 @@ function RndProjectList() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input
+          data-tour="rnd-proj-search"
           style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }}
           placeholder="Search by project number, title, or objective…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+        <select data-tour="rnd-proj-stage-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
           <option value="">All stages</option>
           {Object.entries(STAGE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="rnd-proj-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 150px' }} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+        <select data-tour="rnd-proj-priority-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
           <option value="">All priorities</option>
           {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select data-tour="rnd-proj-origin-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={originFilter} onChange={(e) => setOriginFilter(e.target.value)}>
+          <option value="">All origins</option>
+          {Object.entries(ORIGIN_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
@@ -111,10 +129,10 @@ function RndProjectList() {
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
+        <table data-tour="rnd-proj-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
           <thead>
             <tr>
-              {['Project No.', 'Title', 'Type', 'Priority', 'Stage', 'Status', 'Lead', 'Budget / Spent', 'Target End', ''].map((h) => (
+              {['Project No.', 'Title', 'Origin', 'Priority', 'Status', 'Lead', 'Target End', ''].map((h) => (
                 <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                   {h}
                 </th>
@@ -123,25 +141,23 @@ function RndProjectList() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : projects.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No R&amp;D projects found.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No R&amp;D projects found.</td></tr>
             ) : (
               projects.map((p) => {
-                const over = p.budget_amount != null && p.actual_cost > p.budget_amount
                 return (
-                  <tr key={p.id} onClick={() => router.push(`/dashboard/rnd/projects/${p.id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={p.id} onClick={() => router.push(recordPath('/dashboard/rnd/projects', p))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{p.project_number}</td>
                     <td style={tdStyle}>{p.title}</td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{TYPE_LABELS[p.project_type] || p.project_type}</td>
-                    <td style={tdStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[p.priority]}1a`, color: PRIORITY_HEX[p.priority], whiteSpace: 'nowrap' }}>
-                        {PRIORITY_LABELS[p.priority] || p.priority}
+                    <td style={tdStyle} title={p.source_ref || undefined}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${ORIGIN_HEX[p.origin || 'not_recorded']}1a`, color: ORIGIN_HEX[p.origin || 'not_recorded'], whiteSpace: 'nowrap' }}>
+                        {ORIGIN_LABELS[p.origin || 'not_recorded'] || p.origin}
                       </span>
                     </td>
                     <td style={tdStyle}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STAGE_HEX[p.stage]}1a`, color: STAGE_HEX[p.stage], whiteSpace: 'nowrap' }}>
-                        {STAGE_LABELS[p.stage] || p.stage}
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PRIORITY_HEX[p.priority]}1a`, color: PRIORITY_HEX[p.priority], whiteSpace: 'nowrap' }}>
+                        {PRIORITY_LABELS[p.priority] || p.priority}
                       </span>
                     </td>
                     <td style={tdStyle}>
@@ -150,12 +166,9 @@ function RndProjectList() {
                       </span>
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.lead_name || '—'}</td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: over ? '#DC2626' : TEXT.body }}>
-                      {p.budget_amount != null ? inr(p.budget_amount) : '—'} / {inr(p.actual_cost)}
-                    </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.target_end_date || '—'}</td>
+                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{p.target_end_date || 'Not decided'}</td>
                     <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                      <span onClick={() => router.push(`/dashboard/rnd/projects/${p.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                      <span onClick={() => router.push(recordPath('/dashboard/rnd/projects', p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 )

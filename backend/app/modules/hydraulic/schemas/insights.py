@@ -7,6 +7,8 @@ class HydLookupOption(BaseModel):
     label: str
     code: str | None = None
     extra: str | None = None
+    # Component lookups only — lets the BOM form price lines without the Component Master tab.
+    unit_cost: float | None = None
 
 
 class HydDocumentResponse(BaseModel):
@@ -38,7 +40,7 @@ class HydDashboardKpis(BaseModel):
     plans_due_soon: int = 0
     open_service_records: int = 0
     downtime_hours_30d: float = 0.0
-    service_cost_30d: float = 0.0
+    service_cost_30d: float | None = 0.0  # None = hidden (Hydraulic › BOM › Prices & costs)
     tests_30d: int = 0
     tests_failed_30d: int = 0
     spares_low: int = 0

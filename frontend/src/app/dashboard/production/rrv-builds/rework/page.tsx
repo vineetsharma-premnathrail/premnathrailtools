@@ -10,6 +10,7 @@ import ProductionNav from '@/components/production/ProductionNav'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { recordPath } from '@/lib/recordRef'
 
 const STATUS_LABELS: Record<string, string> = { open: 'Open', in_progress: 'In Progress', done: 'Awaiting Verification', verified: 'Verified', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { open: '#DC2626', in_progress: '#F59E0B', done: '#7C3AED', verified: '#16A34A', cancelled: '#a8a29e' }
@@ -58,7 +59,7 @@ export default function ReworkOrdersPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Rework Orders</h1>
           <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>Every rework across all vehicles — raised from failed tests, failed inspections, or manually.</p>
         </div>
-        <button onClick={() => router.push('/dashboard/production/rrv-builds')} type="button" style={secondaryBtnStyle}>← Back</button>
+        <button data-tour="production-rework-back-btn" onClick={() => router.push('/dashboard/production/rrv-builds')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
 
       {error && (
@@ -67,7 +68,7 @@ export default function ReworkOrdersPage() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div data-tour="production-rework-status-tabs" style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         {STATUS_TABS.map((t) => {
           const active = statusTab === t.key
           return (
@@ -80,12 +81,12 @@ export default function ReworkOrdersPage() {
             </button>
           )
         })}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer', marginLeft: 8 }}>
+        <label data-tour="production-rework-mine-filter" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer', marginLeft: 8 }}>
           <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Assigned to me
         </label>
       </div>
 
-      <div style={{
+      <div data-tour="production-rework-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 340px)',
       }}>
@@ -106,7 +107,7 @@ export default function ReworkOrdersPage() {
               <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No rework orders here.</td></tr>
             ) : (
               rows.map((r) => (
-                <tr key={r.id} onClick={() => router.push(`/dashboard/production/rrv-builds/${r.build_id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', r, 'build_id'))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{r.rework_number}</td>
                   <td style={cellStyle}>{r.build_number}<div style={{ fontSize: 12, color: TEXT.muted }}>{r.rrv_model}</div></td>
                   <td style={{ ...cellStyle, maxWidth: 320 }}>{r.title}</td>
@@ -119,7 +120,7 @@ export default function ReworkOrdersPage() {
                     </span>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/production/rrv-builds/${r.build_id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Open build</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/production/rrv-builds', r, 'build_id'))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>Open build</span>
                   </td>
                 </tr>
               ))

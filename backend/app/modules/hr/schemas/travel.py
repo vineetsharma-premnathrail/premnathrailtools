@@ -67,3 +67,5 @@ class HrTravelRequestResponse(BaseModel):
     can_decide: bool = False
     can_cancel: bool = False
     can_edit: bool = False
+    # Central approval engine request (None = submitted before the cut-over).
+    approval_request_id: int | None = None

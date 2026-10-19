@@ -29,7 +29,10 @@ QUALITY_INSPECTION_TYPE_LABELS = {
 # (the "current" revision) — enforced by the partial unique index below and
 # by services.plans.approve_plan, which obsoletes the previous revision.
 # Legacy values "active"/"inactive" were migrated to draft/obsolete.
-QUALITY_INSPECTION_PLAN_STATUSES = ("draft", "approved", "obsolete")
+# pending_approval = submitted to Organization › Approval Workflows ›
+# Inspection plan (services/authz.py); approval → approved, return /
+# reject / withdraw → draft.
+QUALITY_INSPECTION_PLAN_STATUSES = ("draft", "pending_approval", "approved", "obsolete")
 
 # How the sample size is worked out: "aql" = ISO 2859-1 / IS 2500 single
 # sampling table, "full" = 100% of the lot, "fixed" = a fixed quantity.

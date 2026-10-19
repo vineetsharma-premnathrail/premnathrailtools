@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { inputStyle } from '@/components/shared/ui'
+import { CaretDown, PencilSimple } from '@phosphor-icons/react'
 
 export interface SearchableOption {
   value: string
@@ -18,6 +19,7 @@ export default function SearchableSelect({
   onAdd,
   addLabel = '+ Add new',
   onEdit,
+  onSearch,
 }: {
   value: string
   onChange: (v: string) => void
@@ -29,12 +31,25 @@ export default function SearchableSelect({
   addLabel?: string
   /** Shows a pencil on each option to edit it. */
   onEdit?: (value: string) => void
+  /** Server-side search: called with the typed text (debounce in the caller);
+   *  `options` are then shown as given, without client-side filtering. Keep the
+   *  selected option in `options` so its label stays visible. */
+  onSearch?: (query: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
   const wrapperRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  // Latest onSearch for the mount-time outside-click listener; a closed list resets the server search.
+  const onSearchRef = useRef(onSearch)
+  useEffect(() => { onSearchRef.current = onSearch }, [onSearch])
+  const queryRef = useRef('')
+  const resetQuery = () => {
+    if (queryRef.current) onSearchRef.current?.('')
+    queryRef.current = ''
+    setQuery('')
+  }
 
   const selectedLabel = options.find((o) => o.value === value)?.label || ''
 
@@ -65,27 +80,27 @@ export default function SearchableSelect({
       if (wrapperRef.current?.contains(target)) return
       if (dropdownRef.current?.contains(target)) return
       setOpen(false)
-      setQuery('')
+      resetQuery()
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
   const filtered = useMemo(() => {
-    if (!query.trim()) return options
+    if (onSearch || !query.trim()) return options
     const q = query.toLowerCase()
     return options.filter((o) => o.label.toLowerCase().includes(q))
-  }, [options, query])
+  }, [options, query, onSearch])
 
   const pick = (v: string) => {
     onChange(v)
     setOpen(false)
-    setQuery('')
+    resetQuery()
   }
 
   const closeThen = (fn: () => void) => {
     setOpen(false)
-    setQuery('')
+    resetQuery()
     fn()
   }
 
@@ -107,9 +122,7 @@ export default function SearchableSelect({
           {selectedLabel || placeholder}
         </span>
         {!disabled && (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a8a29e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', marginLeft: 8 }}>
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          <CaretDown size={14} color="#a8a29e" style={{ flex: 'none', marginLeft: 8 }} />
         )}
       </div>
 
@@ -135,7 +148,7 @@ export default function SearchableSelect({
             <input
               autoFocus
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => { setQuery(e.target.value); queryRef.current = e.target.value; onSearch?.(e.target.value) }}
               placeholder="Type to search..."
               style={{ ...inputStyle, padding: '8px 10px' }}
             />
@@ -173,9 +186,7 @@ export default function SearchableSelect({
                       onMouseEnter={(e) => { e.currentTarget.style.color = '#FF7A45' }}
                       onMouseLeave={(e) => { e.currentTarget.style.color = '#a8a29e' }}
                     >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                      </svg>
+                      <PencilSimple size={13} />
                     </button>
                   )}
                 </div>

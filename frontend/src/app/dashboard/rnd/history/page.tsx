@@ -2,10 +2,14 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { Check, Eye, PencilSimple, Trash, User, Users, X } from '@phosphor-icons/react'
 import { useAuth, useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
+import { recordHref } from '@/lib/recordRef'
 import RndNav from '@/components/rnd/RndNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 const TOOL_ROUTES: Record<string, string> = {
   braking: 'braking', hydraulic: 'hydraulic', qmax: 'qmax', load_distribution: 'load-distribution',
@@ -39,6 +43,7 @@ const TOOL_COLORS: Record<string, { bg: string; color: string }> = {
 
 export default function RndHistoryPage() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const { canDelete } = useCan()
   const { user } = useAuth()
   const router = useRouter()
   const isAdmin = user?.role === 'admin'
@@ -54,10 +59,12 @@ export default function RndHistoryPage() {
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [error, setError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
+      setError('')
       if (adminMode) {
         const data = await rndApi.adminListHistory({
           tool_name: toolFilter || undefined,
@@ -68,6 +75,8 @@ export default function RndHistoryPage() {
         const data = await rndApi.listHistory(toolFilter || undefined)
         setRecords(data)
       }
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not load your calculation history — refresh the page; if it keeps failing your account may have lost R&D access.').join(' '))
     } finally {
       setLoading(false)
     }
@@ -79,17 +88,38 @@ export default function RndHistoryPage() {
   }, [isAuthorized, load])
 
   useEffect(() => {
-    if (adminMode && isAdmin) rndApi.adminListUsers().then(setAdminUsers).catch(() => {})
+    if (adminMode && isAdmin) {
+      rndApi.adminListUsers().then(setAdminUsers).catch((err) =>
+        setError(extractErrorMessages(err, "Could not load the user list for the All-users filter — refresh the page; records still show for all users.").join(' ')))
+    }
   }, [adminMode, isAdmin])
 
   if (isLoading || !isAuthorized) return null
 
   const startRename = (r: HistoryRecord) => { setRenamingId(r.id); setRenameValue(r.calculation_name || '') }
-  const confirmRename = async (id: number) => { await rndApi.renameHistory(id, renameValue); setRenamingId(null); load() }
-  const remove = async (id: number) => { await rndApi.deleteHistory(id); load() }
+  const confirmRename = async (id: number) => {
+    setError('')
+    if (!renameValue.trim()) { setError('Enter a name for the calculation (up to 255 characters).'); return }
+    try {
+      await rndApi.renameHistory(id, renameValue.trim())
+      setRenamingId(null)
+      load()
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not rename the calculation — check your connection and try again.').join(' '))
+    }
+  }
+  const remove = async (id: number) => {
+    setError('')
+    try {
+      await rndApi.deleteHistory(id)
+      load()
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not delete the calculation — check your connection and try again.').join(' '))
+    }
+  }
   const openInTool = (r: HistoryRecord) => {
     const route = TOOL_ROUTES[r.tool_name]
-    if (route) router.push(`/dashboard/rnd/${route}?load=${r.id}`)
+    if (route) router.push(recordHref(`/dashboard/rnd/${route}`, r, 'id', undefined, 'load'))
   }
 
   const filtered = useMemo(
@@ -119,6 +149,7 @@ export default function RndHistoryPage() {
         </div>
         {isAdmin && (
           <button
+            data-tour="rnd-hist-admin-toggle"
             onClick={() => { setAdminMode((v) => !v); setSelectedUserId(''); }}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 8, border: 'none', background: adminMode ? '#7c3aed' : '#fff', color: adminMode ? '#fff' : '#7c3aed', boxShadow: adminMode ? 'none' : '0 1px 3px rgba(0,0,0,0.08)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
           >
@@ -128,10 +159,17 @@ export default function RndHistoryPage() {
         )}
       </div>
 
+      {error && (
+        <div role="alert" style={{ padding: '10px 14px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', fontSize: 12.5, marginBottom: 14 }}>
+          {error}
+        </div>
+      )}
+
       {adminMode && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, background: '#f5f3ff', border: '1px solid #ddd6fe', marginBottom: 14, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 11.5, fontWeight: 600, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '.04em' }}>Admin View — All Users</span>
           <select
+            data-tour="rnd-hist-user-filter"
             value={selectedUserId}
             onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : '')}
             style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #ddd6fe', fontSize: 13, outline: 'none' }}
@@ -145,19 +183,20 @@ export default function RndHistoryPage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+      <div data-tour="rnd-hist-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
         <StatCard label="Total Records" value={String(stats.total)} bg="#fff7ed" />
         <StatCard label="Tools Used" value={String(stats.tools)} bg="#f0fdf4" />
         <StatCard label="Latest" value={stats.latest} bg="#eff6ff" />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div data-tour="rnd-hist-tool-filter" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         <FilterPill label="All" active={toolFilter === ''} onClick={() => setToolFilter('')} />
         {Object.entries(TOOL_LABELS).map(([key, label]) => (
           <FilterPill key={key} label={label} active={toolFilter === key} onClick={() => setToolFilter(key)} />
         ))}
         <div style={{ flex: 1 }} />
         <input
+          data-tour="rnd-hist-search"
           placeholder="Search by name…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -167,7 +206,7 @@ export default function RndHistoryPage() {
 
       <div style={{ borderRadius: 12, background: '#fff', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
         <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+        <table data-tour="rnd-hist-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
               {['#', 'Calculation Name', ...(adminMode ? ['User'] : []), 'Tool', 'Saved On', 'Actions'].map((h) => (
@@ -209,9 +248,10 @@ export default function RndHistoryPage() {
                       </div>
                     ) : (
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => openInTool(r)} title="Open in tool &amp; recalculate" style={iconBtnStyle('#2563eb')}><EyeIcon /></button>
-                        <button onClick={() => startRename(r)} title="Rename" style={iconBtnStyle('#7c3aed')}><PencilIcon /></button>
-                        <button onClick={() => setDeleteId(r.id)} title="Delete" style={iconBtnStyle('#dc2626')}><TrashIcon /></button>
+                        <button data-tour={i === 0 ? 'rnd-hist-open-btn' : undefined} onClick={() => openInTool(r)} title="Open in tool &amp; recalculate" style={iconBtnStyle('#2563eb')}><EyeIcon /></button>
+                        <button data-tour={i === 0 ? 'rnd-hist-rename-btn' : undefined} onClick={() => startRename(r)} title="Rename" style={iconBtnStyle('#7c3aed')}><PencilIcon /></button>
+                        {/* rows are the viewer's own calculations; admins see everyone's and may delete any */}
+                        {canDelete('rnd', 'history', null) && <button data-tour={i === 0 ? 'rnd-hist-delete-btn' : undefined} onClick={() => setDeleteId(r.id)} title="Delete" style={iconBtnStyle('#dc2626')}><TrashIcon /></button>}
                       </div>
                     )}
                   </td>
@@ -227,7 +267,7 @@ export default function RndHistoryPage() {
         open={deleteId !== null}
         title="Delete calculation"
         message="Delete this saved calculation? This cannot be undone."
-        onConfirm={async () => { if (deleteId !== null) { await remove(deleteId); setDeleteId(null) } }}
+        onConfirm={async () => { const id = deleteId; setDeleteId(null); if (id !== null) await remove(id) }}
         onCancel={() => setDeleteId(null)}
       />
     </div>
@@ -238,28 +278,23 @@ function iconBtnStyle(color: string): React.CSSProperties {
   return { width: 26, height: 26, borderRadius: 6, border: '1px solid #e2e8f0', background: '#fff', color, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }
 }
 
-const iconProps = { width: 13, height: 13, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-
 function EyeIcon() {
-  return <svg {...iconProps}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+  return <Eye size={13} />
 }
 function PencilIcon() {
-  return <svg {...iconProps}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+  return <PencilSimple size={13} />
 }
 function TrashIcon() {
-  return <svg {...iconProps}><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
+  return <Trash size={13} />
 }
 function CheckIcon() {
-  return <svg {...iconProps}><polyline points="20 6 9 17 4 12" /></svg>
+  return <Check size={13} />
 }
 function CloseIcon({ size = 13 }: { size?: number }) {
-  return <svg {...iconProps} width={size} height={size}><path d="M18 6 6 18M6 6l12 12" /></svg>
+  return <X size={size} />
 }
 function UserIcon({ multiple }: { multiple: boolean }) {
-  if (!multiple) {
-    return <svg {...iconProps} width={14} height={14}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-  }
-  return <svg {...iconProps} width={14} height={14}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+  return multiple ? <Users size={14} /> : <User size={14} />
 }
 
 function FilterPill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {

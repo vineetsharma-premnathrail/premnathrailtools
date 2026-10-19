@@ -1,18 +1,33 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
+import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { crmApi, usersApi } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { Inquiry, InquiryLineItem, Organization, OrgContact, Tender, DirectoryUser } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import PhoneField, { isPhoneValid } from '@/components/erp/PhoneField'
-import { RAILWAY_ZONES, LEAD_SOURCES, PRIORITIES, INQUIRY_STATUSES } from './constants'
-import { Field, Section, Row, Row3, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, ComboBox, handleEnterAsTab, InfoRow, XIcon } from './ui'
+import { RAILWAY_ZONES, LEAD_SOURCES, inquiryStatusOptions, priorityOptions, priorityLabel } from './constants'
+import { Row, ComboBox, handleEnterAsTab, InfoRow, XIcon } from './ui'
+import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
-import MessageDialog from '@/components/erp/MessageDialog'
+
+const inputStyle = sheetInput
+
+/** Labelled field in the sheet style (keeps the tour target on the wrapper). */
+function F({ label, tourId, children }: { label: React.ReactNode; tourId?: string; children: React.ReactNode }) {
+  return (
+    <div {...(tourId ? { 'data-tour': tourId } : {})}>
+      <label style={sheetLabel}>{label}</label>
+      {children}
+    </div>
+  )
+}
 
 type FormState = {
   org_id: string
@@ -21,6 +36,11 @@ type FormState = {
   division: string
   lead_source: string
   bd_owner: string
+  bd_owner_id: string
+  sales_engineer_id: string
+  expected_value: string
+  probability: string
+  expected_order_date: string
   status: string
   current_status_note: string
   product: string
@@ -44,6 +64,11 @@ function toFormState(initial?: Inquiry, defaultOrgId?: number): FormState {
     division: initial?.division || '',
     lead_source: initial?.lead_source || '',
     bd_owner: initial?.bd_owner || '',
+    bd_owner_id: initial?.bd_owner_id ? String(initial.bd_owner_id) : '',
+    sales_engineer_id: initial?.sales_engineer_id ? String(initial.sales_engineer_id) : '',
+    expected_value: initial?.expected_value != null ? String(initial.expected_value) : '',
+    probability: initial?.probability != null ? String(initial.probability) : '',
+    expected_order_date: initial?.expected_order_date || '',
     status: initial?.status || 'Requirement Received',
     current_status_note: initial?.current_status_note || '',
     product: initial?.product || '',
@@ -66,26 +91,44 @@ export default function InquiryForm({
   submitLabel,
   onCancel,
   onSubmit,
+  title,
+  subtitle,
+  nav,
+  onBack,
 }: {
   initial?: Inquiry
   defaultOrgId?: number
   submitLabel: string
   onCancel: () => void
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
+  title?: string
+  subtitle?: string
+  /** Module sub-nav (and anything else) rendered above the form header. */
+  nav?: React.ReactNode
+  /** Shows the "← Back" pill in the header. */
+  onBack?: () => void
 }) {
+  // Inquiries & Tenders › Prices & margins: without it the value is hidden (and the server ignores it on save).
+  const seePrices = useCan().canFeature('crm', 'inquiries_tenders', 'prices', 'view')
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const bdOwnerName = initial?.bd_owner || user?.name || ''
   const orgLocked = !!defaultOrgId
   const [form, setForm] = useState<FormState>(() => toFormState(initial, defaultOrgId))
+  // Secondary requirement fields stay folded unless the record already has one filled.
+  const [showMore, setShowMore] = useState(() => !!(initial?.delivery_location || initial?.inspection_req || initial?.warranty_req))
   const [directoryUsers, setDirectoryUsers] = useState<DirectoryUser[]>([])
 
   useEffect(() => {
-    if (!isAdmin) return
+    // Owner / sales engineer pickers (users, not free text).
     usersApi.directory().then((data) => setDirectoryUsers(Array.isArray(data) ? data : [])).catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin])
-  const [railwayZoneCustom, setRailwayZoneCustom] = useState(
+  }, [])
+  // The role's "Assign to" rules narrow both pickers; whoever is set today stays listed (and owning it yourself is always allowed).
+  const allowBdOwner = useAssigneeFilter('crm:inquiries_tenders.bd_owner')
+  const allowEngineer = useAssigneeFilter('crm:inquiries_tenders.sales_engineer')
+  const bdOwnerUsers = directoryUsers.filter((u) => allowBdOwner(u.id) || u.id === user?.id || u.id === initial?.bd_owner_id)
+  const engineerUsers = directoryUsers.filter((u) => allowEngineer(u.id) || u.id === initial?.sales_engineer_id)
+  const [railwayZoneCustom] = useState(
     initial?.railway_zone && !RAILWAY_ZONES.includes(initial.railway_zone) ? initial.railway_zone : ''
   )
   const [organizations, setOrganizations] = useState<Organization[]>([])
@@ -99,9 +142,11 @@ export default function InquiryForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
   const [previewNumber, setPreviewNumber] = useState('')
+  const errorRef = useRef<HTMLDivElement>(null)
+  // The banner sits at the top of a long form — bring it into view when it appears.
+  useEffect(() => { if (error && (!Array.isArray(error) || error.length)) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
 
   type ExtraProductRow = { product_category: string; product: string; product_spec: string; quantity: string }
-  const emptyExtraProduct = (): ExtraProductRow => ({ product_category: '', product: '', product_spec: '', quantity: '' })
   const [extraProducts, setExtraProducts] = useState<ExtraProductRow[]>(
     (initial?.additional_items || []).map((it: InquiryLineItem) => ({
       product_category: it.product_category || '',
@@ -130,11 +175,11 @@ export default function InquiryForm({
 
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
 
-  const addNewContactMobile = () => setNewContact((c) => ({ ...c, additionalMobiles: [...c.additionalMobiles, ''] }))
+  const addNewContactMobile = () => setNewContact((c) => (canAddMore(c.additionalMobiles) ? { ...c, additionalMobiles: [...c.additionalMobiles, ''] } : c))
   const setNewContactMobile = (i: number, value: string) => setNewContact((c) => ({ ...c, additionalMobiles: c.additionalMobiles.map((m, j) => (j === i ? value : m)) }))
   const removeNewContactMobile = (i: number) => setNewContact((c) => ({ ...c, additionalMobiles: c.additionalMobiles.filter((_, j) => j !== i) }))
 
-  const addNewContactEmail = () => setNewContact((c) => ({ ...c, additionalEmails: [...c.additionalEmails, ''] }))
+  const addNewContactEmail = () => setNewContact((c) => (canAddMore(c.additionalEmails) ? { ...c, additionalEmails: [...c.additionalEmails, ''] } : c))
   const setNewContactEmail = (i: number, value: string) => setNewContact((c) => ({ ...c, additionalEmails: c.additionalEmails.map((m, j) => (j === i ? value : m)) }))
   const removeNewContactEmail = (i: number) => setNewContact((c) => ({ ...c, additionalEmails: c.additionalEmails.filter((_, j) => j !== i) }))
 
@@ -185,7 +230,7 @@ export default function InquiryForm({
       setContacts((list) => (list.some((c) => c.id === saved.id) ? list : [...list, saved]))
       set('org_contact_id', String(saved.id))
       setNewContact(emptyNewContact())
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save contact.'))
     } finally {
       setSavingContact(false)
@@ -193,7 +238,7 @@ export default function InquiryForm({
   }
 
   useEffect(() => {
-    crmApi.listOrganizations().then(setOrganizations)
+    crmApi.listOrganizations({ picker: true }).then(setOrganizations)
     crmApi.listProductCategories().then(setProductCategories).catch(() => {})
     crmApi.listProducts().then(setProducts).catch(() => {})
   }, [])
@@ -232,8 +277,8 @@ export default function InquiryForm({
 
   useEffect(() => {
     if (!form.org_id) {
-      setContacts([])
-      setDuplicateWarning('')
+      // Deferred so the effect itself sets no state.
+      Promise.resolve().then(() => { setContacts([]); setDuplicateWarning('') })
       return
     }
     const orgId = Number(form.org_id)
@@ -252,12 +297,12 @@ export default function InquiryForm({
         crmApi.listTenders({ org_id: orgId }),
       ]).then(([inquiries, tenders]) => {
         const openInquiries = inquiries.filter((i: Inquiry) => !i.status.startsWith('Closed'))
-        const openTenders = tenders.filter((t: Tender) => !['Won', 'Lost', 'Cancelled'].includes(t.status))
+        const openTenders = tenders.filter((t: Tender) => !t.status.startsWith('Closed') && t.status !== 'Tender Cancelled')
         if (openInquiries.length || openTenders.length) {
           const parts: string[] = []
           if (openInquiries.length) parts.push(`${openInquiries.length} open inquiry (${openInquiries.map((i: Inquiry) => i.universal_id).join(', ')})`)
           if (openTenders.length) parts.push(`${openTenders.length} open tender (${openTenders.map((t: Tender) => t.universal_id).join(', ')})`)
-          setDuplicateWarning(`This organization already has ${parts.join(' and ')}. Make sure you're not creating a duplicate.`)
+          setDuplicateWarning(`This customer organization already has ${parts.join(' and ')}. Make sure you're not creating a duplicate.`)
         } else {
           setDuplicateWarning('')
         }
@@ -269,7 +314,7 @@ export default function InquiryForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.org_id) {
-      setError('Please select an organization.')
+      setError('Please select a customer organization.')
       return
     }
     if (!form.lead_source) {
@@ -277,7 +322,7 @@ export default function InquiryForm({
       return
     }
     if (!form.priority) {
-      setError('Please select a priority.')
+      setError('Please select the Customer Requirement Priority (High, Medium or Low).')
       return
     }
     if (!form.status) {
@@ -311,6 +356,13 @@ export default function InquiryForm({
         railway_zone: form.railway_zone === 'Other' ? railwayZoneCustom : form.railway_zone,
         product_category: form.product_category,
         bd_owner: isAdmin ? (form.bd_owner || bdOwnerName) : bdOwnerName,
+        // The owner is a user (the name above follows it on the server). A non-admin
+        // creating an inquiry owns it; editing keeps the recorded owner.
+        bd_owner_id: isAdmin ? (form.bd_owner_id ? Number(form.bd_owner_id) : (initial ? undefined : user?.id)) : (initial ? undefined : user?.id),
+        sales_engineer_id: form.sales_engineer_id ? Number(form.sales_engineer_id) : (initial?.sales_engineer_id ? null : undefined),
+        expected_value: form.expected_value ? Number(form.expected_value) : undefined,
+        probability: form.probability ? Number(form.probability) : undefined,
+        expected_order_date: form.expected_order_date || undefined,
         quantity: form.quantity ? Number(form.quantity) : undefined,
         additional_items: filledExtraProducts.map((r) => ({
           product_category: r.product_category || undefined,
@@ -323,103 +375,248 @@ export default function InquiryForm({
         if (payload[k] === '' || payload[k] === undefined) delete payload[k]
       })
       await onSubmit(payload)
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save inquiry.'))
     } finally {
       setSaving(false)
     }
   }
 
+  const formId = initial ? `inquiry-form-${initial.id}` : 'inquiry-form-new'
   return (
-    <form onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ display: 'flex', flexDirection: 'column', gap: 20, position: 'relative' }}>
+    <FormPage nav={nav} onBack={onBack} backTour="inq-form-back-btn" tour="inq-form" icon={initial ? 'edit' : 'doc'}
+      title={title || (initial ? `Edit Inquiry ${initial.universal_id || ''}`.trim() : 'New Inquiry')}
+      subtitle={subtitle || (initial ? 'Change the inquiry — the change is recorded in its timeline.' : 'A customer requirement: who asked, for what, and by when.')}
+      footer={<>
+        <button type="button" onClick={onCancel} disabled={saving} data-tour="inq-cancel-btn" style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+        <button type="submit" form={formId} data-tour="inq-save" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+          <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
+        </button>
+      </>}>
+    <form id={formId} onSubmit={handleSubmit} onKeyDown={handleEnterAsTab} style={{ position: 'relative' }}>
       {saving && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(2px)' }}>
           <div className="loader" />
         </div>
       )}
-      <MessageDialog open={!!error} variant="error" title="Cannot Save" message={error} onClose={() => setError('')} />
+      <div ref={errorRef} style={{ padding: error && (!Array.isArray(error) || error.length) ? '16px 24px 0' : 0 }}><SheetError error={error} /></div>
 
-      <div className="inquiry-basic-company-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(480px, 1.8fr) minmax(260px, 1fr)', gap: 20, alignItems: 'stretch', position: 'relative', zIndex: 2 }}>
-      <Section title="Basic Information" style={{ display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, flex: 1 }}>
+      <SheetColumns
+        left={<>
+      <SheetSection icon="list" title="Basic Information">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ flex: '1 1 130px', minWidth: 130 }}>
-            <Field label="Inquiry Number" tourId="inq-number">
+            <F label="Inquiry Number" tourId="inq-number">
               <input
                 value={initial?.universal_id || previewNumber || 'Auto-generated on save'}
                 disabled
-                style={{ ...inputStyle, padding: '8px 10px', fontSize: 12, background: 'rgba(244,113,59,0.08)', color: '#FF7A45', fontWeight: 600 }}
+                style={{ ...inputStyle, background: '#eff6ff', color: SHEET.BLUE, fontWeight: 600 }}
               />
-            </Field>
+            </F>
           </div>
           <div style={{ flex: '1 1 100px', minWidth: 100 }}>
-            <Field label="Inquiry Date">
+            <F label="Inquiry Date">
               <input
                 value={initial?.created_at ? formatDate(initial.created_at) : formatDate(new Date())}
                 disabled
-                style={{ ...inputStyle, padding: '8px 10px', fontSize: 12, background: '#f5f5f4', color: '#78716c' }}
+                style={{ ...inputStyle, background: SHEET.SOFT, color: SHEET.MUTED }}
               />
-            </Field>
+            </F>
           </div>
           <div style={{ flex: '1 1 130px', minWidth: 130 }}>
-            <Field label="Lead Source *" tourId="inq-lead-source">
-              <select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={{ ...inputStyle, padding: '8px 10px', fontSize: 12 }}>
+            <F label={<>Lead Source <Req /></>} tourId="inq-lead-source">
+              <select value={form.lead_source} onChange={(e) => set('lead_source', e.target.value)} style={inputStyle}>
                 <option value="">-- Select Source --</option>
                 {LEAD_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
-            </Field>
+            </F>
           </div>
-          <div style={{ flex: '1 1 95px', minWidth: 95 }}>
-            <Field label="Priority *" tourId="inq-priority">
-              <select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={{ ...inputStyle, padding: '8px 10px', fontSize: 12 }}>
-                {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+          <div style={{ flex: '1 1 260px', minWidth: 220 }}>
+            <F label={<>Customer Requirement Priority <Req /></>} tourId="inq-priority">
+              <select value={form.priority} onChange={(e) => set('priority', e.target.value)} style={inputStyle}>
+                {priorityOptions(initial?.priority).map((p) => <option key={p} value={p}>{priorityLabel(p)}</option>)}
               </select>
-            </Field>
+            </F>
           </div>
           <div style={{ flex: '1 1 130px', minWidth: 130 }}>
-            <Field label="Status *" tourId="inq-status">
-              <select value={form.status} onChange={(e) => set('status', e.target.value)} style={{ ...inputStyle, padding: '8px 10px', fontSize: 12 }}>
-                {INQUIRY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            <F label={<>Status <Req /></>} tourId="inq-status">
+              <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
+                {inquiryStatusOptions(form.status).map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
-            </Field>
+            </F>
           </div>
           <div style={{ flex: '1 1 110px', minWidth: 110 }}>
-            <Field label="BD Owner" tourId="inq-bd-owner">
+            <F label="BD Owner" tourId="inq-bd-owner">
               {isAdmin ? (
                 <SearchableSelect
-                  value={form.bd_owner || bdOwnerName}
-                  onChange={(v) => set('bd_owner', v)}
-                  options={directoryUsers.map((u) => ({ value: u.name, label: u.name }))}
+                  value={form.bd_owner_id || String(directoryUsers.find((u) => u.name === (form.bd_owner || bdOwnerName))?.id || '')}
+                  onChange={(v) => { set('bd_owner_id', v); set('bd_owner', directoryUsers.find((u) => String(u.id) === v)?.name || '') }}
+                  options={bdOwnerUsers.map((u) => ({ value: String(u.id), label: u.name }))}
                   placeholder="Select BD Owner..."
                 />
               ) : (
-                <input value={bdOwnerName} disabled style={{ ...inputStyle, padding: '8px 10px', fontSize: 12, background: '#f5f5f4', color: '#78716c' }} />
+                <input value={bdOwnerName} disabled style={{ ...inputStyle, background: SHEET.SOFT, color: SHEET.MUTED }} />
               )}
-            </Field>
+            </F>
           </div>
         </div>
-        <Field label="Current Status" tourId="inq-current-status-note">
-          <textarea value={form.current_status_note} onChange={(e) => set('current_status_note', e.target.value)} rows={2} placeholder="e.g. Waiting for client confirmation" style={{ ...inputStyle, resize: 'vertical', fontSize: 12 }} />
-        </Field>
-      </Section>
+        <div style={{ marginTop: 14 }}>
+        <F label="Current Status" tourId="inq-current-status-note">
+          <textarea value={form.current_status_note} onChange={(e) => set('current_status_note', e.target.value)} rows={2} placeholder="e.g. Waiting for client confirmation" style={{ ...inputStyle, resize: 'vertical' }} />
+        </F>
+        </div>
+      </SheetSection>
+      <SheetSection icon="rupee" title="Opportunity">
+        <div data-tour="inq-opportunity" style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+          {seePrices && <div style={{ flex: '0 1 150px', minWidth: 130 }}>
+            <F label="Expected Value (₹)"><input type="number" min={0} value={form.expected_value} onChange={(e) => set('expected_value', e.target.value)} style={inputStyle} /></F>
+          </div>}
+          <div style={{ flex: '0 1 110px', minWidth: 100 }}>
+            <F label="Win Probability %"><input type="number" min={0} max={100} value={form.probability} onChange={(e) => set('probability', e.target.value)} style={inputStyle} /></F>
+          </div>
+          <div style={{ flex: '0 1 170px', minWidth: 160 }}>
+            <F label="Expected Order Date"><DateField value={form.expected_order_date} onChange={(v) => set('expected_order_date', v)} /></F>
+          </div>
+          <div style={{ flex: '1 1 180px', maxWidth: 300 }}>
+            <F label="Sales Engineer">
+              <SearchableSelect value={form.sales_engineer_id} onChange={(v) => set('sales_engineer_id', v)}
+                options={[{ value: '', label: '— None —' }, ...engineerUsers.map((u) => ({ value: String(u.id), label: u.name }))]} placeholder="Select sales engineer..." />
+            </F>
+          </div>
+        </div>
+      </SheetSection>
+      <SheetSection
+        icon="box"
+        title="Product Requirement"
+        extra={<span style={{ marginLeft: 'auto' }}>
+          <button type="button" data-tour="inq-more-details" onClick={() => setShowMore((v) => !v)} style={{ background: 'none', border: `1px dashed ${SHEET.LINE}`, borderRadius: 8, color: SHEET.BODY, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '6px 12px' }}>
+            {showMore ? 'Hide more details ▴' : <>+ More details <span style={{ fontWeight: 400, color: '#a8a29e' }}>(delivery location, inspection, warranty)</span></>}
+          </button>
+        </span>}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ flex: '0 1 200px', minWidth: 170 }}>
+            <F label="Category" tourId="inq-product-category">
+              <ComboBox
+                value={form.product_category}
+                onChange={(v) => set('product_category', v)}
+                onPick={(o) => set('product_category', o.label)}
+                onCreateNew={createCategory}
+                createLabel="New Category"
+                options={productCategories.map((c) => ({ key: String(c.id), label: c.name }))}
+                placeholder="Select or type a category"
+              />
+            </F>
+          </div>
+          <div style={{ flex: '1 1 180px', minWidth: 160 }}>
+            <F label={<>Product <Req /></>} tourId="inq-product">
+              <ComboBox
+                value={form.product}
+                onChange={(v) => set('product', v)}
+                onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) { set('product', p.name); if (p.category) set('product_category', p.category) } }}
+                onCreateNew={createProduct}
+                createLabel="New Product"
+                options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.category || undefined }))}
+                placeholder="RRV System"
+              />
+              {isDuplicateProductRow(form.product_category, form.product) && (
+                <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>⚠ This product/category is already added below.</p>
+              )}
+            </F>
+          </div>
+          <div style={{ flex: '0 1 90px', minWidth: 80 }}>
+            <F label="Quantity" tourId="inq-quantity"><input type="number" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></F>
+          </div>
+          <div style={{ flex: '0 1 175px', minWidth: 175 }}>
+            <F label="Required Delivery Date" tourId="inq-delivery-date"><DateField value={form.required_delivery_date} onChange={(v) => set('required_delivery_date', v)} /></F>
+          </div>
+        </div>
+        <F label="Product Specification" tourId="inq-product-spec"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
+        <F label="Requirement Description" tourId="inq-requirement-desc"><textarea value={form.requirement_desc} onChange={(e) => set('requirement_desc', e.target.value)} rows={2} placeholder="Brief summary of the requirement..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
 
-      <Section title="Company Information">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Client Company *" tourId="inq-org">
+        {extraProducts.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {extraProducts.map((row, i) => {
+              const isDup = isDuplicateProductRow(row.product_category, row.product)
+              return (
+                <div key={i} style={{ padding: 12, borderRadius: 10, background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ flex: '0 1 200px', minWidth: 170 }}>
+                      <F label="Category">
+                        <ComboBox
+                          value={row.product_category}
+                          onChange={(v) => setExtraProduct(i, 'product_category', v)}
+                          onPick={(o) => setExtraProduct(i, 'product_category', o.label)}
+                          onCreateNew={createCategory}
+                          createLabel="New Category"
+                          options={productCategories.map((c) => ({ key: String(c.id), label: c.name }))}
+                          placeholder="Select or type a category"
+                        />
+                      </F>
+                    </div>
+                    <div style={{ flex: '1 1 180px', minWidth: 160 }}>
+                      <F label="Product">
+                        <ComboBox
+                          value={row.product}
+                          onChange={(v) => setExtraProduct(i, 'product', v)}
+                          onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) { setExtraProduct(i, 'product', p.name); if (p.category) setExtraProduct(i, 'product_category', p.category) } }}
+                          onCreateNew={createProduct}
+                          createLabel="New Product"
+                          options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.category || undefined }))}
+                          placeholder="RRV System"
+                        />
+                      </F>
+                    </div>
+                    <div style={{ flex: '0 1 90px', minWidth: 80 }}>
+                      <F label="Quantity"><input type="number" value={row.quantity} onChange={(e) => setExtraProduct(i, 'quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></F>
+                    </div>
+                    <button type="button" onClick={() => removeExtraProduct(i)} style={{ ...sheetBtn('ghost', '#DC2626'), marginTop: 22 }}><XIcon /></button>
+                  </div>
+                  <F label="Product Specification"><textarea value={row.product_spec} onChange={(e) => setExtraProduct(i, 'product_spec', e.target.value)} rows={2} placeholder="Optional spec for this product" style={{ ...inputStyle, resize: 'vertical' }} /></F>
+                  {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: 0 }}>⚠ This product/category is already added elsewhere in this inquiry.</p>}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {showMore && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, padding: 12, borderRadius: 10, background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.06)' }}>
+            <div style={{ flex: '1 1 170px', minWidth: 150 }}>
+              <F label="Delivery Location" tourId="inq-delivery-location"><input value={form.delivery_location} onChange={(e) => set('delivery_location', e.target.value)} placeholder="e.g. Allahabad, UP" style={inputStyle} /></F>
+            </div>
+            <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+              <F label="Inspection Requirement" tourId="inq-inspection"><input value={form.inspection_req} onChange={(e) => set('inspection_req', e.target.value)} placeholder="e.g. RDSO inspection, third party QA" style={inputStyle} /></F>
+            </div>
+            <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+              <F label="Warranty Requirement" tourId="inq-warranty"><input value={form.warranty_req} onChange={(e) => set('warranty_req', e.target.value)} placeholder="e.g. 12 months from commissioning" style={inputStyle} /></F>
+            </div>
+          </div>
+        )}
+        <F label="Project Details" tourId="inq-project-details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></F>
+        </div>
+      </SheetSection>
+        </>}
+        right={<>
+      <SheetSection icon="building" title="Company Information">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <F label={<>Client Company <Req /></>} tourId="inq-org">
             <SearchableSelect
               value={form.org_id}
               onChange={(v) => set('org_id', v)}
               options={organizations.map((o) => ({ value: String(o.id), label: o.name }))}
-              placeholder="Search existing organization…"
+              placeholder="Search existing customer organization…"
               disabled={orgLocked}
             />
-          </Field>
-          <Field label="Contact Person *" tourId="inq-contact">
+          </F>
+          <F label={<>Contact Person <Req /></>} tourId="inq-contact">
             <select value={form.org_contact_id} onChange={(e) => set('org_contact_id', e.target.value)} disabled={!form.org_id} style={inputStyle}>
               <option value="">-- Select Contact --</option>
               {contacts.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               <option value="__new__">+ Add New Contact</option>
             </select>
-          </Field>
+          </F>
         </div>
         {selectedContact && (
           <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 12 }}>
@@ -433,41 +630,45 @@ export default function InquiryForm({
         {form.org_contact_id === '__new__' && (
           <div style={{ padding: 14, borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
             <Row>
-              <Field label="Name *"><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Rajesh Kumar" style={{ ...inputStyle, ...(nameMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} /></Field>
-              <Field label="Designation"><input value={newContact.designation} onChange={(e) => setNewContact((c) => ({ ...c, designation: e.target.value }))} placeholder="Purchase Head / DGM" style={inputStyle} /></Field>
+              <F label={<>Name <Req /></>}><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Rajesh Kumar" style={{ ...inputStyle, ...(nameMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} /></F>
+              <F label="Designation"><input value={newContact.designation} onChange={(e) => setNewContact((c) => ({ ...c, designation: e.target.value }))} placeholder="Purchase Head / DGM" style={inputStyle} /></F>
             </Row>
             <Row>
-              <Field label="Mobile">
-                <PhoneField value={newContact.mobile} onChange={(v) => setNewContact((c) => ({ ...c, mobile: v }))} style={{ ...inputStyle, ...(mobileMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} />
+              <F label="Mobile">
+                <ValueRow button={<AddMoreButton onClick={addNewContactMobile} label="Add another mobile" extras={newContact.additionalMobiles} />}>
+                  <PhoneField value={newContact.mobile} onChange={(v) => setNewContact((c) => ({ ...c, mobile: v }))} style={{ ...inputStyle, ...(mobileMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} />
+                </ValueRow>
                 {newContact.additionalMobiles.map((m, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                    <PhoneField value={m} onChange={(v) => setNewContactMobile(i, v)} style={inputStyle} />
-                    <button type="button" onClick={() => removeNewContactMobile(i)} style={{ ...dangerBtnStyle, padding: '5px 8px', fontSize: 11 }}><XIcon /></button>
+                  <div key={i} style={{ marginTop: 6 }}>
+                    <ValueRow button={<RemoveValueButton onClick={() => removeNewContactMobile(i)} label="Remove this mobile" />}>
+                      <PhoneField value={m} onChange={(v) => setNewContactMobile(i, v)} style={inputStyle} />
+                    </ValueRow>
                   </div>
                 ))}
-                <button type="button" onClick={addNewContactMobile} style={{ ...secondaryBtnStyle, marginTop: 6, padding: '3px 8px', fontSize: 11 }}>+ Add Mobile</button>
-              </Field>
-              <Field label="Email">
-                <ValidatedInput type="email" value={newContact.email} onChange={(v) => setNewContact((c) => ({ ...c, email: v }))} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="email@company.com" style={{ ...inputStyle, ...(emailMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} />
+              </F>
+              <F label="Email">
+                <ValueRow button={<AddMoreButton onClick={addNewContactEmail} label="Add another email" extras={newContact.additionalEmails} />}>
+                  <ValidatedInput type="email" value={newContact.email} onChange={(v) => setNewContact((c) => ({ ...c, email: v }))} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="email@company.com" style={{ ...inputStyle, ...(emailMatch ? { borderColor: '#f59e0b', background: '#fffbeb' } : {}) }} />
+                </ValueRow>
                 {newContact.additionalEmails.map((em, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                    <input type="email" value={em} onChange={(e) => setNewContactEmail(i, e.target.value)} placeholder="email@company.com" style={inputStyle} />
-                    <button type="button" onClick={() => removeNewContactEmail(i)} style={{ ...dangerBtnStyle, padding: '5px 8px', fontSize: 11 }}><XIcon /></button>
+                  <div key={i} style={{ marginTop: 6 }}>
+                    <ValueRow button={<RemoveValueButton onClick={() => removeNewContactEmail(i)} label="Remove this email" />}>
+                      <input type="email" value={em} onChange={(e) => setNewContactEmail(i, e.target.value)} placeholder="email@company.com" style={inputStyle} />
+                    </ValueRow>
                   </div>
                 ))}
-                <button type="button" onClick={addNewContactEmail} style={{ ...secondaryBtnStyle, marginTop: 6, padding: '3px 8px', fontSize: 11 }}>+ Add Email</button>
-              </Field>
+              </F>
             </Row>
             {matchedContact && (
               <div style={{ padding: '9px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', color: '#b45309', fontSize: 12 }}>
-                ⚠ This matches the existing contact "{matchedContact.name}"
+                ⚠ This matches the existing contact &quot;{matchedContact.name}&quot;
                 {mobileMatch ? ' (same mobile number)' : emailMatch ? ' (same email address)' : ''}.
                 Saving will link to that existing contact instead of creating a new one.
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" onClick={() => { setNewContact(emptyNewContact()); set('org_contact_id', '') }} style={secondaryBtnStyle}>Cancel</button>
-              <button type="button" onClick={saveNewContact} disabled={savingContact} style={{ ...primaryBtnStyle, opacity: savingContact ? 0.7 : 1 }}>
+              <button type="button" onClick={() => { setNewContact(emptyNewContact()); set('org_contact_id', '') }} style={sheetBtn('secondary', SHEET.INK)}>Cancel</button>
+              <button type="button" onClick={saveNewContact} disabled={savingContact} style={sheetBtn('primary', SHEET.BLUE, savingContact)}>
                 {savingContact ? 'Saving…' : 'Save Contact'}
               </button>
             </div>
@@ -480,114 +681,10 @@ export default function InquiryForm({
             <span>{duplicateWarning}</span>
           </div>
         )}
-      </Section>
-      </div>
-
-      <Section title="Product Requirement">
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '0 1 200px', minWidth: 170 }}>
-            <Field label="Category" tourId="inq-product-category">
-              <ComboBox
-                value={form.product_category}
-                onChange={(v) => set('product_category', v)}
-                onPick={(o) => set('product_category', o.label)}
-                onCreateNew={createCategory}
-                createLabel="New Category"
-                options={productCategories.map((c) => ({ key: String(c.id), label: c.name }))}
-                placeholder="Select or type a category"
-              />
-            </Field>
-          </div>
-          <div style={{ flex: '1 1 180px', minWidth: 160 }}>
-            <Field label="Product *" tourId="inq-product">
-              <ComboBox
-                value={form.product}
-                onChange={(v) => set('product', v)}
-                onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) { set('product', p.name); if (p.category) set('product_category', p.category) } }}
-                onCreateNew={createProduct}
-                createLabel="New Product"
-                options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.category || undefined }))}
-                placeholder="RRV System"
-              />
-              {isDuplicateProductRow(form.product_category, form.product) && (
-                <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: '4px 0 0' }}>⚠ This product/category is already added below.</p>
-              )}
-            </Field>
-          </div>
-          <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-            <Field label="Quantity" tourId="inq-quantity"><input type="number" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></Field>
-          </div>
-          <div style={{ flex: '0 1 175px', minWidth: 175 }}>
-            <Field label="Required Delivery Date" tourId="inq-delivery-date"><DateField value={form.required_delivery_date} onChange={(v) => set('required_delivery_date', v)} /></Field>
-          </div>
-          <div style={{ flex: '1 1 170px', minWidth: 150 }}>
-            <Field label="Delivery Location" tourId="inq-delivery-location"><input value={form.delivery_location} onChange={(e) => set('delivery_location', e.target.value)} placeholder="e.g. Allahabad, UP" style={inputStyle} /></Field>
-          </div>
-          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <Field label="Inspection Requirement" tourId="inq-inspection"><input value={form.inspection_req} onChange={(e) => set('inspection_req', e.target.value)} placeholder="e.g. RDSO inspection, third party QA" style={inputStyle} /></Field>
-          </div>
-          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <Field label="Warranty Requirement" tourId="inq-warranty"><input value={form.warranty_req} onChange={(e) => set('warranty_req', e.target.value)} placeholder="e.g. 12 months from commissioning" style={inputStyle} /></Field>
-          </div>
-        </div>
-        <Field label="Product Specification" tourId="inq-product-spec"><textarea value={form.product_spec} onChange={(e) => set('product_spec', e.target.value)} rows={2} placeholder="e.g. High Speed Self Propelled, 1676mm BG, hydraulic braking, anti-climber arrangement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-
-        {extraProducts.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {extraProducts.map((row, i) => {
-              const isDup = isDuplicateProductRow(row.product_category, row.product)
-              return (
-                <div key={i} style={{ padding: 12, borderRadius: 10, background: 'rgba(0,0,0,0.02)', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
-                    <div style={{ flex: '0 1 200px', minWidth: 170 }}>
-                      <Field label="Category">
-                        <ComboBox
-                          value={row.product_category}
-                          onChange={(v) => setExtraProduct(i, 'product_category', v)}
-                          onPick={(o) => setExtraProduct(i, 'product_category', o.label)}
-                          onCreateNew={createCategory}
-                          createLabel="New Category"
-                          options={productCategories.map((c) => ({ key: String(c.id), label: c.name }))}
-                          placeholder="Select or type a category"
-                        />
-                      </Field>
-                    </div>
-                    <div style={{ flex: '1 1 180px', minWidth: 160 }}>
-                      <Field label="Product">
-                        <ComboBox
-                          value={row.product}
-                          onChange={(v) => setExtraProduct(i, 'product', v)}
-                          onPick={(o) => { const p = products.find((pr) => String(pr.id) === o.key); if (p) { setExtraProduct(i, 'product', p.name); if (p.category) setExtraProduct(i, 'product_category', p.category) } }}
-                          onCreateNew={createProduct}
-                          createLabel="New Product"
-                          options={products.map((p) => ({ key: String(p.id), label: p.name, sublabel: p.category || undefined }))}
-                          placeholder="RRV System"
-                        />
-                      </Field>
-                    </div>
-                    <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-                      <Field label="Quantity"><input type="number" value={row.quantity} onChange={(e) => setExtraProduct(i, 'quantity', e.target.value)} placeholder="e.g. 2" style={inputStyle} /></Field>
-                    </div>
-                    <button type="button" onClick={() => removeExtraProduct(i)} style={{ ...dangerBtnStyle, padding: '6px 10px', fontSize: 11, marginTop: 20 }}><XIcon /></button>
-                  </div>
-                  <Field label="Product Specification"><textarea value={row.product_spec} onChange={(e) => setExtraProduct(i, 'product_spec', e.target.value)} rows={2} placeholder="Optional spec for this product" style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-                  {isDup && <p style={{ fontSize: 11, color: '#b45309', fontWeight: 600, margin: 0 }}>⚠ This product/category is already added elsewhere in this inquiry.</p>}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
-        <Field label="Requirement Description" tourId="inq-requirement-desc"><textarea value={form.requirement_desc} onChange={(e) => set('requirement_desc', e.target.value)} rows={2} placeholder="Brief summary of the requirement..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-        <Field label="Project Details" tourId="inq-project-details"><textarea value={form.project_details} onChange={(e) => set('project_details', e.target.value)} rows={3} placeholder="Project background, scope, timeline..." style={{ ...inputStyle, resize: 'vertical' }} /></Field>
-      </Section>
-
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between' }}>
-        <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-        <button type="submit" data-tour="inq-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-      </div>
+      </SheetSection>
+        </>}
+      />
     </form>
+    </FormPage>
   )
 }

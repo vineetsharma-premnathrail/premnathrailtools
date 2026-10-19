@@ -2,19 +2,24 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { recordPath, useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
 import { QualityDispositionCode, QualityNcr } from '@/types'
 import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import PromptDialog from '@/components/erp/PromptDialog'
-import { Field, Section, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import { Section, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle } from '@/components/shared/ui'
 import {
-  Pill, PageHeader, ErrorBanner, fmtQty, fmtDate, NCR_STATUS_LABELS, NCR_STATUS_HEX, SEVERITY_HEX,
+  Pill, PageHeader, ErrorBanner, ActionSheet, fmtQty, fmtDate, NCR_STATUS_LABELS, NCR_STATUS_HEX, SEVERITY_HEX,
   APPROVAL_ROLE_LABELS, DISPOSITION_TYPE_LABELS,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 import QualityRecordDoc from '@/components/quality/QualityRecordDoc'
+import { useCan } from '@/lib/permissions'
+import { sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
 
 const STEPS = ['open', 'disposition_decided', 'action_done', 'verified', 'closed']
 const ACTION_HINT: Record<string, string> = {
@@ -25,7 +30,8 @@ const ACTION_HINT: Record<string, string> = {
 export default function NcrDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
   const router = useRouter()
-  const ncrId = Number(useParams().id)
+  const { id: recordId, error: linkError } = useRecordId(useParams().id as string)
+  const ncrId = recordId ?? 0
   const [ncr, setNcr] = useState<QualityNcr | null>(null)
   const [codes, setCodes] = useState<QualityDispositionCode[]>([])
   const [error, setError] = useState<string | string[]>('')
@@ -36,6 +42,25 @@ export default function NcrDetailPage() {
   const [costs, setCosts] = useState({ material_cost: '', rework_cost: '', other_cost: '', root_cause: '' })
   const [rejectRole, setRejectRole] = useState<string | null>(null)
   const [cancelOpen, setCancelOpen] = useState(false)
+  const [panelKey, setPanelKey] = useState(0)
+  // Which action popup is open (propose / action done / verify / close).
+  const [sheet, setSheet] = useState<'' | 'propose' | 'action' | 'verify' | 'close'>('')
+  const { can, canFeature } = useCan()
+  // Mirrors the backend NCR service: propose / action / verify need Quality engineer authority (quality:ncr:edit,
+  // or a head's quality:ncr:approve); close and cancel are a Quality head's (quality:ncr:approve).
+  // NCR features (core/features/quality.py) layer on top; approvers outside the
+  // NCR tab (Design / Purchase / Partner) are bound only by their stage role.
+  const isHead = can('quality', 'ncr', 'approve')
+  const isEngineer = can('quality', 'ncr', 'edit') || isHead
+  const holdsTab = can('quality', 'ncr', 'view')
+  const nf = (feature: string, action: Parameters<typeof canFeature>[3]) => canFeature('quality', 'ncr', feature, action)
+  const canPropose = isEngineer && nf('disposition', 'submit')
+  const canSign = !holdsTab || nf('disposition', 'approve')
+  const canRejectDisp = !holdsTab || nf('disposition', 'reject')
+  const canActVerify = isEngineer && nf('action_verify', 'edit')
+  const canClose = isHead && nf('closure', 'approve')
+  const canCancel = isHead && nf('closure', 'cancel')
+  const seeCosts = !holdsTab || nf('costs', 'view')
 
   useEffect(() => {
     if (!isAuthorized || !ncrId) return
@@ -43,11 +68,14 @@ export default function NcrDetailPage() {
     qualityApi.listMaster('disposition-codes').then(setCodes).catch(() => setCodes([]))
   }, [isAuthorized, ncrId])
 
+  const reload = () => { qualityApi.getNcr(ncrId).then(setNcr).catch((e) => setError(extractErrorMessages(e, 'Failed to reload this NCR.'))) }
   const act = async (name: Parameters<typeof qualityApi.ncrAction>[1], payload: Record<string, unknown>, fallback: string) => {
     setError('')
     setBusy(true)
     try {
       setNcr(await qualityApi.ncrAction(ncrId, name, payload))
+      setPanelKey((k) => k + 1)  // a (re-)proposal starts a new approval request
+      setSheet('')
     } catch (err) {
       setError(extractErrorMessages(err, fallback))
     } finally {
@@ -55,8 +83,11 @@ export default function NcrDetailPage() {
     }
   }
   const num = (v: string) => (v === '' ? null : Number(v))
+  const openSheet = (s: typeof sheet) => { setError(''); setSheet(s) }
+  const closeSheet = () => { if (!busy) { setSheet(''); setError('') } }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/ncr" listLabel="Back to NCRs" /></div>)
   if (!ncr) {
     return (
       <div>
@@ -86,7 +117,7 @@ export default function NcrDetailPage() {
         <Pill text={NCR_STATUS_LABELS[ncr.status] || ncr.status} hex={NCR_STATUS_HEX[ncr.status]} />
         <button type="button" onClick={() => router.push('/dashboard/quality/ncr')} style={secondaryBtnStyle}>← Back</button>
       </PageHeader>
-      <ErrorBanner error={error} />
+      {!sheet && <ErrorBanner error={error} />}
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {STEPS.map((s, i) => {
@@ -106,14 +137,21 @@ export default function NcrDetailPage() {
           <InfoRow label="Vendor" value={ncr.vendor_name || '—'} />
           <InfoRow label="Defect" value={ncr.defect_code_label || '—'} />
           <InfoRow label="Raised" value={`${ncr.raised_by_name || '—'} · ${fmtDate(ncr.ncr_date)}`} />
-          <InfoRow label="Estimated value" value={ncr.estimated_value != null ? `₹${ncr.estimated_value.toLocaleString('en-IN')}` : '—'} />
+          {seeCosts && <InfoRow label="Estimated value" value={ncr.estimated_value != null ? `₹${ncr.estimated_value.toLocaleString('en-IN')}` : '—'} />}
         </div>
         {ncr.lot_id && (
-          <p style={{ fontSize: 13, margin: 0 }}>Inspection lot: <span onClick={() => router.push(`/dashboard/quality/lots/${ncr.lot_id}`)} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{ncr.lot_number}</span></p>
+          <p style={{ fontSize: 13, margin: 0 }}>Inspection lot: <span onClick={() => router.push(recordPath('/dashboard/quality/lots', ncr, 'lot_id'))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{ncr.lot_number}</span></p>
+        )}
+        {(ncr.capas || []).length > 0 && (
+          <p style={{ fontSize: 13, margin: 0 }}>CAPA:{' '}
+            {(ncr.capas || []).map((c, i) => (
+              <span key={c.id}>{i > 0 ? ', ' : ''}<span onClick={() => router.push(recordPath('/dashboard/quality/capa', c))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{c.capa_number}</span> ({c.status.replace(/_/g, ' ')})</span>
+            ))}
+          </p>
         )}
         <InfoRow label="Description" value={ncr.description} />
         {ncr.root_cause && <InfoRow label="Root cause" value={ncr.root_cause} />}
-        {ncr.status === 'open' && ncr.disposition_status === 'none' && !ncr.auto_raised && !ncr.stock_blocked && (
+        {canCancel && ncr.status === 'open' && ncr.disposition_status === 'none' && !ncr.auto_raised && !ncr.stock_blocked && (
           <div><button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setCancelOpen(true)}>Cancel NCR</button></div>
         )}
       </Section>
@@ -129,7 +167,7 @@ export default function NcrDetailPage() {
           </div>
         )}
         {ncr.disposition_type === 'scrap' && ncr.scrap_value_limit != null && (
-          <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>Scrap above ₹{ncr.scrap_value_limit.toLocaleString('en-IN')} also needs a Partner&apos;s approval.</p>
+          <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>Scrap above ₹{ncr.scrap_value_limit.toLocaleString('en-IN')} also needs a Partner&apos;s approval (limit set in Organization › Approval Workflows › NCR disposition).</p>
         )}
         {active.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -141,55 +179,36 @@ export default function NcrDetailPage() {
             ))}
           </div>
         )}
-        {ncr.status === 'open' && ncr.disposition_status === 'pending_approval' && ncr.pending_roles.length > 0 && (
+        {ncr.status === 'open' && ncr.disposition_status === 'pending_approval' && !ncr.legacy_approval && (
+          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Waiting for: {ncr.pending_roles.map((r) => APPROVAL_ROLE_LABELS[r] || r).join(' → ') || '—'}. Approvers decide in the Disposition approval panel below.</p>
+        )}
+        {ncr.status === 'open' && ncr.disposition_status === 'pending_approval' && ncr.legacy_approval && ncr.pending_roles.length > 0 && (
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {ncr.pending_roles.map((r) => (
               <span key={r} style={{ display: 'inline-flex', gap: 6 }}>
-                <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => act('approve-disposition', { role: r, approve: true }, 'Failed to approve.')}>Approve as {APPROVAL_ROLE_LABELS[r] || r}</button>
-                <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setRejectRole(r)}>Reject</button>
+                {canSign && <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => act('approve-disposition', { role: r, approve: true }, 'Failed to approve.')}>Approve as {APPROVAL_ROLE_LABELS[r] || r}</button>}
+                {canRejectDisp && <button type="button" disabled={busy} style={dangerBtnStyle} onClick={() => setRejectRole(r)}>Reject</button>}
               </span>
             ))}
           </div>
         )}
-        {ncr.status === 'open' && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: 12 }}>
-            <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-              <Field label={ncr.disposition_status === 'none' ? 'Propose disposition' : 'Re-propose (restarts approvals)'}>
-                <select style={inputStyle} value={propose.disposition_code_id} onChange={(e) => setPropose({ ...propose, disposition_code_id: e.target.value })}>
-                  <option value="">Select…</option>
-                  {codes.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div style={{ flex: '1 1 260px', maxWidth: 420 }}>
-              <Field label="Remarks"><input style={inputStyle} value={propose.remarks} onChange={(e) => setPropose({ ...propose, remarks: e.target.value })} /></Field>
-            </div>
-            {selectedCode && ['use_as_is', 'repair'].includes(selectedCode.disposition_type) && (
-              <>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, paddingBottom: 10 }}>
-                  <input type="checkbox" checked={propose.customer_approval_required} onChange={(e) => setPropose({ ...propose, customer_approval_required: e.target.checked })} />
-                  Contract needs customer approval
-                </label>
-                {propose.customer_approval_required && (
-                  <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
-                    <Field label="Customer approval ref."><input style={inputStyle} value={propose.customer_approval_reference} onChange={(e) => setPropose({ ...propose, customer_approval_reference: e.target.value })} /></Field>
-                  </div>
-                )}
-              </>
-            )}
-            <button type="button" disabled={busy || !propose.disposition_code_id} style={primaryBtnStyle}
-              onClick={() => act('propose-disposition', { disposition_code_id: Number(propose.disposition_code_id), remarks: propose.remarks || null,
-                customer_approval_required: propose.customer_approval_required, customer_approval_reference: propose.customer_approval_reference || null }, 'Failed to propose the disposition.')}>
-              Propose
+        {ncr.status === 'open' && canPropose && (
+          <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: 12 }}>
+            <button type="button" disabled={busy} style={ncr.disposition_status === 'none' ? primaryBtnStyle : secondaryBtnStyle}
+              onClick={() => { setPropose({ disposition_code_id: '', remarks: '', customer_approval_required: false, customer_approval_reference: '' }); openSheet('propose') }}>
+              {ncr.disposition_status === 'none' ? 'Propose disposition' : 'Re-propose disposition'}
             </button>
           </div>
         )}
       </Section>
 
+      <ApprovalPanel key={panelKey} entityType="quality_ncr" entityId={ncr.id}
+        onChanged={reload} title="Disposition approval" />
+
       {ncr.disposition_status === 'approved' && ncr.disposition_type && ['use_as_is', 'repair'].includes(ncr.disposition_type) && (
         <Section title="Deviation approval" style={{ marginBottom: 20 }}>
           <QualityRecordDoc title="Deviation approval" hint="Concession record with the approving authorities, on the company letterhead (attach to the material / send to the customer where required)."
-            entityType="quality_deviation_approval" entityId={ncr.id} pdfKind="deviation-approval" canModify
+            entityType="quality_deviation_approval" entityId={ncr.id} pdfKind="deviation-approval" canModify={can('quality', 'ncr', 'edit')}
             downloadName={`Deviation-Approval-${ncr.ncr_number}`} />
         </Section>
       )}
@@ -204,20 +223,14 @@ export default function NcrDetailPage() {
               {ncr.reinspection_lot_id && (
                 <div>
                   <p style={{ fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 2px' }}>Re-inspection lot</p>
-                  <span onClick={() => router.push(`/dashboard/quality/lots/${ncr.reinspection_lot_id}`)} style={{ fontSize: 13, color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{ncr.reinspection_lot_number}</span>
+                  <span onClick={() => router.push(recordPath('/dashboard/quality/lots', ncr, 'reinspection_lot_id'))} style={{ fontSize: 13, color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>{ncr.reinspection_lot_number}</span>
                 </div>
               )}
             </div>
           ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-              <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-                <Field label={`${ACTION_HINT[ncr.disposition_type || ''] || 'Document no.'} *`}><input style={inputStyle} value={action.action_reference} onChange={(e) => setAction({ ...action, action_reference: e.target.value })} /></Field>
-              </div>
-              <div style={{ flex: '1 1 260px', maxWidth: 420 }}>
-                <Field label="Remarks"><input style={inputStyle} value={action.remarks} onChange={(e) => setAction({ ...action, remarks: e.target.value })} /></Field>
-              </div>
-              <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => act('action', action, 'Failed to record the action.')}>Record action done</button>
-            </div>
+            canActVerify
+              ? <div><button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => { setAction({ action_reference: '', remarks: '' }); openSheet('action') }}>Record action done</button></div>
+              : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Waiting for a Quality engineer to record the disposition action.</p>
           )}
           {ncr.disposition_type && ['rework', 'repair'].includes(ncr.disposition_type) && !ncr.action_done_at && (
             <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>Recording the action moves the Blocked quantity back to Quality stock and opens a re-inspection lot.</p>
@@ -227,45 +240,104 @@ export default function NcrDetailPage() {
 
       {ncr.status === 'action_done' && (
         <Section title="Verification" style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 300px', maxWidth: 520 }}><Field label="Verification remarks"><input style={inputStyle} value={verifyRemarks} onChange={(e) => setVerifyRemarks(e.target.value)} /></Field></div>
-            <button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => act('verify', { remarks: verifyRemarks || null }, 'Failed to verify.')}>Verify</button>
-          </div>
+          {canActVerify
+            ? <div><button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => { setVerifyRemarks(''); openSheet('verify') }}>Verify</button></div>
+            : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Waiting for a Quality engineer to verify the action.</p>}
         </Section>
       )}
 
       {(ncr.status === 'verified' || ncr.status === 'closed') && (
-        <Section title="Closure & cost of non-quality" style={{ marginBottom: 20 }}>
+        <Section title={seeCosts ? 'Closure & cost of non-quality' : 'Closure'} style={{ marginBottom: 20 }}>
           {ncr.status === 'closed' ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12 }}>
-              <InfoRow label="Material" value={`₹${(ncr.material_cost || 0).toLocaleString('en-IN')}`} />
-              <InfoRow label="Rework" value={`₹${(ncr.rework_cost || 0).toLocaleString('en-IN')}`} />
-              <InfoRow label="Other" value={`₹${(ncr.other_cost || 0).toLocaleString('en-IN')}`} />
-              <InfoRow label="Total" value={`₹${ncr.cost_of_non_quality.toLocaleString('en-IN')}`} />
+              {seeCosts && (
+                <>
+                  <InfoRow label="Material" value={`₹${(ncr.material_cost || 0).toLocaleString('en-IN')}`} />
+                  <InfoRow label="Rework" value={`₹${(ncr.rework_cost || 0).toLocaleString('en-IN')}`} />
+                  <InfoRow label="Other" value={`₹${(ncr.other_cost || 0).toLocaleString('en-IN')}`} />
+                  <InfoRow label="Total" value={`₹${(ncr.cost_of_non_quality ?? 0).toLocaleString('en-IN')}`} />
+                </>
+              )}
               <InfoRow label="Closed" value={fmtDate(ncr.closed_at)} />
             </div>
           ) : (
             <>
-              {['major', 'critical'].includes(ncr.severity) && ncr.capa_ids.length === 0 && (
-                <p style={{ fontSize: 12.5, color: '#b45309', margin: 0 }}>
-                  This is a {ncr.severity} NCR — raise a CAPA against it in Quality → CAPA before closing (rule 6).
-                </p>
+              {ncr.closure_problem && (
+                <p style={{ fontSize: 12.5, color: '#b45309', margin: 0 }}>{ncr.closure_problem}</p>
               )}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-                {(['material_cost', 'rework_cost', 'other_cost'] as const).map((k) => (
-                  <div key={k} style={{ flex: '0 1 150px' }}>
-                    <Field label={`${k.replace('_cost', '')} cost (₹)`}><input type="number" min={0} style={inputStyle} value={costs[k]} onChange={(e) => setCosts({ ...costs, [k]: e.target.value })} /></Field>
-                  </div>
-                ))}
-                <div style={{ flex: '1 1 260px', maxWidth: 420 }}><Field label="Root cause"><input style={inputStyle} value={costs.root_cause} onChange={(e) => setCosts({ ...costs, root_cause: e.target.value })} /></Field></div>
-                <button type="button" disabled={busy} style={primaryBtnStyle}
-                  onClick={() => act('close', { material_cost: num(costs.material_cost), rework_cost: num(costs.rework_cost), other_cost: num(costs.other_cost), root_cause: costs.root_cause || null }, 'Failed to close the NCR.')}>
-                  Close NCR
-                </button>
-              </div>
+              {canClose
+                ? <div><button type="button" disabled={busy} style={primaryBtnStyle} onClick={() => openSheet('close')}>Close NCR</button></div>
+                : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Verified — waiting for a Quality head to record the cost and close the NCR.</p>}
             </>
           )}
         </Section>
+      )}
+      {sheet === 'propose' && (
+        <ActionSheet icon="flag" title={ncr.disposition_status === 'none' ? 'Propose disposition' : 'Re-propose disposition'} subtitle={`${ncr.ncr_number} · ${ncr.item_name} · ${fmtQty(ncr.quantity, ncr.uom)}`}
+          onClose={closeSheet} busy={busy} error={error} submitLabel="Propose" disabled={!propose.disposition_code_id}
+          onSubmit={() => act('propose-disposition', { disposition_code_id: Number(propose.disposition_code_id), remarks: propose.remarks || null,
+            customer_approval_required: propose.customer_approval_required, customer_approval_reference: propose.customer_approval_reference || null }, 'Failed to propose the disposition.')}>
+          <label style={sheetLabel}>Disposition <Req /></label>
+          <select style={sheetInput} value={propose.disposition_code_id} onChange={(e) => setPropose({ ...propose, disposition_code_id: e.target.value })} autoFocus>
+            <option value="">Select…</option>
+            {codes.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
+          </select>
+          {ncr.disposition_status !== 'none' && <p style={sheetHint}>Re-proposing restarts the approvals.</p>}
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks <Optional /></label>
+          <textarea style={{ ...sheetInput, minHeight: 60 }} value={propose.remarks} onChange={(e) => setPropose({ ...propose, remarks: e.target.value })} />
+          {selectedCode && ['use_as_is', 'repair'].includes(selectedCode.disposition_type) && (
+            <>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginTop: 14, cursor: 'pointer' }}>
+                <input type="checkbox" checked={propose.customer_approval_required} onChange={(e) => setPropose({ ...propose, customer_approval_required: e.target.checked })} />
+                Contract needs customer approval
+              </label>
+              {propose.customer_approval_required && (
+                <>
+                  <label style={{ ...sheetLabel, marginTop: 14 }}>Customer approval ref.</label>
+                  <input style={sheetInput} value={propose.customer_approval_reference} onChange={(e) => setPropose({ ...propose, customer_approval_reference: e.target.value })} />
+                </>
+              )}
+            </>
+          )}
+        </ActionSheet>
+      )}
+      {sheet === 'action' && (
+        <ActionSheet icon="check" title="Record action done" subtitle={`${ncr.ncr_number} · ${ncr.disposition_label || DISPOSITION_TYPE_LABELS[ncr.disposition_type || ''] || ''}`}
+          onClose={closeSheet} busy={busy} error={error} submitLabel="Record action done"
+          onSubmit={() => act('action', action, 'Failed to record the action.')}>
+          <label style={sheetLabel}>{ACTION_HINT[ncr.disposition_type || ''] || 'Document no.'} <Req /></label>
+          <input style={sheetInput} value={action.action_reference} onChange={(e) => setAction({ ...action, action_reference: e.target.value })} autoFocus />
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks <Optional /></label>
+          <textarea style={{ ...sheetInput, minHeight: 60 }} value={action.remarks} onChange={(e) => setAction({ ...action, remarks: e.target.value })} />
+          {ncr.disposition_type && ['rework', 'repair'].includes(ncr.disposition_type) && (
+            <p style={sheetHint}>Recording the action moves the Blocked quantity back to Quality stock and opens a re-inspection lot.</p>
+          )}
+        </ActionSheet>
+      )}
+      {sheet === 'verify' && (
+        <ActionSheet icon="shield" iconColor="#0891B2" title="Verify NCR" subtitle={`${ncr.ncr_number} · ${ncr.item_name}`}
+          onClose={closeSheet} busy={busy} error={error} submitLabel="Verify"
+          onSubmit={() => act('verify', { remarks: verifyRemarks || null }, 'Failed to verify.')}>
+          <label style={sheetLabel}>Verification remarks <Optional /></label>
+          <textarea style={{ ...sheetInput, minHeight: 70 }} value={verifyRemarks} onChange={(e) => setVerifyRemarks(e.target.value)} autoFocus />
+        </ActionSheet>
+      )}
+      {sheet === 'close' && (
+        <ActionSheet icon="rupee" iconColor="#16A34A" title="Close NCR" subtitle={`${ncr.ncr_number} · cost of non-quality`}
+          onClose={closeSheet} busy={busy} error={error} submitLabel="Close NCR" busyLabel="Closing…"
+          onSubmit={() => act('close', { material_cost: num(costs.material_cost), rework_cost: num(costs.rework_cost), other_cost: num(costs.other_cost), root_cause: costs.root_cause || null }, 'Failed to close the NCR.')}>
+          {ncr.closure_problem && <p style={{ fontSize: 12.5, color: '#b45309', margin: '0 0 12px' }}>{ncr.closure_problem}</p>}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            {(['material_cost', 'rework_cost', 'other_cost'] as const).map((k) => (
+              <div key={k} style={{ flex: '1 1 140px' }}>
+                <label style={{ ...sheetLabel, textTransform: 'capitalize' }}>{`${k.replace('_cost', '')} cost (₹)`}</label>
+                <input type="number" min={0} style={sheetInput} value={costs[k]} onChange={(e) => setCosts({ ...costs, [k]: e.target.value })} />
+              </div>
+            ))}
+          </div>
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Root cause <Optional /></label>
+          <textarea style={{ ...sheetInput, minHeight: 60 }} value={costs.root_cause} onChange={(e) => setCosts({ ...costs, root_cause: e.target.value })} />
+        </ActionSheet>
       )}
     </div>
   )

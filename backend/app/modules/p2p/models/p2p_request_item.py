@@ -5,13 +5,14 @@ from sqlalchemy import String, Integer, Float, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
+from app.modules.p2p.models.order_project_mixin import OrderProjectLineMixin
 
 if TYPE_CHECKING:
     from app.modules.p2p.models.p2p_request import P2PRequest
     from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
 
 
-class P2PRequestItem(Base, TimestampMixin):
+class P2PRequestItem(Base, TimestampMixin, OrderProjectLineMixin):
     """One item/part line within a P2PRequest — a requester can add multiple."""
 
     __tablename__ = "p2p_request_items"
@@ -19,6 +20,12 @@ class P2PRequestItem(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     p2p_request_id: Mapped[int] = mapped_column(Integer, ForeignKey("p2p_requests.id"), nullable=False)
 
+    # The line's real identity: the Item Master row it was picked from. The
+    # PO and GRN lines carry the same id forward, and stock posts against it.
+    # item_name / part_code / unit / category below are a snapshot of the
+    # master at PR time. Null only on lines raised before 2026-10-11 that the
+    # migration couldn't link.
+    store_item_id: Mapped[int | None] = mapped_column(ForeignKey("store_items.id"), nullable=True, index=True)
     item_name: Mapped[str] = mapped_column(String(255), nullable=False)
     make: Mapped[str | None] = mapped_column(String(100), nullable=True)
     part_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -47,7 +54,21 @@ class P2PRequestItem(Base, TimestampMixin):
     issued_qty: Mapped[float | None] = mapped_column(Float, nullable=True)
     material_issue_id: Mapped[int | None] = mapped_column(ForeignKey("store_material_issues.id"), nullable=True)
 
+    # Order Project link (2026-10-17): the vehicle / lot of the build-to-order
+    # project this line is bought for — required when the PR is charged to an order
+    # that has a project (p2p/order_project_links.py).
+    order_project_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    order_project_element_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    store_item = relationship("StoreItem")
+    order_project_element = relationship("OrderProjectElement", viewonly=True, lazy="select")
     p2p_request: Mapped["P2PRequest"] = relationship("P2PRequest", back_populates="items")
     attachments: Mapped[list["P2PRequestAttachment"]] = relationship(
         "P2PRequestAttachment", back_populates="item", cascade="all, delete-orphan"
     )
+
+    @property
+    def item_code(self) -> str | None:
+        return self.store_item.item_code if self.store_item is not None else None

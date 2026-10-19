@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRequireAdmin } from '@/hooks/useAuth'
+import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi } from '@/lib/api'
 import { AuditLogEntry, AuditDashboard } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
@@ -105,7 +105,7 @@ function MetaField({ label, value }: { label: string; value?: string | null }) {
 }
 
 export default function AuditLogsPage() {
-  const { isAuthorized, isLoading } = useRequireAdmin()
+  const { isAuthorized, isLoading } = useRequireOrgTab('audit_logs')
   const [dashboard, setDashboard] = useState<AuditDashboard | null>(null)
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
   const [loading, setLoading] = useState(true)

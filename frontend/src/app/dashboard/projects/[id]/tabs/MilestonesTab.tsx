@@ -1,216 +1,348 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { projectsApi } from '@/lib/api'
-import { PmProjectMilestone, PmProjectMilestoneInput, PmMilestoneStatus, PmProjectPhase } from '@/types'
-import { TEXT, GLASS, SHADOWS, BORDER, BRAND } from '@/lib/theme'
-import DateField from '@/components/erp/DateField'
-import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { PmProject, PmProjectMilestone, PmStartRule } from '@/types'
+import { TEXT } from '@/lib/theme'
+import { formatDate } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
 import { extractErrorMessages } from '@/lib/validation'
+import DateField from '@/components/erp/DateField'
+import SearchableSelect from '@/components/erp/SearchableSelect'
+import PeoplePicker, { useTeamCandidates } from '@/components/projects/work/PeoplePicker'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import PromptDialog from '@/components/erp/PromptDialog'
+import { recordPath } from '@/lib/recordRef'
+import {
+  ErrorBanner, FlagPill, Notice, MILESTONE_HEX, MILESTONE_LABELS, Pill, ProgressBar, actionBtn, sectionStyle,
+  tdStyle, thStyle, todayIso,
+} from '@/components/projects/work/pmUi'
+import { FormSheet, Optional, Req, SHEET, SheetColumns, SheetIcon, SheetSection, sheetBtn, sheetHint, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
+type Dept = { id: number; name: string; heads: string[]; has_head: boolean }
+type Form = { id?: number; title: string; department_id: string; lead_user_id: string; assistant_user_ids: number[]; target_date: string; deliverable: string; date_change_reason: string; original_target?: string; start_rule: PmStartRule; depends_on: string }
+const emptyForm = (): Form => ({ title: '', department_id: '', lead_user_id: '', assistant_user_ids: [], target_date: '', deliverable: '', date_change_reason: '', start_rule: 'after_previous', depends_on: '' })
+
+// When a step may start. Most run top to bottom; some overlap (purchase and
+// production start while design is still changing).
+const START_RULES: { value: PmStartRule; label: string }[] = [
+  { value: 'after_previous', label: 'After all steps above are achieved' },
+  { value: 'with_previous', label: 'Together with the step above (parallel)' },
+  { value: 'after_step_started', label: 'Once a chosen step has started (overlap)' },
+  { value: 'after_step_done', label: 'After a chosen step is achieved' },
+]
+const needsStep = (r: PmStartRule) => r === 'after_step_started' || r === 'after_step_done'
+const ruleBadge = (m: PmProjectMilestone): { text: string; color: string } | null => {
+  if (m.start_rule === 'with_previous') return { text: '∥ parallel with step above', color: '#0891b2' }
+  if (m.start_rule === 'after_step_started') return { text: `↗ once step ${m.depends_on_sequence ?? '?'} starts`, color: '#7c3aed' }
+  if (m.start_rule === 'after_step_done') return { text: `after step ${m.depends_on_sequence ?? '?'} only`, color: '#4338ca' }
+  return null
 }
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
 
-const STATUS_LABELS: Record<string, string> = { pending: 'Pending', achieved: 'Achieved', missed: 'Missed' }
-const STATUS_HEX: Record<string, string> = { pending: '#64748b', achieved: '#16a34a', missed: '#dc2626' }
-
-function StatusPill({ value }: { value: string }) {
-  const color = STATUS_HEX[value] || '#64748b'
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${color}1a`, color, whiteSpace: 'nowrap' }}>
-      {STATUS_LABELS[value] || value}
-    </span>
-  )
-}
-
-function emptyMilestone(): PmProjectMilestoneInput & { phase_id_str: string } {
-  return { title: '', description: '', target_date: '', status: 'pending', phase_id_str: '' }
-}
-
-export default function MilestonesTab({ projectId }: { projectId: number }) {
-  const [milestones, setMilestones] = useState<PmProjectMilestone[]>([])
-  const [phases, setPhases] = useState<PmProjectPhase[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | string[]>('')
-
-  const [filterStatus, setFilterStatus] = useState('')
-
-  const [showAdd, setShowAdd] = useState(false)
-  const [newMilestone, setNewMilestone] = useState(emptyMilestone())
+/** Management lays the milestones out as a chain (R&D → Design → Purchase →
+ * Production → Quality …), added one by one for each project.
+ * Each step has a department, a lead who represents it (plans and assigns
+ * tasks) and assistants, and a start rule: after the steps above (default),
+ * in parallel with the step above, or overlapping a chosen step once it has
+ * started. Management moves dates with a reason and accepts or rejects what
+ * departments submit. */
+export default function MilestonesTab({ project, onChange }: { project: PmProject; onChange: () => void }) {
+  const [rows, setRows] = useState<PmProjectMilestone[]>([])
+  const [depts, setDepts] = useState<Dept[]>([])
+  const [form, setForm] = useState<Form | null>(null)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | string[]>('')
+  const [info, setInfo] = useState('')
+  const [acceptFor, setAcceptFor] = useState<PmProjectMilestone | null>(null)
+  const [acceptDate, setAcceptDate] = useState(todayIso())
+  const [reasonFor, setReasonFor] = useState<{ m: PmProjectMilestone; kind: 'reject' | 'cancel' } | null>(null)
+  const [deleteFor, setDeleteFor] = useState<PmProjectMilestone | null>(null)
 
-  const [deleteTarget, setDeleteTarget] = useState<PmProjectMilestone | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const { user, can, canDelete } = useCan()
+  const open = project.can_manage && ['planning', 'active', 'on_hold'].includes(project.status)
+  // The project's own manager always runs its WBS (add / edit / delete),
+  // without needing the Milestones grants in the Permission Matrix.
+  const isPm = !!user && project.project_manager_id === user.id
+  const editable = open && (isPm || can('projects', 'milestones', 'edit'))
+  const creatable = open && (isPm || can('projects', 'milestones', 'create'))
+  // Milestones carry no creator id, so only 'Delete' on the tab is checked.
+  const deletable = open && (isPm || canDelete('projects', 'milestones', null))
 
-  const load = () => {
-    setLoading(true)
-    const params: Record<string, unknown> = {}
-    if (filterStatus) params.status = filterStatus
-    projectsApi.listMilestones(projectId, params)
-      .then((data) => setMilestones(Array.isArray(data) ? data : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load milestones.')))
-      .finally(() => setLoading(false))
+  const load = useCallback(() => {
+    projectsApi.milestones(project.id).then((d) => setRows(Array.isArray(d) ? d : [])).catch((err) => setError(extractErrorMessages(err, 'Failed to load WBS elements.')))
+  }, [project.id])
+  useEffect(() => { load() }, [load])
+  useEffect(() => { projectsApi.departments().then(setDepts).catch(() => setDepts([])) }, [])
+
+  const candidates = useTeamCandidates(form?.department_id ? Number(form.department_id) : null)
+  const done = () => { load(); onChange() }
+  const act = async (fn: () => Promise<unknown>, fallback: string) => {
+    setError('')
+    setInfo('')
+    try { await fn(); done() } catch (err) { setError(extractErrorMessages(err, fallback)) }
   }
 
-  useEffect(() => { load() }, [projectId, filterStatus])
-
-  useEffect(() => {
-    projectsApi.listPhases(projectId).then((data) => setPhases(Array.isArray(data) ? data : [])).catch(() => {})
-  }, [projectId])
-
-  const phaseName = (phaseId?: number) => phases.find((p) => p.id === phaseId)?.name || '—'
-
-  const handleAdd = async () => {
-    setError('')
-    if (!newMilestone.title.trim()) { setError('Milestone title is required.'); return }
+  const save = async () => {
+    if (!form) return
+    const missing: string[] = []
+    if (!form.title.trim()) missing.push('WBS name is required.')
+    if (!form.department_id) missing.push('Department is required.')
+    if (!form.lead_user_id) missing.push('Pick the WBS lead — the person who represents the department and plans its tasks.')
+    if (!form.target_date) missing.push('Target date is required.')
+    if (!form.deliverable.trim()) missing.push('Deliverable / completion criteria is required — it is how everyone agrees the WBS is done.')
+    else if (form.deliverable.trim().length < 10) missing.push("Describe the deliverable in at least 10 characters — what is handed over and how it is judged done (e.g. 'Signed GA drawing + BOM').")
+    if (needsStep(form.start_rule) && !form.depends_on) missing.push('Pick the step this WBS waits for.')
+    const moved = form.id && form.original_target && form.target_date !== form.original_target
+    if (moved && project.status !== 'planning' && !form.date_change_reason.trim()) missing.push('Give a reason for moving the target date — the department committed to the old date.')
+    if (missing.length) { setError(missing); return }
     setSaving(true)
+    setError('')
+    const payload: Record<string, unknown> = {
+      title: form.title.trim(), department_id: Number(form.department_id), target_date: form.target_date,
+      deliverable: form.deliverable.trim(), lead_user_id: Number(form.lead_user_id),
+      assistant_user_ids: form.assistant_user_ids.filter((i) => i !== Number(form.lead_user_id)),
+      start_rule: form.start_rule,
+      depends_on_milestone_id: needsStep(form.start_rule) && form.depends_on ? Number(form.depends_on) : null,
+    }
+    if (moved) payload.date_change_reason = form.date_change_reason.trim()
     try {
-      await projectsApi.createMilestone(projectId, {
-        title: newMilestone.title.trim(),
-        description: newMilestone.description?.trim() || undefined,
-        phase_id: newMilestone.phase_id_str ? Number(newMilestone.phase_id_str) : undefined,
-        target_date: newMilestone.target_date || undefined,
-        status: newMilestone.status,
-      })
-      setNewMilestone(emptyMilestone())
-      setShowAdd(false)
-      load()
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to add milestone.'))
+      if (form.id) await projectsApi.updateMilestone(project.id, form.id, payload)
+      else await projectsApi.createMilestone(project.id, payload)
+      setForm(null)
+      done()
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not save the WBS.'))
     } finally {
       setSaving(false)
     }
   }
 
-  const updateStatus = async (milestone: PmProjectMilestone, status: string) => {
-    setError('')
-    try {
-      const updated = await projectsApi.updateMilestone(projectId, milestone.id, { status })
-      setMilestones((prev) => prev.map((m) => (m.id === milestone.id ? updated : m)))
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to update milestone.'))
-    }
-  }
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return
-    setDeleting(true)
-    try {
-      await projectsApi.deleteMilestone(projectId, deleteTarget.id)
-      setDeleteTarget(null)
-      load()
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to delete milestone.'))
-    } finally {
-      setDeleting(false)
-    }
-  }
+  const edit = (m: PmProjectMilestone) => setForm({
+    id: m.id, title: m.title, department_id: m.department_id ? String(m.department_id) : '', target_date: m.target_date,
+    lead_user_id: m.lead_user_id ? String(m.lead_user_id) : '', assistant_user_ids: m.assistant_user_ids || [],
+    deliverable: m.deliverable || '', date_change_reason: '', original_target: m.target_date,
+    start_rule: m.start_rule || 'after_previous', depends_on: m.depends_on_milestone_id ? String(m.depends_on_milestone_id) : '',
+  })
+  const move = (m: PmProjectMilestone, dir: 'up' | 'down') => act(() => projectsApi.moveMilestone(project.id, m.id, dir), 'Could not move the WBS.')
+  const movable = (m: PmProjectMilestone) => m.status === 'not_started' 
 
   return (
-    <div>
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
+    <div data-tour="pm-ms-section" style={sectionStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }}>WBS</h2>
+          <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '2px 0 0' }}>Steps run top to bottom unless their start rule says otherwise — a step can run in parallel with the one above, or overlap a chosen step once it has started. Each step&apos;s lead turns it into tasks for the team once the project is started.</p>
+        </div>
+        {creatable && !form && <button data-tour="pm-ms-add-btn" type="button" onClick={() => setForm(emptyForm())} style={actionBtn('primary')}>+ Add WBS</button>}
+      </div>
+      {!form && <ErrorBanner error={error} />}
+      {info && <div style={{ marginBottom: 12 }}><Notice tone="info">{info}</Notice></div>}
+
+      {form && (
+        <FormSheet icon={form.id ? 'edit' : 'flag'} title={form.id ? 'Edit WBS' : 'Add WBS'} subtitle={`${project.project_code} · ${project.name}`}
+          onClose={() => { setForm(null); setError('') }} busy={saving}
+          footer={<>
+            <button data-tour="pm-ms-form-cancel" type="button" onClick={() => { setForm(null); setError('') }} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+            <button data-tour="pm-ms-form-save" type="button" onClick={save} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name={form.id ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : form.id ? 'Save' : 'Add WBS'}</button>
+          </>}>
+          <SheetColumns
+            left={<>
+              <ErrorBanner error={error} />
+              <SheetSection icon="list" title="Basic Information">
+                <div data-tour="pm-ms-form-title">
+                  <label style={sheetLabel}>WBS name <Req /></label>
+                  <input style={sheetInput} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. GA drawing released — name the outcome, not the department" autoFocus />
+                </div>
+                <div data-tour="pm-ms-form-deliverable" style={{ marginTop: 14 }}>
+                  <label style={sheetLabel}>Deliverable / completion criteria <Req /></label>
+                  <textarea style={{ ...sheetInput, minHeight: 72, resize: 'vertical' }} value={form.deliverable} onChange={(e) => setForm({ ...form, deliverable: e.target.value })} placeholder="What must be handed over, and how it will be judged done (e.g. signed GA drawing + BOM)" />
+                </div>
+              </SheetSection>
+              <SheetSection icon="calendar" title="Department & Schedule">
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  <div data-tour="pm-ms-form-dept" style={{ flex: '1 1 220px', maxWidth: 320 }}>
+                    <label style={sheetLabel}>Department <Req /></label>
+                    <select style={sheetInput} value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}>
+                      <option value="">Select…</option>
+                      {depts.map((d) => <option key={d.id} value={d.id}>{d.name}{d.has_head ? ` — head ${d.heads.join(', ')}` : ''}</option>)}
+                    </select>
+                  </div>
+                  <div data-tour="pm-ms-form-target" style={{ flex: '0 1 170px', minWidth: 150 }}>
+                    <label style={sheetLabel}>Target date <Req /></label>
+                    <DateField value={form.target_date} onChange={(v) => setForm({ ...form, target_date: v })} />
+                  </div>
+                </div>
+                {form.id && form.original_target && form.target_date !== form.original_target && project.status !== 'planning' && (
+                  <div data-tour="pm-ms-form-reason" style={{ marginTop: 14 }}>
+                    <label style={sheetLabel}>Reason for moving the date <Req /></label>
+                    <input style={sheetInput} value={form.date_change_reason} onChange={(e) => setForm({ ...form, date_change_reason: e.target.value })} />
+                    <p style={sheetHint}>Was {formatDate(form.original_target)}; the original date is kept.</p>
+                  </div>
+                )}
+              </SheetSection>
+            </>}
+            right={<>
+              <SheetSection icon="users" title="Team">
+                <div data-tour="pm-ms-form-lead">
+                  <label style={sheetLabel}>Lead (head for this WBS) <Req /></label>
+                  <SearchableSelect
+                    value={form.lead_user_id}
+                    onChange={(v) => setForm({ ...form, lead_user_id: v, assistant_user_ids: form.assistant_user_ids.filter((i) => i !== Number(v)) })}
+                    options={candidates.map((c) => ({ value: String(c.id), label: `${c.name}${c.sub ? ` — ${c.sub}` : ''}` }))}
+                    placeholder={form.department_id ? 'Who represents the department?' : 'Pick the department first'}
+                  />
+                  <p style={sheetHint}>Plans and assigns the tasks, submits the WBS.</p>
+                </div>
+                <div data-tour="pm-ms-form-assistants" style={{ marginTop: 14 }}>
+                  <label style={sheetLabel}>Assistants <Optional /></label>
+                  <PeoplePicker people={candidates} value={form.assistant_user_ids} exclude={form.lead_user_id ? [Number(form.lead_user_id)] : []}
+                    onChange={(ids) => setForm({ ...form, assistant_user_ids: ids })} placeholder="Type a name to add…" />
+                  <p style={sheetHint}>See their own tasks and the team chat; can add their own tasks.</p>
+                </div>
+              </SheetSection>
+              <SheetSection icon="right" title="Start rule">
+                <div data-tour="pm-ms-form-start-rule">
+                  <label style={sheetLabel}>Starts</label>
+                  <select style={sheetInput} value={form.start_rule} onChange={(e) => setForm({ ...form, start_rule: e.target.value as PmStartRule })}>
+                    {START_RULES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                </div>
+                {needsStep(form.start_rule) && (
+                  <div data-tour="pm-ms-form-waits-for" style={{ marginTop: 14 }}>
+                    <label style={sheetLabel}>{form.start_rule === 'after_step_started' ? 'Can start once this step has started' : 'Waits for this step to be achieved'} <Req /></label>
+                    <select style={sheetInput} value={form.depends_on} onChange={(e) => setForm({ ...form, depends_on: e.target.value })}>
+                      <option value="">Select step…</option>
+                      {rows.filter((r) => r.id !== form.id && r.status !== 'cancelled').map((r) => <option key={r.id} value={r.id}>Step {r.sequence}: {r.title}</option>)}
+                    </select>
+                  </div>
+                )}
+              </SheetSection>
+            </>}
+          />
+        </FormSheet>
+      )}
+
+      {rows.length === 0 ? (
+        <div style={{ padding: 14, borderRadius: 12, background: 'rgba(99,102,241,0.05)', border: '1px dashed rgba(99,102,241,0.35)' }}>
+          <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>
+            No WBS elements yet. Use &quot;+ Add WBS&quot; to lay out the steps this project needs.
+          </p>
+        </div>
+      ) : (
+        <div data-tour="pm-ms-table" style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
+            <thead><tr>{['WBS no.', 'WBS', 'Department / team', 'Target', 'Status', 'Progress', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+            <tbody>
+              {rows.map((m, i) => (
+                <tr key={m.id} style={{ opacity: m.status === 'cancelled' ? 0.55 : 1 }}>
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                    <span style={{ display: 'inline-flex', width: 26, height: 26, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, background: m.status === 'achieved' ? '#16a34a1a' : 'rgba(99,102,241,0.1)', color: m.status === 'achieved' ? '#16a34a' : '#4338ca' }}>{m.sequence || i + 1}</span>
+                    {editable && movable(m) && (
+                      <span style={{ display: 'inline-flex', flexDirection: 'column', marginLeft: 4, verticalAlign: 'middle' }}>
+                        {i > 0 && movable(rows[i - 1]) && <button type="button" title="Move up" onClick={() => move(m, 'up')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 10, padding: 0, color: TEXT.muted }}>▲</button>}
+                        {i < rows.length - 1 && movable(rows[i + 1]) && <button type="button" title="Move down" onClick={() => move(m, 'down')} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 10, padding: 0, color: TEXT.muted }}>▼</button>}
+                      </span>
+                    )}
+                  </td>
+                  <td style={tdStyle}>
+                    <Link href={recordPath('/dashboard/projects/milestones', m)} style={{ fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}>{m.title}</Link>
+                    {ruleBadge(m) && <div style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 9999, margin: '2px 0', color: ruleBadge(m)!.color, background: `${ruleBadge(m)!.color}14` }}>{ruleBadge(m)!.text}</div>}
+                    <div style={{ fontSize: 12, color: TEXT.muted, whiteSpace: 'pre-wrap' }}>{m.deliverable}</div>
+                    {m.status === 'submitted' && m.submission_note && <div style={{ fontSize: 12, color: '#b45309', marginTop: 4 }}>Submitted: {m.submission_note} ({m.evidence_count} file(s))</div>}
+                    {m.return_reason && m.status === 'in_progress' && <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 4 }}>Rejected: {m.return_reason}</div>}
+                    {m.cancel_reason && <div style={{ fontSize: 12, color: TEXT.muted, marginTop: 4 }}>Cancelled: {m.cancel_reason}</div>}
+                  </td>
+                  <td style={tdStyle}>
+                    {m.department_name || '—'}
+                    <div style={{ fontSize: 12, color: TEXT.secondary }}>Lead: {m.lead_name || <span style={{ color: '#b45309' }}>not set</span>}</div>
+                    {m.assistants.length > 0 && <div style={{ fontSize: 11.5, color: TEXT.muted }}>+ {m.assistants.map((a) => a.name).join(', ')}</div>}
+                  </td>
+                  <td style={tdStyle}>
+                    {formatDate(m.target_date)}
+                    {m.original_target_date && <div style={{ fontSize: 11.5, color: TEXT.muted }}>originally {formatDate(m.original_target_date)}</div>}
+                    {m.actual_date && <div style={{ fontSize: 11.5, color: '#16a34a' }}>achieved {formatDate(m.actual_date)}</div>}
+                  </td>
+                  <td style={tdStyle}>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <Pill value={m.status} labels={MILESTONE_LABELS} hex={MILESTONE_HEX} />
+                      {m.is_overdue && <FlagPill text="Overdue" color="#dc2626" />}
+                      {m.is_at_risk && <FlagPill text="At risk" color="#f59e0b" />}
+                      {m.is_locked && <FlagPill text="Locked" color="#64748b" />}
+                    </div>
+                    {m.is_locked && <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 4 }}>Waits for {m.waiting_reason || `step ${m.waiting_for_sequence}: ${m.waiting_for_title}`}</div>}
+                  </td>
+                  <td style={tdStyle}><ProgressBar value={m.progress_percent} width={60} /><div style={{ fontSize: 11.5, color: TEXT.muted }}>{m.tasks_done}/{m.task_count} tasks</div></td>
+                  <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                    {editable && m.status === 'submitted' && (
+                      <>
+                        <button type="button" onClick={() => { setAcceptDate(todayIso()); setAcceptFor(m) }} style={{ ...actionBtn('primary'), padding: '5px 10px', marginRight: 6 }}>Accept</button>
+                        <button type="button" onClick={() => setReasonFor({ m, kind: 'reject' })} style={{ ...actionBtn('danger'), padding: '5px 10px', marginRight: 6 }}>Reject</button>
+                      </>
+                    )}
+                    {editable && !['achieved', 'cancelled'].includes(m.status) && (
+                      <>
+                        <button type="button" onClick={() => edit(m)} style={{ ...actionBtn('secondary'), padding: '5px 10px', marginRight: 6 }}>Edit</button>
+                        {m.status !== 'submitted' && <button type="button" onClick={() => setReasonFor({ m, kind: 'cancel' })} style={{ ...actionBtn('danger'), padding: '5px 10px', marginRight: 6 }}>Cancel</button>}
+                        {deletable && m.status === 'not_started' && m.task_count === 0 && (
+                          <button type="button" onClick={() => setDeleteFor(m)} title="Only works while no task (not even a cancelled one) was ever created — otherwise use Cancel" style={{ ...actionBtn('danger'), padding: '5px 10px' }}>Delete</button>
+                        )}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      <div style={sectionStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Milestones</h2>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <select style={{ ...inputStyle, width: 150 }} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-              <option value="">All Statuses</option>
-              {Object.keys(STATUS_LABELS).map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-            </select>
-            <button
-              onClick={() => setShowAdd((s) => !s)}
-              type="button"
-              style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${BRAND.primaryBorder}`, background: BRAND.primarySoft, color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
-            >
-              {showAdd ? 'Cancel' : '+ Add Milestone'}
-            </button>
-          </div>
-        </div>
-
-        {showAdd && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 18, paddingBottom: 18, borderBottom: `1px solid ${BORDER.normal}` }}>
-            <div style={{ flex: '1 1 240px', minWidth: 220 }}>
-              <label style={labelStyle}>Title *</label>
-              <input style={inputStyle} value={newMilestone.title} onChange={(e) => setNewMilestone({ ...newMilestone, title: e.target.value })} />
-            </div>
-            <div style={{ flex: '1 1 240px', minWidth: 220 }}>
-              <label style={labelStyle}>Description</label>
-              <input style={inputStyle} value={newMilestone.description || ''} onChange={(e) => setNewMilestone({ ...newMilestone, description: e.target.value })} />
-            </div>
-            <div style={{ flex: '0 1 200px', minWidth: 180 }}>
-              <label style={labelStyle}>Phase</label>
-              <select style={inputStyle} value={newMilestone.phase_id_str} onChange={(e) => setNewMilestone({ ...newMilestone, phase_id_str: e.target.value })}>
-                <option value="">None</option>
-                {phases.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-            <div style={{ flex: '0 1 160px', minWidth: 150 }}>
-              <label style={labelStyle}>Target Date</label>
-              <DateField value={newMilestone.target_date || ''} onChange={(v) => setNewMilestone({ ...newMilestone, target_date: v })} />
-            </div>
-            <div style={{ flex: '0 0 auto', alignSelf: 'flex-end' }}>
-              <button
-                onClick={handleAdd}
-                disabled={saving}
-                type="button"
-                style={{ padding: '10px 20px', borderRadius: 10, border: 'none', cursor: saving ? 'not-allowed' : 'pointer', background: '#6366f1', color: '#fff', fontSize: 13, fontWeight: 600, opacity: saving ? 0.6 : 1 }}
-              >
-                {saving ? 'Saving…' : 'Save Milestone'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {loading ? (
-          <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>
-        ) : milestones.length === 0 ? (
-          <p style={{ fontSize: 13, color: TEXT.muted }}>No milestones yet.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {milestones.map((m) => (
-              <div key={m.id} style={{ padding: '14px 16px', borderRadius: 12, background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.light}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 700, color: TEXT.heading }}>{m.title}</span>
-                      <StatusPill value={m.status} />
-                    </div>
-                    <p style={{ fontSize: 12, color: TEXT.muted, margin: 0 }}>
-                      Phase: {phaseName(m.phase_id)} · Target: {m.target_date || '—'}
-                      {m.actual_date && <> · Actual: {m.actual_date}</>}
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    <select style={{ ...inputStyle, width: 140, padding: '6px 8px' }} value={m.status} onChange={(e) => updateStatus(m, e.target.value)}>
-                      {Object.keys(STATUS_LABELS).map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-                    </select>
-                    <span onClick={() => setDeleteTarget(m)} style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', cursor: 'pointer' }}>Delete</span>
-                  </div>
-                </div>
+      {acceptFor && (
+        <FormSheet width={580} icon="check" iconColor="#16a34a" title="Accept WBS" subtitle={`Accept '${acceptFor.title}' as achieved.`} onClose={() => setAcceptFor(null)} busy={false}
+          footer={<>
+            <button type="button" onClick={() => setAcceptFor(null)} style={sheetBtn('secondary', SHEET.INK)}>Cancel</button>
+            <button type="button" onClick={() => { const m = acceptFor; setAcceptFor(null); act(() => projectsApi.acceptMilestone(project.id, m.id, acceptDate), 'Could not accept the WBS.') }} style={sheetBtn('primary', '#16a34a')}><SheetIcon name="check" size={16} />Accept</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {acceptFor.submission_note && (
+              <SheetSection icon="doc" title="Submission">
+                <p style={{ fontSize: 13, color: SHEET.BODY, margin: 0, whiteSpace: 'pre-wrap' }}>{acceptFor.submission_note}</p>
+              </SheetSection>
+            )}
+            <SheetSection icon="calendar" title="Achievement">
+              <div style={{ maxWidth: 200 }}>
+                <label style={sheetLabel}>Actual date achieved</label>
+                <DateField value={acceptDate} onChange={setAcceptDate} />
               </div>
-            ))}
+            </SheetSection>
           </div>
-        )}
-      </div>
-
+        </FormSheet>
+      )}
+      <PromptDialog
+        open={!!reasonFor}
+        title={reasonFor?.kind === 'reject' ? `Reject "${reasonFor?.m.title}"?` : `Cancel "${reasonFor?.m.title}"?`}
+        message={reasonFor?.kind === 'reject' ? 'Say what is missing or wrong — the department head sees this and the WBS goes back to In progress.' : 'Why is this WBS no longer needed? Its open tasks are cancelled too.'}
+        confirmLabel={reasonFor?.kind === 'reject' ? 'Reject' : 'Cancel WBS'}
+        danger
+        requireValue
+        onConfirm={(v) => {
+          const r = reasonFor!
+          setReasonFor(null)
+          act(() => r.kind === 'reject' ? projectsApi.rejectMilestone(project.id, r.m.id, v) : projectsApi.cancelMilestone(project.id, r.m.id, v), 'Could not update the WBS.')
+        }}
+        onCancel={() => setReasonFor(null)}
+      />
       <ConfirmDialog
-        open={!!deleteTarget}
-        title="Delete this milestone?"
-        message={`Delete milestone "${deleteTarget?.title}"? This action cannot be undone.`}
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteTarget(null)}
+        open={!!deleteFor}
+        title="Delete this WBS?"
+        message={deleteFor ? `Delete "${deleteFor.title}"? No work has been recorded on it yet.` : ''}
+        confirmLabel="Delete"
+        onConfirm={() => { const m = deleteFor!; setDeleteFor(null); act(async () => {
+          // The server re-points WBS elements that waited for this one and says which.
+          const res = await projectsApi.deleteMilestone(project.id, m.id) as { message?: string }
+          if (res?.message && res.message !== 'WBS deleted') setInfo(res.message)
+        }, 'Could not delete the WBS.') }}
+        onCancel={() => setDeleteFor(null)}
       />
     </div>
   )

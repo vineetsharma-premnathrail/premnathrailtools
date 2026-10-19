@@ -4,9 +4,10 @@ import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
+import { getHistoryFromLink } from '@/components/rnd/historyLink'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
-import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob } from '@/components/rnd/toolStyles'
+import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface LoadDistResult {
@@ -67,7 +68,7 @@ function LoadDistributionPageInner() {
     if (!isAuthorized) return
     const loadId = searchParams.get('load')
     if (!loadId) return
-    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+    getHistoryFromLink(loadId).then((detail) => {
       const i = detail.inputs as Record<string, any>
       if (i.config_type != null) setConfigType(i.config_type)
       if (i.total_load != null) setTotalLoad(String(i.total_load))
@@ -81,7 +82,7 @@ function LoadDistributionPageInner() {
         q1_percent: Number(i.q1_percent),
         q3_percent: Number(i.q3_percent),
       })
-    }).catch(() => setError('Could not load the saved calculation.'))
+    }).catch((err) => setError(extractErrorMessages(err, 'Could not load the saved calculation — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
@@ -108,8 +109,8 @@ function LoadDistributionPageInner() {
       if (!isFromHistory) {
         rndApi.saveHistory({ tool_name: 'load_distribution', inputs: p, results: data.results, calculation_name: `Load Dist. ${p.total_load}T` }).catch(() => {})
       }
-    } catch {
-      setError('Calculation failed. Check your inputs.')
+    } catch (err) {
+      setError(await getErrorMessage(err, 'Calculation failed. Check your inputs.'))
     } finally {
       setBusy(false)
     }
@@ -131,7 +132,7 @@ function LoadDistributionPageInner() {
   const downloadDocx = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadLoadDistributionReport(payload()), 'Load_Distribution_Report.docx') }
-    catch (err) { setError(extractErrorMessages(err, 'Report generation failed.').join(' ')) } finally { setBusy(false) }
+    catch (err) { setError(await getErrorMessage(err, 'Report generation failed.')) } finally { setBusy(false) }
   }
 
   const importCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -166,16 +167,16 @@ function LoadDistributionPageInner() {
           <p style={{ fontSize: 11.5, color: '#64748b', margin: '4px 0 0' }}>Wheel load analysis · UIC 518 / EN 14363 · ΔQ/Q safety check</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
-          <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
-          <a href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
+          <button data-tour="rnd-load-csv-btn" onClick={exportCsv} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
+          <button data-tour="rnd-load-docx-btn" onClick={downloadDocx} disabled={busy} style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
+          <a data-tour="rnd-load-history-btn" href="/dashboard/rnd/history" style={{ padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>History</a>
         </div>
       </div>
 
       <div className="rnd-main-grid" style={{ display: 'grid', gridTemplateColumns: '280px 1fr 300px', gap: 12, alignItems: 'start' }}>
         {/* Left: inputs */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-load-config" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Configuration Mode</span></div>
             <div style={cardBodyStyle}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -197,24 +198,24 @@ function LoadDistributionPageInner() {
           <div style={cardStyle}>
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Vehicle &amp; Load Data</span>
-              <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+              <label data-tour="rnd-load-csv" style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                 Import CSV
                 <input type="file" accept=".csv" onChange={importCsv} style={{ display: 'none' }} />
               </label>
             </div>
             <div style={cardBodyStyle}>
-              <div><label style={labelStyle}>Total Load (Ton)</label><input style={inputStyle} type="number" step="0.1" value={totalLoad} onChange={(e) => setTotalLoad(e.target.value)} /></div>
-              <div>
+              <div data-tour="rnd-load-total"><label style={labelStyle}>Total Load (Ton)</label><input style={inputStyle} type="number" step="0.1" value={totalLoad} onChange={(e) => setTotalLoad(e.target.value)} /></div>
+              <div data-tour="rnd-load-front">
                 <label style={labelStyle}>Front Load (%)</label>
                 <input style={inputStyle} type="number" step="0.1" min={0} max={100} value={frontPercent} onChange={(e) => setFrontPercent(e.target.value)} />
                 <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '4px 0 0' }}>Rear = 100% − Front%</p>
               </div>
-              <div>
+              <div data-tour="rnd-load-q1">
                 <label style={{ ...labelStyle, color: '#c2410c' }}>Q1 (% of Front Load)</label>
                 <input style={{ ...inputStyle, borderColor: '#fed7aa' }} type="number" step="0.1" min={0} max={100} value={q1Percent} onChange={(e) => setQ1Percent(e.target.value)} />
                 <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '4px 0 0' }}>Q2 = Front − Q1</p>
               </div>
-              <div>
+              <div data-tour="rnd-load-q3">
                 <label style={labelStyle}>Q3 (% of Rear Load)</label>
                 <input style={inputStyle} type="number" step="0.1" min={0} max={100} value={q3Percent} onChange={(e) => setQ3Percent(e.target.value)} />
                 <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '4px 0 0' }}>Q4 = Rear − Q3</p>
@@ -223,12 +224,12 @@ function LoadDistributionPageInner() {
           </div>
 
           {error && <p style={{ fontSize: 12, color: '#dc2626', margin: 0 }}>{error}</p>}
-          <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Calculate'}</button>
+          <button data-tour="rnd-load-calculate-btn" onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Calculate'}</button>
         </div>
 
         {/* Center: wheel load distribution + terminal */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-load-result" style={cardStyle}>
             <div style={{ ...cardHeaderStyle, background: '#1e293b', borderBottom: 'none' }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f97316', boxShadow: '0 0 6px #f97316' }} />
               <span style={{ ...cardTitleStyle, color: '#fff' }}>Wheel Load Distribution</span>
@@ -265,7 +266,7 @@ function LoadDistributionPageInner() {
 
         {/* Right: formula reference + Q summary */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-load-formula" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Formula Reference</span></div>
             <div style={{ padding: 16 }}>
               <div style={{ padding: 12, borderRadius: 8, background: '#f8fafc', fontFamily: 'monospace', fontSize: 11.5, color: '#334155', lineHeight: 1.8 }}>
@@ -292,7 +293,7 @@ function LoadDistributionPageInner() {
             </div>
           </div>
 
-          <div style={cardStyle}>
+          <div data-tour="rnd-load-q-summary" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Q Values Summary</span></div>
             <div style={{ padding: 16 }}>
               {!r ? (

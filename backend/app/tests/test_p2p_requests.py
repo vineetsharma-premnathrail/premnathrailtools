@@ -12,6 +12,7 @@ from sqlalchemy.orm import object_session
 
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
+from app.tests.p2p_workflow_helpers import link_items, master_item, set_po_workflow, set_pr_workflow
 
 BASE = "/api/v1/p2p/requests"
 _seq = count(1)
@@ -26,10 +27,28 @@ def _sqlite_number_series(monkeypatch):
     monkeypatch.setattr("app.modules.p2p.service._lock_number_series", lambda db, prefix: None)
 
 
+# RBAC (2026-10-08): a Purchase-team user holds the `purchase` desk AND the
+# Procurement tabs (p2p) AND Store › GRN & Inspection — the `purchase` app
+# alone no longer opens requisitions, RFQs, POs or GRNs.
+def _apps(apps):
+    apps = list(apps)
+    if "purchase" in apps and "p2p" not in apps:
+        apps.append("p2p")
+    return apps
+
+
+def _grants(apps):
+    if not apps:
+        # A named PR / PO approver from another department: their role gives
+        # them only 'View' on the two tabs; the routing lets them approve.
+        return ["p2p:purchase_requisitions:view", "p2p:purchase_orders:view"]
+    return ["store:grn:view", "store:grn:create", "store:grn:approve"] if "purchase" in apps else []
+
+
 def make_user(db, email, role="user", assigned_apps=(), department=None, **flags):
     user = User(
         email=email, name=email.split("@")[0], role=role, is_active=True,
-        assigned_apps=list(assigned_apps), department=department,
+        assigned_apps=_apps(assigned_apps), granular_permissions=_grants(assigned_apps), department=department,
     )
     for flag, value in flags.items():
         setattr(user, flag, value)
@@ -52,9 +71,10 @@ def _purchaser(db, email="buyer1@premnathrail.com"):
     return make_user(db, email, assigned_apps=("purchase",))
 
 
-# Manager-role approval matrix: a "new project" PR needs one named R&D,
-# Production and Store Manager, all of whom must approve (see
-# PR_APPROVAL_ROLE_SETS). Each PR gets its own freshly flagged approvers.
+# Approvals run on the central approval engine (p2p/approvals.py). Each PR
+# gets three fresh approvers — the "Purchase requisition" workflow is pointed
+# at them (all must approve) just before it is raised; the role keys are only
+# labels the tests use to pick one of them.
 _PR_ROLE_FLAGS = {"rnd_manager": "is_rnd_manager", "production_manager": "is_production_manager", "store_manager": "is_store_manager"}
 
 
@@ -80,9 +100,10 @@ def _create_payload(**overrides):
 
 
 def _create_pr(client, requester, **overrides):
-    """Raise a PR under the matrix with freshly flagged approvers. The
-    approver User objects ride along on the response as `_approvers` so a
-    test can act as them."""
+    """Raise a PR whose approval goes to three fresh approvers (all must
+    approve). The approver User objects ride along on the response as
+    `_approvers` (and the PO approvers used when its PO is raised as
+    `_po_approvers`) so a test can act as them."""
     db = object_session(requester)
     approvers = _pr_approvers(db)
     n = next(_seq)
@@ -90,12 +111,9 @@ def _create_pr(client, requester, **overrides):
         role: make_user(db, f"po.{role}.{n}@premnathrail.com", assigned_apps=("p2p",))
         for role in ("rnd_manager", "purchase_manager", "production_manager")
     }
+    set_pr_workflow(db, [u.id for u in approvers.values()], requester)
     response = client.post(
-        BASE, json=_create_payload(
-            approvers={r: u.id for r, u in approvers.items()},
-            po_approvers={r: u.id for r, u in po_approvers.items()},
-            **overrides,
-        ), headers=auth_header(requester),
+        BASE, json=link_items(db, _create_payload(**overrides)), headers=auth_header(requester),
     )
     assert response.status_code == 200, response.text
     pr = response.json()
@@ -164,15 +182,16 @@ def test_p2p_number_sequence_is_scoped_per_category_and_year(client, db):
 def test_create_requires_project_or_inhouse_on_every_line(client, db):
     requester = _requester(db, "reqpi@premnathrail.com")
     approvers = _pr_approvers(db)
-    response = client.post(BASE, json=_create_payload(
+    master_item(db, "Hose clamp", code="HW-CLAMP-01")
+    response = client.post(BASE, json=link_items(db, _create_payload(
         approvers={r: u.id for r, u in approvers.items()},
         items=[
             {"item_name": "Hydraulic Cylinder", "quantity": 1, "project_inhouse": "Project"},
             {"item_name": "Hose clamp", "quantity": 4},
         ],
-    ), headers=auth_header(requester))
+    )), headers=auth_header(requester))
     assert response.status_code == 400
-    assert response.json()["detail"] == "Line 2 (Hose clamp): choose Project or Inhouse."
+    assert response.json()["detail"] == "Line 2 (HW-CLAMP-01 Hose clamp): choose Project or Inhouse."
 
 
 # ── Meta ─────────────────────────────────────────────────────────────────────
@@ -266,9 +285,12 @@ def test_audit_trail_records_creation_and_approval(client, db):
     response = client.get(f"{BASE}/{pr['id']}/audit", headers=auth_header(requester))
     assert response.status_code == 200
     entries = response.json()
-    # One "approved" entry per approver slot, the final status change, then
-    # the stock re-check that routes lines to store issue or procurement.
-    assert [e["action"] for e in entries] == ["created"] + ["approved"] * (len(pr["_approvers"]) + 1) + ["stock_checked"]
+    # Created, sent into the approval engine, one engine row per approver,
+    # the final status change, then the stock re-check that routes lines to
+    # store issue or procurement.
+    assert [e["action"] for e in entries] == (
+        ["created", "submitted"] + ["approval_approved"] * len(pr["_approvers"]) + ["approved", "stock_checked"]
+    )
     assert entries[-2]["old_status"] == "submitted"
     assert entries[-2]["new_status"] == "approved"
 
@@ -291,12 +313,14 @@ def test_stock_is_checked_at_create_and_lines_are_routed_on_approval(client, db)
         {"item_name": "Special seal kit", "quantity": 1, "unit": "set", "project_inhouse": "Inhouse"},
     ])
     stock = {i["item_name"]: i["stock_status"] for i in pr["items"]}
-    assert stock == {"Hydraulic Cylinder": "in_stock", "Special seal kit": "no_match"}
+    # Every line is an Item Master item now; the seal kit is in the master
+    # (created by link_items) but has no stock anywhere.
+    assert stock == {"Hydraulic Cylinder": "in_stock", "Special seal kit": "not_in_stock"}
 
     approved = _approve_pr(client, pr).json()
     routed = {i["item_name"]: i["fulfillment_status"] for i in approved["items"]}
     # In stock → waits for the store/buyer to issue it (nothing auto-issues);
-    # not in the item master → straight to procurement for the RFQ.
+    # no stock → straight to procurement for the RFQ.
     assert routed == {"Hydraulic Cylinder": "pending", "Special seal kit": "sent_to_procurement"}
 
 
@@ -363,9 +387,12 @@ def test_reject_terminal_status_fails(client, db):
     requester = _requester(db, "reqn@premnathrail.com")
     pr = _create_pr(client, requester)
     approver = pr["_approvers"]["rnd_manager"]
-    client.post(f"{BASE}/{pr['id']}/reject", json={}, headers=auth_header(approver))
+    # The engine needs the reason to reject.
+    no_reason = client.post(f"{BASE}/{pr['id']}/reject", json={}, headers=auth_header(approver))
+    assert no_reason.status_code == 422 and "reason" in no_reason.json()["detail"]
+    assert client.post(f"{BASE}/{pr['id']}/reject", json={"reason": "Wrong item"}, headers=auth_header(approver)).status_code == 200
 
-    response = client.post(f"{BASE}/{pr['id']}/reject", json={}, headers=auth_header(approver))
+    response = client.post(f"{BASE}/{pr['id']}/reject", json={"reason": "again"}, headers=auth_header(approver))
     assert response.status_code == 409
 
 
@@ -508,6 +535,7 @@ def test_create_po_defaults_ordered_quantity_to_item_sum(client, db):
     ])
     buyer = _purchaser(db, "buyeraa@premnathrail.com")
     _approve_pr(client, pr)
+    set_po_workflow(db, [u.id for u in pr["_po_approvers"].values()], buyer)
     bolt, nut = pr["items"]
 
     # po_value in the payload is ignored — the total is computed from the priced lines.
@@ -528,6 +556,7 @@ def test_create_po_respects_explicit_ordered_quantity(client, db):
     pr = _create_pr(client, requester)
     buyer = _purchaser(db, "buyerab@premnathrail.com")
     _approve_pr(client, pr)
+    set_po_workflow(db, [u.id for u in pr["_po_approvers"].values()], buyer)
 
     response = client.post(
         f"{BASE}/{pr['id']}/create-po",
@@ -538,21 +567,12 @@ def test_create_po_respects_explicit_ordered_quantity(client, db):
     assert response.json()["ordered_quantity"] == 7
 
 
-def test_approval_requires_a_comment(client, db):
-    requester = _requester(db, "reqcm@premnathrail.com")
-    pr = _create_pr(client, requester)
-    approver = pr["_approvers"]["rnd_manager"]
-    for body in ({}, {"comment": "   "}):
-        response = client.post(f"{BASE}/{pr['id']}/approve", json=body, headers=auth_header(approver))
-        assert response.status_code == 400
-        assert "Add a comment before approving" in response.json()["detail"]
-    assert client.get(f"{BASE}/{pr['id']}", headers=auth_header(requester)).json()["approvals"][0]["approved_at"] is None
-
-
 # ── PO approval (manager matrix: any ONE holder of the PO role set) ─────────
 
 def _raise_po(client, db, pr, buyer, po_number="PO-REC"):
     _approve_pr(client, pr)
+    # The "Purchase order" workflow: this PR's three PO approvers, all must approve.
+    set_po_workflow(db, [u.id for u in pr["_po_approvers"].values()], buyer)
     raised = client.post(f"{BASE}/{pr['id']}/create-po", json={
         "po_number": po_number, "item_pricing": [{"pr_item_id": i["id"], "unit_price": 100, "tax_rate": 18} for i in pr["items"]],
     }, headers=auth_header(buyer))
@@ -560,51 +580,55 @@ def _raise_po(client, db, pr, buyer, po_number="PO-REC"):
     return raised.json()
 
 
+def _approve_po_as(client, pr, user, comment="Checked and OK"):
+    return client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": comment}, headers=auth_header(user))
+
+
 def _approve_and_raise_po(client, db, pr, buyer):
-    """Approve the PR, raise a priced PO, and have a Purchase Manager (a PO
-    role for "new" projects who is neither requester nor buyer) approve it,
-    so the PR reaches 'po_approved' and goods can be received."""
+    """Approve the PR, raise a priced PO, and have every PO approver sign it so
+    the PR reaches 'po_approved' and goods can be received."""
     _raise_po(client, db, pr, buyer)
-    approver = make_user(db, f"purchase.manager.{pr['id']}@premnathrail.com", assigned_apps=("p2p",), is_director=True)
-    resp = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "Checked and OK"}, headers=auth_header(approver))
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["status"] == "po_approved"
+    resp = None
+    approvers = list(pr["_po_approvers"].values())
+    for i, picked in enumerate(approvers):
+        resp = _approve_po_as(client, pr, picked)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == ("po_approved" if i == len(approvers) - 1 else "po_raised")
     return resp.json()
 
 
-def test_po_approval_by_any_one_role_holder(client, db):
+def _panel(body):
+    return {row["role"]: row for row in body["po_approval_panel"]}
+
+
+def test_po_approval_needs_every_po_approver(client, db):
     requester = _requester(db, "reqpo1@premnathrail.com")
     pr = _create_pr(client, requester)
     buyer = _purchaser(db, "buyerpo1@premnathrail.com")
-    body = _approve_and_raise_po(client, db, pr, buyer)
-    assert body["po_approved_role"] == "director"
-    assert body["po_approved_by_name"].startswith("purchase.manager")
+    _raise_po(client, db, pr, buyer)
+
+    approvers = list(pr["_po_approvers"].values())
+    body = _approve_po_as(client, pr, approvers[0]).json()
+    assert body["status"] == "po_raised"
+    # The same person can't sign twice.
+    assert _approve_po_as(client, pr, approvers[0]).status_code == 403
+    for a in approvers[1:]:
+        body = _approve_po_as(client, pr, a).json()
+    assert body["status"] == "po_approved"
+    assert body["po_approved_by_name"] == approvers[-1].name
 
 
-def test_po_approval_refuses_non_role_holders_but_allows_own_po(client, db):
+def test_po_approval_refuses_outsiders_and_the_buyer_who_sent_it(client, db):
     requester = _requester(db, "reqpo2@premnathrail.com")
     pr = _create_pr(client, requester)
     buyer = make_user(db, "buyerpo2@premnathrail.com", assigned_apps=("purchase",), is_director=True)
     _raise_po(client, db, pr, buyer)
 
     store_mgr = make_user(db, "storepo2@premnathrail.com", assigned_apps=("p2p",), is_store_manager=True)
-    assert client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "Checked and OK"}, headers=auth_header(store_mgr)).status_code == 403  # not a PO role
-    assert client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "Checked and OK"}, headers=auth_header(requester)).status_code == 403  # no PO role
-    # Holding a PO role is enough — even for whoever raised the PO.
-    own = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "Checked and OK"}, headers=auth_header(buyer))
-    assert own.status_code == 200 and own.json()["status"] == "po_approved"
-
-
-def test_po_approval_requires_a_comment(client, db):
-    requester = _requester(db, "reqpo3@premnathrail.com")
-    pr = _create_pr(client, requester)
-    buyer = _purchaser(db, "buyerpo3@premnathrail.com")
-    _raise_po(client, db, pr, buyer)
-    approver = make_user(db, "purchase.manager.po3@premnathrail.com", assigned_apps=("p2p",), is_director=True)
-    response = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": ""}, headers=auth_header(approver))
-    assert response.status_code == 400
-    assert "Add a comment before approving" in response.json()["detail"]
-    assert client.get(f"{BASE}/{pr['id']}", headers=auth_header(buyer)).json()["status"] == "po_raised"
+    assert _approve_po_as(client, pr, store_mgr).status_code == 403  # not an approver of this PO
+    assert _approve_po_as(client, pr, requester).status_code == 403
+    # Director flag or not, the buyer who sent the PO isn't one of its approvers.
+    assert _approve_po_as(client, pr, buyer).status_code == 403
 
 
 # ── Approval queues (P.R Approval / P.O Approval tabs) ──────────────────────
@@ -617,38 +641,52 @@ def test_pr_approval_queue_shows_only_my_slots(client, db):
 
     queue = client.get(BASE, params={"queue": "pr-approval"}, headers=auth_header(approver)).json()
     assert [p["id"] for p in queue] == [mine["id"]]
-    me = client.get("/api/v1/auth/me", headers=auth_header(approver)).json()
-    assert me["is_pr_approver"] is True
+    assert queue[0]["engine_approval"]["can_decide"] is True
+    flags = client.get(f"{BASE}/approver-flags", headers=auth_header(approver)).json()
+    assert flags["is_pr_approver"] is True
 
     outsider = _requester(db, "reqq2@premnathrail.com")
     assert client.get(BASE, params={"queue": "pr-approval"}, headers=auth_header(outsider)).json() == []
-    assert client.get("/api/v1/auth/me", headers=auth_header(outsider)).json()["is_pr_approver"] is False
+    assert client.get(f"{BASE}/approver-flags", headers=auth_header(outsider)).json()["is_pr_approver"] is False
 
 
 def test_po_approval_queue_shows_only_pos_i_can_approve(client, db):
     requester = _requester(db, "reqq3@premnathrail.com")
     pr = _create_pr(client, requester)
-    buyer = make_user(db, "buyerq3@premnathrail.com", assigned_apps=("purchase",), is_director=True)
+    buyer = _purchaser(db, "buyerq3@premnathrail.com")
     _raise_po(client, db, pr, buyer)
 
-    approver = make_user(db, "pmq3@premnathrail.com", assigned_apps=("p2p",), is_director=True)
+    approver = pr["_po_approvers"]["purchase_manager"]
     queue = client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(approver)).json()
     assert [p["id"] for p in queue] == [pr["id"]]
-    assert client.get("/api/v1/auth/me", headers=auth_header(approver)).json()["is_po_approver"] is True
-    # The buyer raised this PO but holds a PO role, so it's in their queue too.
-    assert [p["id"] for p in client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(buyer)).json()] == [pr["id"]]
-    store_mgr = make_user(db, "storeq3@premnathrail.com", assigned_apps=("p2p",), is_store_manager=True)
-    assert client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(store_mgr)).json() == []
+    assert queue[0]["engine_approval"]["entity_type"] == "p2p_purchase_order"
+    assert client.get(f"{BASE}/approver-flags", headers=auth_header(approver)).json()["is_po_approver"] is True
+    director = make_user(db, "storeq3@premnathrail.com", assigned_apps=("p2p",), is_director=True)
+    assert client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(director)).json() == []
 
 
 # ── Receiving (per-PO Goods Receipt → quality inspection → PR receipt status) ─
+
+def _receiving_store(client) -> int:
+    """A GRN must name its store (MIGO 101 posts stock at once) — one shared test store."""
+    from app.db.session import get_db
+    from app.modules.store.models.location import StoreLocation
+    db = client.app.dependency_overrides[get_db]()
+    loc = db.query(StoreLocation).filter_by(code="RCV01").first()
+    if loc is None:
+        loc = StoreLocation(name="Receiving Store", code="RCV01")
+        db.add(loc)
+        db.commit()
+    return loc.id
+
 
 def _receive(client, pr_id, buyer, quantity):
     """Record a GRN for `quantity` of the PO's first line and accept it all at
     inspection — that is what rolls the receipt up onto the PR."""
     po = next(p for p in client.get("/api/v1/p2p/purchase-orders", headers=auth_header(buyer)).json() if p["p2p_request_id"] == pr_id)
     grn = client.post("/api/v1/p2p/goods-receipts", json={
-        "purchase_order_id": po["id"], "items": [{"po_item_id": po["items"][0]["id"], "received_quantity": quantity}],
+        "purchase_order_id": po["id"], "store_location_id": _receiving_store(client),
+        "items": [{"po_item_id": po["items"][0]["id"], "received_quantity": quantity}],
     }, headers=auth_header(buyer))
     if grn.status_code != 200:
         return grn
@@ -933,7 +971,9 @@ def _approved_pr_with_stock(client, db, tag, on_hand, qty):
     requester = _requester(db, f"req{tag}@premnathrail.com")
     pr = _create_pr(client, requester, items=[{"item_name": f"Item {tag}", "quantity": qty, "unit": "NOS", "project_inhouse": "Project"}])
     approved = _approve_pr(client, pr).json()
-    approved["_store_manager"] = pr["_approvers"]["store_manager"]
+    # Requisitions approved through the engine name no Store Manager, so
+    # issuing from stock is left to an admin (as on Settings-scheme PRs).
+    approved["_store_manager"] = make_user(db, f"admin.{tag}@premnathrail.com", role="admin")
     return approved, approved["items"][0]["id"], loc.id
 
 
@@ -969,28 +1009,74 @@ def test_partial_issue_sends_only_shortfall_to_procurement(client, db):
 
 
 
-def test_picked_po_approver_can_approve_but_unpicked_role_holder_cannot(client, db):
+def test_po_approver_can_approve_but_a_flag_holder_cannot(client, db):
     requester = _requester(db, "reqpo9@premnathrail.com")
     pr = _create_pr(client, requester)
     buyer = _purchaser(db, "buyerpo9@premnathrail.com")
     _raise_po(client, db, pr, buyer)
 
-    # Holding a manager flag no longer counts — only the person picked on the PR.
+    # Holding a manager flag doesn't count — only the workflow's approvers.
     other_pm = make_user(db, "other.pm9@premnathrail.com", assigned_apps=("p2p",), is_purchase_manager=True)
     refused = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "OK"}, headers=auth_header(other_pm))
     assert refused.status_code == 403
 
     picked = pr["_po_approvers"]["purchase_manager"]
-    queue = client.get(BASE, params={"queue": "po-approval"}, headers=auth_header(picked)).json()
-    assert [p["id"] for p in queue] == [pr["id"]]
     ok = client.post(f"{BASE}/{pr['id']}/approve-po", json={"comment": "OK"}, headers=auth_header(picked))
     assert ok.status_code == 200
-    assert ok.json()["po_approved_role"] == "purchase_manager"
+    assert ok.json()["status"] == "po_raised"  # the others still have to sign
 
 
-def test_create_requires_po_approvers(client, db):
-    requester = _requester(db, "reqpo10@premnathrail.com")
-    approvers = _pr_approvers(db)
-    resp = client.post(BASE, json=_create_payload(approvers={r: u.id for r, u in approvers.items()}), headers=auth_header(requester))
-    assert resp.status_code == 400
-    assert "PO approver" in resp.json()["detail"]
+# ── PO pricing visibility on the PR detail ──────────────────────────────────
+
+def test_po_pricing_only_for_purchase_and_po_approvers(client, db):
+    requester = _requester(db, "reqpv@premnathrail.com")
+    pr = _create_pr(client, requester)
+    buyer = _purchaser(db, "buyerpv@premnathrail.com")
+    _raise_po(client, db, pr, buyer)
+
+    assert client.get(f"{BASE}/{pr['id']}", headers=auth_header(requester)).json()["purchase_order"] is None
+    pr_head = pr["_approvers"]["store_manager"]
+    assert client.get(f"{BASE}/{pr['id']}", headers=auth_header(pr_head)).json()["purchase_order"] is None
+    director = make_user(db, "director.pv@premnathrail.com", assigned_apps=("p2p",), is_director=True)
+    for viewer in (buyer, pr["_po_approvers"]["purchase_manager"], director):
+        body = client.get(f"{BASE}/{pr['id']}", headers=auth_header(viewer)).json()
+        assert body["purchase_order"] is not None and body["purchase_order"]["items"]
+
+
+# ── Cancel after PO approval / short-close ──────────────────────────────────
+
+def test_cancel_after_po_approval_is_purchase_only_and_cancels_the_po(client, db):
+    requester = _requester(db, "reqcx@premnathrail.com")
+    pr = _create_pr(client, requester)
+    buyer = _purchaser(db, "buyercx@premnathrail.com")
+    _approve_and_raise_po(client, db, pr, buyer)
+
+    refused = client.post(f"{BASE}/{pr['id']}/cancel", json={"reason": "No longer needed"}, headers=auth_header(requester))
+    assert refused.status_code == 403
+    assert "only Purchase" in refused.json()["detail"]
+    assert client.post(f"{BASE}/{pr['id']}/cancel", json={}, headers=auth_header(buyer)).status_code == 400
+
+    ok = client.post(f"{BASE}/{pr['id']}/cancel", json={"reason": "Vendor cannot supply"}, headers=auth_header(buyer))
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["status"] == "cancelled"
+    pos = [p for p in client.get("/api/v1/p2p/purchase-orders", headers=auth_header(buyer)).json() if p["p2p_request_id"] == pr["id"]]
+    assert pos and all(p["status"] == "cancelled" for p in pos)
+
+
+def test_partial_receipt_cannot_be_cancelled_but_can_be_short_closed(client, db):
+    requester = _requester(db, "reqsc@premnathrail.com")
+    pr = _create_pr(client, requester, items=[{"item_name": "Cable", "quantity": 10, "unit": "mtr", "project_inhouse": "Project"}])
+    buyer = _purchaser(db, "buyersc@premnathrail.com")
+    _approve_and_raise_po(client, db, pr, buyer)
+    assert _receive(client, pr["id"], buyer, 4).status_code == 200
+
+    refused = client.post(f"{BASE}/{pr['id']}/cancel", json={"reason": "x"}, headers=auth_header(buyer))
+    assert refused.status_code == 409
+    assert "short-close" in refused.json()["detail"]
+
+    assert client.post(f"{BASE}/{pr['id']}/close", headers=auth_header(buyer)).status_code == 400  # reason required
+    closed = client.post(f"{BASE}/{pr['id']}/close", json={"reason": "Vendor discontinued the item"}, headers=auth_header(buyer))
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["status"] == "closed"
+    # No more goods can be booked against the PO once short-closed.
+    assert _receive(client, pr["id"], buyer, 1).status_code == 409

@@ -5,11 +5,13 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
 import { HydMaintenancePlan, HydServiceRecord } from '@/types'
-import { TEXT, DANGER, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
-import MaintenancePlanForm, { raiseJobHref, frequencyText, daysText, hoursText } from '@/components/hydraulic/MaintenancePlanForm'
-import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
+import MaintenancePlanForm, { frequencyText, daysText, hoursText } from '@/components/hydraulic/MaintenancePlanForm'
+import RetiredBanner from '@/components/hydraulic/RetiredBanner'
 import { MAINTENANCE_TYPE_LABELS, SERVICE_TYPE_LABELS } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
@@ -35,13 +37,14 @@ export default function HydMaintenancePlanDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
   const params = useParams()
-  const planId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedId, error: linkError } = useRecordId(ref)
+  const planId = resolvedId ?? 0
 
   const [plan, setPlan] = useState<HydMaintenancePlan | null>(null)
   const [history, setHistory] = useState<HydServiceRecord[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saved, setSaved] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
     if (!isAuthorized || !planId) return
@@ -53,17 +56,9 @@ export default function HydMaintenancePlanDetailPage() {
       .catch(() => { /* Service Records tab may be restricted; the plan itself still loads */ })
   }, [isAuthorized, planId])
 
-  const handleDelete = async () => {
-    setConfirmDelete(false)
-    try {
-      await hydraulicApi.deletePlan(planId)
-      router.push('/dashboard/hydraulic/maintenance')
-    } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to delete maintenance plan.'))
-    }
-  }
-
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/maintenance" listLabel="Back to maintenance plans" /></div>)
+  if (!resolvedId) return <div><HydraulicNav /></div>
 
   const dueHex = plan ? DUE_HEX[plan.due_status] : '#78716c'
 
@@ -79,17 +74,14 @@ export default function HydMaintenancePlanDetailPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>{plan ? `${plan.plan_number} — ${plan.title}` : 'Maintenance Plan'}</h1>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {plan && (plan.open_service_record_id ? (
-            <button type="button" style={primaryBtn} onClick={() => router.push(`/dashboard/hydraulic/service/${plan.open_service_record_id}`)}>Go to Open Job</button>
-          ) : plan.is_active ? (
-            <button type="button" style={primaryBtn} onClick={() => router.push(raiseJobHref(plan))}>Raise Service Job</button>
-          ) : null)}
-          {plan && (
-            <button type="button" onClick={() => setConfirmDelete(true)} style={{ ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }}>Delete</button>
+          {plan?.open_service_record_id && (
+            <button data-tour="hyd-pland-open-job-btn" type="button" style={primaryBtn} onClick={() => router.push(recordPath('/dashboard/hydraulic/service', plan, 'open_service_record_id'))}>Go to Open Job</button>
           )}
-          <button onClick={() => router.push('/dashboard/hydraulic/maintenance')} type="button" style={secondaryBtnStyle}>← Back</button>
+          <button data-tour="hyd-pland-back-btn" onClick={() => router.push('/dashboard/hydraulic/maintenance')} type="button" style={secondaryBtnStyle}>← Back</button>
         </div>
       </div>
+
+      <RetiredBanner what="Maintenance plans" />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -104,7 +96,7 @@ export default function HydMaintenancePlanDetailPage() {
 
       {plan && (
         <>
-          <div style={{ ...cardStyle, borderLeft: `4px solid ${dueHex}` }}>
+          <div data-tour="hyd-pland-due-card" style={{ ...cardStyle, borderLeft: `4px solid ${dueHex}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${dueHex}1a`, color: dueHex, whiteSpace: 'nowrap' }}>
@@ -114,7 +106,7 @@ export default function HydMaintenancePlanDetailPage() {
                   {MAINTENANCE_TYPE_LABELS[plan.maintenance_type] || plan.maintenance_type} · {frequencyText(plan)}
                 </span>
               </div>
-              <span onClick={() => router.push(`/dashboard/hydraulic/systems/${plan.system_id}`)} style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
+              <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', plan, 'system_id'))} style={{ fontSize: 13, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
                 {plan.system_number} — {plan.system_name} →
               </span>
             </div>
@@ -146,6 +138,8 @@ export default function HydMaintenancePlanDetailPage() {
 
           <MaintenancePlanForm
             key={plan.updated_at}
+            title="Plan Details"
+            subtitle="Retired record — kept readable; the server refuses changes (410)."
             initial={plan}
             submitLabel="Save Changes"
             onSubmit={async (payload) => {
@@ -156,14 +150,14 @@ export default function HydMaintenancePlanDetailPage() {
             }}
           />
 
-          <div style={{ ...cardStyle, marginTop: 20 }}>
+          <div data-tour="hyd-pland-history" style={{ ...cardStyle, marginTop: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
               <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Service History ({history.length})</h2>
             </div>
             {history.length === 0 ? (
               <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No service jobs raised from this plan yet. Completing one resets the plan&apos;s last-done date and hours.</p>
             ) : history.map((r) => (
-              <div key={r.id} onClick={() => router.push(`/dashboard/hydraulic/service/${r.id}`)}
+              <div key={r.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/service', r))}
                 style={{ display: 'flex', gap: 12, padding: '9px 0', borderTop: `1px solid ${BORDER.light}`, cursor: 'pointer', flexWrap: 'wrap', fontSize: 13, alignItems: 'center' }}>
                 <span style={{ fontWeight: 600, color: TEXT.heading, minWidth: 120 }}>{r.record_number}</span>
                 <span style={{ color: TEXT.secondary, minWidth: 90 }}>{formatDate(r.completed_on || r.service_date)}</span>
@@ -171,7 +165,7 @@ export default function HydMaintenancePlanDetailPage() {
                   {SERVICE_TYPE_LABELS[r.service_type] || r.service_type}
                   {r.performed_by_name || r.external_agency ? ` · ${r.performed_by_name || r.external_agency}` : ''}
                 </span>
-                <span style={{ color: TEXT.secondary, minWidth: 90 }}>₹{r.total_cost.toLocaleString('en-IN')}</span>
+                <span style={{ color: TEXT.secondary, minWidth: 90 }}>{r.total_cost == null ? '—' : `₹${r.total_cost.toLocaleString('en-IN')}`}</span>
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${SERVICE_STATUS_HEX[r.status]}1a`, color: SERVICE_STATUS_HEX[r.status], whiteSpace: 'nowrap' }}>
                   {SERVICE_STATUS_LABELS[r.status] || r.status}
                 </span>
@@ -180,16 +174,6 @@ export default function HydMaintenancePlanDetailPage() {
           </div>
         </>
       )}
-
-      <ConfirmDialog
-        open={confirmDelete}
-        title="Delete maintenance plan?"
-        message={`${plan?.plan_number} will stop appearing in the due list. Service jobs already raised from it keep their history.`}
-        confirmLabel="Delete"
-        danger
-        onConfirm={handleDelete}
-        onCancel={() => setConfirmDelete(false)}
-      />
     </div>
   )
 }

@@ -3,19 +3,24 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core import assignee_rules
+from app.core.data_scope import apply_scope, ensure_in_scope, scope_filter
+from app.core.permissions import ensure_can_delete, require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.production import authz as _authz  # noqa: F401 — registers the Production data-scope models
 from app.modules.production.models.work_order import (
     ProductionWorkOrder, ProductionWorkOrderOperation, ProductionTimeLog,
 )
 from app.modules.production.models.workstation import ProductionWorkstation
+from app.modules.accounts.services import co_activity
 from app.modules.production.routes.work_orders import ensure_workstation_available
 from app.modules.production.service import mark_started, project_label
 from app.modules.production.schemas.insights import ProductionQueueEntry
 from app.modules.production.schemas.time_log import ProductionTimeLogCreate, ProductionTimeLogResponse
 from app.modules.erp.models.project import Project
 from app.modules.quality.models.inspection import QualityInspection
+from app.modules.quality.services import production_gates
 from app.modules.store.models.item import StoreItem
 
 router = APIRouter(
@@ -24,6 +29,7 @@ router = APIRouter(
 )
 
 _PRIORITY_RANK = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+OPERATOR_RULE = "production:shop_floor.run_operations"  # core/assignee_rules.PICKERS
 
 
 @router.get("/shop-floor/queue", response_model=list[ProductionQueueEntry])
@@ -45,6 +51,9 @@ async def shop_floor_queue(
     )
     if workstation_id:
         query = query.filter(ProductionWorkOrderOperation.workstation_id == workstation_id)
+    in_scope = scope_filter(db, _tab, ProductionWorkOrder)  # only work orders within the user's data scope
+    if in_scope is not None:
+        query = query.filter(in_scope)
     rows = query.all()
     if not rows:
         return []
@@ -116,8 +125,10 @@ async def list_time_logs(
     date_from: date | None = None,
     date_to: date | None = None,
     db: Session = Depends(get_db),
+    # Read on the work-order detail page, so it follows the Work Orders tab.
+    _tab: User = Depends(require_feature_action("production", "work_orders", "time_logs", "view")),
 ):
-    query = db.query(ProductionTimeLog)
+    query = apply_scope(db.query(ProductionTimeLog), _tab, ProductionTimeLog)
     if work_order_id:
         query = query.filter(ProductionTimeLog.work_order_id == work_order_id)
     if workstation_id:
@@ -137,13 +148,14 @@ async def create_time_log(
     payload: ProductionTimeLogCreate,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("production")),
-    _perm: User = Depends(require_tab_action("production", "shop_floor", "edit")),
+    _perm: User = Depends(require_feature_action("production", "shop_floor", "run_operations", "edit")),
 ):
     wo = db.query(ProductionWorkOrder).filter(
         ProductionWorkOrder.id == payload.work_order_id, ProductionWorkOrder.is_deleted == False  # noqa: E712
     ).with_for_update().first()
     if not wo:
         raise HTTPException(status_code=404, detail=f"Work order #{payload.work_order_id} not found")
+    ensure_in_scope(db, user, wo)
     if wo.status not in ("released", "in_progress"):
         raise HTTPException(status_code=409, detail=f"Work order {wo.wo_number} is {wo.status.replace('_', ' ')} — time can only be booked while it is released or in progress.")
     op = next((o for o in wo.operations if o.id == payload.operation_id), None)
@@ -152,17 +164,49 @@ async def create_time_log(
     if op.status == "completed":
         raise HTTPException(status_code=409, detail=f"Operation {op.sequence} {op.operation_name} is already completed, so no more time can be booked on it.")
     if op.status == "pending":
+        # Booking time on a pending step starts it — same hold as Start.
+        held = production_gates.start_problem(db, wo, op)
+        if held:
+            raise HTTPException(status_code=409, detail=held)
         ensure_workstation_available(db, op)
     if payload.log_date > date.today():
         raise HTTPException(status_code=400, detail="Time can't be booked for a future date.")
+    # Confirmed yield can't exceed the order quantity (SAP: over-delivery on a
+    # confirmation is an error) — over-booking inflates output and costing.
+    if payload.qty_good and op.qty_good + payload.qty_good > wo.quantity_planned + 1e-9:
+        left = max(round(wo.quantity_planned - op.qty_good, 4), 0.0)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Operation {op.sequence} {op.operation_name} already has {op.qty_good:g} good of the {wo.quantity_planned:g} planned on "
+                   f"{wo.wo_number}, so at most {left:g} more good can be booked, not {payload.qty_good:g}. "
+                   "Book the extra as scrap if it was rejected, or raise a second work order for extra units.",
+        )
+    # CO11N yield continuity + control key (milestone / external steps).
+    from app.modules.production import routing_control
+    problem = routing_control.yield_problem(wo, op, payload.qty_good or 0.0)
+    if problem is None and op.status == "pending":
+        problem = routing_control.start_problem(db, wo, op)
+    if problem:
+        raise HTTPException(status_code=409, detail=problem)
     operator_id = payload.operator_id or user.id
-    if not db.query(User).filter(User.id == operator_id, User.is_active == True).first():  # noqa: E712
+    operator = db.query(User).filter(User.id == operator_id, User.is_active == True).first()  # noqa: E712
+    if not operator:
         raise HTTPException(status_code=404, detail=f"Operator user #{operator_id} not found or inactive")
+    # Booking for someone else follows the role's assign-to rule (Production › Shop Floor › Run operations).
+    if operator.id != user.id:
+        assignee_rules.ensure_allowed(db, user, OPERATOR_RULE, operator)
 
     log = ProductionTimeLog(
         work_order_id=wo.id, operation_id=op.id, workstation_id=op.workstation_id, operator_id=operator_id,
         log_date=payload.log_date, hours=payload.hours, qty_good=payload.qty_good, qty_scrap=payload.qty_scrap,
         remarks=payload.remarks, created_by_id=user.id,
+        # Rate valid at booking, so the order's labour cost and WIP don't
+        # move when the workstation rate is revised later. CO activity price
+        # (Finance › Controlling) valid on the log date, else the flat rate.
+        activity_rate=co_activity.workstation_hour_rate(
+            db, db.get(ProductionWorkstation, op.workstation_id), payload.log_date, payload.activity_type)[0]
+        if op.workstation_id else None,
+        activity_type=payload.activity_type,
     )
     db.add(log)
     op.qty_good = round(op.qty_good + payload.qty_good, 4)
@@ -181,11 +225,13 @@ async def create_time_log(
 async def delete_time_log(
     log_id: int,
     db: Session = Depends(get_db),
-    _perm: User = Depends(require_tab_action("production", "shop_floor", "delete")),
+    user: User = Depends(require_tab_action("production", "shop_floor", "delete")),
 ):
     log = db.query(ProductionTimeLog).filter(ProductionTimeLog.id == log_id).first()
     if not log:
         raise HTTPException(status_code=404, detail=f"Time log #{log_id} not found")
+    ensure_in_scope(db, user, log)
+    ensure_can_delete(user, log, "production", "shop_floor", what="time log")
     wo = db.query(ProductionWorkOrder).filter(ProductionWorkOrder.id == log.work_order_id).with_for_update().first()
     op = db.query(ProductionWorkOrderOperation).filter(ProductionWorkOrderOperation.id == log.operation_id).first() if log.operation_id else None
     if wo and wo.status not in ("released", "in_progress"):

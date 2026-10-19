@@ -123,7 +123,7 @@ The detail panel has tabs:
 
 This single list (with **+ New Record**) covers both record types, distinguished by a Type column (filterable to Inquiry or Tender), alongside ID, Organization, Stage, Status, Value/Priority, Created Date, and Created By — all searchable and most columns filterable or sortable. A new tender is normally created from an organization's Tenders tab rather than this list's own "+ New Record" button, which creates an inquiry.
 
-Opening a record shows its universal ID (`INQ-YYYYMMDD-####` or `TND-YYYYMMDD-####`), status, priority, and a clickable **stage progress bar** — click any stage to jump the record to it (with confirmation), which logs a timeline entry and, for inquiries, sends a notification. From here you can also **Edit**, **Delete** (admin), and **Send Technical Offer Request to R&D** (see below).
+Opening a record shows its universal ID (`INQ-YYYYMMDD-####` or `TND-YYYYMMDD-####`), status, priority, and a clickable **stage progress bar** — click any stage to jump the record to it (with confirmation), which logs a timeline entry and, for inquiries, sends a notification. From here you can also **Edit**, **Delete** (admin), and **Send Technical Requirement to R&D** (see below).
 
 Tabs on an inquiry:
 
@@ -149,7 +149,9 @@ From an Inquiry's Follow Ups tab, use **Export MoM** on an activity to generate 
 
 ### Technical Offer Requests
 
-From an Inquiry or Tender's header, **Send Technical Offer Request to R&D** opens a dialog to optionally attach uploaded Client Documents and emails the request to R&D. The button greys out after sending until the record is edited again. Recipients — including external vendors with no portal account — get a link to a standalone Technical Offer Request page with an embedded PDF viewer and a Download option; the link is signed and time-limited rather than a raw SharePoint URL, so it can be shared safely with people outside the organization.
+From an Inquiry or Tender's header, **Send Technical Requirement to R&D** opens a dialog to optionally attach uploaded Client Documents and emails the request to R&D. The button greys out after sending until the record is edited again. Recipients — including external vendors with no portal account — get a link to a standalone Technical Offer Request page with an embedded PDF viewer and a Download option; the link is signed and time-limited rather than a raw SharePoint URL, so it can be shared safely with people outside the organization.
+
+Once a request has been sent, a **Requirement Movement** tab appears on the record. It lists every send to R&D (newest first) with who sent it, when, the TOR number, clickable chips for the TOR PDF and attached documents, the full requirement as R&D received it, and — for each re-send — exactly which requirement fields changed since the previous send.
 
 ### Payment Terms and Products
 

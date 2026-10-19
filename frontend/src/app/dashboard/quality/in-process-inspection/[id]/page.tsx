@@ -2,36 +2,38 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
 import { QualityInspection, QualityInspectionPlan, QualityInspectionResult, QualityInspectionResultInput, QualityInspectionResultValue, QualityInspectionStatus } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BRAND, BORDER, DANGER } from '@/lib/theme'
+import { TEXT } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
 import QualityNav from '@/components/quality/QualityNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+import { ErrorBanner } from '@/components/quality/QualityBits'
+import { FormPage, SheetSection, SheetIcon, sheetInput, sheetLabel, sheetBtn, Req, Optional, SHEET } from '@/components/shared/FormSheet'
 
 function emptyResult(sortOrder: number): QualityInspectionResultInput {
   return { parameter: '', method: '', acceptance_criteria: '', observed_value: '', result: 'na', sort_order: sortOrder }
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
+const inputStyle = sheetInput
+const labelStyle = sheetLabel
+const cell: React.CSSProperties = { padding: '6px 8px' }
 
 export default function InProcessInspectionDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
+  const { can, canDelete } = useCan()
+  // Saving a legacy inspection needs 'edit' on its tab (backend: PATCH /quality/inspections/{id}).
+  const canEdit = can('quality', 'in_process_inspection', 'edit')
   const router = useRouter()
   const params = useParams()
-  const inspectionId = Number(params.id)
+  const { id: recordId, error: linkError } = useRecordId(params.id as string)
+  const inspectionId = recordId ?? 0
 
   const [inspection, setInspection] = useState<QualityInspection | null>(null)
   const [plans, setPlans] = useState<QualityInspectionPlan[]>([])
@@ -79,7 +81,7 @@ export default function InProcessInspectionDetailPage() {
         setResults(insp.results.length
           ? insp.results.map((r: QualityInspectionResult) => ({ parameter: r.parameter, method: r.method, acceptance_criteria: r.acceptance_criteria, observed_value: r.observed_value, result: r.result, sort_order: r.sort_order }))
           : [emptyResult(1)])
-      } catch (err: any) {
+      } catch (err) {
         setError(extractErrorMessages(err, 'Failed to load In-Process Inspection.'))
       } finally {
         setLoading(false)
@@ -88,6 +90,7 @@ export default function InProcessInspectionDetailPage() {
   }, [isAuthorized, inspectionId])
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><QualityNav /><InvalidRecordLink message={linkError} listHref="/dashboard/quality/in-process-inspection" listLabel="Back to in-process inspections" /></div>)
   if (loading || !inspection) return null
 
   const updateResult = (idx: number, field: keyof QualityInspectionResultInput, value: string) => {
@@ -119,7 +122,7 @@ export default function InProcessInspectionDetailPage() {
         results: filledResults.map((r, i) => ({ ...r, sort_order: i + 1 })),
       })
       setInspection(updated)
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save In-Process Inspection.'))
     } finally {
       setSaving(false)
@@ -133,158 +136,140 @@ export default function InProcessInspectionDetailPage() {
     try {
       await qualityApi.deleteInspection(inspectionId)
       router.push('/dashboard/quality/in-process-inspection')
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to delete In-Process Inspection.'))
       setDeleting(false)
     }
   }
 
   return (
-    <div style={{ width: '100%' }}>
-      <QualityNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Quality Module
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>{inspection.inspection_number}</h1>
-        </div>
-        <button onClick={() => router.push('/dashboard/quality/in-process-inspection')} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
-
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Inspection Details</h2>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
-          <div style={{ flex: '1 1 220px', minWidth: 200 }}>
-            <label style={labelStyle}>Item Name *</label>
-            <input style={inputStyle} value={itemName} onChange={(e) => setItemName(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 160px', minWidth: 140 }}>
-            <label style={labelStyle}>Item Code</label>
-            <input style={inputStyle} value={itemCode} onChange={(e) => setItemCode(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 160px', minWidth: 140 }}>
-            <label style={labelStyle}>Batch Number</label>
-            <input style={inputStyle} value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 200px', minWidth: 180 }}>
-            <label style={labelStyle}>Project Label</label>
-            <input style={inputStyle} value={projectLabel} onChange={(e) => setProjectLabel(e.target.value)} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
-          <div style={{ flex: '0 1 130px', minWidth: 110 }}>
-            <label style={labelStyle}>Qty Inspected</label>
-            <input type="number" style={inputStyle} value={quantityInspected} onChange={(e) => setQuantityInspected(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 130px', minWidth: 110 }}>
-            <label style={labelStyle}>Qty Accepted</label>
-            <input type="number" style={inputStyle} value={quantityAccepted} onChange={(e) => setQuantityAccepted(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 130px', minWidth: 110 }}>
-            <label style={labelStyle}>Qty Rejected</label>
-            <input type="number" style={inputStyle} value={quantityRejected} onChange={(e) => setQuantityRejected(e.target.value)} />
-          </div>
-          <div style={{ flex: '1 1 260px', minWidth: 220 }}>
-            <label style={labelStyle}>Inspection Plan</label>
-            <SearchableSelect
-              value={inspectionPlanId}
-              onChange={setInspectionPlanId}
-              options={plans.map((p) => ({ value: String(p.id), label: `${p.plan_number} — ${p.item_name}` }))}
-              placeholder="Search inspection plan…"
-            />
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Inspection Date</label>
-            <DateField value={inspectionDate} onChange={setInspectionDate} />
-          </div>
-          <div style={{ flex: '0 1 190px', minWidth: 170 }}>
-            <label style={labelStyle}>Status</label>
-            <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as QualityInspectionStatus)}>
-              <option value="pending">Pending</option>
-              <option value="in_progress">In Progress</option>
-              <option value="passed">Passed</option>
-              <option value="failed">Failed</option>
-              <option value="conditionally_passed">Conditionally Passed</option>
-            </select>
-          </div>
-        </div>
-        <div>
-          <label style={labelStyle}>Remarks</label>
-          <textarea style={{ ...inputStyle, minHeight: 60 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingTop: 20, borderTop: `1px solid ${BORDER.normal}` }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Inspection Results</h2>
-          <button onClick={addResult} type="button" style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${BRAND.primaryBorder}`, background: BRAND.primarySoft, color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
-            + Add Result
+    <FormPage nav={<QualityNav />} icon="list" title={inspection.inspection_number} subtitle={`Quality · In-process inspection${inspection.item_name ? ` · ${inspection.item_name}` : ''}`}
+      onBack={() => router.push('/dashboard/quality/in-process-inspection')} backTour="qa-ipi-back"
+      footer={<>
+        {canDelete('quality', 'in_process_inspection', null) && (
+          <button type="button" onClick={() => setConfirmOpen(true)} disabled={deleting} style={{ ...sheetBtn('secondary', SHEET.INK, deleting), color: '#b91c1c', marginRight: 'auto' }}>
+            <SheetIcon name="trash" size={16} />{deleting ? 'Deleting…' : 'Delete inspection'}
           </button>
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-            <thead>
-              <tr>
-                {['SL', 'Parameter', 'Method', 'Acceptance Criteria', 'Observed Value', 'Result', ''].map((h) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap' }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((r, idx) => (
-                <tr key={idx}>
-                  <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 600, color: TEXT.muted }}>{idx + 1}</td>
-                  <td style={{ padding: '6px 8px', minWidth: 160 }}>
-                    <input style={inputStyle} value={r.parameter} onChange={(e) => updateResult(idx, 'parameter', e.target.value)} />
-                  </td>
-                  <td style={{ padding: '6px 8px', minWidth: 140 }}>
-                    <input style={inputStyle} value={r.method || ''} onChange={(e) => updateResult(idx, 'method', e.target.value)} />
-                  </td>
-                  <td style={{ padding: '6px 8px', minWidth: 180 }}>
-                    <input style={inputStyle} value={r.acceptance_criteria || ''} onChange={(e) => updateResult(idx, 'acceptance_criteria', e.target.value)} />
-                  </td>
-                  <td style={{ padding: '6px 8px', minWidth: 150 }}>
-                    <input style={inputStyle} value={r.observed_value || ''} onChange={(e) => updateResult(idx, 'observed_value', e.target.value)} />
-                  </td>
-                  <td style={{ padding: '6px 8px', minWidth: 120 }}>
-                    <select style={inputStyle} value={r.result} onChange={(e) => updateResult(idx, 'result', e.target.value as QualityInspectionResultValue)}>
-                      <option value="na">N/A</option>
-                      <option value="pass">Pass</option>
-                      <option value="fail">Fail</option>
-                    </select>
-                  </td>
-                  <td style={{ padding: '6px 8px' }}>
-                    {results.length > 1 && (
-                      <span onClick={() => removeResult(idx)} style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        )}
+        <button type="button" onClick={() => router.push('/dashboard/quality/in-process-inspection')} style={sheetBtn('secondary')}>{canEdit ? 'Cancel' : 'Close'}</button>
+        {canEdit && (
+          <button type="button" onClick={handleSave} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+            <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save changes'}
+          </button>
+        )}
+      </>}>
+      <div style={{ padding: '20px 24px' }}>
+        <ErrorBanner error={error} />
+        <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+          <SheetSection icon="box" title="Inspection details">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
+              <div style={{ flex: '1 1 220px', minWidth: 200 }}>
+                <label style={labelStyle}>Item name <Req /></label>
+                <input style={inputStyle} value={itemName} onChange={(e) => setItemName(e.target.value)} />
+              </div>
+              <div style={{ flex: '0 1 160px', minWidth: 140 }}>
+                <label style={labelStyle}>Item code <Optional /></label>
+                <input style={inputStyle} value={itemCode} onChange={(e) => setItemCode(e.target.value)} />
+              </div>
+              <div style={{ flex: '0 1 160px', minWidth: 140 }}>
+                <label style={labelStyle}>Batch number <Optional /></label>
+                <input style={inputStyle} value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)} />
+              </div>
+              <div style={{ flex: '0 1 200px', minWidth: 180 }}>
+                <label style={labelStyle}>Project label <Optional /></label>
+                <input style={inputStyle} value={projectLabel} onChange={(e) => setProjectLabel(e.target.value)} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
+              <div style={{ flex: '0 1 130px', minWidth: 110 }}>
+                <label style={labelStyle}>Qty inspected</label>
+                <input type="number" style={inputStyle} value={quantityInspected} onChange={(e) => setQuantityInspected(e.target.value)} />
+              </div>
+              <div style={{ flex: '0 1 130px', minWidth: 110 }}>
+                <label style={labelStyle}>Qty accepted</label>
+                <input type="number" style={inputStyle} value={quantityAccepted} onChange={(e) => setQuantityAccepted(e.target.value)} />
+              </div>
+              <div style={{ flex: '0 1 130px', minWidth: 110 }}>
+                <label style={labelStyle}>Qty rejected</label>
+                <input type="number" style={inputStyle} value={quantityRejected} onChange={(e) => setQuantityRejected(e.target.value)} />
+              </div>
+              <div style={{ flex: '1 1 260px', minWidth: 220 }}>
+                <label style={labelStyle}>Inspection plan <Optional /></label>
+                <SearchableSelect
+                  value={inspectionPlanId}
+                  onChange={setInspectionPlanId}
+                  options={plans.map((p) => ({ value: String(p.id), label: `${p.plan_number} — ${p.item_name}` }))}
+                  placeholder="Search inspection plan…"
+                  disabled={!canEdit}
+                />
+              </div>
+              <div style={{ flex: '0 1 170px', minWidth: 150 }}>
+                <label style={labelStyle}>Inspection date</label>
+                <DateField value={inspectionDate} onChange={setInspectionDate} />
+              </div>
+              <div style={{ flex: '0 1 190px', minWidth: 170 }}>
+                <label style={labelStyle}>Status</label>
+                <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as QualityInspectionStatus)}>
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="passed">Passed</option>
+                  <option value="failed">Failed</option>
+                  <option value="conditionally_passed">Conditionally Passed</option>
+                </select>
+              </div>
+            </div>
+            <label style={labelStyle}>Remarks <Optional /></label>
+            <textarea style={{ ...inputStyle, minHeight: 60 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+          </SheetSection>
 
-      <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <button
-          onClick={() => setConfirmOpen(true)}
-          disabled={deleting}
-          type="button"
-          style={{ padding: '12px 22px', borderRadius: 12, border: `1px solid ${DANGER.border}`, background: DANGER.light, color: DANGER.text, fontSize: 14, fontWeight: 600, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}
-        >
-          {deleting ? 'Deleting…' : 'Delete Inspection'}
-        </button>
-        <button onClick={handleSave} disabled={saving} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.6 : 1 }}>
-          {saving ? 'Saving…' : 'Save Changes'}
-        </button>
+          <SheetSection icon="list" title="Inspection results"
+            extra={canEdit ? <button type="button" onClick={addResult} style={{ ...sheetBtn('secondary'), marginLeft: 'auto', padding: '6px 12px' }}><SheetIcon name="plus" size={14} />Add result</button> : undefined}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+                <thead>
+                  <tr>
+                    {['SL', 'Parameter', 'Method', 'Acceptance criteria', 'Observed value', 'Result', ''].map((h) => (
+                      <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: SHEET.MUTED, whiteSpace: 'nowrap' }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.map((r, idx) => (
+                    <tr key={idx}>
+                      <td style={{ ...cell, fontSize: 12.5, fontWeight: 600, color: TEXT.muted }}>{idx + 1}</td>
+                      <td style={{ ...cell, minWidth: 160 }}>
+                        <input style={inputStyle} value={r.parameter} onChange={(e) => updateResult(idx, 'parameter', e.target.value)} />
+                      </td>
+                      <td style={{ ...cell, minWidth: 140 }}>
+                        <input style={inputStyle} value={r.method || ''} onChange={(e) => updateResult(idx, 'method', e.target.value)} />
+                      </td>
+                      <td style={{ ...cell, minWidth: 180 }}>
+                        <input style={inputStyle} value={r.acceptance_criteria || ''} onChange={(e) => updateResult(idx, 'acceptance_criteria', e.target.value)} />
+                      </td>
+                      <td style={{ ...cell, minWidth: 150 }}>
+                        <input style={inputStyle} value={r.observed_value || ''} onChange={(e) => updateResult(idx, 'observed_value', e.target.value)} />
+                      </td>
+                      <td style={{ ...cell, minWidth: 120 }}>
+                        <select style={inputStyle} value={r.result} onChange={(e) => updateResult(idx, 'result', e.target.value as QualityInspectionResultValue)}>
+                          <option value="na">N/A</option>
+                          <option value="pass">Pass</option>
+                          <option value="fail">Fail</option>
+                        </select>
+                      </td>
+                      <td style={cell}>
+                        {canEdit && results.length > 1 && (
+                          <button type="button" aria-label={`Remove result ${idx + 1}`} onClick={() => removeResult(idx)} style={sheetBtn('ghost', '#dc2626')}><SheetIcon name="trash" size={15} /></button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SheetSection>
+        </fieldset>
       </div>
 
       <ConfirmDialog
@@ -295,6 +280,6 @@ export default function InProcessInspectionDetailPage() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmOpen(false)}
       />
-    </div>
+    </FormPage>
   )
 }

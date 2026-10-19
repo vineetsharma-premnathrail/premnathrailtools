@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { WarningCircle } from '@phosphor-icons/react'
 
 /**
  * Center-screen error popup for failures that need more than a dismiss button —
@@ -73,11 +74,7 @@ export default function ErrorRecoveryDialog({
             marginBottom: 16,
           }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
+          <WarningCircle size={20} color="#dc2626" />
         </div>
         <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 8px' }}>{title}</p>
         <p style={{ fontSize: 13.5, color: '#78716c', margin: '0 0 22px', lineHeight: 1.6 }}>{message}</p>

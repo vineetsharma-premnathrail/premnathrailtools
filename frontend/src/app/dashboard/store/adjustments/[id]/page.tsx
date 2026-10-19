@@ -1,26 +1,33 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { storeApi } from '@/lib/api'
+import { approvalsApi, storeApi } from '@/lib/api'
 import { StoreStockAdjustment } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
 import { Row, InfoRow, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useRecordId } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
-const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected' }
-const STATUS_HEX: Record<string, string> = { pending_approval: '#f59e0b', approved: '#22c55e', rejected: '#dc2626' }
+const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Withdrawn' }
+const STATUS_HEX: Record<string, string> = { pending_approval: '#f59e0b', approved: '#22c55e', rejected: '#dc2626', cancelled: '#78716c' }
 
 export default function StoreStockAdjustmentDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('store')
+  const { can } = useCan()
   const router = useRouter()
   const params = useParams()
-  const adjustmentId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedAdjustmentId, error: linkError } = useRecordId(ref)
+  const adjustmentId = resolvedAdjustmentId ?? 0
 
   const [adjustment, setAdjustment] = useState<StoreStockAdjustment | null>(null)
   const [loading, setLoading] = useState(true)
@@ -29,17 +36,24 @@ export default function StoreStockAdjustmentDetailPage() {
   const [busy, setBusy] = useState(false)
   const [confirmApprove, setConfirmApprove] = useState(false)
   const [rejectOpen, setRejectOpen] = useState(false)
+  // Adjustments raised since the move to Organization › Approval Workflows
+  // are decided in the ApprovalPanel; older ones keep the named-approver buttons.
+  const [onEngine, setOnEngine] = useState<boolean | null>(null)
+
+  const load = useCallback(() => {
+    storeApi.getStockAdjustment(adjustmentId).then(setAdjustment).catch((err) => setLoadError(extractErrorMessages(err, 'The server did not respond — check your connection and reload the page.').join(' '))).finally(() => setLoading(false))
+    approvalsApi.entity('stock_adjustment', adjustmentId).then((s) => setOnEngine(!!s.current)).catch(() => setOnEngine(null))
+  }, [adjustmentId])
 
   useEffect(() => {
     if (!isAuthorized || !adjustmentId) return
-    setLoading(true)
-    storeApi.getStockAdjustment(adjustmentId).then(setAdjustment).catch(() => setLoadError('Failed to load this stock adjustment.')).finally(() => setLoading(false))
-  }, [isAuthorized, adjustmentId])
+    load()
+  }, [isAuthorized, adjustmentId, load])
 
   // Maker-checker: the creator can never decide their own adjustment; the
   // approver named on it (or an admin standing in) can. The backend enforces
   // the same rule — this only avoids showing buttons that would be refused.
-  const isPending = adjustment?.status === 'pending_approval'
+  const isPending = adjustment?.status === 'pending_approval' && onEngine === false
   const isCreator = !!adjustment && adjustment.created_by_id === user?.id
   const canDecide = !!adjustment && isPending && !isCreator && (adjustment.approved_by_id === user?.id || user?.role === 'admin')
 
@@ -63,6 +77,8 @@ export default function StoreStockAdjustmentDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><StoreNav /><InvalidRecordLink message={linkError} listHref="/dashboard/store/adjustments" listLabel="Back to adjustments" /></div>)
+  if (!adjustmentId) return <div><StoreNav /></div>
 
   return (
     <div>
@@ -118,10 +134,16 @@ export default function StoreStockAdjustmentDetailPage() {
               </p>
               {canDecide && (
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button type="button" disabled={busy} onClick={() => setRejectOpen(true)} style={{ ...secondaryBtnStyle, color: '#b91c1c', opacity: busy ? 0.6 : 1 }}>Reject</button>
-                  <button type="button" disabled={busy} onClick={() => setConfirmApprove(true)} style={{ ...primaryBtnStyle, opacity: busy ? 0.6 : 1 }}>{busy ? 'Working…' : 'Approve & Post'}</button>
+                  {can('store', 'adjustments', 'reject') && <button type="button" data-tour="adjustment-detail-reject-btn" disabled={busy} onClick={() => setRejectOpen(true)} style={{ ...secondaryBtnStyle, color: '#b91c1c', opacity: busy ? 0.6 : 1 }}>Reject</button>}
+                  {can('store', 'adjustments', 'approve') && <button type="button" data-tour="adjustment-detail-approve-btn" disabled={busy} onClick={() => setConfirmApprove(true)} style={{ ...primaryBtnStyle, opacity: busy ? 0.6 : 1 }}>{busy ? 'Working…' : 'Approve & Post'}</button>}
                 </div>
               )}
+            </div>
+          )}
+
+          {onEngine && (
+            <div data-tour="adjustment-detail-approval-panel">
+              <ApprovalPanel entityType="stock_adjustment" entityId={adjustment.id} onChanged={load} />
             </div>
           )}
 
@@ -157,7 +179,7 @@ export default function StoreStockAdjustmentDetailPage() {
                     <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{line.item_code} — {line.item_name}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.existing_quantity} {line.uom}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.actual_quantity} {line.uom}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: line.difference === 0 ? TEXT.muted : line.difference > 0 ? BRAND.primaryActive : '#b91c1c' }}>
+                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: line.difference === 0 ? TEXT.muted : line.difference > 0 ? '#15803d' : '#b91c1c' }}>
                       {line.difference > 0 ? '+' : ''}{line.difference}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{line.remarks || '—'}</td>

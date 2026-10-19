@@ -2,41 +2,45 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useRequireAdmin } from '@/hooks/useAuth'
+import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi, storeApi } from '@/lib/api'
 import { Company, Branch, StoreLocation, CompanyAddress, CompanyContact, CompanyFinancialYear, CompanyDocument } from '@/types'
-import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
-import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import DateField from '@/components/erp/DateField'
 import FileUploadField from '@/components/shared/FileUploadField'
+import { FormPage, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }
-const checkboxRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.body, marginTop: 6 }
-const cardRowStyle: React.CSSProperties = {
-  display: 'flex', flexDirection: 'column', gap: 8, padding: '14px 16px', borderRadius: 12,
-  background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.normal}`,
-}
-const primaryBtnStyle: React.CSSProperties = {
-  padding: '9px 16px', borderRadius: 9, border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-  background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: '#fff',
-}
-const linkBtnStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }
+const { INK, BODY, MUTED, LINE, SOFT, BLUE } = SHEET
+
+const rowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }
+const checkStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: BODY }
+/** The add/edit block above each list (address, contact, FY, document). */
+const subFormStyle: React.CSSProperties = { padding: 16, borderRadius: 12, background: SOFT, border: `1px solid ${LINE}`, marginBottom: 18 }
+const listRowStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', borderRadius: 12, background: '#fff', border: `1px solid ${LINE}` }
+const linkBtnStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: BLUE, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }
 const dangerLinkStyle: React.CSSProperties = { ...linkBtnStyle, color: '#b91c1c' }
-const fieldLabelStyle: React.CSSProperties = labelStyle
+const pill = (bg: string, color: string): React.CSSProperties => ({ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: bg, color })
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><label style={fieldLabelStyle}>{label}</label>{children}</div>
+/** One field: label + control, sized by its flex basis (short fields stay short). */
+function F({ label, req, opt, basis = 240, max, children }: { label: string; req?: boolean; opt?: boolean; basis?: number; max?: number; children: React.ReactNode }) {
+  return (
+    <div style={{ flex: `1 1 ${basis}px`, minWidth: Math.min(basis, 160), maxWidth: max }}>
+      <label style={sheetLabel}>{label} {req && <Req />}{opt && <Optional />}</label>
+      {children}
+    </div>
+  )
+}
+
+/** Flat underline tab — every border side set explicitly so the app-wide <button> style doesn't show through. */
+function tabStyle(active: boolean): React.CSSProperties {
+  return {
+    padding: '10px 4px', marginRight: 18, marginBottom: -1, borderTop: 'none', borderLeft: 'none', borderRight: 'none', borderRadius: 0, boxShadow: 'none', outline: 'none',
+    background: 'transparent', borderBottom: active ? `2px solid ${BLUE}` : '2px solid transparent',
+    color: active ? BLUE : MUTED, fontWeight: 600, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+  }
 }
 
 type FormState = Partial<Company>
@@ -57,8 +61,16 @@ const TAB_TOUR_IDS: Record<typeof TABS[number], string> = {
 }
 
 export default function EditOrganizationInfoPage() {
-  const { isAuthorized, isLoading } = useRequireAdmin()
+  const { isAuthorized, isLoading } = useRequireOrgTab('info', 'edit')
   const router = useRouter()
+  // Company Info features (core/features/organization.py). Legal / Tax are
+  // left out without their Edit: the server keeps those values as they are.
+  const { canFeature } = useCan()
+  const editStatutory = canFeature('organization', 'info', 'statutory', 'edit')
+  const editFy = canFeature('organization', 'info', 'financial_years', 'edit')
+  const seeDocs = canFeature('organization', 'info', 'documents', 'view')
+  const seeTab = (t: typeof TABS[number]) => (t === 'Legal & Registration' || t === 'Tax Configuration' ? editStatutory
+    : t === 'Financial Year' ? editFy : t === 'Documents' ? seeDocs : true)
   const [form, setForm] = useState<FormState>({})
   const [branches, setBranches] = useState<Branch[]>([])
   const [locations, setLocations] = useState<StoreLocation[]>([])
@@ -76,8 +88,8 @@ export default function EditOrganizationInfoPage() {
     Promise.all([
       organizationApi.listCompanyAddresses(),
       organizationApi.listCompanyContacts(),
-      organizationApi.listCompanyFinancialYears(),
-      organizationApi.listCompanyDocuments(),
+      editFy ? organizationApi.listCompanyFinancialYears() : Promise.resolve([]),
+      seeDocs ? organizationApi.listCompanyDocuments() : Promise.resolve([]),
     ]).then(([a, ct, fy, d]) => {
       setAddresses(a); setContacts(ct); setFinancialYears(fy); setDocuments(d)
     })
@@ -92,7 +104,7 @@ export default function EditOrganizationInfoPage() {
           setBranches(branchList)
           setLocations(locationList)
         })
-        .catch(() => setError('Failed to load company info.'))
+        .catch((err: unknown) => setError(extractErrorMessages(err, 'Could not load plants/store locations for the address pickers. Reload the page; if it keeps failing, check that you still have access to Organization and Store.').join(' ')))
 
       // Company info (and everything under it — addresses/contacts/FYs/
       // documents) 404s until the one-time setup row exists. That's not a
@@ -109,7 +121,7 @@ export default function EditOrganizationInfoPage() {
             setIsNew(true)
             setForm({})
           } else {
-            setError('Failed to load company info.')
+            setError(extractErrorMessages(err, 'Could not load company info. Reload the page; if it keeps failing, the server may be down — contact IT.').join(' '))
           }
         })
         .finally(() => setLoading(false))
@@ -121,11 +133,13 @@ export default function EditOrganizationInfoPage() {
 
   const handleSave = async () => {
     if (!form.name?.trim()) {
-      setError('Company name is required')
+      setError('Company name is required — enter it on the Basic tab.')
+      setTab('Basic')
       return
     }
     if (!form.code?.trim()) {
-      setError('Company code is required')
+      setError('Company code is required — enter it on the Basic tab (e.g. PNR).')
+      setTab('Basic')
       return
     }
     setSaving(true)
@@ -138,422 +152,275 @@ export default function EditOrganizationInfoPage() {
       }
       router.push('/dashboard/organization/info')
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to save company info.')
+      setError(extractErrorMessages(err, 'Could not save company info. Check the highlighted fields and try again; if it keeps failing, the server may be down — contact IT.').join(' '))
       setSaving(false)
     }
   }
 
+  // Plain render helpers (called as functions, not components, so inputs keep focus while typing).
+  const text = (field: keyof Company, label: string, o: { tour?: string; req?: boolean; ph?: string; basis?: number; max?: number; keepEmpty?: boolean; upper?: boolean } = {}) => (
+    <F label={label} req={o.req} basis={o.basis} max={o.max}>
+      <input data-tour={o.tour} style={sheetInput} value={(form[field] as string | null | undefined) || ''} placeholder={o.ph}
+        onChange={(e) => setField(field, o.upper ? e.target.value.toUpperCase() : o.keepEmpty ? e.target.value : (e.target.value || null))} />
+    </F>
+  )
+  const date = (field: keyof Company, label: string, tour?: string) => (
+    <F label={label} basis={170} max={260}>
+      <div data-tour={tour}><DateField value={(form[field] as string | null | undefined) || ''} onChange={(v) => setField(field, v || null)} /></div>
+    </F>
+  )
+  const area = (field: keyof Company, label: string, tour: string, minHeight = 70, ph?: string) => (
+    <div style={{ marginBottom: 14 }}>
+      <label style={sheetLabel}>{label}</label>
+      <textarea data-tour={tour} style={{ ...sheetInput, minHeight, resize: 'vertical' }} value={(form[field] as string | null | undefined) || ''} placeholder={ph} onChange={(e) => setField(field, e.target.value || null)} />
+    </div>
+  )
+  const color = (field: keyof Company, label: string, fallback: string, ph: string) => (
+    <F label={label} basis={200} max={280}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input type="color" value={(form[field] as string | null | undefined) || fallback} onChange={(e) => setField(field, e.target.value)} style={{ width: 44, height: 40, padding: 2, borderRadius: 8, border: `1px solid ${LINE}`, flexShrink: 0 }} />
+        <input style={sheetInput} value={(form[field] as string | null | undefined) || ''} onChange={(e) => setField(field, e.target.value || null)} placeholder={ph} />
+      </div>
+    </F>
+  )
+
   if (isLoading || !isAuthorized) return null
 
+  const isList = LIST_TABS.has(tab)
+  const backToInfo = () => router.push('/dashboard/organization/info')
+
   return (
-    <div>
-      <OrganizationNav />
-
-      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-        <span onClick={() => router.push('/dashboard/organization/info')} style={{ cursor: 'pointer' }}>Organization › Info</span> › Edit
-      </p>
-      <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>Edit Info</h1>
-
-      <MessageDialog
-        open={!!error}
-        variant="error"
-        title="Company Info Error"
-        message={error}
-        onClose={() => setError('')}
-      />
-
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px 20px', color: TEXT.muted, fontSize: 13 }}>Loading…</div>
+    <FormPage
+      nav={<OrganizationNav />}
+      icon="building"
+      title={isNew ? 'Set Up Company Info' : 'Edit Info'}
+      subtitle="Organization › Info — master details printed on letterheads, invoices and other generated documents."
+      onBack={backToInfo} backTour="org-edit-back"
+      footer={isList ? (
+        <p style={{ fontSize: 12.5, color: MUTED, margin: 0, alignSelf: 'center' }}>Each {tab === 'Financial Year' ? 'financial year' : tab.toLowerCase().replace(/s$/, '')} saves on its own with its Save button above.</p>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
-            {TABS.map((t) => (
-              <button
-                key={t}
-                type="button"
-                data-tour={TAB_TOUR_IDS[t]}
-                onClick={() => setTab(t)}
-                style={{
-                  padding: '10px 6px',
-                  marginRight: 16,
-                  border: 'none',
-                  borderRadius: 0,
-                  boxShadow: 'none',
-                  outline: 'none',
-                  background: 'transparent',
-                  borderBottom: tab === t ? `2px solid ${BRAND.primary}` : '2px solid transparent',
-                  color: tab === t ? BRAND.primary : TEXT.secondary,
-                  fontWeight: 600,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {t}
-              </button>
+          <button type="button" data-tour="org-edit-cancel" onClick={backToInfo} disabled={saving} style={sheetBtn('secondary', INK, saving)}>Cancel</button>
+          <button type="button" data-tour="org-edit-save" onClick={handleSave} disabled={saving || loading} style={sheetBtn('primary', BLUE, saving || loading)}>
+            <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Changes'}
+          </button>
+        </>
+      )}
+    >
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: MUTED, fontSize: 13 }}>Loading…</div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', padding: '0 24px', borderBottom: `1px solid ${LINE}` }}>
+            {TABS.filter(seeTab).map((t) => (
+              <button key={t} type="button" data-tour={TAB_TOUR_IDS[t]} onClick={() => setTab(t)} style={tabStyle(tab === t)}>{t}</button>
             ))}
           </div>
 
-          {isNew && (
-            <div style={{ ...sectionStyle, background: 'rgba(255,122,69,0.08)', borderColor: 'rgba(255,122,69,0.3)' }}>
-              <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
-                Company info hasn&apos;t been set up yet. Fill in at least Name and Code below and Save — Address, Contacts,
+          <div style={{ padding: '20px 24px' }}>
+            <SheetError error={error} />
+
+            {isNew && (
+              <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: 12.5 }}>
+                Company info hasn&apos;t been set up yet. Fill in at least Name and Code and Save — Address, Contacts,
                 Financial Year, and Documents can only be added after that first save.
-              </p>
-            </div>
-          )}
+              </div>
+            )}
 
-          {tab === 'Basic' && (
-            <div style={sectionStyle}>
-              <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 16px 0' }}>Basic Information</h2>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Company Name *</label>
-                  <input data-tour="org-edit-name" style={inputStyle} value={form.name || ''} onChange={(e) => setField('name', e.target.value)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Legal Name *</label>
-                  <input data-tour="org-edit-legal-name" style={inputStyle} value={form.legal_name || ''} onChange={(e) => setField('legal_name', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Short Name</label>
-                  <input style={inputStyle} value={form.short_name || ''} onChange={(e) => setField('short_name', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Code *</label>
-                  <input data-tour="org-edit-code" style={inputStyle} value={form.code || ''} onChange={(e) => setField('code', e.target.value.toUpperCase())} />
-                </div>
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Company Type</label>
-                  <input style={inputStyle} value={form.company_type || ''} onChange={(e) => setField('company_type', e.target.value || null)} placeholder="Private Limited" />
-                </div>
-                <div>
-                  <label style={labelStyle}>Industry</label>
-                  <input style={inputStyle} value={form.industry || ''} onChange={(e) => setField('industry', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Business Nature</label>
-                  <input style={inputStyle} value={form.business_nature || ''} onChange={(e) => setField('business_nature', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Website</label>
-                  <input style={inputStyle} value={form.website || ''} onChange={(e) => setField('website', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Description</label>
-                <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={form.description || ''} onChange={(e) => setField('description', e.target.value || null)} />
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Date of Incorporation</label>
-                  <input type="date" style={inputStyle} value={form.date_of_incorporation || ''} onChange={(e) => setField('date_of_incorporation', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Country *</label>
-                  <input data-tour="org-edit-country" style={inputStyle} value={form.country || ''} onChange={(e) => setField('country', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
-                <div>
-                  <label style={labelStyle}>Default Currency *</label>
-                  <input data-tour="org-edit-currency" style={inputStyle} value={form.currency || ''} onChange={(e) => setField('currency', e.target.value || null)} placeholder="INR" />
-                </div>
-                <div>
-                  <label style={labelStyle}>Default Language</label>
-                  <input style={inputStyle} value={form.default_language || ''} onChange={(e) => setField('default_language', e.target.value || null)} placeholder="English" />
-                </div>
-                <div>
-                  <label style={labelStyle}>Time Zone *</label>
-                  <input data-tour="org-edit-timezone" style={inputStyle} value={form.timezone || ''} onChange={(e) => setField('timezone', e.target.value || null)} placeholder="Asia/Kolkata" />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {tab === 'Address' && (isNew
-            ? <p style={{ fontSize: 12.5, color: TEXT.muted }}>Save the Basic tab first to add addresses.</p>
-            : <AddressesEditor addresses={addresses} onRefresh={loadLists} />)}
-
-          {tab === 'Legal & Registration' && (
-            <div style={sectionStyle}>
-              <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 16px 0' }}>Legal & Registration</h2>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Legal Entity Type</label>
-                  <input style={inputStyle} value={form.legal_entity_type || ''} onChange={(e) => setField('legal_entity_type', e.target.value || null)} placeholder="Private Limited Company" />
-                </div>
-                <div>
-                  <label style={labelStyle}>Legal Status</label>
-                  <input style={inputStyle} value={form.legal_status || ''} onChange={(e) => setField('legal_status', e.target.value || null)} placeholder="Active" />
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
-                <div>
-                  <label style={labelStyle}>CIN</label>
-                  <input data-tour="org-edit-cin" style={inputStyle} value={form.cin || ''} onChange={(e) => setField('cin', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>PAN</label>
-                  <input data-tour="org-edit-pan" style={inputStyle} value={form.pan || ''} onChange={(e) => setField('pan', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>TAN</label>
-                  <input style={inputStyle} value={form.tan || ''} onChange={(e) => setField('tan', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>GSTIN</label>
-                  <input data-tour="org-edit-gstin" style={inputStyle} value={form.gstin || ''} onChange={(e) => setField('gstin', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Udyam Registration No.</label>
-                  <input style={inputStyle} value={form.udyam_registration_no || ''} onChange={(e) => setField('udyam_registration_no', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>IEC</label>
-                  <input style={inputStyle} value={form.iec || ''} onChange={(e) => setField('iec', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>MSME Registration No.</label>
-                  <input style={inputStyle} value={form.msme_registration_no || ''} onChange={(e) => setField('msme_registration_no', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>PF Registration No.</label>
-                  <input style={inputStyle} value={form.pf_registration_no || ''} onChange={(e) => setField('pf_registration_no', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>ESIC Registration No.</label>
-                  <input style={inputStyle} value={form.esic_registration_no || ''} onChange={(e) => setField('esic_registration_no', e.target.value || null)} />
-                </div>
-              </div>
-
-              <h3 style={{ fontSize: 12.5, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', margin: '20px 0 12px' }}>Other Registration</h3>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Other Registration Type</label>
-                  <input style={inputStyle} value={form.other_registration_type || ''} onChange={(e) => setField('other_registration_type', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Registration Number</label>
-                  <input style={inputStyle} value={form.other_registration_number || ''} onChange={(e) => setField('other_registration_number', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Registration Date</label>
-                  <input type="date" style={inputStyle} value={form.other_registration_date || ''} onChange={(e) => setField('other_registration_date', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Issuing Authority</label>
-                  <input style={inputStyle} value={form.issuing_authority || ''} onChange={(e) => setField('issuing_authority', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Expiry Date</label>
-                  <input type="date" style={inputStyle} value={form.expiry_date || ''} onChange={(e) => setField('expiry_date', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Legal Representative</label>
-                  <input style={inputStyle} value={form.legal_representative || ''} onChange={(e) => setField('legal_representative', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <div>
-                  <label style={labelStyle}>Authorized Capital</label>
-                  <input data-tour="org-edit-authorized-capital" type="number" style={inputStyle} value={form.authorized_capital ?? ''} onChange={(e) => setField('authorized_capital', e.target.value ? Number(e.target.value) : null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Paid-up Capital</label>
-                  <input type="number" style={inputStyle} value={form.paid_up_capital ?? ''} onChange={(e) => setField('paid_up_capital', e.target.value ? Number(e.target.value) : null)} />
-                </div>
-              </div>
-              <p data-tour="org-edit-legal-docs-note" style={{ fontSize: 11.5, color: TEXT.muted, margin: '16px 0 0' }}>Legal documents (licenses, certificates, agreements) are managed from the Company Documents tab on the Info page.</p>
-            </div>
-          )}
-
-          {tab === 'Tax Configuration' && (
-            <div style={sectionStyle}>
-              <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 16px 0' }}>Tax Configuration</h2>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>GST Registration Type</label>
-                  <input data-tour="org-edit-gst-type" style={inputStyle} value={form.gst_registration_type || ''} onChange={(e) => setField('gst_registration_type', e.target.value || null)} placeholder="Regular" />
-                </div>
-                <div>
-                  <label style={labelStyle}>Default Tax Region</label>
-                  <input style={inputStyle} value={form.default_tax_region || ''} onChange={(e) => setField('default_tax_region', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Tax Deductibility</label>
-                  <input style={inputStyle} value={form.tax_deductibility || ''} onChange={(e) => setField('tax_deductibility', e.target.value || null)} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Tax Registration Status</label>
-                  <input style={inputStyle} value={form.tax_registration_status || ''} onChange={(e) => setField('tax_registration_status', e.target.value || null)} placeholder="Active" />
-                </div>
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Tax Effective Date</label>
-                <input type="date" style={{ ...inputStyle, maxWidth: 260 }} value={form.tax_effective_date || ''} onChange={(e) => setField('tax_effective_date', e.target.value || null)} />
-              </div>
-              <div style={{ display: 'flex', gap: 24 }} data-tour="org-edit-tax-applicability">
-                <label style={checkboxRowStyle}>
-                  <input type="checkbox" checked={!!form.tds_applicable} onChange={(e) => setField('tds_applicable', e.target.checked)} />
-                  TDS Applicable
-                </label>
-                <label style={checkboxRowStyle}>
-                  <input type="checkbox" checked={!!form.tcs_applicable} onChange={(e) => setField('tcs_applicable', e.target.checked)} />
-                  TCS Applicable
-                </label>
-              </div>
-              <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '16px 0 0' }}>Tax documents (registration certificates, filings) are managed from the Company Documents tab on the Info page.</p>
-            </div>
-          )}
-
-          {tab === 'Contacts' && (isNew
-            ? <p style={{ fontSize: 12.5, color: TEXT.muted }}>Save the Basic tab first to add contacts.</p>
-            : <ContactsEditor contacts={contacts} onRefresh={loadLists} />)}
-
-          {tab === 'Financial Year' && (isNew
-            ? <p style={{ fontSize: 12.5, color: TEXT.muted }}>Save the Basic tab first to add financial years.</p>
-            : <FinancialYearsEditor financialYears={financialYears} onRefresh={loadLists} />)}
-
-          {tab === 'Branding' && (
-            <div style={sectionStyle}>
-              <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 16px 0' }}>Branding</h2>
-              <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Company Logo URL</label>
-                <input data-tour="org-edit-logo-url" style={inputStyle} value={form.logo_url || ''} onChange={(e) => setField('logo_url', e.target.value || null)} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }} data-tour="org-edit-brand-colors">
-                <div>
-                  <label style={labelStyle}>Primary Brand Color</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input type="color" value={form.primary_brand_color || '#ff7a45'} onChange={(e) => setField('primary_brand_color', e.target.value)} style={{ width: 44, height: 38, padding: 2, borderRadius: 8, border: `1px solid ${BORDER.normal}` }} />
-                    <input style={inputStyle} value={form.primary_brand_color || ''} onChange={(e) => setField('primary_brand_color', e.target.value || null)} placeholder="#FF7A45" />
+            {(tab === 'Basic' || !seeTab(tab)) && (
+              <>
+                <SheetSection icon="building" title="Basic Information">
+                  <div style={rowStyle}>
+                    {text('name', 'Company Name', { tour: 'org-edit-name', req: true, keepEmpty: true, basis: 280 })}
+                    {text('legal_name', 'Legal Name', { tour: 'org-edit-legal-name', req: true, basis: 280 })}
                   </div>
-                </div>
-                <div>
-                  <label style={labelStyle}>Secondary Brand Color</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input type="color" value={form.secondary_brand_color || '#1f1108'} onChange={(e) => setField('secondary_brand_color', e.target.value)} style={{ width: 44, height: 38, padding: 2, borderRadius: 8, border: `1px solid ${BORDER.normal}` }} />
-                    <input style={inputStyle} value={form.secondary_brand_color || ''} onChange={(e) => setField('secondary_brand_color', e.target.value || null)} placeholder="#1F1108" />
+                  <div style={rowStyle}>
+                    {text('short_name', 'Short Name', { tour: 'org-edit-short-name', basis: 160, max: 240 })}
+                    {text('code', 'Code', { tour: 'org-edit-code', req: true, upper: true, basis: 140, max: 200 })}
+                    {text('company_type', 'Company Type', { tour: 'org-edit-company-type', ph: 'Private Limited', basis: 220 })}
                   </div>
-                </div>
-                <div>
-                  <label style={labelStyle}>Accent Color</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input type="color" value={form.accent_color || '#3b82f6'} onChange={(e) => setField('accent_color', e.target.value)} style={{ width: 44, height: 38, padding: 2, borderRadius: 8, border: `1px solid ${BORDER.normal}` }} />
-                    <input style={inputStyle} value={form.accent_color || ''} onChange={(e) => setField('accent_color', e.target.value || null)} placeholder="#3B82F6" />
+                  <div style={rowStyle}>
+                    {text('industry', 'Industry', { tour: 'org-edit-industry', basis: 240 })}
+                    {text('business_nature', 'Business Nature', { tour: 'org-edit-business-nature', basis: 240 })}
+                    {text('website', 'Website', { tour: 'org-edit-website', basis: 240, max: 340 })}
                   </div>
-                </div>
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Company Header</label>
-                <textarea data-tour="org-edit-header" style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={form.company_header || ''} onChange={(e) => setField('company_header', e.target.value || null)} placeholder="Text shown at the top of generated documents" />
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Company Footer</label>
-                <textarea data-tour="org-edit-footer" style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={form.company_footer || ''} onChange={(e) => setField('company_footer', e.target.value || null)} placeholder="Text shown at the bottom of generated documents" />
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Watermark</label>
-                <input style={inputStyle} value={form.watermark || ''} onChange={(e) => setField('watermark', e.target.value || null)} placeholder="e.g. DRAFT, or a watermark image URL" />
-              </div>
-              <div>
-                <label style={labelStyle}>Email Signature</label>
-                <textarea data-tour="org-edit-email-signature" style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={form.email_signature || ''} onChange={(e) => setField('email_signature', e.target.value || null)} />
-              </div>
-            </div>
-          )}
+                  {area('description', 'Description', 'org-edit-description')}
+                  <div style={{ ...rowStyle, marginBottom: 0 }}>
+                    {date('date_of_incorporation', 'Date of Incorporation', 'org-edit-incorporation-date')}
+                  </div>
+                </SheetSection>
+                <SheetSection icon="gear" title="Locale">
+                  <div style={{ ...rowStyle, marginBottom: 0 }}>
+                    {text('country', 'Country', { tour: 'org-edit-country', req: true, basis: 200, max: 280 })}
+                    {text('currency', 'Default Currency', { tour: 'org-edit-currency', req: true, ph: 'INR', basis: 140, max: 200 })}
+                    {text('default_language', 'Default Language', { tour: 'org-edit-language', ph: 'English', basis: 160, max: 240 })}
+                    {text('timezone', 'Time Zone', { tour: 'org-edit-timezone', req: true, ph: 'Asia/Kolkata', basis: 180, max: 260 })}
+                  </div>
+                </SheetSection>
+              </>
+            )}
 
-          {tab === 'Documents' && (isNew
-            ? <p style={{ fontSize: 12.5, color: TEXT.muted }}>Save the Basic tab first to add documents.</p>
-            : <DocumentsEditor documents={documents} onRefresh={loadLists} />)}
+            {tab === 'Address' && (isNew
+              ? <p style={{ fontSize: 12.5, color: MUTED }}>Save the Basic tab first to add addresses.</p>
+              : <AddressesEditor addresses={addresses} onRefresh={loadLists} />)}
 
-          {tab === 'Defaults & Controls' && (
-            <div style={sectionStyle}>
-              <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 16px 0' }}>Company Defaults & Controls</h2>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Default Tax</label>
-                  <input style={inputStyle} value={form.default_tax || ''} onChange={(e) => setField('default_tax', e.target.value || null)} placeholder="GST 18%" />
-                </div>
-                <div>
-                  <label style={labelStyle}>Default Plant</label>
-                  <select data-tour="org-edit-default-plant" style={inputStyle} value={form.default_plant_id || ''} onChange={(e) => setField('default_plant_id', e.target.value ? Number(e.target.value) : null)}>
-                    <option value="">— Select —</option>
-                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div style={gridStyle}>
-                <div>
-                  <label style={labelStyle}>Default Store</label>
-                  <select data-tour="org-edit-default-warehouse" style={inputStyle} value={form.default_warehouse_id || ''} onChange={(e) => setField('default_warehouse_id', e.target.value ? Number(e.target.value) : null)}>
-                    <option value="">— Select —</option>
-                    {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={labelStyle}>Default Cost Center</label>
-                  <input style={inputStyle} value={form.default_cost_center || ''} onChange={(e) => setField('default_cost_center', e.target.value || null)} />
-                </div>
-              </div>
-              <div style={{ maxWidth: 'calc(50% - 8px)' }}>
-                <label style={labelStyle}>Default Profit Center</label>
-                <input style={inputStyle} value={form.default_profit_center || ''} onChange={(e) => setField('default_profit_center', e.target.value || null)} />
-              </div>
-            </div>
-          )}
+            {tab === 'Legal & Registration' && editStatutory && (
+              <>
+                <SheetSection icon="shield" title="Legal & Registration">
+                  <div style={rowStyle}>
+                    {text('legal_entity_type', 'Legal Entity Type', { tour: 'org-edit-legal-entity-type', ph: 'Private Limited Company', basis: 260 })}
+                    {text('legal_status', 'Legal Status', { tour: 'org-edit-legal-status', ph: 'Active', basis: 160, max: 240 })}
+                  </div>
+                  <div style={rowStyle}>
+                    {text('cin', 'CIN', { tour: 'org-edit-cin', basis: 220, max: 300 })}
+                    {text('pan', 'PAN', { tour: 'org-edit-pan', basis: 150, max: 200 })}
+                    {text('tan', 'TAN', { tour: 'org-edit-tan', basis: 150, max: 200 })}
+                    {text('gstin', 'GSTIN', { tour: 'org-edit-gstin', basis: 190, max: 240 })}
+                  </div>
+                  <div style={rowStyle}>
+                    {text('udyam_registration_no', 'Udyam Registration No.', { tour: 'org-edit-udyam', basis: 220, max: 300 })}
+                    {text('iec', 'IEC', { tour: 'org-edit-iec', basis: 160, max: 220 })}
+                    {text('msme_registration_no', 'MSME Registration No.', { tour: 'org-edit-msme', basis: 220, max: 300 })}
+                  </div>
+                  <div style={{ ...rowStyle, marginBottom: 0 }}>
+                    {text('pf_registration_no', 'PF Registration No.', { tour: 'org-edit-pf', basis: 220, max: 300 })}
+                    {text('esic_registration_no', 'ESIC Registration No.', { tour: 'org-edit-esic', basis: 220, max: 300 })}
+                  </div>
+                </SheetSection>
 
-          {!LIST_TABS.has(tab) && (
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button
-              data-tour="org-edit-cancel"
-              onClick={() => router.push('/dashboard/organization/info')}
-              disabled={saving}
-              style={{
-                padding: '10px 20px', borderRadius: 8, border: '1px solid #d4d4d8', background: '#fff',
-                color: TEXT.body, fontSize: 13.5, fontWeight: 600,
-                cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.5 : 1,
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              data-tour="org-edit-save"
-              onClick={handleSave}
-              disabled={saving}
-              style={{
-                padding: '10px 24px', borderRadius: 10, border: 'none',
-                background: saving ? '#999' : `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`,
-                color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
-                boxShadow: saving ? 'none' : `0 4px 14px ${BRAND.primaryGlow}`,
-              }}
-            >
-              {saving ? 'Saving…' : 'Save Changes'}
-            </button>
+                <div data-tour="org-edit-other-registration">
+                  <SheetSection icon="doc" title="Other Registration" extra={<Optional />}>
+                    <div style={rowStyle}>
+                      {text('other_registration_type', 'Other Registration Type', { basis: 240 })}
+                      {text('other_registration_number', 'Registration Number', { basis: 220, max: 300 })}
+                      {text('issuing_authority', 'Issuing Authority', { basis: 220 })}
+                    </div>
+                    <div style={{ ...rowStyle, marginBottom: 0 }}>
+                      {date('other_registration_date', 'Registration Date')}
+                      {date('expiry_date', 'Expiry Date')}
+                    </div>
+                  </SheetSection>
+                </div>
+
+                <SheetSection icon="rupee" title="Representative & Capital">
+                  <div style={{ ...rowStyle, marginBottom: 0 }}>
+                    {text('legal_representative', 'Legal Representative', { tour: 'org-edit-legal-representative', basis: 260, max: 340 })}
+                    <F label="Authorized Capital" basis={180} max={240}>
+                      <input data-tour="org-edit-authorized-capital" type="number" style={sheetInput} value={form.authorized_capital ?? ''} onChange={(e) => setField('authorized_capital', e.target.value ? Number(e.target.value) : null)} />
+                    </F>
+                    <F label="Paid-up Capital" basis={180} max={240}>
+                      <input type="number" data-tour="org-edit-paid-up-capital" style={sheetInput} value={form.paid_up_capital ?? ''} onChange={(e) => setField('paid_up_capital', e.target.value ? Number(e.target.value) : null)} />
+                    </F>
+                  </div>
+                  <p data-tour="org-edit-legal-docs-note" style={sheetHint}>Legal documents (licenses, certificates, agreements) are managed from the Company Documents tab on the Info page.</p>
+                </SheetSection>
+              </>
+            )}
+
+            {tab === 'Tax Configuration' && editStatutory && (
+              <SheetSection icon="rupee" title="Tax Configuration">
+                <div style={rowStyle}>
+                  {text('gst_registration_type', 'GST Registration Type', { tour: 'org-edit-gst-type', ph: 'Regular', basis: 200, max: 280 })}
+                  {text('default_tax_region', 'Default Tax Region', { tour: 'org-edit-tax-region', basis: 200, max: 280 })}
+                  {text('tax_deductibility', 'Tax Deductibility', { tour: 'org-edit-tax-deductibility', basis: 200, max: 280 })}
+                </div>
+                <div style={rowStyle}>
+                  {text('tax_registration_status', 'Tax Registration Status', { tour: 'org-edit-tax-reg-status', ph: 'Active', basis: 200, max: 280 })}
+                  {date('tax_effective_date', 'Tax Effective Date', 'org-edit-tax-effective-date')}
+                </div>
+                <div style={{ display: 'flex', gap: 24 }} data-tour="org-edit-tax-applicability">
+                  <label style={checkStyle}>
+                    <input type="checkbox" checked={!!form.tds_applicable} onChange={(e) => setField('tds_applicable', e.target.checked)} />
+                    TDS Applicable
+                  </label>
+                  <label style={checkStyle}>
+                    <input type="checkbox" checked={!!form.tcs_applicable} onChange={(e) => setField('tcs_applicable', e.target.checked)} />
+                    TCS Applicable
+                  </label>
+                </div>
+                <p style={sheetHint}>Tax documents (registration certificates, filings) are managed from the Company Documents tab on the Info page.</p>
+              </SheetSection>
+            )}
+
+            {tab === 'Contacts' && (isNew
+              ? <p style={{ fontSize: 12.5, color: MUTED }}>Save the Basic tab first to add contacts.</p>
+              : <ContactsEditor contacts={contacts} onRefresh={loadLists} />)}
+
+            {tab === 'Financial Year' && editFy && (isNew
+              ? <p style={{ fontSize: 12.5, color: MUTED }}>Save the Basic tab first to add financial years.</p>
+              : <FinancialYearsEditor financialYears={financialYears} onRefresh={loadLists} />)}
+
+            {tab === 'Branding' && (
+              <>
+                <SheetSection icon="star" title="Logo & Colors">
+                  <div style={rowStyle}>
+                    {text('logo_url', 'Company Logo URL', { tour: 'org-edit-logo-url', basis: 360 })}
+                  </div>
+                  <div style={{ ...rowStyle, marginBottom: 0 }} data-tour="org-edit-brand-colors">
+                    {color('primary_brand_color', 'Primary Brand Color', '#ff7a45', '#FF7A45')}
+                    {color('secondary_brand_color', 'Secondary Brand Color', '#1f1108', '#1F1108')}
+                    {color('accent_color', 'Accent Color', '#3b82f6', '#3B82F6')}
+                  </div>
+                </SheetSection>
+                <SheetSection icon="doc" title="Documents & Email">
+                  {area('company_header', 'Company Header', 'org-edit-header', 60, 'Text shown at the top of generated documents')}
+                  {area('company_footer', 'Company Footer', 'org-edit-footer', 60, 'Text shown at the bottom of generated documents')}
+                  <div style={rowStyle}>
+                    {text('watermark', 'Watermark', { tour: 'org-edit-watermark', ph: 'e.g. DRAFT, or a watermark image URL', basis: 320 })}
+                  </div>
+                  {area('email_signature', 'Email Signature', 'org-edit-email-signature', 80)}
+                </SheetSection>
+              </>
+            )}
+
+            {tab === 'Documents' && seeDocs && (isNew
+              ? <p style={{ fontSize: 12.5, color: MUTED }}>Save the Basic tab first to add documents.</p>
+              : <DocumentsEditor documents={documents} onRefresh={loadLists} />)}
+
+            {tab === 'Defaults & Controls' && (
+              <SheetSection icon="gear" title="Company Defaults & Controls">
+                <div style={rowStyle}>
+                  {text('default_tax', 'Default Tax', { tour: 'org-edit-default-tax', ph: 'GST 18%', basis: 180, max: 260 })}
+                  <F label="Default Plant" basis={240} max={340}>
+                    <select data-tour="org-edit-default-plant" style={sheetInput} value={form.default_plant_id || ''} onChange={(e) => setField('default_plant_id', e.target.value ? Number(e.target.value) : null)}>
+                      <option value="">— Select —</option>
+                      {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    </select>
+                  </F>
+                  <F label="Default Store" basis={240} max={340}>
+                    <select data-tour="org-edit-default-warehouse" style={sheetInput} value={form.default_warehouse_id || ''} onChange={(e) => setField('default_warehouse_id', e.target.value ? Number(e.target.value) : null)}>
+                      <option value="">— Select —</option>
+                      {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                  </F>
+                </div>
+                <div style={{ ...rowStyle, marginBottom: 0 }}>
+                  {text('default_cost_center', 'Default Cost Center', { tour: 'org-edit-default-cost-center', basis: 220, max: 320 })}
+                  {text('default_profit_center', 'Default Profit Center', { tour: 'org-edit-default-profit-center', basis: 220, max: 320 })}
+                </div>
+              </SheetSection>
+            )}
           </div>
-          )}
         </>
       )}
+    </FormPage>
+  )
+}
+
+/** Header row of a list tab's add/edit block: title + "Cancel edit" while editing. */
+function SubFormHead({ title, editing, onCancel }: { title: string; editing: boolean; onCancel: () => void }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      <h4 style={{ fontSize: 13.5, fontWeight: 700, color: INK, margin: 0 }}>{title}</h4>
+      {editing && <button type="button" style={linkBtnStyle} onClick={onCancel}>Cancel edit</button>}
+    </div>
+  )
+}
+
+function SaveBtn({ tour, saving, label, busyLabel = 'Saving…' }: { tour: string; saving: boolean; label: string; busyLabel?: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <button type="submit" data-tour={tour} disabled={saving} style={sheetBtn('primary', BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? busyLabel : label}</button>
     </div>
   )
 }
@@ -575,6 +442,7 @@ function AddressesEditor({ addresses, onRefresh }: { addresses: CompanyAddress[]
 
   const startEdit = (a: CompanyAddress) => {
     setEditingId(a.id)
+    setError('')
     setForm({
       address_type: a.address_type || '', address_line1: a.address_line1, address_line2: a.address_line2 || '',
       landmark: a.landmark || '', country: a.country || '', state: a.state || '', city: a.city || '',
@@ -582,10 +450,11 @@ function AddressesEditor({ addresses, onRefresh }: { addresses: CompanyAddress[]
     })
   }
   const cancel = () => { setEditingId(null); setForm(emptyAddress()) }
+  const set = (k: keyof ReturnType<typeof emptyAddress>, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.address_line1.trim()) { setError('Address Line 1 is required'); return }
+    if (!form.address_line1.trim()) { setError('Address Line 1 is required — enter the building / street.'); return }
     setSaving(true)
     setError('')
     try {
@@ -594,8 +463,7 @@ function AddressesEditor({ addresses, onRefresh }: { addresses: CompanyAddress[]
       cancel()
       onRefresh()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to save address.')
+      setError(extractErrorMessages(err, 'Could not save the address. Check the fields and try again.').join(' '))
     } finally {
       setSaving(false)
     }
@@ -614,13 +482,7 @@ function AddressesEditor({ addresses, onRefresh }: { addresses: CompanyAddress[]
   }
 
   return (
-    <div style={sectionStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{editingId ? 'Edit Address' : 'Add Address'}</h2>
-        {editingId && <button type="button" style={linkBtnStyle} onClick={cancel}>Cancel edit</button>}
-      </div>
-
-      <MessageDialog open={!!error} variant="error" title="Address Error" message={error} onClose={() => setError('')} />
+    <SheetSection icon="building" title="Addresses">
       <ConfirmDialog
         open={!!deleteTarget}
         title="Delete this address?"
@@ -629,47 +491,49 @@ function AddressesEditor({ addresses, onRefresh }: { addresses: CompanyAddress[]
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <form onSubmit={submit} style={{ marginBottom: 20, padding: 16, borderRadius: 12, background: 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.normal}`, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <Field label="Address Type"><input data-tour="org-addr-type" style={inputStyle} value={form.address_type} onChange={(e) => setForm((f) => ({ ...f, address_type: e.target.value }))} placeholder="Registered Office" /></Field>
-        <Field label="Landmark"><input style={inputStyle} value={form.landmark} onChange={(e) => setForm((f) => ({ ...f, landmark: e.target.value }))} /></Field>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <Field label="Address Line 1 *"><input data-tour="org-addr-line1" style={inputStyle} value={form.address_line1} onChange={(e) => setForm((f) => ({ ...f, address_line1: e.target.value }))} /></Field>
+      <form onSubmit={submit} style={subFormStyle}>
+        <SubFormHead title={editingId ? 'Edit Address' : 'Add Address'} editing={!!editingId} onCancel={cancel} />
+        <SheetError error={error} />
+        <div style={rowStyle}>
+          <F label="Address Type" basis={220} max={320}><input data-tour="org-addr-type" style={sheetInput} value={form.address_type} onChange={(e) => set('address_type', e.target.value)} placeholder="Registered Office" /></F>
+          <F label="Landmark" basis={220}><input style={sheetInput} value={form.landmark} onChange={(e) => set('landmark', e.target.value)} /></F>
         </div>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <Field label="Address Line 2"><input style={inputStyle} value={form.address_line2} onChange={(e) => setForm((f) => ({ ...f, address_line2: e.target.value }))} /></Field>
+        <div style={rowStyle}>
+          <F label="Address Line 1" req basis={400}><input data-tour="org-addr-line1" style={sheetInput} value={form.address_line1} onChange={(e) => set('address_line1', e.target.value)} /></F>
         </div>
-        <Field label="Country"><input style={inputStyle} value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))} /></Field>
-        <Field label="State / UT"><input style={inputStyle} value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))} /></Field>
-        <Field label="City"><input style={inputStyle} value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} /></Field>
-        <Field label="District"><input style={inputStyle} value={form.district} onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))} /></Field>
-        <Field label="PIN Code"><input data-tour="org-addr-pincode" style={inputStyle} value={form.pincode} onChange={(e) => setForm((f) => ({ ...f, pincode: e.target.value }))} /></Field>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }} data-tour="org-addr-flags">
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: TEXT.body }}>
-            <input type="checkbox" checked={form.is_primary} onChange={(e) => setForm((f) => ({ ...f, is_primary: e.target.checked }))} /> Primary
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: TEXT.body }}>
-            <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} /> Active
-          </label>
+        <div style={rowStyle}>
+          <F label="Address Line 2" basis={400}><input style={sheetInput} value={form.address_line2} onChange={(e) => set('address_line2', e.target.value)} /></F>
         </div>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="submit" data-tour="org-addr-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Address'}</button>
+        <div style={rowStyle}>
+          <F label="Country" basis={160} max={220}><input style={sheetInput} value={form.country} onChange={(e) => set('country', e.target.value)} /></F>
+          <F label="State / UT" basis={160} max={220}><input style={sheetInput} value={form.state} onChange={(e) => set('state', e.target.value)} /></F>
+          <F label="City" basis={160} max={220}><input style={sheetInput} value={form.city} onChange={(e) => set('city', e.target.value)} /></F>
+          <F label="District" basis={160} max={220}><input style={sheetInput} value={form.district} onChange={(e) => set('district', e.target.value)} /></F>
+          <F label="PIN Code" basis={110} max={140}><input data-tour="org-addr-pincode" style={sheetInput} value={form.pincode} onChange={(e) => set('pincode', e.target.value)} /></F>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 16 }} data-tour="org-addr-flags">
+            <label style={checkStyle}><input type="checkbox" checked={form.is_primary} onChange={(e) => set('is_primary', e.target.checked)} /> Primary</label>
+            <label style={checkStyle}><input type="checkbox" checked={form.is_active} onChange={(e) => set('is_active', e.target.checked)} /> Active</label>
+          </div>
+          <SaveBtn tour="org-addr-save" saving={saving} label={editingId ? 'Save Changes' : 'Save Address'} />
         </div>
       </form>
 
       {addresses.length === 0 ? (
-        <p style={{ fontSize: 13, color: TEXT.muted }}>No addresses added yet.</p>
+        <p style={{ fontSize: 13, color: MUTED }}>No addresses added yet.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-tour="org-addr-list">
           {addresses.map((a) => (
-            <div key={a.id} style={cardRowStyle}>
+            <div key={a.id} style={listRowStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{a.address_type || 'Address'}</span>
-                    {a.is_primary && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(16,185,129,0.12)', color: '#047857' }}>PRIMARY</span>}
-                    {!a.is_active && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#b91c1c' }}>INACTIVE</span>}
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{a.address_type || 'Address'}</span>
+                    {a.is_primary && <span style={pill('rgba(16,185,129,0.12)', '#047857')}>PRIMARY</span>}
+                    {!a.is_active && <span style={pill('rgba(220,38,38,0.1)', '#b91c1c')}>INACTIVE</span>}
                   </div>
-                  <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
+                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>
                     {[a.address_line1, a.address_line2, a.landmark, a.city, a.district, a.state, a.country, a.pincode].filter(Boolean).join(', ')}
                   </p>
                 </div>
@@ -682,7 +546,7 @@ function AddressesEditor({ addresses, onRefresh }: { addresses: CompanyAddress[]
           ))}
         </div>
       )}
-    </div>
+    </SheetSection>
   )
 }
 
@@ -703,6 +567,7 @@ function ContactsEditor({ contacts, onRefresh }: { contacts: CompanyContact[]; o
 
   const startEdit = (c: CompanyContact) => {
     setEditingId(c.id)
+    setError('')
     setForm({
       contact_type: c.contact_type || '', contact_person: c.contact_person, designation: c.designation || '',
       department: c.department || '', mobile: c.mobile || '', phone: c.phone || '', email: c.email || '',
@@ -711,10 +576,11 @@ function ContactsEditor({ contacts, onRefresh }: { contacts: CompanyContact[]; o
     })
   }
   const cancel = () => { setEditingId(null); setForm(emptyContact()) }
+  const set = (k: keyof ReturnType<typeof emptyContact>, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.contact_person.trim()) { setError('Contact Person is required'); return }
+    if (!form.contact_person.trim()) { setError('Contact Person is required — enter the person\'s name.'); return }
     setSaving(true)
     setError('')
     try {
@@ -723,8 +589,7 @@ function ContactsEditor({ contacts, onRefresh }: { contacts: CompanyContact[]; o
       cancel()
       onRefresh()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to save contact.')
+      setError(extractErrorMessages(err, 'Could not save the contact. Check the fields (e.g. a valid email) and try again.').join(' '))
     } finally {
       setSaving(false)
     }
@@ -743,13 +608,7 @@ function ContactsEditor({ contacts, onRefresh }: { contacts: CompanyContact[]; o
   }
 
   return (
-    <div style={sectionStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{editingId ? 'Edit Contact' : 'Add Contact'}</h2>
-        {editingId && <button type="button" style={linkBtnStyle} onClick={cancel}>Cancel edit</button>}
-      </div>
-
-      <MessageDialog open={!!error} variant="error" title="Contact Error" message={error} onClose={() => setError('')} />
+    <SheetSection icon="users" title="Contacts">
       <ConfirmDialog
         open={!!deleteTarget}
         title="Delete this contact?"
@@ -758,44 +617,48 @@ function ContactsEditor({ contacts, onRefresh }: { contacts: CompanyContact[]; o
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <form onSubmit={submit} style={{ marginBottom: 20, padding: 16, borderRadius: 12, background: 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.normal}`, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-        <Field label="Contact Type"><input style={inputStyle} value={form.contact_type} onChange={(e) => setForm((f) => ({ ...f, contact_type: e.target.value }))} placeholder="Primary" /></Field>
-        <Field label="Contact Person *"><input data-tour="org-contact-person" style={inputStyle} value={form.contact_person} onChange={(e) => setForm((f) => ({ ...f, contact_person: e.target.value }))} /></Field>
-        <Field label="Designation"><input style={inputStyle} value={form.designation} onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))} /></Field>
-        <Field label="Department"><input style={inputStyle} value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} /></Field>
-        <Field label="Mobile"><input data-tour="org-contact-mobile" style={inputStyle} value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} /></Field>
-        <Field label="Phone"><input style={inputStyle} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} /></Field>
-        <Field label="Email"><input data-tour="org-contact-email" style={inputStyle} value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} /></Field>
-        <Field label="Alternate Email"><input style={inputStyle} value={form.alternate_email} onChange={(e) => setForm((f) => ({ ...f, alternate_email: e.target.value }))} /></Field>
-        <Field label="Communication Preference"><input style={inputStyle} value={form.communication_preference} onChange={(e) => setForm((f) => ({ ...f, communication_preference: e.target.value }))} placeholder="Email" /></Field>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: TEXT.body }}>
-            <input type="checkbox" checked={form.is_primary} onChange={(e) => setForm((f) => ({ ...f, is_primary: e.target.checked }))} /> Primary
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: TEXT.body }}>
-            <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))} /> Active
-          </label>
+      <form onSubmit={submit} style={subFormStyle}>
+        <SubFormHead title={editingId ? 'Edit Contact' : 'Add Contact'} editing={!!editingId} onCancel={cancel} />
+        <SheetError error={error} />
+        <div style={rowStyle}>
+          <F label="Contact Person" req basis={240} max={340}><input data-tour="org-contact-person" style={sheetInput} value={form.contact_person} onChange={(e) => set('contact_person', e.target.value)} /></F>
+          <F label="Contact Type" basis={160} max={220}><input style={sheetInput} value={form.contact_type} onChange={(e) => set('contact_type', e.target.value)} placeholder="Primary" /></F>
+          <F label="Designation" basis={180} max={260}><input style={sheetInput} value={form.designation} onChange={(e) => set('designation', e.target.value)} /></F>
+          <F label="Department" basis={180} max={260}><input style={sheetInput} value={form.department} onChange={(e) => set('department', e.target.value)} /></F>
         </div>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="submit" data-tour="org-contact-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Contact'}</button>
+        <div style={rowStyle}>
+          <F label="Mobile" basis={170} max={220}><input data-tour="org-contact-mobile" style={sheetInput} value={form.mobile} onChange={(e) => set('mobile', e.target.value)} /></F>
+          <F label="Phone" basis={170} max={220}><input style={sheetInput} value={form.phone} onChange={(e) => set('phone', e.target.value)} /></F>
+          <F label="Email" basis={240} max={320}><input data-tour="org-contact-email" style={sheetInput} value={form.email} onChange={(e) => set('email', e.target.value)} /></F>
+          <F label="Alternate Email" basis={240} max={320}><input style={sheetInput} value={form.alternate_email} onChange={(e) => set('alternate_email', e.target.value)} /></F>
+        </div>
+        <div style={rowStyle}>
+          <F label="Communication Preference" basis={220} max={280}><input style={sheetInput} value={form.communication_preference} onChange={(e) => set('communication_preference', e.target.value)} placeholder="Email" /></F>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <label style={checkStyle}><input type="checkbox" checked={form.is_primary} onChange={(e) => set('is_primary', e.target.checked)} /> Primary</label>
+            <label style={checkStyle}><input type="checkbox" checked={form.is_active} onChange={(e) => set('is_active', e.target.checked)} /> Active</label>
+          </div>
+          <SaveBtn tour="org-contact-save" saving={saving} label={editingId ? 'Save Changes' : 'Save Contact'} />
         </div>
       </form>
 
       {contacts.length === 0 ? (
-        <p style={{ fontSize: 13, color: TEXT.muted }}>No contacts added yet.</p>
+        <p style={{ fontSize: 13, color: MUTED }}>No contacts added yet.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-tour="org-contact-list">
           {contacts.map((c) => (
-            <div key={c.id} style={cardRowStyle}>
+            <div key={c.id} style={listRowStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{c.contact_person}</span>
-                    {c.designation && <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>{c.designation}</span>}
-                    {c.is_primary && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(16,185,129,0.12)', color: '#047857' }}>PRIMARY</span>}
-                    {!c.is_active && <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: 'rgba(220,38,38,0.1)', color: '#b91c1c' }}>INACTIVE</span>}
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{c.contact_person}</span>
+                    {c.designation && <span style={pill('#eff6ff', BLUE)}>{c.designation}</span>}
+                    {c.is_primary && <span style={pill('rgba(16,185,129,0.12)', '#047857')}>PRIMARY</span>}
+                    {!c.is_active && <span style={pill('rgba(220,38,38,0.1)', '#b91c1c')}>INACTIVE</span>}
                   </div>
-                  <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
+                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>
                     {[c.department, c.mobile, c.email].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
@@ -808,7 +671,7 @@ function ContactsEditor({ contacts, onRefresh }: { contacts: CompanyContact[]; o
           ))}
         </div>
       )}
-    </div>
+    </SheetSection>
   )
 }
 
@@ -829,17 +692,20 @@ function FinancialYearsEditor({ financialYears, onRefresh }: { financialYears: C
 
   const startEdit = (fy: CompanyFinancialYear) => {
     setEditingId(fy.id)
+    setError('')
     setForm({
       name: fy.name, start_date: fy.start_date, end_date: fy.end_date, fiscal_year_code: fy.fiscal_year_code || '',
-      status: fy.status, lock_date: fy.lock_date || '', period_closing_rule: fy.period_closing_rule || '',
+      // Legacy statuses (e.g. 'locked') map to Open — the select only offers Open/Closed.
+      status: fy.status === 'closed' ? 'closed' : 'open', lock_date: fy.lock_date || '', period_closing_rule: fy.period_closing_rule || '',
       number_series_reset: fy.number_series_reset,
     })
   }
   const cancel = () => { setEditingId(null); setForm(emptyFinancialYear()) }
+  const set = (k: keyof ReturnType<typeof emptyFinancialYear>, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!form.name.trim() || !form.start_date || !form.end_date) { setError('Name, Start Date, and End Date are required'); return }
+    if (!form.name.trim() || !form.start_date || !form.end_date) { setError('Name, Start Date, and End Date are required — e.g. FY 2025-26, 01-04-2025 to 31-03-2026.'); return }
     setSaving(true)
     setError('')
     try {
@@ -849,8 +715,7 @@ function FinancialYearsEditor({ financialYears, onRefresh }: { financialYears: C
       cancel()
       onRefresh()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to save financial year.')
+      setError(extractErrorMessages(err, 'Could not save the financial year. Check the dates (start before end, no overlap with another year) and try again.').join(' '))
     } finally {
       setSaving(false)
     }
@@ -869,13 +734,7 @@ function FinancialYearsEditor({ financialYears, onRefresh }: { financialYears: C
   }
 
   return (
-    <div style={sectionStyle}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{editingId ? 'Edit Financial Year' : 'Add Financial Year'}</h2>
-        {editingId && <button type="button" style={linkBtnStyle} onClick={cancel}>Cancel edit</button>}
-      </div>
-
-      <MessageDialog open={!!error} variant="error" title="Financial Year Error" message={error} onClose={() => setError('')} />
+    <SheetSection icon="calendar" title="Financial Years">
       <ConfirmDialog
         open={!!deleteTarget}
         title="Delete this financial year?"
@@ -884,49 +743,44 @@ function FinancialYearsEditor({ financialYears, onRefresh }: { financialYears: C
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <form onSubmit={submit} style={{ marginBottom: 20, padding: 16, borderRadius: 12, background: 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.normal}`, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-        <Field label="Financial Year Name *"><input data-tour="org-fy-name" style={inputStyle} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="FY 2025-26" /></Field>
-        <Field label="Start Date *"><input data-tour="org-fy-start" type="date" style={inputStyle} value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} /></Field>
-        <Field label="End Date *"><input data-tour="org-fy-end" type="date" style={inputStyle} value={form.end_date} onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} /></Field>
-        <Field label="Fiscal Year Code"><input style={inputStyle} value={form.fiscal_year_code} onChange={(e) => setForm((f) => ({ ...f, fiscal_year_code: e.target.value }))} /></Field>
-        <Field label="Status">
-          <select data-tour="org-fy-status" style={inputStyle} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
-            <option value="open">Open</option>
-            <option value="locked">Locked</option>
-            <option value="closed">Closed</option>
-          </select>
-        </Field>
-        <Field label="Lock Date"><input type="date" style={inputStyle} value={form.lock_date} onChange={(e) => setForm((f) => ({ ...f, lock_date: e.target.value }))} /></Field>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <Field label="Period Closing Rule"><input style={inputStyle} value={form.period_closing_rule} onChange={(e) => setForm((f) => ({ ...f, period_closing_rule: e.target.value }))} /></Field>
+      <form onSubmit={submit} style={subFormStyle}>
+        <SubFormHead title={editingId ? 'Edit Financial Year' : 'Add Financial Year'} editing={!!editingId} onCancel={cancel} />
+        <SheetError error={error} />
+        <div style={rowStyle}>
+          <F label="Financial Year Name" req basis={200} max={280}><input data-tour="org-fy-name" style={sheetInput} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="FY 2025-26" /></F>
+          <F label="Start Date" req basis={170} max={220}><div data-tour="org-fy-start"><DateField value={form.start_date} onChange={(v) => set('start_date', v)} /></div></F>
+          <F label="End Date" req basis={170} max={220}><div data-tour="org-fy-end"><DateField value={form.end_date} onChange={(v) => set('end_date', v)} /></div></F>
+          <F label="Fiscal Year Code" basis={150} max={200}><input style={sheetInput} value={form.fiscal_year_code} onChange={(e) => set('fiscal_year_code', e.target.value)} /></F>
         </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: TEXT.body }}>
-            <input type="checkbox" checked={form.number_series_reset} onChange={(e) => setForm((f) => ({ ...f, number_series_reset: e.target.checked }))} /> Reset number series
-          </label>
+        <div style={rowStyle}>
+          <F label="Status" basis={140} max={180}>
+            <select data-tour="org-fy-status" style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)}>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+          </F>
+          <F label="Lock Date" basis={170} max={220}><DateField value={form.lock_date} onChange={(v) => set('lock_date', v)} /></F>
+          <F label="Period Closing Rule" basis={260}><input style={sheetInput} value={form.period_closing_rule} onChange={(e) => set('period_closing_rule', e.target.value)} /></F>
         </div>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="submit" data-tour="org-fy-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : editingId ? 'Save Changes' : 'Save Financial Year'}</button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <label style={checkStyle}><input type="checkbox" checked={form.number_series_reset} onChange={(e) => set('number_series_reset', e.target.checked)} /> Reset number series</label>
+          <SaveBtn tour="org-fy-save" saving={saving} label={editingId ? 'Save Changes' : 'Save Financial Year'} />
         </div>
       </form>
 
       {financialYears.length === 0 ? (
-        <p style={{ fontSize: 13, color: TEXT.muted }}>No financial years added yet.</p>
+        <p style={{ fontSize: 13, color: MUTED }}>No financial years added yet.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-tour="org-fy-list">
           {financialYears.map((fy) => (
-            <div key={fy.id} style={cardRowStyle}>
+            <div key={fy.id} style={listRowStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{fy.name}</span>
-                    <span style={{
-                      fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, textTransform: 'uppercase',
-                      background: fy.status === 'open' ? 'rgba(16,185,129,0.12)' : fy.status === 'locked' ? 'rgba(245,158,11,0.12)' : 'rgba(220,38,38,0.1)',
-                      color: fy.status === 'open' ? '#047857' : fy.status === 'locked' ? '#92400e' : '#b91c1c',
-                    }}>{fy.status}</span>
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{fy.name}</span>
+                    <span style={{ ...pill(fy.status === 'open' ? 'rgba(16,185,129,0.12)' : 'rgba(220,38,38,0.1)', fy.status === 'open' ? '#047857' : '#b91c1c'), textTransform: 'uppercase' }}>{fy.status}</span>
                   </div>
-                  <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{fy.start_date} → {fy.end_date}{fy.fiscal_year_code ? ` · ${fy.fiscal_year_code}` : ''}</p>
+                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>{fy.start_date} → {fy.end_date}{fy.fiscal_year_code ? ` · ${fy.fiscal_year_code}` : ''}</p>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
                   <button type="button" style={linkBtnStyle} onClick={() => startEdit(fy)}>Edit</button>
@@ -937,7 +791,7 @@ function FinancialYearsEditor({ financialYears, onRefresh }: { financialYears: C
           ))}
         </div>
       )}
-    </div>
+    </SheetSection>
   )
 }
 
@@ -953,16 +807,21 @@ function emptyDocumentMeta() {
 }
 
 function DocumentsEditor({ documents, onRefresh }: { documents: CompanyDocument[]; onRefresh: () => void }) {
+  const { canFeature } = useCan()
+  const mayUpload = canFeature('organization', 'info', 'documents', 'create')
+  const mayDelete = canFeature('organization', 'info', 'documents', 'delete')
+  const mayOpen = canFeature('organization', 'info', 'documents', 'export')
   const [file, setFile] = useState<File | null>(null)
   const [meta, setMeta] = useState(emptyDocumentMeta())
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<CompanyDocument | null>(null)
+  const set = (k: keyof ReturnType<typeof emptyDocumentMeta>, v: string) => setMeta((m) => ({ ...m, [k]: v }))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!file) { setError('Select a file to upload'); return }
-    if (!meta.document_name.trim()) { setError('Document Name is required'); return }
+    if (!file) { setError('Select a file to upload — click the Document File box.'); return }
+    if (!meta.document_name.trim()) { setError('Document Name is required — e.g. GST Registration Certificate.'); return }
     setSaving(true)
     setError('')
     try {
@@ -971,8 +830,7 @@ function DocumentsEditor({ documents, onRefresh }: { documents: CompanyDocument[
       setMeta(emptyDocumentMeta())
       onRefresh()
     } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(detail || 'Failed to upload document.')
+      setError(extractErrorMessages(err, 'Could not upload the document. Check the file and try again; if it keeps failing, SharePoint may be unreachable — contact IT.').join(' '))
     } finally {
       setSaving(false)
     }
@@ -991,10 +849,7 @@ function DocumentsEditor({ documents, onRefresh }: { documents: CompanyDocument[
   }
 
   return (
-    <div style={sectionStyle}>
-      <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Add Company Document</h2>
-
-      <MessageDialog open={!!error} variant="error" title="Document Error" message={error} onClose={() => setError('')} />
+    <SheetSection icon="clip" title="Company Documents">
       <ConfirmDialog
         open={!!deleteTarget}
         title="Delete this document?"
@@ -1003,65 +858,70 @@ function DocumentsEditor({ documents, onRefresh }: { documents: CompanyDocument[
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <form onSubmit={submit} style={{ marginBottom: 20, padding: 16, borderRadius: 12, background: 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.normal}`, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-        <div style={{ gridColumn: '1 / -1' }} data-tour="org-doc-file">
-          <Field label="Document File *">
-            <FileUploadField file={file} onChange={setFile} onRemove={() => setFile(null)} uploading={saving} />
-          </Field>
+      {mayUpload && <form onSubmit={submit} style={subFormStyle}>
+        <SubFormHead title="Add Company Document" editing={false} onCancel={() => undefined} />
+        <SheetError error={error} />
+        <div style={{ marginBottom: 14 }} data-tour="org-doc-file">
+          <label style={sheetLabel}>Document File <Req /></label>
+          <FileUploadField file={file} onChange={setFile} onRemove={() => setFile(null)} uploading={saving} />
         </div>
-        <Field label="Document Type *">
-          <select data-tour="org-doc-type" style={inputStyle} value={meta.document_type} onChange={(e) => setMeta((m) => ({ ...m, document_type: e.target.value }))}>
-            {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </Field>
-        <Field label="Document Name *"><input data-tour="org-doc-name" style={inputStyle} value={meta.document_name} onChange={(e) => setMeta((m) => ({ ...m, document_name: e.target.value }))} /></Field>
-        <Field label="Document Number"><input style={inputStyle} value={meta.document_number} onChange={(e) => setMeta((m) => ({ ...m, document_number: e.target.value }))} /></Field>
-        <Field label="Issue Date"><input type="date" style={inputStyle} value={meta.issue_date} onChange={(e) => setMeta((m) => ({ ...m, issue_date: e.target.value }))} /></Field>
-        <Field label="Expiry Date"><input data-tour="org-doc-expiry" type="date" style={inputStyle} value={meta.expiry_date} onChange={(e) => setMeta((m) => ({ ...m, expiry_date: e.target.value }))} /></Field>
-        <Field label="Issuing Authority"><input style={inputStyle} value={meta.issuing_authority} onChange={(e) => setMeta((m) => ({ ...m, issuing_authority: e.target.value }))} /></Field>
-        <Field label="Confidentiality">
-          <select data-tour="org-doc-confidentiality" style={inputStyle} value={meta.confidentiality} onChange={(e) => setMeta((m) => ({ ...m, confidentiality: e.target.value }))}>
-            {CONFIDENTIALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </Field>
-        <Field label="Tags (comma separated)"><input style={inputStyle} value={meta.tags} onChange={(e) => setMeta((m) => ({ ...m, tags: e.target.value }))} /></Field>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <Field label="Description"><input style={inputStyle} value={meta.description} onChange={(e) => setMeta((m) => ({ ...m, description: e.target.value }))} /></Field>
+        <div style={rowStyle}>
+          <F label="Document Type" req basis={170} max={220}>
+            <select data-tour="org-doc-type" style={sheetInput} value={meta.document_type} onChange={(e) => set('document_type', e.target.value)}>
+              {DOCUMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </F>
+          <F label="Document Name" req basis={260} max={360}><input data-tour="org-doc-name" style={sheetInput} value={meta.document_name} onChange={(e) => set('document_name', e.target.value)} /></F>
+          <F label="Document Number" basis={180} max={260}><input style={sheetInput} value={meta.document_number} onChange={(e) => set('document_number', e.target.value)} /></F>
         </div>
-        <div style={{ gridColumn: '1 / -1' }}>
-          <Field label="Remarks"><input style={inputStyle} value={meta.remarks} onChange={(e) => setMeta((m) => ({ ...m, remarks: e.target.value }))} /></Field>
+        <div style={rowStyle}>
+          <F label="Issue Date" basis={170} max={220}><DateField value={meta.issue_date} onChange={(v) => set('issue_date', v)} /></F>
+          <F label="Expiry Date" basis={170} max={220}><div data-tour="org-doc-expiry"><DateField value={meta.expiry_date} onChange={(v) => set('expiry_date', v)} /></div></F>
+          <F label="Issuing Authority" basis={220} max={320}><input style={sheetInput} value={meta.issuing_authority} onChange={(e) => set('issuing_authority', e.target.value)} /></F>
+          <F label="Confidentiality" basis={150} max={200}>
+            <select data-tour="org-doc-confidentiality" style={sheetInput} value={meta.confidentiality} onChange={(e) => set('confidentiality', e.target.value)}>
+              {CONFIDENTIALITY_LEVELS.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </F>
         </div>
-        <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="submit" data-tour="org-doc-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'Uploading…' : 'Save Document'}</button>
+        <div style={rowStyle}>
+          <F label="Tags (comma separated)" basis={240}><input style={sheetInput} value={meta.tags} onChange={(e) => set('tags', e.target.value)} /></F>
         </div>
-      </form>
+        <div style={rowStyle}>
+          <F label="Description" basis={400}><input style={sheetInput} value={meta.description} onChange={(e) => set('description', e.target.value)} /></F>
+        </div>
+        <div style={rowStyle}>
+          <F label="Remarks" basis={400}><input style={sheetInput} value={meta.remarks} onChange={(e) => set('remarks', e.target.value)} /></F>
+        </div>
+        <SaveBtn tour="org-doc-save" saving={saving} label="Save Document" busyLabel="Uploading…" />
+      </form>}
 
       {documents.length === 0 ? (
-        <p style={{ fontSize: 13, color: TEXT.muted }}>No documents uploaded yet.</p>
+        <p style={{ fontSize: 13, color: MUTED }}>No documents uploaded yet.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-tour="org-doc-list">
           {documents.map((d) => (
-            <div key={d.id} style={cardRowStyle}>
+            <div key={d.id} style={listRowStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{d.document_name}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(244,113,59,0.1)', color: BRAND.primary }}>{d.document_type}</span>
-                    {d.confidentiality && <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: TEXT.secondary }}>{d.confidentiality}</span>}
+                    <span style={{ fontSize: 13.5, fontWeight: 600, color: INK }}>{d.document_name}</span>
+                    <span style={pill('#eff6ff', BLUE)}>{d.document_type}</span>
+                    {d.confidentiality && <span style={pill('rgba(0,0,0,0.05)', MUTED)}>{d.confidentiality}</span>}
                   </div>
-                  <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>
+                  <p style={{ fontSize: 12.5, color: MUTED, margin: 0 }}>
                     {d.filename}{d.expiry_date ? ` · Expires ${d.expiry_date}` : ''}{d.issuing_authority ? ` · ${d.issuing_authority}` : ''}
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
-                  {d.sharepoint_url && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a>}
-                  <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(d)}>Delete</button>
+                  {d.sharepoint_url && mayOpen && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a>}
+                  {mayDelete && <button type="button" style={dangerLinkStyle} onClick={() => setDeleteTarget(d)}>Delete</button>}
                 </div>
               </div>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </SheetSection>
   )
 }

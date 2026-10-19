@@ -1,14 +1,20 @@
 'use client'
 
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { FormSheet, SHEET, SheetIcon, sheetBtn, type SheetIconName } from '@/components/shared/FormSheet'
 
-/** Modal shell for the Maintenance action forms (convert to work order,
- * complete, issue spare, log labour…) — same backdrop/panel look as
- * ConfirmDialog/PromptDialog, but with arbitrary fields inside and its own
- * error slot so a rejected action keeps the user's input on screen. */
+/** Popup shell for the Maintenance action forms (convert to work order,
+ * complete, issue spare, log labour…) — the app-wide FormSheet look (icon
+ * header, title, subtitle, close, footer), with arbitrary fields inside and
+ * its own error slot so a rejected action keeps the user's input on screen.
+ * Always portaled to <body> by FormSheet (glass cards clip fixed overlays). */
 export default function FormDialog({
   open,
   title,
+  subtitle = '',
+  icon = 'edit',
+  iconColor = SHEET.BLUE,
+  width = 580,
   error,
   confirmLabel = 'Save',
   busy = false,
@@ -18,6 +24,11 @@ export default function FormDialog({
 }: {
   open: boolean
   title: string
+  /** One line under the title — what the action does. */
+  subtitle?: string
+  icon?: SheetIconName
+  iconColor?: string
+  width?: number
   error?: string | string[]
   confirmLabel?: string
   busy?: boolean
@@ -29,34 +40,21 @@ export default function FormDialog({
   if (!open) return null
 
   return (
-    <div
-      onClick={onCancel}
-      className="dialog-backdrop"
-      style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="dialog-panel"
-        style={{ width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}
-      >
-        <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 16px' }}>{title}</p>
+    <FormSheet width={width} icon={icon} iconColor={iconColor} title={title} subtitle={subtitle} onClose={onCancel} busy={busy}
+      footer={<>
+        <button type="button" onClick={onCancel} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button data-tour="maint-dialog-confirm" type="button" onClick={onConfirm} disabled={busy} style={sheetBtn('primary', iconColor, busy)}>
+          <SheetIcon name="check" size={16} />{busy ? 'Saving…' : confirmLabel}
+        </button>
+      </>}>
+      <div style={{ padding: '20px 24px' }}>
         {error && (Array.isArray(error) ? error.length > 0 : true) && (
           <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
             {Array.isArray(error) ? error.join(' ') : error}
           </div>
         )}
         {children}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-          <button type="button" onClick={onCancel} style={{
-            fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.12)',
-            background: '#fff', color: '#57534e', cursor: 'pointer',
-          }}>Cancel</button>
-          <button type="button" onClick={onConfirm} disabled={busy} style={{
-            fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: 'none',
-            background: 'linear-gradient(135deg,#FF7A45,#FF5A1F)', color: '#fff', cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1,
-          }}>{busy ? 'Saving…' : confirmLabel}</button>
-        </div>
       </div>
-    </div>
+    </FormSheet>
   )
 }

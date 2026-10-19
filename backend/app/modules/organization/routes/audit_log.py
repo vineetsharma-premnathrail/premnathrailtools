@@ -7,7 +7,7 @@ from app.core.audit import audited_entity_modules
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
-from app.modules.main.routes.users import require_admin
+from app.core.permissions import require_tab_access
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.schemas.audit_log import AuditLogResponse, AuditDashboardResponse
 
@@ -20,7 +20,7 @@ _ENTITY_TYPE_MODULE: dict[str, str] = {
     "p2p_request": "p2p", "p2p_goods_receipt": "p2p", "rfq": "p2p",
     "organization": "crm", "quotation_revision": "crm", "tender": "crm", "tender_spec": "crm",
     "inquiry": "crm", "inquiry_spec": "crm", "activity": "crm",
-    "user_permissions": "organization", "branch": "organization", "company": "organization", "department": "organization",
+    "user": "organization", "user_permissions": "organization", "branch": "organization", "company": "organization", "department": "organization",
 }
 
 
@@ -70,7 +70,7 @@ async def list_audit_logs(
     limit: int = Query(200, le=1000),
     offset: int = Query(0),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_tab_access("organization", "audit_logs")),
 ):
     query = db.query(AuditLog)
     if module_key:
@@ -103,7 +103,7 @@ async def list_audit_logs(
 @router.get("/dashboard", response_model=AuditDashboardResponse)
 async def audit_dashboard(
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_tab_access("organization", "audit_logs")),
 ):
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)

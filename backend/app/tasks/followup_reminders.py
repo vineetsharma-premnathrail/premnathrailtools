@@ -18,6 +18,7 @@ from app.modules.crm.models.organization import Organization
 from app.modules.main.models.user import User
 from app.modules.main.models.notification import Notification
 from app.utils.notifications import notify_user
+from app.core.notification_events import notify_event
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,54 @@ def _send_activity_followup_reminders(db: Session) -> None:
                 teams=True,
             )
 
+    _send_role_reminders(db, today)
     db.commit()
+
+
+TENDER_DUE_DAYS = (3, 1)
+
+
+def _send_role_reminders(db: Session, today: date) -> None:
+    """Role-based reminders (core/events/crm.py), bell / Teams only (no email
+    from a job). Each fires on one specific day, so a daily run announces a
+    record once per milestone."""
+    from app.modules.crm.access import can_open_activity, can_open_record
+    from app.modules.crm.models.tender import Tender
+    from app.modules.crm.services import quotation_status
+
+    # Follow-ups of inquiries / tenders that became overdue yesterday (the
+    # assignee keeps getting the direct daily nudge above — skipped here).
+    yesterday = today - timedelta(days=1)
+    for a in db.query(Activity).filter(
+        Activity.is_deleted == False, Activity.status == "Open", Activity.next_followup == yesterday,  # noqa: E712
+        Activity.related_module.in_(("inquiry", "tender")),
+    ).all():
+        target = _resolve_target_user_id(db, a)
+        notify_event(
+            db, None, "crm", "followup_overdue",
+            title=f"Follow-up overdue — {a.universal_id or a.activity_type or 'follow-up'}",
+            message=f"{a.activity_type or 'Follow-up'} on {a.universal_id or a.related_module} "
+                    f"(assigned to {a.assigned_to or 'nobody'}) was due on {a.next_followup.strftime('%d-%m-%Y')} and is still open.",
+            entity_type="activity", entity_id=a.id, can_open=can_open_activity(db, a),
+            skip_user_ids={target} if target else None,
+        )
+
+    # Live tenders whose submission date is 3 days / 1 day away.
+    for days in TENDER_DUE_DAYS:
+        due = today + timedelta(days=days)
+        for t in db.query(Tender).filter(Tender.is_deleted == False, Tender.submission_date == due).all():  # noqa: E712
+            if (t.status or "").startswith(("Closed", "Tender Cancelled", "Tender Submitted")):
+                continue
+            notify_event(
+                db, None, "crm", "tender_submission_due",
+                title=f"Tender {t.universal_id} due in {days} day{'s' if days != 1 else ''}",
+                message=f"Tender {t.tender_name or t.tender_number or t.universal_id} must be submitted by {due.strftime('%d-%m-%Y')} "
+                        f"(status: {t.status}). Finish the bid documents and submit on the portal.",
+                entity_type="tender", entity_id=t.id, can_open=can_open_record(db, t),
+            )
+
+    # Quotations whose validity ends in 3 days.
+    quotation_status.remind_expiring(db, today)
 
 
 def send_activity_followup_reminders() -> None:

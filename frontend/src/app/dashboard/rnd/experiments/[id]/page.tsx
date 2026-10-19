@@ -6,14 +6,19 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi, usersApi } from '@/lib/api'
 import { DirectoryUser, RndExperiment, RndExperimentParameter, RndExperimentResult, RndExperimentStatus, RndExperimentType, RndProject, RndPrototype } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
+import { TEXT, DANGER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import RndNav from '@/components/rnd/RndNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import RndDocumentsPanel from '@/components/rnd/RndDocumentsPanel'
 import { extractErrorMessages } from '@/lib/validation'
+import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import { useCan } from '@/lib/permissions'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { planned: '#78716c', in_progress: '#2563EB', completed: '#16A34A', cancelled: '#DC2626' }
@@ -31,29 +36,26 @@ const toRow = (p: RndExperimentParameter): ParamRow => ({
 })
 const isFilled = (r: ParamRow) => !!(r.parameter.trim() || r.specification.trim() || r.measured.trim() || r.unit.trim() || r.result)
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
+const inputStyle = sheetInput
 const cellInputStyle: React.CSSProperties = { ...inputStyle, padding: '8px 10px', fontSize: 13 }
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
+const labelStyle = sheetLabel
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted }
 const pillStyle = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
 
 export default function RndExperimentDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('rnd')
+  const { can, canDelete } = useCan()
   const router = useRouter()
   const params = useParams()
-  const experimentId = Number(params.id)
+  const { id: resolvedId, error: linkError } = useRecordId(params.id as string)
+  const experimentId = resolvedId ?? 0
 
   const [experiment, setExperiment] = useState<RndExperiment | null>(null)
   const [projects, setProjects] = useState<RndProject[]>([])
   const [prototypes, setPrototypes] = useState<RndPrototype[]>([])
   const [users, setUsers] = useState<DirectoryUser[]>([])
+  // The role's assign-to rule for 'Conducted by'; yourself and the current conductor stay listed.
+  const allowConductor = useAssigneeFilter('rnd:experiments.conducted_by')
   const [loading, setLoading] = useState(true)
 
   const [projectId, setProjectId] = useState('')
@@ -185,6 +187,7 @@ export default function RndExperimentDetailPage() {
   const failCount = filledRows.filter((r) => r.result === 'fail').length
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div style={{ width: '100%' }}><RndNav /><InvalidRecordLink message={linkError} listHref="/dashboard/rnd/experiments" listLabel="Back to experiments" /></div>)
   if (loading) return null
   if (!experiment) {
     return (
@@ -208,216 +211,238 @@ export default function RndExperimentDetailPage() {
     )
   }
 
+  const canEdit = can('rnd', 'experiments', 'edit')
+
   return (
     <div style={{ width: '100%' }}>
-      <RndNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            R&amp;D Module
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{experiment.experiment_number}</h1>
+      <FormPage
+        tour="rnd-ed-form"
+        nav={<RndNav />}
+        icon="flag"
+        title={experiment.experiment_number}
+        subtitle={experiment.title}
+        onBack={() => router.push('/dashboard/rnd/experiments')} backTour="rnd-ed-back-btn"
+        footer={<>
+          {canDelete('rnd', 'experiments', (experiment as { created_by_id?: number | null }).created_by_id ?? null) && (
+            <button
+              data-tour="rnd-ed-delete-btn"
+              onClick={() => setConfirmOpen(true)}
+              disabled={deleting}
+              type="button"
+              style={{ ...sheetBtn('secondary', DANGER.text, deleting), color: DANGER.text, borderColor: DANGER.border, background: DANGER.light, marginRight: 'auto' }}
+            >
+              <SheetIcon name="trash" size={15} />{deleting ? 'Deleting…' : 'Delete Experiment'}
+            </button>
+          )}
+          <button type="button" onClick={() => router.push('/dashboard/rnd/experiments')} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+          {canEdit && (
+            <button data-tour="rnd-ed-save-btn" onClick={handleSave} disabled={saving} type="button" style={sheetBtn('primary', SHEET.BLUE, saving)}>
+              <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          )}
+        </>}
+      >
+        <div style={{ padding: '16px 24px 0' }}>
+          <div data-tour="rnd-ed-badges" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={pillStyle(STATUS_HEX[experiment.status] || '#78716c')}>{STATUS_LABELS[experiment.status] || experiment.status}</span>
             {experiment.result && (
               <span style={pillStyle(RESULT_HEX[experiment.result] || '#78716c')}>{RESULT_LABELS[experiment.result] || experiment.result}</span>
             )}
+            <span style={{ fontSize: 13, color: SHEET.MUTED }}>
+              Project:{' '}
+              <Link href={recordPath('/dashboard/rnd/projects', experiment, 'project_id')} style={{ color: '#FF6A2A', fontWeight: 600, textDecoration: 'none' }}>
+                {experiment.project_number || `#${experiment.project_id}`}{experiment.project_title ? ` — ${experiment.project_title}` : ''}
+              </Link>
+            </span>
           </div>
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: '6px 0 0' }}>
-            Project:{' '}
-            <Link href={`/dashboard/rnd/projects/${experiment.project_id}`} style={{ color: '#FF6A2A', fontWeight: 600, textDecoration: 'none' }}>
-              {experiment.project_number || `#${experiment.project_id}`}{experiment.project_title ? ` — ${experiment.project_title}` : ''}
-            </Link>
-          </p>
+          {error && (
+            <div style={{ padding: '10px 14px', marginTop: 14, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+              {Array.isArray(error) ? error.join(' ') : error}
+            </div>
+          )}
         </div>
-        <button onClick={() => router.push('/dashboard/rnd/experiments')} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
 
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
-
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Experiment Details</h2>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
-          <div style={{ flex: '1 1 280px', minWidth: 240, maxWidth: 440 }}>
-            <label style={labelStyle}>Project *</label>
-            <SearchableSelect
-              value={projectId}
-              onChange={(v) => { setProjectId(v); setPrototypeId(''); setPrototypes([]) }}
-              options={projects.map((p) => ({ value: String(p.id), label: `${p.project_number} — ${p.title}` }))}
-              placeholder="Search project…"
-            />
-          </div>
-          <div style={{ flex: '1 1 240px', minWidth: 200, maxWidth: 360 }}>
-            <label style={labelStyle}>Prototype</label>
-            <SearchableSelect
-              value={prototypeId}
-              onChange={setPrototypeId}
-              options={[
-                { value: '', label: '— None —' },
-                ...(projectId ? prototypes : []).map((p) => ({ value: String(p.id), label: `${p.prototype_number} — ${p.name}${p.version ? ` (${p.version})` : ''}` })),
-              ]}
-              placeholder={projectId ? (prototypes.length ? 'Search prototype…' : 'No prototypes in this project') : 'Pick a project first'}
-              disabled={!projectId}
-            />
-          </div>
-          <div style={{ flex: '1 1 300px', minWidth: 240, maxWidth: 520 }}>
-            <label style={labelStyle}>Title *</label>
-            <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Type</label>
-            <select style={inputStyle} value={experimentType} onChange={(e) => setExperimentType(e.target.value as RndExperimentType)}>
-              <option value="research">Research</option>
-              <option value="lab_test">Lab Test</option>
-              <option value="field_trial">Field Trial</option>
-              <option value="simulation">Simulation</option>
-              <option value="validation">Validation</option>
-            </select>
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Status</label>
-            <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as RndExperimentStatus)}>
-              <option value="planned">Planned</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Result{status === 'completed' ? ' *' : ''}</label>
-            <select style={inputStyle} value={result} onChange={(e) => setResult(e.target.value as RndExperimentResult | '')}>
-              <option value="">—</option>
-              <option value="pass">Pass</option>
-              <option value="fail">Fail</option>
-              <option value="inconclusive">Inconclusive</option>
-            </select>
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Experiment Date</label>
-            <DateField value={experimentDate} onChange={setExperimentDate} />
-          </div>
-          <div style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 320 }}>
-            <label style={labelStyle}>Conducted By</label>
-            <SearchableSelect
-              value={conductedById}
-              onChange={setConductedById}
-              options={users.map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
-              placeholder="Search user…"
-            />
-          </div>
-        </div>
-        <div style={{ marginBottom: 18 }}>
-          <label style={labelStyle}>Objective / Hypothesis</label>
-          <textarea style={{ ...inputStyle, minHeight: 70 }} value={objective} onChange={(e) => setObjective(e.target.value)} />
-        </div>
-        <div>
-          <label style={labelStyle}>Method / Procedure</label>
-          <textarea style={{ ...inputStyle, minHeight: 80 }} value={method} onChange={(e) => setMethod(e.target.value)} />
-        </div>
-        <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '14px 0 0' }}>
-          Conducted by {experiment.conducted_by_name || '—'}{experiment.created_at ? ` · created ${experiment.created_at.slice(0, 10)}` : ''}
-        </p>
-      </div>
-
-      <div style={sectionStyle}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Test Parameters</h2>
-          <span style={{ fontSize: 12.5, color: TEXT.muted }}>
-            {filledRows.length} parameter{filledRows.length === 1 ? '' : 's'}
-            {' · '}<span style={{ color: RESULT_HEX.pass, fontWeight: 600 }}>{passCount} pass</span>
-            {' · '}<span style={{ color: RESULT_HEX.fail, fontWeight: 600 }}>{failCount} fail</span>
-          </span>
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
-            <thead>
-              <tr>
-                <th style={thStyle}>Parameter *</th>
-                <th style={thStyle}>Specification</th>
-                <th style={thStyle}>Measured</th>
-                <th style={{ ...thStyle, width: 110 }}>Unit</th>
-                <th style={{ ...thStyle, width: 110 }}>Result</th>
-                <th style={{ ...thStyle, width: 40 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: 14, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No parameters yet.</td></tr>
-              ) : rows.map((r, idx) => (
-                <tr key={idx}>
-                  <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.parameter} onChange={(e) => updateRow(idx, { parameter: e.target.value })} placeholder="e.g. Brake force" /></td>
-                  <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.specification} onChange={(e) => updateRow(idx, { specification: e.target.value })} placeholder="e.g. ≥ 12" /></td>
-                  <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.measured} onChange={(e) => updateRow(idx, { measured: e.target.value })} /></td>
-                  <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.unit} onChange={(e) => updateRow(idx, { unit: e.target.value })} placeholder="kN" /></td>
-                  <td style={{ padding: 4 }}>
-                    <select style={cellInputStyle} value={r.result} onChange={(e) => updateRow(idx, { result: e.target.value as ParamRow['result'] })}>
+        <SheetColumns
+          left={
+            <div data-tour="rnd-ed-details">
+              <SheetSection icon="list" title="Experiment Details">
+                <label style={labelStyle}>Title <Req /></label>
+                <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
+                  <div style={{ flex: '1 1 240px', minWidth: 200, maxWidth: 420 }}>
+                    <label style={labelStyle}>Project <Req /></label>
+                    <SearchableSelect
+                      value={projectId}
+                      onChange={(v) => { setProjectId(v); setPrototypeId(''); setPrototypes([]) }}
+                      options={projects.map((p) => ({ value: String(p.id), label: `${p.project_number} — ${p.title}` }))}
+                      placeholder="Search project…"
+                    />
+                  </div>
+                  <div style={{ flex: '1 1 220px', minWidth: 180, maxWidth: 360 }}>
+                    <label style={labelStyle}>Prototype</label>
+                    <SearchableSelect
+                      value={prototypeId}
+                      onChange={setPrototypeId}
+                      options={[
+                        { value: '', label: '— None —' },
+                        ...(projectId ? prototypes : []).map((p) => ({ value: String(p.id), label: `${p.prototype_number} — ${p.name}${p.version ? ` (${p.version})` : ''}` })),
+                      ]}
+                      placeholder={projectId ? (prototypes.length ? 'Search prototype…' : 'No prototypes in this project') : 'Pick a project first'}
+                      disabled={!projectId}
+                    />
+                  </div>
+                </div>
+              </SheetSection>
+              <SheetSection icon="calendar" title="Status & Result">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                  <div style={{ flex: '0 1 160px', minWidth: 140 }}>
+                    <label style={labelStyle}>Type</label>
+                    <select style={inputStyle} value={experimentType} onChange={(e) => setExperimentType(e.target.value as RndExperimentType)}>
+                      <option value="research">Research</option>
+                      <option value="lab_test">Lab Test</option>
+                      <option value="field_trial">Field Trial</option>
+                      <option value="simulation">Simulation</option>
+                      <option value="validation">Validation</option>
+                    </select>
+                  </div>
+                  <div data-tour="rnd-ed-status" style={{ flex: '0 1 160px', minWidth: 140 }}>
+                    <label style={labelStyle}>Status</label>
+                    <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value as RndExperimentStatus)}>
+                      <option value="planned">Planned</option>
+                      <option value="in_progress">In Progress</option>
+                      <option value="completed">Completed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                  <div data-tour="rnd-ed-result" style={{ flex: '0 1 160px', minWidth: 140 }}>
+                    <label style={labelStyle}>Result {status === 'completed' && <Req />}</label>
+                    <select style={inputStyle} value={result} onChange={(e) => setResult(e.target.value as RndExperimentResult | '')}>
                       <option value="">—</option>
                       <option value="pass">Pass</option>
                       <option value="fail">Fail</option>
+                      <option value="inconclusive">Inconclusive</option>
                     </select>
-                  </td>
-                  <td style={{ padding: 4, textAlign: 'center' }}>
-                    <button
-                      type="button"
-                      onClick={() => removeRow(idx)}
-                      title="Remove row"
-                      style={{ border: 'none', background: 'transparent', color: '#DC2626', fontSize: 18, lineHeight: 1, cursor: 'pointer', padding: '4px 8px' }}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <button
-          type="button"
-          onClick={() => setRows((prev) => [...prev, emptyRow()])}
-          style={{ marginTop: 12, padding: '8px 16px', borderRadius: 10, border: `1px dashed ${BORDER.normal}`, background: 'transparent', color: '#FF6A2A', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-        >
-          + Add parameter
-        </button>
-      </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
+                  <div style={{ flex: '0 1 170px', minWidth: 150 }}>
+                    <label style={labelStyle}>Experiment Date</label>
+                    <DateField value={experimentDate} onChange={setExperimentDate} />
+                  </div>
+                  <div style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 320 }}>
+                    <label style={labelStyle}>Conducted By</label>
+                    <SearchableSelect
+                      value={conductedById}
+                      onChange={setConductedById}
+                      options={users.filter((u) => allowConductor(u.id) || u.id === user?.id || u.id === experiment?.conducted_by_id).map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` }))}
+                      placeholder="Search user…"
+                    />
+                  </div>
+                </div>
+                <p style={sheetHint}>
+                  Conducted by {experiment.conducted_by_name || '—'}{experiment.created_at ? ` · created ${experiment.created_at.slice(0, 10)}` : ''}
+                </p>
+              </SheetSection>
+            </div>
+          }
+          right={<>
+            <SheetSection icon="chat" title="Objective & Method">
+              <label style={labelStyle}>Objective / Hypothesis</label>
+              <textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={objective} onChange={(e) => setObjective(e.target.value)} />
+              <label style={{ ...labelStyle, marginTop: 14 }}>Method / Procedure</label>
+              <textarea style={{ ...inputStyle, minHeight: 100, resize: 'vertical' }} value={method} onChange={(e) => setMethod(e.target.value)} />
+            </SheetSection>
+          </>}
+        />
 
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Results &amp; Conclusion</h2>
-        <div style={{ marginBottom: 18 }}>
-          <label style={labelStyle}>Observations</label>
-          <textarea style={{ ...inputStyle, minHeight: 80 }} value={observations} onChange={(e) => setObservations(e.target.value)} />
+        <div style={{ padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }}>
+          <SheetSection icon="list" title="Test Parameters" extra={
+            <span style={{ fontSize: 12.5, color: SHEET.MUTED, marginLeft: 'auto' }}>
+              {filledRows.length} parameter{filledRows.length === 1 ? '' : 's'}
+              {' · '}<span style={{ color: RESULT_HEX.pass, fontWeight: 600 }}>{passCount} pass</span>
+              {' · '}<span style={{ color: RESULT_HEX.fail, fontWeight: 600 }}>{failCount} fail</span>
+            </span>
+          }>
+            <div style={{ overflowX: 'auto' }}>
+              <table data-tour="rnd-ed-params" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Parameter *</th>
+                    <th style={thStyle}>Specification</th>
+                    <th style={thStyle}>Measured</th>
+                    <th style={{ ...thStyle, width: 110 }}>Unit</th>
+                    <th style={{ ...thStyle, width: 110 }}>Result</th>
+                    <th style={{ ...thStyle, width: 40 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 ? (
+                    <tr><td colSpan={6} style={{ padding: 14, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No parameters yet.</td></tr>
+                  ) : rows.map((r, idx) => (
+                    <tr key={idx}>
+                      <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.parameter} onChange={(e) => updateRow(idx, { parameter: e.target.value })} placeholder="e.g. Brake force" /></td>
+                      <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.specification} onChange={(e) => updateRow(idx, { specification: e.target.value })} placeholder="e.g. ≥ 12" /></td>
+                      <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.measured} onChange={(e) => updateRow(idx, { measured: e.target.value })} /></td>
+                      <td style={{ padding: 4 }}><input style={cellInputStyle} value={r.unit} onChange={(e) => updateRow(idx, { unit: e.target.value })} placeholder="kN" /></td>
+                      <td style={{ padding: 4 }}>
+                        <select style={cellInputStyle} value={r.result} onChange={(e) => updateRow(idx, { result: e.target.value as ParamRow['result'] })}>
+                          <option value="">—</option>
+                          <option value="pass">Pass</option>
+                          <option value="fail">Fail</option>
+                        </select>
+                      </td>
+                      <td style={{ padding: 4, textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => removeRow(idx)}
+                          title="Remove row"
+                          aria-label="Remove row"
+                          style={{ ...sheetBtn('ghost', '#DC2626'), padding: '4px 6px' }}
+                        >
+                          <SheetIcon name="x" size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <button
+              data-tour="rnd-ed-add-param-btn"
+              type="button"
+              onClick={() => setRows((prev) => [...prev, emptyRow()])}
+              style={{ ...sheetBtn('secondary'), marginTop: 12 }}
+            >
+              <SheetIcon name="plus" size={15} color={SHEET.BLUE} />Add parameter
+            </button>
+          </SheetSection>
         </div>
-        <div>
-          <label style={labelStyle}>Conclusion</label>
-          <textarea style={{ ...inputStyle, minHeight: 70 }} value={conclusion} onChange={(e) => setConclusion(e.target.value)} />
+
+        <div data-tour="rnd-ed-conclusion" style={{ padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }}>
+          <SheetSection icon="check" title="Results & Conclusion">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+              <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+                <label style={labelStyle}>Observations</label>
+                <textarea style={{ ...inputStyle, minHeight: 90, resize: 'vertical' }} value={observations} onChange={(e) => setObservations(e.target.value)} />
+              </div>
+              <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+                <label style={labelStyle}>Conclusion</label>
+                <textarea style={{ ...inputStyle, minHeight: 90, resize: 'vertical' }} value={conclusion} onChange={(e) => setConclusion(e.target.value)} />
+              </div>
+            </div>
+          </SheetSection>
         </div>
-      </div>
+      </FormPage>
 
-      <RndDocumentsPanel
-        key={experiment.project_id}
-        projectId={experiment.project_id}
-        experimentId={experiment.id}
-        title="Test Reports & Documents"
-        currentUserId={user?.id}
-        isAdmin={user?.role === 'admin'}
-      />
-
-      <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <button
-          onClick={() => setConfirmOpen(true)}
-          disabled={deleting}
-          type="button"
-          style={{ padding: '12px 22px', borderRadius: 12, border: `1px solid ${DANGER.border}`, background: DANGER.light, color: DANGER.text, fontSize: 14, fontWeight: 600, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}
-        >
-          {deleting ? 'Deleting…' : 'Delete Experiment'}
-        </button>
-        <button onClick={handleSave} disabled={saving} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.6 : 1 }}>
-          {saving ? 'Saving…' : 'Save Changes'}
-        </button>
+      <div style={{ marginTop: 20 }}>
+        <RndDocumentsPanel
+          key={experiment.project_id}
+          projectId={experiment.project_id}
+          experimentId={experiment.id}
+          title="Test Reports & Documents"
+          currentUserId={user?.id}
+          isAdmin={user?.role === 'admin'}
+        />
       </div>
 
       <ConfirmDialog

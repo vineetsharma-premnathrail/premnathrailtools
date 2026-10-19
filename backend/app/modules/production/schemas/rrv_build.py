@@ -112,14 +112,14 @@ class ProductionRrvConsumptionRow(BaseModel):
     returned_qty: float = 0.0
     consumed_qty: float = 0.0
     outstanding_qty: float = 0.0
-    unit_cost: float = 0.0
-    consumed_value: float = 0.0
+    unit_cost: float | None = 0.0  # None = hidden by the costs switch
+    consumed_value: float | None = 0.0
     work_orders: list[str] = []
 
 
 class ProductionRrvConsumption(BaseModel):
     rows: list[ProductionRrvConsumptionRow] = []
-    total_consumed_value: float = 0.0
+    total_consumed_value: float | None = 0.0
     total_required_lines: int = 0
     lines_fully_issued: int = 0
 
@@ -301,6 +301,13 @@ class ProductionRrvBuildResponse(BaseModel):
     open_rework_count: int = 0
     work_order_count: int = 0
     is_overdue: bool = False
+    # Order Project (sales order projects) — the vehicle element this build makes.
+    sales_order_id: int | None = None
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
+    order_project_number: str | None = None
+    order_project_element_no: str | None = None
+    order_project_element_label: str | None = None
 
 
 class ProductionRrvBuildDetail(ProductionRrvBuildResponse):

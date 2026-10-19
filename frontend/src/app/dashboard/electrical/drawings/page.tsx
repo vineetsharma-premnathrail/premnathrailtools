@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { electricalApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { ElectricalDrawing, ElectricalMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
@@ -50,7 +51,7 @@ export default function ElectricalDrawingRegisterPage() {
       .finally(() => setLoading(false))
   }, [isAuthorized, search, typeFilter, statusFilter, asBuiltFilter])
 
-  const open = (d: ElectricalDrawing) => router.push(`/dashboard/electrical/jobs/${d.job_id}?tab=drawings`)
+  const open = (d: ElectricalDrawing) => router.push(`${recordPath('/dashboard/electrical/jobs', d, 'job_id')}?tab=drawings`)
   const typeLabel = (t: string) => drawingTypes[t] || t.replace(/_/g, ' ')
   const awaitingOnly = statusFilter === 'submitted'
   const filtered = !!(search.trim() || typeFilter || statusFilter || asBuiltFilter)
@@ -69,6 +70,7 @@ export default function ElectricalDrawingRegisterPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Drawing Register</h1>
         </div>
         <button
+          data-tour="elec-dreg-awaiting-btn"
           type="button"
           onClick={() => setStatusFilter(awaitingOnly ? '' : 'submitted')}
           style={awaitingOnly
@@ -83,27 +85,28 @@ export default function ElectricalDrawingRegisterPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input
+          data-tour="elec-dreg-search"
           style={{ ...inputStyle, width: 'auto', flex: '1 1 240px', minWidth: 200, maxWidth: 420 }}
           placeholder="Search drawing number, title or job number…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <select data-tour="elec-dreg-type-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All drawing types</option>
           {Object.entries(drawingTypes).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="elec-dreg-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All revision statuses</option>
           {Object.entries(REVISION_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 150px' }} value={asBuiltFilter} onChange={(e) => setAsBuiltFilter(e.target.value)}>
+        <select data-tour="elec-dreg-as-built-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 150px' }} value={asBuiltFilter} onChange={(e) => setAsBuiltFilter(e.target.value)}>
           <option value="">As-built: All</option>
           <option value="yes">As-built: Yes</option>
           <option value="no">As-built: No</option>
         </select>
       </div>
 
-      <div style={{
+      <div data-tour="elec-dreg-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>

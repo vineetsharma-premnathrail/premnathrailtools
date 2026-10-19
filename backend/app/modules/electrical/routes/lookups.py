@@ -3,7 +3,7 @@ pick ERP machines, plants, people and Store items, but usually don't hold
 the ERP / Organization / Store app themselves — so these read-only lists are
 served under the electrical permission instead of those modules' own
 routes (same approach as production/routes/lookups.py)."""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.permissions import require_app_access
@@ -15,7 +15,10 @@ from app.modules.electrical.models.job import ELECTRICAL_STAGES, ELECTRICAL_PHAS
 from app.modules.electrical.models.panel import ELECTRICAL_PANEL_TYPES
 from app.modules.electrical.models.test_record import ELECTRICAL_TEST_TYPES
 from app.modules.electrical.schemas.insights import ElectricalLookupOption, ElectricalMetaResponse, ElectricalStageMeta
-from app.modules.electrical.service import ELECTRICAL_APP, MANDATORY_STAGES, project_label
+from app.modules.electrical import access
+from app.modules.electrical.models.bom import ElectricalBomItem
+from app.modules.electrical.models.drawing import ElectricalDrawing, ElectricalDrawingRevision
+from app.modules.electrical.service import ELECTRICAL_APP, MANDATORY_STAGES, get_job_or_404, project_label
 from app.modules.erp.models.project import Project
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
@@ -26,6 +29,28 @@ router = APIRouter(
     prefix="/electrical/lookups", tags=["Electrical"],
     dependencies=[Depends(require_app_access(ELECTRICAL_APP))],
 )
+
+
+@router.get("/approval-target/{entity_type}/{entity_id}")
+async def approval_target(
+    entity_type: str, entity_id: int, db: Session = Depends(get_db),
+    user: User = Depends(require_app_access(ELECTRICAL_APP)),
+):
+    """Where an approval link (My Approvals, notifications) should open: the
+    job page and tab holding that drawing revision / BOM line."""
+    if entity_type == access.REVISION_ENTITY:
+        rev = db.get(ElectricalDrawingRevision, entity_id)
+        drawing = db.get(ElectricalDrawing, rev.drawing_id) if rev else None
+        job_id, tab = (drawing.job_id if drawing else None), "drawings"
+    elif entity_type == access.BOM_ENTITY:
+        item = db.get(ElectricalBomItem, entity_id)
+        job_id, tab = (item.job_id if item else None), "bom"
+    else:
+        raise HTTPException(status_code=404, detail=f"'{entity_type}' isn't an Electrical approval type — open it from My Approvals.")
+    if job_id is None:
+        raise HTTPException(status_code=404, detail=f"The {tab} record #{entity_id} no longer exists (it may have been deleted).")
+    get_job_or_404(db, job_id, user=user)
+    return {"job_id": job_id, "tab": tab}
 
 
 @router.get("/meta", response_model=ElectricalMetaResponse)
@@ -86,7 +111,7 @@ async def lookup_items(
 @router.get("/purchase-requisitions", response_model=list[ElectricalLookupOption])
 async def lookup_purchase_requisitions(search: str | None = None, db: Session = Depends(get_db)):
     """Live PRs to link BOM lines to, newest first — Electrical category first."""
-    query = db.query(P2PRequest).filter(P2PRequest.status.notin_(("rejected", "cancelled")))
+    query = db.query(P2PRequest).filter(P2PRequest.status.notin_(("rejected", "cancelled", "draft")))
     if search:
         query = query.filter(P2PRequest.p2p_number.ilike(f"%{search}%") | P2PRequest.project_label.ilike(f"%{search}%"))
     rows = query.order_by(P2PRequest.id.desc()).limit(100).all()

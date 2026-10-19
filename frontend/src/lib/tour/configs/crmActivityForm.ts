@@ -14,8 +14,8 @@ const config: TourConfig = {
     {
       target: 'activity-add-btn',
       title: 'Step 2 — + Add Follow Up',
-      purpose: 'Opens the follow-up form below the button.',
-      after: 'Clicking again while the form is open cancels and discards anything typed into it.',
+      purpose: 'Opens the follow-up form in a popup: details, remarks and action plan on the left; contact persons and photos on the right.',
+      after: 'Cancel (or the ✕ at the top right) closes the popup and discards anything typed into it.',
       autoActivateOnAdvance: true,
     },
     {
@@ -29,7 +29,7 @@ const config: TourConfig = {
       target: 'activity-contacts',
       title: 'Contact Person(s)',
       required: false,
-      purpose: 'Who you interacted with — pick one or more existing contacts from this organization, or add a brand-new one inline via "+ Add New Contact" in the dropdown.',
+      purpose: 'Who you interacted with — pick one or more existing contacts from this customer organization, or add a brand-new one inline via "+ Add New Contact" in the dropdown.',
       after: 'Selected contacts show as removable chips; click the × on a chip to drop that person from this follow-up.',
     },
     {
@@ -64,7 +64,7 @@ const config: TourConfig = {
       target: 'activity-attachment',
       title: 'Attachment',
       required: false,
-      purpose: 'Attach photos to this follow-up — either take one directly with the camera icon, or upload existing image files.',
+      purpose: 'Attach photos to this follow-up — either take one directly with Take Photo, or upload existing image files with Add Photo.',
     },
     {
       target: 'activity-remarks-fontsize',
@@ -133,8 +133,15 @@ const config: TourConfig = {
     {
       target: 'activity-save',
       title: 'Add Follow Up',
-      purpose: 'Saves this follow-up against the inquiry and uploads any attached photos.',
-      after: 'The new entry appears immediately in the Follow Ups list, and also feeds the "Recent Follow Ups" panel on the CRM Dashboard.',
+      purpose: 'Saves this follow-up against this inquiry/tender and uploads any attached photos.',
+      after: 'The popup closes and the new entry appears immediately in the Follow Ups list; it also feeds the "Recent Follow Ups" panel on the CRM Dashboard. If something is wrong, the reason shows at the top of the popup.',
+    },
+    {
+      target: 'activity-cancel-btn',
+      title: 'Cancel',
+      purpose: 'Closes the popup without saving anything typed into it.',
+      after: 'Press Next and the tour closes the popup to continue.',
+      autoActivateOnAdvance: true,
     },
   ],
 }

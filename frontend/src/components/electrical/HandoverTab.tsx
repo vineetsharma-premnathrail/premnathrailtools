@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { electricalApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
+import { useCan } from '@/lib/permissions'
 import { ElectricalJobDetail } from '@/types'
 import { TEXT } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
@@ -43,7 +45,13 @@ export default function HandoverTab({ job, canEdit, onJob }: {
 
   const s = job.summary
   const canQc = !s.inspection_number || s.inspection_status === 'failed'
-  const detailsEditable = canEdit || job.status === 'on_hold'
+  // Saving these details goes through the job update (Jobs › Edit) and needs
+  // the job's QC & Handover › Edit; requesting QC needs QC & Handover › Submit
+  // (both default to Jobs › Edit).
+  const { can, canFeature } = useCan()
+  const detailsEditable = (canEdit || job.status === 'on_hold') && can('electrical', 'jobs', 'edit')
+    && canFeature('electrical', 'jobs', 'handover', 'edit')
+  const canRequestQc = canEdit && canFeature('electrical', 'jobs', 'handover', 'submit')
 
   const save = async (payload: Record<string, unknown>, fallback: string, success: string) => {
     setError('')
@@ -80,7 +88,7 @@ export default function HandoverTab({ job, canEdit, onJob }: {
       <ErrorBanner error={error} />
       <NoticeBanner notice={notice} />
 
-      <div style={sectionStyle}>
+      <div data-tour="elec-handover-closing-stages" style={sectionStyle}>
         <p style={sectionTitle}>Closing stages</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
           {job.stages.filter((st) => CLOSING_STAGES.includes(st.stage_key)).map((st) => (
@@ -93,14 +101,14 @@ export default function HandoverTab({ job, canEdit, onJob }: {
         </div>
       </div>
 
-      <div style={sectionStyle}>
+      <div data-tour="elec-handover-qc" style={sectionStyle}>
         <p style={sectionTitle}>Inspection & QC</p>
         {s.inspection_number ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: TEXT.heading }}>{s.inspection_number}</span>
             <Pill value={s.inspection_status} labels={INSPECTION_LABELS} hex={INSPECTION_HEX} />
             {user?.apps?.includes('quality') && job.quality_inspection_id && (
-              <button type="button" style={smallBtn} onClick={() => router.push(`/dashboard/quality/final-inspection/${job.quality_inspection_id}`)}>Open in Quality</button>
+              <button data-tour="elec-handover-open-quality-btn" type="button" style={smallBtn} onClick={() => router.push(recordPath('/dashboard/quality/final-inspection', job, 'quality_inspection_id'))}>Open in Quality</button>
             )}
           </div>
         ) : (
@@ -108,8 +116,8 @@ export default function HandoverTab({ job, canEdit, onJob }: {
             No inspection yet. Requesting one raises a final inspection in the Quality module for this RRV&apos;s electrical system and notifies the Quality team.
           </p>
         )}
-        {canEdit && canQc && (
-          <button type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirmQc(true)}>
+        {canRequestQc && canQc && (
+          <button data-tour="elec-handover-request-qc-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirmQc(true)}>
             {s.inspection_status === 'failed' ? 'Request Fresh QC Inspection' : 'Request QC Inspection'}
           </button>
         )}
@@ -121,15 +129,15 @@ export default function HandoverTab({ job, canEdit, onJob }: {
           {s.commissioning_tests} commissioning test(s) recorded on the Tests tab. The stage also needs the commissioning date.
         </p>
         <div style={rowStyle}>
-          <F label="Commissioning Location" basis={300} grow max={440}>
+          <F tour="elec-handover-comm-location" label="Commissioning Location" basis={300} grow max={440}>
             <input style={inputStyle} disabled={!detailsEditable} value={commissioning.commissioning_location} onChange={(e) => setCommissioning((c) => ({ ...c, commissioning_location: e.target.value }))} placeholder="e.g. Customer depot, Kanpur" />
           </F>
-          <F label="Commissioned On" basis={170}>
+          <F tour="elec-handover-comm-date" label="Commissioned On" basis={170}>
             <DateField value={commissioning.commissioned_on} onChange={(v) => setCommissioning((c) => ({ ...c, commissioned_on: v }))} />
           </F>
         </div>
         {detailsEditable && (
-          <button type="button" disabled={busy} style={smallBtn} onClick={() => save({
+          <button data-tour="elec-handover-comm-save" type="button" disabled={busy} style={smallBtn} onClick={() => save({
             commissioning_location: strOrNull(commissioning.commissioning_location),
             commissioned_on: commissioning.commissioned_on || null,
           }, 'Failed to save commissioning details.', 'Commissioning details saved.')}>
@@ -142,24 +150,24 @@ export default function HandoverTab({ job, canEdit, onJob }: {
         <p style={sectionTitle}>RRV Electrical Handover</p>
         {job.handed_over_at && <p style={{ fontSize: 13, color: '#15803d', margin: '0 0 12px', fontWeight: 600 }}>Handed over {formatDateTime(job.handed_over_at)}</p>}
         <div style={rowStyle}>
-          <F label="Handed Over To" basis={240} grow max={340}>
+          <F tour="elec-handover-to-name" label="Handed Over To" basis={240} grow max={340}>
             <input style={inputStyle} disabled={!detailsEditable} value={handover.handover_to_name} onChange={(e) => setHandover((h) => ({ ...h, handover_to_name: e.target.value }))} placeholder="Person receiving the RRV" />
           </F>
-          <F label="Organisation" basis={240} grow max={360}>
+          <F tour="elec-handover-to-org" label="Organisation" basis={240} grow max={360}>
             <input style={inputStyle} disabled={!detailsEditable} value={handover.handover_to_organization} onChange={(e) => setHandover((h) => ({ ...h, handover_to_organization: e.target.value }))} />
           </F>
-          <F label="Handover Date" basis={170}>
+          <F tour="elec-handover-date" label="Handover Date" basis={170}>
             <DateField value={handover.handover_date} onChange={(v) => setHandover((h) => ({ ...h, handover_date: v }))} />
           </F>
         </div>
         <div style={rowStyle}>
-          <F label="Handover Remarks" basis={400} grow>
+          <F tour="elec-handover-remarks" label="Handover Remarks" basis={400} grow>
             <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} disabled={!detailsEditable} value={handover.handover_remarks} onChange={(e) => setHandover((h) => ({ ...h, handover_remarks: e.target.value }))}
               placeholder="Punch points, spares handed over, training given…" />
           </F>
         </div>
         {detailsEditable && (
-          <button type="button" disabled={busy} style={smallBtn} onClick={() => save({
+          <button data-tour="elec-handover-save" type="button" disabled={busy} style={smallBtn} onClick={() => save({
             handover_to_name: strOrNull(handover.handover_to_name),
             handover_to_organization: strOrNull(handover.handover_to_organization),
             handover_date: handover.handover_date || null,

@@ -22,12 +22,21 @@ def is_same_unit(db: Session, department: Department, user_id: int | None) -> bo
 
 def cross_unit_head_error(db: Session, branch_id: int | None, head_ids: list[int]) -> str | None:
     """Human-readable reason the given heads can't head a department in
-    `branch_id`, or None when they all belong to that unit."""
-    if not branch_id or not head_ids:
+    `branch_id`, or None when they all belong to that unit. Head ids that
+    match no user are always rejected, with or without a unit."""
+    if not head_ids:
+        return None
+    users = db.query(User).filter(User.id.in_(head_ids)).all()
+    missing = sorted(set(head_ids) - {u.id for u in users})
+    if missing:
+        return (
+            f"Department head user id(s) {', '.join(str(i) for i in missing)} do not exist. "
+            "Pick the head from the user list again — the user may have been removed or never synced from Azure."
+        )
+    if not branch_id:
         return None
     branch = db.get(Branch, branch_id)
     unit = branch.name if branch else f"branch #{branch_id}"
-    users = db.query(User).filter(User.id.in_(head_ids)).all()
     wrong = []
     for u in users:
         if u.branch_id == branch_id:

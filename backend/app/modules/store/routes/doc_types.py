@@ -5,9 +5,10 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access
+from app.core.permissions import ensure_can_delete, ensure_tab_action, require_app_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.store.services.plant_access import is_unrestricted_user
 from app.modules.store.models.doc_type import (
     STORE_APPROVER_RULES,
     STORE_DOC_TYPE_DEFAULTS,
@@ -43,9 +44,16 @@ def doc_types(db: Session, kind: str, active_only: bool = False) -> list[StoreDo
     if not q.first():
         db.add_all([StoreDocType(kind=kind, approver_user_ids=[], **d) for d in STORE_DOC_TYPE_DEFAULTS[kind]])
         db.commit()
+    elif kind in _FIXED_KINDS:
+        _heal_fixed_kind(db, kind, q.all())
     if active_only:
         q = q.filter(StoreDocType.is_active.is_(True))
-    return q.order_by(StoreDocType.id).all()
+    rows = q.order_by(StoreDocType.id).all()
+    if kind in _FIXED_KINDS:
+        # Fixed lists show in their code order (e.g. the Issue Type dropdown).
+        order = {d["value"]: i for i, d in enumerate(STORE_DOC_TYPE_DEFAULTS[kind])}
+        rows.sort(key=lambda t: order.get(t.value, len(order)))
+    return rows
 
 
 def get_doc_type(db: Session, kind: str, value: str | None, *, field: str) -> StoreDocType:
@@ -79,9 +87,106 @@ def _to_dict(db: Session, t: StoreDocType) -> dict:
     }
 
 
+# Which Store › Settings tab manages each list. Return sources / conditions
+# are fixed in code (only renamed by an admin) and have no tab of their own —
+# they fall under Store › Settings › General settings.
+_KIND_TAB = {"stock_entry": "entry_types", "issue": "issue_types", "return_source": "settings", "return_condition": "settings"}
+
+
+def _ensure_kind_action(user: User, kind: str, action: str) -> None:
+    tab = _KIND_TAB[kind]
+    if tab == "settings":
+        ensure_tab_action(user, "store", "settings", "edit")
+    elif action == "create":
+        ensure_tab_action(user, "store", tab, "create")
+    else:
+        ensure_tab_action(user, "store", tab, "edit")
+
+
+def _ensure_editable_kind(kind: str) -> None:
+    """Stock entry types are history only since Record Stock Entry was removed
+    (2026-10-12) — kept so old entries show their labels, never changed."""
+    if kind == "stock_entry":
+        raise HTTPException(status_code=410, detail="Stock entry types can't be added or changed any more — Record Stock Entry was "
+                                                    "removed (every stock movement has its own document). The existing names stay "
+                                                    "only so older entries keep their labels.")
+
+
 def _check_kind(kind: str) -> None:
     if kind not in STORE_DOC_TYPE_KINDS:
         raise HTTPException(status_code=404, detail=f"Unknown type list '{kind}'. Valid lists: {', '.join(STORE_DOC_TYPE_KINDS)}.")
+
+
+# Return sources and conditions drive Material Return approvals (C-09): the
+# list, each row's approval rule, stock effect and "needs an issue" flag are
+# fixed in code. An admin may only rename a row. Who approves a return is no
+# longer set here: the rule became the default stages of the central workflow
+# "store.material_return" (Organization › Approval Workflows › Material
+# return), which an admin edits there — incl. the designated approvers of
+# "Rejected (quality)" that used to be named on this row.
+_FIXED_KINDS = ("return_source", "return_condition", "issue")
+
+
+def _heal_fixed_kind(db: Session, kind: str, rows: list[StoreDocType]) -> None:
+    """Return sources/conditions are fixed in code (C-09), but databases
+    configured before the lock may hold weakened rows — a default switched to
+    "no approval" or turned off, or extra custom rows with no approval. Each
+    load puts the code defaults back (approval rule, "needs an issue",
+    active) and switches off rows that aren't in the code list, so the
+    approval bypass can't survive in old data. Labels and the named
+    approvers of a "Specific users" row stay as the admin set them; switched-
+    off custom rows still resolve to their label on old documents."""
+    defaults = {d["value"]: d for d in STORE_DOC_TYPE_DEFAULTS[kind]}
+    changed = False
+    for t in rows:
+        d = defaults.get(t.value)
+        if d is None:
+            if t.is_active:
+                t.is_active, changed = False, True
+            continue
+        rule = d.get("approver_rule", "none")
+        need_issue = bool(d.get("requires_issue", False))
+        if t.approver_rule != rule:
+            t.approver_rule, changed = rule, True
+            if rule != "specific_users" and t.approver_user_ids:
+                t.approver_user_ids = []
+        if kind == "return_source" and bool(t.requires_issue) != need_issue:
+            t.requires_issue, changed = need_issue, True
+        if not t.is_active:
+            t.is_active, changed = True, True
+    present = {t.value for t in rows}
+    for value, d in defaults.items():
+        if value not in present:
+            db.add(StoreDocType(kind=kind, approver_user_ids=[], **d))
+            changed = True
+    if changed:
+        db.commit()
+
+
+def _fixed_kind_error(kind: str) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail=f"{KIND_LABELS[kind].capitalize()}s are fixed in code and can't be added, switched off or changed here — only renamed. "
+               + ("Who approves a Material Return is set in Organization › Approval Workflows › Material return." if kind != "issue"
+                  else "Extra mandatory fields per type (vendor, return date, challan) are set in Store › Settings › Issue Rules."),
+    )
+
+
+def _guard_fixed_kind_update(kind: str, user: User, payload: DocTypeIn, current: StoreDocType) -> None:
+    if kind not in _FIXED_KINDS:
+        return
+    if not is_unrestricted_user(user):
+        raise _fixed_kind_error(kind)
+    if (payload.approver_rule != current.approver_rule
+            or payload.is_active != current.is_active
+            or (kind == "return_source" and bool(payload.requires_issue) != bool(current.requires_issue))):
+        raise _fixed_kind_error(kind)
+    if sorted(set(payload.approver_user_ids or [])) != sorted(set(current.approver_user_ids or [])):
+        raise HTTPException(
+            status_code=409,
+            detail="Material Return approvers are now set in Organization › Approval Workflows › Material return "
+                   "(edit the stage of this condition there). Only the name can be changed here.",
+        )
 
 
 def _clean(db: Session, kind: str, payload: DocTypeIn, current: StoreDocType | None = None) -> dict:
@@ -131,6 +236,8 @@ def _clean(db: Session, kind: str, payload: DocTypeIn, current: StoreDocType | N
     }
 
 
+# Listing stays open to every Store user: the Stock / Issue / Return forms
+# read these lists to offer their type dropdowns.
 @router.get("/{kind}")
 async def list_doc_types(
     kind: str,
@@ -147,9 +254,13 @@ async def create_doc_type(
     kind: str,
     payload: DocTypeIn,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_app_access("store")),
 ):
     _check_kind(kind)
+    if kind in _FIXED_KINDS:
+        raise _fixed_kind_error(kind)
+    _ensure_kind_action(user, kind, "create")
+    _ensure_editable_kind(kind)
     doc_types(db, kind)
     fields = _clean(db, kind, payload)
     value = re.sub(r"[^a-z0-9]+", "_", fields["label"].lower()).strip("_")[:45] or "type"
@@ -168,15 +279,20 @@ async def update_doc_type(
     value: str,
     payload: DocTypeIn,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_app_access("store")),
 ):
     """Edits label / approval / active flag. The stored value never changes,
     so documents already using this type keep resolving to it."""
     _check_kind(kind)
+    if kind in _FIXED_KINDS and not is_unrestricted_user(user):
+        raise _fixed_kind_error(kind)
     doc_types(db, kind)
     t = db.query(StoreDocType).filter(StoreDocType.kind == kind, StoreDocType.value == value).first()
     if not t:
         raise HTTPException(status_code=404, detail=f"That {KIND_LABELS[kind]} wasn't found — reload the page and try again.")
+    _guard_fixed_kind_update(kind, user, payload, t)
+    _ensure_kind_action(user, kind, "edit")
+    _ensure_editable_kind(kind)
     fields = _clean(db, kind, payload, t)
     if not payload.is_active and t.is_active:
         others = db.query(StoreDocType).filter(StoreDocType.kind == kind, StoreDocType.is_active.is_(True), StoreDocType.id != t.id).count()
@@ -194,7 +310,7 @@ async def delete_doc_type(
     kind: str,
     value: str,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_app_access("store")),
 ):
     """Removes a stock entry / issue type that no document has used yet. One
     that's been used keeps existing (old documents show its label) — it can
@@ -207,12 +323,16 @@ async def delete_doc_type(
 
     _check_kind(kind)
     noun = KIND_LABELS[kind]
-    if kind not in ("stock_entry", "issue"):
+    if kind == "issue":
+        raise _fixed_kind_error(kind)
+    if kind != "stock_entry":
         raise HTTPException(status_code=409, detail=f"A {noun} can't be deleted — deactivate it instead (Edit → untick Active).")
     doc_types(db, kind)
     t = db.query(StoreDocType).filter(StoreDocType.kind == kind, StoreDocType.value == value).first()
     if not t:
         raise HTTPException(status_code=404, detail=f"That {noun} wasn't found — it may already be deleted. Reload the page.")
+    ensure_can_delete(user, t, "store", _KIND_TAB[kind], what=noun)
+    _ensure_editable_kind(kind)
     if kind == "stock_entry":
         used, where = db.query(StoreStockTransaction).filter(StoreStockTransaction.entry_type == t.value).count(), "stock entr(ies)"
     else:

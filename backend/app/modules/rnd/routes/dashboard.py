@@ -9,6 +9,7 @@ from app.modules.store.models.item import StoreItem
 from app.modules.rnd.models.project import RndProject, RND_PROJECT_STAGES
 from app.modules.rnd.models.experiment import RndExperiment
 from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem, RND_PROTOTYPE_STATUSES
+from app.modules.rnd.scope import apply_scope
 from app.modules.rnd.service import user_names
 
 router = APIRouter(tags=["RnD Dashboard"], dependencies=[Depends(require_app_access("rnd"))])
@@ -19,14 +20,14 @@ async def rnd_dashboard(
     db: Session = Depends(get_db),
     _tab: User = Depends(require_tab_access("rnd", "dashboard")),
 ):
-    live_projects = db.query(RndProject).filter(RndProject.is_deleted == False)  # noqa: E712
+    live_projects = apply_scope(db.query(RndProject), _tab, RndProject).filter(RndProject.is_deleted == False)  # noqa: E712
     by_stage = dict(
         live_projects.filter(RndProject.status != "cancelled")
         .with_entities(RndProject.stage, func.count(RndProject.id)).group_by(RndProject.stage).all()
     )
     by_status = dict(live_projects.with_entities(RndProject.status, func.count(RndProject.id)).group_by(RndProject.status).all())
 
-    live_exps = db.query(RndExperiment).filter(RndExperiment.is_deleted == False)  # noqa: E712
+    live_exps = apply_scope(db.query(RndExperiment), _tab, RndExperiment).filter(RndExperiment.is_deleted == False)  # noqa: E712
     by_result = dict(
         live_exps.filter(RndExperiment.status == "completed")
         .with_entities(RndExperiment.result, func.count(RndExperiment.id)).group_by(RndExperiment.result).all()
@@ -34,7 +35,7 @@ async def rnd_dashboard(
     exp_open = live_exps.filter(RndExperiment.status.in_(("planned", "in_progress"))).count()
 
     by_proto_status = dict(
-        db.query(RndPrototype.status, func.count(RndPrototype.id))
+        apply_scope(db.query(RndPrototype.status, func.count(RndPrototype.id)), _tab, RndPrototype)
         .filter(RndPrototype.is_deleted == False).group_by(RndPrototype.status).all()  # noqa: E712
     )
 
@@ -46,10 +47,15 @@ async def rnd_dashboard(
         .join(RndPrototype, RndPrototype.id == RndPrototypeBomItem.prototype_id)
         .join(RndProject, RndProject.id == RndPrototype.project_id)
         .filter(RndPrototype.is_deleted == False, RndProject.is_deleted == False, RndProject.status != "cancelled")  # noqa: E712
-        .scalar()
+    )
+    total_spend = (
+        apply_scope(total_spend, _tab, RndProject).scalar()
     ) or 0
 
-    recent_projects = live_projects.order_by(RndProject.updated_at.desc()).limit(6).all()
+    # Ongoing = being worked on now: active and not yet closed.
+    ongoing = live_projects.filter(RndProject.status == "active", RndProject.stage != "closed")
+    ongoing_count = ongoing.count()
+    recent_projects = ongoing.order_by(RndProject.updated_at.desc()).limit(6).all()
     lead_names = user_names(db, [p.lead_id for p in recent_projects])
     recent_experiments = live_exps.order_by(RndExperiment.updated_at.desc()).limit(6).all()
     completed = sum(by_result.values())
@@ -58,6 +64,7 @@ async def rnd_dashboard(
         "projects": {
             "total": sum(by_status.values()),
             "active": by_status.get("active", 0),
+            "ongoing": ongoing_count,
             "on_hold": by_status.get("on_hold", 0),
             "cancelled": by_status.get("cancelled", 0),
             "by_stage": {s: by_stage.get(s, 0) for s in RND_PROJECT_STAGES},

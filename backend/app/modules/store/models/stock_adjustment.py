@@ -6,7 +6,8 @@ from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
 
-STOCK_ADJUSTMENT_STATUSES = ("pending_approval", "approved", "rejected")
+# cancelled = the creator withdrew it from approval (central approval engine).
+STOCK_ADJUSTMENT_STATUSES = ("pending_approval", "approved", "rejected", "cancelled")
 
 
 class StoreStockAdjustment(Base, TimestampMixin):
@@ -16,9 +17,12 @@ class StoreStockAdjustment(Base, TimestampMixin):
     from the live balance server-side at creation (count) time, not taken
     from the client, so it can't be spoofed to fabricate a difference.
 
-    Maker-checker: created as `pending_approval` with nothing posted; only
-    the named approver (`approved_by_id`, never the creator) can approve —
-    which posts the stored per-line difference — or reject it."""
+    Maker-checker on the central approval engine (workflow
+    "store.stock_adjustment"): created as `pending_approval` with nothing
+    posted; the approver the workflow resolves (by default the Store Manager
+    named in `approved_by_id`, never the creator) approves — which posts the
+    stored per-line difference — or rejects it. After a decision
+    `approved_by_id` holds who actually decided."""
 
     __tablename__ = "store_stock_adjustments"
 
@@ -50,5 +54,7 @@ class StoreStockAdjustmentItem(Base, TimestampMixin):
     actual_quantity: Mapped[float] = mapped_column(Float, nullable=False)
     difference: Mapped[float] = mapped_column(Float, nullable=False)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Bin-wise physical count: the bin whose stock this line corrects (WM).
+    bin_id: Mapped[int | None] = mapped_column(ForeignKey("store_bins.id"), nullable=True)
 
     adjustment: Mapped["StoreStockAdjustment"] = relationship("StoreStockAdjustment", back_populates="items")

@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { ReactNode } from 'react'
+import { ArrowLeft } from '@phosphor-icons/react'
 
 export default function LegalPageShell({ title, updatedDate, children }: { title: string; updatedDate: string; children: ReactNode }) {
   const router = useRouter()
@@ -35,10 +36,7 @@ export default function LegalPageShell({ title, updatedDate, children }: { title
             cursor: 'pointer',
           }}
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12" />
-            <polyline points="12 19 5 12 12 5" />
-          </svg>
+          <ArrowLeft size={15} />
           Back
         </button>
 

@@ -26,7 +26,7 @@ def test_sr_creation_sends_no_notification(client, db):
 
     client.post(
         "/api/v1/erp/service-requests",
-        json={"project_id": project["id"], "issue_title": "Notif test issue"},
+        json={"project_id": project["id"], "issue_title": "Notif test issue", "service_type": "repair_breakdown"},
         headers=auth_header(creator),
     )
 
@@ -41,7 +41,7 @@ def test_sr_update_sends_no_notification(client, db):
     project = client.post("/api/v1/erp/projects", json={"serial_number": "SN-N2"}, headers=auth_header(creator)).json()
     sr = client.post(
         "/api/v1/erp/service-requests",
-        json={"project_id": project["id"], "issue_title": "Update notif test"},
+        json={"project_id": project["id"], "issue_title": "Update notif test", "service_type": "repair_breakdown"},
         headers=auth_header(creator),
     ).json()
 

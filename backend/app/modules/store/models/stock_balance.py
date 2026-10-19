@@ -32,3 +32,7 @@ class StoreStockBalance(Base, TimestampMixin):
     # post_stock_transaction's quality_* / blocked_* types.
     quarantine_qty: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
     quality_qty: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")
+    # WITH VENDOR stock (SAP special stock O): material sent out on a job-work
+    # challan. Still ours and still valued, but physically at the vendor —
+    # never issuable. Moves only through the jobwork_* transaction types.
+    vendor_qty: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default="0")

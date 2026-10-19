@@ -67,7 +67,7 @@ class HydSparePartResponse(BaseModel):
     manufacturer: str | None = None
     part_number: str | None = None
     uom: str
-    unit_cost: float
+    unit_cost: float | None  # None = hidden (Hydraulic › BOM › Prices & costs)
     min_stock_qty: float
     reorder_qty: float
     lead_time_days: int | None = None

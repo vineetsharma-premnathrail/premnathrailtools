@@ -1,7 +1,9 @@
 # Hydraulic Tool API Router
 
 import logging
+import re
 from typing import Mapping, Any
+from urllib.parse import quote
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
@@ -11,101 +13,93 @@ from .service import perform_hydraulic_calculation
 from .reports.pdf_builder import create_hydraulic_docx_report, generate_hydraulic_pdf_report
 from ..latex_utils import escape_latex
 
-logger = logging.getLogger("engineering_tools")
+logger = logging.getLogger("rnd.tools.hydraulic")
 router = APIRouter()
 
-@router.post("/calculate")
-async def calculate_hydraulic(raw: Mapping[str, Any]) -> dict[str, Any]:
-    """Calculate hydraulic motor/pump parameters"""
-    # Construct the Pydantic model here so we can log validation errors with details
+
+def _validation_detail(ve: ValidationError) -> str:
+    """Turn a Pydantic ValidationError into '<field>: <message> — fill it and recalculate.'
+    lines instead of the raw multi-line Pydantic dump."""
+    parts = []
+    for err in ve.errors():
+        loc = ".".join(str(x) for x in err.get("loc", ()) if x != "body") or "input"
+        parts.append(f"{loc}: {err.get('msg', 'is not valid')} — fill it and recalculate.")
+    return " ".join(parts) or "One of the hydraulic inputs is not valid — check every field and recalculate."
+
+
+def _parse_input(raw: Mapping[str, Any], purpose: str) -> HydraulicInput:
     try:
         if hasattr(HydraulicInput, 'model_validate'):
-            # Pydantic v2: model_validate accepts Mapping and returns a model instance
-            model = HydraulicInput.model_validate(raw)
-        else:
-            model = HydraulicInput(**raw)  # pydantic v1
+            return HydraulicInput.model_validate(raw)
+        return HydraulicInput(**raw)  # pydantic v1
     except ValidationError as ve:
         try:
             keys = list(raw.keys())
         except Exception:
             keys = None
-        logger.warning("Hydraulic input validation failed: %s; payload keys: %s", ve, keys)
-        # Re-raise as 422 with the validation info for client visibility
-        raise HTTPException(status_code=422, detail=str(ve))
-    except Exception as e:
-        logger.exception("Unexpected error while validating hydraulic input")
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.warning("Hydraulic input validation failed (%s): %s; payload keys: %s", purpose, ve, keys)
+        raise HTTPException(status_code=422, detail=_validation_detail(ve))
+    except Exception:
+        logger.exception("Unexpected error while validating hydraulic input (%s)", purpose)
+        raise HTTPException(status_code=400, detail="Could not read the hydraulic inputs — fill every field with a valid number and recalculate.")
+
+
+def _content_disposition(doc_no: Any, ext: str) -> str:
+    """Attachment header built from the raw doc_no: an ASCII-safe quoted name
+    (falls back to Hydraulic_Report) plus an RFC 5987 filename* for the original."""
+    original = str(doc_no or "").strip()
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", original.replace(" ", "_")).strip("._") or "Hydraulic_Report"
+    utf8_name = (original or "Hydraulic_Report") + ext
+    return f"attachment; filename=\"{safe}{ext}\"; filename*=UTF-8''{quote(utf8_name)}"
+
+@router.post("/calculate")
+async def calculate_hydraulic(raw: Mapping[str, Any]) -> dict[str, Any]:
+    """Calculate hydraulic motor/pump parameters"""
+    model = _parse_input(raw, "calculate")
 
     try:
         inputs, inputs_raw = validate_hydraulic_inputs(model)
         results, report = perform_hydraulic_calculation(inputs, inputs_raw)
         return {"report": report, "results": results}
+    except HTTPException:
+        raise
     except ValueError as e:
         # Input-related error — return 400 so client receives a clear validation response
         logger.warning("Validation error during hydraulic calculation: %s", e)
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"{e} — correct the highlighted input and recalculate.")
+    except Exception:
         logger.exception("Error during hydraulic calculation")
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, "Calculation failed unexpectedly — report this with your inputs to the R&D tool owner.")
 
 @router.post("/download-report")
 async def download_hydraulic_report(raw: Mapping[str, Any]):
     """Download hydraulic calculation report as DOCX"""
-    try:
-        if hasattr(HydraulicInput, 'model_validate'):
-            model = HydraulicInput.model_validate(raw)
-        else:
-            model = HydraulicInput(**raw)
-    except ValidationError as ve:
-        try:
-            keys = list(raw.keys())
-        except Exception:
-            keys = None
-        logger.warning("Hydraulic input validation failed for download: %s; payload keys: %s", ve, keys)
-        raise HTTPException(status_code=422, detail=str(ve))
-    except Exception as e:
-        logger.exception("Unexpected error while validating hydraulic input for download")
-        raise HTTPException(status_code=400, detail=str(e))
+    model = _parse_input(raw, "docx")
 
     try:
         inputs, inputs_raw = validate_hydraulic_inputs(model)
         results, _ = perform_hydraulic_calculation(inputs, inputs_raw)
         stream = create_hydraulic_docx_report(inputs, results, inputs_raw)
-        # Use doc_no for filename when provided
-        raw_docno = (inputs_raw or {}).get('doc_no') or 'Hydraulic_Report'
-        safe_name = str(raw_docno).replace(' ', '_').replace('/', '_')
-        filename = f"{safe_name}.docx" if safe_name else "Hydraulic_Report.docx"
+        # File name comes from the raw doc_no (never a LaTeX-escaped one)
         return StreamingResponse(
             stream,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f"attachment; filename={filename}"}
+            headers={"Content-Disposition": _content_disposition(raw.get('doc_no'), ".docx")}
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         logger.warning("Validation error generating hydraulic report: %s", e)
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"{e} — correct the highlighted input and recalculate.")
+    except Exception:
         logger.exception("Error generating hydraulic report")
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, "Calculation failed unexpectedly — report this with your inputs to the R&D tool owner.")
 
 
 @router.post("/hydraulic_report_pdf")
 async def download_hydraulic_pdf(raw: Mapping[str, Any]):
     """Generate and download a PDF report (LaTeX -> PDF) for Pump & Motor (cc) calculations"""
-    try:
-        if hasattr(HydraulicInput, 'model_validate'):
-            model = HydraulicInput.model_validate(raw)
-        else:
-            model = HydraulicInput(**raw)
-    except ValidationError as ve:
-        try:
-            keys = list(raw.keys())
-        except Exception:
-            keys = None
-        logger.warning("Hydraulic input validation failed for PDF: %s; payload keys: %s", ve, keys)
-        raise HTTPException(status_code=422, detail=str(ve))
-    except Exception as e:
-        logger.exception("Unexpected error while validating hydraulic input for PDF")
-        raise HTTPException(status_code=400, detail=str(e))
+    model = _parse_input(raw, "pdf")
 
     try:
         inputs, inputs_raw = validate_hydraulic_inputs(model)
@@ -130,28 +124,17 @@ async def download_hydraulic_pdf(raw: Mapping[str, Any]):
                 context[meta] = escape_latex(str(raw.get(meta)))
 
         pdf_stream = generate_hydraulic_pdf_report(context)
-        fname = str(context.get('doc_no') or 'Hydraulic_Report').replace(' ', '_').replace('/', '_') + '.pdf'
+        # File name comes from the raw doc_no, not the LaTeX-escaped context value
         return StreamingResponse(
             pdf_stream,
             media_type='application/pdf',
-            headers={'Content-Disposition': f'attachment; filename={fname}'}
+            headers={'Content-Disposition': _content_disposition(raw.get('doc_no'), '.pdf')}
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         logger.warning('Validation error generating hydraulic PDF: %s', e)
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        import traceback, os
+        raise HTTPException(status_code=400, detail=f"{e} — correct the highlighted input and recalculate.")
+    except Exception:
         logger.exception('Error generating hydraulic PDF report')
-        # Write diagnostic to file so we can retrieve the traceback without access to uvicorn stdout
-        try:
-            _log_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..', '..', 'logs')
-            os.makedirs(_log_dir, exist_ok=True)
-            _log_path = os.path.join(_log_dir, 'pdf_error.log')
-            with open(_log_path, 'a', encoding='utf-8') as _f:
-                import datetime
-                _f.write(f"\n[{datetime.datetime.now().isoformat()}] PDF 500\n")
-                _f.write(traceback.format_exc())
-                _f.write(f"raw keys: {list(raw.keys()) if raw else 'n/a'}\n")
-        except Exception:
-            pass
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, "Calculation failed unexpectedly — report this with your inputs to the R&D tool owner.")

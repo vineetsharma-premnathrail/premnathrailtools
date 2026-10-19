@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access
+from app.core.permissions import ensure_can_delete, require_app_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.quality.models.quality_standard import QualityStandard, QUALITY_STANDARD_STATUSES
@@ -70,7 +70,7 @@ async def list_quality_standards(
 async def create_quality_standard(
     payload: QualityStandardCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("quality")),
+    user: User = Depends(require_tab_action("quality", "standards", "create")),
 ):
     if payload.status not in QUALITY_STANDARD_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status '{payload.status}'")
@@ -102,6 +102,7 @@ async def update_quality_standard(
     standard_id: int,
     payload: QualityStandardUpdate,
     db: Session = Depends(get_db),
+    _user: User = Depends(require_tab_action("quality", "standards", "edit")),
 ):
     standard = _get_or_404(db, standard_id)
     updates = payload.model_dump(exclude_unset=True)
@@ -123,8 +124,13 @@ async def update_quality_standard(
 
 
 @router.delete("/{standard_id}")
-async def delete_quality_standard(standard_id: int, db: Session = Depends(get_db)):
+async def delete_quality_standard(
+    standard_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("quality")),
+):
     standard = _get_or_404(db, standard_id)
+    ensure_can_delete(user, standard, "quality", "standards", what="quality standard")
     # Soft delete — quality records are retained for audit (ISO 9001 §7.5.3),
     # and the delete itself is logged by app/core/audit.py.
     standard.is_deleted = True

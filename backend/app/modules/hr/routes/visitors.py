@@ -5,7 +5,7 @@ cancel, see everyone. Any logged-in employee may pre-register a visitor
 with themself as host and see the visitors they host or registered."""
 from datetime import date, datetime, time, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,10 @@ from app.modules.hr.schemas.visitor import (
     HrVisitorCreate, HrVisitorUpdate, HrVisitorCheckInPayload, HrVisitorCheckOutPayload,
     HrVisitorCancelPayload, HrVisitorResponse, HrVisitorBoardResponse,
 )
-from app.modules.hr.services.access import is_hr, require_hr
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.modules.hr.services import approvals as _hr_scope  # noqa: F401 — registers HR data-scope tables
+from app.core.permissions import ensure_tab_action, require_feature_action
+from app.modules.hr.services.access import can_hr, is_hr_for, require_hr_tab, require_me_view
 from app.modules.hr.services.admin_common import (
     users_by_id, branches_by_id, display_name, require_active_user, require_branch, require_choice,
 )
@@ -25,6 +28,15 @@ from app.modules.main.routes.auth import get_current_user
 from app.utils.notifications import notify_user
 
 router = APIRouter(prefix="/hr/visitors", tags=["HR"])
+
+# HR-team gate for this file: hr app + Permission Matrix › HR › visitors.
+require_hr = require_hr_tab("visitors")
+require_gate_desk = require_feature_action("hr", "visitors", "gate_desk", "edit")  # check-in / check-out at the gate
+# Reception work needs hr:visitors:create|edit; an employee pre-registering,
+# editing or cancelling a visitor they host is self-service (hr:me:create|edit).
+
+# Same list as ID_PROOF_TYPES in frontend/src/components/hr/admin/VisitorDialogs.tsx.
+ID_PROOF_TYPES = ("Aadhaar", "PAN", "Driving Licence", "Passport", "Voter ID", "Company ID", "Other")
 
 # All plants are in India (no DST), so "today" on the board is an IST day.
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -58,10 +70,12 @@ def _to_responses(db: Session, rows: list[HrVisitor]) -> list[HrVisitorResponse]
     return out
 
 
-def _get_visitor(db: Session, visitor_id: int) -> HrVisitor:
+def _get_visitor(db: Session, visitor_id: int, user: User | None = None) -> HrVisitor:
     v = db.query(HrVisitor).filter(HrVisitor.id == visitor_id).first()
     if not v:
         raise HTTPException(status_code=404, detail=f"Visitor entry #{visitor_id} was not found. Refresh the visitor list.")
+    if user is not None and not _is_own(user, v):
+        ensure_in_scope(db, user, v)  # HR data access (Organization › Role & Permissions)
     return v
 
 
@@ -70,7 +84,7 @@ def _is_own(user: User, v: HrVisitor) -> bool:
 
 
 def _ensure_can_view(user: User, v: HrVisitor) -> None:
-    if not (is_hr(user) or _is_own(user, v)):
+    if not (is_hr_for(user, "visitors") or _is_own(user, v)):
         raise HTTPException(
             status_code=403,
             detail="You can only see visitors you host or registered. Reception (HR) can see every visitor.",
@@ -83,11 +97,26 @@ def _status_word(s: str) -> str:
 
 # ── self-service ────────────────────────────────────────────────────────────
 
+def _visitor_event(db: Session, background_tasks, v, actor: User) -> None:
+    """Role event 'visitor_checked_in' (core/events/hr.py) — e.g. security /
+    reception supervisors; the host already got a direct notice."""
+    from app.modules.hr.services import role_events
+
+    host = db.get(User, v.host_user_id) if v.host_user_id else None
+    role_events.fire(
+        db, background_tasks, "visitor_checked_in", title=f"Visitor checked in — {v.visit_no}",
+        message=(f"{v.visitor_name}{f' ({v.visitor_company})' if v.visitor_company else ''} checked in at the gate"
+                 f"{f' with badge {v.badge_no}' if v.badge_no else ''} to meet {host.name if host else 'their host'}."),
+        entity_type="hr_visitor", entity_id=v.id, actor=actor, can_open=role_events.record_opener(db, v),
+        skip={v.host_user_id} if v.host_user_id else None,
+    )
+
+
 @router.get("/mine", response_model=list[HrVisitorResponse])
 async def list_my_visitors(
     status_filter: str | None = Query(None, alias="status"),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_view),
 ):
     q = db.query(HrVisitor).filter(or_(HrVisitor.host_user_id == user.id, HrVisitor.created_by_id == user.id))
     if status_filter:
@@ -105,7 +134,9 @@ async def create_visitor(
 ):
     """Pre-register a visitor. Non-HR users are always the host. Reception
     can pick any host and, for walk-ins, check the visitor in immediately."""
-    hr = is_hr(user)
+    hr = can_hr(user, "visitors", "create")
+    if not hr:
+        ensure_tab_action(user, "hr", "me", "create")
     if not hr and payload.host_user_id not in (None, user.id):
         raise HTTPException(
             status_code=403,
@@ -116,6 +147,8 @@ async def create_visitor(
             status_code=403,
             detail="Only reception (HR) can check a visitor in. Pre-register the visitor and reception will check them in at the gate.",
         )
+    if payload.id_proof_type:
+        require_choice(payload.id_proof_type, ID_PROOF_TYPES, "ID proof type")
     host_id = payload.host_user_id if hr and payload.host_user_id else user.id
     host = require_active_user(db, host_id, "host")
     require_branch(db, payload.branch_id)
@@ -140,6 +173,7 @@ async def create_visitor(
             f"{f' with badge {v.badge_no}' if v.badge_no else ''}.",
             "hr_visitor_checked_in", entity_type="hr_visitor", entity_id=v.id,
         )
+        _visitor_event(db, None, v, user)
     elif host.id != user.id:
         notify_user(
             db, host.id, "Visitor registered for you",
@@ -164,7 +198,7 @@ async def visitor_board(
     (whatever day they came in), and those who left today."""
     d = on_date or datetime.now(IST).date()
     start, end = _day_window(d)
-    base = db.query(HrVisitor)
+    base = apply_scope(db.query(HrVisitor), _user, HrVisitor)
     if branch_id:
         base = base.filter(HrVisitor.branch_id == branch_id)
     expected = base.filter(
@@ -199,7 +233,7 @@ async def list_visitors(
     _user: User = Depends(require_hr),
 ):
     when = func.coalesce(HrVisitor.check_in_at, HrVisitor.expected_at, HrVisitor.created_at)
-    q = db.query(HrVisitor)
+    q = apply_scope(db.query(HrVisitor), _user, HrVisitor)
     if date_from:
         q = q.filter(when >= _day_window(date_from)[0])
     if date_to:
@@ -227,7 +261,7 @@ async def get_visitor(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    v = _get_visitor(db, visitor_id)
+    v = _get_visitor(db, visitor_id, user)
     _ensure_can_view(user, v)
     return _to_responses(db, [v])[0]
 
@@ -239,9 +273,10 @@ async def update_visitor(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    v = _get_visitor(db, visitor_id)
-    hr = is_hr(user)
+    v = _get_visitor(db, visitor_id, user)
+    hr = can_hr(user, "visitors", "edit")
     if not hr:
+        ensure_tab_action(user, "hr", "me", "edit")
         if not _is_own(user, v):
             raise HTTPException(status_code=403, detail="You can only edit visitors you host or registered. Ask reception (HR) to change this entry.")
         if v.status != "expected":
@@ -262,10 +297,20 @@ async def update_visitor(
         require_branch(db, data["branch_id"])
     if "id_proof_last4" in data:
         data["id_proof_last4"] = _last4(data["id_proof_last4"])
+    if data.get("id_proof_type"):
+        require_choice(data["id_proof_type"], ID_PROOF_TYPES, "ID proof type")
     if "visitor_name" in data and not (data["visitor_name"] or "").strip():
         raise HTTPException(status_code=400, detail="Visitor name cannot be blank. Enter the visitor's full name.")
+    old_host_id = v.host_user_id
     for k, val in data.items():
         setattr(v, k, val)
+    if v.host_user_id != old_host_id and v.host_user_id != user.id:
+        notify_user(
+            db, v.host_user_id, "Visitor registered for you",
+            f"Reception changed the host of {v.visit_no} ({v.visitor_name}) to you"
+            + (f"; expected on {v.expected_at.astimezone(IST):%d-%m-%Y %H:%M}." if v.expected_at else "."),
+            "hr_visitor_registered", entity_type="hr_visitor", entity_id=v.id,
+        )
     db.commit()
     db.refresh(v)
     return _to_responses(db, [v])[0]
@@ -276,14 +321,17 @@ async def check_in_visitor(
     visitor_id: int,
     payload: HrVisitorCheckInPayload,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_hr),
+    _user: User = Depends(require_gate_desk),
+    background_tasks: BackgroundTasks = None,
 ):
-    v = _get_visitor(db, visitor_id)
+    v = _get_visitor(db, visitor_id, _user)
     if v.status != "expected":
         raise HTTPException(
             status_code=409,
             detail=f"{v.visit_no} is already {_status_word(v.status)}, so it cannot be checked in. Only expected visitors can be checked in — register a new visit if they came back.",
         )
+    if payload.id_proof_type:
+        require_choice(payload.id_proof_type, ID_PROOF_TYPES, "ID proof type")
     v.status = "checked_in"
     v.check_in_at = payload.check_in_at or datetime.now(timezone.utc)
     if payload.badge_no is not None:
@@ -302,6 +350,7 @@ async def check_in_visitor(
         f"{f' with badge {v.badge_no}' if v.badge_no else ''}.",
         "hr_visitor_checked_in", entity_type="hr_visitor", entity_id=v.id,
     )
+    _visitor_event(db, background_tasks, v, _user)
     db.commit()
     db.refresh(v)
     return _to_responses(db, [v])[0]
@@ -312,9 +361,9 @@ async def check_out_visitor(
     visitor_id: int,
     payload: HrVisitorCheckOutPayload,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_hr),
+    _user: User = Depends(require_gate_desk),
 ):
-    v = _get_visitor(db, visitor_id)
+    v = _get_visitor(db, visitor_id, _user)
     if v.status != "checked_in":
         raise HTTPException(
             status_code=409,
@@ -342,9 +391,13 @@ async def cancel_visitor(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    v = _get_visitor(db, visitor_id)
-    if not (is_hr(user) or _is_own(user, v)):
+    v = _get_visitor(db, visitor_id, user)
+    if not (is_hr_for(user, "visitors") or _is_own(user, v)):
         raise HTTPException(status_code=403, detail="You can only cancel visitors you host or registered. Ask reception (HR) to cancel this one.")
+    # Cancelling is a status change (edit), not a delete: reception needs
+    # hr:visitors:edit; the host/registrant cancelling their own needs hr:me:edit.
+    if not can_hr(user, "visitors", "edit"):
+        ensure_tab_action(user, "hr", "me", "edit")
     if v.status != "expected":
         raise HTTPException(
             status_code=409,

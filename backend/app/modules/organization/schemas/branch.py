@@ -1,7 +1,29 @@
 from datetime import date, datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 PLANT_STATUSES = ("active", "inactive", "under_maintenance", "under_construction", "closed")
+
+
+def _clean_plant_gst(obj):
+    """Plant GSTIN / state: GSTIN checked like any party GSTIN (format, state,
+    check digit); the state defaults from it and must agree with it."""
+    from app.modules.accounts.services.gst import GST_STATE_CODES, state_code_for_name, validate_gstin
+
+    g = getattr(obj, "gstin", None)
+    if g is not None:
+        obj.gstin = validate_gstin(g)
+    sc = getattr(obj, "state_code", None)
+    if sc is not None:
+        code = state_code_for_name(sc) if sc.strip() else None
+        if sc.strip() and not code:
+            raise ValueError(f"State '{sc}' is not a GST state — use the 2-digit GST state code (e.g. 27 for Maharashtra).")
+        obj.state_code = code
+    if obj.gstin and not obj.state_code:
+        obj.state_code = obj.gstin[:2]
+    if obj.gstin and obj.state_code and obj.gstin[:2] != obj.state_code:
+        raise ValueError(f"GSTIN {obj.gstin} is registered in {GST_STATE_CODES.get(obj.gstin[:2], obj.gstin[:2])}, but the plant's state is "
+                         f"{GST_STATE_CODES.get(obj.state_code, obj.state_code)} — a plant's GSTIN must be the registration of its own state.")
+    return obj
 
 
 class BranchCreate(BaseModel):
@@ -25,6 +47,13 @@ class BranchCreate(BaseModel):
     timezone: str | None = None
     currency: str | None = None
     remarks: str | None = None
+    # GST identity (stock transfers between plants in different states are taxable).
+    gstin: str | None = None
+    state_code: str | None = None
+
+    @model_validator(mode="after")
+    def _gst(self):
+        return _clean_plant_gst(self)
 
 
 class BranchUpdate(BaseModel):
@@ -48,6 +77,13 @@ class BranchUpdate(BaseModel):
     timezone: str | None = None
     currency: str | None = None
     remarks: str | None = None
+    # GST identity (stock transfers between plants in different states are taxable).
+    gstin: str | None = None
+    state_code: str | None = None
+
+    @model_validator(mode="after")
+    def _gst(self):
+        return _clean_plant_gst(self)
 
 
 class BranchResponse(BaseModel):
@@ -79,6 +115,8 @@ class BranchResponse(BaseModel):
     timezone: str | None = None
     currency: str | None = None
     remarks: str | None = None
+    gstin: str | None = None
+    state_code: str | None = None
     created_at: datetime
     updated_at: datetime
 

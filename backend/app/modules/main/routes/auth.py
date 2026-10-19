@@ -18,14 +18,15 @@ from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.schemas.auth import TokenResponse, CurrentUserResponse
 from app.auth.jwt_handler import create_access_token, verify_access_token, create_refresh_token, hash_refresh_token
+from app.modules.organization.services import security as org_security
 from app.modules.main.models.user_session import UserSession
 from datetime import datetime, timedelta, timezone
-from app.auth.microsoft import get_auth_url, exchange_code_for_token, get_microsoft_user_profile, get_microsoft_manager_profile
+from app.auth.microsoft import get_auth_url, exchange_code_for_token, get_microsoft_user_profile, get_microsoft_manager_profile, get_azure_admin_ids
 from app.modules.organization.services.provisioning import sync_user_org_links
 from app.modules.hr.services.employee_sync import is_org_locked
 from app.modules.hr.services.exit_guard import is_exited, exited_login_message
 from app.core.config import settings
-from app.core.permission_registry import restricted_subtabs
+from app.core.permission_registry import is_admin_user, legacy_erp_permissions, restricted_subtabs
 
 logger = logging.getLogger(__name__)
 
@@ -113,19 +114,54 @@ def _set_auth_cookies(response, session_token: str, ms_access_token: str = "", r
         )
 
 
-def _issue_refresh_session(db: Session, user: User, user_agent: str = "") -> str:
-    """Creates a `user_sessions` row and returns the raw refresh token for
-    the cookie. Only the hash is persisted."""
+def _issue_refresh_session(db: Session, user: User, user_agent: str = "", request: Request | None = None,
+                           rotated_from: UserSession | None = None) -> tuple[str, int]:
+    """Creates a `user_sessions` row and returns (raw refresh token for the
+    cookie, session id). Only the hash is persisted. Lifetime and the
+    concurrent-session cap come from Organization › Security & Sessions.
+    A new sign-in starts app-locked; a refresh rotation keeps the lock state
+    and last activity of the session it replaces (services/app_lock.py)."""
     raw, token_hash = create_refresh_token()
+    org_security.enforce_session_limit(db, user.id)
     session = UserSession(
         user_id=user.id,
         token_hash=token_hash,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        expires_at=org_security.session_expiry(db),
         user_agent=user_agent[:255] if user_agent else None,
+        ip_address=org_security.client_ip(request),
+        app_lock_state=(rotated_from.app_lock_state if rotated_from is not None else "locked"),
+        app_activity_at=(rotated_from.app_activity_at if rotated_from is not None else None),
     )
     db.add(session)
     db.commit()
-    return raw
+    return raw, session.id
+
+
+def _adopt_hr_record(db: Session, user: User) -> None:
+    """A brand-new account takes over the HR record waiting for its email
+    (HR > Employees, Portal Access = Yes). Never blocks the sign-in."""
+    from app.modules.hr.services.workforce_link import link_pending_profile
+
+    try:
+        if link_pending_profile(db, user):
+            db.commit()
+            db.refresh(user)
+    except Exception:  # noqa: BLE001 — HR linking must never stop someone signing in
+        db.rollback()
+        logger.exception("Linking the pending HR record to new account %s failed", user.email)
+
+
+def _issue_tokens(db: Session, user: User, request: Request, rotated_from: UserSession | None = None) -> tuple[str, str]:
+    """(access token, refresh token) for a new sign-in or refresh. The access
+    token carries the session id (`sid`) so revoking the session — logout,
+    admin revoke, deactivation — cuts the access token off at once instead of
+    when it expires (see get_current_user)."""
+    refresh_token, session_id = _issue_refresh_session(db, user, request.headers.get("user-agent", ""), request, rotated_from)
+    access_token = create_access_token(
+        {"sub": str(user.id), "email": user.email, "role": user.role, "sid": session_id},
+        org_security.access_token_minutes(db),
+    )
+    return access_token, refresh_token
 
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
@@ -157,19 +193,50 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     user_id = payload.get("sub")
+    # Document-share and upload tokens are signed with the same key but are not
+    # sign-in tokens (they carry a `purpose` and no `sub`): refuse them here
+    # with a 401 instead of crashing on int(None).
+    if payload.get("purpose") or not str(user_id or "").isdigit():
+        raise HTTPException(status_code=401, detail="This token isn't a sign-in token — sign in again to get one.")
     user = db.query(User).filter(User.id == int(user_id)).first()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
+    sid = payload.get("sid")
+    if sid is not None:
+        # Tokens from a sign-in are tied to their refresh session: once it is
+        # revoked (logout, admin revoke, deactivation, session limit) the
+        # access token stops working immediately. Rotation is safe — the
+        # frontend only refreshes after the old access token is rejected.
+        session = db.get(UserSession, int(sid))
+        if session is None or session.user_id != user.id or session.revoked_at is not None:
+            raise HTTPException(status_code=401, detail="Your session was signed out — sign in again.")
+        request.state.app_session = session
+        from app.modules.main.services.app_lock import enforce as enforce_app_lock
+        enforce_app_lock(request, db, user, session)
     set_current_user_id(user.id)
-    # The portal owner(s) in RESTRICTED_APPS_ALLOWED_EMAILS are always admin,
-    # so Organization / Users & Roles and every admin-only check open for
-    # them even if their row was created (or reset) as a plain user.
-    from app.core.module_visibility import can_see_restricted_apps
-    if user.role != "admin" and can_see_restricted_apps(user.email):
+    return user
+
+
+async def _refresh_azure_admin(db: Session, user: User) -> None:
+    """Re-reads whether this user is an Azure tenant Global Administrator
+    and stores it on is_azure_admin (Azure admins see every module and are
+    portal admins). Best-effort: if Graph can't be asked, the last known
+    value stays — a failed lookup must never strip someone's access."""
+    if not user.azure_id:
+        return
+    try:
+        is_admin = user.azure_id in await get_azure_admin_ids()
+    except Exception as e:  # noqa: BLE001 — login must not fail on this
+        logger.warning("Azure admin lookup failed for %s: %s", user.email, e)
+        return
+    changed = user.is_azure_admin != is_admin
+    user.is_azure_admin = is_admin
+    if is_admin and user.role == "user":
         user.role = "admin"
+        changed = True
+    if changed:
         db.commit()
         db.refresh(user)
-    return user
 
 
 @router.get("/microsoft-login")
@@ -190,7 +257,7 @@ async def microsoft_login(request: Request):
     _oauth_states[state] = {"next_path": next_path, "expiry": time.time() + _STATE_TTL_SECONDS}
 
     redirect_uri = settings.AZURE_REDIRECT_URI
-    auth_url = get_auth_url(state, redirect_uri)
+    auth_url = get_auth_url(state, redirect_uri, pick_account=request.query_params.get("account") == "pick")
     return RedirectResponse(url=auth_url, status_code=302)
 
 
@@ -223,6 +290,7 @@ async def oauth_callback(request: Request, code: str, state: str, db: Session = 
         if settings.DOMAIN_EMAIL:
             allowed_domain = settings.DOMAIN_EMAIL.strip().lstrip("@").lower()
             if not email.lower().endswith(f"@{allowed_domain}"):
+                org_security.log_sign_in(db, request, email=email, ok=False, reason="not a company account")
                 return RedirectResponse(url=f"{frontend_url}/login?error=unauthorized", status_code=302)
 
         user = db.query(User).filter(User.email == email).first()
@@ -235,6 +303,7 @@ async def oauth_callback(request: Request, code: str, state: str, db: Session = 
             db.add(user)
             db.commit()
             db.refresh(user)
+            _adopt_hr_record(db, user)
         else:
             # An employee HR has exited stays out even though their Entra
             # account may still be enabled (handover period) — only a new
@@ -243,6 +312,7 @@ async def oauth_callback(request: Request, code: str, state: str, db: Session = 
                 if user.is_active:
                     user.is_active = False
                     db.commit()
+                org_security.log_sign_in(db, request, user=user, ok=False, reason="employee exited in HR")
                 return RedirectResponse(url=f"{frontend_url}/login?error=exited", status_code=302)
             user.name = name
             user.azure_id = azure_id
@@ -255,6 +325,8 @@ async def oauth_callback(request: Request, code: str, state: str, db: Session = 
             user.office_location = office_location
             db.commit()
             db.refresh(user)
+
+        await _refresh_azure_admin(db, user)
 
         # Best-effort manager resolution — reading the manager relationship
         # needs more than the plain User.Read delegated scope this flow
@@ -281,10 +353,11 @@ async def oauth_callback(request: Request, code: str, state: str, db: Session = 
         db.commit()
 
         if not user.is_active:
+            org_security.log_sign_in(db, request, user=user, ok=False, reason="account deactivated")
             return RedirectResponse(url=f"{frontend_url}/login?error=inactive", status_code=302)
 
-        session_token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
-        refresh_token = _issue_refresh_session(db, user, request.headers.get("user-agent", ""))
+        session_token, refresh_token = _issue_tokens(db, user, request)
+        org_security.log_sign_in(db, request, user=user, ok=True)
 
         redirect_to = state_data["next_path"]
         if redirect_to == "/auth/teams-success":
@@ -390,6 +463,7 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
     if settings.DOMAIN_EMAIL:
         allowed_domain = settings.DOMAIN_EMAIL.strip().lstrip("@").lower()
         if not email.lower().endswith(f"@{allowed_domain}"):
+            org_security.log_sign_in(db, request, email=email, ok=False, reason="not a company account", channel="teams")
             raise HTTPException(status_code=403, detail="Account not authorized for this portal")
 
     user = db.query(User).filter(User.email == email).first()
@@ -398,19 +472,21 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
         db.add(user)
         db.commit()
         db.refresh(user)
+        _adopt_hr_record(db, user)
     else:
         user.azure_id = azure_id
         db.commit()
         db.refresh(user)
 
     if is_exited(db, user.id):
+        org_security.log_sign_in(db, request, user=user, ok=False, reason="employee exited in HR", channel="teams")
         raise HTTPException(status_code=403, detail=exited_login_message(db, user.id))
 
     if not user.is_active:
+        org_security.log_sign_in(db, request, user=user, ok=False, reason="account deactivated", channel="teams")
         raise HTTPException(status_code=403, detail="Account deactivated")
 
-    session_token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
-
+    await _refresh_azure_admin(db, user)
     # On-Behalf-Of exchange: swap the Teams SSO token for a Graph delegated
     # token. Requires the Azure app to expose "access_as_user" and pre-authorize
     # the Teams desktop/web client IDs. If it fails, we still complete the
@@ -434,7 +510,8 @@ async def teams_token_login(request: Request, db: Session = Depends(get_db)):
     except Exception:
         logger.info("Graph on-behalf-of token acquisition failed for Teams login", exc_info=True)
 
-    refresh_token = _issue_refresh_session(db, user, request.headers.get("user-agent", ""))
+    session_token, refresh_token = _issue_tokens(db, user, request)
+    org_security.log_sign_in(db, request, user=user, ok=True, channel="teams")
     response = JSONResponse({"ok": True})
     _set_auth_cookies(response, session_token, ms_access_token, refresh_token)
     return response
@@ -466,7 +543,13 @@ def _p2p_approver_flags(db: Session, user: User) -> tuple[bool, bool]:
 
     if user.role == "admin":
         return True, True
-    is_pr_approver = (
+    # New PRs / POs are routed by the central approval engine.
+    from app.modules.p2p.approvals import is_approver_user
+
+    engine_pr, engine_po = is_approver_user(db, user)
+    if engine_pr and engine_po:
+        return True, True
+    is_pr_approver = engine_pr or (
         db.query(P2PRequestApproval.id).filter(P2PRequestApproval.approver_id == user.id).first() is not None
         or db.query(P2PRequest.id).filter(
             (P2PRequest.approver_id == user.id)
@@ -475,7 +558,7 @@ def _p2p_approver_flags(db: Session, user: User) -> tuple[bool, bool]:
         ).first() is not None
     )
     from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover
-    is_po_approver = (
+    is_po_approver = engine_po or (
         any(getattr(user, flag, False) for flag in P2P_PO_APPROVER_FLAGS)
         or db.query(P2PRequestPOApprover.id).filter(P2PRequestPOApprover.approver_id == user.id).first() is not None
     )
@@ -495,15 +578,16 @@ async def get_current_user_info(user: User = Depends(get_current_user), db: Sess
         designation=user.designation,
         department=user.department,
         phone=user.phone,
-        assigned_apps=user.assigned_apps or [],
-        erp_permissions=user.erp_permissions or [],
+        assigned_apps=user.get_apps(),
+        erp_permissions=legacy_erp_permissions(user),
         apps=user.get_apps(),
         is_department_head=user.is_department_head,
         is_project_head=user.is_project_head,
         is_plant_head=user.is_plant_head,
         is_purchase_head=user.is_purchase_head,
         is_director=user.is_director,
-        is_md=user.is_md,
+        is_partner=user.is_partner,
+        is_azure_admin=bool(user.is_azure_admin),
         is_finance_manager=user.is_finance_manager,
         is_design_manager=user.is_design_manager,
         is_rnd_manager=user.is_rnd_manager,
@@ -515,6 +599,8 @@ async def get_current_user_info(user: User = Depends(get_current_user), db: Sess
         is_po_approver=is_po_approver,
         notifications_enabled=user.notifications_enabled,
         tab_access=restricted_subtabs(user),
+        permissions=[] if is_admin_user(user) else sorted(user.effective_permissions),
+        roles=sorted(r.name for r in user.roles or [] if r.is_active),
     )
 
 
@@ -540,6 +626,10 @@ async def refresh_session(request: Request, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
     if not session or session.revoked_at is not None or session.expires_at < now:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    if org_security.is_idle(db, session):
+        session.revoked_at, session.revoked_reason = now, "idle"
+        db.commit()
+        raise HTTPException(status_code=401, detail="Signed out after inactivity — sign in again.")
 
     user = db.query(User).filter(User.id == session.user_id).first()
     if not user or not user.is_active:
@@ -550,30 +640,41 @@ async def refresh_session(request: Request, db: Session = Depends(get_db)):
     # Rotate: revoke this refresh token and issue a new one, so each cookie
     # value is single-use — replay of an intercepted old cookie fails outright.
     session.revoked_at = now
+    session.revoked_reason = "rotated"
     session.last_used_at = now
     db.commit()
-    new_refresh_token = _issue_refresh_session(db, user, request.headers.get("user-agent", ""))
-
-    session_token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
+    session_token, new_refresh_token = _issue_tokens(db, user, request, rotated_from=session)
     response = JSONResponse({"ok": True})
     _set_auth_cookies(response, session_token, refresh_token=new_refresh_token)
     return response
 
 
 @router.post("/logout")
-async def logout(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+async def logout(request: Request, db: Session = Depends(get_db)):
     """Logout: revoke the refresh session server-side (so the refresh cookie
-    can't be used to silently sign back in) and clear all auth cookies."""
+    can't be used to silently sign back in) and clear all auth cookies.
+
+    Deliberately does NOT require a valid access token — the 15-minute
+    session_token is usually already expired when someone clicks Sign out on a
+    shared PC, and the refresh session must still be revoked. Always 200."""
     raw = request.cookies.get("refresh_token")
     if raw:
         token_hash = hash_refresh_token(raw)
         session = db.query(UserSession).filter(UserSession.token_hash == token_hash).first()
         if session and session.revoked_at is None:
             session.revoked_at = datetime.now(timezone.utc)
+            session.revoked_reason = "logout"
             db.commit()
+            org_security.log_sign_out(db, request, session.user_id)
 
     response = JSONResponse({"message": "Logged out successfully", "status": "ok"})
-    response.delete_cookie("session_token")
-    response.delete_cookie("ms_access_token")
-    response.delete_cookie("refresh_token", path="/api/v1/auth")
+    # Delete with the same attributes the cookies were set with — browsers
+    # ignore a deletion whose secure/samesite don't match (Teams iframe case).
+    secure = settings.SECURE_COOKIES
+    samesite = "none" if secure else "lax"
+    for name in ("session_token", "ms_access_token"):
+        response.delete_cookie(name, httponly=True, secure=secure, samesite=samesite)
+    response.delete_cookie(
+        "refresh_token", path="/api/v1/auth", httponly=True, secure=secure, samesite=samesite,
+    )
     return response

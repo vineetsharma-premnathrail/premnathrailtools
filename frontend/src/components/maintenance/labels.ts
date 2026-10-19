@@ -47,6 +47,12 @@ export const DOC_TYPE_LABELS: Record<string, string> = {
   photo: 'Photo', manual: 'Manual', drawing: 'Drawing', service_report: 'Service Report', certificate: 'Certificate', other: 'Other',
 }
 
+export const PM_FREQUENCY_UNIT_LABELS: Record<string, string> = { day: 'Day(s)', week: 'Week(s)', month: 'Month(s)', year: 'Year(s)' }
+
+export const PM_SCHEDULE_BASIS_LABELS: Record<string, string> = { fixed: 'Fixed calendar', floating: 'From last completion' }
+
+export const PM_DUE_STATE_LABELS: Record<string, string> = { overdue: 'Overdue', due_soon: 'Due soon', scheduled: 'Scheduled', inactive: 'Inactive' }
+
 /** "2h 15m" / "3d 4h" — downtime is stored in minutes. */
 export function formatMinutes(mins: number | null | undefined): string {
   if (mins == null) return '—'

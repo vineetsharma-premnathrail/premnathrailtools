@@ -44,6 +44,23 @@ class ServiceMaterial(Base, TimestampMixin, SoftDeleteMixin):
     received_quantity: Mapped[float] = mapped_column(Float, default=0)
     receiving_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | partial | received
 
+    # Spare consumption (SAP goods issue to a service order): the Item Master
+    # row (never matched by name), the store it was issued from, how much
+    # left Store against this SR and how much unused came back. unit_cost is
+    # the weighted issue cost (stock valuation); unit_price is what the
+    # customer is charged per unit on a chargeable job. Legacy free-text
+    # lines have no store_item_id and keep estimated_budget as their value.
+    store_item_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("store_items.id"), nullable=True, index=True)
+    location_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("store_locations.id"), nullable=True)
+    qty_issued: Mapped[float] = mapped_column(Float, default=0, server_default="0")
+    qty_returned: Mapped[float] = mapped_column(Float, default=0, server_default="0")
+    unit_cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    @property
+    def net_issued(self) -> float:
+        return max(0.0, (self.qty_issued or 0) - (self.qty_returned or 0))
+
     service_request: Mapped["ServiceRequest"] = relationship("ServiceRequest", back_populates="materials")
     attachments: Mapped[list["ServiceMaterialAttachment"]] = relationship(
         "ServiceMaterialAttachment", back_populates="material", cascade="all, delete-orphan"

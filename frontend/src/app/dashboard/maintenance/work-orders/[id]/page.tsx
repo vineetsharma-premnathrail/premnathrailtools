@@ -3,25 +3,33 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
-import { maintenanceApi } from '@/lib/api'
+import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
+import { approvalsApi, maintenanceApi } from '@/lib/api'
 import { MaintenanceLookups, MaintenanceStoreItemOption, MaintenanceWorkOrder, MaintenanceWorkOrderSpare, MaintenanceWorkOrderTask } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle, dangerBtnStyle, InfoRow } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import MaintenanceAttachments from '@/components/maintenance/MaintenanceAttachments'
+import WorkOrderPermitsCard from '@/components/maintenance/WorkOrderPermitsCard'
+import WorkOrderPurchaseCard from '@/components/maintenance/WorkOrderPurchaseCard'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import FormDialog from '@/components/maintenance/FormDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import PromptDialog from '@/components/erp/PromptDialog'
+import ReasonSheet from '@/components/shared/ReasonSheet'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
+import { PermissionAction, useCan } from '@/lib/permissions'
+import { SHEET, SheetSection, Optional, Req, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import { formatDate, formatDateTime } from '@/lib/format'
 import {
   FAILURE_CATEGORY_LABELS, PRIORITY_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS,
   formatINR, formatMinutes, localInputToIso, nowLocalInput,
 } from '@/components/maintenance/labels'
 
-const STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#DC2626' }
+const STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
 const RESULT_OPTIONS = [
   { value: 'ok', label: 'OK', hex: '#16A34A' },
@@ -45,7 +53,6 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
 }
 const smallInput: React.CSSProperties = { ...inputStyle, padding: '7px 10px', fontSize: 13 }
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 const thStyle: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, background: '#fdf1e6' }
 const tdStyle: React.CSSProperties = { padding: '8px 10px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }
 const linkStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', marginRight: 10 }
@@ -103,14 +110,24 @@ function TaskRow({ task, editable, onSave, onDelete }: {
 }
 
 export default function MaintenanceWorkOrderDetailPage() {
-  const { isAuthorized, isLoading } = useRequireApp('maintenance')
+  const { user, isAuthorized, isLoading } = useRequireApp('maintenance')
+  const { can, canFeature } = useCan()
+  // Features inside a work order (core/features/maintenance.py).
+  const wf = (key: string, action: PermissionAction = 'view') => canFeature('maintenance', 'work_orders', key, action)
+  const showCosts = wf('costs')
   const router = useRouter()
   const params = useParams()
-  const id = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedId, error: linkError } = useRecordId(ref)
+  const id = resolvedId ?? 0
 
   const [wo, setWo] = useState<MaintenanceWorkOrder | null>(null)
   const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
+  // Role assign-to rules (core/features/maintenance.py) — the server enforces them on save too.
+  const allowAssign = useAssigneeFilter('maintenance:work_orders.assign')
+  const allowLabour = useAssigneeFilter('maintenance:work_orders.labour')
   const [error, setError] = useState<string | string[]>('')
+  const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
 
   // Dialog state
@@ -120,7 +137,7 @@ export default function MaintenanceWorkOrderDetailPage() {
   const [assignOpen, setAssignOpen] = useState(false)
   const [assignTo, setAssignTo] = useState('')
   const [completeOpen, setCompleteOpen] = useState(false)
-  const [cp, setCp] = useState({ failure_category: '', root_cause: '', action_taken: '', handed_back_at: '' })
+  const [cp, setCp] = useState({ failure_category: '', root_cause: '', action_taken: '', handed_back_at: '', meter_reading: '' })
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [dt, setDt] = useState<Record<string, string>>({})
   const [spareOpen, setSpareOpen] = useState<null | { mode: 'issue' | 'plan'; spare?: MaintenanceWorkOrderSpare }>(null)
@@ -132,12 +149,29 @@ export default function MaintenanceWorkOrderDetailPage() {
   const [labourOpen, setLabourOpen] = useState(false)
   const [lb, setLb] = useState({ technician_id: '', start_time: '', end_time: '', hours: '', hourly_rate: '', remarks: '' })
   const [newTask, setNewTask] = useState('')
+  // Close-out verification runs through the central approval engine; the old
+  // Verify & Close / Reopen buttons stay only for jobs completed before it
+  // (no engine request) or while awaiting the requester's confirmation.
+  const [closeOutPending, setCloseOutPending] = useState(false)
 
   useEffect(() => {
     if (!isAuthorized || !id) return
     maintenanceApi.getWorkOrder(id).then(setWo).catch((err) => setError(extractErrorMessages(err, 'Failed to load work order.')))
+      .finally(() => setLoading(false))
     maintenanceApi.getLookups().then(setLookups).catch(() => { /* pickers degrade to empty lists */ })
   }, [isAuthorized, id])
+
+  const woStatus = wo?.status
+  useEffect(() => {
+    if (!isAuthorized || !id || !woStatus) return
+    approvalsApi.entity('maintenance_work_order', id)
+      .then((st) => setCloseOutPending(st.current?.status === 'pending'))
+      .catch(() => setCloseOutPending(false))
+  }, [isAuthorized, id, woStatus])
+
+  const reloadWo = () => {
+    maintenanceApi.getWorkOrder(id).then(setWo).catch((err) => setError(extractErrorMessages(err, 'Failed to reload the work order.')))
+  }
 
   // Spare picker: search Store items (spare parts first), with stock at the chosen location.
   useEffect(() => {
@@ -188,17 +222,22 @@ export default function MaintenanceWorkOrderDetailPage() {
     run(() => maintenanceApi.workOrderAction(id, action, payload), `Couldn't ${action.replace('_', ' ')} the work order.`)
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><MaintenanceNav /><InvalidRecordLink message={linkError} listHref="/dashboard/maintenance/work-orders" listLabel="Back to work orders" /></div>)
+  if (!id) return <div><MaintenanceNav /></div>
 
   const s = wo?.status || ''
-  const editable = !!wo && s !== 'closed' && s !== 'cancelled'
-  const canIssue = SPARE_ISSUE_STATUSES.includes(s)
-  const canLabour = LABOUR_STATUSES.includes(s)
+  // Backend: every job change needs work_orders:edit; reopen / close / cancel need :approve.
+  const mayEdit = can('maintenance', 'work_orders', 'edit')
+  const mayApprove = can('maintenance', 'work_orders', 'approve')
+  const editable = !!wo && s !== 'closed' && s !== 'cancelled' && mayEdit
+  const canIssue = SPARE_ISSUE_STATUSES.includes(s) && mayEdit
+  const canLabour = LABOUR_STATUSES.includes(s) && mayEdit
   const needsRca = !!wo && RCA_TYPES.includes(wo.wo_type)
   const downtime = wo ? (wo.downtime_minutes ?? wo.live_downtime_minutes) : null
 
   const openComplete = () => {
     if (!wo) return
-    setCp({ failure_category: wo.failure_category || '', root_cause: wo.root_cause || '', action_taken: wo.action_taken || '', handed_back_at: nowLocalInput() })
+    setCp({ failure_category: wo.failure_category || '', root_cause: wo.root_cause || '', action_taken: wo.action_taken || '', handed_back_at: nowLocalInput(), meter_reading: '' })
     setDialogError('')
     setCompleteOpen(true)
   }
@@ -217,6 +256,7 @@ export default function MaintenanceWorkOrderDetailPage() {
       root_cause: cp.root_cause.trim() || null,
       action_taken: cp.action_taken.trim() || null,
       handed_back_at: wo!.machine_down ? localInputToIso(cp.handed_back_at) : null,
+      meter_reading: wo!.asset_meter_unit && cp.meter_reading.trim() ? Number(cp.meter_reading) : null,
     }), 'Failed to complete the work order.', () => setCompleteOpen(false))
   }
 
@@ -239,7 +279,9 @@ export default function MaintenanceWorkOrderDetailPage() {
     runInDialog(() => maintenanceApi.updateWorkOrder(id, {
       title: dt.title.trim(), wo_type: dt.wo_type, priority: dt.priority, description: dt.description.trim() || null,
       planned_start: dt.planned_start || null, planned_end: dt.planned_end || null, estimated_hours: hrs,
-      external_vendor_id: dt.external_vendor_id ? Number(dt.external_vendor_id) : null, external_cost: ext,
+      external_vendor_id: dt.external_vendor_id ? Number(dt.external_vendor_id) : null,
+      // Only users with Maintenance costs see (and so send) the external cost.
+      ...(showCosts ? { external_cost: ext } : {}),
     }), 'Failed to save details.', () => setDetailsOpen(false))
   }
 
@@ -304,7 +346,10 @@ export default function MaintenanceWorkOrderDetailPage() {
   }
 
   const selectedItem = itemOptions.find((i) => String(i.id) === sp.store_item_id)
-  const techOptions = (lookups?.technicians || []).map((t) => ({ value: String(t.id), label: t.name }))
+  const techs = lookups?.technicians || []
+  const techOptions = techs.filter((t) => allowAssign(t.id) || t.id === wo?.assigned_to_id).map((t) => ({ value: String(t.id), label: t.name }))
+  // Your own time is always allowed (server rule).
+  const labourOptions = techs.filter((t) => allowLabour(t.id) || t.id === user?.id).map((t) => ({ value: String(t.id), label: t.name }))
 
   return (
     <div>
@@ -315,7 +360,7 @@ export default function MaintenanceWorkOrderDetailPage() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Maintenance Work Order
           </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <h1 data-tour="maint-wod-status" style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             {wo?.wo_number || 'Work Order'}
             {wo && (
               <>
@@ -325,14 +370,23 @@ export default function MaintenanceWorkOrderDetailPage() {
             )}
           </h1>
           {wo && <p style={{ fontSize: 14, color: TEXT.body, margin: '6px 0 0' }}>{wo.title}</p>}
+          {wo?.pm_plan_id && (
+            <p data-tour="maint-wod-pm-plan" style={{ fontSize: 12.5, color: TEXT.muted, margin: '4px 0 0' }}>
+              From PM plan{' '}
+              <span onClick={() => router.push(recordPath('/dashboard/maintenance/schedule', wo, 'pm_plan_id'))} style={{ fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>
+                {wo.pm_plan_code || `#${wo.pm_plan_id}`}
+              </span>
+              {wo.pm_due_date && ` · due ${new Date(`${wo.pm_due_date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
+            </p>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {wo && s === 'draft' && <button type="button" disabled={busy} onClick={() => { setAssignTo(''); setDialogError(''); setAssignOpen(true) }} style={primaryBtn}>Assign Technician</button>}
-          {wo && s === 'assigned' && <button type="button" disabled={busy} onClick={() => act('start')} style={primaryBtn}>Start Job</button>}
-          {wo && s === 'in_progress' && <button type="button" disabled={busy} onClick={openComplete} style={primaryBtn}>Mark Completed</button>}
-          {wo && s === 'on_hold' && <button type="button" disabled={busy} onClick={() => act('resume')} style={primaryBtn}>Resume</button>}
-          {wo && s === 'completed' && (
-            <button type="button" disabled={busy || wo.awaiting_confirmation} onClick={() => setConfirm({
+          {wo && mayEdit && wf('assign', 'edit') && s === 'draft' && <button data-tour="maint-wo-assign-btn" type="button" disabled={busy} onClick={() => { setAssignTo(''); setDialogError(''); setAssignOpen(true) }} style={primaryBtn}>Assign Technician</button>}
+          {wo && mayEdit && s === 'assigned' && <button data-tour="maint-wo-start-btn" type="button" disabled={busy} onClick={() => act('start')} style={primaryBtn}>Start Job</button>}
+          {wo && mayEdit && s === 'in_progress' && <button data-tour="maint-wo-complete-btn" type="button" disabled={busy} onClick={openComplete} style={primaryBtn}>Mark Completed</button>}
+          {wo && mayEdit && s === 'on_hold' && <button data-tour="maint-wo-resume-btn" type="button" disabled={busy} onClick={() => act('resume')} style={primaryBtn}>Resume</button>}
+          {wo && mayApprove && wf('close_out', 'approve') && s === 'completed' && !closeOutPending && (
+            <button data-tour="maint-wo-close-btn" type="button" disabled={busy || wo.awaiting_confirmation} onClick={() => setConfirm({
               title: `Close ${wo.wo_number}?`, message: 'This verifies the job and freezes its cost. The asset returns to Operational if nothing else is open on it.',
               label: 'Verify & Close', danger: false, run: () => maintenanceApi.workOrderAction(id, 'close'),
             })} style={{ ...primaryBtn, opacity: wo.awaiting_confirmation ? 0.5 : 1, cursor: wo.awaiting_confirmation ? 'not-allowed' : 'pointer' }}
@@ -340,14 +394,14 @@ export default function MaintenanceWorkOrderDetailPage() {
               Verify &amp; Close
             </button>
           )}
-          {wo && s === 'in_progress' && <button type="button" disabled={busy} onClick={() => setPrompt('hold')} style={secondaryBtnStyle}>Put On Hold</button>}
-          {wo && ['assigned', 'in_progress', 'on_hold'].includes(s) && (
-            <button type="button" disabled={busy} onClick={() => { setAssignTo(wo.assigned_to_id ? String(wo.assigned_to_id) : ''); setDialogError(''); setAssignOpen(true) }} style={secondaryBtnStyle}>Reassign</button>
+          {wo && mayEdit && s === 'in_progress' && <button data-tour="maint-wo-hold-btn" type="button" disabled={busy} onClick={() => setPrompt('hold')} style={secondaryBtnStyle}>Put On Hold</button>}
+          {wo && mayEdit && wf('assign', 'edit') && ['assigned', 'in_progress', 'on_hold'].includes(s) && (
+            <button data-tour="maint-wo-reassign-btn" type="button" disabled={busy} onClick={() => { setAssignTo(wo.assigned_to_id ? String(wo.assigned_to_id) : ''); setDialogError(''); setAssignOpen(true) }} style={secondaryBtnStyle}>Reassign</button>
           )}
-          {wo && s === 'completed' && <button type="button" disabled={busy} onClick={() => setPrompt('reopen')} style={secondaryBtnStyle}>Reopen</button>}
-          {editable && <button type="button" disabled={busy} onClick={openDetails} style={secondaryBtnStyle}>Edit Details</button>}
-          {wo && ['draft', 'assigned', 'on_hold'].includes(s) && <button type="button" disabled={busy} onClick={() => setPrompt('cancel')} style={dangerBtnStyle}>Cancel</button>}
-          <button type="button" onClick={() => router.push('/dashboard/maintenance/work-orders')} style={secondaryBtnStyle}>← Back</button>
+          {wo && mayApprove && wf('close_out', 'edit') && s === 'completed' && !closeOutPending && <button data-tour="maint-wo-reopen-btn" type="button" disabled={busy} onClick={() => setPrompt('reopen')} style={secondaryBtnStyle}>Reopen</button>}
+          {editable && <button data-tour="maint-wo-edit-btn" type="button" disabled={busy} onClick={openDetails} style={secondaryBtnStyle}>Edit Details</button>}
+          {wo && mayApprove && wf('close_out', 'cancel') && ['draft', 'assigned', 'on_hold'].includes(s) && <button data-tour="maint-wo-cancel-btn" type="button" disabled={busy} onClick={() => setPrompt('cancel')} style={dangerBtnStyle}>Cancel</button>}
+          <button data-tour="maint-wod-back" type="button" onClick={() => router.push('/dashboard/maintenance/work-orders')} style={secondaryBtnStyle}>← Back</button>
         </div>
       </div>
 
@@ -357,10 +411,14 @@ export default function MaintenanceWorkOrderDetailPage() {
         </div>
       )}
 
+      {!wo && !error && loading && (
+        <div style={{ ...sectionStyle, fontSize: 13, color: TEXT.muted }}>Loading work order…</div>
+      )}
+
       {wo && (
         <>
           {s !== 'cancelled' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div data-tour="maint-wod-stepper" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
               {STEPS.map((step, i) => {
                 const idx = STEPS.indexOf(s === 'on_hold' ? 'in_progress' : s)
                 const done = i <= idx
@@ -368,7 +426,7 @@ export default function MaintenanceWorkOrderDetailPage() {
                   <div key={step} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{
                       fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 9999,
-                      background: done ? 'rgba(255,106,42,0.12)' : 'rgba(0,0,0,0.04)', color: done ? '#FF6A2A' : TEXT.muted,
+                      background: done ? '#16A34A1a' : 'rgba(0,0,0,0.04)', color: done ? '#15803d' : TEXT.muted,
                     }}>{step === 'in_progress' && s === 'on_hold' ? 'On Hold' : WO_STATUS_LABELS[step]}</span>
                     {i < STEPS.length - 1 && <span style={{ color: TEXT.muted, fontSize: 12 }}>→</span>}
                   </div>
@@ -381,6 +439,10 @@ export default function MaintenanceWorkOrderDetailPage() {
             <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', color: '#92400e', fontSize: 13 }}>
               Waiting for {wo.requester_name || 'the requester'} to confirm the machine is working ({wo.request_number}). You can close the job once they confirm.
             </div>
+          )}
+          {s !== 'draft' && (
+            <ApprovalPanel key={`${wo.id}-${s}`} entityType="maintenance_work_order" entityId={wo.id} title="Close-out approval"
+              onChanged={reloadWo} />
           )}
           {s === 'on_hold' && wo.hold_reason && (
             <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(147,51,234,0.06)', border: '1px solid rgba(147,51,234,0.25)', color: '#6b21a8', fontSize: 13 }}>
@@ -398,16 +460,16 @@ export default function MaintenanceWorkOrderDetailPage() {
             </div>
           )}
 
-          <div style={sectionStyle}>
+          <div data-tour="maint-wod-summary" style={sectionStyle}>
             <div style={gridStyle}>
-              <div onClick={() => router.push(`/dashboard/maintenance/assets/${wo.asset_id}`)} style={{ cursor: 'pointer' }}>
+              <div onClick={() => router.push(recordPath('/dashboard/maintenance/assets', wo, 'asset_id'))} style={{ cursor: 'pointer' }}>
                 <InfoRow label="Asset" value={`${wo.asset_code || ''} — ${wo.asset_name || ''}`} />
               </div>
               <InfoRow label="Plant" value={wo.branch_name || '—'} />
               <InfoRow label="Type" value={WO_TYPE_LABELS[wo.wo_type] || wo.wo_type} />
               <InfoRow label="Technician" value={wo.assigned_to_name || 'Unassigned'} />
               {wo.request_id ? (
-                <div onClick={() => router.push(`/dashboard/maintenance/requests/${wo.request_id}`)} style={{ cursor: 'pointer' }}>
+                <div onClick={() => router.push(recordPath('/dashboard/maintenance/requests', wo, 'request_id'))} style={{ cursor: 'pointer' }}>
                   <InfoRow label="From Request" value={`${wo.request_number || ''} · ${wo.requester_name || ''}`} />
                 </div>
               ) : <InfoRow label="From Request" value="—" />}
@@ -429,7 +491,7 @@ export default function MaintenanceWorkOrderDetailPage() {
             )}
           </div>
 
-          <div style={sectionStyle}>
+          {wf('checklist') && <div data-tour="maint-wod-checklist" style={sectionStyle}>
             <div style={sectionHead}>
               <p style={sectionTitle}>Checklist</p>
               {wo.tasks.length > 0 && <span style={{ fontSize: 12, color: TEXT.muted }}>{wo.tasks.filter((t) => t.result).length} of {wo.tasks.length} done</span>}
@@ -440,7 +502,7 @@ export default function MaintenanceWorkOrderDetailPage() {
                   <thead><tr>{['#', 'Check', 'Result', 'Measured', 'Remarks', 'By', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
                   <tbody>
                     {wo.tasks.map((t) => (
-                      <TaskRow key={`${t.id}-${t.measured_value ?? ""}-${t.remarks ?? ""}`} task={t} editable={editable}
+                      <TaskRow key={`${t.id}-${t.measured_value ?? ""}-${t.remarks ?? ""}`} task={t} editable={editable && wf('checklist', 'edit')}
                         onSave={(payload) => run(() => maintenanceApi.updateTask(id, t.id, payload), 'Failed to update checklist line.')}
                         onDelete={() => setConfirm({ title: 'Remove checklist line?', message: t.description, label: 'Remove', run: () => maintenanceApi.deleteTask(id, t.id) })} />
                     ))}
@@ -448,23 +510,23 @@ export default function MaintenanceWorkOrderDetailPage() {
                 </table>
               </div>
             )}
-            {editable && (
+            {editable && wf('checklist', 'create') && (
               <div style={{ display: 'flex', gap: 10, marginTop: wo.tasks.length ? 12 : 0, flexWrap: 'wrap' }}>
-                <input style={{ ...smallInput, flex: '1 1 280px', maxWidth: 480 }} value={newTask} onChange={(e) => setNewTask(e.target.value)}
+                <input data-tour="maint-wod-add-check" style={{ ...smallInput, flex: '1 1 280px', maxWidth: 480 }} value={newTask} onChange={(e) => setNewTask(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTask() } }} placeholder="Add a check, e.g. Inspect coupling for wear" />
                 <button type="button" disabled={busy || !newTask.trim()} onClick={addTask} style={smallBtn}>+ Add</button>
               </div>
             )}
             {!editable && wo.tasks.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No checklist on this job.</p>}
-          </div>
+          </div>}
 
-          <div style={sectionStyle}>
+          {wf('spares') && <div data-tour="maint-wod-spares" style={sectionStyle}>
             <div style={sectionHead}>
               <p style={sectionTitle}>Spares</p>
-              {editable && (
+              {editable && wf('spares', 'create') && (
                 <div style={{ display: 'flex', gap: 8 }}>
-                  {canIssue && <button type="button" disabled={busy} onClick={() => openSpare('issue')} style={smallBtn}>Issue from Store</button>}
-                  <button type="button" disabled={busy} onClick={() => openSpare('plan')} style={smallBtn}>+ Plan Spare</button>
+                  {canIssue && <button data-tour="maint-wo-issue-spare-btn" type="button" disabled={busy} onClick={() => openSpare('issue')} style={smallBtn}>Issue from Store</button>}
+                  <button data-tour="maint-wo-plan-spare-btn" type="button" disabled={busy} onClick={() => openSpare('plan')} style={smallBtn}>+ Plan Spare</button>
                 </div>
               )}
             </div>
@@ -473,7 +535,7 @@ export default function MaintenanceWorkOrderDetailPage() {
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
-                  <thead><tr>{['Item', 'Store', 'Planned', 'Issued', 'Returned', 'In Stock', 'Cost', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Item', 'Store', 'Planned', 'Issued', 'Returned', 'In Stock', ...(showCosts ? ['Cost'] : []), ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
                   <tbody>
                     {wo.spares.map((sp2) => {
                       const outstanding = sp2.qty_issued - sp2.qty_returned
@@ -490,11 +552,11 @@ export default function MaintenanceWorkOrderDetailPage() {
                           <td style={{ ...tdStyle, color: sp2.available_qty != null && sp2.available_qty < sp2.qty_planned - sp2.qty_issued ? '#DC2626' : TEXT.body }}>
                             {sp2.available_qty != null ? fmtQty(sp2.available_qty) : '—'}
                           </td>
-                          <td style={tdStyle}>{formatINR(sp2.net_cost)}</td>
+                          {showCosts && <td style={tdStyle}>{formatINR(sp2.net_cost)}</td>}
                           <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                            {canIssue && <span onClick={() => openSpare('issue', sp2)} style={linkStyle}>Issue</span>}
-                            {editable && outstanding > 0 && <span onClick={() => { setReturnQty(fmtQty(outstanding)); setDialogError(''); setReturnSpare(sp2) }} style={linkStyle}>Return</span>}
-                            {editable && sp2.qty_issued === 0 && (
+                            {canIssue && wf('spares', 'create') && <span onClick={() => openSpare('issue', sp2)} style={linkStyle}>Issue</span>}
+                            {editable && wf('spares', 'edit') && outstanding > 0 && <span onClick={() => { setReturnQty(fmtQty(outstanding)); setDialogError(''); setReturnSpare(sp2) }} style={linkStyle}>Return</span>}
+                            {editable && wf('spares', 'delete') && sp2.qty_issued === 0 && (
                               <span onClick={() => setConfirm({ title: 'Remove spare line?', message: `${sp2.item_code} ${sp2.item_name || ''}`, label: 'Remove', run: () => maintenanceApi.deleteSpare(id, sp2.id) })}
                                 style={{ ...linkStyle, color: '#DC2626' }}>Remove</span>
                             )}
@@ -506,19 +568,19 @@ export default function MaintenanceWorkOrderDetailPage() {
                 </table>
               </div>
             )}
-          </div>
+          </div>}
 
-          <div style={sectionStyle}>
+          {wf('labour') && <div data-tour="maint-wod-labour" style={sectionStyle}>
             <div style={sectionHead}>
               <p style={sectionTitle}>Labour</p>
-              {canLabour && <button type="button" disabled={busy} onClick={openLabour} style={smallBtn}>+ Log Time</button>}
+              {canLabour && wf('labour', 'create') && <button data-tour="maint-wo-log-time-btn" type="button" disabled={busy} onClick={openLabour} style={smallBtn}>+ Log Time</button>}
             </div>
             {wo.labour_logs.length === 0 ? (
               <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No time logged yet.</p>
             ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
-                  <thead><tr>{['Technician', 'From', 'To', 'Hours', 'Rate', 'Cost', 'Remarks', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Technician', 'From', 'To', 'Hours', ...(showCosts ? ['Rate', 'Cost'] : []), 'Remarks', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
                   <tbody>
                     {wo.labour_logs.map((l) => (
                       <tr key={l.id}>
@@ -526,11 +588,11 @@ export default function MaintenanceWorkOrderDetailPage() {
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDateTime(l.start_time)}</td>
                         <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{formatDateTime(l.end_time)}</td>
                         <td style={tdStyle}>{fmtQty(l.hours)}</td>
-                        <td style={tdStyle}>{l.hourly_rate ? formatINR(l.hourly_rate) : '—'}</td>
-                        <td style={tdStyle}>{l.cost ? formatINR(l.cost) : '—'}</td>
+                        {showCosts && <td style={tdStyle}>{l.hourly_rate ? formatINR(l.hourly_rate) : '—'}</td>}
+                        {showCosts && <td style={tdStyle}>{l.cost ? formatINR(l.cost) : '—'}</td>}
                         <td style={tdStyle}>{l.remarks || ''}</td>
                         <td style={tdStyle}>
-                          {editable && (
+                          {editable && wf('labour', 'delete') && (
                             <span onClick={() => setConfirm({ title: 'Delete labour entry?', message: `${fmtQty(l.hours)} h by ${l.technician_name || 'technician'}`, label: 'Delete', run: () => maintenanceApi.deleteLabour(id, l.id) })}
                               style={{ ...linkStyle, color: '#DC2626' }}>Delete</span>
                           )}
@@ -541,31 +603,38 @@ export default function MaintenanceWorkOrderDetailPage() {
                 </table>
               </div>
             )}
-          </div>
+          </div>}
 
-          <div style={sectionStyle}>
+          {showCosts && <div data-tour="maint-wod-cost" style={sectionStyle}>
             <div style={sectionHead}><p style={sectionTitle}>Cost</p></div>
             <div style={gridStyle}>
               <InfoRow label="Spares" value={formatINR(wo.spares_cost)} />
               <InfoRow label="Labour" value={formatINR(wo.labour_cost)} />
               <InfoRow label="External" value={`${formatINR(wo.external_cost)}${wo.external_vendor_name ? ` · ${wo.external_vendor_name}` : ''}`} />
+              {(wo.procured_cost || 0) > 0 && <InfoRow label="Outside service (billed)" value={formatINR(wo.procured_cost)} />}
               <InfoRow label="Total" value={formatINR(wo.total_cost)} />
             </div>
-          </div>
+          </div>}
 
-          <div style={sectionStyle}>
+          {wf('permits') && <WorkOrderPermitsCard woId={id} woStatus={wo.status} permitRequired={!!wo.permit_required} assignedToId={wo.assigned_to_id ?? null} onChanged={reloadWo} />}
+          {wf('purchase') && <WorkOrderPurchaseCard woId={id} woStatus={wo.status} onChanged={reloadWo} />}
+
+          {wf('documents') && <div data-tour="maint-wod-files" style={sectionStyle}>
             <div style={sectionHead}><p style={sectionTitle}>Service Reports &amp; Photos</p></div>
-            <MaintenanceAttachments entityType="work_order" entityId={id} canUpload={editable} defaultDocType="service_report" />
-          </div>
+            <MaintenanceAttachments entityType="work_order" entityId={id} canUpload={s !== 'closed' && s !== 'cancelled' && wf('documents', 'create')}
+              canDeleteFiles={wf('documents', 'delete')} defaultDocType="service_report" />
+          </div>}
         </>
       )}
 
       {/* ── Dialogs ── */}
-      <PromptDialog
+      <ReasonSheet
         open={!!prompt}
+        icon={prompt === 'hold' ? 'clock' : prompt === 'reopen' ? 'undo' : 'x'}
+        requireValue
         title={prompt === 'hold' ? 'Put job on hold?' : prompt === 'reopen' ? 'Reopen this job?' : 'Cancel this work order?'}
         message={prompt === 'hold' ? 'Say what you\'re waiting for — spares, vendor, shutdown window…' : prompt === 'reopen' ? 'The job goes back to In Progress.' : 'Planned spares are dropped. If it came from a request, the request goes back to Acknowledged.'}
-        placeholder="Reason (required)…"
+        placeholder="Reason…"
         confirmLabel={prompt === 'hold' ? 'Put On Hold' : prompt === 'reopen' ? 'Reopen' : 'Cancel Work Order'}
         danger={prompt === 'cancel'}
         onConfirm={(reason) => {
@@ -587,195 +656,213 @@ export default function MaintenanceWorkOrderDetailPage() {
         onCancel={() => setConfirm(null)}
       />
 
-      <FormDialog open={assignOpen} title={s === 'draft' ? 'Assign technician' : 'Reassign technician'} error={dialogError} confirmLabel="Assign" busy={busy}
+      <FormDialog open={assignOpen} icon="user" title={s === 'draft' ? 'Assign technician' : 'Reassign technician'}
+        subtitle={`${wo?.wo_number || 'Work order'} — the technician is notified and the job moves to Assigned.`}
+        error={dialogError} confirmLabel="Assign" busy={busy}
         onConfirm={() => {
           if (!assignTo) { setDialogError('Pick a technician.'); return }
           runInDialog(() => maintenanceApi.workOrderAction(id, 'assign', { assigned_to_id: Number(assignTo) }), 'Failed to assign.', () => setAssignOpen(false))
         }}
         onCancel={() => setAssignOpen(false)}>
-        <label style={labelStyle}>Technician</label>
-        <SearchableSelect value={assignTo} onChange={setAssignTo} placeholder="Select technician…" options={techOptions} />
-        {techOptions.length === 0 && <p style={{ fontSize: 12, color: TEXT.muted, margin: '8px 0 0' }}>No technicians found. Give maintenance staff the Maintenance module in User Management.</p>}
+        <SheetSection icon="user" title="Technician">
+          <label style={sheetLabel}>Technician <Req /></label>
+          <SearchableSelect value={assignTo} onChange={setAssignTo} placeholder="Select technician…" options={techOptions} />
+          {techOptions.length === 0 && <p style={sheetHint}>No technicians found. Give maintenance staff the Maintenance module in User Management.</p>}
+        </SheetSection>
       </FormDialog>
 
-      <FormDialog open={completeOpen} title="Mark job completed" error={dialogError} confirmLabel="Mark Completed" busy={busy}
+      <FormDialog open={completeOpen} icon="check" iconColor="#16A34A" title="Mark job completed"
+        subtitle={`${wo?.wo_number || 'Work order'} — record what failed and what was done.`}
+        error={dialogError} confirmLabel="Mark Completed" busy={busy}
         onConfirm={submitComplete} onCancel={() => setCompleteOpen(false)}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div>
-            <label style={labelStyle}>Failure Category{needsRca ? ' *' : ''}</label>
-            <select style={inputStyle} value={cp.failure_category} onChange={(e) => setCp({ ...cp, failure_category: e.target.value })}>
-              <option value="">— Select —</option>
-              {Object.entries(FAILURE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={labelStyle}>Root Cause{needsRca ? ' *' : ''}</label>
-            <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={cp.root_cause} onChange={(e) => setCp({ ...cp, root_cause: e.target.value })} placeholder="Why did it fail?" />
-          </div>
-          <div>
-            <label style={labelStyle}>Action Taken{needsRca ? ' *' : ''}</label>
-            <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={cp.action_taken} onChange={(e) => setCp({ ...cp, action_taken: e.target.value })} placeholder="What was done to fix it?" />
-          </div>
-          {wo?.machine_down && (
-            <div style={{ maxWidth: 240 }}>
-              <label style={labelStyle}>Machine Handed Back At</label>
-              <input style={inputStyle} type="datetime-local" value={cp.handed_back_at} max={nowLocalInput()} onChange={(e) => setCp({ ...cp, handed_back_at: e.target.value })} />
-              <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '6px 0 0' }}>Ends the downtime clock.</p>
+        <SheetSection icon="alert" title="Root Cause Analysis" extra={needsRca ? undefined : <Optional />}>
+          <label style={sheetLabel}>Failure Category {needsRca && <Req />}</label>
+          <select data-tour="maint-woc-failure" style={sheetInput} value={cp.failure_category} onChange={(e) => setCp({ ...cp, failure_category: e.target.value })}>
+            <option value="">— Select —</option>
+            {Object.entries(FAILURE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Root Cause {needsRca && <Req />}</label>
+          <textarea data-tour="maint-woc-root-cause" style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} value={cp.root_cause} onChange={(e) => setCp({ ...cp, root_cause: e.target.value })} placeholder="Why did it fail?" />
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Action Taken {needsRca && <Req />}</label>
+          <textarea data-tour="maint-woc-action" style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} value={cp.action_taken} onChange={(e) => setCp({ ...cp, action_taken: e.target.value })} placeholder="What was done to fix it?" />
+        </SheetSection>
+        {(wo?.machine_down || wo?.asset_meter_unit) && (
+          <SheetSection icon="clock" title="Hand-back">
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              {wo?.machine_down && (
+                <div style={{ flex: '1 1 220px', maxWidth: 260 }}>
+                  <label style={sheetLabel}>Machine Handed Back At</label>
+                  <input data-tour="maint-woc-handed-back" style={sheetInput} type="datetime-local" value={cp.handed_back_at} max={nowLocalInput()} onChange={(e) => setCp({ ...cp, handed_back_at: e.target.value })} />
+                  <p style={sheetHint}>Ends the downtime clock.</p>
+                </div>
+              )}
+              {wo?.asset_meter_unit && (
+                <div style={{ flex: '1 1 220px', maxWidth: 260 }}>
+                  <label style={sheetLabel}>Counter reading now ({wo.asset_meter_unit}) <Req /></label>
+                  <input style={sheetInput} type="number" min={0} value={cp.meter_reading} onChange={(e) => setCp({ ...cp, meter_reading: e.target.value })} placeholder={wo.asset_meter_reading != null ? `Last: ${wo.asset_meter_reading}` : ''} />
+                  <p style={sheetHint}>Booked in the reading history; restarts counter-based PM plans.</p>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </SheetSection>
+        )}
       </FormDialog>
 
-      <FormDialog open={detailsOpen} title="Edit work order details" error={dialogError} confirmLabel="Save" busy={busy}
+      <FormDialog open={detailsOpen} icon="edit" title="Edit work order details"
+        subtitle={`${wo?.wo_number || 'Work order'} — title, type, plan and outside service.`}
+        error={dialogError} confirmLabel="Save" busy={busy}
         onConfirm={submitDetails} onCancel={() => setDetailsOpen(false)}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div>
-            <label style={labelStyle}>Title *</label>
-            <input style={inputStyle} value={dt.title || ''} onChange={(e) => setDt({ ...dt, title: e.target.value })} maxLength={200} />
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <SheetSection icon="list" title="Basic Information">
+          <label style={sheetLabel}>Title <Req /></label>
+          <input data-tour="maint-wodt-title" style={sheetInput} value={dt.title || ''} onChange={(e) => setDt({ ...dt, title: e.target.value })} maxLength={200} />
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
             <div style={{ flex: '1 1 150px' }}>
-              <label style={labelStyle}>Type</label>
-              <select style={inputStyle} value={dt.wo_type || ''} onChange={(e) => setDt({ ...dt, wo_type: e.target.value })}>
+              <label style={sheetLabel}>Type</label>
+              <select data-tour="maint-wodt-type" style={sheetInput} value={dt.wo_type || ''} onChange={(e) => setDt({ ...dt, wo_type: e.target.value })}>
                 {Object.entries(WO_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
             <div style={{ flex: '1 1 130px' }}>
-              <label style={labelStyle}>Priority</label>
-              <select style={inputStyle} value={dt.priority || ''} onChange={(e) => setDt({ ...dt, priority: e.target.value })}>
+              <label style={sheetLabel}>Priority</label>
+              <select data-tour="maint-wodt-priority" style={sheetInput} value={dt.priority || ''} onChange={(e) => setDt({ ...dt, priority: e.target.value })}>
                 {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
-            <div style={{ flex: '0 1 110px' }}>
-              <label style={labelStyle}>Est. Hours</label>
-              <input style={inputStyle} type="number" min={0} step="0.5" value={dt.estimated_hours || ''} onChange={(e) => setDt({ ...dt, estimated_hours: e.target.value })} />
-            </div>
           </div>
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Instructions</label>
+          <textarea data-tour="maint-wodt-instructions" style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={dt.description || ''} onChange={(e) => setDt({ ...dt, description: e.target.value })} />
+        </SheetSection>
+        <SheetSection icon="calendar" title="Schedule">
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 160px' }}>
-              <label style={labelStyle}>Planned Start</label>
+            <div data-tour="maint-wodt-planned" style={{ flex: '1 1 150px' }}>
+              <label style={sheetLabel}>Planned Start</label>
               <DateField value={dt.planned_start || ''} onChange={(v) => setDt({ ...dt, planned_start: v })} />
             </div>
-            <div style={{ flex: '1 1 160px' }}>
-              <label style={labelStyle}>Planned End</label>
+            <div style={{ flex: '1 1 150px' }}>
+              <label style={sheetLabel}>Planned End</label>
               <DateField value={dt.planned_end || ''} onChange={(v) => setDt({ ...dt, planned_end: v })} />
             </div>
+            <div style={{ flex: '0 1 110px' }}>
+              <label style={sheetLabel}>Est. Hours</label>
+              <input data-tour="maint-wodt-est-hours" style={sheetInput} type="number" min={0} step="0.5" value={dt.estimated_hours || ''} onChange={(e) => setDt({ ...dt, estimated_hours: e.target.value })} />
+            </div>
           </div>
+        </SheetSection>
+        <SheetSection icon="truck" title="Outside Service" extra={<Optional />}>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 220px' }}>
-              <label style={labelStyle}>External Service Vendor</label>
+            <div data-tour="maint-wodt-vendor" style={{ flex: '1 1 220px' }}>
+              <label style={sheetLabel}>External Service Vendor</label>
               <SearchableSelect value={dt.external_vendor_id || ''} onChange={(v) => setDt({ ...dt, external_vendor_id: v })} placeholder="None"
                 options={[{ value: '', label: '— None —' }, ...(lookups?.vendors || []).map((v) => ({ value: String(v.id), label: v.name }))]} />
             </div>
-            <div style={{ flex: '0 1 150px' }}>
-              <label style={labelStyle}>External Cost (₹)</label>
-              <input style={inputStyle} type="number" min={0} step="0.01" value={dt.external_cost || ''} onChange={(e) => setDt({ ...dt, external_cost: e.target.value })} />
-            </div>
+            {showCosts && <div style={{ flex: '0 1 150px' }}>
+              <label style={sheetLabel}>External Cost (₹)</label>
+              <input data-tour="maint-wodt-ext-cost" style={sheetInput} type="number" min={0} step="0.01" value={dt.external_cost || ''} onChange={(e) => setDt({ ...dt, external_cost: e.target.value })} />
+            </div>}
           </div>
-          <div>
-            <label style={labelStyle}>Instructions</label>
-            <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={dt.description || ''} onChange={(e) => setDt({ ...dt, description: e.target.value })} />
-          </div>
-        </div>
+        </SheetSection>
       </FormDialog>
 
-      <FormDialog open={!!spareOpen} title={spareOpen?.mode === 'plan' ? 'Plan a spare' : spareOpen?.spare ? `Issue ${spareOpen.spare.item_code}` : 'Issue spare from Store'}
+      <FormDialog open={!!spareOpen} icon="box" title={spareOpen?.mode === 'plan' ? 'Plan a spare' : spareOpen?.spare ? `Issue ${spareOpen.spare.item_code}` : 'Issue spare from Store'}
+        subtitle={spareOpen?.mode === 'plan' ? `Reserve a spare for ${wo?.wo_number || 'this job'} — nothing leaves Store yet.` : `Takes the spare out of Store stock against ${wo?.wo_number || 'this job'}.`}
         error={dialogError} confirmLabel={spareOpen?.mode === 'plan' ? 'Add to Plan' : 'Issue'} busy={busy}
         onConfirm={submitSpare} onCancel={() => setSpareOpen(null)}>
         {spareOpen?.spare ? (
-          <p style={{ fontSize: 13, color: TEXT.body, margin: '0 0 12px' }}>
+          <p style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 16px' }}>
             {spareOpen.spare.item_name} from {spareOpen.spare.location_name}. Issued so far: {fmtQty(spareOpen.spare.qty_issued)} of {fmtQty(spareOpen.spare.qty_planned)} planned
             {spareOpen.spare.available_qty != null && ` · ${fmtQty(spareOpen.spare.available_qty)} in stock`}.
           </p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
-            <div>
-              <label style={labelStyle}>Store Location</label>
-              <select style={inputStyle} value={sp.location_id} onChange={(e) => setSp({ ...sp, location_id: e.target.value, store_item_id: '' })}>
-                <option value="">— Select —</option>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </select>
+          <SheetSection icon="search" title="Spare Part">
+            <label style={sheetLabel}>Store Location <Req /></label>
+            <select data-tour="maint-wosp-location" style={sheetInput} value={sp.location_id} onChange={(e) => setSp({ ...sp, location_id: e.target.value, store_item_id: '' })}>
+              <option value="">— Select —</option>
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+            <label style={{ ...sheetLabel, marginTop: 14 }}>Spare Part <Req /></label>
+            <input data-tour="maint-wosp-item" style={sheetInput} value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} placeholder="Search by item code, name or part number…" />
+            <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 6, border: `1px solid ${SHEET.LINE}`, borderRadius: 10 }}>
+              {itemOptions.length === 0 ? (
+                <p style={{ fontSize: 12.5, color: SHEET.MUTED, margin: 0, padding: 10 }}>No matching Store items.</p>
+              ) : itemOptions.map((it) => {
+                const active = String(it.id) === sp.store_item_id
+                return (
+                  <div key={it.id} onClick={() => setSp({ ...sp, store_item_id: String(it.id) })} style={{
+                    display: 'flex', justifyContent: 'space-between', gap: 10, padding: '8px 10px', cursor: 'pointer', fontSize: 13,
+                    background: active ? '#eff6ff' : 'transparent', borderTop: `1px solid ${SHEET.LINE}`,
+                  }}>
+                    <span><b>{it.item_code}</b> {it.item_name}{it.item_type === 'spare_part' ? '' : <span style={{ color: SHEET.MUTED }}> · {it.item_type}</span>}</span>
+                    {it.available_qty != null && (
+                      <span style={{ whiteSpace: 'nowrap', color: it.available_qty > 0 ? '#16A34A' : '#DC2626', fontWeight: 600 }}>{fmtQty(it.available_qty)} {it.uom || ''}</span>
+                    )}
+                  </div>
+                )
+              })}
             </div>
-            <div>
-              <label style={labelStyle}>Spare Part</label>
-              <input style={inputStyle} value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} placeholder="Search by item code, name or part number…" />
-              <div style={{ maxHeight: 200, overflowY: 'auto', marginTop: 6, border: `1px solid ${BORDER.light}`, borderRadius: 10 }}>
-                {itemOptions.length === 0 ? (
-                  <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0, padding: 10 }}>No matching Store items.</p>
-                ) : itemOptions.map((it) => {
-                  const active = String(it.id) === sp.store_item_id
-                  return (
-                    <div key={it.id} onClick={() => setSp({ ...sp, store_item_id: String(it.id) })} style={{
-                      display: 'flex', justifyContent: 'space-between', gap: 10, padding: '8px 10px', cursor: 'pointer', fontSize: 13,
-                      background: active ? 'rgba(255,106,42,0.1)' : 'transparent', borderTop: `1px solid ${BORDER.light}`,
-                    }}>
-                      <span><b>{it.item_code}</b> {it.item_name}{it.item_type === 'spare_part' ? '' : <span style={{ color: TEXT.muted }}> · {it.item_type}</span>}</span>
-                      {it.available_qty != null && (
-                        <span style={{ whiteSpace: 'nowrap', color: it.available_qty > 0 ? '#16A34A' : '#DC2626', fontWeight: 600 }}>{fmtQty(it.available_qty)} {it.uom || ''}</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
+          </SheetSection>
         )}
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: '0 1 140px' }}>
-            <label style={labelStyle}>Quantity{selectedItem?.uom ? ` (${selectedItem.uom})` : spareOpen?.spare?.uom ? ` (${spareOpen.spare.uom})` : ''}</label>
-            <input style={inputStyle} type="number" min={0} step="any" value={sp.quantity} onChange={(e) => setSp({ ...sp, quantity: e.target.value })} />
+        <SheetSection icon="box" title="Quantity">
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ flex: '0 1 140px' }}>
+              <label style={sheetLabel}>Quantity{selectedItem?.uom ? ` (${selectedItem.uom})` : spareOpen?.spare?.uom ? ` (${spareOpen.spare.uom})` : ''} <Req /></label>
+              <input data-tour="maint-wosp-qty" style={sheetInput} type="number" min={0} step="any" value={sp.quantity} onChange={(e) => setSp({ ...sp, quantity: e.target.value })} />
+            </div>
+            <div style={{ flex: '1 1 220px' }}>
+              <label style={sheetLabel}>Remarks</label>
+              <input data-tour="maint-wosp-remarks" style={sheetInput} value={sp.remarks} onChange={(e) => setSp({ ...sp, remarks: e.target.value })} />
+            </div>
           </div>
-          <div style={{ flex: '1 1 220px' }}>
-            <label style={labelStyle}>Remarks</label>
-            <input style={inputStyle} value={sp.remarks} onChange={(e) => setSp({ ...sp, remarks: e.target.value })} />
-          </div>
-        </div>
-        {spareOpen?.mode === 'issue' && <p style={{ fontSize: 11.5, color: TEXT.muted, margin: '8px 0 0' }}>This posts an issue in the Store stock ledger against {wo?.wo_number}.</p>}
+          {spareOpen?.mode === 'issue' && <p style={sheetHint}>This posts an issue in the Store stock ledger against {wo?.wo_number}.</p>}
+        </SheetSection>
       </FormDialog>
 
-      <FormDialog open={!!returnSpare} title={`Return ${returnSpare?.item_code || ''} to Store`} error={dialogError} confirmLabel="Return" busy={busy}
+      <FormDialog open={!!returnSpare} icon="undo" title={`Return ${returnSpare?.item_code || ''} to Store`}
+        subtitle="Unused quantity goes back into Store stock." error={dialogError} confirmLabel="Return" busy={busy}
         onConfirm={submitReturn} onCancel={() => setReturnSpare(null)}>
-        <p style={{ fontSize: 13, color: TEXT.body, margin: '0 0 12px' }}>
+        <p style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 14px' }}>
           {returnSpare && `${fmtQty(returnSpare.qty_issued - returnSpare.qty_returned)} ${returnSpare.uom || ''} still out on this job. Unused quantity goes back to ${returnSpare.location_name}.`}
         </p>
         <div style={{ maxWidth: 160 }}>
-          <label style={labelStyle}>Quantity</label>
-          <input style={inputStyle} type="number" min={0} step="any" value={returnQty} onChange={(e) => setReturnQty(e.target.value)} />
+          <label style={sheetLabel}>Quantity <Req /></label>
+          <input style={sheetInput} type="number" min={0} step="any" value={returnQty} onChange={(e) => setReturnQty(e.target.value)} />
         </div>
       </FormDialog>
 
-      <FormDialog open={labourOpen} title="Log labour" error={dialogError} confirmLabel="Log Time" busy={busy}
+      <FormDialog open={labourOpen} icon="clock" title="Log labour"
+        subtitle={`Time spent on ${wo?.wo_number || 'this job'} — adds to its labour cost.`}
+        error={dialogError} confirmLabel="Log Time" busy={busy}
         onConfirm={submitLabour} onCancel={() => setLabourOpen(false)}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div>
-            <label style={labelStyle}>Technician</label>
-            <SearchableSelect value={lb.technician_id} onChange={(v) => setLb({ ...lb, technician_id: v })} placeholder="Select technician…" options={techOptions} />
+        <SheetSection icon="user" title="Technician">
+          <div data-tour="maint-wolb-technician">
+            <label style={sheetLabel}>Technician <Req /></label>
+            <SearchableSelect value={lb.technician_id} onChange={(v) => setLb({ ...lb, technician_id: v })} placeholder="Select technician…" options={labourOptions} />
           </div>
+        </SheetSection>
+        <SheetSection icon="clock" title="Time">
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 200px' }}>
-              <label style={labelStyle}>From</label>
-              <input style={inputStyle} type="datetime-local" value={lb.start_time} onChange={(e) => setLb({ ...lb, start_time: e.target.value })} />
+              <label style={sheetLabel}>From</label>
+              <input data-tour="maint-wolb-from" style={sheetInput} type="datetime-local" value={lb.start_time} onChange={(e) => setLb({ ...lb, start_time: e.target.value })} />
             </div>
             <div style={{ flex: '1 1 200px' }}>
-              <label style={labelStyle}>To</label>
-              <input style={inputStyle} type="datetime-local" value={lb.end_time} onChange={(e) => setLb({ ...lb, end_time: e.target.value })} />
+              <label style={sheetLabel}>To</label>
+              <input data-tour="maint-wolb-to" style={sheetInput} type="datetime-local" value={lb.end_time} onChange={(e) => setLb({ ...lb, end_time: e.target.value })} />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
             <div style={{ flex: '0 1 120px' }}>
-              <label style={labelStyle}>Or Hours</label>
-              <input style={inputStyle} type="number" min={0} step="0.25" value={lb.hours} onChange={(e) => setLb({ ...lb, hours: e.target.value })} />
+              <label style={sheetLabel}>Or Hours</label>
+              <input data-tour="maint-wolb-hours" style={sheetInput} type="number" min={0} step="0.25" value={lb.hours} onChange={(e) => setLb({ ...lb, hours: e.target.value })} />
             </div>
-            <div style={{ flex: '0 1 140px' }}>
-              <label style={labelStyle}>Rate / hr (₹)</label>
-              <input style={inputStyle} type="number" min={0} step="0.01" value={lb.hourly_rate} onChange={(e) => setLb({ ...lb, hourly_rate: e.target.value })} placeholder="0" />
-            </div>
-            <div style={{ flex: '1 1 200px' }}>
-              <label style={labelStyle}>Remarks</label>
-              <input style={inputStyle} value={lb.remarks} onChange={(e) => setLb({ ...lb, remarks: e.target.value })} />
-            </div>
+            {showCosts && <div style={{ flex: '0 1 140px' }}>
+              <label style={sheetLabel}>Rate / hr (₹)</label>
+              <input data-tour="maint-wolb-rate" style={sheetInput} type="number" min={0} step="0.01" value={lb.hourly_rate} onChange={(e) => setLb({ ...lb, hourly_rate: e.target.value })} placeholder="0" />
+            </div>}
           </div>
-        </div>
+          <p style={sheetHint}>Enter the hours, or both a start and end time.</p>
+          <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks</label>
+          <input data-tour="maint-wolb-remarks" style={sheetInput} value={lb.remarks} onChange={(e) => setLb({ ...lb, remarks: e.target.value })} />
+        </SheetSection>
       </FormDialog>
     </div>
   )

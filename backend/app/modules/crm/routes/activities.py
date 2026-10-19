@@ -6,7 +6,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.core.permissions import require_app_access
+from app.core.permissions import ensure_can_delete, require_app_access
+from app.core.permission_registry import can_feature
+from app.modules.crm.access import (
+    INQ, apply_activity_scope, ensure_activity_in_scope, ensure_child_action, ensure_own, ensure_parent_in_scope,
+    ensure_view_any, tab_for,
+)
 from app.modules.main.models.user import User
 from app.modules.crm.models.activity import Activity
 from app.modules.crm.models.activity_attachment import ActivityAttachment
@@ -15,9 +20,15 @@ from app.modules.crm.models.tender import Tender
 from app.modules.crm.models.organization import Organization, OrgContact
 from app.modules.crm.schemas.activity import ActivityCreate, ActivityUpdate, ActivityResponse, ActivityAttachmentResponse, ActivityContactDetail
 from app.modules.crm.reports.mom_docx import build_mom_docx, mom_rows_from_activity
+from app.modules.main.services import managed_documents
 from app.utils.sharepoint import upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint, download_file_content
 
 router = APIRouter(prefix="/crm/activities", tags=["CRM - Activities"])
+
+MOM_ENTITY = "crm_activity_mom"
+# Fields printed on the follow-up's MoM — editing any of them makes an
+# existing Word MoM out of date (a status change alone does not).
+MOM_FIELDS = {"subject", "org_id", "assigned_to", "contact_ids", "remarks", "action_plan", "next_followup"}
 
 
 def _can_modify(record, user: User) -> bool:
@@ -29,7 +40,7 @@ async def list_team_members(
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("crm")),
 ):
-    """Lightweight internal-user lookup (name + designation) for the MOM
+    """(Lookup — any CRM user.) Lightweight internal-user lookup (name + designation) for the MOM
     export's "PEW Member Present" picker — avoids re-typing attendee names
     that already live on the user's profile."""
     users = db.query(User).filter(User.is_active == True).order_by(User.name).all()  # noqa: E712
@@ -113,13 +124,33 @@ async def list_activities(
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("crm")),
 ):
+    # Follow-ups belong to the tab of what they're logged against.
+    if related_module:
+        ensure_child_action(_user, related_module, "followups", "view", "view")
+    else:
+        ensure_view_any(_user)
     query = db.query(Activity).filter(Activity.is_deleted == False)  # noqa: E712
+    if not related_module and not can_feature(_user, "crm", "inquiries_tenders", "followups", "view"):
+        # Inquiries & Tenders › Follow-ups not granted: the cross-record list keeps organization follow-ups only.
+        query = query.filter(or_(Activity.related_module.is_(None), Activity.related_module.notin_(("inquiry", "tender"))))
+    # Data scope: the follow-ups tab of one Inquiry / Tender / Organization shows
+    # all of that record's follow-ups once the record itself is in scope; the
+    # cross-record list shows follow-ups the user's scope covers (own / assigned
+    # …, or logged against a record in scope).
+    if related_module and related_id:
+        ensure_parent_in_scope(db, _user, related_module, related_id)
+    elif org_id:
+        ensure_parent_in_scope(db, _user, "organization", org_id)
+    else:
+        query = apply_activity_scope(query, db, _user)
     if status:
         query = query.filter(Activity.status == status)
     if overdue:
         query = query.filter(Activity.status == "Open", Activity.next_followup < date.today())
     if due_today:
-        query = query.filter(Activity.next_followup == date.today())
+        # Same definition as the dashboard's "Today's Follow-ups" count: only
+        # Open items due today (Closed/Hold ones are not pending work).
+        query = query.filter(Activity.status == "Open", Activity.next_followup == date.today())
     if org_id:
         # Activity.org_id is stamped at creation time and can drift from the
         # truth if the parent Inquiry/Tender's org is edited afterwards — so
@@ -152,6 +183,12 @@ async def create_activity(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("crm")),
 ):
+    # Logging a follow-up is working the Organization / Inquiry / Tender it's logged against.
+    ensure_child_action(user, payload.related_module, "followups", "create", "edit")
+    if payload.related_module in ("inquiry", "tender"):
+        ensure_parent_in_scope(db, user, payload.related_module, payload.related_id)
+    else:
+        ensure_parent_in_scope(db, user, "organization", payload.related_id or payload.org_id)
     data = payload.model_dump()
     data["mom_items"] = payload.model_dump(mode="json").get("mom_items")
     activity = Activity(**data, created_by_id=user.id)
@@ -171,11 +208,19 @@ async def update_activity(
     activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
+    ensure_activity_in_scope(db, user, activity)
+    ensure_child_action(user, activity.related_module, "followups", "edit", "edit")
     if not _can_modify(activity, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can edit this activity.")
     json_data = payload.model_dump(exclude_unset=True, mode="json")
+    mom_changed = False
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(activity, field, json_data[field] if field == "mom_items" else value)
+        new_value = json_data[field] if field == "mom_items" else value
+        if field in MOM_FIELDS and getattr(activity, field) != new_value:
+            mom_changed = True
+        setattr(activity, field, new_value)
+    if mom_changed:
+        activity.mom_revision += 1
     db.commit()
     db.refresh(activity)
     return _enrich(db, [activity])[0]
@@ -191,6 +236,8 @@ async def upload_activity_attachments(
     activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
+    ensure_activity_in_scope(db, user, activity)
+    ensure_child_action(user, activity.related_module, "followups", "edit", "edit")
     if not _can_modify(activity, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can add photos to this activity.")
     if not settings.SHAREPOINT_SITE_ID:
@@ -247,6 +294,11 @@ async def get_activity_attachment_content(
     ).first()
     if not attachment:
         raise HTTPException(status_code=404, detail="Photo not found")
+    parent = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
+    if not parent:
+        raise HTTPException(status_code=404, detail=f"Follow-up #{activity_id} was deleted, so its photos can't be opened — restore it from the recycle bin first.")
+    ensure_child_action(_user, parent.related_module, "followups", "view", "view")
+    ensure_activity_in_scope(db, _user, parent)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 
@@ -268,6 +320,9 @@ async def delete_activity_attachment(
     activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
+    ensure_activity_in_scope(db, user, activity)
+    # Removing a photo is editing the follow-up, not deleting a record.
+    ensure_child_action(user, activity.related_module, "followups", "edit", "edit")
     if not _can_modify(activity, user):
         raise HTTPException(status_code=403, detail="Only the creator or an admin can delete photos from this activity.")
 
@@ -298,34 +353,27 @@ async def delete_activity(
     activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
     if not activity:
         raise HTTPException(status_code=404, detail="Activity not found")
-    if not _can_modify(activity, user):
-        raise HTTPException(status_code=403, detail="Only the creator or an admin can delete this activity.")
+    ensure_activity_in_scope(db, user, activity)
+    if tab_for(activity.related_module) == INQ:
+        ensure_child_action(user, activity.related_module, "followups", "delete", "delete")
+        ensure_own(user, activity, "follow-up")
+    else:
+        ensure_can_delete(user, activity, "crm", tab_for(activity.related_module), what="follow-up")
     activity.is_deleted = True
     activity.deleted_at = datetime.now(timezone.utc)
     db.commit()
     return {"message": "Activity deleted"}
 
 
-@router.post("/{activity_id}/mom-docx")
-async def export_activity_mom(
-    activity_id: int,
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
-):
-    """One-click MOM export for a single follow-up — no form. Everything
-    (subject, date, attendees) is pulled straight from what the user already
-    saved on the follow-up itself; there's nothing left to ask them."""
-    activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
-    if not activity:
-        raise HTTPException(status_code=404, detail="Activity not found")
-
+def _activity_mom_docx(db: Session, activity: Activity) -> tuple[bytes, str]:
+    """(docx bytes, file name stem) for a single follow-up's MoM. Everything
+    (subject, date, attendees) comes from what was saved on the follow-up."""
     org = db.query(Organization).filter(Organization.id == activity.org_id).first() if activity.org_id else None
     contacts = (
         db.query(OrgContact).filter(OrgContact.id.in_(activity.contact_ids)).all()
         if activity.contact_ids else []
     )
     target = activity.next_followup.strftime("%d.%m.%Y") if activity.next_followup else None
-
     ctx = {
         "org_name": org.name if org else None,
         "subject": activity.subject,
@@ -334,13 +382,55 @@ async def export_activity_mom(
         "client_members": [{"name": c.name, "designation": c.designation} for c in contacts],
         "activities": mom_rows_from_activity(activity.remarks, activity.action_plan, activity.assigned_to, target),
     }
-    buf = build_mom_docx(ctx)
-
     org_slug = (org.name if org else "Activity").replace(" ", "_").replace("/", "-")
     date_slug = activity.created_at.strftime("%Y%m%d") if activity.created_at else "undated"
-    filename = f"MOM_{org_slug}_{date_slug}.docx"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    return build_mom_docx(ctx).getvalue(), f"MOM_{org_slug}_{date_slug}"
+
+
+@router.post("/{activity_id}/mom-docx")
+async def export_activity_mom(
+    activity_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_app_access("crm")),
+):
+    """One-click MOM export for a single follow-up — no form. Once a Word MoM
+    exists for the follow-up's current content, that (with any edits made in
+    Word) is what's exported, not a fresh render."""
+    activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
+    if not activity:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    ensure_activity_in_scope(db, _user, activity)
+    # Print exists only on Inquiries & Tenders; an Organization follow-up's MoM needs View there.
+    ensure_child_action(_user, activity.related_module, "followups", "print", "view")
+    _, stem = _activity_mom_docx(db, activity)
+    content = await managed_documents.docx_of_record(
+        db, MOM_ENTITY, activity.id, activity.mom_revision, render=lambda: _activity_mom_docx(db, activity)[0],
     )
+    return Response(
+        content=content, media_type=managed_documents.DOCX_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{stem}.docx"'},
+    )
+
+
+def _activity_mom_target(db: Session, activity_id: int, user: User, modify: bool) -> managed_documents.DocumentTarget:
+    activity = db.query(Activity).filter(Activity.id == activity_id, Activity.is_deleted == False).first()  # noqa: E712
+    if not activity:
+        raise HTTPException(status_code=404, detail="Follow-up not found — it may have been deleted. Refresh the page.")
+    ensure_activity_in_scope(db, user, activity)
+    if modify:
+        ensure_child_action(user, activity.related_module, "followups", "edit", "edit")
+    else:
+        ensure_child_action(user, activity.related_module, "followups", "view", "view")
+    if modify and not _can_modify(activity, user):
+        raise HTTPException(status_code=403, detail="Only the follow-up's creator or an admin can change its Word MoM.")
+    _, stem = _activity_mom_docx(db, activity)
+    return managed_documents.DocumentTarget(
+        entity_id=activity.id, revision=activity.mom_revision,
+        title=f"MoM — {activity.subject or 'follow-up'} ({activity.created_at:%d-%m-%Y})" if activity.created_at else f"MoM — {activity.subject or 'follow-up'}",
+        folder=managed_documents.sharepoint_folder("CRM-MoM", activity.universal_id or f"activity-{activity.id}"),
+        filename_stem=managed_documents.safe_filename(f"{stem}_{activity.id}"),
+        build_docx=lambda: _activity_mom_docx(db, activity)[0],
+    )
+
+
+managed_documents.register(managed_documents.DocumentAdapter(entity_type=MOM_ENTITY, app="crm", load=_activity_mom_target))

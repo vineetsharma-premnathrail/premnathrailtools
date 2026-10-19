@@ -5,9 +5,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, SoftDeleteMixin
 
-# draft → released → obsolete. Only a draft can be edited; changing a
-# released BOM means raising its next revision.
-HYD_BOM_STATUSES = ("draft", "released", "obsolete")
+# draft → under_review → released → obsolete. Only a draft can be edited;
+# releasing goes through the central approval engine (under_review while it
+# waits; returned / rejected / withdrawn → draft). Changing a released BOM
+# means raising its next revision.
+HYD_BOM_STATUSES = ("draft", "under_review", "released", "obsolete")
 
 
 class HydBom(Base, TimestampMixin, SoftDeleteMixin):

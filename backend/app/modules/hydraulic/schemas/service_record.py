@@ -14,7 +14,7 @@ class HydServicePartResponse(BaseModel):
     id: int
     spare_part_id: int
     quantity: float
-    unit_cost: float
+    unit_cost: float | None  # None = hidden (Hydraulic › BOM › Prices & costs)
     remarks: str | None = None
     issued_location_id: int | None = None
 
@@ -23,7 +23,7 @@ class HydServicePartResponse(BaseModel):
     uom: str | None = None
     store_linked: bool = False
     issued_location_name: str | None = None
-    line_cost: float = 0.0
+    line_cost: float | None = 0.0
 
 
 class HydServiceRecordCreate(BaseModel):
@@ -102,8 +102,8 @@ class HydServiceRecordResponse(BaseModel):
     downtime_hours: float
     fluid_added_l: float
     oil_condition: str | None = None
-    labour_cost: float
-    other_cost: float
+    labour_cost: float | None  # None = hidden (Hydraulic › BOM › Prices & costs)
+    other_cost: float | None
     next_service_date: date | None = None
     remarks: str | None = None
     cancel_reason: str | None = None
@@ -122,5 +122,5 @@ class HydServiceRecordResponse(BaseModel):
     plan_title: str | None = None
     performed_by_name: str | None = None
     completed_by_name: str | None = None
-    parts_cost: float = 0.0
-    total_cost: float = 0.0
+    parts_cost: float | None = 0.0
+    total_cost: float | None = 0.0

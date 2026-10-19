@@ -1,21 +1,31 @@
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+import json
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.permission_registry import MODULES as PERMISSION_MODULES, ACTIONS as PERMISSION_ACTIONS, DATA_ACCESS_SCOPES as PERMISSION_SCOPES
+from app.core.permission_registry import MODULES as PERMISSION_MODULES, ACTIONS as PERMISSION_ACTIONS, ACTION_LABELS, expand_grants
 from app.db.session import get_db
 from app.modules.main.models.user import User, AVAILABLE_APPS
 from app.modules.main.models.module import Module
+from app.modules.main.models.role import Role
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.user_session import UserSession
 from app.modules.main.models.user_document import UserDocument
 from app.modules.main.schemas.user import (
-    UserResponse, UserUpdate, UserSessionResponse, UserActivityResponse, UserDocumentResponse, UserPermissionsUpdate,
+    UserResponse, UserUpdate, UserSessionResponse, UserActivityResponse, UserDocumentResponse, UserPermissionsUpdate, UserRolesUpdate,
 )
 from app.modules.main.routes.auth import get_current_user
+from app.core.permissions import require_feature_action, require_tab_action
+from app.core.notification_events import notify_event
+from app.core.permission_registry import is_admin_user
 from app.auth.microsoft import list_azure_org_users, get_azure_admin_ids
+from app.modules.main.services.azure_sync import (
+    EXCLUDED_MAILBOX_LOCAL_PARTS, is_syncable_azure_user, apply_azure_sync,
+)
 from app.modules.organization.services.provisioning import sync_user_org_links
 from app.modules.hr.services.employee_sync import is_org_locked
 from app.modules.hr.services.exit_guard import get_exit_info, is_exited, revoke_user_sessions
@@ -31,24 +41,10 @@ router = APIRouter(prefix="/users", tags=["Users & Roles"])
 
 VALID_ROLES = {"user", "admin"}
 
-# Generic/shared inboxes that exist as directory objects but aren't real
-# people — never pull these into the local users table from an Azure sync.
-_EXCLUDED_MAILBOX_LOCAL_PARTS = {"accounts", "corporate", "info", "prpl", "pew.research", "service"}
-
-
-def _is_syncable_azure_user(email: str) -> bool:
-    """False for accounts outside our own tenant domain (guests/partners) or
-    known shared/generic mailboxes — both get excluded from Azure AD syncs so
-    the org directory only ever contains real internal employees."""
-    email = (email or "").strip().lower()
-    if not email or "@" not in email:
-        return False
-    local_part, _, domain = email.partition("@")
-    if settings.DOMAIN_EMAIL and domain != settings.DOMAIN_EMAIL.strip().lstrip("@").lower():
-        return False
-    if local_part in _EXCLUDED_MAILBOX_LOCAL_PARTS:
-        return False
-    return True
+# Shared-mailbox / guest filter and the sync body live in the azure_sync
+# service so the nightly scheduler job can reuse them.
+_EXCLUDED_MAILBOX_LOCAL_PARTS = EXCLUDED_MAILBOX_LOCAL_PARTS
+_is_syncable_azure_user = is_syncable_azure_user
 
 # Granular ERP permission ids the "ERP Permissions" section of the Module
 # Access modal can grant. R&D Tools and CRM don't have a sub-permission
@@ -95,10 +91,36 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+def _ensure_may_manage(actor: User, target: User, *, own_access: bool = False) -> None:
+    """Authority checks on top of the Organization tab permission.
+
+    - Only an admin may change an admin account (a Users 'Edit' holder must
+      not be able to deactivate or re-shape an admin).
+    - With own_access=True (roles / extra grants / approval flags), a
+      non-admin may never change their own — that would be self-promotion.
+    Admins pass both."""
+    if is_admin_user(actor):
+        return
+    if is_admin_user(target):
+        raise HTTPException(
+            status_code=403,
+            detail=f"{target.name or target.email} is an admin — only another admin can change an admin account.",
+        )
+    if own_access and target.id == actor.id:
+        raise HTTPException(
+            status_code=403,
+            detail="You can't change your own roles, extra permissions or approval flags. Ask an admin "
+                   "(or another user with Organization › Role & Permissions 'Edit') to make this change.",
+        )
+
+
 def to_response(user: User, db: Session | None = None) -> UserResponse:
     """Serialize a User row, computing `apps` from role + assigned_apps
     (admins implicitly get every module regardless of what's assigned)."""
-    updates = {"apps": user.get_apps()}
+    updates = {
+        "apps": user.get_apps(), "assigned_apps": user.get_apps(),
+        "role_ids": sorted(r.id for r in user.roles), "role_names": sorted(r.name for r in user.roles),
+    }
     if user.reporting_manager_id and db is not None:
         manager = db.query(User).filter(User.id == user.reporting_manager_id).first()
         updates["reporting_manager_name"] = manager.name if manager else None
@@ -110,16 +132,18 @@ def to_response(user: User, db: Session | None = None) -> UserResponse:
 
 @router.get("", response_model=list[UserResponse])
 async def list_users(
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=5000),
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_tab_action("organization", "users", "view")),
 ):
     """List all users (admin only) — excludes shared mailboxes / external-domain
-    accounts that shouldn't be managed as people (see _is_syncable_azure_user)."""
-    users = db.query(User).order_by(User.name).offset(skip).limit(limit).all()
-    users = [u for u in users if _is_syncable_azure_user(u.email)]
-    return [to_response(u) for u in users]
+    accounts that shouldn't be managed as people (see _is_syncable_azure_user).
+    The filter runs before paging so a page is never short, and the default
+    limit covers the whole org (the page filters client-side)."""
+    users = db.query(User).order_by(User.name).all()
+    users = [u for u in users if _is_syncable_azure_user(u.email)][skip:skip + limit]
+    return [to_response(u, db) for u in users]
 
 
 @router.get("/directory", response_model=list[dict])
@@ -151,22 +175,18 @@ async def list_user_directory(
 
 @router.get("/permissions/registry")
 async def get_permission_registry(
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_tab_action("organization", "roles", "view")),
 ):
-    """The full module/subtab/action/scope catalog the Permission Matrix UI
-    renders — single source of truth so the frontend doesn't hardcode it."""
-    return {
-        "modules": PERMISSION_MODULES,
-        "actions": PERMISSION_ACTIONS,
-        "scopes": PERMISSION_SCOPES,
-    }
+    """The full module/tab/action catalog the Permission Matrix UI renders —
+    single source of truth so the frontend doesn't hardcode it."""
+    return {"modules": PERMISSION_MODULES, "actions": PERMISSION_ACTIONS, "action_labels": ACTION_LABELS}
 
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_tab_action("organization", "users", "view")),
 ):
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
@@ -178,7 +198,7 @@ async def get_user(
 async def list_user_branch_assignments(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_feature_action("organization", "users", "assignments", "view")),
 ):
     """All of this user's branch assignments, across every branch — the
     reverse direction of GET /organization/branches/{id}/user-assignments."""
@@ -201,49 +221,191 @@ async def update_user_permissions(
     user_id: int,
     payload: UserPermissionsUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_feature_action("organization", "roles", "extra_permissions", "edit")),
 ):
+    """Replace this user's EXTRA grants — the ones on top of their roles."""
+    from app.modules.main.routes.roles import validate_grants
+
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-
-    valid_ids = {
-        f"{mk}:{stk}:{a}"
-        for mk, m in PERMISSION_MODULES.items()
-        for stk in (m["subtabs"] or {"": None})
-        for a in PERMISSION_ACTIONS
-    }
-    invalid = set(payload.granular_permissions) - valid_ids
-    if invalid:
-        raise HTTPException(status_code=400, detail=f"Invalid permission id(s): {', '.join(sorted(invalid)[:5])}")
-    invalid_scopes = {v for v in payload.data_access_scopes.values() if v not in PERMISSION_SCOPES}
-    if invalid_scopes:
-        raise HTTPException(status_code=400, detail=f"Invalid scope(s): {', '.join(sorted(invalid_scopes))}")
-    invalid_modules = set(payload.data_access_scopes.keys()) - set(PERMISSION_MODULES.keys())
-    if invalid_modules:
-        raise HTTPException(status_code=400, detail=f"Invalid module(s): {', '.join(sorted(invalid_modules))}")
-
-    added = sorted(set(payload.granular_permissions) - set(target.granular_permissions or []))
-    removed = sorted(set(target.granular_permissions or []) - set(payload.granular_permissions))
-    target.granular_permissions = payload.granular_permissions
-    target.data_access_scopes = payload.data_access_scopes
-    db.add(AuditLog(
-        entity_type="user_permissions", entity_id=user_id, action="update",
-        summary=f"{admin.name} updated permissions for {target.name}" + (
-            f" (+{len(added)}/-{len(removed)})" if added or removed else " (data access scopes only)"
-        ),
-        old_value=None, new_value=None, performed_by_id=admin.id,
-    ))
+    _ensure_may_manage(admin, target, own_access=True)
+    # validate_grants also stops a non-admin handing out grants they don't hold.
+    grants = validate_grants(payload.granular_permissions, admin)
+    added = sorted(set(grants) - set(target.granular_permissions or []))
+    removed = sorted(set(target.granular_permissions or []) - set(grants))
+    from app.modules.main.services.grc import check_assignment, permissions_after
+    check_assignment(db, target, admin, permissions_after(db, None, grants, target), payload.sod_mitigation_reason)
+    target.granular_permissions = grants
+    target.invalidate_permissions()
+    if added or removed:
+        db.add(AuditLog(
+            entity_type="user_permissions", entity_id=user_id, action="update", module_key="organization",
+            summary=f"{admin.name} updated extra permissions for {target.name} (+{len(added)}/-{len(removed)})",
+            old_value=json.dumps(removed) if removed else None, new_value=json.dumps(added) if added else None,
+            performed_by_id=admin.id,
+        ))
     db.commit()
     db.refresh(target)
     return to_response(target, db)
+
+
+@router.put("/{user_id}/roles", response_model=UserResponse)
+async def update_user_roles(
+    user_id: int,
+    payload: UserRolesUpdate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_feature_action("organization", "roles", "members", "edit")),
+):
+    """Replace the roles this user holds."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    wanted = set(payload.role_ids)
+    roles = db.query(Role).filter(Role.id.in_(wanted)).all() if wanted else []
+    missing = wanted - {r.id for r in roles}
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Role(s) not found: {', '.join(map(str, sorted(missing)))} — reload the page.")
+    _ensure_may_manage(admin, target, own_access=True)
+    if not is_admin_user(admin):
+        # No privilege escalation: a non-admin may only hand out a role whose
+        # every grant they hold themselves (same rule as validate_grants).
+        held_ids = {r.id for r in target.roles}
+        held = admin.effective_permissions
+        for role in roles:
+            if role.id in held_ids:
+                continue
+            beyond = expand_grants(role.permissions) - held
+            if beyond:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"You can't assign the role '{role.name}' — it grants {len(beyond)} permission(s) you don't "
+                           f"hold yourself (e.g. {', '.join(sorted(beyond)[:3])}). Ask an admin to assign it.",
+                )
+            from app.modules.main.routes.roles import validate_scope_escalation
+
+            validate_scope_escalation(dict(role.data_scopes or {}), admin)
+    before = sorted(r.name for r in target.roles)
+    from app.modules.main.services.grc import check_assignment, permissions_after
+    check_assignment(db, target, admin, permissions_after(db, [r.id for r in roles], None, target),
+                     payload.sod_mitigation_reason)
+    target.roles = roles
+    target.invalidate_permissions()
+    after = sorted(r.name for r in roles)
+    if before != after:
+        db.add(AuditLog(
+            entity_type="user_permissions", entity_id=user_id, action="update", module_key="organization",
+            summary=f"{admin.name} set roles for {target.name}: {', '.join(after) or 'none'}",
+            old_value=json.dumps(before), new_value=json.dumps(after), performed_by_id=admin.id,
+        ))
+        notify_event(db, background_tasks, "organization", "role_members_changed", title=f"Roles of {target.name} changed",
+                     message=f"{admin.name} set {target.name}'s roles to: {', '.join(after) or 'none'} (was: {', '.join(before) or 'none'}).",
+                     entity_type="user", entity_id=target.id, actor=admin, skip_user_ids={target.id})
+    db.commit()
+    db.refresh(target)
+    return to_response(target, db)
+
+
+class UserDataScopesUpdate(BaseModel):
+    # module_key -> level; a module left out follows the user's roles.
+    overrides: dict[str, str]
+
+
+def _data_scope_rows(target: User) -> list[dict]:
+    from app.core.data_scope import SCOPE_LABELS, user_scope
+
+    overrides = target.data_access_scopes or {}
+    rows = []
+    for mk, m in PERMISSION_MODULES.items():
+        if mk == "organization":
+            continue
+        rows.append({
+            "module_key": mk, "module_label": m["label"], "override": overrides.get(mk),
+            "effective": user_scope(target, mk), "effective_label": SCOPE_LABELS[user_scope(target, mk)],
+        })
+    return rows
+
+
+@router.get("/{user_id}/data-scopes")
+async def get_user_data_scopes(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_feature_action("organization", "roles", "data_access", "view")),
+):
+    """Per module: the user's personal override (if any) and the scope that applies."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _data_scope_rows(target)
+
+
+@router.put("/{user_id}/data-scopes")
+async def update_user_data_scopes(
+    user_id: int,
+    payload: UserDataScopesUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_feature_action("organization", "roles", "data_access", "edit")),
+):
+    from app.core.data_scope import SCOPE_LABELS
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_may_manage(admin, target, own_access=True)
+    clean: dict[str, str] = {}
+    for mk, level in payload.overrides.items():
+        if not level:
+            continue
+        if mk not in PERMISSION_MODULES or mk == "organization":
+            raise HTTPException(status_code=422, detail=f"Unknown module '{mk}' — reload the page.")
+        if level not in SCOPE_LABELS:
+            raise HTTPException(status_code=422, detail=f"Data access must be one of: {', '.join(SCOPE_LABELS.values())}.")
+        clean[mk] = level
+    before = dict(target.data_access_scopes or {})
+    from app.modules.main.routes.roles import validate_scope_escalation
+
+    validate_scope_escalation(clean, admin, before)
+    target.data_access_scopes = clean
+    if before != clean:
+        db.add(AuditLog(
+            entity_type="user_permissions", entity_id=user_id, action="update", module_key="organization",
+            summary=f"{admin.name} set personal data access for {target.name}: "
+                    + (", ".join(f"{PERMISSION_MODULES[k]['label']} = {SCOPE_LABELS[v]}" for k, v in clean.items()) or "follow roles"),
+            old_value=json.dumps(before), new_value=json.dumps(clean), performed_by_id=admin.id,
+        ))
+    db.commit()
+    db.refresh(target)
+    return _data_scope_rows(target)
+
+
+@router.get("/{user_id}/effective-permissions")
+async def get_user_effective_permissions(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_tab_action("organization", "roles", "view")),
+):
+    """Every grant this user effectively holds and where it comes from
+    (role names and/or "Extra"), for the read-only matrix on their profile."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    sources: dict[str, list[str]] = {}
+    held = [r for r in target.roles if r.is_active]
+    held += [r for r in db.query(Role).filter(Role.is_default.is_(True), Role.is_active.is_(True)).all() if r not in held]
+    for role in held:
+        for g in expand_grants(role.permissions):
+            sources.setdefault(g, []).append(role.name + (" (everyone)" if role.is_default else ""))
+    for g in expand_grants(target.granular_permissions):
+        sources.setdefault(g, []).append("Extra")
+    return {"is_admin": target.role == "admin" or target.is_azure_admin, "apps": target.get_apps(), "grants": sources}
 
 
 @router.get("/{user_id}/permission-history", response_model=list[UserActivityResponse])
 async def list_user_permission_history(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_feature_action("organization", "users", "activity", "view")),
 ):
     if not db.query(User).filter(User.id == user_id).first():
         raise HTTPException(status_code=404, detail="User not found")
@@ -256,7 +418,7 @@ async def list_user_permission_history(
 async def list_user_sessions(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_feature_action("organization", "users", "login_history", "view")),
 ):
     if not db.query(User).filter(User.id == user_id).first():
         raise HTTPException(status_code=404, detail="User not found")
@@ -267,7 +429,7 @@ async def list_user_sessions(
 async def list_user_activity(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_feature_action("organization", "users", "activity", "view")),
 ):
     if not db.query(User).filter(User.id == user_id).first():
         raise HTTPException(status_code=404, detail="User not found")
@@ -278,7 +440,7 @@ async def list_user_activity(
 async def list_user_documents(
     user_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_feature_action("organization", "users", "documents", "view")),
 ):
     if not db.query(User).filter(User.id == user_id).first():
         raise HTTPException(status_code=404, detail="User not found")
@@ -299,7 +461,7 @@ async def upload_user_document(
     tags: str | None = Form(None),
     remarks: str | None = Form(None),
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_feature_action("organization", "users", "documents", "create")),
 ):
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
@@ -341,11 +503,12 @@ async def get_user_document_content(
     user_id: int,
     document_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_feature_action("organization", "users", "documents", "export")),
 ):
     document = db.query(UserDocument).filter(UserDocument.id == document_id, UserDocument.user_id == user_id).first()
     if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail=f"Document #{document_id} not found on user #{user_id} — it may have been "
+                                                    "deleted or belongs to another user. Reload the user's Documents tab.")
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
     content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, document.sharepoint_path or "")
@@ -361,11 +524,12 @@ async def delete_user_document(
     user_id: int,
     document_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_feature_action("organization", "users", "documents", "delete")),
 ):
     document = db.query(UserDocument).filter(UserDocument.id == document_id, UserDocument.user_id == user_id).first()
     if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail=f"Document #{document_id} not found on user #{user_id} — it may have been "
+                                                    "deleted or belongs to another user. Reload the user's Documents tab.")
     if settings.SHAREPOINT_SITE_ID and document.sharepoint_path:
         try:
             await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, document.sharepoint_path)
@@ -381,31 +545,42 @@ async def update_user(
     user_id: int,
     payload: UserUpdate,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_tab_action("organization", "users", "edit")),
 ):
-    """Update a user's role, module access, or name (admin only)."""
+    """Update a user's name / approval flags (Users 'Edit'); the admin role itself stays admin-only."""
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    before = _audited_user_fields(target)
+    _ensure_may_manage(admin, target)
+    _APPROVAL_FLAGS = (
+        "is_department_head", "is_project_head", "is_plant_head", "is_purchase_head", "is_director",
+        "is_finance_manager", "is_design_manager", "is_rnd_manager", "is_production_manager",
+        "is_project_manager", "is_store_manager", "is_purchase_manager",
+    )
+    if any(getattr(payload, f, None) is not None for f in _APPROVAL_FLAGS):
+        _ensure_may_manage(admin, target, own_access=True)
 
     if payload.role is not None:
         if payload.role not in VALID_ROLES:
             raise HTTPException(status_code=400, detail="Invalid role")
+        # Making someone an admin (or taking it away) stays admin-only, whatever
+        # Organization permissions the caller holds.
+        if payload.role != target.role and not is_admin_user(admin):
+            raise HTTPException(
+                status_code=403,
+                detail="Only an admin can make a user an admin or remove admin rights. Ask an admin to make this change.",
+            )
         if target.id == admin.id and payload.role != "admin":
             raise HTTPException(status_code=400, detail="Cannot change your own admin role")
         target.role = payload.role
 
-    if payload.assigned_apps is not None:
-        invalid = set(payload.assigned_apps) - _assignable_app_keys(db)
-        if invalid:
-            raise HTTPException(status_code=400, detail=f"Invalid app(s): {', '.join(sorted(invalid))}")
-        target.assigned_apps = payload.assigned_apps
-
-    if payload.erp_permissions is not None:
-        invalid = set(payload.erp_permissions) - VALID_GRANULAR_PERMISSIONS
-        if invalid:
-            raise HTTPException(status_code=400, detail=f"Invalid permission(s): {', '.join(sorted(invalid))}")
-        target.erp_permissions = payload.erp_permissions
+    if payload.assigned_apps is not None or payload.erp_permissions is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Module access and ERP permissions are now given through roles. Open the user's 'Roles & Permissions' "
+                   "tab (or Organization › Role & Permissions) and assign a role instead.",
+        )
 
     if payload.is_department_head is not None:
         target.is_department_head = payload.is_department_head
@@ -422,8 +597,6 @@ async def update_user(
     if payload.is_director is not None:
         target.is_director = payload.is_director
 
-    if payload.is_md is not None:
-        target.is_md = payload.is_md
 
     if payload.is_finance_manager is not None:
         target.is_finance_manager = payload.is_finance_manager
@@ -437,42 +610,83 @@ async def update_user(
     if payload.name is not None:
         target.name = payload.name
 
+    after = _audited_user_fields(target)
+    changed = sorted(k for k in after if after[k] != before[k])
+    if changed:
+        db.add(AuditLog(
+            entity_type="user", entity_id=target.id, action="updated", module_key="organization",
+            summary=f"{admin.name} updated {target.name}: {', '.join(changed)}",
+            old_value=json.dumps({k: before[k] for k in changed}, default=str),
+            new_value=json.dumps({k: after[k] for k in changed}, default=str),
+            performed_by_id=admin.id,
+        ))
+
     db.commit()
     db.refresh(target)
-    return to_response(target)
+    return to_response(target, db)
+
+
+_AUDITED_USER_FIELDS = (
+    "name", "role",
+    "is_department_head", "is_project_head", "is_plant_head", "is_purchase_head", "is_director",
+    "is_finance_manager", "is_design_manager", "is_rnd_manager", "is_production_manager",
+    "is_project_manager", "is_store_manager", "is_purchase_manager",
+)
+
+
+def _audited_user_fields(user: User) -> dict:
+    """Snapshot of the admin-editable fields, for the update_user audit diff."""
+    out = {}
+    for f in _AUDITED_USER_FIELDS:
+        v = getattr(user, f, None)
+        out[f] = sorted(v) if isinstance(v, list) else v
+    return out
 
 
 @router.patch("/{user_id}/deactivate", response_model=UserResponse)
 async def deactivate_user(
     user_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_tab_action("organization", "users", "edit")),
 ):
-    """Deactivate a user account (admin only)."""
+    """Deactivate a user account (Organization › Users 'Edit')."""
     if user_id == admin.id:
         raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    _ensure_may_manage(admin, target)
     target.is_active = False
     # Deactivation must also cut off every signed-in device, not just new
     # logins (security finding S-10 / P2-USR-17).
     revoke_user_sessions(db, target.id)
+    # This row is also what stops the Azure sync re-activating them (C-10) —
+    # see azure_may_reactivate() in app/modules/main/services/azure_sync.py.
+    db.add(AuditLog(
+        entity_type="user", entity_id=target.id, action="deactivated", module_key="organization",
+        summary=f"{admin.name} deactivated {target.name}", performed_by_id=admin.id,
+    ))
+    notify_event(db, background_tasks, "organization", "user_deactivated", title=f"{target.name} deactivated",
+                 message=f"{admin.name} deactivated {target.name} ({target.email}) — they can no longer sign in and their sessions were ended.",
+                 entity_type="user", entity_id=target.id, actor=admin, skip_user_ids={target.id})
     db.commit()
     db.refresh(target)
-    return to_response(target)
+    return to_response(target, db)
 
 
 @router.patch("/{user_id}/activate", response_model=UserResponse)
 async def activate_user(
     user_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_tab_action("organization", "users", "edit")),
 ):
-    """Reactivate a user account (admin only)."""
+    """Reactivate a user account (Organization › Users 'Edit')."""
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    _ensure_may_manage(admin, target)
     exited, exit_date = get_exit_info(db, target.id)
     if exited:
         when = f" on {exit_date.strftime('%d-%m-%Y')}" if exit_date else ""
@@ -484,15 +698,22 @@ async def activate_user(
             ),
         )
     target.is_active = True
+    db.add(AuditLog(
+        entity_type="user", entity_id=target.id, action="activated", module_key="organization",
+        summary=f"{admin.name} activated {target.name}", performed_by_id=admin.id,
+    ))
+    notify_event(db, background_tasks, "organization", "user_deactivated", title=f"{target.name} reactivated",
+                 message=f"{admin.name} reactivated {target.name} ({target.email}) — they can sign in again with their existing roles.",
+                 entity_type="user", entity_id=target.id, actor=admin, skip_user_ids={target.id})
     db.commit()
     db.refresh(target)
-    return to_response(target)
+    return to_response(target, db)
 
 
 @router.post("/sync-azure", response_model=list[UserResponse])
 async def sync_azure_users(
     db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    _user: User = Depends(require_tab_action("organization", "users", "create")),
 ):
     """Pull every member from the Azure AD tenant into the local users table,
     so the Users & Roles page shows the full org directory, not just people
@@ -503,86 +724,10 @@ async def sync_azure_users(
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Azure sync failed: {e}")
 
-    azure_users = [
-        au for au in azure_users
-        if _is_syncable_azure_user(au.get("mail") or au.get("userPrincipalName") or "")
-    ]
-
-    # Anyone already synced in previously (e.g. an external guest or shared
-    # mailbox pulled in before this filter existed) who no longer passes the
-    # filter is treated the same as someone removed from the tenant: they
-    # fall out of active_azure_ids below and get deactivated, not deleted.
-    active_azure_ids = {au.get("id") for au in azure_users if au.get("id")}
-
-    azure_id_to_user: dict[str, User] = {}
-    for au in azure_users:
-        email = au.get("mail") or au.get("userPrincipalName", "")
-        if not email:
-            continue
-        azure_id = au.get("id")
-        is_az_admin = azure_id in admin_ids
-
-        target = db.query(User).filter(User.email == email).first()
-        if target:
-            target.azure_id = azure_id or target.azure_id
-            target.name = au.get("displayName") or target.name
-            # HR & Administration owns these once an employee profile locks
-            # them (see app/modules/hr/services/employee_sync.py).
-            if not is_org_locked(db, target.id):
-                target.department = au.get("department") or target.department
-                target.designation = au.get("jobTitle") or target.designation
-            target.phone = au.get("mobilePhone") or target.phone
-            target.office_location = au.get("officeLocation") or target.office_location
-            # Never re-activate someone HR has exited (their Entra account is
-            # often left enabled during handover) — security finding S-10.
-            if not is_exited(db, target.id):
-                target.is_active = True
-            target.is_azure_admin = is_az_admin
-            if is_az_admin and target.role == "user":
-                target.role = "admin"
-        else:
-            target = User(
-                    email=email,
-                    name=au.get("displayName") or email.split("@")[0],
-                    azure_id=azure_id,
-                    department=au.get("department"),
-                    designation=au.get("jobTitle"),
-                    phone=au.get("mobilePhone"),
-                    office_location=au.get("officeLocation"),
-                    role="admin" if is_az_admin else "user",
-                    is_active=True,
-                    is_azure_admin=is_az_admin,
-                    assigned_apps=[],
-                )
-            db.add(target)
-        if azure_id:
-            azure_id_to_user[azure_id] = target
-
-    # Resolve manager links only after every Azure user has a local row.
-    # Graph returns the manager's Azure object id in the expanded relation.
-    db.flush()
-    for au in azure_users:
-        azure_id = au.get("id")
-        target = azure_id_to_user.get(azure_id) if azure_id else None
-        manager = au.get("manager") or {}
-        if target and "manager" in au and not is_org_locked(db, target.id):
-            manager_id = manager.get("id")
-            manager_user = azure_id_to_user.get(manager_id) if manager_id else None
-            target.reporting_manager_id = manager_user.id if manager_user else None
-
-    # Auto-link every synced user to a Branch (from office_location) and
-    # Department (from department) now that reporting_manager_id is
-    # resolved — see provisioning.py docstring.
-    for target in azure_id_to_user.values():
-        sync_user_org_links(db, target)
-
-    # Deactivate any azure-linked local users no longer in the active tenant list
-    for u in db.query(User).filter(User.azure_id.isnot(None)).all():
-        if u.azure_id not in active_azure_ids:
-            if u.is_active:
-                revoke_user_sessions(db, u.id)
-            u.is_active = False
-
-    db.commit()
+    # Same body the nightly `azure_user_sync` job runs — see
+    # app/modules/main/services/azure_sync.py.
+    apply_azure_sync(db, azure_users, admin_ids)
     users = db.query(User).order_by(User.name).all()
-    return [to_response(u, db) for u in users]
+    # Same shared-mailbox/guest filter as GET /users, so the list doesn't
+    # change between a sync and a reload.
+    return [to_response(u, db) for u in users if _is_syncable_azure_user(u.email)]

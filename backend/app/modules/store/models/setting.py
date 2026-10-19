@@ -20,6 +20,11 @@ STORE_SETTING_ADJUSTMENT_APPROVERS = "adjustment_approver_ids"
 STORE_SETTING_CHALLAN_RULES = "challan_rules"
 STORE_SETTING_VENDOR_ISSUE_TYPES = "vendor_issue_types"
 STORE_SETTING_RETURN_DATE_ISSUE_TYPES = "return_date_issue_types"
+#   plant_access             {"enabled": bool, "users": {"<user_id>":
+#                            {"all_plants": bool, "branch_ids": [int]}}} —
+#                            plant-wise stock visibility, see
+#                            app/modules/store/services/plant_access.py.
+STORE_SETTING_PLANT_ACCESS = "plant_access"
 
 
 class StoreSetting(Base, TimestampMixin):

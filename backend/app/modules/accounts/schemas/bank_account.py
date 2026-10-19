@@ -3,8 +3,9 @@ from pydantic import BaseModel
 
 
 class BankAccountCreate(BaseModel):
+    account_kind: str = "bank"
     bank_name: str
-    account_no: str
+    account_no: str | None = None
     account_holder_name: str | None = None
     branch_name: str | None = None
     ifsc_code: str | None = None
@@ -15,6 +16,7 @@ class BankAccountCreate(BaseModel):
 
 
 class BankAccountUpdate(BaseModel):
+    account_kind: str | None = None
     bank_name: str | None = None
     account_no: str | None = None
     account_holder_name: str | None = None
@@ -29,8 +31,9 @@ class BankAccountResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
+    account_kind: str = "bank"
     bank_name: str
-    account_no: str
+    account_no: str | None = None
     account_holder_name: str | None = None
     branch_name: str | None = None
     ifsc_code: str | None = None
@@ -39,6 +42,8 @@ class BankAccountResponse(BaseModel):
     current_balance: float
     gl_account_id: int | None = None
     gl_account_code: str | None = None
+    # Balance per the books = the linked GL ledger, as of today.
+    book_balance: float = 0
     status: str
     created_at: datetime | None = None
     updated_at: datetime | None = None

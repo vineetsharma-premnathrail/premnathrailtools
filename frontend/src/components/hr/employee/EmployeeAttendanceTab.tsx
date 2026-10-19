@@ -37,7 +37,7 @@ export default function EmployeeAttendanceTab({ userId }: { userId: number }) {
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
           Attendance{data?.shift_name ? <span style={{ fontSize: 12.5, fontWeight: 500, color: TEXT.muted }}> · {data.shift_name}</span> : null}
         </h3>
-        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div data-tour="hr-emp-att-month" style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
           <MonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m) }} />
           <Link href="/dashboard/hr/attendance" style={{ fontSize: 12.5, fontWeight: 600, color: '#E85A1F', textDecoration: 'none' }}>Mark / correct →</Link>
         </div>
@@ -53,7 +53,7 @@ export default function EmployeeAttendanceTab({ userId }: { userId: number }) {
         <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p>
       ) : data ? (
         <>
-          <div style={{ marginBottom: 12 }}><AttendanceLegend counts={data.counts} /></div>
+          <div data-tour="hr-emp-att-legend" style={{ marginBottom: 12 }}><AttendanceLegend counts={data.counts} /></div>
           <AttendanceCalendar year={year} month={month} days={data.days} />
         </>
       ) : null}

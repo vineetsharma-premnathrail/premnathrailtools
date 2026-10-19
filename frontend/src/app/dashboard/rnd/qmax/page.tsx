@@ -4,9 +4,10 @@ import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
+import { getHistoryFromLink } from '@/components/rnd/historyLink'
 import RndNav from '@/components/rnd/RndNav'
 import TerminalPanel from '@/components/rnd/TerminalPanel'
-import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob } from '@/components/rnd/toolStyles'
+import { inputStyle, labelStyle, cardStyle, cardHeaderStyle, cardTitleStyle, cardBodyStyle, calcButtonStyle, downloadCsv, downloadBlob, getErrorMessage } from '@/components/rnd/toolStyles'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface QmaxResult {
@@ -61,7 +62,7 @@ function QmaxPageInner() {
     if (!isAuthorized) return
     const loadId = searchParams.get('load')
     if (!loadId) return
-    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+    getHistoryFromLink(loadId).then((detail) => {
       const i = detail.inputs as Record<string, any>
       const dVal = i.d != null ? String(i.d) : d
       const eVal = i.e_param != null ? String(i.e_param) : eParam
@@ -80,7 +81,7 @@ function QmaxPageInner() {
         sigma_b_custom: mat === 'custom' ? String(i.sigma_b_custom || '') : '',
         v_head: vVal,
       }, eVal)
-    }).catch(() => setError('Could not load the saved calculation.'))
+    }).catch((err) => setError(extractErrorMessages(err, 'Could not load the saved calculation — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
@@ -115,8 +116,8 @@ function QmaxPageInner() {
       if (!isFromHistory) {
         rndApi.saveHistory({ tool_name: 'qmax', inputs: { ...usedPayload, e_param: usedE, q_applied: qApplied }, results: data.results, calculation_name: `Qmax d=${usedD}` }).catch(() => {})
       }
-    } catch {
-      setError('Calculation failed. Check your inputs.')
+    } catch (err) {
+      setError(await getErrorMessage(err, 'Calculation failed. Check your inputs.'))
     } finally {
       setBusy(false)
     }
@@ -142,7 +143,7 @@ function QmaxPageInner() {
   const downloadDocx = async () => {
     setBusy(true)
     try { downloadBlob(await rndApi.downloadQmaxReport(payload()), 'Qmax_Report.docx') }
-    catch (err) { setError(extractErrorMessages(err, 'Report generation failed.').join(' ')) } finally { setBusy(false) }
+    catch (err) { setError(await getErrorMessage(err, 'Report generation failed.')) } finally { setBusy(false) }
   }
 
   const importCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -186,7 +187,7 @@ function QmaxPageInner() {
       <div className="rnd-main-grid" style={{ display: 'grid', gridTemplateColumns: '300px 1fr 260px', gap: 12, alignItems: 'start' }}>
         {/* Left: inputs */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-qmax-material" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Material Selection (σB)</span></div>
             <div style={cardBodyStyle}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
@@ -203,7 +204,7 @@ function QmaxPageInner() {
                 ))}
               </div>
               {material === 'custom' && (
-                <div><label style={labelStyle}>Custom σB (N/mm²)</label><input style={inputStyle} type="number" step="10" value={sigmaCustom} onChange={(e) => setSigmaCustom(e.target.value)} placeholder="e.g. 780" /></div>
+                <div data-tour="rnd-qmax-sigma-custom"><label style={labelStyle}>Custom σB (N/mm²)</label><input style={inputStyle} type="number" step="10" value={sigmaCustom} onChange={(e) => setSigmaCustom(e.target.value)} placeholder="e.g. 780" /></div>
               )}
             </div>
           </div>
@@ -211,18 +212,18 @@ function QmaxPageInner() {
           <div style={cardStyle}>
             <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
               <span style={cardTitleStyle}>Rail Parameters</span>
-              <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+              <label data-tour="rnd-qmax-csv" style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
                 Import CSV
                 <input type="file" accept=".csv" onChange={importCsv} style={{ display: 'none' }} />
               </label>
             </div>
             <div style={cardBodyStyle}>
-              <div>
+              <div data-tour="rnd-qmax-d">
                 <label style={labelStyle}>Worn Rail Head Diameter — d (mm)</label>
                 <input style={inputStyle} type="number" step="0.1" value={d} onChange={(e) => setD(e.target.value)} />
                 <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '4px 0 0' }}>Measured worn tread diameter of the wheel/rail contact</p>
               </div>
-              <div>
+              <div data-tour="rnd-qmax-e">
                 <label style={labelStyle}>Additional Parameter — e (mm) <span style={{ fontWeight: 400, textTransform: 'none' }}>optional</span></label>
                 <input style={inputStyle} type="number" step="0.1" value={eParam} onChange={(e) => setEParam(e.target.value)} />
                 <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '4px 0 0' }}>Secondary diameter / contact width (0 = not used)</p>
@@ -233,12 +234,12 @@ function QmaxPageInner() {
           <div style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Safety Parameters</span></div>
             <div style={cardBodyStyle}>
-              <div>
+              <div data-tour="rnd-qmax-vhead">
                 <label style={labelStyle}>Safety Factor — v_head</label>
                 <input style={inputStyle} type="number" step="0.05" value={vHead} onChange={(e) => setVHead(e.target.value)} />
                 <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '4px 0 0' }}>Typical range 1.0–1.5 (EN 13674 recommends ≥1.1)</p>
               </div>
-              <div>
+              <div data-tour="rnd-qmax-q-applied">
                 <label style={labelStyle}>Applied Wheel Load — Q_applied (kN) <span style={{ fontWeight: 400, textTransform: 'none' }}>optional</span></label>
                 <input style={inputStyle} type="number" step="1" value={qApplied} onChange={(e) => setQApplied(e.target.value)} />
                 <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '4px 0 0' }}>If entered, compliance check is shown (0 = skip)</p>
@@ -251,7 +252,7 @@ function QmaxPageInner() {
 
         {/* Center: result + formula */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={cardStyle}>
+          <div data-tour="rnd-qmax-result" style={cardStyle}>
             <div style={{ ...cardHeaderStyle, background: '#1e293b', borderBottom: 'none' }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f97316', boxShadow: '0 0 6px #f97316' }} />
               <span style={{ ...cardTitleStyle, color: '#fff' }}>Qmax Result</span>
@@ -277,7 +278,7 @@ function QmaxPageInner() {
             </div>
           </div>
 
-          <div style={cardStyle}>
+          <div data-tour="rnd-qmax-formula" style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Formula Reference</span></div>
             <div style={{ padding: 16 }}>
               <div style={{ padding: 12, borderRadius: 8, background: '#f8fafc', fontFamily: 'monospace', fontSize: 12.5, color: '#334155', lineHeight: 1.9 }}>
@@ -299,13 +300,13 @@ function QmaxPageInner() {
           <div style={cardStyle}>
             <div style={cardHeaderStyle}><span style={cardTitleStyle}>Actions</span></div>
             <div style={cardBodyStyle}>
-              <button onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Calculate'}</button>
-              <button onClick={exportCsv} style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
-              <button onClick={downloadDocx} disabled={busy} style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
-              <a href="/dashboard/rnd/history" style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', textAlign: 'center' }}>History</a>
+              <button data-tour="rnd-qmax-calculate-btn" onClick={() => calculate()} disabled={busy} style={calcButtonStyle(busy)}>{busy ? 'Calculating…' : 'Calculate'}</button>
+              <button data-tour="rnd-qmax-csv-btn" onClick={exportCsv} style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export CSV</button>
+              <button data-tour="rnd-qmax-docx-btn" onClick={downloadDocx} disabled={busy} style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Export Report (.docx)</button>
+              <a data-tour="rnd-qmax-history-btn" href="/dashboard/rnd/history" style={{ padding: '9px 12px', borderRadius: 6, border: '1px solid #ddd6fe', background: '#f5f3ff', color: '#7c3aed', fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', textAlign: 'center' }}>History</a>
             </div>
           </div>
-          <TerminalPanel title="qmax_output.log" text={result?.report || '> System Ready.\n> Awaiting parameters...\n>\n> Configure inputs on the left and\n> click Calculate to begin.'} />
+          <div data-tour="rnd-qmax-output"><TerminalPanel title="qmax_output.log" text={result?.report || '> System Ready.\n> Awaiting parameters...\n>\n> Configure inputs on the left and\n> click Calculate to begin.'} /></div>
         </div>
       </div>
     </div>

@@ -20,6 +20,9 @@ class QualityDashboardKpis(BaseModel):
     month_received_qty: float = 0
     month_rejected_qty: float = 0
     month_rejection_rate: float = 0
+    vendors_on_watch: int = 0
+    vendors_blocked: int = 0
+    vendor_blocks_pending: int = 0
 
 
 class QualityDashboardResponse(BaseModel):

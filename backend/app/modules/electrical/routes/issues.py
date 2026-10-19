@@ -2,10 +2,12 @@
 they were traced and fixed."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core import assignee_rules
+from app.core.permission_registry import can_feature, can_view_tab
+from app.core.permissions import ensure_can_delete, require_app_access, require_tab_access
 from app.db.session import get_db
 from app.modules.electrical.models.cable import ElectricalCable
 from app.modules.electrical.models.issue import (
@@ -18,8 +20,9 @@ from app.modules.electrical.schemas.issue import (
     ElectricalIssueCreate, ElectricalIssueUpdate, ElectricalIssueResolvePayload, ElectricalIssueResponse,
 )
 from app.modules.electrical.service import (
-    ELECTRICAL_APP, generate_issue_number, get_job_or_404, require_working, user_names,
+    ELECTRICAL_APP, generate_issue_number, get_job_or_404, ensure_job_view, require_job_feature, require_working, user_names,
 )
+from app.modules.electrical.access import notify_job_event, scope_jobs
 from app.modules.main.models.user import User
 from app.utils.notifications import notify_user
 
@@ -28,7 +31,16 @@ router = APIRouter(
     dependencies=[Depends(require_app_access(ELECTRICAL_APP))],
 )
 
-_CAN_EDIT = require_tab_action(ELECTRICAL_APP, "jobs", "edit")
+# Any Electrical user — record-level access is the job's data scope.
+_VIEWER = require_app_access(ELECTRICAL_APP)
+
+# Job › Tests / Troubleshooting feature holders (default: Jobs › Edit) can do everything; someone granted only the Troubleshooting
+# subtab's actions can still log and work issues.
+_CAN_CREATE = require_job_feature("issues", "create", ("troubleshooting", "create"))
+_CAN_EDIT = require_job_feature("issues", "edit", ("troubleshooting", "edit"))
+_CAN_DELETE = require_job_feature("issues", "delete", ("troubleshooting", "delete"))
+# "Assign to" rule (core/features/electrical.py).
+ASSIGN_RULE = "electrical:jobs.issues"
 
 
 def _to_responses(db: Session, issues: list[ElectricalIssue]) -> list[ElectricalIssueResponse]:
@@ -74,6 +86,13 @@ def _validate(db: Session, job_id: int, data: dict) -> None:
         raise HTTPException(status_code=404, detail=f"User #{data['assigned_to_id']} not found or inactive. Pick someone else to assign.")
 
 
+def _ensure_assignee_rule(db: Session, user: User, assignee_id: int | None) -> None:
+    """The role's "Assign to" rule — only when someone new is named."""
+    person = db.get(User, assignee_id) if assignee_id else None
+    if person:
+        assignee_rules.ensure_allowed(db, user, ASSIGN_RULE, person)
+
+
 def _notify_assignee(db: Session, issue: ElectricalIssue, job: ElectricalJob, actor: User) -> None:
     if issue.assigned_to_id and issue.assigned_to_id != actor.id:
         notify_user(
@@ -95,6 +114,7 @@ async def list_issues(
     query = db.query(ElectricalIssue).join(ElectricalJob, ElectricalJob.id == ElectricalIssue.job_id).filter(
         ElectricalIssue.is_deleted == False, ElectricalJob.is_deleted == False  # noqa: E712
     )
+    query = scope_jobs(query, db, user)
     if job_id:
         query = query.filter(ElectricalIssue.job_id == job_id)
     if status_filter == "open":
@@ -109,8 +129,10 @@ async def list_issues(
 
 
 @router.get("/jobs/{job_id}/issues", response_model=list[ElectricalIssueResponse])
-async def list_job_issues(job_id: int, db: Session = Depends(get_db)):
-    get_job_or_404(db, job_id)
+async def list_job_issues(job_id: int, db: Session = Depends(get_db), user: User = Depends(_VIEWER)):
+    ensure_job_view(user, can_feature(user, "electrical", "jobs", "issues", "view")
+                    or can_view_tab(user, "electrical", "troubleshooting"), "issues")
+    get_job_or_404(db, job_id, user=user)
     issues = db.query(ElectricalIssue).filter(
         ElectricalIssue.job_id == job_id, ElectricalIssue.is_deleted == False  # noqa: E712
     ).order_by(ElectricalIssue.issue_number.desc()).all()
@@ -118,16 +140,23 @@ async def list_job_issues(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/jobs/{job_id}/issues", response_model=ElectricalIssueResponse)
-async def create_issue(job_id: int, payload: ElectricalIssueCreate, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    job = get_job_or_404(db, job_id, lock=True)
+async def create_issue(job_id: int, payload: ElectricalIssueCreate, background_tasks: BackgroundTasks,
+                       db: Session = Depends(get_db), user: User = Depends(_CAN_CREATE)):
+    job = get_job_or_404(db, job_id, lock=True, user=user)
     require_working(job, "log issues")
     data = payload.model_dump()
     data["title"] = data["title"].strip()
     _validate(db, job_id, data)
+    _ensure_assignee_rule(db, user, data.get("assigned_to_id"))
     issue = ElectricalIssue(**data, job_id=job_id, issue_number=generate_issue_number(db, job_id), status="open", reported_by_id=user.id)
     db.add(issue)
     db.flush()
     _notify_assignee(db, issue, job, user)
+    notify_job_event(
+        db, background_tasks, "issue_logged", job, title="Electrical Issue Logged",
+        message=f"{issue.issue_number} on {job.job_number}: {issue.title} ({issue.severity}), logged by {user.name or user.email}.",
+        actor=user, skip={issue.assigned_to_id},
+    )
     db.commit()
     db.refresh(issue)
     return _to_responses(db, [issue])[0]
@@ -136,7 +165,7 @@ async def create_issue(job_id: int, payload: ElectricalIssueCreate, db: Session 
 @router.patch("/issues/{issue_id}", response_model=ElectricalIssueResponse)
 async def update_issue(issue_id: int, payload: ElectricalIssueUpdate, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
     issue = _get_issue(db, issue_id)
-    job = get_job_or_404(db, issue.job_id, lock=True)
+    job = get_job_or_404(db, issue.job_id, lock=True, user=user)
     require_working(job, "change its issues")
     updates = payload.model_dump(exclude_unset=True)
     if "status" in updates:
@@ -149,6 +178,8 @@ async def update_issue(issue_id: int, payload: ElectricalIssueUpdate, db: Sessio
         updates["title"] = updates["title"].strip()
     _validate(db, job.id, updates)
     reassigned = "assigned_to_id" in updates and updates["assigned_to_id"] and updates["assigned_to_id"] != issue.assigned_to_id
+    if reassigned:
+        _ensure_assignee_rule(db, user, updates["assigned_to_id"])
     for field, val in updates.items():
         setattr(issue, field, val)
     if reassigned:
@@ -161,7 +192,7 @@ async def update_issue(issue_id: int, payload: ElectricalIssueUpdate, db: Sessio
 @router.post("/issues/{issue_id}/resolve", response_model=ElectricalIssueResponse)
 async def resolve_issue(issue_id: int, payload: ElectricalIssueResolvePayload, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
     issue = _get_issue(db, issue_id)
-    job = get_job_or_404(db, issue.job_id, lock=True)
+    job = get_job_or_404(db, issue.job_id, lock=True, user=user)
     require_working(job, "resolve issues")
     if issue.status not in ELECTRICAL_OPEN_ISSUE_STATUSES:
         raise HTTPException(status_code=409, detail=f"Issue {issue.issue_number} is already {issue.status}.")
@@ -184,7 +215,7 @@ async def resolve_issue(issue_id: int, payload: ElectricalIssueResolvePayload, d
 @router.post("/issues/{issue_id}/close", response_model=ElectricalIssueResponse)
 async def close_issue(issue_id: int, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
     issue = _get_issue(db, issue_id)
-    job = get_job_or_404(db, issue.job_id, lock=True)
+    job = get_job_or_404(db, issue.job_id, lock=True, user=_perm)
     require_working(job, "close issues")
     if issue.status != "resolved":
         raise HTTPException(status_code=409, detail=f"Issue {issue.issue_number} is {issue.status}. Resolve it (with its root cause and fix) before closing.")
@@ -197,7 +228,7 @@ async def close_issue(issue_id: int, db: Session = Depends(get_db), _perm: User 
 @router.post("/issues/{issue_id}/reopen", response_model=ElectricalIssueResponse)
 async def reopen_issue(issue_id: int, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
     issue = _get_issue(db, issue_id)
-    job = get_job_or_404(db, issue.job_id, lock=True)
+    job = get_job_or_404(db, issue.job_id, lock=True, user=_perm)
     require_working(job, "reopen issues")
     if issue.status in ELECTRICAL_OPEN_ISSUE_STATUSES:
         raise HTTPException(status_code=409, detail=f"Issue {issue.issue_number} is already {issue.status}.")
@@ -210,9 +241,12 @@ async def reopen_issue(issue_id: int, db: Session = Depends(get_db), _perm: User
 
 
 @router.delete("/issues/{issue_id}")
-async def delete_issue(issue_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
+async def delete_issue(issue_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_DELETE)):
     issue = _get_issue(db, issue_id)
-    job = get_job_or_404(db, issue.job_id, lock=True)
+    # 'Delete' on Troubleshooting is required; ownership is the reporter
+    # (reported_by_id, checked below — record_owner_id doesn't know it).
+    ensure_can_delete(user, issue, ELECTRICAL_APP, "troubleshooting", what="issue")
+    job = get_job_or_404(db, issue.job_id, lock=True, user=user)
     require_working(job, "change its issues")
     if issue.status not in ELECTRICAL_OPEN_ISSUE_STATUSES:
         raise HTTPException(status_code=409, detail=f"Issue {issue.issue_number} is {issue.status} and stays on record as troubleshooting history.")

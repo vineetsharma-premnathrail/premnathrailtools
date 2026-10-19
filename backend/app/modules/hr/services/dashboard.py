@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, true
 from sqlalchemy.orm import Session
 
 from app.modules.main.models.user import User
@@ -26,7 +26,9 @@ from app.modules.hr.models.masters import HrDesignation
 from app.modules.hr.models.travel import HrTravelRequest
 from app.modules.hr.models.visitor import HrVisitor
 from app.modules.hr.services.calendar import today_ist
+from app.modules.hr.services.approvals import employee_scope_filter, worker_scope_filter
 from app.modules.hr.services.employees import people_filter
+from app.core.data_scope import apply_scope
 
 LIST_LIMIT = 10
 WINDOW_DAYS = 30
@@ -75,14 +77,41 @@ def _names(db: Session, ids: set[int]) -> dict[int, str]:
     return {uid: name for uid, name in db.query(User.id, User.name).filter(User.id.in_(ids)).all()}
 
 
-def build_dashboard(db: Session, today: date | None = None) -> dict:
+def build_dashboard(db: Session, today: date | None = None, user: User | None = None) -> dict:
+    """`user`: limit every number to that user's HR data access (Organization ›
+    Role & Permissions → Data access). None = organization-wide."""
     today = today or today_ist()
+
+    def S(q, model):
+        return q if user is None else apply_scope(q, user, model)
+
+    emp_scope = employee_scope_filter(db, user) if user is not None else None
     month_start, month_end = _month_bounds(today)
     window_end = today + timedelta(days=WINDOW_DAYS)
 
     # ---------------------------------------------------------- headcount
-    people = _headcount_query(db).all()
+    people_q = _headcount_query(db)
+    if emp_scope is not None:
+        people_q = people_q.filter(emp_scope)
+    people = people_q.all()
     people_ids = {r.user_id for r in people}
+    # Headcount also covers employees with no portal account (workshop / contract labour).
+    workers_q = (
+        db.query(
+            HrEmployeeProfile.id.label("user_id"),  # not a user id — only counted, never looked up
+            HrEmployeeProfile.employment_status.label("status"),
+            func.coalesce(Department.name, "Unassigned").label("department"),
+            func.coalesce(Branch.name, "Unassigned").label("branch"),
+        )
+        .outerjoin(Department, Department.id == HrEmployeeProfile.department_id)
+        .outerjoin(Branch, Branch.id == HrEmployeeProfile.branch_id)
+        .filter(HrEmployeeProfile.user_id.is_(None), HrEmployeeProfile.employment_status != "exited")
+    )
+    if user is not None:
+        w_scope = worker_scope_filter(db, user)
+        if w_scope is not None:
+            workers_q = workers_q.filter(w_scope)
+    people = people + workers_q.all()
     headcount = {
         "total": len(people),
         "by_status": _breakdown(people, "status"),
@@ -98,6 +127,7 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
         .outerjoin(Department, Department.id == P.department_id)
         .outerjoin(HrDesignation, HrDesignation.id == P.designation_id)
         .filter(people_filter(), User.date_of_joining >= month_start, User.date_of_joining <= month_end)
+        .filter(emp_scope if emp_scope is not None else true())
         .order_by(User.date_of_joining.asc(), User.name.asc())
         .all()
     )
@@ -108,7 +138,7 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
     # Joinings raised in HR Lifecycle but not completed yet (candidate may
     # not have a portal account).
     pending_joinings = (
-        db.query(HrLifecycleEvent)
+        S(db.query(HrLifecycleEvent), HrLifecycleEvent)
         .filter(HrLifecycleEvent.event_type == "joining", HrLifecycleEvent.status.in_(OPEN_EVENT_STATUSES),
                 HrLifecycleEvent.effective_date.isnot(None),
                 HrLifecycleEvent.effective_date >= month_start, HrLifecycleEvent.effective_date <= month_end)
@@ -126,6 +156,7 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
         db.query(P.user_id, P.date_of_exit, User.name)
         .join(User, User.id == P.user_id)
         .filter(P.date_of_exit >= month_start, P.date_of_exit <= month_end)
+        .filter(emp_scope if emp_scope is not None else true())
         .all()
     )
     seen_exit: set[int] = set()
@@ -133,7 +164,7 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
         seen_exit.add(uid)
         exits.append({"user_id": uid, "name": name, "date": dox, "status": "exited"})
     exit_events = (
-        db.query(HrLifecycleEvent)
+        S(db.query(HrLifecycleEvent), HrLifecycleEvent)
         .filter(HrLifecycleEvent.event_type == "exit", HrLifecycleEvent.status.in_(OPEN_EVENT_STATUSES),
                 HrLifecycleEvent.last_working_day.isnot(None),
                 HrLifecycleEvent.last_working_day >= month_start, HrLifecycleEvent.last_working_day <= month_end)
@@ -150,7 +181,7 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
 
     # ------------------------------------------------------ on leave today
     leave_rows = (
-        db.query(HrLeaveRequest, User.name, HrLeaveType.code, HrLeaveType.name)
+        S(db.query(HrLeaveRequest, User.name, HrLeaveType.code, HrLeaveType.name), HrLeaveRequest)
         .join(User, User.id == HrLeaveRequest.user_id)
         .join(HrLeaveType, HrLeaveType.id == HrLeaveRequest.leave_type_id)
         .filter(HrLeaveRequest.status == "approved", HrLeaveRequest.from_date <= today, HrLeaveRequest.to_date >= today)
@@ -190,20 +221,20 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
 
     # --------------------------------------------------- pending approvals
     def _pending(model, status: str) -> dict:
-        total, no_approver = db.query(
+        total, no_approver = S(db.query(
             func.count(model.id), func.count(model.id).filter(model.approver_id.is_(None))
-        ).filter(model.status == status).one()
+        ), model).filter(model.status == status).one()
         return {"total": int(total or 0), "awaiting_hr": int(no_approver or 0)}
 
     pending_checklist = (
-        db.query(func.count(HrChecklistItem.id))
-        .join(HrLifecycleEvent, HrLifecycleEvent.id == HrChecklistItem.event_id)
+        S(db.query(func.count(HrChecklistItem.id))
+          .join(HrLifecycleEvent, HrLifecycleEvent.id == HrChecklistItem.event_id), HrLifecycleEvent)
         .filter(HrChecklistItem.status == "pending", HrLifecycleEvent.status.in_(OPEN_EVENT_STATUSES))
         .scalar() or 0
     )
-    claims_to_pay, claims_to_pay_amount = db.query(
+    claims_to_pay, claims_to_pay_amount = S(db.query(
         func.count(HrExpenseClaim.id), func.coalesce(func.sum(HrExpenseClaim.total_amount), 0)
-    ).filter(HrExpenseClaim.status == "approved").one()
+    ), HrExpenseClaim).filter(HrExpenseClaim.status == "approved").one()
     approvals = {
         "leave": _pending(HrLeaveRequest, "pending"),
         "regularization": _pending(HrAttendanceRegularization, "pending"),
@@ -216,14 +247,14 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
 
     # --------------------------------------------- open lifecycle events
     open_counts = dict(
-        db.query(HrLifecycleEvent.event_type, func.count(HrLifecycleEvent.id))
+        S(db.query(HrLifecycleEvent.event_type, func.count(HrLifecycleEvent.id)), HrLifecycleEvent)
         .filter(HrLifecycleEvent.status.in_(OPEN_EVENT_STATUSES))
         .group_by(HrLifecycleEvent.event_type)
         .all()
     )
     due = func.coalesce(HrLifecycleEvent.last_working_day, HrLifecycleEvent.effective_date)
     open_events_rows = (
-        db.query(HrLifecycleEvent)
+        S(db.query(HrLifecycleEvent), HrLifecycleEvent)
         .filter(HrLifecycleEvent.status.in_(OPEN_EVENT_STATUSES))
         .order_by(due.asc().nullslast(), HrLifecycleEvent.id.desc())
         .limit(LIST_LIMIT)
@@ -255,7 +286,7 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
 
     # --------------------------------------------------------------- assets
     asset_counts = dict(
-        db.query(HrAsset.status, func.count(HrAsset.id)).filter(HrAsset.is_deleted.is_(False)).group_by(HrAsset.status).all()
+        S(db.query(HrAsset.status, func.count(HrAsset.id)), HrAsset).filter(HrAsset.is_deleted.is_(False)).group_by(HrAsset.status).all()
     )
     assets = {
         "total": sum(asset_counts.values()),
@@ -266,7 +297,7 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
         "retired": asset_counts.get("retired", 0),
         # Assets still held by someone HR has exited or who is deactivated.
         "held_by_inactive": int(
-            db.query(func.count(HrAsset.id))
+            S(db.query(func.count(HrAsset.id)), HrAsset)
             .join(User, User.id == HrAsset.current_holder_id)
             .outerjoin(P, P.user_id == User.id)
             .filter(HrAsset.is_deleted.is_(False), HrAsset.status == "issued",
@@ -277,7 +308,7 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
 
     # ------------------------------------------------------------- visitors
     inside_rows = (
-        db.query(HrVisitor, User.name)
+        S(db.query(HrVisitor, User.name), HrVisitor)
         .join(User, User.id == HrVisitor.host_user_id)
         .filter(HrVisitor.status == "checked_in")
         .order_by(HrVisitor.check_in_at.asc().nullslast())
@@ -287,7 +318,7 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
         "inside_now": len(inside_rows),
         "persons_inside": sum(int(v.number_of_persons or 1) for v, _ in inside_rows),
         "expected_today": int(
-            db.query(func.count(HrVisitor.id))
+            S(db.query(func.count(HrVisitor.id)), HrVisitor)
             .filter(HrVisitor.status == "expected", HrVisitor.expected_at.isnot(None),
                     func.date(func.timezone("Asia/Kolkata", HrVisitor.expected_at)) == today)
             .scalar() or 0
@@ -304,6 +335,7 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
         db.query(UserDocument, User.name)
         .join(User, User.id == UserDocument.user_id)
         .filter(User.is_active.is_(True), UserDocument.expiry_date.isnot(None), UserDocument.expiry_date <= window_end)
+        .filter(emp_scope if emp_scope is not None else true())
     )
     expired_count = doc_q.filter(UserDocument.expiry_date < today).count()
     doc_rows = doc_q.filter(UserDocument.expiry_date >= today).order_by(UserDocument.expiry_date.asc()).all()
@@ -321,8 +353,9 @@ def build_dashboard(db: Session, today: date | None = None) -> dict:
     prob_rows = (
         db.query(P, User.name)
         .join(User, User.id == P.user_id)
-        .filter(User.is_active.is_(True), P.employment_status.in_(("onboarding", "probation")),
+        .filter(User.is_active.is_(True), or_(P.employment_status == "onboarding", P.probation_status == "on_probation"),
                 P.probation_end_date.isnot(None), P.probation_end_date <= window_end)
+        .filter(emp_scope if emp_scope is not None else true())
         .order_by(P.probation_end_date.asc())
         .all()
     )

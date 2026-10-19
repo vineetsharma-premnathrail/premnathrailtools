@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.core.permissions import require_app_access, require_tab_access
 from app.db.session import get_db
+from app.modules.design.access import is_team
 from app.modules.design.models.document import DesignDocument, DesignDocumentRevision
+from app.modules.design.scope import apply_scope
 from app.modules.design.routes.documents import document_responses, list_documents_query
 from app.modules.design.schemas.dashboard import DesignCountRow, DesignMonthRow, DesignReportSummary
 from app.modules.design.service import as_aware, released_revision, user_name, users_by_id
@@ -24,23 +26,27 @@ router = APIRouter(
 _TYPE_LABELS = {
     "ga_drawing": "GA Drawing", "part_drawing": "Part Drawing", "assembly_drawing": "Assembly Drawing",
     "schematic": "Schematic", "specification": "Specification", "calculation": "Calculation", "datasheet": "Datasheet",
-    "procedure": "Procedure", "manual": "Manual", "bom": "BOM", "other": "Other",
+    "procedure": "Procedure", "manual": "Manual", "bom": "BOM", "wiring_diagram": "Wiring Diagram",
+    "harness_drawing": "Harness Drawing", "hydraulic_circuit": "Hydraulic Circuit", "pneumatic_circuit": "Pneumatic Circuit",
+    "panel_layout": "Panel Layout", "other": "Other",
 }
 _STATUS_LABELS = {
     "draft": "Draft", "in_review": "In Review", "in_approval": "In Approval", "released": "Released",
     "revising": "Released (revision in progress)", "obsolete": "Obsolete",
+    "approved": "Approved (awaiting customer)", "customer_rejected": "Rejected by customer",
 }
 
 
 @router.get("/summary", response_model=DesignReportSummary)
-async def report_summary(db: Session = Depends(get_db)):
-    docs = document_responses(db, list_documents_query(db, limit=100000))
+async def report_summary(db: Session = Depends(get_db), user: User = Depends(require_app_access("design"))):
+    team = is_team(db, user)
+    docs = document_responses(db, list_documents_query(db, limit=100000, released_only=not team, user=user))
     out = DesignReportSummary()
     out.by_type = [DesignCountRow(key=k, count=v) for k, v in Counter(d.document_type for d in docs).most_common()]
     out.by_discipline = [DesignCountRow(key=k, count=v) for k, v in Counter(d.discipline for d in docs).most_common()]
     out.by_status = [DesignCountRow(key=k, count=v) for k, v in Counter(d.display_status for d in docs).most_common()]
 
-    released = db.query(DesignDocumentRevision).join(DesignDocument, DesignDocument.id == DesignDocumentRevision.document_id).filter(
+    released = apply_scope(db.query(DesignDocumentRevision).join(DesignDocument, DesignDocument.id == DesignDocumentRevision.document_id), user, DesignDocument).filter(
         DesignDocumentRevision.is_deleted == False,  # noqa: E712
         DesignDocument.is_deleted == False,  # noqa: E712
         DesignDocumentRevision.released_at.isnot(None),
@@ -79,9 +85,13 @@ async def master_document_list(
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("design")),
 ):
+    # Viewers outside the Design team see released drawings only, and not
+    # who an in-progress revision is pending with.
+    team = is_team(db, _user)
     docs = list_documents_query(
         db, status=status_filter, document_type=document_type, discipline=discipline,
         pm_project_id=pm_project_id, erp_project_id=erp_project_id, search=search, limit=100000,
+        released_only=not team, user=_user,
     )
     rows = document_responses(db, docs)
     by_id = {d.id: d for d in docs}
@@ -94,7 +104,7 @@ async def master_document_list(
     writer.writerow([
         "Doc Number", "Title", "Type", "Discipline", "Status", "Controlled Rev", "Released On", "Checked By",
         "Approved By", "Open Rev", "Open Rev Status", "Pending With", "Owner", "Project", "Machine", "Store Item",
-        "Department", "Created On",
+        "Department", "Customer", "Customer Approval", "Legacy No.", "Created On",
     ])
     for row in sorted(rows, key=lambda r: r.doc_number):
         rel = released_revision(by_id[row.id])
@@ -103,9 +113,11 @@ async def master_document_list(
             _STATUS_LABELS.get(row.display_status, row.display_status), row.released_revision_label or "",
             row.released_at.strftime("%d-%m-%Y") if row.released_at else "",
             user_name(signers.get(rel.reviewed_by_id)) if rel else "", user_name(signers.get(rel.approved_by_id)) if rel else "",
-            row.open_revision_label or "", (row.open_revision_status or "").replace("_", " ").title(), row.pending_with_name or "",
+            (row.open_revision_label or "") if team else "",
+            (row.open_revision_status or "").replace("_", " ").title() if team else "", (row.pending_with_name or "") if team else "",
             row.owner_name or "", row.pm_project_label or "", row.erp_project_label or "", row.store_item_label or "",
-            row.department_name or "", row.created_at.strftime("%d-%m-%Y") if row.created_at else "",
+            row.department_name or "", row.customer_name or "", "Required" if row.customer_approval_required else "",
+            row.legacy_number or "", row.created_at.strftime("%d-%m-%Y") if row.created_at else "",
         ])
     # BOM so Excel opens the UTF-8 file with the right encoding.
     content = "﻿" + buffer.getvalue()

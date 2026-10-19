@@ -7,12 +7,15 @@
 // blocked while one is pending so a second click can't submit it twice.
 // "read" = GET/HEAD: only a thin progress bar, nothing is blocked.
 // A request can opt out entirely with `{ background: true }` in its axios
-// config (e.g. silent polling).
+// config (e.g. silent polling), or name what it does with
+// `{ activityLabel: 'Sending' }` so the wait card matches the button.
 
 declare module 'axios' {
   interface AxiosRequestConfig {
     /** Don't show loading UI or block the screen for this request. */
     background?: boolean
+    /** Verb for the "… please wait" card (default "Saving"), e.g. "Sending". */
+    activityLabel?: string
     /** Internal: ends this request's activity tracking (called once). */
     _endActivity?: () => void
   }
@@ -20,7 +23,7 @@ declare module 'axios' {
 
 export type RequestKind = 'read' | 'write'
 export type UploadProgress = { id: number; name: string; loaded: number; total: number; status: 'uploading' | 'done' | 'failed' }
-export type ActivitySnapshot = { reads: number; writes: number; writeSince: number | null; anySince: number | null; uploads: UploadProgress[] }
+export type ActivitySnapshot = { reads: number; writes: number; writeSince: number | null; anySince: number | null; uploads: UploadProgress[]; writeLabel: string }
 
 let reads = 0
 let writes = 0
@@ -28,13 +31,16 @@ let writeSince: number | null = null
 let anySince: number | null = null
 let uploads: UploadProgress[] = []
 let nextUploadId = 1
-let snapshot: ActivitySnapshot = { reads, writes, writeSince, anySince, uploads }
+// Labels of pending writes; the card shows the most recent one.
+let writeLabels: string[] = []
+const DEFAULT_WRITE_LABEL = 'Saving'
+let snapshot: ActivitySnapshot = { reads, writes, writeSince, anySince, uploads, writeLabel: DEFAULT_WRITE_LABEL }
 const listeners = new Set<() => void>()
 
 function publish() {
   if (reads + writes === 0) anySince = null
   else if (anySince === null) anySince = Date.now()
-  snapshot = { reads, writes, writeSince, anySince, uploads }
+  snapshot = { reads, writes, writeSince, anySince, uploads, writeLabel: writeLabels[writeLabels.length - 1] || DEFAULT_WRITE_LABEL }
   listeners.forEach((l) => l())
 }
 
@@ -43,8 +49,10 @@ function publish() {
 const SAFETY_CAP_MS = 11 * 60 * 1000
 
 /** Starts tracking one request; returns an idempotent `end` function. */
-export function beginRequest(kind: RequestKind): () => void {
+export function beginRequest(kind: RequestKind, label?: string): () => void {
+  const writeLabel = label || DEFAULT_WRITE_LABEL
   if (kind === 'write') {
+    writeLabels = [...writeLabels, writeLabel]
     writes += 1
     if (writeSince === null) writeSince = Date.now()
   } else {
@@ -57,6 +65,8 @@ export function beginRequest(kind: RequestKind): () => void {
     ended = true
     clearTimeout(cap)
     if (kind === 'write') {
+      const i = writeLabels.lastIndexOf(writeLabel)
+      if (i >= 0) writeLabels = [...writeLabels.slice(0, i), ...writeLabels.slice(i + 1)]
       writes = Math.max(0, writes - 1)
       if (writes === 0) writeSince = null
     } else {
@@ -77,7 +87,7 @@ export function getActivitySnapshot(): ActivitySnapshot {
   return snapshot
 }
 
-const SERVER_SNAPSHOT: ActivitySnapshot = { reads: 0, writes: 0, writeSince: null, anySince: null, uploads: [] }
+const SERVER_SNAPSHOT: ActivitySnapshot = { reads: 0, writes: 0, writeSince: null, anySince: null, uploads: [], writeLabel: DEFAULT_WRITE_LABEL }
 export function getServerActivitySnapshot(): ActivitySnapshot {
   return SERVER_SNAPSHOT
 }

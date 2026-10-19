@@ -32,6 +32,13 @@ class HrExpenseClaim(Base, TimestampMixin):
     paid_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     payment_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     paid_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # PR05 posting to Finance: on approval Dr expense ledgers (per category,
+    # with the cost center) / Cr employee reimbursements payable; on payment a
+    # payment voucher Dr payable / Cr bank-cash. See services/expense_posting.py.
+    cost_center_id: Mapped[int | None] = mapped_column(ForeignKey("cost_centers.id"), nullable=True)
+    posted_je_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"), nullable=True)
+    payment_voucher_id: Mapped[int | None] = mapped_column(ForeignKey("payment_transactions.id"), nullable=True)
+    posting_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     items: Mapped[list["HrExpenseClaimItem"]] = relationship(
         "HrExpenseClaimItem", back_populates="claim", cascade="all, delete-orphan",

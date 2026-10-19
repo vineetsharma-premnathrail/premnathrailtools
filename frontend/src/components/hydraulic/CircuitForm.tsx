@@ -3,21 +3,11 @@
 import { useEffect, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { HydCircuit, HydLookupOption } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { SheetColumns, SheetSection, SHEET, sheetInput, sheetLabel, sheetHint, Req, Optional, SheetError } from '@/components/shared/FormSheet'
+import HydFormShell, { HydShellProps, Cell, fieldRow } from '@/components/hydraulic/HydFormShell'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 import { SYSTEM_TYPE_LABELS } from '@/components/hydraulic/labels'
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: 0 }
 
 /**
  * Create / edit form for a circuit revision. Only rendered while the
@@ -30,7 +20,8 @@ export default function CircuitForm({
   defaultSystemId,
   submitLabel,
   onSubmit,
-}: {
+  mode, title: shellTitle, subtitle, nav, onBack, onCancel,
+}: HydShellProps & {
   initial?: HydCircuit | null
   defaultSystemId?: string
   submitLabel: string
@@ -56,8 +47,7 @@ export default function CircuitForm({
   // (systemType starts from the saved value when editing).
   const effectiveType = selectedSystem?.extra || systemType
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async () => {
     setError('')
     if (!title.trim()) { setError('Circuit title is required — e.g. "Main press circuit" or "Clamp cylinder circuit".'); return }
     setSaving(true)
@@ -79,73 +69,66 @@ export default function CircuitForm({
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
-
-      <div style={sectionStyle}>
-        <p style={{ ...sectionTitle, marginBottom: 14 }}>Circuit</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 280px', maxWidth: 420 }}>
-            <label style={labelStyle}>Title *</label>
-            <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Main press circuit" maxLength={255} />
-          </div>
-          <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
-            <label style={labelStyle}>System</label>
-            <SearchableSelect value={systemId} onChange={setSystemId} placeholder="Search system…"
-              options={[{ value: '', label: '— Not linked to a system —' }, ...systems.map((s) => ({ value: String(s.id), label: s.label }))]} />
-          </div>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
-            <label style={labelStyle}>Medium</label>
-            {!initial && !systemId ? (
-              <select style={inputStyle} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
-                {Object.entries(SYSTEM_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-            ) : (
-              <div style={{ ...inputStyle, background: 'rgba(0,0,0,0.03)' }}>{SYSTEM_TYPE_LABELS[effectiveType] || effectiveType}</div>
-            )}
-          </div>
-        </div>
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '8px 0 0' }}>
-          {systemId ? 'The medium follows the linked system.' : initial ? "The medium can't be changed after creation — link a system to take on its medium." : "Pick a system to take on its medium, or choose one here — it can't be changed later."}
-        </p>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-          <div style={{ flex: '1 1 180px', maxWidth: 260 }}>
-            <label style={labelStyle}>Drawing Number</label>
-            <input style={inputStyle} value={drawingNumber} onChange={(e) => setDrawingNumber(e.target.value)} placeholder="PRL-HYD-0012" maxLength={100} />
-          </div>
-          <div style={{ flex: '1 1 160px', maxWidth: 220 }}>
-            <label style={labelStyle}>Symbol Standard</label>
-            <input style={inputStyle} value={symbolStandard} onChange={(e) => setSymbolStandard(e.target.value)} placeholder="ISO 1219-1" maxLength={100} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-          <div style={{ flex: '1 1 300px' }}>
-            <label style={labelStyle}>Description</label>
-            <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)}
-              placeholder="What the circuit does — actuators, sequence, pressure settings…" />
-          </div>
-          <div style={{ flex: '1 1 300px' }}>
-            <label style={labelStyle}>Change Note</label>
-            <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={changeNote} onChange={(e) => setChangeNote(e.target.value)}
-              placeholder={initial && initial.revision !== 'A' ? 'What changed in this revision' : 'Initial issue'} />
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button type="submit" disabled={saving} style={{
-          padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-          background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
-          boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-        }}>
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-      </div>
-    </form>
+    <HydFormShell
+      mode={mode} title={shellTitle} subtitle={subtitle} nav={nav} onBack={onBack} onCancel={onCancel}
+      icon={initial ? 'edit' : 'link'} busy={saving} submitLabel={submitLabel} submitIcon={initial ? 'check' : 'plus'}
+      onSubmit={handleSubmit} tour="hyd-cir-form" backTour="hyd-cir-back-btn" submitTour="hyd-cir-save-btn"
+    >
+      <SheetColumns
+        left={<>
+          <SheetError error={error} />
+          <SheetSection icon="link" title="Circuit">
+            <div style={fieldRow}>
+              <Cell basis={260} grow>
+                <label style={sheetLabel}>Title <Req /></label>
+                <input data-tour="hyd-cir-title" style={sheetInput} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Main press circuit" maxLength={255} />
+              </Cell>
+            </div>
+            <div style={{ ...fieldRow, marginBottom: 0 }}>
+              <Cell tour="hyd-cir-system" basis={240} grow max={380}>
+                <label style={sheetLabel}>System</label>
+                <SearchableSelect value={systemId} onChange={setSystemId} placeholder="Search system…"
+                  options={[{ value: '', label: '— Not linked to a system —' }, ...systems.map((s) => ({ value: String(s.id), label: s.label }))]} />
+              </Cell>
+              <Cell tour="hyd-cir-medium" basis={150}>
+                <label style={sheetLabel}>Medium</label>
+                {!initial && !systemId ? (
+                  <select style={sheetInput} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+                    {Object.entries(SYSTEM_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                ) : (
+                  <div style={{ ...sheetInput, background: SHEET.SOFT }}>{SYSTEM_TYPE_LABELS[effectiveType] || effectiveType}</div>
+                )}
+              </Cell>
+            </div>
+            <p style={sheetHint}>
+              {systemId ? 'The medium follows the linked system.' : initial ? "The medium can't be changed after creation — link a system to take on its medium." : "Pick a system to take on its medium, or choose one here — it can't be changed later."}
+            </p>
+          </SheetSection>
+          <SheetSection icon="doc" title="Drawing">
+            <div style={{ ...fieldRow, marginBottom: 0 }}>
+              <Cell basis={180} grow max={260}>
+                <label style={sheetLabel}>Drawing Number</label>
+                <input data-tour="hyd-cir-drawing-number" style={sheetInput} value={drawingNumber} onChange={(e) => setDrawingNumber(e.target.value)} placeholder="PRL-HYD-0012" maxLength={100} />
+              </Cell>
+              <Cell basis={160} grow max={220}>
+                <label style={sheetLabel}>Symbol Standard</label>
+                <input data-tour="hyd-cir-symbol-standard" style={sheetInput} value={symbolStandard} onChange={(e) => setSymbolStandard(e.target.value)} placeholder="ISO 1219-1" maxLength={100} />
+              </Cell>
+            </div>
+          </SheetSection>
+        </>}
+        right={<>
+          <SheetSection icon="list" title="Description" extra={<Optional />}>
+            <textarea data-tour="hyd-cir-description" style={{ ...sheetInput, minHeight: 90, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)}
+              placeholder="What the circuit does — actuators, sequence, pressure settings…" aria-label="Description" />
+          </SheetSection>
+          <SheetSection icon="history" title="Change Note" extra={<Optional />}>
+            <textarea data-tour="hyd-cir-change-note" style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={changeNote} onChange={(e) => setChangeNote(e.target.value)}
+              placeholder={initial && initial.revision !== 'A' ? 'What changed in this revision' : 'Initial issue'} aria-label="Change note" />
+          </SheetSection>
+        </>}
+      />
+    </HydFormShell>
   )
 }

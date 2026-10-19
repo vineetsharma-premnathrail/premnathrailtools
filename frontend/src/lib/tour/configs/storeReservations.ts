@@ -8,6 +8,9 @@ const config: TourConfig = {
       target: 'res-add-btn',
       title: '+ New Reservation',
       purpose: 'Earmarks stock for a project or production order, blocking it from other allocation — doesn\'t move stock, only shifts it from Available to Reserved.',
+      why: 'Without a reservation, material bought for one order can be issued to another job and the first order then stalls for want of it.',
+      after: 'Opens the reservation form — the next steps walk through it.',
+      autoActivateOnAdvance: true,
     },
     {
       target: 'res-item',
@@ -34,6 +37,12 @@ const config: TourConfig = {
       target: 'res-save-btn',
       title: 'Reserve Stock',
       purpose: 'Creates the reservation and immediately moves the quantity from Available to Reserved on the Stock page.',
+    },
+    {
+      target: 'res-modal-cancel-btn',
+      title: 'Cancel (form)',
+      purpose: 'Closes the form without reserving anything.',
+      autoActivateOnAdvance: true,
     },
     {
       target: 'res-table',

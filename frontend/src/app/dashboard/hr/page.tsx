@@ -10,6 +10,7 @@ import { TEXT, GLASS, SHADOWS, DANGER, WARNING, SUCCESS, INFO, BORDER } from '@/
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import HrNav from '@/components/hr/HrNav'
+import { recordPath } from '@/lib/recordRef'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -66,10 +67,10 @@ function Badge({ label, hex }: { label: string; hex: string }) {
   )
 }
 
-function Tile({ label, value, sub, tone = 'neutral', href }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: Tone; href?: string }) {
+function Tile({ label, value, sub, tone = 'neutral', href, tour }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: Tone; href?: string; tour?: string }) {
   const t = toneStyle(tone)
   const body = (
-    <div style={{
+    <div data-tour={tour} style={{
       borderRadius: 18, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, boxShadow: SHADOWS.glass(),
       padding: 16, background: t.background, border: t.border, height: '100%', boxSizing: 'border-box',
     }}>
@@ -81,9 +82,9 @@ function Tile({ label, value, sub, tone = 'neutral', href }: { label: string; va
   return href ? <Link href={href} style={{ textDecoration: 'none', display: 'block' }}>{body}</Link> : body
 }
 
-function Card({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+function Card({ title, action, children, tour }: { title: string; action?: React.ReactNode; children: React.ReactNode; tour?: string }) {
   return (
-    <div style={sectionStyle}>
+    <div data-tour={tour} style={sectionStyle}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
         <h2 style={{ fontSize: 14.5, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{title}</h2>
         {action}
@@ -196,7 +197,7 @@ export default function HrDashboardPage() {
             {d ? `As of ${fmtDate(d.today)} (IST). ` : ''}Headcount, joiners and leavers, leave and attendance today, pending approvals.
           </p>
         </div>
-        <button type="button" onClick={load} disabled={loading} style={{ ...secondaryBtnStyle, opacity: loading ? 0.6 : 1 }}>
+        <button type="button" data-tour="hr-dash-refresh-btn" onClick={load} disabled={loading} style={{ ...secondaryBtnStyle, opacity: loading ? 0.6 : 1 }}>
           {loading ? 'Refreshing…' : '↻ Refresh'}
         </button>
       </div>
@@ -208,19 +209,20 @@ export default function HrDashboardPage() {
       )}
 
       {d && d.missing_profiles > 0 && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: `${WARNING.primary}12`, border: `1px solid ${WARNING.primary}33`, color: WARNING.hover, fontSize: 13 }}>
+        <div data-tour="hr-dash-missing-profiles" style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: `${WARNING.primary}12`, border: `1px solid ${WARNING.primary}33`, color: WARNING.hover, fontSize: 13 }}>
           {d.missing_profiles} of {d.headcount.total} employees have no HR profile yet, so their department, plant, shift and probation are not tracked.{' '}
           <Link href="/dashboard/hr/employees" style={{ color: WARNING.hover, fontWeight: 700 }}>Open Employees and create profiles →</Link>
         </div>
       )}
 
       {/* KPI tiles */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12, marginBottom: 20 }}>
-        <Tile label="Headcount" value={d ? d.headcount.total : dash} sub="Active, not exited" href="/dashboard/hr/employees" />
-        <Tile label="Joiners this month" value={d ? d.joiners_count : dash} tone="good" href="/dashboard/hr/lifecycle" />
-        <Tile label="Exits this month" value={d ? d.exits_count : dash} tone={d && d.exits_count ? 'bad' : 'neutral'} href="/dashboard/hr/lifecycle" />
-        <Tile label="On leave today" value={d ? d.on_leave_today.length : dash} tone="info" href="/dashboard/hr/leave" />
+      <div data-tour="hr-dash-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: 12, marginBottom: 20 }}>
+        <Tile tour="hr-dash-tile-headcount" label="Headcount" value={d ? d.headcount.total : dash} sub="Active, not exited" href="/dashboard/hr/employees" />
+        <Tile tour="hr-dash-tile-joiners" label="Joiners this month" value={d ? d.joiners_count : dash} tone="good" href="/dashboard/hr/lifecycle" />
+        <Tile tour="hr-dash-tile-exits" label="Exits this month" value={d ? d.exits_count : dash} tone={d && d.exits_count ? 'bad' : 'neutral'} href="/dashboard/hr/lifecycle" />
+        <Tile tour="hr-dash-tile-on-leave" label="On leave today" value={d ? d.on_leave_today.length : dash} tone="info" href="/dashboard/hr/leave" />
         <Tile
+          tour="hr-dash-tile-attendance"
           label="Attendance today"
           value={att ? `${att.present}/${att.headcount}` : dash}
           sub={att ? `${att.absent} absent · ${att.not_marked} not marked` : undefined}
@@ -228,28 +230,32 @@ export default function HrDashboardPage() {
           href="/dashboard/hr/attendance"
         />
         <Tile
+          tour="hr-dash-tile-approvals"
           label="Pending approvals"
           value={a ? pendingTotal : dash}
           sub={a && awaitingHr ? `${awaitingHr} have no manager — HR decides` : undefined}
           tone={pendingTotal ? 'warn' : 'neutral'}
           href="/dashboard/hr/approvals"
         />
-        <Tile label="Open lifecycle events" value={d ? d.lifecycle.total_open : dash} sub={a ? `${a.checklist_items_pending} checklist tasks open` : undefined} href="/dashboard/hr/lifecycle" />
-        <Tile label="Assets issued" value={d ? d.assets.issued : dash} sub={d ? `${d.assets.in_stock} in stock · ${d.assets.under_repair} in repair` : undefined} href="/dashboard/hr/assets" />
-        <Tile label="Visitors inside" value={d ? d.visitors.inside_now : dash} sub={d ? `${d.visitors.expected_today} more expected today` : undefined} tone="info" href="/dashboard/hr/visitors" />
+        <Tile tour="hr-dash-tile-lifecycle" label="Open lifecycle events" value={d ? d.lifecycle.total_open : dash} sub={a ? `${a.checklist_items_pending} checklist tasks open` : undefined} href="/dashboard/hr/lifecycle" />
+        <Tile tour="hr-dash-tile-assets" label="Assets issued" value={d ? d.assets.issued : dash} sub={d ? `${d.assets.in_stock} in stock · ${d.assets.under_repair} in repair` : undefined} href="/dashboard/hr/assets" />
+        <Tile tour="hr-dash-tile-visitors" label="Visitors inside" value={d ? d.visitors.inside_now : dash} sub={d ? `${d.visitors.expected_today} more expected today` : undefined} tone="info" href="/dashboard/hr/visitors" />
         <Tile
+          tour="hr-dash-tile-documents"
           label="Documents expiring"
           value={d ? d.documents.expiring_count : dash}
           sub={d ? (d.documents.expired_count ? `${d.documents.expired_count} already expired` : 'Next 30 days') : undefined}
           tone={d && (d.documents.expiring_count || d.documents.expired_count) ? 'warn' : 'neutral'}
         />
         <Tile
+          tour="hr-dash-tile-probation"
           label="Probation ending"
           value={d ? d.probation.count : dash}
           sub={d ? (d.probation.overdue_count ? `${d.probation.overdue_count} past end date` : 'Next 30 days') : undefined}
           tone={d && d.probation.overdue_count ? 'bad' : d && d.probation.count ? 'warn' : 'neutral'}
         />
         <Tile
+          tour="hr-dash-tile-claims"
           label="Claims to pay"
           value={a ? a.claims_to_pay : dash}
           sub={a && a.claims_to_pay ? inr(a.claims_to_pay_amount) : 'Approved, not yet paid'}
@@ -261,7 +267,7 @@ export default function HrDashboardPage() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
           {/* Left column */}
           <div style={{ flex: '1 1 460px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <Card title="Pending approvals" action={<Link href="/dashboard/hr/approvals" style={linkStyle}>Open Approvals →</Link>}>
+            <Card tour="hr-dash-card-approvals" title="Pending approvals" action={<Link href="/dashboard/hr/approvals" style={linkStyle}>Open Approvals →</Link>}>
               <MiniTable head={['Type', 'Pending', 'No manager (HR decides)', '']} colSpan={4} empty={null}>
                 {([
                   ['Leave', d.approvals.leave, '/dashboard/hr/leave'],
@@ -279,10 +285,10 @@ export default function HrDashboardPage() {
               </MiniTable>
             </Card>
 
-            <Card title="On leave today" action={<Link href="/dashboard/hr/leave" style={linkStyle}>Leave →</Link>}>
+            <Card tour="hr-dash-card-on-leave" title="On leave today" action={<Link href="/dashboard/hr/leave" style={linkStyle}>Leave →</Link>}>
               <MiniTable head={['Employee', 'Type', 'From', 'To']} colSpan={4} empty={d.on_leave_today.length ? null : 'Nobody is on approved leave today.'}>
                 {d.on_leave_today.map((l) => (
-                  <tr key={l.request_id} onClick={() => router.push(`/dashboard/hr/employees/${l.user_id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={l.request_id} onClick={() => router.push(recordPath('/dashboard/hr/employees', l, 'user_id'))} style={{ cursor: 'pointer' }}>
                     <td style={tdStyle}>{l.name}{l.half_day && <span style={{ color: TEXT.muted }}> (half day)</span>}</td>
                     <td style={tdStyle} title={l.leave_type_name}>{l.leave_type}</td>
                     <td style={tdStyle}>{fmtDate(l.from_date)}</td>
@@ -292,7 +298,7 @@ export default function HrDashboardPage() {
               </MiniTable>
             </Card>
 
-            <Card title={`Attendance — ${fmtDate(d.attendance_today.date)}`} action={<Link href="/dashboard/hr/attendance" style={linkStyle}>Register →</Link>}>
+            <Card tour="hr-dash-card-attendance" title={`Attendance —${fmtDate(d.attendance_today.date)}`} action={<Link href="/dashboard/hr/attendance" style={linkStyle}>Register →</Link>}>
               {d.attendance_today.holidays_today.length > 0 && (
                 <p style={{ fontSize: 12.5, color: INFO.primary, margin: '0 0 8px' }}>Holiday today: {d.attendance_today.holidays_today.join(', ')}</p>
               )}
@@ -306,10 +312,10 @@ export default function HrDashboardPage() {
               />
             </Card>
 
-            <Card title="Open lifecycle events" action={<Link href="/dashboard/hr/lifecycle" style={linkStyle}>Lifecycle →</Link>}>
+            <Card tour="hr-dash-card-lifecycle" title="Open lifecycle events" action={<Link href="/dashboard/hr/lifecycle" style={linkStyle}>Lifecycle →</Link>}>
               <MiniTable head={['Event', 'Type', 'Employee', 'Due', 'Checklist']} colSpan={5} empty={d.lifecycle.events.length ? null : 'No open joining, transfer, promotion, confirmation or exit events.'}>
                 {d.lifecycle.events.map((e) => (
-                  <tr key={e.id} onClick={() => router.push(`/dashboard/hr/lifecycle/${e.id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={e.id} onClick={() => router.push(recordPath('/dashboard/hr/lifecycle', e))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...tdStyle, fontWeight: 600 }}>{e.event_no}</td>
                     <td style={tdStyle}><Badge label={EVENT_LABELS[e.event_type] || e.event_type} hex={EVENT_HEX[e.event_type] || '#78716C'} /></td>
                     <td style={tdStyle}>{e.name || '—'}</td>
@@ -320,7 +326,7 @@ export default function HrDashboardPage() {
               </MiniTable>
             </Card>
 
-            <Card title="Joiners and exits this month">
+            <Card tour="hr-dash-card-movements" title="Joiners and exits this month">
               <MiniTable
                 head={['Employee', 'Movement', 'Date', 'Department']}
                 colSpan={4}
@@ -330,7 +336,7 @@ export default function HrDashboardPage() {
                   ...d.joiners_this_month.map((p) => ({ ...p, kind: 'join' as const })),
                   ...d.exits_this_month.map((p) => ({ ...p, kind: 'exit' as const })),
                 ].map((p, i) => {
-                  const href = p.event_id ? `/dashboard/hr/lifecycle/${p.event_id}` : p.user_id ? `/dashboard/hr/employees/${p.user_id}` : undefined
+                  const href = p.event_id ? recordPath('/dashboard/hr/lifecycle', p, 'event_id') : p.user_id ? recordPath('/dashboard/hr/employees', p, 'user_id') : undefined
                   const label = p.kind === 'join' ? (p.pending ? 'Joining (pending)' : 'Joined') : (p.status === 'scheduled' ? 'Exit scheduled' : 'Exited')
                   return (
                     <tr key={`${p.kind}-${p.user_id ?? 'c'}-${p.event_id ?? i}`} onClick={() => href && router.push(href)} style={{ cursor: href ? 'pointer' : 'default' }}>
@@ -347,7 +353,7 @@ export default function HrDashboardPage() {
 
           {/* Right column */}
           <div style={{ flex: '1 1 380px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <Card title="Headcount by status" action={<Link href="/dashboard/hr/employees" style={linkStyle}>Employees →</Link>}>
+            <Card tour="hr-dash-card-status" title="Headcount by status" action={<Link href="/dashboard/hr/employees" style={linkStyle}>Employees →</Link>}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {d.headcount.by_status.length === 0 && <Empty text="No active employees." />}
                 {d.headcount.by_status.map((s) => (
@@ -358,18 +364,18 @@ export default function HrDashboardPage() {
               </div>
             </Card>
 
-            <Card title="Headcount by department">
+            <Card tour="hr-dash-card-dept" title="Headcount by department">
               <Bars rows={d.headcount.by_department} />
             </Card>
 
-            <Card title="Headcount by plant">
+            <Card tour="hr-dash-card-plant" title="Headcount by plant">
               <Bars rows={d.headcount.by_branch} />
             </Card>
 
-            <Card title="Probation ending (30 days)">
+            <Card tour="hr-dash-card-probation" title="Probation ending (30 days)">
               <MiniTable head={['Employee', 'Ends', 'When']} colSpan={3} empty={d.probation.items.length ? null : 'No probation periods end in the next 30 days.'}>
                 {d.probation.items.map((p) => (
-                  <tr key={p.user_id} onClick={() => router.push(`/dashboard/hr/employees/${p.user_id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={p.user_id} onClick={() => router.push(recordPath('/dashboard/hr/employees', p, 'user_id'))} style={{ cursor: 'pointer' }}>
                     <td style={tdStyle}>{p.name}</td>
                     <td style={tdStyle}>{fmtDate(p.probation_end_date)}</td>
                     <td style={{ ...tdStyle, color: p.days_left < 0 ? DANGER.primary : p.days_left <= 7 ? WARNING.hover : TEXT.body, fontWeight: p.days_left <= 7 ? 700 : 400 }}>{daysLabel(p.days_left)}</td>
@@ -383,10 +389,10 @@ export default function HrDashboardPage() {
               )}
             </Card>
 
-            <Card title="Documents expiring (30 days)">
+            <Card tour="hr-dash-card-documents" title="Documents expiring (30 days)">
               <MiniTable head={['Employee', 'Document', 'Expires']} colSpan={3} empty={d.documents.items.length ? null : 'No employee documents expire in the next 30 days.'}>
                 {d.documents.items.map((doc) => (
-                  <tr key={doc.document_id} onClick={() => router.push(`/dashboard/hr/employees/${doc.user_id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={doc.document_id} onClick={() => router.push(recordPath('/dashboard/hr/employees', doc, 'user_id'))} style={{ cursor: 'pointer' }}>
                     <td style={tdStyle}>{doc.name}</td>
                     <td style={tdStyle}>{doc.document_type} — {doc.document_name}</td>
                     <td style={{ ...tdStyle, color: doc.days_left <= 7 ? DANGER.primary : TEXT.body }}>{fmtDate(doc.expiry_date)} ({daysLabel(doc.days_left)})</td>
@@ -400,7 +406,7 @@ export default function HrDashboardPage() {
               )}
             </Card>
 
-            <Card title="Visitors inside now" action={<Link href="/dashboard/hr/visitors" style={linkStyle}>Visitors →</Link>}>
+            <Card tour="hr-dash-card-visitors" title="Visitors inside now" action={<Link href="/dashboard/hr/visitors" style={linkStyle}>Visitors →</Link>}>
               <MiniTable head={['Visitor', 'Host', 'In at', 'Badge']} colSpan={4} empty={d.visitors.inside.length ? null : 'No visitors are checked in right now.'}>
                 {d.visitors.inside.map((v) => (
                   <tr key={v.id}>
@@ -417,7 +423,7 @@ export default function HrDashboardPage() {
               </MiniTable>
             </Card>
 
-            <Card title="Assets" action={<Link href="/dashboard/hr/assets" style={linkStyle}>Assets →</Link>}>
+            <Card tour="hr-dash-card-assets" title="Assets" action={<Link href="/dashboard/hr/assets" style={linkStyle}>Assets →</Link>}>
               <Bars
                 rows={([
                   ['issued', d.assets.issued], ['in_stock', d.assets.in_stock], ['under_repair', d.assets.under_repair],

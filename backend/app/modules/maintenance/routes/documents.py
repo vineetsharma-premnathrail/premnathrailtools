@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, R
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.permissions import require_any_app_access
+from app.core.data_scope import ensure_in_scope
+from app.core.permissions import ensure_feature_action, require_any_app_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.maintenance.models.asset import MaintenanceAsset
@@ -14,6 +15,7 @@ from app.modules.maintenance.models.attachment import (
     MaintenanceAttachment, MAINTENANCE_ATTACHMENT_ENTITIES, MAINTENANCE_ATTACHMENT_DOC_TYPES,
 )
 from app.modules.maintenance.schemas.attachment import MaintenanceAttachmentResponse
+from app.modules.maintenance import access  # noqa: F401 — registers the maintenance data scopes
 from app.utils.sharepoint import (
     upload_file_to_sharepoint, build_sharepoint_folder_path, delete_file_from_sharepoint, download_file_content,
 )
@@ -43,6 +45,7 @@ def _resolve(db: Session, entity_type: str, entity_id: int, user: User) -> str:
             raise HTTPException(status_code=404, detail=f"Maintenance request #{entity_id} not found.")
         if not is_maint and req.raised_by_id != user.id:
             raise HTTPException(status_code=403, detail="You can only attach files to requests you raised.")
+        ensure_in_scope(db, user, req)
         return req.request_number
     if not is_maint:
         raise HTTPException(status_code=403, detail="Only the Maintenance team can manage asset and work-order attachments.")
@@ -50,11 +53,22 @@ def _resolve(db: Session, entity_type: str, entity_id: int, user: User) -> str:
         asset = db.query(MaintenanceAsset).filter(MaintenanceAsset.id == entity_id, MaintenanceAsset.is_deleted == False).first()  # noqa: E712
         if not asset:
             raise HTTPException(status_code=404, detail=f"Asset #{entity_id} not found.")
+        ensure_in_scope(db, user, asset)
         return asset.asset_code
     wo = db.query(MaintenanceWorkOrder).filter(MaintenanceWorkOrder.id == entity_id).first()
     if not wo:
         raise HTTPException(status_code=404, detail=f"Work order #{entity_id} not found.")
+    ensure_in_scope(db, user, wo)
     return wo.wo_number
+
+
+def _ensure_files_feature(user: User, entity_type: str, action: str) -> None:
+    """Files on an asset / work order follow that tab's Documents feature
+    (core/features/maintenance.py); request files have none."""
+    if entity_type == "asset":
+        ensure_feature_action(user, "maintenance", "assets", "documents", action)
+    elif entity_type == "work_order":
+        ensure_feature_action(user, "maintenance", "work_orders", "documents", action)
 
 
 def _get_or_404(db: Session, attachment_id: int) -> MaintenanceAttachment:
@@ -70,6 +84,7 @@ async def list_attachments(
     user: User = Depends(require_any_app_access("maintenance", "production")),
 ):
     _resolve(db, entity_type, entity_id, user)
+    _ensure_files_feature(user, entity_type, "view")
     return db.query(MaintenanceAttachment).filter(
         MaintenanceAttachment.entity_type == entity_type, MaintenanceAttachment.entity_id == entity_id,
         MaintenanceAttachment.is_deleted == False,  # noqa: E712
@@ -90,6 +105,7 @@ async def upload_attachments(
     if not files:
         raise HTTPException(status_code=400, detail="Choose at least one file to upload.")
     ref = _resolve(db, entity_type, entity_id, user)
+    _ensure_files_feature(user, entity_type, "create")
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail=_STORAGE_NOT_CONFIGURED)
     folder = build_sharepoint_folder_path(user.name or user.email or "", "Maintenance", f"{entity_type}/{ref}", root_folder="Maintenance-media")
@@ -117,6 +133,7 @@ async def get_attachment_content(
 ):
     att = _get_or_404(db, attachment_id)
     _resolve(db, att.entity_type, att.entity_id, user)
+    _ensure_files_feature(user, att.entity_type, "view")
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail=_STORAGE_NOT_CONFIGURED)
     content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, att.sharepoint_path or "")
@@ -131,6 +148,7 @@ async def delete_attachment(
 ):
     att = _get_or_404(db, attachment_id)
     _resolve(db, att.entity_type, att.entity_id, user)
+    _ensure_files_feature(user, att.entity_type, "delete")
     if not (user.role == "admin" or att.created_by_id == user.id):
         raise HTTPException(status_code=403, detail=f"Only the uploader ({att.created_by_name or 'unknown'}) or an admin can delete this file.")
     if settings.SHAREPOINT_SITE_ID and att.sharepoint_path:

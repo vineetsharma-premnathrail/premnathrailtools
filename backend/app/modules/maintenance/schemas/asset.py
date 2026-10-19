@@ -91,6 +91,7 @@ class MaintenanceAssetResponse(BaseModel):
     commissioned_on: date | None = None
     decommissioned_on: date | None = None
     remarks: str | None = None
+    created_by_id: int | None = None  # the delete button is shown only to the creator
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

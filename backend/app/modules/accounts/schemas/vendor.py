@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel
 
 
@@ -22,6 +22,14 @@ class VendorCreate(BaseModel):
     payment_days: int | None = None
     early_payment_discount_pct: float | None = None
     gl_reconciliation_account_id: int | None = None
+    gst_registration_type: str | None = None
+    default_expense_gl_account_id: int | None = None
+    website: str | None = None
+    msme_category: str | None = None
+    udyam_number: str | None = None
+    msme_activity: str | None = None
+    msme_valid_from: date | None = None
+    terms_conditions: str | None = None
     status: str = "active"
 
 
@@ -45,6 +53,14 @@ class VendorUpdate(BaseModel):
     payment_days: int | None = None
     early_payment_discount_pct: float | None = None
     gl_reconciliation_account_id: int | None = None
+    gst_registration_type: str | None = None
+    default_expense_gl_account_id: int | None = None
+    website: str | None = None
+    msme_category: str | None = None
+    udyam_number: str | None = None
+    msme_activity: str | None = None
+    msme_valid_from: date | None = None
+    terms_conditions: str | None = None
     status: str | None = None
 
 
@@ -71,7 +87,16 @@ class VendorResponse(BaseModel):
     payment_days: int | None = None
     early_payment_discount_pct: float | None = None
     gl_reconciliation_account_id: int | None = None
+    gst_registration_type: str | None = None
+    default_expense_gl_account_id: int | None = None
     gl_reconciliation_account_code: str | None = None
+    website: str | None = None
+    msme_category: str | None = None
+    udyam_number: str | None = None
+    msme_activity: str | None = None
+    msme_valid_from: date | None = None
+    terms_conditions: str | None = None
     status: str
+    created_by_id: int | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

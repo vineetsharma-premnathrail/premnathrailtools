@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrAttendanceDay, HrAttendanceMonth, HrAttendanceRegularization, HrAttendanceToday } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
+import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import MyHrTabs from '@/components/hr/MyHrTabs'
 import AttendanceCalendar, { AttendanceLegend, MonthPicker } from '@/components/hr/attendance/AttendanceCalendar'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import MyTimeEvaluation from '@/components/hr/time/MyTimeEvaluation'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -20,11 +23,6 @@ const ATT_LABELS: Record<string, string> = {
   weekly_off: 'Weekly off', on_duty: 'On duty', work_from_home: 'Work from home', unmarked: 'Not marked',
 }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
@@ -42,6 +40,8 @@ function dmy(iso: string | null) {
 export default function MyAttendancePage() {
   // Self-service: any logged-in user.
   const { user, isLoading } = useAuth()
+  // Self-service: My HR create / edit (hr:me:*), not the HR-team tabs.
+  const { can } = useCan()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
@@ -150,7 +150,7 @@ export default function MyAttendancePage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>My Attendance</h1>
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Check in and out, see your month, and ask for a correction if a day is wrong.</p>
         </div>
-        <button type="button" style={secondaryBtnStyle} onClick={() => openReg()}>Request correction</button>
+        {can('hr', 'me', 'create') && <button type="button" data-tour="hr-myatt-correction-btn" style={secondaryBtnStyle} onClick={() => openReg()}>Request correction</button>}
       </div>
 
       {error.length > 0 && (
@@ -164,7 +164,7 @@ export default function MyAttendancePage() {
         </div>
       )}
 
-      <div style={{ ...sectionStyle, display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'center', justifyContent: 'space-between' }}>
+      <div data-tour="hr-myatt-today" style={{ ...sectionStyle, display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'center', justifyContent: 'space-between' }}>
         {loading && !today ? (
           <span style={{ fontSize: 13, color: TEXT.muted }}>Loading today…</span>
         ) : today && td0 ? (
@@ -196,12 +196,12 @@ export default function MyAttendancePage() {
                 <p style={{ fontSize: 20, fontWeight: 800, color: TEXT.heading, margin: 0 }}>{td0.check_out_time || '--:--'}</p>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div data-tour="hr-myatt-punch" style={{ display: 'flex', gap: 10 }}>
               {today.on_leave ? (
                 <span style={{ fontSize: 13, color: TEXT.muted }}>You&apos;re on approved leave today.</span>
-              ) : today.can_check_in ? (
+              ) : today.can_check_in && can('hr', 'me', 'create') ? (
                 <button type="button" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }} onClick={() => punch('in')}>{busy ? 'Saving…' : 'Check in'}</button>
-              ) : today.can_check_out ? (
+              ) : today.can_check_out && can('hr', 'me', 'edit') ? (
                 <button type="button" disabled={busy} style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }} onClick={() => punch('out')}>{busy ? 'Saving…' : 'Check out'}</button>
               ) : td0.check_out_time ? (
                 <span style={{ fontSize: 13, color: '#16A34A', fontWeight: 600 }}>Done for today</span>
@@ -212,59 +212,67 @@ export default function MyAttendancePage() {
       </div>
 
       {showReg && (
-        <div style={sectionStyle}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Request an attendance correction</h3>
-          {regError.length > 0 && (
-            <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-              {regError.join(' ')}
-            </div>
-          )}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
-            <div style={{ flex: '0 1 160px', minWidth: 150 }}>
-              <label style={labelStyle}>Date *</label>
-              <DateField value={regDate} onChange={setRegDate} />
-            </div>
-            <div style={{ flex: '0 1 180px', minWidth: 160 }}>
-              <label style={labelStyle}>Correct status *</label>
-              <select style={inputStyle} value={regStatus} onChange={(e) => setRegStatus(e.target.value)}>
-                <option value="present">Present</option>
-                <option value="half_day">Half day</option>
-                <option value="on_duty">On duty (outside office)</option>
-                <option value="work_from_home">Work from home</option>
-              </select>
-            </div>
-            <div style={{ flex: '0 1 130px', minWidth: 120 }}>
-              <label style={labelStyle}>Check-in{regStatus === 'present' || regStatus === 'half_day' ? ' *' : ''}</label>
-              <input type="time" style={inputStyle} value={regIn} onChange={(e) => setRegIn(e.target.value)} />
-            </div>
-            <div style={{ flex: '0 1 130px', minWidth: 120 }}>
-              <label style={labelStyle}>Check-out</label>
-              <input type="time" style={inputStyle} value={regOut} onChange={(e) => setRegOut(e.target.value)} />
-            </div>
-            <div style={{ flex: '1 1 260px', maxWidth: 480 }}>
-              <label style={labelStyle}>Reason *</label>
-              <input style={inputStyle} value={regReason} onChange={(e) => setRegReason(e.target.value)} placeholder="e.g. Forgot to check in; was at vendor site" />
-            </div>
+        <FormSheet width={580} tour="hr-myatt-reg-sheet" icon="clock" title="Request an attendance correction"
+          subtitle="Corrections can be requested for the last 60 days. Your reporting manager (or HR) approves them."
+          onClose={() => setShowReg(false)} busy={regSaving}
+          footer={<>
+            <button type="button" style={sheetBtn('secondary', SHEET.INK, regSaving)} disabled={regSaving} onClick={() => setShowReg(false)}>Cancel</button>
+            <button type="button" data-tour="hr-myatt-reg-submit" disabled={regSaving} style={sheetBtn('primary', SHEET.BLUE, regSaving)} onClick={submitReg}><SheetIcon name="send" size={16} />{regSaving ? 'Submitting…' : 'Submit request'}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {regError.length > 0 && (
+              <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                {regError.join(' ')}
+              </div>
+            )}
+            <SheetSection icon="calendar" title="Day">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                <div data-tour="hr-myatt-reg-date" style={{ flex: '0 1 160px', minWidth: 150 }}>
+                  <label style={sheetLabel}>Date <Req /></label>
+                  <DateField value={regDate} onChange={setRegDate} />
+                </div>
+                <div style={{ flex: '1 1 180px', minWidth: 160 }}>
+                  <label style={sheetLabel}>Correct status <Req /></label>
+                  <select data-tour="hr-myatt-reg-status" style={sheetInput} value={regStatus} onChange={(e) => setRegStatus(e.target.value)}>
+                    <option value="present">Present</option>
+                    <option value="half_day">Half day</option>
+                    <option value="on_duty">On duty (outside office)</option>
+                    <option value="work_from_home">Work from home</option>
+                  </select>
+                </div>
+              </div>
+            </SheetSection>
+            <SheetSection icon="clock" title="Timing">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                <div style={{ flex: '0 1 140px', minWidth: 120 }}>
+                  <label style={sheetLabel}>Check-in{regStatus === 'present' || regStatus === 'half_day' ? <> <Req /></> : ''}</label>
+                  <input type="time" data-tour="hr-myatt-reg-in" style={sheetInput} value={regIn} onChange={(e) => setRegIn(e.target.value)} />
+                </div>
+                <div style={{ flex: '0 1 140px', minWidth: 120 }}>
+                  <label style={sheetLabel}>Check-out</label>
+                  <input type="time" data-tour="hr-myatt-reg-out" style={sheetInput} value={regOut} onChange={(e) => setRegOut(e.target.value)} />
+                </div>
+              </div>
+            </SheetSection>
+            <SheetSection icon="chat" title="Reason">
+              <label style={sheetLabel}>Reason <Req /></label>
+              <input data-tour="hr-myatt-reg-reason" style={sheetInput} value={regReason} onChange={(e) => setRegReason(e.target.value)} placeholder="e.g. Forgot to check in; was at vendor site" />
+            </SheetSection>
           </div>
-          <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>Corrections can be requested for the last 60 days. Your reporting manager (or HR) approves them.</p>
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button type="button" style={secondaryBtnStyle} onClick={() => setShowReg(false)}>Cancel</button>
-            <button type="button" disabled={regSaving} style={{ ...primaryBtn, opacity: regSaving ? 0.6 : 1 }} onClick={submitReg}>{regSaving ? 'Submitting…' : 'Submit request'}</button>
-          </div>
-        </div>
+        </FormSheet>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+      <div data-tour="hr-myatt-month" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <MonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m) }} />
         <AttendanceLegend counts={monthData?.counts} />
       </div>
-      <div style={{ marginBottom: 8 }}>
+      <div data-tour="hr-myatt-calendar" style={{ marginBottom: 8 }}>
         {monthData ? (
           <AttendanceCalendar
             year={year}
             month={month}
             days={monthData.days}
-            onDayClick={(d) => { if (d.date <= todayIso && d.source !== 'leave') openReg(d) }}
+            onDayClick={(d) => { if (can('hr', 'me', 'create') && d.date <= todayIso && d.source !== 'leave') openReg(d) }}
           />
         ) : (
           <div style={{ ...sectionStyle, fontSize: 13, color: TEXT.muted }}>Loading month…</div>
@@ -273,7 +281,7 @@ export default function MyAttendancePage() {
       <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 20px' }}>Click a past day to ask for a correction.</p>
 
       <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 10px' }}>My correction requests</h3>
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
+      <div data-tour="hr-myatt-regs-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
           <thead>
             <tr>
@@ -308,6 +316,8 @@ export default function MyAttendancePage() {
           </tbody>
         </table>
       </div>
+
+      <MyTimeEvaluation />
 
       <ConfirmDialog
         open={!!cancelTarget}

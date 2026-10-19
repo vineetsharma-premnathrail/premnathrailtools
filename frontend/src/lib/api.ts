@@ -2,7 +2,10 @@ import axios, { AxiosInstance, AxiosError } from 'axios'
 import { useAuthStore } from '@/store/authStore'
 import { beginRequest } from '@/lib/requestActivity'
 import { DIRECT_UPLOAD_THRESHOLD, uploadToSession } from '@/lib/largeUpload'
-import type { P2PRequestLineItemInput, PRCategoryMeta, StoreDocType, StoreDocTypeKind, StoreDocTypePayload, StoreIssueRules } from '@/types'
+import { rememberRefs } from '@/lib/recordRef'
+import { lockHeaderFor, rememberLockVersion } from '@/lib/lockVersion'
+import { isUserActive, notifyLocked } from '@/lib/appLockState'
+import type { P2PRequestLineItemInput, RequirementMovement, RndRequirement, RndRequirementDetail, PRCategoryMeta, StoreDocType, StoreDocTypeKind, StoreStockEntry, StoreDocTypePayload, StoreIssueFormStandard, StorePlantAccess, StorePlantAccessPayload, StoreItemMeta, StoreItemVendorSuggestion, RndRequest, RndRequestAssignment, RndAssignee } from '@/types'
 
 // Files above this open through a direct SharePoint link rather than the API.
 const LARGE_DOWNLOAD_BYTES = 50 * 1024 * 1024
@@ -15,6 +18,8 @@ export const apiClient: AxiosInstance = axios.create({
   withCredentials: true, // send the httponly session_token cookie set by /auth/callback
   headers: {
     'Content-Type': 'application/json',
+    // Signed record links beside every id — page URLs use them (lib/recordRef.ts).
+    'X-Record-Refs': '1',
   },
 })
 
@@ -39,13 +44,14 @@ apiClient.interceptors.request.use((config) => {
   const url = config.url || ''
   if (!config.background && !url.includes('/auth/refresh')) {
     const method = (config.method || 'get').toLowerCase()
-    config._endActivity = beginRequest(method === 'get' || method === 'head' || method === 'options' ? 'read' : 'write')
+    config._endActivity = beginRequest(method === 'get' || method === 'head' || method === 'options' ? 'read' : 'write', config.activityLabel)
   }
   return config
 })
 apiClient.interceptors.response.use(
   (response) => {
     response.config?._endActivity?.()
+    rememberRefs(response.data)
     return response
   },
   (error: AxiosError) => {
@@ -53,6 +59,32 @@ apiClient.interceptors.response.use(
     return Promise.reject(error)
   }
 )
+
+// App password lock (lib/appLockState.ts, components/shared/AppLock.tsx):
+// tell the server the person is really using the page (background polling
+// is not activity), and open the lock screen on any 423.
+apiClient.interceptors.request.use((config) => {
+  if (!config.background && isUserActive()) config.headers['X-User-Active'] = '1'
+  return config
+})
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => {
+    if (error.response?.status === 423) notifyLocked()
+    return Promise.reject(error)
+  }
+)
+
+// SM12 optimistic locking: echo the loaded lock_version on saves (lib/lockVersion.ts).
+apiClient.interceptors.request.use((config) => {
+  const v = lockHeaderFor(config.url, config.method)
+  if (v !== null) config.headers['X-Lock-Version'] = v
+  return config
+})
+apiClient.interceptors.response.use((response) => {
+  rememberLockVersion(response.config?.url, response.data)
+  return response
+})
 
 // The access token (session_token) is short-lived by design (15 min) — see
 // backend/app/modules/main/routes/auth.py's /auth/refresh docstring for why.
@@ -147,6 +179,44 @@ export const modulesApi = {
   },
 }
 
+export const rolesApi = {
+  catalog: async (): Promise<import('@/types').PermissionRegistry> => {
+    const { data } = await apiClient.get('/roles/catalog')
+    return data
+  },
+  list: async (): Promise<import('@/types').Role[]> => {
+    const { data } = await apiClient.get('/roles')
+    return data
+  },
+  get: async (id: number): Promise<import('@/types').Role> => {
+    const { data } = await apiClient.get(`/roles/${id}`)
+    return data
+  },
+  notificationEvents: async (): Promise<import('@/components/organization/RoleNotificationsEditor').NotificationEventCatalog> => {
+    const { data } = await apiClient.get('/roles/notification-events')
+    return data
+  },
+  create: async (payload: { name: string; description: string | null; permissions: string[]; is_default: boolean; is_active: boolean; notification_events?: Record<string, string[]> }): Promise<import('@/types').Role> => {
+    const { data } = await apiClient.post('/roles', payload)
+    return data
+  },
+  update: async (id: number, payload: { name: string; description: string | null; permissions: string[]; is_default: boolean; is_active: boolean; notification_events?: Record<string, string[]> }): Promise<import('@/types').Role> => {
+    const { data } = await apiClient.patch(`/roles/${id}`, payload)
+    return data
+  },
+  copy: async (id: number, name: string): Promise<import('@/types').Role> => {
+    const { data } = await apiClient.post(`/roles/${id}/copy`, { name })
+    return data
+  },
+  remove: async (id: number) => {
+    await apiClient.delete(`/roles/${id}`)
+  },
+  setUsers: async (id: number, userIds: number[]): Promise<import('@/types').Role> => {
+    const { data } = await apiClient.put(`/roles/${id}/users`, { user_ids: userIds })
+    return data
+  },
+}
+
 export const usersApi = {
   list: async () => {
     const { data } = await apiClient.get('/users')
@@ -158,18 +228,9 @@ export const usersApi = {
     return data
   },
 
-  updateAssignedApps: async (id: number, assigned_apps: string[]) => {
-    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps })
-    return data
-  },
-
-  updateModuleAccess: async (
-    id: number,
-    assigned_apps: string[],
-    erp_permissions: string[],
-    approvalRoleFlags: Record<string, boolean> = {}
-  ) => {
-    const { data } = await apiClient.patch(`/users/${id}`, { assigned_apps, erp_permissions, ...approvalRoleFlags })
+  /** Approval-routing flags (Partner, Director, heads, managers) — not permissions; access comes from roles. */
+  updateApprovalRoles: async (id: number, approvalRoleFlags: Record<string, boolean>) => {
+    const { data } = await apiClient.patch(`/users/${id}`, approvalRoleFlags)
     return data
   },
 
@@ -233,13 +294,42 @@ export const usersApi = {
     const { data } = await apiClient.get('/users/permissions/registry')
     return data
   },
-  updatePermissions: async (id: number, granularPermissions: string[], dataAccessScopes: Record<string, string>) => {
-    const { data } = await apiClient.patch(`/users/${id}/permissions`, { granular_permissions: granularPermissions, data_access_scopes: dataAccessScopes })
+  /** Replace the user's EXTRA grants (on top of their roles). */
+  updatePermissions: async (id: number, granularPermissions: string[]) => {
+    const { data } = await apiClient.patch(`/users/${id}/permissions`, { granular_permissions: granularPermissions })
+    return data
+  },
+  updateRoles: async (id: number, roleIds: number[]) => {
+    const { data } = await apiClient.put(`/users/${id}/roles`, { role_ids: roleIds })
+    return data
+  },
+  getEffectivePermissions: async (id: number): Promise<import('@/types').EffectivePermissions> => {
+    const { data } = await apiClient.get(`/users/${id}/effective-permissions`)
     return data
   },
   listPermissionHistory: async (id: number) => {
     const { data } = await apiClient.get(`/users/${id}/permission-history`)
     return data
+  },
+}
+
+// Editable Word documents of record (any record type registered on the backend:
+// crm_quotation, erp_project_letter, ...) - see backend main/routes/documents.py.
+export const managedDocumentsApi = {
+  get: async (entityType: string, entityId: number) => (await apiClient.get(`/managed-documents/${entityType}/${entityId}`)).data,
+  create: async (entityType: string, entityId: number, regenerate = false) =>
+    (await apiClient.post(`/managed-documents/${entityType}/${entityId}`, null, { params: regenerate ? { regenerate: true } : {} })).data,
+  changes: async (entityType: string, entityId: number) => (await apiClient.get(`/managed-documents/${entityType}/${entityId}/changes`)).data,
+  openForEdit: async (entityType: string, entityId: number): Promise<{ url: string }> =>
+    (await apiClient.post(`/managed-documents/${entityType}/${entityId}/edit`)).data,
+  downloadDocx: async (entityType: string, entityId: number) => {
+    const { data } = await apiClient.get(`/managed-documents/${entityType}/${entityId}/docx`, { responseType: 'blob' })
+    return data as Blob
+  },
+  uploadDocx: async (entityType: string, entityId: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return (await apiClient.post(`/managed-documents/${entityType}/${entityId}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })).data
   },
 }
 
@@ -251,7 +341,8 @@ export const crmApi = {
   },
 
   // Organizations
-  listOrganizations: async (params: { search?: string; railway_zone?: string } = {}) => {
+  // picker: true = every organization (dropdowns), not limited to the user's CRM data scope
+  listOrganizations: async (params: { search?: string; railway_zone?: string; picker?: boolean } = {}) => {
     const { data } = await apiClient.get('/crm/organizations', { params })
     return data
   },
@@ -326,16 +417,30 @@ export const crmApi = {
   deleteInquiry: async (id: number) => {
     await apiClient.delete(`/crm/inquiries/${id}`)
   },
-  createInquiryTechnicalOfferRequest: async (id: number, documentIds: number[] = []) => {
-    const { data } = await apiClient.post(`/crm/inquiries/${id}/technical-offer-request`, { document_ids: documentIds })
+  createInquiryTechnicalOfferRequest: async (id: number, documentIds: number[], assignment: RndRequestAssignment) => {
+    const { data } = await apiClient.post(`/crm/inquiries/${id}/technical-offer-request`, { document_ids: documentIds, ...assignment }, {
+      activityLabel: 'Sending to R&D',
+      // Builds the PDF from the Word file on SharePoint, files it and mails R&D — well over the
+      // global 10s; a timeout here showed "failed" for a send that had gone through.
+      timeout: 120000,
+    })
     return data
   },
   getInquiryAudit: async (id: number) => {
     const { data } = await apiClient.get(`/crm/inquiries/${id}/audit`)
     return data
   },
-  getInquirySpecRevisions: async (id: number) => {
-    const { data } = await apiClient.get(`/crm/inquiries/${id}/spec-revisions`)
+  listRndAssignees: async (): Promise<RndAssignee[]> => {
+    const { data } = await apiClient.get('/crm/rnd-requests/assignees')
+    return data
+  },
+  getInquiryRequirementMovements: async (id: number): Promise<RequirementMovement[]> => {
+    const { data } = await apiClient.get(`/crm/inquiries/${id}/requirement-movements`)
+    return data
+  },
+  // requirementOnly: just edits to Specification / Requirement Description / Project Details (Info tab Revision selector).
+  getInquirySpecRevisions: async (id: number, requirementOnly = false) => {
+    const { data } = await apiClient.get(`/crm/inquiries/${id}/spec-revisions`, { params: requirementOnly ? { requirement_only: true } : undefined })
     return data
   },
   listInquiryStages: async (id: number) => {
@@ -375,12 +480,21 @@ export const crmApi = {
   deleteTender: async (id: number) => {
     await apiClient.delete(`/crm/tenders/${id}`)
   },
-  createTenderTechnicalOfferRequest: async (id: number, documentIds: number[] = []) => {
-    const { data } = await apiClient.post(`/crm/tenders/${id}/technical-offer-request`, { document_ids: documentIds })
+  createTenderTechnicalOfferRequest: async (id: number, documentIds: number[], assignment: RndRequestAssignment) => {
+    const { data } = await apiClient.post(`/crm/tenders/${id}/technical-offer-request`, { document_ids: documentIds, ...assignment }, {
+      activityLabel: 'Sending to R&D',
+      // Builds the PDF from the Word file on SharePoint, files it and mails R&D — well over the
+      // global 10s; a timeout here showed "failed" for a send that had gone through.
+      timeout: 120000,
+    })
     return data
   },
   getTenderAudit: async (id: number) => {
     const { data } = await apiClient.get(`/crm/tenders/${id}/audit`)
+    return data
+  },
+  getTenderRequirementMovements: async (id: number): Promise<RequirementMovement[]> => {
+    const { data } = await apiClient.get(`/crm/tenders/${id}/requirement-movements`)
     return data
   },
   getTenderSpecRevisions: async (id: number) => {
@@ -495,6 +609,32 @@ export const crmApi = {
   },
   // Opens a document in a new tab. Large files use a short-lived direct
   // SharePoint link instead of being pulled through the portal.
+  // CRM → Settings (notification rules on the settings framework)
+  getSettings: async (): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.get('/crm/settings'); return data },
+  saveSettings: async (values: Record<string, unknown>): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.put('/crm/settings', { values }); return data },
+  resetSetting: async (key: string): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.post(`/crm/settings/reset/${key}`); return data },
+  // Excel exports: what = 'organizations' | 'inquiries-tenders'
+  exportExcel: async (what: 'organizations' | 'inquiries-tenders', params: Record<string, string | number | undefined> = {}) => {
+    const { data } = await apiClient.get(`/crm/exports/${what}`, { params, responseType: 'blob', timeout: 120000 })
+    return data as Blob
+  },
+  // Requirement Discussion (CRM ↔ R&D thread on an Inquiry / Tender sent to R&D)
+  listDiscussion: async (source: 'inquiry' | 'tender', recordId: number, side: import('@/types').DiscussionSide): Promise<import('@/types').RequirementComment[]> => {
+    const { data } = await apiClient.get(`/requirement-discussion/${source}/${recordId}`, { params: { side } })
+    return data
+  },
+  postDiscussion: async (source: 'inquiry' | 'tender', recordId: number, p: { side: import('@/types').DiscussionSide; body: string; mentionIds: number[]; files: File[]; documentIds?: number[] }): Promise<import('@/types').RequirementComment> => {
+    const form = new FormData()
+    form.append('side', p.side)
+    form.append('body', p.body)
+    form.append('mention_ids', p.mentionIds.join(','))
+    form.append('document_ids', (p.documentIds || []).join(','))
+    p.files.forEach((f) => form.append('files', f))
+    const { data } = await apiClient.post(`/requirement-discussion/${source}/${recordId}`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000, activityLabel: 'Sending' })
+    return data
+  },
+  deleteDiscussion: async (commentId: number) => { const { data } = await apiClient.delete(`/requirement-discussion/comments/${commentId}`); return data },
+  discussionPeople: async (): Promise<import('@/types').DiscussionPerson[]> => { const { data } = await apiClient.get('/requirement-discussion/people'); return data },
   openDocument: async (doc: { id: number; file_size?: number | null }) => {
     if ((doc.file_size || 0) > LARGE_DOWNLOAD_BYTES) {
       const { data } = await apiClient.get(`/crm/documents/${doc.id}/download-url`)
@@ -510,6 +650,8 @@ export const crmApi = {
   },
 
   listQuotations: async (inquiryId: number) => (await apiClient.get(`/crm/inquiries/${inquiryId}/quotations`)).data,
+  listInquiryTechnicalOffers: async (inquiryId: number): Promise<import('@/types').CrmTechnicalOfferOption[]> => (await apiClient.get(`/crm/inquiries/${inquiryId}/technical-offers`)).data,
+  technicalOfferPdf: async (inquiryId: number, offerId: number): Promise<Blob> => (await apiClient.get(`/crm/inquiries/${inquiryId}/technical-offers/${offerId}/pdf`, { responseType: 'blob' })).data,
   createQuotation: async (inquiryId: number, payload: Record<string, unknown>) => (await apiClient.post(`/crm/inquiries/${inquiryId}/quotations`, payload)).data,
   updateQuotation: async (inquiryId: number, quotId: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/inquiries/${inquiryId}/quotations/${quotId}`, payload)).data,
   deleteQuotation: async (inquiryId: number, quotId: number) => (await apiClient.delete(`/crm/inquiries/${inquiryId}/quotations/${quotId}`)).data,
@@ -533,6 +675,10 @@ export const crmApi = {
   createPaymentTerm: async (payload: Record<string, unknown>) => (await apiClient.post('/crm/payment-terms', payload)).data,
   updatePaymentTerm: async (id: number, payload: Record<string, unknown>) => (await apiClient.patch(`/crm/payment-terms/${id}`, payload)).data,
   deletePaymentTerm: async (id: number) => (await apiClient.delete(`/crm/payment-terms/${id}`)).data,
+  listDocumentCategories: async (): Promise<import('@/types').CrmDocumentCategory[]> => (await apiClient.get('/crm/document-categories')).data,
+  createDocumentCategory: async (payload: { label: string }) => (await apiClient.post('/crm/document-categories', payload)).data,
+  updateDocumentCategory: async (id: number, payload: { label: string }) => (await apiClient.patch(`/crm/document-categories/${id}`, payload)).data,
+  deleteDocumentCategory: async (id: number) => (await apiClient.delete(`/crm/document-categories/${id}`)).data,
 
   downloadBulkImportTemplate: async () => {
     const { data } = await apiClient.get('/crm/bulk-import/template', { responseType: 'blob' })
@@ -550,15 +696,52 @@ export const crmApi = {
 }
 
 export const erpApi = {
+  // Service → Settings (approvals + notification rules on the settings framework, permissions matrix)
+  getSettings: async (): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.get('/erp/settings'); return data },
+  saveSettings: async (values: Record<string, unknown>): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.put('/erp/settings', { values }); return data },
+  resetSetting: async (key: string): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.post(`/erp/settings/reset/${key}`); return data },
+  approveProject: async (id: number, remarks?: string) => { const { data } = await apiClient.post(`/erp/projects/${id}/approve`, { remarks }); return data },
+  rejectProject: async (id: number, remarks: string) => { const { data } = await apiClient.post(`/erp/projects/${id}/reject`, { remarks }); return data },
+  approveSrClose: async (id: number, remarks?: string) => { const { data } = await apiClient.post(`/erp/service-requests/${id}/approve-close`, { remarks }); return data },
+  rejectSrClose: async (id: number, remarks: string) => { const { data } = await apiClient.post(`/erp/service-requests/${id}/reject-close`, { remarks }); return data },
+
   // Projects (machines/vehicles)
-  listProjects: async (params: { search?: string; status?: string; application_type?: string; client_company?: string; limit?: number } = {}) => {
+  listProjects: async (params: { search?: string; status?: string; application_type?: string; client_company?: string; customer_id?: number; limit?: number } = {}) => {
     const { data } = await apiClient.get('/erp/projects', { params })
+    return data
+  },
+  // Installed base: customer / product pick-lists and the customer-wise view
+  getProjectLinkOptions: async (): Promise<{ customers: { id: number; label: string; name: string; gst_number: string | null; state: string | null }[]; products: { id: number; label: string; warranty_months: number | null }[] }> => {
+    const { data } = await apiClient.get('/erp/projects/link-options')
+    return data
+  },
+  getInstalledBase: async (customerId?: number) => {
+    const { data } = await apiClient.get('/erp/projects/installed-base', { params: customerId ? { customer_id: customerId } : {} })
     return data
   },
 
   getProjectFilterOptions: async () => {
     const { data } = await apiClient.get('/erp/projects/filter-options')
     return data
+  },
+
+  // Bulk import / Excel export — `kind` picks Machines or Service Requests.
+  downloadImportTemplate: async (kind: 'projects' | 'service-requests') => {
+    const { data } = await apiClient.get(`/erp/${kind}/import/template`, { responseType: 'blob' })
+    return data as Blob
+  },
+  bulkImport: async (kind: 'projects' | 'service-requests', file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post(`/erp/${kind}/import`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 180000,
+    })
+    return data
+  },
+  exportExcel: async (kind: 'projects' | 'service-requests', params: Record<string, string | number | undefined> = {}) => {
+    const { data } = await apiClient.get(`/erp/${kind}/export`, { params, responseType: 'blob', timeout: 120000 })
+    return data as Blob
   },
 
   createProject: async (payload: Record<string, unknown>) => {
@@ -641,6 +824,36 @@ export const erpApi = {
     return data
   },
 
+  getProjectLetterDefaults: async (id: number): Promise<{ signatory_name: string | null; signatory_designation: string | null; source: string | null; partners: { name: string; designation: string }[] }> => {
+    const { data } = await apiClient.get(`/erp/projects/${id}/letter-defaults`)
+    return data
+  },
+
+  listProjectLetters: async (id: number) => {
+    const { data } = await apiClient.get(`/erp/projects/${id}/letters`)
+    return data
+  },
+
+  createProjectLetter: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/erp/projects/${id}/letters`, payload)
+    return data
+  },
+
+  updateProjectLetter: async (id: number, letterId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/erp/projects/${id}/letters/${letterId}`, payload)
+    return data
+  },
+
+  deleteProjectLetter: async (id: number, letterId: number) => {
+    const { data } = await apiClient.delete(`/erp/projects/${id}/letters/${letterId}`)
+    return data
+  },
+
+  getProjectLetterBlob: async (id: number, letterId: number, format: 'pdf' | 'docx' = 'pdf'): Promise<Blob> => {
+    const { data } = await apiClient.get(`/erp/projects/${id}/letters/${letterId}/file`, { params: { format }, responseType: 'blob' })
+    return data
+  },
+
   updateProjectAttachmentPermissions: async (
     id: number,
     attachmentId: number,
@@ -659,7 +872,7 @@ export const erpApi = {
   },
 
   // Service requests
-  listServiceRequests: async (params: { search?: string; status?: string; priority?: string; project_id?: number; limit?: number } = {}) => {
+  listServiceRequests: async (params: { search?: string; status?: string; priority?: string; service_type?: string; project_id?: number; sla?: string; limit?: number } = {}) => {
     const { data } = await apiClient.get('/erp/service-requests', { params })
     return data
   },
@@ -722,6 +935,27 @@ export const erpApi = {
 
   receiveMaterial: async (srId: number, matId: number, receivedQuantity: number) => {
     const { data } = await apiClient.post(`/erp/service-requests/${srId}/materials/${matId}/receive`, { received_quantity: receivedQuantity })
+    return data
+  },
+  // Spares from Store against the SR (Material Issue type Service) + returns
+  issueMaterialFromStore: async (srId: number, matId: number, payload: { location_id: number; quantity: number; challan_number: string; vehicle_number?: string; site_address?: string; issue_date?: string; remarks?: string }) => {
+    const { data } = await apiClient.post(`/erp/service-requests/${srId}/materials/${matId}/issue`, payload)
+    return data
+  },
+  returnMaterialToStore: async (srId: number, matId: number, payload: { quantity: number; remarks?: string }) => {
+    const { data } = await apiClient.post(`/erp/service-requests/${srId}/materials/${matId}/return`, payload)
+    return data
+  },
+  listSrStoreIssues: async (srId: number) => { const { data } = await apiClient.get(`/erp/service-requests/${srId}/store-issues`); return data },
+  listSrIssueLocations: async (srId: number): Promise<{ id: number; label: string }[]> => { const { data } = await apiClient.get(`/erp/service-requests/${srId}/store-locations`); return data },
+  // Warranty check + service billing (AR invoice drafted in Finance)
+  srWarrantyCheck: async (projectId: number, serviceType?: string) => {
+    const { data } = await apiClient.get('/erp/service-requests/warranty-check', { params: { project_id: projectId, service_type: serviceType } })
+    return data
+  },
+  getSrInvoice: async (srId: number) => { const { data } = await apiClient.get(`/erp/service-requests/${srId}/invoice`); return data },
+  createSrInvoice: async (srId: number, payload: { invoice_date?: string; customer_po_number?: string; narration?: string } = {}) => {
+    const { data } = await apiClient.post(`/erp/service-requests/${srId}/invoice`, payload)
     return data
   },
 
@@ -847,13 +1081,34 @@ export const p2pApi = {
     return data
   },
 
-  setPoApprovers: async (id: number, poApprovers: Record<string, number>) => {
-    const { data } = await apiClient.post(`/p2p/requests/${id}/set-po-approvers`, { po_approvers: poApprovers })
+  // Approvals run on the central approval engine (approvalsApi); these are the Procurement extras.
+  resubmit: async (id: number) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/submit`)
+    return data
+  },
+  approverFlags: async (): Promise<{ is_pr_approver: boolean; is_po_approver: boolean }> => {
+    const { data } = await apiClient.get('/p2p/requests/approver-flags')
+    return data
+  },
+  getByPo: async (poId: number) => {
+    const { data } = await apiClient.get(`/p2p/requests/by-po/${poId}`)
     return data
   },
 
   update: async (id: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch(`/p2p/requests/${id}`, payload)
+    return data
+  },
+
+  // Full edit of header + lines (allowed until an RFQ is raised). save_as_draft
+  // keeps it as a draft; otherwise it goes (back) into approval.
+  edit: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.put(`/p2p/requests/${id}`, payload)
+    return data
+  },
+
+  discardDraft: async (id: number) => {
+    const { data } = await apiClient.delete(`/p2p/requests/${id}`)
     return data
   },
 
@@ -902,8 +1157,8 @@ export const p2pApi = {
     return data
   },
 
-  close: async (id: number) => {
-    const { data } = await apiClient.post(`/p2p/requests/${id}/close`)
+  close: async (id: number, reason?: string) => {
+    const { data } = await apiClient.post(`/p2p/requests/${id}/close`, reason ? { reason } : undefined)
     return data
   },
 
@@ -959,6 +1214,70 @@ export const p2pApi = {
     const { data } = await apiClient.get('/p2p/mis/export', { params, responseType: 'blob' })
     return data
   },
+  // Procurement → Settings (company terms, notification rules; approvers live in Organization › Approval Workflows)
+  getSettings: async (): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.get('/p2p/settings'); return data },
+  saveSettings: async (values: Record<string, unknown>): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.put('/p2p/settings', { values }); return data },
+  resetSetting: async (key: string): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.post(`/p2p/settings/reset/${key}`); return data },
+  approvalFlow: async (): Promise<import('@/types').P2PApprovalFlow> => { const { data } = await apiClient.get('/p2p/approval-flow'); return data },
+  // Requisition Excel export / CSV import
+  exportRequisitions: async (params: Record<string, string | undefined> = {}): Promise<Blob> => {
+    const { data } = await apiClient.get('/p2p/requests/export', { params, responseType: 'blob', timeout: 120000 })
+    return data
+  },
+  requisitionImportTemplate: async (): Promise<Blob> => { const { data } = await apiClient.get('/p2p/requests/import/template', { responseType: 'blob' }); return data },
+  importRequisitions: async (file: File): Promise<{ created: { ref: string; p2p_number: string }[]; errors: { ref: string; row: number; reason: string }[] }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await apiClient.post('/p2p/requests/import', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 })
+    return data
+  },
+}
+
+// Procurement → Vendors: the shared vendor master (Finance owns the table), its documents and catalog.
+export const vendorsApi = {
+  meta: async (): Promise<{ statuses: string[]; gst_registration_types: string[]; doc_types: { value: string; label: string }[] }> => {
+    const { data } = await apiClient.get('/p2p/vendors/meta'); return data
+  },
+  list: async (params: { search?: string; status?: string } = {}): Promise<import('@/types').ProcurementVendor[]> => {
+    const { data } = await apiClient.get('/p2p/vendors', { params }); return data
+  },
+  get: async (id: number): Promise<import('@/types').ProcurementVendor> => { const { data } = await apiClient.get(`/p2p/vendors/${id}`); return data },
+  create: async (payload: Record<string, unknown>): Promise<import('@/types').ProcurementVendor> => { const { data } = await apiClient.post('/p2p/vendors', payload); return data },
+  update: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').ProcurementVendor> => { const { data } = await apiClient.patch(`/p2p/vendors/${id}`, payload); return data },
+  // Vendors with an info record for an Item Master item — by id, never by name (2026-10-14).
+  forItem: async (storeItemId: number): Promise<import('@/types').VendorItemMatch[]> => { const { data } = await apiClient.get('/p2p/vendors/for-item', { params: { store_item_id: storeItemId } }); return data },
+  exportExcel: async (params: Record<string, string | undefined> = {}): Promise<Blob> => {
+    const { data } = await apiClient.get('/p2p/vendors/export', { params, responseType: 'blob', timeout: 120000 }); return data
+  },
+  importTemplate: async (): Promise<Blob> => { const { data } = await apiClient.get('/p2p/vendors/import/template', { responseType: 'blob' }); return data },
+  importFile: async (file: File): Promise<{ created: string[]; existing: string[]; errors: { row: number; reason: string }[] }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await apiClient.post('/p2p/vendors/import', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 }); return data
+  },
+  documents: async (id: number): Promise<import('@/types').VendorDocumentRow[]> => { const { data } = await apiClient.get(`/p2p/vendors/${id}/documents`); return data },
+  uploadDocuments: async (id: number, docType: string, files: File[]): Promise<import('@/types').VendorDocumentRow[]> => {
+    const fd = new FormData()
+    fd.append('doc_type', docType)
+    files.forEach((f) => fd.append('files', f))
+    const { data } = await apiClient.post(`/p2p/vendors/${id}/documents`, fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 }); return data
+  },
+  openDocument: async (id: number, docId: number) => {
+    const { data } = await apiClient.get(`/p2p/vendors/${id}/documents/${docId}/content`, { responseType: 'blob' })
+    window.open(URL.createObjectURL(data), '_blank')
+  },
+  deleteDocument: async (id: number, docId: number) => { const { data } = await apiClient.delete(`/p2p/vendors/${id}/documents/${docId}`); return data },
+  catalog: async (id: number): Promise<import('@/types').VendorCatalogRow[]> => { const { data } = await apiClient.get(`/p2p/vendors/${id}/catalog`); return data },
+  addCatalogItem: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').VendorCatalogRow> => { const { data } = await apiClient.post(`/p2p/vendors/${id}/catalog`, payload); return data },
+  updateCatalogItem: async (id: number, itemId: number, payload: Record<string, unknown>): Promise<import('@/types').VendorCatalogRow> => { const { data } = await apiClient.patch(`/p2p/vendors/${id}/catalog/${itemId}`, payload); return data },
+  deleteCatalogItem: async (id: number, itemId: number) => { const { data } = await apiClient.delete(`/p2p/vendors/${id}/catalog/${itemId}`); return data },
+  catalogTemplate: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/p2p/vendors/${id}/catalog/template`, { responseType: 'blob' }); return data },
+  importCatalog: async (id: number, file: File): Promise<{ added: number; updated: number; errors: { row: number; reason: string }[] }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await apiClient.post(`/p2p/vendors/${id}/catalog/import`, fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 }); return data
+  },
+  exportCatalog: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/p2p/vendors/${id}/catalog/export`, { responseType: 'blob' }); return data },
 }
 
 export const qualityApi = {
@@ -974,6 +1293,7 @@ export const qualityApi = {
   updateInspectionPlan: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/inspection-plans/${id}`, payload); return data },
   deleteInspectionPlan: async (id: number) => { const { data } = await apiClient.delete(`/quality/inspection-plans/${id}`); return data },
   approveInspectionPlan: async (id: number) => { const { data } = await apiClient.post(`/quality/inspection-plans/${id}/approve`); return data },
+  submitInspectionPlan: async (id: number) => { const { data } = await apiClient.post(`/quality/inspection-plans/${id}/submit`); return data },
   reviseInspectionPlan: async (id: number) => { const { data } = await apiClient.post(`/quality/inspection-plans/${id}/new-revision`); return data },
   obsoleteInspectionPlan: async (id: number) => { const { data } = await apiClient.post(`/quality/inspection-plans/${id}/obsolete`); return data },
   // Inspection lots (Phase 1 core inspection)
@@ -991,6 +1311,7 @@ export const qualityApi = {
   getMastersMeta: async () => { const { data } = await apiClient.get('/quality/masters/meta'); return data },
   lookupItems: async (search = '') => { const { data } = await apiClient.get('/quality/masters/items', { params: { search } }); return data },
   lookupLocations: async () => { const { data } = await apiClient.get('/quality/masters/locations'); return data },
+  lookupUsers: async (): Promise<{ id: number; name: string; email: string }[]> => { const { data } = await apiClient.get('/quality/masters/users'); return data },
   listMaster: async (kind: 'characteristics' | 'defect-codes' | 'disposition-codes', params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/quality/masters/${kind}`, { params }); return data },
   createMaster: async (kind: 'characteristics' | 'defect-codes' | 'disposition-codes', payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/quality/masters/${kind}`, payload); return data },
   updateMaster: async (kind: 'characteristics' | 'defect-codes' | 'disposition-codes', id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/masters/${kind}/${id}`, payload); return data },
@@ -1016,21 +1337,53 @@ export const qualityApi = {
   updateNcr: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/ncr/${id}`, payload); return data },
   deleteNcr: async (id: number) => { const { data } = await apiClient.delete(`/quality/ncr/${id}`); return data },
   ncrAction: async (id: number, action: 'propose-disposition' | 'approve-disposition' | 'action' | 'verify' | 'close' | 'cancel', payload: Record<string, unknown> = {}) => { const { data } = await apiClient.post(`/quality/ncr/${id}/${action}`, payload); return data },
+  // CAPA (8D) — Phase 3
+  getCapaMeta: async () => { const { data } = await apiClient.get('/quality/capa/meta'); return data },
   listCapas: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/capa', { params }); return data },
   getCapa: async (id: number) => { const { data } = await apiClient.get(`/quality/capa/${id}`); return data },
   createCapa: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/capa', payload); return data },
   updateCapa: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/capa/${id}`, payload); return data },
-  deleteCapa: async (id: number) => { const { data } = await apiClient.delete(`/quality/capa/${id}`); return data },
+  setCapaTeam: async (id: number, members: Record<string, unknown>[]) => { const { data } = await apiClient.put(`/quality/capa/${id}/team`, { members }); return data },
+  linkCapaNcr: async (id: number, ncrId: number) => { const { data } = await apiClient.post(`/quality/capa/${id}/ncrs`, { ncr_id: ncrId }); return data },
+  addCapaAction: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/quality/capa/${id}/actions`, payload); return data },
+  capaActionDone: async (id: number, actionId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/quality/capa/${id}/actions/${actionId}/done`, payload); return data },
+  capaActionCancel: async (id: number, actionId: number, reason: string) => { const { data } = await apiClient.post(`/quality/capa/${id}/actions/${actionId}/cancel`, { reason }); return data },
+  advanceCapa: async (id: number) => { const { data } = await apiClient.post(`/quality/capa/${id}/advance`); return data },
+  capaEffectiveness: async (id: number, effective: boolean, remarks: string) => { const { data } = await apiClient.post(`/quality/capa/${id}/effectiveness`, { effective, remarks }); return data },
+  reopenCapa: async (id: number, reason: string) => { const { data } = await apiClient.post(`/quality/capa/${id}/reopen`, { reason }); return data },
+  // Customer complaints — Phase 3
+  getComplaintMeta: async () => { const { data } = await apiClient.get('/quality/complaints/meta'); return data },
+  getComplaintStats: async () => { const { data } = await apiClient.get('/quality/complaints/stats'); return data },
   listComplaints: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/complaints', { params }); return data },
   getComplaint: async (id: number) => { const { data } = await apiClient.get(`/quality/complaints/${id}`); return data },
   createComplaint: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/complaints', payload); return data },
   updateComplaint: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/complaints/${id}`, payload); return data },
-  deleteComplaint: async (id: number) => { const { data } = await apiClient.delete(`/quality/complaints/${id}`); return data },
-  listSupplierScorecards: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/supplier-quality', { params }); return data },
-  getSupplierScorecard: async (id: number) => { const { data } = await apiClient.get(`/quality/supplier-quality/${id}`); return data },
-  createSupplierScorecard: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/supplier-quality', payload); return data },
-  updateSupplierScorecard: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/quality/supplier-quality/${id}`, payload); return data },
-  deleteSupplierScorecard: async (id: number) => { const { data } = await apiClient.delete(`/quality/supplier-quality/${id}`); return data },
+  complaintAction: async (id: number, action: 'investigate' | 'response' | 'feedback' | 'close' | 'reject', payload: Record<string, unknown> = {}) => { const { data } = await apiClient.post(`/quality/complaints/${id}/${action}`, payload); return data },
+  getComplaintContainment: async (id: number) => { const { data } = await apiClient.get(`/quality/complaints/${id}/containment`); return data },
+  traceBatch: async (params: Record<string, unknown>) => { const { data } = await apiClient.get('/quality/complaints/traceability', { params }); return data },
+  uploadComplaintPhotos: async (id: number, files: File[], caption?: string) => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    if (caption) form.append('caption', caption)
+    const { data } = await apiClient.post(`/quality/complaints/${id}/photos`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data
+  },
+  complaintPhotoBlob: async (id: number, photoId: number): Promise<Blob> => { const { data } = await apiClient.get(`/quality/complaints/${id}/photos/${photoId}`, { responseType: 'blob' }); return data },
+  deleteComplaintPhoto: async (id: number, photoId: number) => { const { data } = await apiClient.delete(`/quality/complaints/${id}/photos/${photoId}`); return data },
+  // Supplier quality — Phase 3
+  getSupplierMeta: async () => { const { data } = await apiClient.get('/quality/supplier-quality/meta'); return data },
+  listVendorSummary: async () => { const { data } = await apiClient.get('/quality/supplier-quality/vendors'); return data },
+  listAvl: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/supplier-quality/avl', { params }); return data },
+  getAvl: async (id: number) => { const { data } = await apiClient.get(`/quality/supplier-quality/avl/${id}`); return data },
+  createAvl: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/supplier-quality/avl', payload); return data },
+  avlAction: async (id: number, action: 'approve' | 'watch' | 'release-watch' | 'request-block' | 'request-unblock', reason: string) => { const { data } = await apiClient.post(`/quality/supplier-quality/avl/${id}/${action}`, { reason }); return data },
+  avlDecision: async (id: number, approve: boolean, remarks: string) => { const { data } = await apiClient.post(`/quality/supplier-quality/avl/${id}/decision`, { approve, remarks }); return data },
+  listRatings: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/supplier-quality/ratings', { params }); return data },
+  runRatings: async (period: string) => { const { data } = await apiClient.post('/quality/supplier-quality/ratings/run', { period }); return data },
+  listVendorAudits: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/supplier-quality/audits', { params }); return data },
+  scheduleVendorAudit: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/supplier-quality/audits', payload); return data },
+  completeVendorAudit: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/quality/supplier-quality/audits/${id}/complete`, payload); return data },
+  defectPareto: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/analysis/defect-pareto', { params }); return data },
 
   // Documents
   listDocuments: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/documents', { params }); return data },
@@ -1065,8 +1418,9 @@ export const qualityApi = {
   },
   lotPhotoBlob: async (id: number, photoId: number): Promise<Blob> => { const { data } = await apiClient.get(`/quality/inspection-lots/${id}/photos/${photoId}`, { responseType: 'blob' }); return data },
   deleteLotPhoto: async (id: number, photoId: number) => { const { data } = await apiClient.delete(`/quality/inspection-lots/${id}/photos/${photoId}`); return data },
-  recordPdf: async (kind: 'inspection-report' | 'test-certificate' | 'deviation-approval', id: number): Promise<Blob> => {
-    const url = kind === 'deviation-approval' ? `/quality/records/ncr/${id}/deviation-approval.pdf` : `/quality/records/lots/${id}/${kind}.pdf`
+  recordPdf: async (kind: 'inspection-report' | 'test-certificate' | 'deviation-approval' | '8d-report', id: number): Promise<Blob> => {
+    const url = kind === 'deviation-approval' ? `/quality/records/ncr/${id}/deviation-approval.pdf`
+      : kind === '8d-report' ? `/quality/records/capa/${id}/8d-report.pdf` : `/quality/records/lots/${id}/${kind}.pdf`
     const { data } = await apiClient.get(url, { responseType: 'blob' })
     return data
   },
@@ -1090,84 +1444,127 @@ export const qualityApi = {
   listContracts: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/quality/inspection-calls/contracts', { params }); return data },
   setContractRequirement: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.put(`/quality/inspection-calls/contracts/${projectId}`, payload); return data },
   dispatchCheck: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/quality/inspection-calls/dispatch-check', payload); return data },
+  orderProjectRequirement: async (params: { element_id?: number | null; project_id?: number | null }) => { const { data } = await apiClient.get('/quality/inspection-calls/order-project-requirement', { params }); return data },
   getDashboard: async () => { const { data } = await apiClient.get('/quality/dashboard'); return data },
 }
 
 export const projectsApi = {
+  meta: async () => { const { data } = await apiClient.get('/projects/meta'); return data as { statuses: string[]; priorities: string[]; can_create: boolean } },
+  departments: async () => { const { data } = await apiClient.get('/projects/lookups/departments'); return data as { id: number; name: string; heads: string[]; has_head: boolean }[] },
+  departmentPeople: async (deptId: number) => { const { data } = await apiClient.get(`/projects/lookups/departments/${deptId}/people`); return data },
   list: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/projects', { params }); return data },
+  dashboard: async () => { const { data } = await apiClient.get('/projects/dashboard'); return data },
+  board: async () => { const { data } = await apiClient.get('/projects/board'); return data },
   get: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}`); return data },
   create: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/projects', payload); return data },
   update: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${id}`, payload); return data },
-  delete: async (id: number) => { const { data } = await apiClient.delete(`/projects/${id}`); return data },
-  getAudit: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/audit`); return data },
-  getMeta: async () => { const { data } = await apiClient.get('/projects/meta'); return data },
+  transition: async (id: number, payload: { action: string; reason?: string; closure_note?: string; documents_archived?: boolean; lessons_learned?: string }) => { const { data } = await apiClient.post(`/projects/${id}/transition`, payload); return data },
+  closure: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/closure`); return data },
+  remove: async (id: number) => { const { data } = await apiClient.delete(`/projects/${id}`); return data },
+  audit: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/audit`); return data },
+  breakdown: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/breakdown`); return data },
+  communications: async (id: number): Promise<import('@/types').PmCommItem[]> => { const { data } = await apiClient.get(`/projects/${id}/communications`); return data },
+  tasks: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/tasks`); return data },
 
-  listPhases: async (projectId: number) => { const { data } = await apiClient.get(`/projects/${projectId}/phases`); return data },
-  createPhase: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/phases`, payload); return data },
-  updatePhase: async (projectId: number, phaseId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/phases/${phaseId}`, payload); return data },
-  deletePhase: async (projectId: number, phaseId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/phases/${phaseId}`); return data },
-  listTasks: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/tasks`, { params }); return data },
-  createTask: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/tasks`, payload); return data },
-  updateTask: async (projectId: number, taskId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/tasks/${taskId}`, payload); return data },
-  deleteTask: async (projectId: number, taskId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/tasks/${taskId}`); return data },
-  listMilestones: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/milestones`, { params }); return data },
-  createMilestone: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/milestones`, payload); return data },
-  updateMilestone: async (projectId: number, milestoneId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/milestones/${milestoneId}`, payload); return data },
-  deleteMilestone: async (projectId: number, milestoneId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/milestones/${milestoneId}`); return data },
-  listResources: async (projectId: number) => { const { data } = await apiClient.get(`/projects/${projectId}/resources`); return data },
-  createResource: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/resources`, payload); return data },
-  deleteResource: async (projectId: number, resourceId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/resources/${resourceId}`); return data },
+  milestones: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/milestones`); return data },
+  createMilestone: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${id}/milestones`, payload); return data },
+  updateMilestone: async (id: number, mid: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${id}/milestones/${mid}`, payload); return data },
+  deleteMilestone: async (id: number, mid: number) => { const { data } = await apiClient.delete(`/projects/${id}/milestones/${mid}`); return data },
+  acceptMilestone: async (id: number, mid: number, actual_date?: string) => { const { data } = await apiClient.post(`/projects/${id}/milestones/${mid}/accept`, { actual_date: actual_date || null }); return data },
+  rejectMilestone: async (id: number, mid: number, reason: string) => { const { data } = await apiClient.post(`/projects/${id}/milestones/${mid}/reject`, { reason }); return data },
+  cancelMilestone: async (id: number, mid: number, reason: string) => { const { data } = await apiClient.post(`/projects/${id}/milestones/${mid}/cancel`, { reason }); return data },
+  moveMilestone: async (id: number, mid: number, direction: 'up' | 'down') => { const { data } = await apiClient.post(`/projects/${id}/milestones/${mid}/move`, { direction }); return data },
 
-  listBudgetLines: async (projectId: number) => { const { data } = await apiClient.get(`/projects/${projectId}/budget/lines`); return data },
-  createBudgetLine: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/budget/lines`, payload); return data },
-  updateBudgetLine: async (projectId: number, lineId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/budget/lines/${lineId}`, payload); return data },
-  deleteBudgetLine: async (projectId: number, lineId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/budget/lines/${lineId}`); return data },
-  listCostEntries: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/budget/entries`, { params }); return data },
-  createCostEntry: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/budget/entries`, payload); return data },
-  updateCostEntry: async (projectId: number, entryId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/budget/entries/${entryId}`, payload); return data },
-  deleteCostEntry: async (projectId: number, entryId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/budget/entries/${entryId}`); return data },
+  documents: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/documents`); return data },
+  uploadDocuments: async (id: number, form: FormData) => { const { data } = await apiClient.post(`/projects/${id}/documents`, form, { headers: { 'Content-Type': 'multipart/form-data' } }); return data },
+  documentBlob: async (id: number, docId: number): Promise<Blob> => { const { data } = await apiClient.get(`/projects/${id}/documents/${docId}/content`, { responseType: 'blob' }); return data },
+  deleteDocument: async (id: number, docId: number) => { const { data } = await apiClient.delete(`/projects/${id}/documents/${docId}`); return data },
 
-  listDeliverables: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/deliverables`, { params }); return data },
-  createDeliverable: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/deliverables`, payload); return data },
-  updateDeliverable: async (projectId: number, id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/deliverables/${id}`, payload); return data },
-  deleteDeliverable: async (projectId: number, id: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/deliverables/${id}`); return data },
+  // Tasks tab — tasks straight on the project.
+  projectTasks: async (id: number) => { const { data } = await apiClient.get(`/projects/${id}/project-tasks`); return data },
+  createProjectTask: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${id}/project-tasks`, payload); return data },
+  editProjectTask: async (id: number, tid: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${id}/project-tasks/${tid}`, payload); return data },
+  deleteProjectTask: async (id: number, tid: number) => { const { data } = await apiClient.delete(`/projects/${id}/project-tasks/${tid}`); return data },
+}
 
-  listProjectDocuments: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/documents`, { params }); return data },
-  uploadProjectDocument: async (projectId: number, formData: FormData) => {
-    const { data } = await apiClient.post(`/projects/${projectId}/documents`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      // File uploads (esp. to SharePoint via the backend) routinely take
-      // longer than the global 10s JSON-request timeout — that was tripping
-      // ECONNABORTED (or, if the connection dropped instead of cleanly
-      // timing out, a bare network error) on ordinary multi-MB attachments
-      // and surfacing a misleading "check your internet connection" message
-      // even when connectivity was fine.
-      timeout: 120000,
-    })
+// Project milestones worked from My Tasks — each user's own milestones and
+// sub-tasks. Works without the Project Management app.
+export const pmOngoingApi = {
+  my: async (includeClosed = false): Promise<import('@/types').PmDeptTask[]> => { const { data } = await apiClient.get('/pm-ongoing/my', { params: { include_closed: includeClosed } }); return data },
+  task: async (tid: number): Promise<import('@/types').PmDeptTask> => { const { data } = await apiClient.get(`/pm-ongoing/tasks/${tid}`); return data },
+  everyone: async (): Promise<{ id: number; name: string; designation?: string | null; department?: string | null }[]> => { const { data } = await apiClient.get('/pm-ongoing/people'); return data },
+  people: async (deptId: number) => { const { data } = await apiClient.get(`/pm-ongoing/departments/${deptId}/people`); return data },
+  taskStatus: async (tid: number, payload: { action: string; reason?: string }) => { const { data } = await apiClient.post(`/pm-ongoing/tasks/${tid}/status`, payload); return data },
+  addSubtask: async (tid: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/pm-ongoing/tasks/${tid}/subtasks`, payload); return data },
+  subtaskStatus: async (sid: number, done: boolean) => { const { data } = await apiClient.post(`/pm-ongoing/subtasks/${sid}/status`, { done }); return data },
+  editSubtask: async (sid: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/pm-ongoing/subtasks/${sid}`, payload); return data },
+  addChildSubtask: async (sid: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/pm-ongoing/subtasks/${sid}/subtasks`, payload); return data },
+  deleteSubtask: async (sid: number) => { const { data } = await apiClient.delete(`/pm-ongoing/subtasks/${sid}`); return data },
+  activity: async (tid: number) => { const { data } = await apiClient.get(`/pm-ongoing/tasks/${tid}/activity`); return data },
+  addRemark: async (tid: number, comment: string) => { const { data } = await apiClient.post(`/pm-ongoing/tasks/${tid}/remarks`, { comment }); return data },
+  addFiles: async (tid: number, files: File[]) => {
+    const fd = new FormData()
+    files.forEach((f) => fd.append('files', f))
+    const { data } = await apiClient.post(`/pm-ongoing/tasks/${tid}/files`, fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })
     return data
   },
-  getProjectDocumentContent: async (projectId: number, id: number): Promise<Blob> => {
-    const { data } = await apiClient.get(`/projects/${projectId}/documents/${id}/content`, { responseType: 'blob' })
+  subActivity: async (sid: number) => { const { data } = await apiClient.get(`/pm-ongoing/subtasks/${sid}/activity`); return data },
+  addSubRemark: async (sid: number, comment: string) => { const { data } = await apiClient.post(`/pm-ongoing/subtasks/${sid}/remarks`, { comment }); return data },
+  addSubFiles: async (sid: number, files: File[]) => {
+    const fd = new FormData()
+    files.forEach((f) => fd.append('files', f))
+    const { data } = await apiClient.post(`/pm-ongoing/subtasks/${sid}/files`, fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })
     return data
   },
-  deleteProjectDocument: async (projectId: number, id: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/documents/${id}`); return data },
+  fileBlob: async (docId: number): Promise<Blob> => { const { data } = await apiClient.get(`/pm-ongoing/files/${docId}/content`, { responseType: 'blob' }); return data },
+  deleteFile: async (docId: number) => { const { data } = await apiClient.delete(`/pm-ongoing/files/${docId}`); return data },
+}
 
-  listIssues: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/issues`, { params }); return data },
-  createIssue: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/issues`, payload); return data },
-  updateIssue: async (projectId: number, issueId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/issues/${issueId}`, payload); return data },
-  deleteIssue: async (projectId: number, issueId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/issues/${issueId}`); return data },
-  listRisks: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/risks`, { params }); return data },
-  createRisk: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/risks`, payload); return data },
-  updateRisk: async (projectId: number, riskId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/risks/${riskId}`, payload); return data },
-  deleteRisk: async (projectId: number, riskId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/risks/${riskId}`); return data },
-  listChangeRequests: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/changes`, { params }); return data },
-  createChangeRequest: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/changes`, payload); return data },
-  updateChangeRequest: async (projectId: number, changeId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/changes/${changeId}`, payload); return data },
-  deleteChangeRequest: async (projectId: number, changeId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/changes/${changeId}`); return data },
-  listApprovals: async (projectId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/projects/${projectId}/approvals`, { params }); return data },
-  createApproval: async (projectId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/projects/${projectId}/approvals`, payload); return data },
-  updateApproval: async (projectId: number, approvalId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/projects/${projectId}/approvals/${approvalId}`, payload); return data },
-  deleteApproval: async (projectId: number, approvalId: number) => { const { data } = await apiClient.delete(`/projects/${projectId}/approvals/${approvalId}`); return data },
+// Department heads and users — works without the Project Management app.
+export const pmWorkApi = {
+  me: async () => { const { data } = await apiClient.get('/pm-work/me'); return data },
+  departmentProjects: async (department_id?: number) => { const { data } = await apiClient.get('/pm-work/department/projects', { params: { department_id } }); return data },
+  departmentMilestones: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/pm-work/department/milestones', { params }); return data },
+  departmentTasks: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/pm-work/department/tasks', { params }); return data },
+  workload: async (department_id?: number) => { const { data } = await apiClient.get('/pm-work/department/workload', { params: { department_id } }); return data },
+  people: async (department_id: number) => { const { data } = await apiClient.get(`/pm-work/departments/${department_id}/people`); return data },
+
+  milestone: async (mid: number) => { const { data } = await apiClient.get(`/pm-work/milestones/${mid}`); return data },
+  milestoneBreakdown: async (mid: number) => { const { data } = await apiClient.get(`/pm-work/milestones/${mid}/breakdown`); return data },
+  createTask: async (mid: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/pm-work/milestones/${mid}/tasks`, payload); return data },
+  createOwnTask: async (mid: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/pm-work/milestones/${mid}/my-tasks`, payload); return data },
+  updateTeam: async (mid: number, assistant_user_ids: number[]) => { const { data } = await apiClient.put(`/pm-work/milestones/${mid}/team`, { assistant_user_ids }); return data },
+  messages: async (mid: number) => { const { data } = await apiClient.get(`/pm-work/milestones/${mid}/messages`); return data },
+  postMessage: async (mid: number, payload: { body: string; mentionIds: number[]; files: File[] }) => {
+    const fd = new FormData()
+    fd.append('body', payload.body)
+    fd.append('mention_user_ids', payload.mentionIds.join(','))
+    payload.files.forEach((f) => fd.append('files', f))
+    const { data } = await apiClient.post(`/pm-work/milestones/${mid}/messages`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  updateTask: async (tid: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/pm-work/tasks/${tid}`, payload); return data },
+  deleteTask: async (tid: number) => { const { data } = await apiClient.delete(`/pm-work/tasks/${tid}`); return data },
+  cancelTask: async (tid: number, reason: string) => { const { data } = await apiClient.post(`/pm-work/tasks/${tid}/cancel`, { reason }); return data },
+  reopenTask: async (tid: number, reason: string) => { const { data } = await apiClient.post(`/pm-work/tasks/${tid}/reopen`, { reason }); return data },
+  submitMilestone: async (mid: number, submission_note: string) => { const { data } = await apiClient.post(`/pm-work/milestones/${mid}/submit`, { submission_note }); return data },
+  uploadEvidence: async (mid: number, form: FormData) => { const { data } = await apiClient.post(`/pm-work/milestones/${mid}/files`, form, { headers: { 'Content-Type': 'multipart/form-data' } }); return data },
+  fileBlob: async (docId: number): Promise<Blob> => { const { data } = await apiClient.get(`/pm-work/files/${docId}/content`, { responseType: 'blob' }); return data },
+  deleteFile: async (docId: number) => { const { data } = await apiClient.delete(`/pm-work/files/${docId}`); return data },
+
+  myTasks: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/pm-work/my-tasks', { params }); return data },
+  task: async (tid: number) => { const { data } = await apiClient.get(`/pm-work/tasks/${tid}`); return data },
+  startTask: async (tid: number) => { const { data } = await apiClient.post(`/pm-work/tasks/${tid}/start`); return data },
+  blockTask: async (tid: number, reason: string) => { const { data } = await apiClient.post(`/pm-work/tasks/${tid}/block`, { reason }); return data },
+  unblockTask: async (tid: number) => { const { data } = await apiClient.post(`/pm-work/tasks/${tid}/unblock`); return data },
+  completeTask: async (tid: number, note: string) => { const { data } = await apiClient.post(`/pm-work/tasks/${tid}/complete`, { note }); return data },
+  comment: async (tid: number, comment: string, mention_user_ids: number[] = []) => { const { data } = await apiClient.post(`/pm-work/tasks/${tid}/comments`, { comment, mention_user_ids }); return data },
+  logTime: async (tid: number, payload: { work_date: string; hours: number; note?: string | null }) => { const { data } = await apiClient.post(`/pm-work/tasks/${tid}/time`, payload); return data },
+  deleteTime: async (logId: number) => { const { data } = await apiClient.delete(`/pm-work/time/${logId}`); return data },
+  uploadTaskFiles: async (tid: number, form: FormData) => { const { data } = await apiClient.post(`/pm-work/tasks/${tid}/files`, form, { headers: { 'Content-Type': 'multipart/form-data' } }); return data },
+  addSubtask: async (tid: number, payload: { title: string; due_date?: string | null }) => { const { data } = await apiClient.post(`/pm-work/tasks/${tid}/subtasks`, payload); return data },
+  updateSubtask: async (sid: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/pm-work/subtasks/${sid}`, payload); return data },
+  deleteSubtask: async (sid: number) => { const { data } = await apiClient.delete(`/pm-work/subtasks/${sid}`); return data },
 }
 
 export const rfqApi = {
@@ -1191,12 +1588,14 @@ export const rfqApi = {
     return data
   },
 
-  uploadAttachments: async (id: number, files: File[], vendorTier: string, vendorName?: string, vendorContact?: string) => {
+  uploadAttachments: async (id: number, files: File[], vendorTier: string, vendorName?: string, vendorContact?: string, vendorId?: number) => {
     const formData = new FormData()
     files.forEach((f) => formData.append('files', f))
     formData.append('vendor_tier', vendorTier)
     if (vendorName) formData.append('vendor_name', vendorName)
     if (vendorContact) formData.append('vendor_contact', vendorContact)
+    // Picked from the vendor master — the backend takes name/contact from the master row.
+    if (vendorId) formData.append('vendor_id', String(vendorId))
     const { data } = await apiClient.post(`/p2p/rfqs/${id}/attachments`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       // File uploads (esp. to SharePoint via the backend) routinely take
@@ -1347,6 +1746,41 @@ export const purchaseOrdersApi = {
     const { data } = await apiClient.patch(`/p2p/purchase-orders/${id}`, payload)
     return data
   },
+
+  /** One-time link of an older PO line to its Item Master item (needed before a GRN). */
+  linkItem: async (poId: number, itemId: number, storeItemId: number) => {
+    const { data } = await apiClient.post(`/p2p/purchase-orders/${poId}/items/${itemId}/link-item`, { store_item_id: storeItemId })
+    return data
+  },
+
+  /** Service entry sheets (SAP ML81N) — how a service PO line is "received". */
+  listServiceEntries: async (poId: number) => {
+    const { data } = await apiClient.get(`/p2p/purchase-orders/${poId}/service-entries`)
+    return data
+  },
+  createServiceEntry: async (poId: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/p2p/purchase-orders/${poId}/service-entries`, payload)
+    return data
+  },
+  acceptServiceEntry: async (entryId: number) => {
+    const { data } = await apiClient.post(`/p2p/service-entries/${entryId}/accept`)
+    return data
+  },
+  cancelServiceEntry: async (entryId: number, reason: string) => {
+    const { data } = await apiClient.post(`/p2p/service-entries/${entryId}/cancel`, { reason })
+    return data
+  },
+}
+
+export const vendorReturnsApi = {
+  list: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/p2p/vendor-returns', { params })
+    return data
+  },
+  create: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/p2p/vendor-returns', payload)
+    return data
+  },
 }
 
 export const goodsReceiptsApi = {
@@ -1374,11 +1808,110 @@ export const goodsReceiptsApi = {
     const { data } = await apiClient.post(`/p2p/goods-receipts/${id}/inspect`, payload)
     return data
   },
+  /** Cancels a wrongly entered GRN as a whole (stock taken back out at the PO rate). */
+  reverse: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/p2p/goods-receipts/${id}/reverse`, { reason })
+    return data
+  },
+}
+
+/** Serial numbers (IQ01): units of serialised items, from GRN to issue, with history. */
+export const storeSerialsApi = {
+  list: async (params: Record<string, unknown> = {}) => {
+    const res = await apiClient.get('/store/serials', { params })
+    return { rows: res.data as any[], total: Number(res.headers['x-total-count'] || res.data.length) }
+  },
+  statuses: async () => (await apiClient.get('/store/serials/statuses')).data,
+  get: async (id: number) => (await apiClient.get(`/store/serials/${id}`)).data,
+  available: async (params: { item_id: number; location_id: number; bin_id?: number }) =>
+    (await apiClient.get('/store/serials/available', { params })).data,
+  issued: async (params: { item_id: number; issue_id?: number }) => (await apiClient.get('/store/serials/issued', { params })).data,
+  setQualityResult: async (id: number, status: 'in_stock' | 'blocked', reason: string) =>
+    (await apiClient.post(`/store/serials/${id}/quality-result`, { status, reason })).data,
+}
+
+/** WM bin stock (LS24 / LS26) and bin-to-bin moves inside one store. */
+export const storeBinStockApi = {
+  list: async (params: Record<string, unknown> = {}) => (await apiClient.get('/store/bin-stock', { params })).data,
+  export: async (params: Record<string, unknown> = {}) =>
+    (await apiClient.get('/store/bin-stock/export', { params, responseType: 'blob' })).data as Blob,
+  moves: async (params: Record<string, unknown> = {}) => (await apiClient.get('/store/bin-stock/moves', { params })).data,
+  move: async (payload: Record<string, unknown>) => (await apiClient.post('/store/bin-stock/moves', payload)).data,
+}
+
+/** MB51 material document list (filters + paging via X-Total-Count) and its Excel export. */
+export const storeMaterialDocsApi = {
+  list: async (params: Record<string, unknown> = {}) => {
+    const res = await apiClient.get('/store/stock/transactions', { params })
+    return { rows: res.data as any[], total: Number(res.headers['x-total-count'] || res.data.length) }
+  },
+  export: async (params: Record<string, unknown> = {}) =>
+    (await apiClient.get('/store/stock/transactions/export', { params, responseType: 'blob' })).data as Blob,
+  postedBy: async () => (await apiClient.get('/store/stock/transactions/posted-by')).data as { id: number; label: string }[],
+}
+
+/** ME2N / ME2L / ME2M / ME80FN line-level PO report and ME23N PO history. */
+export const poReportsApi = {
+  openItems: async (params: Record<string, unknown> = {}) => (await apiClient.get('/p2p/po-reports/open-items', { params })).data,
+  exportOpenItems: async (params: Record<string, unknown> = {}) =>
+    (await apiClient.get('/p2p/po-reports/open-items/export', { params, responseType: 'blob' })).data as Blob,
+  history: async (poId: number) => (await apiClient.get(`/p2p/po-reports/${poId}/history`)).data,
+}
+
+/** Physical stock count: freeze → count (blind) → submit → Store Manager approval. */
+/** Items at / below their reorder point, net of what is already on order. */
+export const reorderApi = {
+  list: async (params: Record<string, unknown> = {}) => (await apiClient.get('/store/reorder', { params })).data,
+}
+
+/** Batch management: batches by heat no. + mill TC, stock by batch, FIFO pick, traceability. */
+export const storeBatchesApi = {
+  list: async (params: Record<string, unknown> = {}) => (await apiClient.get('/store/batches', { params })).data,
+  available: async (params: { item_id: number; location_id: number; quantity?: number }) =>
+    (await apiClient.get('/store/batches/available', { params })).data,
+  trace: async (id: number) => (await apiClient.get(`/store/batches/${id}`)).data,
+  setStatus: async (id: number, status: string, reason?: string) =>
+    (await apiClient.post(`/store/batches/${id}/status`, { status, reason })).data,
+  uploadTc: async (id: number, file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return (await apiClient.post(`/store/batches/${id}/tc`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })).data
+  },
+  downloadTc: async (id: number) => (await apiClient.get(`/store/batches/${id}/tc`, { responseType: 'blob' })).data as Blob,
+}
+
+/** Job work / subcontracting: challans at vendors, stock with vendor, job work receipts, ITC-04. */
+export const storeJobWorkApi = {
+  challans: async (params: Record<string, unknown> = {}) => (await apiClient.get('/store/job-work/challans', { params })).data,
+  challan: async (issueId: number) => (await apiClient.get(`/store/job-work/challans/${issueId}`)).data,
+  vendorStock: async (params: Record<string, unknown> = {}) => (await apiClient.get('/store/job-work/vendor-stock', { params })).data,
+  itc04: async (from: string, to: string) => (await apiClient.get('/store/job-work/itc04', { params: { from, to } })).data,
+  itc04Xlsx: async (from: string, to: string) =>
+    (await apiClient.get('/store/job-work/itc04', { params: { from, to, format: 'xlsx' }, responseType: 'blob' })).data as Blob,
+  poLines: async (vendorId: number) => (await apiClient.get('/store/job-work/po-lines', { params: { vendor_id: vendorId } })).data,
+  receipts: async () => (await apiClient.get('/store/job-work/receipts')).data,
+  receipt: async (id: number) => (await apiClient.get(`/store/job-work/receipts/${id}`)).data,
+  createReceipt: async (payload: Record<string, unknown>) => (await apiClient.post('/store/job-work/receipts', payload)).data,
+}
+
+export const physicalCountsApi = {
+  list: async (params: Record<string, unknown> = {}) => (await apiClient.get('/store/physical-counts', { params })).data,
+  get: async (id: number) => (await apiClient.get(`/store/physical-counts/${id}`)).data,
+  create: async (payload: Record<string, unknown>) => (await apiClient.post('/store/physical-counts', payload)).data,
+  enterCounts: async (id: number, lines: { line_id: number; counted_quantity: number; remarks?: string }[]) =>
+    (await apiClient.put(`/store/physical-counts/${id}/counts`, { lines })).data,
+  addItem: async (id: number, itemId: number) => (await apiClient.post(`/store/physical-counts/${id}/items`, { item_id: itemId })).data,
+  submit: async (id: number, payload: { approver_id: number; reason?: string }) =>
+    (await apiClient.post(`/store/physical-counts/${id}/submit`, payload)).data,
+  cancel: async (id: number, reason: string) => (await apiClient.post(`/store/physical-counts/${id}/cancel`, { reason })).data,
 }
 
 export const storeApi = {
-  listLocations: async (branchId?: number) => {
-    const { data } = await apiClient.get('/store/locations', { params: branchId ? { branch_id: branchId } : undefined })
+  /** Stores the user's plant access covers; `allPlants` lists every plant's
+   *  stores (names only) for destination pickers like an inter-unit transfer. */
+  listLocations: async (branchId?: number, opts?: { allPlants?: boolean }) => {
+    const params = { ...(branchId ? { branch_id: branchId } : {}), ...(opts?.allPlants ? { all_plants: true } : {}) }
+    const { data } = await apiClient.get('/store/locations', { params })
     return data
   },
 
@@ -1480,8 +2013,13 @@ export const storeApi = {
     const { data } = await apiClient.put(`/store/uoms/${encodeURIComponent(code)}`, payload)
     return data
   },
-  getItemMeta: async (): Promise<{ item_types: { value: string; label: string; prefix: string }[]; uoms: { value: string; label: string }[] }> => {
+  getItemMeta: async (): Promise<StoreItemMeta> => {
     const { data } = await apiClient.get('/store/items/meta')
+    return data
+  },
+  // Who can supply the item: preferred vendor, vendor catalogs, past POs.
+  getItemVendors: async (id: number): Promise<StoreItemVendorSuggestion[]> => {
+    const { data } = await apiClient.get(`/store/items/${id}/vendors`)
     return data
   },
   // Preview only — the real code is assigned when the item is saved.
@@ -1517,12 +2055,33 @@ export const storeApi = {
     const { data } = await apiClient.get('/store/stock/balances', { params })
     return data
   },
+  /** Stock on a posting date (SAP MB5B) — opening, receipts, issues, closing, rebuilt from the ledger. */
+  stockAsOf: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/stock/as-of', { params })
+    return data
+  },
+  exportStockAsOf: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/store/stock/as-of/export', { params, responseType: 'blob' })
+    return data as Blob
+  },
   listStockTransactions: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/store/stock/transactions', { params })
     return data
   },
-  createStockTransaction: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/store/stock/transactions', payload)
+  // Manual stock posting (Record Stock Entry) was removed 2026-10-12 — every
+  // movement has its own document; old SE-… entries stay viewable below.
+  getStockEntryByNumber: async (entryNumber: string): Promise<StoreStockEntry> => {
+    const { data } = await apiClient.get(`/store/stock/entries/by-number/${encodeURIComponent(entryNumber)}`)
+    return data
+  },
+  addStockEntryAttachments: async (id: number, files: File[]): Promise<StoreStockEntry> => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    const { data } = await apiClient.post(`/store/stock/entries/${id}/attachments`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data
+  },
+  stockEntryAttachmentBlob: async (id: number, attachmentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/store/stock/entries/${id}/attachments/${attachmentId}`, { responseType: 'blob' })
     return data
   },
   listStockVendorOptions: async () => {
@@ -1564,6 +2123,20 @@ export const storeApi = {
     const { data } = await apiClient.get('/store/material-issues/dispatch-projects')
     return data as { id: number; label: string; third_party_inspection_required: boolean; inspection_agency?: string | null }[]
   },
+  // New Issue: read item lines from Excel into the form (nothing is posted).
+  importIssueLines: async (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await apiClient.post('/store/material-issues/import-lines', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data as {
+      lines: { item_id: number; item_code: string; item_name: string; uom?: string | null; quantity: number; batch_number?: string | null; remarks?: string | null }[]
+      errors: { row: number; item_code: string; reason: string }[]
+    }
+  },
+  downloadIssueLinesTemplate: async () => {
+    const { data } = await apiClient.get('/store/material-issues/import-lines/template', { responseType: 'blob' })
+    return data as Blob
+  },
 
   listMaterialReturns: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/store/material-returns', { params })
@@ -1591,12 +2164,26 @@ export const storeApi = {
   },
 
 
-  getIssueRules: async (): Promise<StoreIssueRules> => {
-    const { data } = await apiClient.get('/store/settings/issue-rules')
+  /** What each issue type asks for (fields, rules) — the New Issue form renders from it. */
+  getIssueFormStandard: async (): Promise<StoreIssueFormStandard> => {
+    const { data } = await apiClient.get('/store/material-issues/form-standard')
     return data
   },
-  setIssueRules: async (rules: StoreIssueRules): Promise<StoreIssueRules> => {
-    const { data } = await apiClient.put('/store/settings/issue-rules', rules)
+  /** Pick-list for an issue's "against" field (departments, assets, customers, vendors …). */
+  issueLookups: async (list: string): Promise<{ id: number; label: string }[]> => {
+    const { data } = await apiClient.get(`/store/material-issues/lookups/${list}`)
+    return data
+  },
+  getPlantAccess: async (): Promise<StorePlantAccess> => {
+    const { data } = await apiClient.get('/store/settings/plant-access')
+    return data
+  },
+  setPlantAccess: async (payload: StorePlantAccessPayload): Promise<StorePlantAccess> => {
+    const { data } = await apiClient.put('/store/settings/plant-access', payload)
+    return data
+  },
+  getMyPlantAccess: async (): Promise<{ restricted: boolean; plant_names: string[] }> => {
+    const { data } = await apiClient.get('/store/settings/plant-access/me')
     return data
   },
 
@@ -1627,6 +2214,22 @@ export const storeApi = {
   },
   createStockTransfer: async (payload: Record<string, unknown>) => {
     const { data } = await apiClient.post('/store/stock-transfers', payload)
+    return data
+  },
+  dispatchStockTransfer: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/store/stock-transfers/${id}/dispatch`, payload)
+    return data
+  },
+  receiveStockTransfer: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/store/stock-transfers/${id}/receive`, payload)
+    return data
+  },
+  cancelStockTransfer: async (id: number) => {
+    const { data } = await apiClient.post(`/store/stock-transfers/${id}/cancel`)
+    return data
+  },
+  stockTransferNotePdf: async (id: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/store/stock-transfers/${id}/transfer-note.pdf`, { responseType: 'blob' })
     return data
   },
 
@@ -1688,6 +2291,56 @@ export const costCentersApi = {
 }
 
 export const accountsApi = {
+  // ── Setup: company / FY, groups, ledger settings, GST rates, opening ──
+  getSetup: async () => {
+    const { data } = await apiClient.get('/accounts/setup')
+    return data
+  },
+  listAccountGroups: async () => {
+    const { data } = await apiClient.get('/accounts/account-groups')
+    return data
+  },
+  createAccountGroup: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/account-groups', payload)
+    return data
+  },
+  updateAccountGroup: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/accounts/account-groups/${id}`, payload)
+    return data
+  },
+  deleteAccountGroup: async (id: number) => {
+    await apiClient.delete(`/accounts/account-groups/${id}`)
+  },
+  getLedgerSettings: async () => {
+    const { data } = await apiClient.get('/accounts/ledger-settings')
+    return data
+  },
+  updateLedgerSetting: async (role: string, glAccountId: number | null) => {
+    const { data } = await apiClient.put('/accounts/ledger-settings', { role, gl_account_id: glAccountId })
+    return data
+  },
+  listGstRates: async () => {
+    const { data } = await apiClient.get('/accounts/gst-rates')
+    return data
+  },
+  createGstRate: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/gst-rates', payload)
+    return data
+  },
+  updateGstRate: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/accounts/gst-rates/${id}`, payload)
+    return data
+  },
+  postOpeningBalances: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/opening-balances', payload)
+    return data
+  },
+  rebuildBalances: async () => {
+    const { data } = await apiClient.post('/accounts/maintenance/rebuild-balances')
+    return data
+  },
+
+  // ── Chart of accounts / masters ──
   listGLAccounts: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/accounts/gl-accounts', { params })
     return data
@@ -1703,7 +2356,10 @@ export const accountsApi = {
   deleteGLAccount: async (id: number) => {
     await apiClient.delete(`/accounts/gl-accounts/${id}`)
   },
-
+  getGLAccountBalance: async (glAccountId: number, period?: string) => {
+    const { data } = await apiClient.get(`/accounts/gl-accounts/${glAccountId}/balance`, { params: period ? { period } : undefined })
+    return data
+  },
   listBankAccounts: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/accounts/bank-accounts', { params })
     return data
@@ -1719,7 +2375,6 @@ export const accountsApi = {
   deleteBankAccount: async (id: number) => {
     await apiClient.delete(`/accounts/bank-accounts/${id}`)
   },
-
   listVendors: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/accounts/vendors', { params })
     return data
@@ -1735,7 +2390,6 @@ export const accountsApi = {
   deleteVendor: async (id: number) => {
     await apiClient.delete(`/accounts/vendors/${id}`)
   },
-
   listInternalOrders: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/accounts/internal-orders', { params })
     return data
@@ -1751,7 +2405,29 @@ export const accountsApi = {
   deleteInternalOrder: async (id: number) => {
     await apiClient.delete(`/accounts/internal-orders/${id}`)
   },
+  // Controlling: status moves (open → in progress → completed → closed; reopen = Partner approval → 202)
+  changeInternalOrderStatus: async (id: number, payload: { status: string; reason?: string | null }) => {
+    const res = await apiClient.post(`/accounts/internal-orders/${id}/status`, payload)
+    return { ...res.data, http_status: res.status }
+  },
+  getCostCenterActuals: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/reports/cost-center-actuals', { params })
+    return data
+  },
+  getCostCenterLineItems: async (params: Record<string, unknown>) => {
+    const { data } = await apiClient.get('/accounts/reports/cost-center-line-items', { params })
+    return data
+  },
+  getInternalOrdersOverview: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/reports/internal-orders', { params })
+    return data
+  },
+  getInternalOrderReport: async (id: number, params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get(`/accounts/reports/internal-orders/${id}`, { params })
+    return data
+  },
 
+  // ── Journals (manual = draft -> posted by another user) ──
   listJournalEntries: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/accounts/journal-entries', { params })
     return data
@@ -1764,19 +2440,46 @@ export const accountsApi = {
     const { data } = await apiClient.post('/accounts/journal-entries', payload)
     return data
   },
-  reverseJournalEntry: async (id: number, reason: string) => {
-    const { data } = await apiClient.post(`/accounts/journal-entries/${id}/reverse`, { reason })
+  postJournalEntry: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/journal-entries/${id}/post`)
     return data
   },
-  getGLAccountBalance: async (glAccountId: number, period?: string) => {
-    const { data } = await apiClient.get(`/accounts/gl-accounts/${glAccountId}/balance`, { params: period ? { period } : undefined })
+  submitJournalEntry: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/journal-entries/${id}/submit`)
+    return data
+  },
+  discardJournalEntry: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/journal-entries/${id}/discard`)
+    return data
+  },
+  reverseJournalEntry: async (id: number, reason: string, reversalDate?: string) => {
+    const { data } = await apiClient.post(`/accounts/journal-entries/${id}/reverse`, { reason, reversal_date: reversalDate || null })
+    return data
+  },
+  getJournalEntryByNumber: async (entryNumber: string) => {
+    const { data } = await apiClient.get('/accounts/journal-entries/by-number', { params: { entry_number: entryNumber } })
+    return data
+  },
+  getJournalEntryHistory: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/journal-entries/${id}/history`)
+    return data
+  },
+  /** FB02: only narration + line remarks change after posting. */
+  changeJournalEntryDetails: async (id: number, payload: { description?: string | null; lines?: { line_id: number; remarks: string | null }[] }) => {
+    const { data } = await apiClient.patch(`/accounts/journal-entries/${id}/details`, payload)
     return data
   },
 
+  // ── Purchase ──
   matchPreview: async (purchaseOrderId: number, invoiceQty: number, invoiceAmount: number) => {
     const { data } = await apiClient.get('/accounts/vendor-invoices/match-preview', {
       params: { purchase_order_id: purchaseOrderId, invoice_qty: invoiceQty, invoice_amount: invoiceAmount },
     })
+    return data
+  },
+  /** Line-level 3-way match: each bill line against its PO line and goods received. */
+  matchPreviewLines: async (purchaseOrderId: number, lines: Record<string, unknown>[]) => {
+    const { data } = await apiClient.post('/accounts/vendor-invoices/match-preview', { purchase_order_id: purchaseOrderId, lines })
     return data
   },
   listVendorInvoices: async (params: Record<string, unknown> = {}) => {
@@ -1791,7 +2494,7 @@ export const accountsApi = {
     const { data } = await apiClient.post('/accounts/vendor-invoices', payload)
     return data
   },
-  approveVendorInvoiceVariance: async (id: number, note?: string) => {
+  approveVariance: async (id: number, note?: string) => {
     const { data } = await apiClient.post(`/accounts/vendor-invoices/${id}/approve-variance`, { note })
     return data
   },
@@ -1799,37 +2502,174 @@ export const accountsApi = {
     const { data } = await apiClient.post(`/accounts/vendor-invoices/${id}/post`)
     return data
   },
+  submitVendorInvoice: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/vendor-invoices/${id}/submit`)
+    return data
+  },
+  cancelVendorInvoice: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/accounts/vendor-invoices/${id}/cancel`, { reason })
+    return data
+  },
+  vendorInvoiceSettlements: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/vendor-invoices/${id}/settlements`)
+    return data
+  },
 
+  // ── Sales ──
+  listARTransactions: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/ar-transactions', { params })
+    return data
+  },
+  getARTransaction: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/ar-transactions/${id}`)
+    return data
+  },
+  createARTransaction: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/ar-transactions', payload)
+    return data
+  },
+  // Invoice from a Sales Order billing milestone (VF01)
+  salesBillingOrders: async (): Promise<import('@/types').SalesBillableOrder[]> => {
+    const { data } = await apiClient.get('/accounts/sales-billing/orders')
+    return data
+  },
+  salesBillingOrder: async (soId: number): Promise<{ so_id: number; so_number: string | null; customer_name: string | null; customer_gstin: string | null; place_of_supply_state_code: string | null; customer_po_number: string | null; customer_po_date: string | null; status: string; milestones: import('@/types').SalesBillingDue[] }> => {
+    const { data } = await apiClient.get(`/accounts/sales-billing/orders/${soId}`)
+    return data
+  },
+  createInvoiceFromSalesOrder: async (payload: { so_id: number; billing_plan_line_id: number; schedule_ids?: number[]; invoice_date: string; narration?: string | null; eway_bill_no?: string | null; vehicle_no?: string | null }) => {
+    const { data } = await apiClient.post('/accounts/sales-billing/invoices', payload)
+    return data
+  },
+  postARTransaction: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/ar-transactions/${id}/post`)
+    return data
+  },
+  submitARTransaction: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/ar-transactions/${id}/submit`)
+    return data
+  },
+  cancelARTransaction: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/accounts/ar-transactions/${id}/cancel`, { reason })
+    return data
+  },
+  updateEInvoice: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/accounts/ar-transactions/${id}/e-invoice`, payload)
+    return data
+  },
+  arSettlements: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/ar-transactions/${id}/settlements`)
+    return data
+  },
+
+  // ── Debit / credit notes ──
+  listNotes: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/notes', { params })
+    return data
+  },
+  getNote: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/notes/${id}`)
+    return data
+  },
+  createNote: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/notes', payload)
+    return data
+  },
+  postNote: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/notes/${id}/post`)
+    return data
+  },
+  submitNote: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/notes/${id}/submit`)
+    return data
+  },
+  cancelNote: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/accounts/notes/${id}/cancel`, { reason })
+    return data
+  },
+
+  // ── Payments / receipts / contra vouchers ──
   listPayments: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/accounts/payments', { params })
     return data
   },
-  createPayment: async (payload: Record<string, unknown>) => {
+  getPayment: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/payments/${id}`)
+    return data
+  },
+  createVoucher: async (payload: Record<string, unknown>) => {
     const { data } = await apiClient.post('/accounts/payments', payload)
     return data
   },
-
-  listArTransactions: async (params: Record<string, unknown> = {}) => {
-    const { data } = await apiClient.get('/accounts/ar-transactions', { params })
+  payInvoice: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/payments/pay-invoice', payload)
     return data
   },
-  getArTransaction: async (id: number) => {
-    const { data } = await apiClient.get(`/accounts/ar-transactions/${id}`)
+  openItems: async (partyType: 'vendor' | 'customer', partyId: number) => {
+    const { data } = await apiClient.get('/accounts/payments/open-items', { params: { party_type: partyType, party_id: partyId } })
     return data
   },
-  createArTransaction: async (payload: Record<string, unknown>) => {
-    const { data } = await apiClient.post('/accounts/ar-transactions', payload)
+  allocate: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/payments/allocate', payload)
     return data
   },
-  postArTransaction: async (id: number) => {
-    const { data } = await apiClient.post(`/accounts/ar-transactions/${id}/post`)
+  removeAllocation: async (allocationId: number) => {
+    const { data } = await apiClient.delete(`/accounts/payments/allocations/${allocationId}`)
     return data
   },
-  collectArTransaction: async (id: number, payload: Record<string, unknown>) => {
+  cancelVoucher: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/accounts/payments/${id}/cancel`, { reason })
+    return data
+  },
+  collectARTransaction: async (id: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.post(`/accounts/ar-transactions/${id}/collect`, payload)
     return data
   },
 
+  // ── Outstanding (AR / AP) ──
+  partyOutstanding: async (partyType: 'vendor' | 'customer', asOf?: string) => {
+    const { data } = await apiClient.get('/accounts/outstanding', { params: { party_type: partyType, as_of: asOf || undefined } })
+    return data
+  },
+  openBills: async (partyType: 'vendor' | 'customer', partyId?: number, asOf?: string) => {
+    const { data } = await apiClient.get('/accounts/outstanding/bills', { params: { party_type: partyType, party_id: partyId, as_of: asOf || undefined } })
+    return data
+  },
+
+  // ── Receivables management: credit, collections & dunning, disputes ──
+  receivablesMeta: async () => { const { data } = await apiClient.get('/accounts/receivables/meta'); return data },
+  creditPosition: async (customerId: number, checkpoint: 'so_confirmation' | 'dispatch' = 'so_confirmation', salesOrderId?: number) => {
+    const { data } = await apiClient.get(`/accounts/credit/customers/${customerId}`, { params: { checkpoint, sales_order_id: salesOrderId } })
+    return data
+  },
+  creditOverview: async () => { const { data } = await apiClient.get('/accounts/credit/overview'); return data },
+  creditReleases: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/accounts/credit/releases', { params }); return data },
+  requestCreditRelease: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/accounts/credit/releases', payload); return data },
+  withdrawCreditRelease: async (id: number, reason?: string) => { const { data } = await apiClient.post(`/accounts/credit/releases/${id}/withdraw`, { reason }); return data },
+  collectionsWorklist: async (asOf?: string) => { const { data } = await apiClient.get('/accounts/collections/worklist', { params: { as_of: asOf || undefined } }); return data },
+  collectionsCustomer: async (customerId: number) => { const { data } = await apiClient.get(`/accounts/collections/customers/${customerId}`); return data },
+  addCollectionNote: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/accounts/collections/notes', payload); return data },
+  cancelPromise: async (noteId: number) => { const { data } = await apiClient.post(`/accounts/collections/notes/${noteId}/cancel-promise`); return data },
+  dunningProposal: async (asOf?: string) => { const { data } = await apiClient.get('/accounts/collections/dunning-proposal', { params: { as_of: asOf || undefined } }); return data },
+  runDunning: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/accounts/collections/dunning-run', payload); return data },
+  dunningLetters: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/accounts/collections/letters', { params }); return data },
+  cancelDunningLetter: async (id: number, reason: string) => { const { data } = await apiClient.post(`/accounts/collections/letters/${id}/cancel`, { reason }); return data },
+  dunningLetterPdf: async (id: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/accounts/collections/letters/${id}/letter.pdf`, { responseType: 'blob' })
+    return data
+  },
+  listDisputes: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/accounts/disputes', { params }); return data },
+  createDispute: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/accounts/disputes', payload); return data },
+  updateDispute: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/accounts/disputes/${id}`, payload); return data },
+  resolveDispute: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/accounts/disputes/${id}/resolve`, payload); return data },
+  partyStatement: async (partyType: 'vendor' | 'customer', partyId: number, fromDate?: string, toDate?: string) => {
+    const { data } = await apiClient.get('/accounts/outstanding/statement', {
+      params: { party_type: partyType, party_id: partyId, from_date: fromDate || undefined, to_date: toDate || undefined },
+    })
+    return data
+  },
+
+  // ── Period close ──
   listPeriodCloses: async () => {
     const { data } = await apiClient.get('/accounts/period-close')
     return data
@@ -1843,6 +2683,7 @@ export const accountsApi = {
     return data
   },
 
+  // ── Bank reconciliation ──
   listBankReconciliations: async (params: Record<string, unknown> = {}) => {
     const { data } = await apiClient.get('/accounts/bank-reconciliations', { params })
     return data
@@ -1859,50 +2700,165 @@ export const accountsApi = {
     const { data } = await apiClient.get(`/accounts/bank-reconciliations/${id}/unreconciled-payments`)
     return data
   },
-  reconcilePayments: async (id: number, paymentTransactionIds: number[]) => {
-    const { data } = await apiClient.post(`/accounts/bank-reconciliations/${id}/reconcile-payments`, { payment_transaction_ids: paymentTransactionIds })
+  reconcilePayments: async (id: number, paymentTransactionIds: number[], clearedDate?: string) => {
+    const { data } = await apiClient.post(`/accounts/bank-reconciliations/${id}/reconcile-payments`, {
+      payment_transaction_ids: paymentTransactionIds, cleared_date: clearedDate || null,
+    })
     return data
   },
   completeBankReconciliation: async (id: number) => {
     const { data } = await apiClient.post(`/accounts/bank-reconciliations/${id}/complete`)
     return data
   },
-
   getLiquidityForecast: async () => {
     const { data } = await apiClient.get('/accounts/liquidity-forecast')
     return data
   },
 
-  getTrialBalance: async (period?: string) => {
-    const { data } = await apiClient.get('/accounts/reports/trial-balance', { params: period ? { period } : undefined })
+  // ── GST ──
+  gstRegister: async (kind: 'sales' | 'purchase', fromDate: string, toDate: string) => {
+    const { data } = await apiClient.get('/accounts/gst/register', { params: { kind, from_date: fromDate, to_date: toDate } })
     return data
   },
-  getGLLedger: async (glAccountId: number, fromPeriod?: string, toPeriod?: string) => {
-    const { data } = await apiClient.get('/accounts/reports/gl-ledger', { params: { gl_account_id: glAccountId, from_period: fromPeriod, to_period: toPeriod } })
+  gstr1: async (period: string) => {
+    const { data } = await apiClient.get('/accounts/gst/gstr1', { params: { period } })
     return data
   },
-  getApAging: async () => {
-    const { data } = await apiClient.get('/accounts/reports/ap-aging')
+  gstr3b: async (period: string) => {
+    const { data } = await apiClient.get('/accounts/gst/gstr3b', { params: { period } })
     return data
   },
-  getArAging: async () => {
-    const { data } = await apiClient.get('/accounts/reports/ar-aging')
+  gstSetoffPreview: async (period: string) => {
+    const { data } = await apiClient.get('/accounts/gst/setoff', { params: { period } })
     return data
   },
-  getProfitAndLoss: async (period?: string) => {
-    const { data } = await apiClient.get('/accounts/reports/profit-and-loss', { params: period ? { period } : undefined })
+  postGstSetoff: async (period: string) => {
+    const { data } = await apiClient.post('/accounts/gst/setoff', null, { params: { period } })
     return data
   },
-  getBalanceSheet: async (period?: string) => {
-    const { data } = await apiClient.get('/accounts/reports/balance-sheet', { params: period ? { period } : undefined })
+
+  // ── Inventory accounting (periodic) ──
+  stockValue: async () => {
+    const { data } = await apiClient.get('/accounts/inventory/stock-value')
     return data
   },
-  getVarianceAnalysis: async (fromPeriod?: string, toPeriod?: string) => {
-    const { data } = await apiClient.get('/accounts/reports/variance-analysis', { params: { from_period: fromPeriod, to_period: toPeriod } })
+  purchaseSalesImpact: async (fromDate?: string, toDate?: string) => {
+    const { data } = await apiClient.get('/accounts/inventory/purchase-sales-impact', { params: { from_date: fromDate || undefined, to_date: toDate || undefined } })
+    return data
+  },
+  listValuations: async () => {
+    const { data } = await apiClient.get('/accounts/inventory/valuations')
+    return data
+  },
+  getValuation: async (id: number) => {
+    const { data } = await apiClient.get(`/accounts/inventory/valuations/${id}`)
+    return data
+  },
+  createValuation: async (accountingPeriod: string, notes?: string) => {
+    const { data } = await apiClient.post('/accounts/inventory/valuations', { accounting_period: accountingPeriod, notes })
+    return data
+  },
+  updateValuationLine: async (lineId: number, payload: { quantity?: number; rate?: number }) => {
+    const { data } = await apiClient.patch(`/accounts/inventory/valuation-lines/${lineId}`, payload)
+    return data
+  },
+  postValuation: async (id: number) => {
+    const { data } = await apiClient.post(`/accounts/inventory/valuations/${id}/post`)
+    return data
+  },
+  cancelValuation: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/accounts/inventory/valuations/${id}/cancel`, { reason })
+    return data
+  },
+
+  // ── Fixed assets & depreciation ──
+  listFixedAssets: async (params: Record<string, unknown> = {}) => {
+    const { data } = await apiClient.get('/accounts/fixed-assets', { params })
+    return data
+  },
+  createFixedAsset: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/accounts/fixed-assets', payload)
+    return data
+  },
+  updateFixedAsset: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.patch(`/accounts/fixed-assets/${id}`, payload)
+    return data
+  },
+  deleteFixedAsset: async (id: number) => {
+    await apiClient.delete(`/accounts/fixed-assets/${id}`)
+  },
+  disposeFixedAsset: async (id: number, payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post(`/accounts/fixed-assets/${id}/dispose`, payload)
+    return data
+  },
+  depreciationPreview: async (period: string) => {
+    const { data } = await apiClient.get('/accounts/fixed-assets/depreciation/preview', { params: { period } })
+    return data
+  },
+  listDepreciationRuns: async () => {
+    const { data } = await apiClient.get('/accounts/fixed-assets/depreciation/runs')
+    return data
+  },
+  runDepreciation: async (accountingPeriod: string) => {
+    const { data } = await apiClient.post('/accounts/fixed-assets/depreciation/runs', { accounting_period: accountingPeriod })
+    return data
+  },
+  reverseDepreciationRun: async (id: number, reason: string) => {
+    const { data } = await apiClient.post(`/accounts/fixed-assets/depreciation/runs/${id}/reverse`, { reason })
+    return data
+  },
+
+  // ── Financial reports & year end ──
+  getTrialBalance: async (params: { from_date?: string; to_date?: string; period?: string } = {}) => {
+    const { data } = await apiClient.get('/accounts/reports/trial-balance', { params })
+    return data
+  },
+  getGLLedger: async (glAccountId: number, fromDate?: string, toDate?: string) => {
+    const { data } = await apiClient.get('/accounts/reports/gl-ledger', { params: { gl_account_id: glAccountId, from_date: fromDate || undefined, to_date: toDate || undefined } })
+    return data
+  },
+  getDayBook: async (fromDate?: string, toDate?: string, voucherType?: string) => {
+    const { data } = await apiClient.get('/accounts/reports/day-book', { params: { from_date: fromDate || undefined, to_date: toDate || undefined, voucher_type: voucherType || undefined } })
+    return data
+  },
+  getProfitAndLoss: async (params: { from_date?: string; to_date?: string; period?: string } = {}) => {
+    const { data } = await apiClient.get('/accounts/reports/profit-and-loss', { params })
+    return data
+  },
+  getBalanceSheet: async (params: { as_of?: string; period?: string } = {}) => {
+    const { data } = await apiClient.get('/accounts/reports/balance-sheet', { params })
+    return data
+  },
+  getCashFlow: async (params: { from_date?: string; to_date?: string } = {}) => {
+    const { data } = await apiClient.get('/accounts/reports/cash-flow', { params })
+    return data
+  },
+  getAPAging: async (asOf?: string) => {
+    const { data } = await apiClient.get('/accounts/reports/ap-aging', { params: { as_of: asOf || undefined } })
+    return data
+  },
+  getARAging: async (asOf?: string) => {
+    const { data } = await apiClient.get('/accounts/reports/ar-aging', { params: { as_of: asOf || undefined } })
+    return data
+  },
+  getVarianceAnalysis: async (params: { from_date?: string; to_date?: string } = {}) => {
+    const { data } = await apiClient.get('/accounts/reports/variance-analysis', { params })
     return data
   },
   getMonthlyReportPack: async (period?: string) => {
     const { data } = await apiClient.get('/accounts/reports/monthly-pack', { params: period ? { period } : undefined })
+    return data
+  },
+  yearEndPreview: async (fyCode: string) => {
+    const { data } = await apiClient.get('/accounts/reports/year-end', { params: { fy_code: fyCode } })
+    return data
+  },
+  closeFinancialYear: async (fyCode: string) => {
+    const { data } = await apiClient.post('/accounts/reports/year-end/close', null, { params: { fy_code: fyCode } })
+    return data
+  },
+  reopenFinancialYear: async (fyCode: string, reason: string) => {
+    const { data } = await apiClient.post('/accounts/reports/year-end/reopen', null, { params: { fy_code: fyCode, reason } })
     return data
   },
 }
@@ -1936,6 +2892,15 @@ export const organizationApi = {
   },
   deleteCompanyAddress: async (id: number) => {
     await apiClient.delete(`/organization/company/addresses/${id}`)
+  },
+
+  listCompanyPartners: async () => {
+    const { data } = await apiClient.get('/organization/company/partners')
+    return data
+  },
+  setCompanyPartners: async (userIds: number[]) => {
+    const { data } = await apiClient.put('/organization/company/partners', { user_ids: userIds })
+    return data
   },
 
   listCompanyContacts: async () => {
@@ -2105,11 +3070,234 @@ const RND_TOOL_PATHS: Record<string, string> = {
   spline: 'spline',
 }
 
+/** R&D task planning fields (priority, start date, status, checklist) on a multipart create form. */
+function appendTaskPlanning(form: FormData, p: import('@/types').RndTaskCreateInput) {
+  if (p.priority) form.append('priority', p.priority)
+  if (p.start_date) form.append('start_date', p.start_date)
+  if (p.work_status) form.append('work_status', p.work_status)
+  if (p.checklist?.length) form.append('checklist', JSON.stringify(p.checklist))
+}
+
+// Design / Electrical / Hydraulic & Pneumatic › Requirements — what R&D shared with the department.
+export const deptRequirementsApi = {
+  list: async (department: string): Promise<import('@/types').DeptRequirementRow[]> => { const { data } = await apiClient.get(`/rnd/department-requirements/${department}`); return data },
+  get: async (department: string, shareId: number): Promise<import('@/types').DeptRequirementDetail> => { const { data } = await apiClient.get(`/rnd/department-requirements/${department}/${shareId}`); return data },
+  respond: async (department: string, shareId: number, response: string, remarks: string, files: File[]): Promise<import('@/types').DeptRequirementDetail> => {
+    const form = new FormData()
+    form.append('response', response)
+    if (remarks.trim()) form.append('remarks', remarks.trim())
+    files.forEach((f) => form.append('files', f))
+    const { data } = await apiClient.post(`/rnd/department-requirements/${department}/${shareId}/respond`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Sending' })
+    return data
+  },
+  openDocument: async (department: string, doc: { id: number; file_size?: number | null }) => {
+    if ((doc.file_size || 0) > LARGE_DOWNLOAD_BYTES) {
+      const { data } = await apiClient.get(`/rnd/department-requirements/${department}/documents/${doc.id}/download-url`)
+      window.open(data.url, '_blank', 'noopener')
+      return
+    }
+    const { data } = await apiClient.get(`/rnd/department-requirements/${department}/documents/${doc.id}/content`, { responseType: 'blob' })
+    window.open(URL.createObjectURL(data), '_blank')
+  },
+}
+
 export const rndApi = {
+  listRequirements: async (params: { search?: string; source?: string; mine?: boolean } = {}): Promise<RndRequirement[]> => {
+    const { data } = await apiClient.get('/rnd/requirements', { params })
+    return data
+  },
+  respondToRequest: async (requestId: number, payload: { remarks?: string; delay_reason?: string; files?: File[] }): Promise<RndRequest> => {
+    const form = new FormData()
+    if (payload.remarks) form.append('remarks', payload.remarks)
+    if (payload.delay_reason) form.append('delay_reason', payload.delay_reason)
+    for (const f of payload.files || []) form.append('files', f)
+    const { data } = await apiClient.post(`/rnd/requirements/requests/${requestId}/respond`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  getRequirement: async (source: string, id: number): Promise<RndRequirementDetail> => {
+    const { data } = await apiClient.get(`/rnd/requirements/${source}/${id}`)
+    return data
+  },
+  // R&D Settings (team: head / member)
+  getSettings: async (): Promise<import('@/types').RndSettings> => { const { data } = await apiClient.get('/rnd/settings'); return data },
+  saveSettings: async (payload: { creator_ids: number[]; viewer_ids: number[] }): Promise<import('@/types').RndSettings> => { const { data } = await apiClient.put('/rnd/settings', payload); return data },
+  people: async (): Promise<import('@/types').RndPerson[]> => { const { data } = await apiClient.get('/rnd/settings/people'); return data },
+  // Prototype / Research projects linked to a requirement (R&D head links / unlinks)
+  linkedProjects: async (source: string, id: number): Promise<import('@/types').RndLinkedProject[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/projects`); return data },
+  linkableProjects: async (source: string, id: number): Promise<import('@/types').RndLinkedProject[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/linkable-projects`); return data },
+  linkProject: async (source: string, id: number, projectId: number): Promise<import('@/types').RndLinkedProject[]> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/projects`, { project_id: projectId }); return data },
+  unlinkProject: async (source: string, id: number, projectId: number): Promise<import('@/types').RndLinkedProject[]> => { const { data } = await apiClient.delete(`/rnd/requirement-work/${source}/${id}/projects/${projectId}`); return data },
+  // Per-requirement access (set by the R&D head)
+  getAccess: async (source: string, id: number): Promise<import('@/types').RndRequirementAccessRow[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/access`); return data },
+  saveAccess: async (source: string, id: number, rows: Omit<import('@/types').RndRequirementAccessRow, 'name' | 'granted_by'>[]): Promise<import('@/types').RndRequirementAccessRow[]> => {
+    const { data } = await apiClient.put(`/rnd/requirement-work/${source}/${id}/access`, { rows }); return data
+  },
+  // Requirement documents on the R&D side - opened only through the R&D access check
+  listWorkDocuments: async (source: string, id: number): Promise<import('@/types').RndWorkDocument[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/documents`); return data },
+  /** Upload under one of my departments; 'own' keeps the files to that department, 'all' shows them to every department. */
+  uploadWorkDocuments: async (source: string, id: number, files: File[], opts?: { department?: string; visibility?: 'all' | 'own' }) => {
+    const form = new FormData()
+    for (const f of files) form.append('files', f)
+    if (opts?.department) form.append('department', opts.department)
+    if (opts?.visibility) form.append('visibility', opts.visibility)
+    const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/documents`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Uploading' })
+    return data
+  },
+  setDocumentVisibility: async (documentId: number, sharedWithAll: boolean): Promise<import('@/types').RndWorkDocument> => {
+    const { data } = await apiClient.patch(`/rnd/requirement-work/documents/${documentId}/visibility`, { shared_with_all: sharedWithAll }); return data
+  },
+  /** What I may do on a requirement and which of its departments I belong to (R&D or a shared department). */
+  requirementMyAccess: async (source: string, id: number): Promise<import('@/types').RndMyAccess> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/my-access`); return data },
+  /** R&D people + people of every department the requirement is shared with (one row per person and department). */
+  requirementAssignees: async (source: string, id: number): Promise<import('@/types').RndPerson[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/assignees`); return data },
+  openWorkDocument: async (doc: { id: number; file_size?: number | null }) => {
+    if ((doc.file_size || 0) > LARGE_DOWNLOAD_BYTES) {
+      const { data } = await apiClient.get(`/rnd/requirement-work/documents/${doc.id}/download-url`)
+      window.open(data.url, '_blank', 'noopener')
+      return
+    }
+    const { data } = await apiClient.get(`/rnd/requirement-work/documents/${doc.id}/content`, { responseType: 'blob' })
+    window.open(URL.createObjectURL(data), '_blank')
+  },
+  // Tasks
+  listTasks: async (source: string, id: number): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/tasks`); return data },
+  myTasks: async (includeDone = false): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get('/rnd/requirement-work/tasks/mine', { params: includeDone ? { include_done: true } : undefined }); return data },
+  /** Tasks assigned to me on R&D (Prototype / Research) projects. */
+  myProjectTasks: async (includeDone = false): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get('/rnd/project-tasks/mine', { params: includeDone ? { include_done: true } : undefined }); return data },
+  createTask: async (source: string, id: number, p: import('@/types').RndTaskCreateInput): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('title', p.title)
+    form.append('assigned_to_id', String(p.assigned_to_id))
+    form.append('due_date', p.due_date)
+    if (p.remarks) form.append('remarks', p.remarks)
+    if (p.department) form.append('department', p.department)
+    appendTaskPlanning(form, p)
+    for (const f of p.files) form.append('files', f)
+    const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/tasks`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Assigning' })
+    return data
+  },
+  extendTask: async (taskId: number, reason: string, newDueDate: string): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('reason', reason)
+    form.append('new_due_date', newDueDate)
+    const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/extend`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  /** Assignee completes the task themselves. */
+  completeTask: async (taskId: number, p: { remarks: string; delay_reason?: string; files: File[] }): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('remarks', p.remarks)
+    if (p.delay_reason) form.append('delay_reason', p.delay_reason)
+    for (const f of p.files) form.append('files', f)
+    const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/complete`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Completing' })
+    return data
+  },
+  requestApproval: async (taskId: number, p: { request: string; files: File[] }): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('request', p.request)
+    for (const f of p.files) form.append('files', f)
+    const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/approvals`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Sending' })
+    return data
+  },
+  decideApproval: async (approvalId: number, decision: 'approve' | 'reject', remarks?: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/approvals/${approvalId}/decide`, { decision, remarks }); return data },
+  withdrawApproval: async (approvalId: number): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/approvals/${approvalId}/withdraw`); return data },
+  reopenTask: async (taskId: number, remarks: string, newDueDate?: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/reopen`, { remarks, new_due_date: newDueDate || null }); return data },
+  cancelTask: async (taskId: number, remarks: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/cancel`, { remarks }); return data },
+  createSubtask: async (parentTaskId: number, p: import('@/types').RndTaskCreateInput): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('title', p.title)
+    form.append('assigned_to_id', String(p.assigned_to_id))
+    form.append('due_date', p.due_date)
+    if (p.remarks) form.append('remarks', p.remarks)
+    if (p.department) form.append('department', p.department)
+    appendTaskPlanning(form, p)
+    for (const f of p.files) form.append('files', f)
+    const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${parentTaskId}/subtasks`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Assigning' })
+    return data
+  },
+  editTask: async (taskId: number, p: import('@/types').RndTaskEditInput): Promise<import('@/types').RndTask> => { const { data } = await apiClient.patch(`/rnd/requirement-work/tasks/${taskId}`, p); return data },
+  /** Tick a checklist step or change the work status (assignee / reviewer). */
+  taskProgress: async (taskId: number, p: { work_status?: string; item_id?: string; done?: boolean }): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/progress`, p); return data },
+  addTaskUpdate: async (taskId: number, p: { remarks: string; files: File[] }): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('remarks', p.remarks)
+    for (const f of p.files) form.append('files', f)
+    const { data } = await apiClient.post(`/rnd/requirement-work/tasks/${taskId}/update`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Uploading' })
+    return data
+  },
+  // Every file R&D may see on a requirement (business team, tasks, discussion, R&D).
+  listAllRequirementDocuments: async (source: string, id: number): Promise<import('@/types').RndWorkDocument[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/all-documents`); return data },
+  // Technical Offers on a requirement (R&D prepares, the R&D head releases, CRM quotes against it).
+  listTechnicalOffers: async (source: string, id: number): Promise<import('@/types').RndTechnicalOffer[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/technical-offers`); return data },
+  technicalOfferTorOptions: async (): Promise<import('@/types').RndTorOption[]> => { const { data } = await apiClient.get('/rnd/requirement-work/technical-offers/tor-options'); return data },
+  createTechnicalOffer: async (source: string, id: number, p: Partial<import('@/types').RndTechnicalOfferInput> = {}): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/technical-offers`, p); return data },
+  updateTechnicalOffer: async (offerId: number, p: Partial<import('@/types').RndTechnicalOfferInput>): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.patch(`/rnd/requirement-work/technical-offers/${offerId}`, p); return data },
+  deleteTechnicalOffer: async (offerId: number) => { const { data } = await apiClient.delete(`/rnd/requirement-work/technical-offers/${offerId}`); return data },
+  releaseTechnicalOffer: async (offerId: number): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/release`); return data },
+  reviseTechnicalOffer: async (offerId: number, reason: string): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/revise`, { reason }); return data },
+  // Shared with Design / Electrical / Hydraulic & Pneumatic for a feasibility reply.
+  listShares: async (source: string, id: number): Promise<import('@/types').RndRequirementShare[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/shares`); return data },
+  shareRequirement: async (source: string, id: number, p: { departments: string[]; note: string; due_date: string | null }): Promise<import('@/types').RndRequirementShare[]> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/shares`, p); return data },
+  // Project (Prototype / Research) tasks — same RndTask shape as requirement tasks.
+  projectTaskAccess: async (projectId: number): Promise<{ can_manage: boolean; people: import('@/types').RndPerson[]; team: import('@/types').RndPerson[] }> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/task-access`); return data },
+  listProjectTasks: async (projectId: number): Promise<import('@/types').RndTask[]> => { const { data } = await apiClient.get(`/rnd/projects/${projectId}/tasks`); return data },
+  createProjectTask: async (projectId: number, p: import('@/types').RndTaskCreateInput, parentTaskId?: number): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('title', p.title)
+    form.append('assigned_to_id', String(p.assigned_to_id))
+    form.append('due_date', p.due_date)
+    if (p.remarks) form.append('remarks', p.remarks)
+    appendTaskPlanning(form, p)
+    for (const f of p.files) form.append('files', f)
+    const url = parentTaskId ? `/rnd/project-tasks/${parentTaskId}/subtasks` : `/rnd/projects/${projectId}/tasks`
+    const { data } = await apiClient.post(url, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Assigning' })
+    return data
+  },
+  editProjectTask: async (taskId: number, p: import('@/types').RndTaskEditInput): Promise<import('@/types').RndTask> => { const { data } = await apiClient.patch(`/rnd/project-tasks/${taskId}`, p); return data },
+  projectTaskProgress: async (taskId: number, p: { work_status?: string; item_id?: string; done?: boolean }): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/progress`, p); return data },
+  extendProjectTask: async (taskId: number, reason: string, newDueDate: string): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('reason', reason)
+    form.append('new_due_date', newDueDate)
+    const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/extend`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  completeProjectTask: async (taskId: number, p: { remarks: string; delay_reason?: string; files: File[] }): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('remarks', p.remarks)
+    if (p.delay_reason) form.append('delay_reason', p.delay_reason)
+    for (const f of p.files) form.append('files', f)
+    const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/complete`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Completing' })
+    return data
+  },
+  requestProjectApproval: async (taskId: number, p: { request: string; files: File[] }): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('request', p.request)
+    for (const f of p.files) form.append('files', f)
+    const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/approvals`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Sending' })
+    return data
+  },
+  decideProjectApproval: async (approvalId: number, decision: 'approve' | 'reject', remarks?: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-task-approvals/${approvalId}/decide`, { decision, remarks }); return data },
+  withdrawProjectApproval: async (approvalId: number): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-task-approvals/${approvalId}/withdraw`); return data },
+  reopenProjectTask: async (taskId: number, remarks: string, newDueDate?: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/reopen`, { remarks, new_due_date: newDueDate || null }); return data },
+  cancelProjectTask: async (taskId: number, remarks: string): Promise<import('@/types').RndTask> => { const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/cancel`, { remarks }); return data },
+  addProjectTaskUpdate: async (taskId: number, p: { remarks: string; files: File[] }): Promise<import('@/types').RndTask> => {
+    const form = new FormData()
+    form.append('remarks', p.remarks)
+    for (const f of p.files) form.append('files', f)
+    const { data } = await apiClient.post(`/rnd/project-tasks/${taskId}/update`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 600000, activityLabel: 'Uploading' })
+    return data
+  },
   // Braking is the fully-wired example tool — see app/dashboard/rnd/braking.
   calculateBraking: async (payload: Record<string, unknown>) => {
     const { data } = await apiClient.post('/rnd/tools/braking/braking_calculate', payload)
     return data
+  },
+  downloadBrakingDocx: async (payload: Record<string, unknown>) => {
+    const { data } = await apiClient.post('/rnd/tools/braking/braking_download_docx', payload, { responseType: 'blob' })
+    return data as Blob
   },
   downloadBrakingPdf: async (payload: Record<string, unknown>) => {
     const { data } = await apiClient.post('/rnd/tools/braking/braking_report_pdf', payload, { responseType: 'blob' })
@@ -2234,6 +3422,11 @@ export const rndApi = {
   },
   updateProject: async (id: number, payload: Record<string, unknown>) => {
     const { data } = await apiClient.patch(`/rnd/projects/${id}`, payload)
+    return data
+  },
+  /** Picker options for a project's origin (product / inquiry / tender / complaint / NCR / service request). */
+  projectSourceOptions: async (kind: import('@/types').RndProjectSourceKind | 'product', q?: string): Promise<import('@/types').RndProjectSourceOption[]> => {
+    const { data } = await apiClient.get('/rnd/projects/source-options', { params: { kind, ...(q ? { q } : {}) } })
     return data
   },
   changeProjectStage: async (id: number, stage: string) => {
@@ -2378,6 +3571,10 @@ export const feedbackApi = {
 // its own marker line below (keep the marker). Backend routers live in
 // backend/app/modules/hr/routes/*, all under /api/v1/hr/...
 export const hrApi = {
+  // ── hr:settings (shared settings framework) ──
+  getSettings: async (): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.get('/hr/settings'); return data },
+  saveSettings: async (values: Record<string, unknown>): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.put('/hr/settings', { values }); return data },
+  resetSetting: async (key: string): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.post(`/hr/settings/reset/${key}`); return data },
   // ── hr:employees (A) ──
   listEmployees: async (params: Record<string, unknown> = {}): Promise<import('@/types').HrEmployeeListResponse> => {
     const { data } = await apiClient.get('/hr/employees', { params })
@@ -2390,6 +3587,24 @@ export const hrApi = {
   /** Create-or-update the HR profile (partial). reporting_manager_id / date_of_joining are written to the User row. */
   saveEmployee: async (userId: number, payload: Record<string, unknown>): Promise<import('@/types').HrEmployeeProfile> => {
     const { data } = await apiClient.patch(`/hr/employees/${userId}`, payload)
+    return data
+  },
+  /** Field rules of the dynamic workforce form (visibility, required, why). */
+  getWorkforceFormRules: async (): Promise<import('@/types').HrFormRules> => {
+    const { data } = await apiClient.get('/hr/employees/form-rules')
+    return data
+  },
+  // Employees without a portal account (workshop / contract labour), keyed by HR profile id.
+  createWorker: async (payload: Record<string, unknown>): Promise<import('@/types').HrEmployeeProfile> => {
+    const { data } = await apiClient.post('/hr/employees/workers', payload)
+    return data
+  },
+  getWorker: async (profileId: number): Promise<import('@/types').HrEmployeeProfile> => {
+    const { data } = await apiClient.get(`/hr/employees/workers/${profileId}`)
+    return data
+  },
+  saveWorker: async (profileId: number, payload: Record<string, unknown>): Promise<import('@/types').HrEmployeeProfile> => {
+    const { data } = await apiClient.patch(`/hr/employees/workers/${profileId}`, payload)
     return data
   },
   getMyProfile: async (): Promise<import('@/types').HrEmployeeProfile> => {
@@ -2428,6 +3643,37 @@ export const hrApi = {
   },
   deleteEmployeeDocument: async (userId: number, documentId: number) => {
     await apiClient.delete(`/hr/employees/${userId}/documents/${documentId}`)
+  },
+  // Documents of an employee without a portal account (keyed by HR profile id).
+  listWorkerDocuments: async (profileId: number): Promise<import('@/types').UserDocument[]> => {
+    const { data } = await apiClient.get(`/hr/employees/workers/${profileId}/documents`)
+    return data
+  },
+  uploadWorkerDocument: async (profileId: number, file: File, meta: Record<string, string>) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    Object.entries(meta).forEach(([k, v]) => { if (v) formData.append(k, v) })
+    const { data } = await apiClient.post(`/hr/employees/workers/${profileId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+    return data
+  },
+  getWorkerDocumentBlob: async (profileId: number, documentId: number): Promise<Blob> => {
+    const { data } = await apiClient.get(`/hr/employees/workers/${profileId}/documents/${documentId}/content`, { responseType: 'blob', timeout: 60000 })
+    return data
+  },
+  deleteWorkerDocument: async (profileId: number, documentId: number) => {
+    await apiClient.delete(`/hr/employees/workers/${profileId}/documents/${documentId}`)
+  },
+  /** HR verification of an employee document (rejection needs remarks). */
+  verifyEmployeeDocument: async (userId: number, documentId: number, payload: { status: string; remarks?: string }) => {
+    const { data } = await apiClient.post(`/hr/employees/${userId}/documents/${documentId}/verify`, payload)
+    return data
+  },
+  verifyWorkerDocument: async (profileId: number, documentId: number, payload: { status: string; remarks?: string }) => {
+    const { data } = await apiClient.post(`/hr/employees/workers/${profileId}/documents/${documentId}/verify`, payload)
+    return data
   },
   listMyDocuments: async (): Promise<import('@/types').UserDocument[]> => {
     const { data } = await apiClient.get('/hr/employees/me/documents')
@@ -2693,11 +3939,145 @@ export const hrApi = {
   getDashboard: async (): Promise<import('@/types').HrDashboard> => { const { data } = await apiClient.get('/hr/dashboard'); return data },
 }
 
+// ── HR › Safety (EHS incidents) and time evaluation / overtime ──
+// Types: components/hr/safety/types.ts.
+export const hrSafetyApi = {
+  meta: async () => { const { data } = await apiClient.get('/hr/safety/meta'); return data },
+  list: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/safety/incidents', { params }); return data },
+  mine: async () => { const { data } = await apiClient.get('/hr/safety/incidents/mine'); return data },
+  myActions: async () => { const { data } = await apiClient.get('/hr/safety/actions/mine'); return data },
+  get: async (id: number) => { const { data } = await apiClient.get(`/hr/safety/incidents/${id}`); return data },
+  create: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/safety/incidents', payload); return data },
+  update: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hr/safety/incidents/${id}`, payload); return data },
+  remove: async (id: number) => { const { data } = await apiClient.delete(`/hr/safety/incidents/${id}`); return data },
+  addPerson: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/hr/safety/incidents/${id}/persons`, payload); return data },
+  updatePerson: async (id: number, personId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.put(`/hr/safety/incidents/${id}/persons/${personId}`, payload); return data },
+  removePerson: async (id: number, personId: number) => { const { data } = await apiClient.delete(`/hr/safety/incidents/${id}/persons/${personId}`); return data },
+  startInvestigation: async (id: number, leadId: number) => { const { data } = await apiClient.post(`/hr/safety/incidents/${id}/start-investigation`, { investigation_lead_id: leadId }); return data },
+  saveInvestigation: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.put(`/hr/safety/incidents/${id}/investigation`, payload); return data },
+  addAction: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/hr/safety/incidents/${id}/actions`, payload); return data },
+  completeAction: async (id: number, actionId: number, remarks: string) => { const { data } = await apiClient.post(`/hr/safety/incidents/${id}/actions/${actionId}/complete`, { remarks }); return data },
+  cancelAction: async (id: number, actionId: number, remarks: string) => { const { data } = await apiClient.post(`/hr/safety/incidents/${id}/actions/${actionId}/cancel`, { remarks }); return data },
+  saveStatutory: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.put(`/hr/safety/incidents/${id}/statutory`, payload); return data },
+  submitClosure: async (id: number, remarks: string) => { const { data } = await apiClient.post(`/hr/safety/incidents/${id}/submit-closure`, { remarks }); return data },
+  withdrawClosure: async (id: number) => { const { data } = await apiClient.post(`/hr/safety/incidents/${id}/withdraw-closure`); return data },
+  uploadAttachment: async (id: number, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await apiClient.post(`/hr/safety/incidents/${id}/attachments`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  getAttachment: async (id: number, attId: number) => { const { data } = await apiClient.get(`/hr/safety/incidents/${id}/attachments/${attId}`, { responseType: 'blob' }); return data as Blob },
+  removeAttachment: async (id: number, attId: number) => { const { data } = await apiClient.delete(`/hr/safety/incidents/${id}/attachments/${attId}`); return data },
+  form18Pdf: async (id: number) => { const { data } = await apiClient.get(`/hr/safety/incidents/${id}/form18.pdf`, { responseType: 'blob' }); return data as Blob },
+  register: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/safety/register', { params }); return data },
+  exportRegister: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/safety/register/export', { params, responseType: 'blob' }); return data as Blob },
+  stats: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/safety/stats', { params }); return data },
+}
+
+export const hrTimeApi = {
+  me: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/time-evaluation/me', { params }); return data },
+  month: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/time-evaluation/month', { params }); return data },
+  employee: async (userId: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/hr/time-evaluation/employee/${userId}`, { params }); return data },
+  exportMonth: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/time-evaluation/export', { params, responseType: 'blob' }); return data as Blob },
+  claimOvertime: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/time-evaluation/overtime/me', payload); return data },
+  generateOvertime: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/time-evaluation/overtime/generate', payload); return data },
+  myOvertime: async () => { const { data } = await apiClient.get('/hr/time-evaluation/overtime/me'); return data },
+  overtimePendingForMe: async () => { const { data } = await apiClient.get('/hr/time-evaluation/overtime/pending-for-me'); return data },
+  listOvertime: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/time-evaluation/overtime', { params }); return data },
+  approveOvertime: async (id: number, payload: Record<string, unknown> = {}) => { const { data } = await apiClient.post(`/hr/time-evaluation/overtime/${id}/approve`, payload); return data },
+  rejectOvertime: async (id: number, remarks: string) => { const { data } = await apiClient.post(`/hr/time-evaluation/overtime/${id}/reject`, { remarks }); return data },
+  cancelOvertime: async (id: number) => { const { data } = await apiClient.post(`/hr/time-evaluation/overtime/${id}/cancel`); return data },
+}
+
+/** HCM wave 2: org assignment history (PA30), effective-dated actions (PA40),
+ * shift roster (PT01), biometric punches, attendance period lock, statutory
+ * registers, and the Finance side of expense claim posting (PR05). */
+export const hrOrgApi = {
+  history: async (userId: number) => { const { data } = await apiClient.get(`/hr/org-assignments/${userId}`); return data },
+  change: async (userId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/hr/org-assignments/${userId}`, payload); return data },
+  withdraw: async (sliceId: number) => { const { data } = await apiClient.delete(`/hr/org-assignments/slices/${sliceId}`); return data },
+  asOf: async (params: Record<string, unknown>) => { const { data } = await apiClient.get('/hr/org-assignments/as-of', { params }); return data },
+  scheduled: async () => { const { data } = await apiClient.get('/hr/lifecycle/scheduled'); return data },
+  applyNow: async (eventId: number, reason: string) => { const { data } = await apiClient.post(`/hr/lifecycle/events/${eventId}/apply-now`, { reason }); return data },
+}
+
+export const hrRosterApi = {
+  patterns: async () => { const { data } = await apiClient.get('/hr/roster/patterns'); return data },
+  createPattern: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/roster/patterns', payload); return data },
+  updatePattern: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hr/roster/patterns/${id}`, payload); return data },
+  grid: async (params: Record<string, unknown>) => { const { data } = await apiClient.get('/hr/roster', { params }); return data },
+  setCells: async (cells: Record<string, unknown>[]) => { const { data } = await apiClient.put('/hr/roster/cells', { cells }); return data },
+  generate: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/roster/generate', payload); return data },
+  template: async () => { const { data } = await apiClient.get('/hr/roster/import/template', { responseType: 'blob' }); return data as Blob },
+  importCsv: async (file: File, dryRun: boolean) => {
+    const fd = new FormData(); fd.append('file', file)
+    const { data } = await apiClient.post('/hr/roster/import', fd, { params: { dry_run: dryRun }, headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+}
+
+export const hrPunchApi = {
+  template: async () => { const { data } = await apiClient.get('/hr/punches/import/template', { responseType: 'blob' }); return data as Blob },
+  importLog: async (file: File, dryRun: boolean) => {
+    const fd = new FormData(); fd.append('file', file)
+    const { data } = await apiClient.post('/hr/punches/import', fd, { params: { dry_run: dryRun }, headers: { 'Content-Type': 'multipart/form-data' } })
+    return data
+  },
+  list: async (params: Record<string, unknown>) => { const { data } = await apiClient.get('/hr/punches', { params }); return data },
+  evaluate: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/punches/evaluate', payload); return data },
+}
+
+export const hrPeriodApi = {
+  list: async (year: number) => { const { data } = await apiClient.get('/hr/attendance-periods', { params: { year } }); return data },
+  lock: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/attendance-periods/lock', payload); return data },
+  unlock: async (id: number, reason: string) => { const { data } = await apiClient.post(`/hr/attendance-periods/${id}/unlock`, { reason }); return data },
+  adpExport: async (params: Record<string, unknown>) => { const { data } = await apiClient.get('/hr/attendance-periods/adp-export', { params, responseType: 'blob' }); return data as Blob },
+}
+
+export const hrRegisterApi = {
+  types: async () => { const { data } = await apiClient.get('/hr/registers/types'); return data },
+  list: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hr/registers', { params }); return data },
+  generate: async (payload: Record<string, unknown>) => { const { data } = await apiClient.post('/hr/registers', payload); return data },
+  preview: async (id: number) => { const { data } = await apiClient.get(`/hr/registers/${id}/preview`); return data },
+  xlsx: async (id: number) => { const { data } = await apiClient.get(`/hr/registers/${id}/xlsx`, { responseType: 'blob' }); return data as Blob },
+}
+
+export const hrClaimFinanceApi = {
+  list: async (status: 'approved' | 'paid' = 'approved') => { const { data } = await apiClient.get('/accounts/hr-claims', { params: { status } }); return data },
+  get: async (id: number) => { const { data } = await apiClient.get(`/accounts/hr-claims/${id}`); return data },
+  post: async (id: number) => { const { data } = await apiClient.post(`/accounts/hr-claims/${id}/post`); return data },
+  pay: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/accounts/hr-claims/${id}/pay`, payload); return data },
+}
+
 export const maintenanceApi = {
   getDashboard: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceDashboard> => { const { data } = await apiClient.get('/maintenance/dashboard', { params }); return data },
   getLookups: async (): Promise<import('@/types').MaintenanceLookups> => { const { data } = await apiClient.get('/maintenance/lookups'); return data },
   lookupAssets: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceAssetOption[]> => { const { data } = await apiClient.get('/maintenance/lookups/assets', { params }); return data },
   lookupStoreItems: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceStoreItemOption[]> => { const { data } = await apiClient.get('/maintenance/lookups/store-items', { params }); return data },
+  // ── Settings ── (shared settings framework)
+  getSettings: async (): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.get('/maintenance/settings'); return data },
+  saveSettings: async (values: Record<string, unknown>): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.put('/maintenance/settings', { values }); return data },
+  resetSetting: async (key: string): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.post(`/maintenance/settings/reset/${key}`); return data },
+
+  // ── QR asset tags ── (scan resolver + printable label sheet)
+  getAssetByCode: async (code: string): Promise<import('@/types').MaintenanceAssetScan> => { const { data } = await apiClient.get(`/maintenance/asset-lookup/by-code/${encodeURIComponent(code)}`); return data },
+  getAssetTagSheet: async (params: { ids?: number[]; branch_id?: number }): Promise<import('@/types').MaintenanceAssetTagLabel[]> => {
+    const { data } = await apiClient.get('/maintenance/asset-tags/sheet', { params: { ids: params.ids?.length ? params.ids.join(',') : undefined, branch_id: params.branch_id } })
+    return data
+  },
+  /** API path (relative to apiClient's baseURL) of an asset's QR SVG — fetch it with getAssetQrObjectUrl so the auth header goes along. */
+  assetQrPath: (assetId: number) => `/maintenance/assets/${assetId}/qr.svg`,
+  /** Fetches the QR SVG with auth and returns an object URL for <img src>; caller must URL.revokeObjectURL it. */
+  getAssetQrObjectUrl: async (assetId: number): Promise<string> => {
+    const { data } = await apiClient.get(`/maintenance/assets/${assetId}/qr.svg`, { responseType: 'blob' })
+    return URL.createObjectURL(data as Blob)
+  },
+
+  // ── Spares ── (read-only over Store; the bill of spares replaces the whole list)
+  getAssetSpares: async (assetId: number): Promise<import('@/types').MaintenanceAssetSpare[]> => { const { data } = await apiClient.get(`/maintenance/assets/${assetId}/spares`); return data },
+  putAssetSpares: async (assetId: number, lines: import('@/types').MaintenanceAssetSpareInput[]): Promise<import('@/types').MaintenanceAssetSpare[]> => { const { data } = await apiClient.put(`/maintenance/assets/${assetId}/spares`, { lines }); return data },
+  listSpares: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceSpare[]> => { const { data } = await apiClient.get('/maintenance/spares', { params }); return data },
 
   // ── Assets ──
   listAssets: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceAsset[]> => { const { data } = await apiClient.get('/maintenance/assets', { params }); return data },
@@ -2732,6 +4112,15 @@ export const maintenanceApi = {
   addLabour: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.post(`/maintenance/work-orders/${id}/labour`, payload); return data },
   deleteLabour: async (id: number, logId: number): Promise<import('@/types').MaintenanceWorkOrder> => { const { data } = await apiClient.delete(`/maintenance/work-orders/${id}/labour/${logId}`); return data },
 
+  // ── PM plans ──
+  listPmPlans: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenancePmPlan[]> => { const { data } = await apiClient.get('/maintenance/pm-plans', { params }); return data },
+  getPmPlan: async (id: number): Promise<import('@/types').MaintenancePmPlan> => { const { data } = await apiClient.get(`/maintenance/pm-plans/${id}`); return data },
+  createPmPlan: async (payload: Record<string, unknown>): Promise<import('@/types').MaintenancePmPlan> => { const { data } = await apiClient.post('/maintenance/pm-plans', payload); return data },
+  updatePmPlan: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').MaintenancePmPlan> => { const { data } = await apiClient.patch(`/maintenance/pm-plans/${id}`, payload); return data },
+  deletePmPlan: async (id: number) => { const { data } = await apiClient.delete(`/maintenance/pm-plans/${id}`); return data },
+  generatePmNow: async (id: number): Promise<import('@/types').MaintenancePmPlan> => { const { data } = await apiClient.post(`/maintenance/pm-plans/${id}/generate-now`); return data },
+  getPmCalendar: async (params: { from: string; to: string; branch_id?: number; asset_id?: number }): Promise<import('@/types').MaintenancePmCalendarEntry[]> => { const { data } = await apiClient.get('/maintenance/pm-plans/calendar', { params }); return data },
+
   // ── Attachments ── (asset | request | work_order)
   listAttachments: async (entityType: string, entityId: number): Promise<import('@/types').MaintenanceAttachment[]> => { const { data } = await apiClient.get('/maintenance/attachments', { params: { entity_type: entityType, entity_id: entityId } }); return data },
   uploadAttachments: async (entityType: string, entityId: number, files: File[], docType = 'other'): Promise<import('@/types').MaintenanceAttachment[]> => {
@@ -2745,12 +4134,38 @@ export const maintenanceApi = {
   },
   getAttachmentContent: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/maintenance/attachments/${id}/content`, { responseType: 'blob' }); return data },
   deleteAttachment: async (id: number) => { const { data } = await apiClient.delete(`/maintenance/attachments/${id}`); return data },
+
+  // ── Reports ── (params: from, to, branch_id, asset_id, category)
+  getReportSummary: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceReportSummary> => { const { data } = await apiClient.get('/maintenance/reports/summary', { params }); return data },
+  exportReport: async (params: Record<string, unknown> = {}): Promise<Blob> => {
+    const { data } = await apiClient.get('/maintenance/reports/export', { params: { ...params, format: 'xlsx' }, responseType: 'blob', timeout: 120000 })
+    return data as Blob
+  },
+
+  // ── AMC & warranty tracker ──
+  listContracts: async (params: Record<string, unknown> = {}): Promise<import('@/types').MaintenanceContractList> => { const { data } = await apiClient.get('/maintenance/contracts', { params }); return data },
+  exportContracts: async (params: Record<string, unknown> = {}): Promise<Blob> => {
+    const { data } = await apiClient.get('/maintenance/contracts/export', { params, responseType: 'blob', timeout: 120000 })
+    return data as Blob
+  },
+
+  // ── Asset Excel import ──
+  downloadAssetImportTemplate: async (): Promise<Blob> => { const { data } = await apiClient.get('/maintenance/assets/import-template', { responseType: 'blob' }); return data as Blob },
+  importAssets: async (file: File, dryRun: boolean): Promise<import('@/types').MaintenanceAssetImportResult> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post('/maintenance/assets/import', formData, {
+      params: { dry_run: dryRun }, headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000,
+    })
+    return data
+  },
 }
 
 export const productionApi = {
   getDashboard: async () => { const { data } = await apiClient.get('/production/dashboard'); return data },
   getPlanning: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/planning', { params }); return data },
   getReport: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/reports', { params }); return data },
+  getWipReport: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/reports/wip', { params }); return data },
 
   listWorkstations: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/workstations', { params }); return data },
   getWorkstation: async (id: number) => { const { data } = await apiClient.get(`/production/workstations/${id}`); return data },
@@ -2766,6 +4181,10 @@ export const productionApi = {
   activateBom: async (id: number) => { const { data } = await apiClient.post(`/production/boms/${id}/activate`); return data },
   obsoleteBom: async (id: number) => { const { data } = await apiClient.post(`/production/boms/${id}/obsolete`); return data },
   newBomVersion: async (id: number) => { const { data } = await apiClient.post(`/production/boms/${id}/new-version`); return data },
+  // eBOM -> mBOM transfer: released Design BOM revisions + where Production stands on them.
+  listDesignSources: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/boms/design-sources', { params }); return data },
+  transferFromDesign: async (designBomRevisionId: number) => { const { data } = await apiClient.post('/production/boms/from-design', { design_bom_revision_id: designBomRevisionId }); return data },
+  getBomDesignDiff: async (id: number, params: Record<string, unknown> = {}) => { const { data } = await apiClient.get(`/production/boms/${id}/design-diff`, { params }); return data },
 
   listWorkOrders: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/production/work-orders', { params }); return data },
   getWorkOrder: async (id: number) => { const { data } = await apiClient.get(`/production/work-orders/${id}`); return data },
@@ -2833,6 +4252,8 @@ export const electricalApi = {
   createBomItem: async (jobId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/bom`, payload); return data },
   updateBomItem: async (jobId: number, itemId: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/electrical/jobs/${jobId}/bom/${itemId}`, payload); return data },
   deleteBomItem: async (jobId: number, itemId: number) => { const { data } = await apiClient.delete(`/electrical/jobs/${jobId}/bom/${itemId}`); return data },
+  submitBomItem: async (jobId: number, itemId: number) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/bom/${itemId}/submit`); return data },
+  approvalTarget: async (entityType: string, id: number): Promise<{ job_id: number; tab: string }> => { const { data } = await apiClient.get(`/electrical/lookups/approval-target/${entityType}/${id}`); return data },
   linkPr: async (jobId: number, itemId: number, p2pNumber: string) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/bom/${itemId}/link-pr`, { p2p_number: p2pNumber }); return data },
   unlinkPr: async (jobId: number, itemId: number) => { const { data } = await apiClient.post(`/electrical/jobs/${jobId}/bom/${itemId}/unlink-pr`); return data },
   listPurchaseRequirements: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/electrical/purchase-requirements', { params }); return data },
@@ -2889,7 +4310,7 @@ export const electricalApi = {
   deleteDocument: async (documentId: number) => { const { data } = await apiClient.delete(`/electrical/documents/${documentId}`); return data },
 
   // Lookups
-  lookupProjects: async () => { const { data } = await apiClient.get('/electrical/lookups/projects'); return data },
+  lookupProjects: async (search?: string) => { const { data } = await apiClient.get('/electrical/lookups/projects', { params: { search } }); return data },
   lookupBranches: async () => { const { data } = await apiClient.get('/electrical/lookups/branches'); return data },
   lookupUsers: async () => { const { data } = await apiClient.get('/electrical/lookups/users'); return data },
   lookupItems: async (search?: string) => { const { data } = await apiClient.get('/electrical/lookups/items', { params: { search, limit: 500 } }); return data },
@@ -2955,6 +4376,141 @@ export const designApi = {
   lookupItems: async (search?: string): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/items', { params: { search, limit: 200 } }); return data },
   lookupDepartments: async (): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/departments'); return data },
   lookupDocuments: async (search?: string): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/documents', { params: { search, limit: 500 } }); return data },
+  lookupCustomers: async (search?: string): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/customers', { params: { search } }); return data },
+  lookupCrmRecords: async (source: 'inquiry' | 'tender', search?: string): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/crm-records', { params: { source, search } }); return data },
+  lookupStandards: async (): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/standards'); return data },
+  lookupQualityRecords: async (kind: 'ncr' | 'capa', search?: string): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/quality-records', { params: { kind, search } }); return data },
+  lookupBoms: async (releasedOnly = false): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/boms', { params: { released_only: releasedOnly } }); return data },
+  lookupReleasedDocuments: async (): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/released-documents'); return data },
+  /** Revisions approved internally and waiting on the customer (option id = revision id). */
+  lookupAwaitingCustomer: async (customerId?: number | null): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/awaiting-customer', { params: { customer_id: customerId || undefined } }); return data },
+  lookupMilestones: async (pmProjectId: number): Promise<import('@/types').DesignLookupOption[]> => { const { data } = await apiClient.get('/design/lookups/milestones', { params: { pm_project_id: pmProjectId } }); return data },
+
+  // Revision release after customer approval
+  releaseRevision: async (id: number, comment?: string): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post(`/design/revisions/${id}/release`, { comment }); return data },
+
+  // Me / settings
+  getMe: async (): Promise<import('@/types').DesignMe> => { const { data } = await apiClient.get('/design/settings/me'); return data },
+  getSettings: async (): Promise<import('@/types').DesignSettings> => { const { data } = await apiClient.get('/design/settings'); return data },
+  updateSettings: async (payload: Record<string, unknown>): Promise<import('@/types').DesignSettings> => { const { data } = await apiClient.put('/design/settings', payload); return data },
+
+  // Requests, milestones, my work
+  listRequests: async (params: Record<string, unknown> = {}): Promise<import('@/types').DesignRequest[]> => { const { data } = await apiClient.get('/design/requests', { params }); return data },
+  getRequest: async (id: number): Promise<import('@/types').DesignRequestDetail> => { const { data } = await apiClient.get(`/design/requests/${id}`); return data },
+  createRequest: async (payload: Record<string, unknown>): Promise<import('@/types').DesignRequestDetail> => { const { data } = await apiClient.post('/design/requests', payload); return data },
+  updateRequest: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignRequestDetail> => { const { data } = await apiClient.patch(`/design/requests/${id}`, payload); return data },
+  reviseRequest: async (id: number, requirement: string, change_note: string): Promise<import('@/types').DesignRequestDetail> => { const { data } = await apiClient.post(`/design/requests/${id}/revise`, { requirement, change_note }); return data },
+  acknowledgeRequest: async (id: number): Promise<import('@/types').DesignRequestDetail> => { const { data } = await apiClient.post(`/design/requests/${id}/acknowledge`); return data },
+  requestStatus: async (id: number, action: string, reason?: string): Promise<import('@/types').DesignRequestDetail> => { const { data } = await apiClient.post(`/design/requests/${id}/status`, { action, reason }); return data },
+  requestWaiting: async (id: number, waiting_on: 'design' | 'requester', note?: string): Promise<import('@/types').DesignRequestDetail> => { const { data } = await apiClient.post(`/design/requests/${id}/waiting`, { waiting_on, note }); return data },
+  commentRequest: async (id: number, comment: string): Promise<import('@/types').DesignRequestDetail> => { const { data } = await apiClient.post(`/design/requests/${id}/comments`, { comment }); return data },
+  listMilestones: async (includeClosed = false): Promise<import('@/types').DesignMilestoneEvidence[]> => { const { data } = await apiClient.get('/design/milestones', { params: { include_closed: includeClosed } }); return data },
+  getMilestoneEvidence: async (id: number): Promise<import('@/types').DesignMilestoneEvidence> => { const { data } = await apiClient.get(`/design/milestones/${id}/evidence`); return data },
+  getMyWork: async (includeDone = false): Promise<import('@/types').DesignWorkTask[]> => { const { data } = await apiClient.get('/design/my-work', { params: { include_done: includeDone } }); return data },
+  linkDeliverable: async (payload: { pm_task_id: number; document_id?: number | null; bom_id?: number | null }) => { const { data } = await apiClient.post('/design/task-deliverables', payload); return data },
+  unlinkDeliverable: async (linkId: number) => { const { data } = await apiClient.delete(`/design/task-deliverables/${linkId}`); return data },
+
+  // BOMs
+  listBoms: async (params: Record<string, unknown> = {}): Promise<import('@/types').DesignBom[]> => { const { data } = await apiClient.get('/design/boms', { params }); return data },
+  getBom: async (id: number): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.get(`/design/boms/${id}`); return data },
+  createBom: async (payload: Record<string, unknown>): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post('/design/boms', payload); return data },
+  updateBom: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.patch(`/design/boms/${id}`, payload); return data },
+  deleteBom: async (id: number) => { const { data } = await apiClient.delete(`/design/boms/${id}`); return data },
+  obsoleteBom: async (id: number, reason: string): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post(`/design/boms/${id}/obsolete`, { reason }); return data },
+  reactivateBom: async (id: number): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post(`/design/boms/${id}/reactivate`); return data },
+  startBomRevision: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post(`/design/boms/${id}/revisions`, payload); return data },
+  commentBom: async (id: number, comment: string): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post(`/design/boms/${id}/comments`, { comment }); return data },
+  updateBomRevision: async (revisionId: number, payload: Record<string, unknown>): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.patch(`/design/boms/revisions/${revisionId}`, payload); return data },
+  discardBomRevision: async (revisionId: number): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.delete(`/design/boms/revisions/${revisionId}`); return data },
+  submitBomRevision: async (revisionId: number, payload: Record<string, unknown> = {}): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post(`/design/boms/revisions/${revisionId}/submit`, payload); return data },
+  recallBomRevision: async (revisionId: number): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post(`/design/boms/revisions/${revisionId}/recall`); return data },
+  reviewBomRevision: async (revisionId: number, decision: 'pass' | 'return', comment?: string, checklist: import('@/types').DesignChecklistAnswer[] = []): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post(`/design/boms/revisions/${revisionId}/review`, { decision, comment, checklist }); return data },
+  approveBomRevision: async (revisionId: number, decision: 'pass' | 'return', comment?: string): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post(`/design/boms/revisions/${revisionId}/approve`, { decision, comment }); return data },
+  explodeBom: async (id: number, revisionId?: number): Promise<import('@/types').DesignBomExplosionRow[]> => { const { data } = await apiClient.get(`/design/boms/${id}/explosion`, { params: { revision_id: revisionId } }); return data },
+  exportBom: async (id: number, revisionId?: number): Promise<Blob> => { const { data } = await apiClient.get(`/design/boms/${id}/export`, { params: { revision_id: revisionId }, responseType: 'blob', timeout: 120000 }); return data },
+  listNewItemRequests: async (): Promise<import('@/types').DesignNewItemRequest[]> => { const { data } = await apiClient.get('/design/boms/new-item-requests'); return data },
+  whereUsed: async (params: { store_item_id?: number; document_id?: number }): Promise<import('@/types').DesignWhereUsed> => { const { data } = await apiClient.get('/design/where-used', { params }); return data },
+  /** Checker decision on a drawing revision with checklist answers. */
+  reviewRevisionWithChecklist: async (id: number, decision: 'pass' | 'return', comment: string | undefined, checklist: import('@/types').DesignChecklistAnswer[]): Promise<import('@/types').DesignDocumentDetail> => { const { data } = await apiClient.post(`/design/revisions/${id}/review`, { decision, comment, checklist }); return data },
+
+  // Customer submissions
+  listSubmissions: async (params: Record<string, unknown> = {}): Promise<import('@/types').DesignCustomerSubmission[]> => { const { data } = await apiClient.get('/design/submissions', { params }); return data },
+  getSubmission: async (id: number): Promise<import('@/types').DesignCustomerSubmissionDetail> => { const { data } = await apiClient.get(`/design/submissions/${id}`); return data },
+  createSubmission: async (payload: Record<string, unknown>): Promise<import('@/types').DesignCustomerSubmissionDetail> => { const { data } = await apiClient.post('/design/submissions', payload); return data },
+  updateSubmission: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignCustomerSubmissionDetail> => { const { data } = await apiClient.patch(`/design/submissions/${id}`, payload); return data },
+  deleteSubmission: async (id: number) => { const { data } = await apiClient.delete(`/design/submissions/${id}`); return data },
+  sendSubmission: async (id: number, sentDate?: string): Promise<import('@/types').DesignCustomerSubmissionDetail> => { const { data } = await apiClient.post(`/design/submissions/${id}/send`, { sent_date: sentDate || null }); return data },
+  recordSubmissionResponse: async (id: number, payload: { response_date: string; remarks?: string; lines: { line_id: number; response: string; comment?: string }[] }): Promise<import('@/types').DesignCustomerSubmissionDetail> => { const { data } = await apiClient.post(`/design/submissions/${id}/response`, payload); return data },
+  cancelSubmission: async (id: number, reason: string): Promise<import('@/types').DesignCustomerSubmissionDetail> => { const { data } = await apiClient.post(`/design/submissions/${id}/cancel`, { reason }); return data },
+  uploadSubmissionLetter: async (id: number, file: File): Promise<import('@/types').DesignCustomerSubmissionDetail> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post(`/design/submissions/${id}/letter`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })
+    return data
+  },
+  getSubmissionLetter: async (id: number, download = false): Promise<Blob> => { const { data } = await apiClient.get(`/design/submissions/${id}/letter`, { params: { download }, responseType: 'blob', timeout: 300000 }); return data },
+  addSubmissionComment: async (id: number, payload: { document_id?: number | null; comment: string; assigned_to_id?: number | null }): Promise<import('@/types').DesignCustomerSubmissionDetail> => { const { data } = await apiClient.post(`/design/submissions/${id}/comments`, payload); return data },
+  closeSubmissionComment: async (commentId: number, resolution: string): Promise<import('@/types').DesignCustomerSubmissionDetail> => { const { data } = await apiClient.post(`/design/submissions/comments/${commentId}/close`, { resolution }); return data },
+
+  // Change requests (ECR) + ECN additions
+  listChangeRequests: async (params: Record<string, unknown> = {}): Promise<import('@/types').DesignChangeRequest[]> => { const { data } = await apiClient.get('/design/change-requests', { params }); return data },
+  getChangeRequest: async (id: number): Promise<import('@/types').DesignChangeRequestDetail> => { const { data } = await apiClient.get(`/design/change-requests/${id}`); return data },
+  createChangeRequest: async (payload: Record<string, unknown>): Promise<import('@/types').DesignChangeRequestDetail> => { const { data } = await apiClient.post('/design/change-requests', payload); return data },
+  updateChangeRequest: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignChangeRequestDetail> => { const { data } = await apiClient.patch(`/design/change-requests/${id}`, payload); return data },
+  recordEcrImpact: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignChangeRequestDetail> => { const { data } = await apiClient.post(`/design/change-requests/${id}/impact`, payload); return data },
+  voteEcr: async (id: number, vote: 'approve' | 'reject' | 'defer', comment?: string): Promise<import('@/types').DesignChangeRequestDetail> => { const { data } = await apiClient.post(`/design/change-requests/${id}/vote`, { vote, comment }); return data },
+  decideEcr: async (id: number, decision: 'approved' | 'rejected' | 'deferred', comment?: string): Promise<import('@/types').DesignChangeRequestDetail> => { const { data } = await apiClient.post(`/design/change-requests/${id}/decide`, { decision, comment }); return data },
+  reopenEcr: async (id: number): Promise<import('@/types').DesignChangeRequestDetail> => { const { data } = await apiClient.post(`/design/change-requests/${id}/reopen`); return data },
+  withdrawEcr: async (id: number, comment: string): Promise<import('@/types').DesignChangeRequestDetail> => { const { data } = await apiClient.post(`/design/change-requests/${id}/withdraw`, { comment }); return data },
+  commentEcr: async (id: number, comment: string): Promise<import('@/types').DesignChangeRequestDetail> => { const { data } = await apiClient.post(`/design/change-requests/${id}/comments`, { comment }); return data },
+  createEcnFromEcr: async (id: number, payload: Record<string, unknown>): Promise<{ id: number; ecn_number: string }> => { const { data } = await apiClient.post(`/design/change-requests/${id}/ecn`, payload); return data },
+  updateEcnEffectivity: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.patch(`/design/change-notices/${id}/effectivity`, payload); return data },
+  acknowledgeEcn: async (id: number, department: string, remarks?: string): Promise<import('@/types').DesignChangeNoticeDetail> => { const { data } = await apiClient.post(`/design/change-notices/${id}/acknowledge`, { department, remarks }); return data },
+
+  // Library
+  listStandards: async (params: Record<string, unknown> = {}): Promise<import('@/types').DesignStandard[]> => { const { data } = await apiClient.get('/design/library/standards', { params }); return data },
+  createStandard: async (payload: Record<string, unknown>): Promise<import('@/types').DesignStandard> => { const { data } = await apiClient.post('/design/library/standards', payload); return data },
+  updateStandard: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignStandard> => { const { data } = await apiClient.patch(`/design/library/standards/${id}`, payload); return data },
+  deleteStandard: async (id: number) => { const { data } = await apiClient.delete(`/design/library/standards/${id}`); return data },
+  uploadStandardFile: async (id: number, file: File): Promise<import('@/types').DesignStandard> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const { data } = await apiClient.post(`/design/library/standards/${id}/file`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })
+    return data
+  },
+  getStandardFile: async (id: number, download = false): Promise<Blob> => { const { data } = await apiClient.get(`/design/library/standards/${id}/file`, { params: { download }, responseType: 'blob', timeout: 300000 }); return data },
+  listStandardParts: async (params: Record<string, unknown> = {}): Promise<import('@/types').DesignStandardPart[]> => { const { data } = await apiClient.get('/design/library/standard-parts', { params }); return data },
+  createStandardPart: async (payload: Record<string, unknown>): Promise<import('@/types').DesignStandardPart> => { const { data } = await apiClient.post('/design/library/standard-parts', payload); return data },
+  updateStandardPart: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignStandardPart> => { const { data } = await apiClient.patch(`/design/library/standard-parts/${id}`, payload); return data },
+  deleteStandardPart: async (id: number) => { const { data } = await apiClient.delete(`/design/library/standard-parts/${id}`); return data },
+  listTemplates: async (): Promise<import('@/types').DesignTemplate[]> => { const { data } = await apiClient.get('/design/library/templates'); return data },
+  uploadTemplate: async (kind: string, name: string, description: string, file: File): Promise<import('@/types').DesignTemplate> => {
+    const formData = new FormData()
+    formData.append('kind', kind)
+    formData.append('name', name)
+    if (description) formData.append('description', description)
+    formData.append('file', file)
+    const { data } = await apiClient.post('/design/library/templates', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 })
+    return data
+  },
+  getTemplateFile: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/design/library/templates/${id}/file`, { responseType: 'blob', timeout: 300000 }); return data },
+  deleteTemplate: async (id: number) => { const { data } = await apiClient.delete(`/design/library/templates/${id}`); return data },
+  listApprovedMakes: async (params: Record<string, unknown> = {}): Promise<import('@/types').DesignApprovedMake[]> => { const { data } = await apiClient.get('/design/library/approved-makes', { params }); return data },
+  createApprovedMake: async (payload: Record<string, unknown>): Promise<import('@/types').DesignApprovedMake> => { const { data } = await apiClient.post('/design/library/approved-makes', payload); return data },
+  updateApprovedMake: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignApprovedMake> => { const { data } = await apiClient.patch(`/design/library/approved-makes/${id}`, payload); return data },
+  deleteApprovedMake: async (id: number) => { const { data } = await apiClient.delete(`/design/library/approved-makes/${id}`); return data },
+  listChecklists: async (): Promise<import('@/types').DesignChecklist[]> => { const { data } = await apiClient.get('/design/library/checklists'); return data },
+  createChecklist: async (payload: Record<string, unknown>): Promise<import('@/types').DesignChecklist> => { const { data } = await apiClient.post('/design/library/checklists', payload); return data },
+  updateChecklist: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignChecklist> => { const { data } = await apiClient.patch(`/design/library/checklists/${id}`, payload); return data },
+  deleteChecklist: async (id: number) => { const { data } = await apiClient.delete(`/design/library/checklists/${id}`); return data },
+
+  // Phase-4 reports
+  reportRevisionHistory: async (documentId: number) => { const { data } = await apiClient.get('/design/reports/revision-history', { params: { document_id: documentId } }); return data },
+  reportCustomerApprovals: async () => { const { data } = await apiClient.get('/design/reports/customer-approvals'); return data },
+  reportChangeRegister: async () => { const { data } = await apiClient.get('/design/reports/change-register'); return data },
+  reportMilestones: async () => { const { data } = await apiClient.get('/design/reports/milestones'); return data },
+  reportWorkload: async () => { const { data } = await apiClient.get('/design/reports/workload'); return data },
+  reportFirstTimeRight: async () => { const { data } = await apiClient.get('/design/reports/first-time-right'); return data },
 }
 
 export const hydraulicApi = {
@@ -2988,6 +4544,7 @@ export const hydraulicApi = {
   updateBom: async (id: number, payload: Record<string, unknown>) => { const { data } = await apiClient.patch(`/hydraulic/boms/${id}`, payload); return data },
   deleteBom: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/boms/${id}`); return data },
   releaseBom: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/boms/${id}/release`); return data },
+  submitBom: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/boms/${id}/submit`); return data },
   reviseBom: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/boms/${id}/revise`); return data },
   exportBom: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/hydraulic/boms/${id}/export`, { responseType: 'blob' }); return data },
 
@@ -3009,6 +4566,7 @@ export const hydraulicApi = {
   deleteTest: async (id: number) => { const { data } = await apiClient.delete(`/hydraulic/tests/${id}`); return data },
   startTest: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/tests/${id}/start`); return data },
   completeTest: async (id: number, result: string, remarks?: string) => { const { data } = await apiClient.post(`/hydraulic/tests/${id}/complete`, { result, remarks }); return data },
+  submitTestResult: async (id: number, result: string, remarks?: string) => { const { data } = await apiClient.post(`/hydraulic/tests/${id}/submit`, { result, remarks }); return data },
   retest: async (id: number) => { const { data } = await apiClient.post(`/hydraulic/tests/${id}/retest`); return data },
 
   listPlans: async (params: Record<string, unknown> = {}) => { const { data } = await apiClient.get('/hydraulic/maintenance-plans', { params }); return data },
@@ -3089,4 +4647,144 @@ export const rrvApi = {
   cancelRework: async (reworkId: number, reason: string): Promise<RrvDetail> => { const { data } = await apiClient.post(`/production/rrv-builds/rework/${reworkId}/cancel`, { reason }); return data },
 
   getHandoverCertificate: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/production/rrv-builds/${id}/handover-certificate`, { responseType: 'blob', timeout: 60000 }); return data },
+}
+
+// Sales (backend app/modules/sales) — orders, approvals, amendments, delivery
+// schedule, DP extensions, dashboard / reports, settings.
+// Order Projects (OP-YYYY-NNN) — execution projects of confirmed sales orders
+// (backend sales/routes/order_projects.py). `lookup` feeds <OrderProjectPicker> in other modules.
+export const orderProjectsApi = {
+  list: async (params: Record<string, unknown> = {}): Promise<import('@/types').OrderProject[]> => { const { data } = await apiClient.get('/sales/order-projects', { params }); return data },
+  get: async (id: number): Promise<import('@/types').OrderProject> => { const { data } = await apiClient.get(`/sales/order-projects/${id}`); return data },
+  update: async (id: number, payload: { project_manager_id?: number | null; status?: 'active' | 'on_hold'; planned_start?: string | null; planned_end?: string | null }): Promise<import('@/types').OrderProject> => { const { data } = await apiClient.patch(`/sales/order-projects/${id}`, payload); return data },
+  backfill: async (): Promise<{ created: number; op_numbers: string[] }> => { const { data } = await apiClient.post('/sales/order-projects/backfill'); return data },
+  lookup: async (params: { q?: string; kind?: 'vehicle' | 'lot'; include_projects?: boolean; project_id?: number } = {}): Promise<import('@/types').OrderProjectLookupItem[]> => { const { data } = await apiClient.get('/sales/order-projects/lookup', { params }); return data },
+}
+
+export const salesApi = {
+  listOrders: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesOrder[]> => { const { data } = await apiClient.get('/sales/orders', { params }); return data },
+  getOrder: async (id: number): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.get(`/sales/orders/${id}`); return data },
+  prefill: async (params: { inquiry?: number; tender?: number; quotation?: number }) => { const { data } = await apiClient.get('/sales/orders/prefill', { params }); return data },
+  customerQuotations: async (customerId: number): Promise<{ id: number; quot_number: string | null; status: string; status_label: string; quote_date: string | null; net_value: number; inquiry_id: number; inquiry_number: string; inquiry_stage: string; order_received: boolean; existing_order: string | null }[]> => { const { data } = await apiClient.get('/sales/orders/quotations', { params: { customer_id: customerId } }); return data },
+  bySource: async (params: { inquiry?: number; tender?: number }): Promise<{ order: { id: number; display_number: string; status: string; status_label: string | null } | null }> => { const { data } = await apiClient.get('/sales/orders/by-source', { params }); return data },
+  defaults: async () => { const { data } = await apiClient.get('/sales/orders/defaults'); return data },
+  createOrder: async (payload: Record<string, unknown>): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post('/sales/orders', payload); return data },
+  updateOrder: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.patch(`/sales/orders/${id}`, payload); return data },
+  deleteOrder: async (id: number) => { const { data } = await apiClient.delete(`/sales/orders/${id}`); return data },
+  putLines: async (id: number, lines: unknown[]): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.put(`/sales/orders/${id}/lines`, lines); return data },
+  putSchedule: async (id: number, rows: unknown[]): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.put(`/sales/orders/${id}/schedule`, rows); return data },
+  putBillingPlan: async (id: number, rows: unknown[]): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.put(`/sales/orders/${id}/billing-plan`, rows); return data },
+  action: async (id: number, action: string, payload: Record<string, unknown> = {}): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/orders/${id}/${action}`, payload); return data },
+  timeline: async (id: number): Promise<import('@/types').SalesTimelineEntry[]> => { const { data } = await apiClient.get(`/sales/orders/${id}/timeline`); return data },
+  oaPdf: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/sales/orders/${id}/oa.pdf`, { responseType: 'blob', timeout: 60000 }); return data },
+
+  listAmendments: async (soId: number): Promise<import('@/types').SalesAmendment[]> => { const { data } = await apiClient.get(`/sales/orders/${soId}/amendments`); return data },
+  getAmendment: async (aid: number): Promise<import('@/types').SalesAmendment> => { const { data } = await apiClient.get(`/sales/amendments/${aid}`); return data },
+  createAmendment: async (soId: number, payload: Record<string, unknown>): Promise<import('@/types').SalesAmendment> => { const { data } = await apiClient.post(`/sales/orders/${soId}/amendments`, payload); return data },
+  updateAmendment: async (aid: number, payload: Record<string, unknown>): Promise<import('@/types').SalesAmendment> => { const { data } = await apiClient.patch(`/sales/amendments/${aid}`, payload); return data },
+  amendmentAction: async (aid: number, action: string, payload: Record<string, unknown> = {}): Promise<import('@/types').SalesAmendment> => { const { data } = await apiClient.post(`/sales/amendments/${aid}/${action}`, payload); return data },
+
+  schedule: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesOrderSchedule[]> => { const { data } = await apiClient.get('/sales/schedule', { params }); return data },
+  updateScheduleRow: async (sid: number, payload: Record<string, unknown>): Promise<import('@/types').SalesOrderSchedule> => { const { data } = await apiClient.patch(`/sales/schedule/${sid}`, payload); return data },
+  linkBuild: async (sid: number, buildId: number): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/schedule/${sid}/link-build`, { build_id: buildId }); return data },
+  unlinkBuild: async (sid: number): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/schedule/${sid}/unlink-build`); return data },
+  // Delivery confirmations (VL01N / POD / commissioning) and billing due list (VF04)
+  confirmDelivery: async (sid: number, payload: { delivered_on: string; reference: string; quantity?: number | null; remarks?: string | null }): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/schedule/${sid}/confirm-delivery`, payload); return data },
+  confirmCommissioning: async (sid: number, payload: { commissioned_on: string; reference: string; remarks?: string | null }): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/schedule/${sid}/confirm-commissioning`, payload); return data },
+  deliveryEvents: async (soId: number): Promise<import('@/types').SalesDeliveryEvent[]> => { const { data } = await apiClient.get(`/sales/orders/${soId}/delivery-events`); return data },
+  reverseDeliveryEvent: async (eid: number, reason: string): Promise<import('@/types').SalesOrder> => { const { data } = await apiClient.post(`/sales/delivery-events/${eid}/reverse`, { reason }); return data },
+  dispatchableRows: async (params: { erp_project_id?: number; so_id?: number } = {}) => { const { data } = await apiClient.get('/sales/schedule/dispatchable', { params }); return data },
+  billingDue: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesBillingDue[]> => { const { data } = await apiClient.get('/sales/billing-due', { params }); return data },
+  orderBilling: async (soId: number): Promise<import('@/types').SalesBillingDue[]> => { const { data } = await apiClient.get(`/sales/orders/${soId}/billing`); return data },
+  requestInvoice: async (bid: number): Promise<import('@/types').SalesBillingDue> => { const { data } = await apiClient.post(`/sales/billing/${bid}/request-invoice`); return data },
+  markMilestoneDue: async (bid: number, payload: { on: string; reference?: string | null }): Promise<import('@/types').SalesBillingDue> => { const { data } = await apiClient.post(`/sales/billing/${bid}/mark-due`, payload); return data },
+  listExtensions: async (soId: number): Promise<import('@/types').SalesExtension[]> => { const { data } = await apiClient.get(`/sales/orders/${soId}/extensions`); return data },
+  listAllExtensions: async (params: Record<string, unknown> = {}): Promise<import('@/types').SalesExtension[]> => { const { data } = await apiClient.get('/sales/extensions', { params }); return data },
+  requestExtension: async (soId: number, payload: Record<string, unknown>): Promise<import('@/types').SalesExtension> => { const { data } = await apiClient.post(`/sales/orders/${soId}/extensions`, payload); return data },
+  extensionAction: async (eid: number, action: 'grant' | 'refuse', payload: Record<string, unknown>): Promise<import('@/types').SalesExtension> => { const { data } = await apiClient.post(`/sales/extensions/${eid}/${action}`, payload); return data },
+
+  dashboard: async (): Promise<import('@/types').SalesDashboard> => { const { data } = await apiClient.get('/sales/dashboard'); return data },
+  orderBook: async () => { const { data } = await apiClient.get('/sales/reports/order-book'); return data },
+  backlog: async () => { const { data } = await apiClient.get('/sales/reports/backlog'); return data },
+  ldExposure: async () => { const { data } = await apiClient.get('/sales/reports/ld-exposure'); return data },
+
+  lookupCustomers: async (search = '') => { const { data } = await apiClient.get('/sales/lookups/customers', { params: search ? { search } : {} }); return data },
+  lookupContacts: async (customerId: number) => { const { data } = await apiClient.get(`/sales/lookups/customers/${customerId}/contacts`); return data },
+  lookupBuilds: async (search = '') => { const { data } = await apiClient.get('/sales/lookups/builds', { params: search ? { search } : {} }); return data },
+  lookupAgencies: async () => { const { data } = await apiClient.get('/sales/lookups/inspection-agencies'); return data },
+
+  listAttachments: async (entityType: string, entityId: number): Promise<import('@/types').SalesAttachment[]> => { const { data } = await apiClient.get('/sales/attachments', { params: { entity_type: entityType, entity_id: entityId } }); return data },
+  uploadAttachments: async (entityType: string, entityId: number, files: File[], docType: string): Promise<import('@/types').SalesAttachment[]> => {
+    const form = new FormData()
+    form.append('entity_type', entityType)
+    form.append('entity_id', String(entityId))
+    form.append('doc_type', docType)
+    files.forEach((f) => form.append('files', f))
+    const { data } = await apiClient.post('/sales/attachments', form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data
+  },
+  attachmentContent: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/sales/attachments/${id}/content`, { responseType: 'blob', timeout: 60000 }); return data },
+  deleteAttachment: async (id: number) => { const { data } = await apiClient.delete(`/sales/attachments/${id}`); return data },
+
+  getSettings: async (): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.get('/sales/settings'); return data },
+  saveSettings: async (values: Record<string, unknown>): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.put('/sales/settings', { values }); return data },
+  resetSetting: async (key: string): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.post(`/sales/settings/reset/${key}`); return data },
+}
+
+export const productsApi = {
+  meta: async (): Promise<import('@/types').ProductMeta> => { const { data } = await apiClient.get('/products/meta'); return data },
+  list: async (params: Record<string, unknown> = {}): Promise<import('@/types').FinishedProduct[]> => { const { data } = await apiClient.get('/products', { params }); return data },
+  get: async (id: number): Promise<import('@/types').FinishedProduct> => { const { data } = await apiClient.get(`/products/${id}`); return data },
+  create: async (payload: Record<string, unknown>): Promise<import('@/types').FinishedProduct> => { const { data } = await apiClient.post('/products', payload); return data },
+  update: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').FinishedProduct> => { const { data } = await apiClient.patch(`/products/${id}`, payload); return data },
+  remove: async (id: number) => { await apiClient.delete(`/products/${id}`) },
+  searchStoreItems: async (search: string): Promise<import('@/types').ProductStoreItemOption[]> => { const { data } = await apiClient.get('/products/lookups/store-items', { params: { search } }); return data },
+
+  listApplications: async (params: { include_inactive?: boolean } = {}): Promise<import('@/types').ProductApplication[]> => { const { data } = await apiClient.get('/products/applications', { params }); return data },
+  createApplication: async (payload: Record<string, unknown>): Promise<import('@/types').ProductApplication> => { const { data } = await apiClient.post('/products/applications', payload); return data },
+  updateApplication: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').ProductApplication> => { const { data } = await apiClient.patch(`/products/applications/${id}`, payload); return data },
+}
+
+/** Central approval engine — used by every module's approval UI (components/shared/ApprovalPanel). */
+export const approvalsApi = {
+  inbox: async (): Promise<import('@/types').ApprovalRequestInfo[]> => { const { data } = await apiClient.get('/approvals/inbox'); return data },
+  types: async (): Promise<import('@/types').ApprovalTransactionType[]> => { const { data } = await apiClient.get('/approvals/types'); return data },
+  mine: async (): Promise<import('@/types').ApprovalRequestInfo[]> => { const { data } = await apiClient.get('/approvals/mine'); return data },
+  decided: async (): Promise<import('@/types').ApprovalRequestInfo[]> => { const { data } = await apiClient.get('/approvals/decided'); return data },
+  entity: async (entityType: string, entityId: number): Promise<import('@/types').ApprovalEntityStatus> => { const { data } = await apiClient.get(`/approvals/entity/${entityType}/${entityId}`); return data },
+  decide: async (requestId: number, decision: 'approve' | 'reject' | 'return', comment?: string): Promise<import('@/types').ApprovalRequestInfo> => { const { data } = await apiClient.post(`/approvals/requests/${requestId}/decide`, { decision, comment }); return data },
+  cancel: async (requestId: number, reason?: string): Promise<import('@/types').ApprovalRequestInfo> => { const { data } = await apiClient.post(`/approvals/requests/${requestId}/cancel`, { reason }); return data },
+
+  // Organization › Approval Workflows
+  workflowMeta: async (): Promise<import('@/types').ApprovalWorkflowMeta> => { const { data } = await apiClient.get('/organization/workflows/meta'); return data },
+  listWorkflows: async (): Promise<import('@/types').ApprovalTransactionType[]> => { const { data } = await apiClient.get('/organization/workflows'); return data },
+  getWorkflow: async (key: string): Promise<{ type: import('@/types').ApprovalTransactionType; workflow: import('@/types').ApprovalWorkflowDef }> => { const { data } = await apiClient.get(`/organization/workflows/${key}`); return data },
+  saveWorkflow: async (key: string, payload: Record<string, unknown>): Promise<{ type: import('@/types').ApprovalTransactionType; workflow: import('@/types').ApprovalWorkflowDef }> => { const { data } = await apiClient.put(`/organization/workflows/${key}`, payload); return data },
+  resetWorkflow: async (key: string): Promise<{ type: import('@/types').ApprovalTransactionType; workflow: import('@/types').ApprovalWorkflowDef }> => { const { data } = await apiClient.post(`/organization/workflows/${key}/reset`); return data },
+  // Dry-run the workflow as edited (unsaved) against everyone who can raise the document.
+  checkWorkflow: async (key: string, payload: Record<string, unknown>): Promise<import('@/types').ApprovalWorkflowCheck> => { const { data } = await apiClient.post(`/organization/workflows/${key}/check`, payload); return data },
+  workflowHistory: async (key: string): Promise<{ id: number; summary: string | null; performed_by: string; performed_at: string | null }[]> => { const { data } = await apiClient.get(`/organization/workflows/${key}/history`); return data },
+  previewWorkflow: async (key: string, payload: Record<string, unknown>): Promise<{ stages: { sequence: number; name: string; approval_mode: string; approvers: { id: number; name: string }[]; problem?: string | null; skipped: boolean }[] }> => { const { data } = await apiClient.post(`/organization/workflows/${key}/preview`, payload); return data },
+  // Read-only "Approves in" for the Role and User screens (derived from the workflows).
+  approvesInRole: async (roleId: number): Promise<import('@/types').ApprovesInRow[]> => { const { data } = await apiClient.get(`/organization/workflows/-/approves-in/role/${roleId}`); return data },
+  approvesInUser: async (userId: number): Promise<import('@/types').ApprovesInUser> => { const { data } = await apiClient.get(`/organization/workflows/-/approves-in/user/${userId}`); return data },
+
+  // Organization › Delegations
+  myDelegations: async (): Promise<import('@/types').ApprovalDelegationInfo[]> => { const { data } = await apiClient.get('/organization/delegations/mine'); return data },
+  listDelegations: async (): Promise<import('@/types').ApprovalDelegationInfo[]> => { const { data } = await apiClient.get('/organization/delegations'); return data },
+  createDelegation: async (payload: Record<string, unknown>): Promise<import('@/types').ApprovalDelegationInfo> => { const { data } = await apiClient.post('/organization/delegations', payload); return data },
+  endDelegation: async (id: number): Promise<import('@/types').ApprovalDelegationInfo> => { const { data } = await apiClient.post(`/organization/delegations/${id}/end`); return data },
+}
+
+/** Organization › Security & Sessions, plus per-user data-scope overrides. */
+export const securityApi = {
+  getSettings: async (): Promise<{ values: import('@/types').SecuritySettings; defaults: import('@/types').SecuritySettings }> => { const { data } = await apiClient.get('/organization/security/settings'); return data },
+  saveSettings: async (values: Partial<import('@/types').SecuritySettings>): Promise<{ values: import('@/types').SecuritySettings; defaults: import('@/types').SecuritySettings }> => { const { data } = await apiClient.put('/organization/security/settings', values); return data },
+  sessions: async (userId?: number): Promise<import('@/types').UserSessionInfo[]> => { const { data } = await apiClient.get('/organization/security/sessions', { params: userId ? { user_id: userId } : {} }); return data },
+  revokeSession: async (id: number) => { const { data } = await apiClient.post(`/organization/security/sessions/${id}/revoke`); return data },
+  revokeAll: async (userId: number): Promise<{ revoked: number }> => { const { data } = await apiClient.post(`/organization/security/users/${userId}/revoke-all`); return data },
+  sendAppPasswordReset: async (userId: number): Promise<{ sent_to: string }> => { const { data } = await apiClient.post(`/organization/security/users/${userId}/app-password-reset`); return data },
+  signIns: async (params: { user_id?: number; failed_only?: boolean } = {}): Promise<import('@/types').SignInEvent[]> => { const { data } = await apiClient.get('/organization/security/sign-ins', { params }); return data },
+  userDataScopes: async (userId: number): Promise<import('@/types').UserDataScopeRow[]> => { const { data } = await apiClient.get(`/users/${userId}/data-scopes`); return data },
+  saveUserDataScopes: async (userId: number, overrides: Record<string, string>): Promise<import('@/types').UserDataScopeRow[]> => { const { data } = await apiClient.put(`/users/${userId}/data-scopes`, { overrides }); return data },
 }

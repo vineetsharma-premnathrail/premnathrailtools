@@ -34,6 +34,10 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     lead_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bd_owner: Mapped[str | None] = mapped_column(String(150), nullable=True)
     sales_engineer: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    # Owners as users (CRM opportunity owner). The text columns above are kept in
+    # step with the user's name (legacy rows, MoM, data scope by name).
+    bd_owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    sales_engineer_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     status: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
     current_stage: Mapped[str] = mapped_column(String(50), default="Requirement Received", nullable=False)
@@ -45,6 +49,9 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     product: Mapped[str | None] = mapped_column(String(255), nullable=True)
     product_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     product_spec: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Product master link (COMMPR01 merge): set by exact code / name+model match or the
+    # Product Mapping screen (products/linking.py); the text above stays as typed.
+    product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
     quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
     required_delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     delivery_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -58,6 +65,12 @@ class Inquiry(Base, TimestampMixin, SoftDeleteMixin):
     probability: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expected_order_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     priority: Mapped[str] = mapped_column(String(20), default="Medium", nullable=False)
+    # Win / loss (CRM opportunity) — required when the inquiry closes as not ordered.
+    # Codes: crm/services/opportunity.py LOST_REASONS.
+    lost_reason_code: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    lost_to_competitor: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lost_remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     next_followup_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     followup_priority: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -91,6 +104,9 @@ class InquiryLineItem(Base):
     product: Mapped[str | None] = mapped_column(String(255), nullable=True)
     product_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     product_spec: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Product master link (COMMPR01 merge): set by exact code / name+model match or the
+    # Product Mapping screen (products/linking.py); the text above stays as typed.
+    product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
     quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     inquiry: Mapped["Inquiry"] = relationship("Inquiry", back_populates="additional_items")
@@ -112,16 +128,36 @@ class Quotation(Base):
     quote_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     technical_offer_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     technical_offer_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # R&D Technical Offer this quotation quotes against (rnd_technical_offers.id);
+    # number/date above are copied from it so the printed quotation never changes.
+    technical_offer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     client_contact_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     client_contact_email: Mapped[str | None] = mapped_column(String(150), nullable=True)
     client_contact_phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     valid_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # "itemwise" = qty x unit price + GST per line; "lumpsum" = items are a plain
+    # Particulars list and `price` (+ lump_sum_gst_percent) is the whole offer's price.
+    pricing_mode: Mapped[str] = mapped_column(String(20), default="itemwise", server_default="itemwise", nullable=False)
     price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lump_sum_gst_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     delivery_time: Mapped[str | None] = mapped_column(String(150), nullable=True)
     payment_terms: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     customer_response: Mapped[str] = mapped_column(String(30), default="— Awaiting —")
+    # Document status (SAP VA21-VA23) — the source of truth; customer_response is
+    # its display mirror. draft → submitted → approved → sent → accepted / lost /
+    # expired (crm/services/quotation_status.py). A content revision returns it to draft.
+    status: Mapped[str] = mapped_column(String(20), default="draft", server_default="draft", nullable=False, index=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    submitted_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     discount: Mapped[float | None] = mapped_column(Float, nullable=True)
     discount_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     quote_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -143,10 +179,19 @@ class QuotationLineItem(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_number: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    # Free-text sub-lines printed under the item name (e.g. "Total 1 year warranty").
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
     quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
     unit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     gst_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
     subtotal: Mapped[float | None] = mapped_column(Float, nullable=True)
     total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Product master link (COMMPR01 merge): set by exact code / name+model match or the
+    # Product Mapping screen (products/linking.py); the text above stays as typed.
+    product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
+    # Pricing conditions (VK11): the price the conditions gave when the line was saved, and
+    # why a different price / higher discount was typed (products/pricing.py).
+    list_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     quotation: Mapped["Quotation"] = relationship("Quotation", back_populates="items")

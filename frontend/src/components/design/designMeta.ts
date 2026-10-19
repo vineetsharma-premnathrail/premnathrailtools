@@ -13,6 +13,11 @@ export const DOC_TYPE_LABELS: Record<string, string> = {
   procedure: 'Procedure',
   manual: 'Manual',
   bom: 'BOM',
+  wiring_diagram: 'Wiring Diagram',
+  harness_drawing: 'Harness Drawing',
+  hydraulic_circuit: 'Hydraulic Circuit',
+  pneumatic_circuit: 'Pneumatic Circuit',
+  panel_layout: 'Panel Layout',
   other: 'Other',
 }
 
@@ -61,4 +66,64 @@ export function formatBytes(size?: number | null): string {
 export function toOptions(rows: { id: number; label: string }[], none?: string): { value: string; label: string }[] {
   const opts = rows.map((r) => ({ value: String(r.id), label: r.label }))
   return none ? [{ value: '', label: none }, ...opts] : opts
+}
+
+export const BOM_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft', in_review: 'In check', in_approval: 'Awaiting release', released: 'Released', revising: 'Released · revising',
+  superseded: 'Superseded', obsolete: 'Obsolete',
+}
+
+export const REQUEST_SOURCE_LABELS: Record<string, string> = { bd: 'BD / CRM', project: 'Project', rnd: 'R&D hand-over', internal: 'Internal' }
+export const REQUEST_STATUS_LABELS: Record<string, string> = {
+  open: 'Open', accepted: 'Accepted', in_progress: 'In progress', on_hold: 'On hold', completed: 'Completed', cancelled: 'Cancelled',
+}
+export const PRIORITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' }
+
+export const SUBMISSION_STATUS_LABELS: Record<string, string> = { draft: 'Draft', sent: 'With customer', closed: 'Closed', cancelled: 'Cancelled' }
+export const CUSTOMER_RESPONSE_LABELS: Record<string, string> = {
+  pending: 'Pending', approved: 'Approved', approved_with_comments: 'Approved with comments', rejected: 'Rejected',
+}
+
+export const ECR_SOURCE_LABELS: Record<string, string> = {
+  ncr: 'NCR', capa: 'CAPA', customer: 'Customer', production: 'Production', purchase: 'Purchase (material)',
+  quality: 'Quality', service: 'Service / field failure', design: 'Design', other: 'Other',
+}
+export const ECR_URGENCY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', critical: 'Critical' }
+export const ECR_STATUS_LABELS: Record<string, string> = {
+  open: 'Open (impact check)', impact_checked: 'With change board', approved: 'Approved', rejected: 'Rejected',
+  deferred: 'Deferred', withdrawn: 'Withdrawn',
+}
+// ECN status as the plan names it: Open, Released, Closed.
+export const ECN_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft', submitted: 'Awaiting approval', approved: 'Open', implemented: 'Released', closed: 'Closed',
+  rejected: 'Rejected', cancelled: 'Cancelled',
+}
+export const ECN_EFFECTIVITY_LABELS: Record<string, string> = {
+  immediate: 'Immediately', date: 'From a date', serial: 'From a serial number', next_order: 'From the next production order',
+  project: 'For a specific project',
+}
+export const DISPOSITION_LABELS: Record<string, string> = { use_up: 'Use up', rework: 'Rework', scrap: 'Scrap', not_applicable: 'Not applicable' }
+export const ACK_DEPARTMENT_LABELS: Record<string, string> = {
+  production: 'Production', purchase: 'Purchase', store: 'Store', quality: 'Quality', project: 'Project management',
+}
+
+export const STANDARD_BODIES = ['RDSO', 'IS', 'EN', 'ISO', 'IEC', 'UIC', 'DIN', 'ASME', 'customer', 'internal', 'other'] as const
+export const TEMPLATE_KIND_LABELS: Record<string, string> = {
+  title_block: 'Title block', drawing_sheet: 'Drawing sheet', bom_sheet: 'BOM sheet', specification: 'Specification',
+  transmittal: 'Transmittal cover note', ecn_notice: 'ECN notice', other: 'Other',
+}
+export const TEAM_ROLE_LABELS: Record<string, string> = {
+  head: 'Design head', reviewer: 'Reviewer (senior designer)', designer: 'Designer', viewer: 'Viewer (other department)', admin: 'Admin',
+}
+
+/** Saves a Blob (export/attachment) under a filename. */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

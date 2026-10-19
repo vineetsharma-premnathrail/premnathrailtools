@@ -4,8 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, R
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.permission_registry import MODULES, can_feature, can_view_tab
+from app.core.data_scope import ensure_in_scope, scoped_models
 from app.core.permissions import require_app_access
 from app.db.session import get_db
+from app.modules.hydraulic import access  # noqa: F401  (registers data scope / approval types)
 from app.modules.hydraulic.models.circuit import HydCircuit
 from app.modules.hydraulic.models.component import HydComponent
 from app.modules.hydraulic.models.document import HydDocument, HYD_DOCUMENT_ENTITIES, HYD_DOCUMENT_TYPES
@@ -41,6 +44,53 @@ _PARENTS = {
 }
 
 
+# entity_type → the tab whose Documents feature (app/core/features/hydraulic.py)
+# governs its files; by default the feature follows the tab ('edit' to add /
+# remove, view to see).
+_EDIT_TAB = {
+    "system": "systems", "component": "components", "circuit": "circuits", "test": "testing",
+}
+
+
+def _ensure_can_view(user: User, entity_type: str) -> None:
+    """Seeing files needs the parent tab's Documents › View. Someone without
+    the parent tab's View (who can't open that page) keeps today's read-only
+    access, as before features existed."""
+    tab = _EDIT_TAB.get(entity_type)
+    if not tab or not can_view_tab(user, "hydraulic", tab) or can_feature(user, "hydraulic", tab, "documents", "view"):
+        return
+    label = MODULES.get("hydraulic", {}).get("subtabs", {}).get(tab, tab)
+    raise HTTPException(
+        status_code=403,
+        detail=f"You don't have 'view' permission on Hydraulic & Pneumatic › {label} › Documents "
+               f"(hydraulic:{tab}.documents:view), so these files are hidden. Ask an admin to grant it in "
+               "Organization › Role & Permissions.",
+    )
+
+
+def _require_edit_right(user: User, entity_type: str, action: str = "create") -> None:
+    """Viewing files follows the parent page; adding (create) or removing
+    (delete) one needs the parent tab's Documents feature — by default its
+    'edit' right (a circuit drawing is what lets the circuit go for review, a
+    test certificate is evidence)."""
+    if entity_type == "service_record":
+        raise HTTPException(
+            status_code=410,
+            detail="Hydraulic service records are retired (plan rule R5) — their files are read-only. "
+                   "Attach service documents to the Service Request in Service & Commissioning instead.",
+        )
+    tab = _EDIT_TAB.get(entity_type)
+    if tab and not can_feature(user, "hydraulic", tab, "documents", action):
+        label = MODULES.get("hydraulic", {}).get("subtabs", {}).get(tab, tab)
+        verb = "add" if action == "create" else "remove"
+        raise HTTPException(
+            status_code=403,
+            detail=f"You don't have '{action}' permission on Hydraulic & Pneumatic › {label} › Documents "
+                   f"(hydraulic:{tab}.documents:{action}; by default anyone with 'edit' on {label}), so you can't {verb} "
+                   "its documents. Ask an admin to grant it in Organization › Role & Permissions (the Permission Matrix).",
+        )
+
+
 def _parent_ref(db: Session, entity_type: str, entity_id: int) -> str:
     if entity_type not in HYD_DOCUMENT_ENTITIES:
         raise HTTPException(status_code=400, detail=f"Documents can't be attached to '{entity_type}'. Use one of: {', '.join(HYD_DOCUMENT_ENTITIES)}.")
@@ -50,8 +100,27 @@ def _parent_ref(db: Session, entity_type: str, entity_id: int) -> str:
         raise HTTPException(status_code=404, detail=f"{label} #{entity_id} not found (it may have been deleted).")
     if entity_type == "circuit" and parent.status != "draft":
         raise HTTPException(status_code=409, detail=f"{parent.circuit_number} Rev {parent.revision} is {parent.status.replace('_', ' ')} — drawings can only be added to a draft revision. Raise a new revision to change the drawing.")
+    if entity_type == "test" and parent.status == "completed":
+        raise HTTPException(status_code=409, detail=f"{parent.test_number} is completed and locked — its certificates can't be added or replaced. Raise a re-test from the test page and attach the new certificate there.")
     ref = getattr(parent, number_col)
     return f"{ref}-Rev{parent.revision}" if entity_type == "circuit" else ref
+
+
+def _ensure_parent_in_scope(db: Session, user: User, entity_type: str, entity_id: int) -> None:
+    """Files follow their record's data scope (component files are master data — open to all)."""
+    parent = _PARENTS.get(entity_type)
+    if parent is None:
+        return
+    model, _, label = parent
+    record = db.query(model).filter(model.id == entity_id, model.is_deleted == False).first()  # noqa: E712
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{label} #{entity_id} not found (it may have been deleted) — its documents are no longer available. "
+                   "Reopen the record from its list page.",
+        )
+    if model in scoped_models():
+        ensure_in_scope(db, user, record)
 
 
 def _get_or_404(db: Session, document_id: int) -> HydDocument:
@@ -62,7 +131,10 @@ def _get_or_404(db: Session, document_id: int) -> HydDocument:
 
 
 @router.get("", response_model=list[HydDocumentResponse])
-async def list_documents(entity_type: str, entity_id: int, db: Session = Depends(get_db)):
+async def list_documents(entity_type: str, entity_id: int, db: Session = Depends(get_db),
+                         user: User = Depends(require_app_access("hydraulic"))):
+    _ensure_can_view(user, entity_type)
+    _ensure_parent_in_scope(db, user, entity_type, entity_id)
     return db.query(HydDocument).filter(
         HydDocument.entity_type == entity_type, HydDocument.entity_id == entity_id, HydDocument.is_deleted == False,  # noqa: E712
     ).order_by(HydDocument.id.desc()).all()
@@ -85,7 +157,9 @@ async def upload_documents(
         raise HTTPException(status_code=400, detail="Document title is required.")
     if not files:
         raise HTTPException(status_code=400, detail="Choose at least one file to upload.")
+    _require_edit_right(user, entity_type)
     ref = _parent_ref(db, entity_type, entity_id)
+    _ensure_parent_in_scope(db, user, entity_type, entity_id)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail=_STORAGE_NOT_CONFIGURED)
 
@@ -107,8 +181,11 @@ async def upload_documents(
 
 
 @router.get("/{document_id}/content")
-async def get_document_content(document_id: int, db: Session = Depends(get_db)):
+async def get_document_content(document_id: int, db: Session = Depends(get_db),
+                               user: User = Depends(require_app_access("hydraulic"))):
     doc = _get_or_404(db, document_id)
+    _ensure_can_view(user, doc.entity_type)
+    _ensure_parent_in_scope(db, user, doc.entity_type, doc.entity_id)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail=_STORAGE_NOT_CONFIGURED)
     content, content_type = await download_file_content(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or "")
@@ -123,6 +200,12 @@ async def delete_document(document_id: int, db: Session = Depends(get_db), user:
     doc = _get_or_404(db, document_id)
     if not (user.role == "admin" or doc.uploaded_by_id == user.id):
         raise HTTPException(status_code=403, detail=f"Only the uploader ({doc.uploaded_by_name or 'unknown'}) or an admin can delete this document.")
+    _require_edit_right(user, doc.entity_type, "delete")
+    _ensure_parent_in_scope(db, user, doc.entity_type, doc.entity_id)
+    if doc.entity_type == "test":
+        test = db.query(HydTest).filter(HydTest.id == doc.entity_id).first()
+        if test and test.status == "completed":
+            raise HTTPException(status_code=409, detail=f"{test.test_number} is completed and locked — its certificates can't be removed. Raise a re-test if the result needs to change.")
     if doc.entity_type == "circuit":
         circuit = db.query(HydCircuit).filter(HydCircuit.id == doc.entity_id).first()
         if circuit and circuit.status != "draft":

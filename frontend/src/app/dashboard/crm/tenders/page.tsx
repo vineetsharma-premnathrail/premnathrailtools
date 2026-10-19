@@ -9,7 +9,7 @@ export default function TendersRedirectPage() {
 
   useEffect(() => {
     const id = searchParams.get('id')
-    router.replace(id ? `/dashboard/crm/inquiries?id=${id}&type=tender` : '/dashboard/crm/inquiries')
+    router.replace(id ? `/dashboard/crm/inquiries?id=${id}&type=tender` : '/dashboard/crm/inquiries?type=tender')
   }, [router, searchParams])
 
   return null

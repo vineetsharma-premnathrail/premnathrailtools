@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hrApi, usersApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import type { HrAsset, HrBranchLookup, DirectoryUser } from '@/types'
@@ -14,12 +15,14 @@ import {
   tableWrapStyle, thStyle, tdStyle, linkActionStyle, fmtDate,
 } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
+import { recordPath } from '@/lib/recordRef'
 
 const STATUS_LABELS: Record<string, string> = { in_stock: 'In Stock', issued: 'Issued', under_repair: 'Under Repair', retired: 'Retired', lost: 'Lost' }
 const STATUS_HEX: Record<string, string> = { in_stock: '#16A34A', issued: '#2563EB', under_repair: '#F59E0B', retired: '#64748B', lost: '#DC2626' }
 
 export default function HrAssetsPage() {
   const { isAuthorized, isLoading } = useRequireApp('hr')
+  const { can } = useCan()
   const router = useRouter()
 
   const [assets, setAssets] = useState<HrAsset[]>([])
@@ -83,13 +86,13 @@ export default function HrAssetsPage() {
       <PageHeader
         title="Assets"
         subtitle="Company asset register — laptops, phones, SIMs, ID and access cards, vehicles. Issue to employees and record returns."
-        actions={<button type="button" style={primaryActionStyle} onClick={() => setShowCreate(true)}>+ Add Asset</button>}
+        actions={can('hr', 'assets', 'create') ? <button type="button" data-tour="hr-asset-add-btn" style={primaryActionStyle} onClick={() => setShowCreate(true)}>+ Add Asset</button> : undefined}
       />
 
       <ErrorBanner error={error} />
       <SuccessBanner message={notice} />
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+      <div data-tour="hr-asset-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <StatCard label={filtersActive ? 'Matching' : 'Total assets'} value={assets.length} hex={TEXT.heading} />
         <StatCard label="In stock" value={counts.in_stock || 0} hex={STATUS_HEX.in_stock} />
         <StatCard label="Issued" value={counts.issued || 0} hex={STATUS_HEX.issued} />
@@ -99,24 +102,25 @@ export default function HrAssetsPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
+          data-tour="hr-asset-search"
           style={{ ...filterInputStyle, flex: '1 1 240px', maxWidth: 340 }}
           placeholder="Search code, name, serial, invoice, holder…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select style={{ ...filterInputStyle, flex: '0 1 160px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
+        <select data-tour="hr-asset-category-filter" style={{ ...filterInputStyle, flex: '0 1 160px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">All categories</option>
           {Object.entries(ASSET_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...filterInputStyle, flex: '0 1 150px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select data-tour="hr-asset-status-filter" style={{ ...filterInputStyle, flex: '0 1 150px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...filterInputStyle, flex: '0 1 170px' }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+        <select data-tour="hr-asset-plant-filter" style={{ ...filterInputStyle, flex: '0 1 170px' }} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
           <option value="">All plants</option>
           {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
-        <div style={{ flex: '0 1 220px', minWidth: 180 }}>
+        <div data-tour="hr-asset-holder-filter" style={{ flex: '0 1 220px', minWidth: 180 }}>
           <SearchableSelect
             value={holderId}
             onChange={setHolderId}
@@ -131,7 +135,7 @@ export default function HrAssetsPage() {
         )}
       </div>
 
-      <div style={tableWrapStyle}>
+      <div data-tour="hr-asset-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead>
             <tr>
@@ -147,7 +151,7 @@ export default function HrAssetsPage() {
               <EmptyRow colSpan={9} text={filtersActive ? 'No assets match these filters.' : 'No assets registered yet. Use “+ Add Asset” to register the first one.'} />
             ) : (
               assets.map((a) => (
-                <tr key={a.id} onClick={() => router.push(`/dashboard/hr/assets/${a.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/hr/assets', a))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{a.asset_code}</td>
                   <td style={tdStyle}>
                     <div style={{ fontWeight: 600 }}>{a.name}</div>
@@ -156,7 +160,7 @@ export default function HrAssetsPage() {
                   <td style={tdStyle}>{ASSET_CATEGORY_LABELS[a.category] || a.category}</td>
                   <td style={{ ...tdStyle, fontFamily: 'ui-monospace, monospace', fontSize: 12 }}>{a.serial_number || '—'}</td>
                   <td style={tdStyle}>{a.branch_name || '—'}</td>
-                  <td style={tdStyle}><Pill hex={STATUS_HEX[a.status] || '#64748B'} label={STATUS_LABELS[a.status] || a.status} /></td>
+                  <td data-tour="hr-asset-status-badge" style={tdStyle}><Pill hex={STATUS_HEX[a.status] || '#64748B'} label={STATUS_LABELS[a.status] || a.status} /></td>
                   <td style={tdStyle}>
                     {a.current_holder_name ? (
                       <>
@@ -172,7 +176,7 @@ export default function HrAssetsPage() {
                   </td>
                   <td style={tdStyle}>{a.condition ? ASSET_CONDITION_LABELS[a.condition] || a.condition : '—'}</td>
                   <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                    <span onClick={() => router.push(`/dashboard/hr/assets/${a.id}`)} style={linkActionStyle}>View</span>
+                    <span data-tour="hr-asset-view-link" onClick={() => router.push(recordPath('/dashboard/hr/assets', a))} style={linkActionStyle}>View</span>
                   </td>
                 </tr>
               ))

@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { HydTest } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
@@ -11,8 +13,8 @@ import { TEST_TYPE_LABELS, withUnit } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 
-const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', completed: 'Completed' }
-const STATUS_HEX: Record<string, string> = { planned: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A' }
+const STATUS_LABELS: Record<string, string> = { planned: 'Planned', in_progress: 'In Progress', under_review: 'Awaiting Sign-off', completed: 'Completed' }
+const STATUS_HEX: Record<string, string> = { planned: '#2563EB', in_progress: '#F59E0B', under_review: '#9333EA', completed: '#16A34A' }
 const RESULT_LABELS: Record<string, string> = { pending: 'Pending', pass: 'Pass', fail: 'Fail', conditional: 'Conditional' }
 const RESULT_HEX: Record<string, string> = { pending: '#78716c', pass: '#16A34A', fail: '#DC2626', conditional: '#F59E0B' }
 
@@ -26,6 +28,7 @@ const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 
 export default function HydTestsPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
+  const { can } = useCan()
 
   const [tests, setTests] = useState<HydTest[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,16 +66,19 @@ export default function HydTestsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Testing &amp; Inspection</h1>
         </div>
-        <button
-          onClick={() => router.push('/dashboard/hydraulic/testing/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New Test
-        </button>
+        {can('hydraulic', 'testing', 'create') && (
+          <button
+            data-tour="hyd-test-new-btn"
+            onClick={() => router.push('/dashboard/hydraulic/testing/new')}
+            style={{
+              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
+              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
+            }}
+          >
+            + New Test
+          </button>
+        )}
       </div>
 
       {error && (
@@ -82,27 +88,27 @@ export default function HydTestsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search test no., title or serial no…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+        <input data-tour="hyd-test-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search test no., title or serial no…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="hyd-test-medium-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
           <option value="">Hydraulic + Pneumatic</option>
           <option value="hydraulic">Hydraulic</option>
           <option value="pneumatic">Pneumatic</option>
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 220px' }} value={testType} onChange={(e) => setTestType(e.target.value)}>
+        <select data-tour="hyd-test-type-filter" style={{ ...inputStyle, flex: '0 1 220px' }} value={testType} onChange={(e) => setTestType(e.target.value)}>
           <option value="">All test types</option>
           {Object.entries(TEST_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="hyd-test-status-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 140px' }} value={resultFilter} onChange={(e) => setResultFilter(e.target.value)}>
+        <select data-tour="hyd-test-result-filter" style={{ ...inputStyle, flex: '0 1 140px' }} value={resultFilter} onChange={(e) => setResultFilter(e.target.value)}>
           <option value="">All results</option>
           {Object.entries(RESULT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
-      <div style={{
+      <div data-tour="hyd-test-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
@@ -123,7 +129,7 @@ export default function HydTestsPage() {
               <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No tests match. Plan a pressure, proof, leak or cleanliness test against a system or component to start its test record.</td></tr>
             ) : (
               tests.map((t) => (
-                <tr key={t.id} onClick={() => router.push(`/dashboard/hydraulic/testing/${t.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={t.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/testing', t))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{t.test_number}</td>
                   <td style={cellStyle}>{t.title}</td>
                   <td style={cellStyle}>{TEST_TYPE_LABELS[t.test_type] || t.test_type}</td>
@@ -139,7 +145,7 @@ export default function HydTestsPage() {
                   <td style={cellStyle}><span style={pill(STATUS_HEX[t.status])}>{STATUS_LABELS[t.status] || t.status}</span></td>
                   <td style={cellStyle}><span style={pill(RESULT_HEX[t.result])}>{RESULT_LABELS[t.result] || t.result}</span></td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/hydraulic/testing/${t.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/hydraulic/testing', t))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

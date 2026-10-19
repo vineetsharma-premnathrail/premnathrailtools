@@ -23,6 +23,13 @@ class InquiryCreate(BaseModel):
     lead_source: str
     bd_owner: str | None = None
     sales_engineer: str | None = None
+    # Opportunity owner / sales engineer as users (the name fields above follow them).
+    bd_owner_id: int | None = None
+    sales_engineer_id: int | None = None
+    # Win / loss — required when the inquiry closes as not ordered (crm/services/opportunity.py).
+    lost_reason_code: str | None = None
+    lost_to_competitor: str | None = None
+    lost_remarks: str | None = None
     status: str = "Requirement Received"
     current_stage: str = "Requirement Received"
     current_status_note: str | None = None
@@ -49,6 +56,8 @@ class InquiryCreate(BaseModel):
 
 
 class InquiryUpdate(BaseModel):
+    # Only for an admin moving the stage back — required then, logged on the timeline.
+    stage_reason: str | None = None
     org_id: int | None = None
     org_contact_id: int | None = None
     railway_zone: str | None = None
@@ -56,6 +65,13 @@ class InquiryUpdate(BaseModel):
     lead_source: str | None = None
     bd_owner: str | None = None
     sales_engineer: str | None = None
+    # Opportunity owner / sales engineer as users (the name fields above follow them).
+    bd_owner_id: int | None = None
+    sales_engineer_id: int | None = None
+    # Win / loss — required when the inquiry closes as not ordered (crm/services/opportunity.py).
+    lost_reason_code: str | None = None
+    lost_to_competitor: str | None = None
+    lost_remarks: str | None = None
     status: str | None = None
     current_stage: str | None = None
     current_status_note: str | None = None
@@ -93,6 +109,14 @@ class InquiryResponse(BaseModel):
     lead_source: str | None = None
     bd_owner: str | None = None
     sales_engineer: str | None = None
+    # Opportunity owner / sales engineer as users (the name fields above follow them).
+    bd_owner_id: int | None = None
+    sales_engineer_id: int | None = None
+    # Win / loss — required when the inquiry closes as not ordered (crm/services/opportunity.py).
+    lost_reason_code: str | None = None
+    lost_to_competitor: str | None = None
+    lost_remarks: str | None = None
+    closed_at: datetime | None = None
     status: str
     current_stage: str
     current_status_note: str | None = None

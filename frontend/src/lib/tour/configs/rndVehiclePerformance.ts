@@ -1,0 +1,195 @@
+import { TourConfig } from '../types'
+
+const config: TourConfig = {
+  id: 'rnd-vehicle-performance',
+  pageTitle: 'Vehicle Performance Calculator',
+  steps: [
+    {
+      target: 'rnd-toolnav-vehicle',
+      title: 'Engineering Tools row',
+      purpose: 'Jump between calculators from this row of pills.',
+    },
+    {
+      target: 'rnd-vp-summary',
+      title: 'Traction snapshot',
+      purpose: 'Shown after a calculation: Max Traction the drivetrain can generate (N), Traction (No Slip) — the most the wheels can transmit before slipping (weight × μ) — and the Status.',
+      why: 'If the engine can push harder than the wheels can grip, the wheels spin. The lower of the two numbers is what you really get.',
+    },
+    {
+      target: 'rnd-vp-doc',
+      title: 'Document Details',
+      purpose: 'Doc No., Date, Made By, Checked By and Approved By — printed on the Word report only; they do not affect the calculation.',
+    },
+    {
+      target: 'rnd-vp-gvw',
+      title: 'GVW (kg)',
+      purpose: 'Gross weight of the road-rail vehicle / locomotive.',
+      whatToEnter: 'Kilograms (not tonnes).',
+      required: true,
+      validExample: '28000',
+      invalidExample: '28 (that is tonnes)',
+    },
+    {
+      target: 'rnd-vp-max-speed',
+      title: 'Max Speed (km/h)',
+      purpose: 'Top speed — the graphs are drawn up to this speed.',
+      required: true,
+      validExample: '50',
+    },
+    {
+      target: 'rnd-vp-axles',
+      title: 'No. of Axles',
+      purpose: 'Number of axles (whole number).',
+      required: true,
+      validExample: '2',
+    },
+    {
+      target: 'rnd-vp-axle-ratio',
+      title: 'Rear Axle Ratio',
+      purpose: 'Final drive (differential) reduction between propeller shaft and wheels.',
+      validExample: '5.29',
+    },
+    {
+      target: 'rnd-vp-gears',
+      title: 'Gear Ratios (comma)',
+      purpose: 'Every gearbox ratio, first gear first. Each gear gets its own curve on the graphs.',
+      whatToEnter: 'Numbers separated by commas.',
+      required: true,
+      validExample: '8.81,6.55,4.77,3.55,2.48,1.85,1.34,1',
+      invalidExample: '8.81; 6.55 (use commas, not semicolons)',
+    },
+    {
+      target: 'rnd-vp-shunting-load',
+      title: 'Shunting Load (t)',
+      purpose: 'Weight of the wagons the vehicle must haul, in tonnes.',
+      required: true,
+      validExample: '500',
+    },
+    {
+      target: 'rnd-vp-curve',
+      title: 'Max Curve',
+      purpose: 'Sharpest curve on the route (unit chosen next).',
+      validExample: '5',
+    },
+    {
+      target: 'rnd-vp-curve-unit',
+      title: 'Curve Unit',
+      purpose: 'How the curve number is read.',
+      options: [
+        { value: 'degree', meaning: 'Degree of curve.' },
+        { value: 'm (radius)', meaning: 'Curve radius in metres.' },
+      ],
+    },
+    {
+      target: 'rnd-vp-slope',
+      title: 'Max Slope',
+      purpose: 'Steepest gradient (unit chosen next). The Speed vs Slope table works up to this.',
+      validExample: '3.5',
+    },
+    {
+      target: 'rnd-vp-slope-unit',
+      title: 'Slope Unit',
+      purpose: 'How the slope number is read.',
+      options: [
+        { value: '%', meaning: 'Percent — metres of rise per 100 m.' },
+        { value: 'degree', meaning: 'Slope angle in degrees.' },
+      ],
+    },
+    {
+      target: 'rnd-vp-power',
+      title: 'Peak Power (kW)',
+      purpose: 'Engine peak power. (1 HP ≈ 0.746 kW — 300 HP ≈ 223.7 kW.)',
+      required: true,
+      validExample: '223.7',
+    },
+    {
+      target: 'rnd-vp-mu',
+      title: 'Friction Coeff. (μ)',
+      purpose: 'Wheel-to-rail adhesion coefficient — limits traction before slipping.',
+      whatToEnter: 'A decimal; steel on dry rail ≈ 0.25–0.35, rubber tyre on rail ≈ 0.5–0.6.',
+      required: true,
+      validExample: '0.55',
+      invalidExample: '55 (enter a fraction, not a percent)',
+    },
+    {
+      target: 'rnd-vp-wheel-dia',
+      title: 'Wheel Dia (m)',
+      purpose: 'Driving wheel diameter in METRES.',
+      required: true,
+      validExample: '0.56',
+      invalidExample: '560 (that is mm)',
+    },
+    {
+      target: 'rnd-vp-min-rpm',
+      title: 'Min RPM',
+      purpose: 'Lowest engine speed to plot from (whole number).',
+      validExample: '100',
+    },
+    {
+      target: 'rnd-vp-max-rpm',
+      title: 'Max RPM',
+      purpose: 'Highest engine speed (governed speed). Defaults to 2500 if blank.',
+      validExample: '2200',
+    },
+    {
+      target: 'rnd-vp-torque',
+      title: 'Torque Curve',
+      purpose: 'Engine torque (N·m) at each RPM, from the engine data sheet. Edit any cell; × deletes a row.',
+      whatToEnter: 'RPM and torque pairs, numbers only.',
+      why: 'Engine torque changes with RPM, so the tractive effort in each gear follows this curve.',
+    },
+    {
+      target: 'rnd-vp-torque-import',
+      title: 'Import torque CSV',
+      purpose: 'Loads the RPM/torque table from a CSV file.',
+    },
+    {
+      target: 'rnd-vp-torque-export',
+      title: 'Export torque CSV',
+      purpose: 'Downloads the current torque table as CSV.',
+    },
+    {
+      target: 'rnd-vp-torque-add',
+      title: '+ Add Row',
+      purpose: 'Adds an empty RPM/torque row.',
+    },
+    {
+      target: 'rnd-vp-calculate-btn',
+      title: 'Calculate Performance',
+      purpose: 'Runs the performance calculation.',
+      after: 'The traction snapshot, Speed vs Slope table and both graphs fill in, and the run is saved to History automatically.',
+    },
+    {
+      target: 'rnd-vp-speed-slope',
+      title: 'Speed vs Slope',
+      purpose: 'The top speed the vehicle can hold on each slope with the given load.',
+    },
+    {
+      target: 'rnd-vp-te-chart',
+      title: 'Tractive Effort vs Speed',
+      purpose: 'Pulling force against speed, one line per slope and gear.',
+    },
+    {
+      target: 'rnd-vp-sc-chart',
+      title: 'Shunting Capability vs Speed',
+      purpose: 'How much load can be hauled at each speed, one line per slope and gear.',
+    },
+    {
+      target: 'rnd-vp-csv-btn',
+      title: 'Export CSV',
+      purpose: 'Downloads inputs and results as CSV.',
+    },
+    {
+      target: 'rnd-vp-docx-btn',
+      title: 'Save Doc',
+      purpose: 'Downloads the full Word report, including the Document Details.',
+    },
+    {
+      target: 'rnd-vp-history-btn',
+      title: 'History',
+      purpose: 'Opens saved calculations to reopen an earlier run.',
+    },
+  ],
+}
+
+export default config

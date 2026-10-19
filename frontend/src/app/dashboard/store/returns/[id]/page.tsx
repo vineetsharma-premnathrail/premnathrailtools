@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useProtectedPage } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
@@ -8,13 +8,16 @@ import { StoreMaterialReturn } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { Row, InfoRow, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useRecordId } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import { extractErrorMessages } from '@/lib/validation'
 
-const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected' }
-const STATUS_HEX: Record<string, string> = { pending_approval: '#d97706', approved: '#16a34a', rejected: '#dc2626' }
+const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Withdrawn' }
+const STATUS_HEX: Record<string, string> = { pending_approval: '#d97706', approved: '#16a34a', rejected: '#dc2626', cancelled: '#78716c' }
 const STEP_LABELS: Record<string, string> = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
 
 const card = { borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass() }
@@ -26,7 +29,9 @@ export default function StoreMaterialReturnDetailPage() {
   const { isAuthorized, isLoading, user } = useProtectedPage()
   const router = useRouter()
   const params = useParams()
-  const returnId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedReturnId, error: linkError } = useRecordId(ref)
+  const returnId = resolvedReturnId ?? 0
   const hasStore = !!user && (user.role === 'admin' || (user.assigned_apps || []).includes('store'))
 
   const [ret, setRet] = useState<StoreMaterialReturn | null>(null)
@@ -37,14 +42,17 @@ export default function StoreMaterialReturnDetailPage() {
   const [rejectOpen, setRejectOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  useEffect(() => {
-    if (!isAuthorized || !returnId) return
-    setLoading(true)
+  const load = useCallback(() => {
     storeApi.getMaterialReturn(returnId)
       .then(setRet)
       .catch((err) => setLoadError(extractErrorMessages(err, 'Failed to load this material return.').join(' ')))
       .finally(() => setLoading(false))
-  }, [isAuthorized, returnId])
+  }, [returnId])
+
+  useEffect(() => {
+    if (!isAuthorized || !returnId) return
+    load()
+  }, [isAuthorized, returnId, load])
 
   const decide = async (fn: () => Promise<StoreMaterialReturn>) => {
     setBusy(true)
@@ -58,6 +66,8 @@ export default function StoreMaterialReturnDetailPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div>{hasStore && <StoreNav />}<InvalidRecordLink message={linkError} listHref={hasStore ? '/dashboard/store/returns' : '/dashboard'} listLabel={hasStore ? 'Back to returns' : 'Back to dashboard'} /></div>)
+  if (!returnId) return <div>{hasStore && <StoreNav />}</div>
 
   const back = () => router.push(hasStore ? '/dashboard/store/returns' : '/dashboard')
 
@@ -137,9 +147,14 @@ export default function StoreMaterialReturnDetailPage() {
             </div>
           </div>
 
+          {/* Approval routed by Organization › Approval Workflows › Material return. */}
+          <div data-tour="return-detail-approval-panel">
+            <ApprovalPanel entityType="material_return" entityId={ret.id} onChanged={load} />
+          </div>
+
           {ret.approvals.length > 0 && (
             <>
-              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 10px' }}>Approvals</p>
+              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 10px' }}>Approvals (raised before Approval Workflows)</p>
               <div data-tour="return-detail-approvals" style={{ ...card, padding: '6px 0', marginBottom: 20 }}>
                 {ret.approvals.map((a) => (
                   <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '12px 20px', borderTop: '1px solid rgba(0,0,0,0.04)' }}>

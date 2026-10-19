@@ -5,6 +5,7 @@
 // Electrical Records stages. Each drawing carries R0, R1 … revisions that go
 // draft → submitted → approved / rejected; files stream through the backend.
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { electricalApi } from '@/lib/api'
 import { ElectricalDrawing, ElectricalDrawingRevision, ElectricalJobDetail, ElectricalMeta } from '@/types'
 import { useAuth } from '@/hooks/useAuth'
@@ -13,16 +14,25 @@ import { formatDateTime } from '@/lib/format'
 import { TEXT, BORDER, DANGER } from '@/lib/theme'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import {
-  inputStyle, sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallBtn, smallDangerBtn, linkStyle,
-  tableWrap, mutedText, pill, Pill, ErrorBanner, NoticeBanner, Modal, F, rowStyle,
+  sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallBtn, smallDangerBtn, linkStyle,
+  tableWrap, mutedText, pill, Pill, ErrorBanner, NoticeBanner, Modal, ModalFooter, F, rowStyle,
   REVISION_STATUS_LABELS, REVISION_STATUS_HEX, fmtBytes, openBlob, strOrNull,
+  useJobFeatures,
 } from '@/components/electrical/shared'
+import { useCan } from '@/lib/permissions'
+import { SheetColumns, SheetSection, SHEET, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
+import { useRecordId } from '@/lib/recordRef'
 
 const DRAWING_ACCEPT = '.pdf,.dwg,.dxf,.png,.jpg,.jpeg'
 
 type Confirm = { title: string; message: string; confirmLabel: string; danger: boolean; run: () => Promise<unknown>; fallback: string; notice: string }
 type Decision = { kind: 'approve' | 'reject'; drawing: ElectricalDrawing; rev: ElectricalDrawingRevision }
+// Pending central approval request of a submitted revision (Organization ›
+// Approval Workflows); absent on one submitted before the approval engine,
+// which is still approved / rejected with the buttons below.
+const approvalRequestId = (rev: ElectricalDrawingRevision) => (rev as ElectricalDrawingRevision & { approval_request_id?: number | null }).approval_request_id ?? null
 
 const emptyAdd = { title: '', drawing_type: 'schematic', drawing_number: '', is_as_built: false, description: '', change_summary: 'First issue' }
 type EditForm = { drawing_number: string; title: string; drawing_type: string; is_as_built: boolean; description: string }
@@ -30,6 +40,15 @@ type EditForm = { drawing_number: string; title: string; drawing_type: string; i
 export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: ElectricalJobDetail; meta: ElectricalMeta; canEdit: boolean; onChanged: () => void }) {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const { can, canDelete } = useCan()
+  // Approve / reject of a pre-engine submitted revision — backend needs electrical:drawings:approve.
+  const canApproveDrawings = can('electrical', 'drawings', 'approve')
+  // Electrical › RRV Electrical Jobs › Drawings (canEdit = job open + edit).
+  const { jf } = useJobFeatures()
+  const isOpen = ['draft', 'in_progress', 'handed_over'].includes(job.status)
+  const canAdd = isOpen && jf('drawings', 'create')
+  const canRemove = isOpen && jf('drawings', 'delete')
+  const canSubmitRev = jf('drawings', 'submit')
 
   const [drawings, setDrawings] = useState<ElectricalDrawing[]>([])
   const [loading, setLoading] = useState(true)
@@ -56,6 +75,8 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
   const uploadTarget = useRef<ElectricalDrawingRevision | null>(null)
 
   const typeLabel = (t: string) => meta.drawing_types?.[t] || t.replace(/_/g, ' ')
+  // ?focus=<revision id> (from an approval link) opens that revision's drawing.
+  const { id: focusId } = useRecordId(useSearchParams().get('focus'))
 
   // Bumped after every successful mutation to re-fetch the register.
   const [reloadKey, setReloadKey] = useState(0)
@@ -64,11 +85,17 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
   useEffect(() => {
     let cancelled = false
     electricalApi.listJobDrawings(job.id)
-      .then((data) => { if (!cancelled) setDrawings(Array.isArray(data) ? data : []) })
+      .then((data) => {
+        if (cancelled) return
+        const rows: ElectricalDrawing[] = Array.isArray(data) ? data : []
+        setDrawings(rows)
+        const hit = focusId ? rows.find((d) => d.revisions.some((r) => r.id === focusId)) : undefined
+        if (hit) setExpanded((prev) => (prev.has(hit.id) ? prev : new Set(prev).add(hit.id)))
+      })
       .catch((err) => { if (!cancelled) setError(extractErrorMessages(err, `Could not load the drawings for ${job.job_number}.`)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [job.id, job.job_number, reloadKey])
+  }, [job.id, job.job_number, reloadKey, focusId])
 
   /** Runs a mutation, then reloads the register and tells the job page. */
   const run = async (fn: () => Promise<unknown>, fallback: string, successNotice: string): Promise<boolean> => {
@@ -227,13 +254,13 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
   const revisionActions = (d: ElectricalDrawing, rev: ElectricalDrawingRevision) => {
     const isPreparer = !!user && rev.prepared_by_id === user.id
     const canPrepare = canEdit && (isAdmin || !rev.prepared_by_id || isPreparer)
-    const canDiscard = canPrepare && d.revisions.length > 1
+    const canDiscard = canPrepare && canRemove && d.revisions.length > 1
     const out: React.ReactNode[] = []
     if (rev.status === 'draft' && canPrepare) {
-      out.push(<button key="file" type="button" style={smallBtn} disabled={busy} onClick={() => pickFile(rev)}>{rev.has_file ? 'Replace file' : 'Upload file'}</button>)
-      out.push(
+      out.push(<button key="file" data-tour="elec-rev-upload-btn" type="button" style={smallBtn} disabled={busy} onClick={() => pickFile(rev)}>{rev.has_file ? 'Replace file' : 'Upload file'}</button>)
+      if (canSubmitRev) out.push(
         <button
-          key="submit" type="button"
+          key="submit" data-tour="elec-rev-submit-btn" type="button"
           style={{ ...smallBtn, opacity: rev.has_file ? 1 : 0.5, cursor: rev.has_file ? 'pointer' : 'not-allowed' }}
           disabled={busy || !rev.has_file}
           title={rev.has_file ? 'Send this revision for approval' : `Attach the drawing file to ${rev.revision_label} before submitting it for approval.`}
@@ -243,14 +270,14 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
         </button>,
       )
     }
-    if (rev.status === 'submitted' && (isAdmin || !isPreparer)) {
-      out.push(<button key="approve" type="button" style={{ ...smallBtn, color: '#15803d', borderColor: 'rgba(22,163,74,0.35)' }} disabled={busy} onClick={() => { setDecisionHint(''); setDecision({ kind: 'approve', drawing: d, rev }) }}>Approve</button>)
-      out.push(<button key="reject" type="button" style={smallDangerBtn} disabled={busy} onClick={() => { setDecisionHint(''); setDecision({ kind: 'reject', drawing: d, rev }) }}>Reject</button>)
+    if (rev.status === 'submitted' && !approvalRequestId(rev) && canApproveDrawings && (isAdmin || !isPreparer)) {
+      out.push(<button key="approve" data-tour="elec-rev-approve-btn" type="button" style={{ ...smallBtn, color: '#15803d', borderColor: 'rgba(22,163,74,0.35)' }} disabled={busy} onClick={() => { setDecisionHint(''); setDecision({ kind: 'approve', drawing: d, rev }) }}>Approve</button>)
+      out.push(<button key="reject" data-tour="elec-rev-reject-btn" type="button" style={smallDangerBtn} disabled={busy} onClick={() => { setDecisionHint(''); setDecision({ kind: 'reject', drawing: d, rev }) }}>Reject</button>)
     }
     if ((rev.status === 'draft' || rev.status === 'submitted') && canDiscard) {
       out.push(
         <button
-          key="discard" type="button" style={smallDangerBtn} disabled={busy}
+          key="discard" data-tour="elec-rev-discard-btn" type="button" style={smallDangerBtn} disabled={busy}
           onClick={() => setConfirm({
             title: `Discard ${d.drawing_number} ${rev.revision_label}?`,
             message: `${rev.revision_label} (${rev.status === 'submitted' ? 'awaiting approval' : 'draft'}) will be removed from the register. Earlier revisions stay as they are.`,
@@ -276,13 +303,13 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
           <div>
             <h3 style={{ ...sectionTitle, margin: '0 0 6px' }}>Drawings</h3>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13, color: TEXT.body }}>
+            <div data-tour="elec-drawings-summary" style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13, color: TEXT.body }}>
               <span><strong>{total}</strong> drawing{total === 1 ? '' : 's'}</span>
               <span style={{ color: awaiting ? '#b45309' : TEXT.body }}><strong>{awaiting}</strong> awaiting approval</span>
               <span><strong>{asBuiltApproved}</strong> as-built approved</span>
             </div>
           </div>
-          {canEdit && <button type="button" style={primaryBtn} disabled={busy} onClick={openAdd}>+ Add Drawing</button>}
+          {canAdd && <button data-tour="elec-drawings-add-btn" type="button" style={primaryBtn} disabled={busy} onClick={openAdd}>+ Add Drawing</button>}
         </div>
         <p style={{ ...mutedText, fontSize: 12, marginBottom: 14 }}>
           Schematics stage needs an approved schematic or single line diagram; As-Built stage needs approved drawings marked as-built.
@@ -300,6 +327,7 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
               return (
                 <div key={d.id} style={{ borderRadius: 12, border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.55)' }}>
                   <div
+                    data-tour="elec-drawing-row"
                     onClick={() => toggle(d.id)}
                     style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', cursor: 'pointer', flexWrap: 'wrap' }}
                   >
@@ -317,15 +345,16 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
                           : <span style={{ color: DANGER.primary, fontWeight: 600 }}> · No approved revision</span>}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div data-tour="elec-drawing-status" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       {d.latest_revision_label && <span style={{ fontSize: 12, color: TEXT.muted }}>{d.latest_revision_label}</span>}
                       <Pill value={d.latest_revision_status} labels={REVISION_STATUS_LABELS} hex={REVISION_STATUS_HEX} />
                     </div>
                     {canEdit && (
                       <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {!hasOpenRev && <button type="button" style={smallBtn} disabled={busy} onClick={() => openNewRev(d)}>New Revision</button>}
-                        <button type="button" style={smallBtn} disabled={busy} onClick={() => openEdit(d)}>Edit</button>
+                        {!hasOpenRev && canAdd && <button data-tour="elec-drawing-new-rev-btn" type="button" style={smallBtn} disabled={busy} onClick={() => openNewRev(d)}>New Revision</button>}
+                        <button data-tour="elec-drawing-edit-btn" type="button" style={smallBtn} disabled={busy} onClick={() => openEdit(d)}>Edit</button>
                         <button
+                          data-tour="elec-drawing-as-built-btn"
                           type="button" style={smallBtn} disabled={busy}
                           onClick={() => run(
                             () => electricalApi.updateDrawing(d.id, { is_as_built: !d.is_as_built }),
@@ -335,19 +364,22 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
                         >
                           {d.is_as_built ? 'Unmark as-built' : 'Mark as-built'}
                         </button>
-                        <button
-                          type="button" style={smallDangerBtn} disabled={busy}
-                          onClick={() => setConfirm({
-                            title: `Delete drawing ${d.drawing_number}?`,
-                            message: `"${d.title}" and all of its revisions will be removed. A drawing with an approved revision on record can't be deleted — raise a new revision instead.`,
-                            confirmLabel: 'Delete', danger: true,
-                            run: () => electricalApi.deleteDrawing(d.id),
-                            fallback: `Could not delete drawing ${d.drawing_number}.`,
-                            notice: `Drawing ${d.drawing_number} deleted.`,
-                          })}
-                        >
-                          Delete
-                        </button>
+                        {canRemove && canDelete('electrical', 'drawings', (d as { created_by_id?: number | null }).created_by_id ?? null) && (
+                          <button
+                            data-tour="elec-drawing-delete-btn"
+                            type="button" style={smallDangerBtn} disabled={busy}
+                            onClick={() => setConfirm({
+                              title: `Delete drawing ${d.drawing_number}?`,
+                              message: `"${d.title}" and all of its revisions will be removed. A drawing with an approved revision on record can't be deleted — raise a new revision instead.`,
+                              confirmLabel: 'Delete', danger: true,
+                              run: () => electricalApi.deleteDrawing(d.id),
+                              fallback: `Could not delete drawing ${d.drawing_number}.`,
+                              notice: `Drawing ${d.drawing_number} deleted.`,
+                            })}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -355,7 +387,7 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
                   {isOpen && (
                     <div style={{ padding: '0 12px 12px' }}>
                       {d.description && <p style={{ ...mutedText, fontSize: 12.5, margin: '0 0 10px 24px' }}>{d.description}</p>}
-                      <div style={{ ...tableWrap, maxHeight: 'none' }}>
+                      <div data-tour="elec-drawing-revisions" style={{ ...tableWrap, maxHeight: 'none' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                           <thead>
                             <tr>
@@ -398,6 +430,17 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
                           </tbody>
                         </table>
                       </div>
+                      {d.revisions.length > 0 && (
+                        <div style={{ marginTop: 12 }} onClick={(e) => e.stopPropagation()}>
+                          <ApprovalPanel
+                            key={`${d.revisions[d.revisions.length - 1].id}-${d.revisions[d.revisions.length - 1].status}-${approvalRequestId(d.revisions[d.revisions.length - 1])}`}
+                            entityType="electrical_drawing_revision"
+                            entityId={d.revisions[d.revisions.length - 1].id}
+                            title={`Approval — ${d.drawing_number} ${d.revisions[d.revisions.length - 1].revision_label}`}
+                            onChanged={() => { load(); onChanged() }}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -410,106 +453,114 @@ export default function DrawingsTab({ job, meta, canEdit, onChanged }: { job: El
       <input ref={fileInputRef} type="file" accept={DRAWING_ACCEPT} onChange={onFilePicked} style={{ display: 'none' }} />
 
       {/* Add drawing */}
-      <Modal open={addOpen} title="Add Drawing" onClose={() => !busy && setAddOpen(false)}>
-        <ErrorBanner error={formError} />
-        <div style={rowStyle}>
-          <F label="Title *" basis={280} grow max={420}>
-            <input style={inputStyle} value={addForm.title} onChange={(e) => setAddForm({ ...addForm, title: e.target.value })} placeholder="e.g. Main 24V DC distribution schematic" autoFocus />
-          </F>
-          <F label="Drawing type" basis={190}>
-            <select style={inputStyle} value={addForm.drawing_type} onChange={(e) => setAddForm({ ...addForm, drawing_type: e.target.value })}>
-              {typeOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Drawing number" basis={220} grow max={300}>
-            <input style={inputStyle} value={addForm.drawing_number} onChange={(e) => setAddForm({ ...addForm, drawing_number: e.target.value })} placeholder="Leave blank to auto-number" />
-          </F>
-          <div style={{ flex: '0 1 160px', display: 'flex', alignItems: 'flex-end', paddingBottom: 9 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
-              <input type="checkbox" checked={addForm.is_as_built} onChange={(e) => setAddForm({ ...addForm, is_as_built: e.target.checked })} />
-              As-built drawing
-            </label>
-          </div>
-        </div>
-        <div style={rowStyle}>
-          <F label="Description" basis={300} grow>
-            <textarea style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} rows={2} value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="R0 change summary" basis={260} grow max={420}>
-            <input style={inputStyle} value={addForm.change_summary} onChange={(e) => setAddForm({ ...addForm, change_summary: e.target.value })} />
-          </F>
-          <F label="File (optional)" basis={240} grow max={360}>
-            <input type="file" accept={DRAWING_ACCEPT} onChange={(e) => setAddFile(e.target.files?.[0] || null)} style={inputStyle} />
-          </F>
-        </div>
-        <p style={{ ...mutedText, fontSize: 12, marginBottom: 14 }}>The drawing starts as an R0 draft. It can be submitted for approval once a file is attached.</p>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" style={smallBtn} disabled={busy} onClick={() => setAddOpen(false)}>Cancel</button>
-          <button type="button" style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={submitAdd}>{busy ? 'Saving…' : 'Add Drawing'}</button>
-        </div>
+      <Modal
+        open={addOpen} width={960} flush busy={busy} tour="elec-drawing-form" icon="doc" title="Add Drawing"
+        subtitle={`New drawing on ${job.job_number} — it starts as an R0 draft.`}
+        onClose={() => setAddOpen(false)}
+        footer={<ModalFooter onCancel={() => setAddOpen(false)} onSubmit={submitAdd} busy={busy} icon="plus" label="Add Drawing"
+          cancelTour="elec-drawing-form-cancel" submitTour="elec-drawing-form-save" />}
+      >
+        <SheetColumns
+          left={<>
+            <ErrorBanner error={formError} />
+            <SheetSection icon="doc" title="Drawing">
+              <div style={rowStyle}>
+                <F tour="elec-drawing-title" label="Title" req basis={280} grow>
+                  <input style={sheetInput} value={addForm.title} onChange={(e) => setAddForm({ ...addForm, title: e.target.value })} placeholder="e.g. Main 24V DC distribution schematic" autoFocus />
+                </F>
+              </div>
+              <div style={rowStyle}>
+                <F tour="elec-drawing-type" label="Drawing type" basis={190}>
+                  <select style={sheetInput} value={addForm.drawing_type} onChange={(e) => setAddForm({ ...addForm, drawing_type: e.target.value })}>
+                    {typeOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </F>
+                <F tour="elec-drawing-number" label="Drawing number" basis={200} grow max={300}>
+                  <input style={sheetInput} value={addForm.drawing_number} onChange={(e) => setAddForm({ ...addForm, drawing_number: e.target.value })} placeholder="Leave blank to auto-number" />
+                </F>
+              </div>
+              <label data-tour="elec-drawing-as-built" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer', marginBottom: 12 }}>
+                <input type="checkbox" checked={addForm.is_as_built} onChange={(e) => setAddForm({ ...addForm, is_as_built: e.target.checked })} />
+                As-built drawing
+              </label>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-drawing-description" label="Description" optional basis={300} grow>
+                  <textarea style={{ ...sheetInput, resize: 'vertical' }} rows={3} value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} />
+                </F>
+              </div>
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="history" title="First Revision (R0)">
+              <div style={rowStyle}>
+                <F tour="elec-drawing-change-summary" label="R0 change summary" basis={240} grow>
+                  <input style={sheetInput} value={addForm.change_summary} onChange={(e) => setAddForm({ ...addForm, change_summary: e.target.value })} />
+                </F>
+              </div>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-drawing-file" label="File" optional basis={240} grow>
+                  <input type="file" accept={DRAWING_ACCEPT} onChange={(e) => setAddFile(e.target.files?.[0] || null)} style={sheetInput} />
+                </F>
+              </div>
+              <p style={sheetHint}>PDF, DWG, DXF or image. The drawing can be submitted for approval once a file is attached.</p>
+            </SheetSection>
+          </>}
+        />
       </Modal>
 
       {/* Edit drawing */}
-      <Modal open={!!editing} title={`Edit ${editing?.drawing_number || 'drawing'}`} onClose={() => !busy && setEditing(null)}>
+      <Modal
+        open={!!editing} width={580} busy={busy} icon="edit" title={`Edit ${editing?.drawing_number || 'drawing'}`}
+        subtitle={editing ? `${editing.title} — ${job.job_number}` : ''}
+        onClose={() => setEditing(null)}
+        footer={<ModalFooter onCancel={() => setEditing(null)} onSubmit={submitEdit} busy={busy} label="Save Changes" />}
+      >
         <ErrorBanner error={formError} />
-        <div style={rowStyle}>
-          <F label="Drawing number *" basis={220} grow max={300}>
-            <input style={inputStyle} value={editForm.drawing_number} onChange={(e) => setEditForm({ ...editForm, drawing_number: e.target.value })} />
-          </F>
-          <F label="Drawing type" basis={190}>
-            <select style={inputStyle} value={editForm.drawing_type} onChange={(e) => setEditForm({ ...editForm, drawing_type: e.target.value })}>
-              {typeOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Title *" basis={280} grow max={460}>
-            <input style={inputStyle} value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
-          </F>
-          <div style={{ flex: '0 1 160px', display: 'flex', alignItems: 'flex-end', paddingBottom: 9 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
-              <input type="checkbox" checked={editForm.is_as_built} onChange={(e) => setEditForm({ ...editForm, is_as_built: e.target.checked })} />
-              As-built drawing
-            </label>
+        <SheetSection icon="doc" title="Drawing">
+          <div style={rowStyle}>
+            <F label="Drawing number" req basis={200} grow max={300}>
+              <input style={sheetInput} value={editForm.drawing_number} onChange={(e) => setEditForm({ ...editForm, drawing_number: e.target.value })} />
+            </F>
+            <F label="Drawing type" basis={180}>
+              <select style={sheetInput} value={editForm.drawing_type} onChange={(e) => setEditForm({ ...editForm, drawing_type: e.target.value })}>
+                {typeOptions.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </F>
           </div>
-        </div>
-        <div style={rowStyle}>
-          <F label="Description" basis={300} grow>
-            <textarea style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} rows={3} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
-          </F>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" style={smallBtn} disabled={busy} onClick={() => setEditing(null)}>Cancel</button>
-          <button type="button" style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={submitEdit}>{busy ? 'Saving…' : 'Save Changes'}</button>
-        </div>
+          <div style={rowStyle}>
+            <F label="Title" req basis={280} grow>
+              <input style={sheetInput} value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
+            </F>
+          </div>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer', marginBottom: 12 }}>
+            <input type="checkbox" checked={editForm.is_as_built} onChange={(e) => setEditForm({ ...editForm, is_as_built: e.target.checked })} />
+            As-built drawing
+          </label>
+          <div style={{ ...rowStyle, marginBottom: 0 }}>
+            <F label="Description" optional basis={300} grow>
+              <textarea style={{ ...sheetInput, resize: 'vertical' }} rows={3} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
+            </F>
+          </div>
+        </SheetSection>
       </Modal>
 
       {/* New revision */}
-      <Modal open={!!revFor} title={`New revision of ${revFor?.drawing_number || 'drawing'}`} onClose={() => !busy && setRevFor(null)} width={560}>
+      <Modal
+        open={!!revFor} width={580} busy={busy} icon="history" title={`New revision of ${revFor?.drawing_number || 'drawing'}`}
+        subtitle={revFor ? `${revFor.title} — currently ${revFor.latest_revision_label || 'no revisions'}${revFor.approved_revision_label ? `, approved ${revFor.approved_revision_label}` : ''}` : ''}
+        onClose={() => setRevFor(null)}
+        footer={<ModalFooter onCancel={() => setRevFor(null)} onSubmit={submitNewRev} busy={busy} icon="plus" label="Start Revision" />}
+      >
         <ErrorBanner error={formError} />
-        {revFor && (
-          <p style={{ ...mutedText, fontSize: 12.5, marginBottom: 12 }}>
-            {revFor.title} — currently {revFor.latest_revision_label || 'no revisions'}{revFor.approved_revision_label ? `, approved ${revFor.approved_revision_label}` : ''}. The new revision starts as a draft; approving it supersedes the current approved one.
-          </p>
-        )}
-        <div style={rowStyle}>
-          <F label="Change summary *" basis={300} grow>
-            <textarea style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }} rows={3} value={revSummary} onChange={(e) => setRevSummary(e.target.value)} placeholder="What changed in this revision?" autoFocus />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="File (optional)" basis={300} grow>
-            <input type="file" accept={DRAWING_ACCEPT} onChange={(e) => setRevFile(e.target.files?.[0] || null)} style={inputStyle} />
-          </F>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" style={smallBtn} disabled={busy} onClick={() => setRevFor(null)}>Cancel</button>
-          <button type="button" style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={submitNewRev}>{busy ? 'Saving…' : 'Start Revision'}</button>
-        </div>
+        <SheetSection icon="edit" title="What Changed">
+          <label style={sheetLabel}>Change summary <Req /></label>
+          <textarea style={{ ...sheetInput, resize: 'vertical' }} rows={3} value={revSummary} onChange={(e) => setRevSummary(e.target.value)} placeholder="What changed in this revision?" autoFocus />
+          <p style={sheetHint}>The new revision starts as a draft; approving it supersedes the current approved one.</p>
+        </SheetSection>
+        <SheetSection icon="clip" title="Revision File" extra={<Optional />}>
+          <input type="file" accept={DRAWING_ACCEPT} onChange={(e) => setRevFile(e.target.files?.[0] || null)} style={sheetInput} aria-label="Revision file" />
+          <p style={sheetHint}>Attach it now or later — it must be attached before the revision is submitted for approval.</p>
+        </SheetSection>
       </Modal>
 
       <ConfirmDialog

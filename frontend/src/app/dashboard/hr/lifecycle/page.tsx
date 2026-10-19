@@ -3,17 +3,19 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { HrLifecycleCounts, HrLifecycleEvent, HrLifecycleEventType } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import HrNav from '@/components/hr/HrNav'
 import MyChecklistTasks from '@/components/hr/lifecycle/MyChecklistTasks'
+import { recordPath } from '@/lib/recordRef'
 
 const TYPE_LABELS: Record<string, string> = { joining: 'Joining', confirmation: 'Confirmation', transfer: 'Transfer', promotion: 'Promotion', exit: 'Exit' }
 const TYPE_HEX: Record<string, string> = { joining: '#16A34A', confirmation: '#0891B2', transfer: '#2563EB', promotion: '#7C3AED', exit: '#DC2626' }
-const STATUS_LABELS: Record<string, string> = { draft: 'Draft', in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' }
-const STATUS_HEX: Record<string, string> = { draft: '#78716C', in_progress: '#F59E0B', completed: '#16A34A', cancelled: '#DC2626' }
+const STATUS_LABELS: Record<string, string> = { draft: 'Draft', in_progress: 'In Progress', scheduled: 'Scheduled', completed: 'Completed', cancelled: 'Cancelled' }
+const STATUS_HEX: Record<string, string> = { draft: '#78716C', in_progress: '#F59E0B', scheduled: '#7C3AED', completed: '#16A34A', cancelled: '#94A3B8' }
 const TYPES: HrLifecycleEventType[] = ['joining', 'confirmation', 'transfer', 'promotion', 'exit']
 
 const inputStyle: React.CSSProperties = {
@@ -30,6 +32,7 @@ const fmtDate = (d: string | null) => (d ? d.split('-').reverse().join('-') : 'â
 
 export default function HrLifecyclePage() {
   const { isAuthorized, isLoading } = useRequireApp('hr')
+  const { can } = useCan()
   const router = useRouter()
 
   const [events, setEvents] = useState<HrLifecycleEvent[]>([])
@@ -80,8 +83,9 @@ export default function HrLifecyclePage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Lifecycle</h1>
           <p style={{ fontSize: 13.5, color: TEXT.muted, margin: 0 }}>Joining, confirmation, transfer, promotion and exit events with their checklists.</p>
         </div>
-        <button
+        {can('hr', 'lifecycle', 'create') && <button
           type="button"
+          data-tour="hr-lc-new-btn"
           onClick={() => router.push('/dashboard/hr/lifecycle/new')}
           style={{
             padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
@@ -90,10 +94,10 @@ export default function HrLifecyclePage() {
           }}
         >
           + New Event
-        </button>
+        </button>}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 18 }}>
+      <div data-tour="hr-lc-type-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 18 }}>
         {TYPES.map((t) => {
           const active = typeFilter === t
           return (
@@ -121,16 +125,17 @@ export default function HrLifecyclePage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input
+          data-tour="hr-lc-search"
           style={{ ...inputStyle, flex: '1 1 240px', maxWidth: 340 }}
           placeholder="Search event no, employee or candidateâ€¦"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <select data-tour="hr-lc-type-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All types</option>
           {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="hr-lc-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="open">Open (draft + in progress)</option>
           <option value="">All statuses</option>
           <option value="draft">Draft</option>
@@ -144,7 +149,7 @@ export default function HrLifecyclePage() {
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
+        <table data-tour="hr-lc-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
           <thead>
             <tr>
               {['Event No', 'Type', 'Employee / Candidate', 'Effective', 'Checklist', 'Status', 'Raised', ''].map((h) => (
@@ -166,7 +171,7 @@ export default function HrLifecyclePage() {
                 const done = e.items_total - e.items_pending
                 const pct = e.items_total ? Math.round((done / e.items_total) * 100) : 0
                 return (
-                  <tr key={e.id} onClick={() => router.push(`/dashboard/hr/lifecycle/${e.id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={e.id} onClick={() => router.push(recordPath('/dashboard/hr/lifecycle', e))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...td, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{e.event_no}</td>
                     <td style={td}>
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${TYPE_HEX[e.event_type]}1a`, color: TYPE_HEX[e.event_type], whiteSpace: 'nowrap' }}>
@@ -181,7 +186,7 @@ export default function HrLifecyclePage() {
                       </div>
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDate(e.event_type === 'exit' ? (e.last_working_day || e.effective_date) : e.effective_date)}</td>
-                    <td style={{ ...td, minWidth: 130 }}>
+                    <td style={{ ...td, minWidth: 130 }} data-tour="hr-lc-checklist-progress">
                       {e.items_total ? (
                         <>
                           <div style={{ fontSize: 12, color: TEXT.body, marginBottom: 4 }}>{done} / {e.items_total} done</div>
@@ -191,7 +196,7 @@ export default function HrLifecyclePage() {
                         </>
                       ) : <span style={{ color: TEXT.muted }}>No items</span>}
                     </td>
-                    <td style={td}>
+                    <td style={td} data-tour="hr-lc-status-badge">
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[e.status]}1a`, color: STATUS_HEX[e.status], whiteSpace: 'nowrap' }}>
                         {STATUS_LABELS[e.status] || e.status}
                       </span>
@@ -201,7 +206,7 @@ export default function HrLifecyclePage() {
                       <div style={{ fontSize: 11.5, color: TEXT.muted }}>{e.created_by_name || ''}</div>
                     </td>
                     <td onClick={(ev) => ev.stopPropagation()} style={td}>
-                      <span onClick={() => router.push(`/dashboard/hr/lifecycle/${e.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                      <span onClick={() => router.push(recordPath('/dashboard/hr/lifecycle', e))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 )

@@ -11,6 +11,14 @@ from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
 from app.modules.rnd.models.feasibility import RndFeasibilityStudy
 
 
+def hide_costs(user) -> bool:
+    """True when prototype BOM costs must be blanked for `user`: their roles
+    lack R&D › Prototypes › BOM costs and they can't edit prototypes (an
+    editor enters the costs, so editing implies seeing them)."""
+    from app.core.permission_registry import can_feature, can_perform
+    return not (can_feature(user, "rnd", "prototypes", "costs", "view") or can_perform(user, "rnd", "prototypes", "edit"))
+
+
 def _lock_number_series(db: Session, prefix: str) -> None:
     """Serializes concurrent number generation for a given prefix via a
     transaction-scoped Postgres advisory lock — see quality/service.py for

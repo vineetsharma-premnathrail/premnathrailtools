@@ -9,9 +9,11 @@ import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { recordPath } from '@/lib/recordRef'
+import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
-const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#DC2626' }
+const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
 const PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
 
@@ -35,6 +37,7 @@ const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, col
 export default function ProductionWorkOrdersPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
   const router = useRouter()
+  const { can } = useCan()
 
   const [orders, setOrders] = useState<ProductionWorkOrder[]>([])
   const [loading, setLoading] = useState(true)
@@ -70,7 +73,8 @@ export default function ProductionWorkOrdersPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Work Orders</h1>
         </div>
-        <button
+        {can('production', 'work_orders', 'create') && <button
+          data-tour="production-wo-new-btn"
           onClick={() => router.push('/dashboard/production/work-orders/new')}
           style={{
             padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
@@ -79,7 +83,7 @@ export default function ProductionWorkOrdersPage() {
           }}
         >
           + New Work Order
-        </button>
+        </button>}
       </div>
 
       {error && (
@@ -88,7 +92,7 @@ export default function ProductionWorkOrdersPage() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+      <div data-tour="production-wo-status-tabs" style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
         {STATUS_TABS.map((t) => {
           const active = statusTab === t.key
           return (
@@ -104,17 +108,17 @@ export default function ProductionWorkOrdersPage() {
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by WO number or product…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 160px' }} value={priority} onChange={(e) => setPriority(e.target.value)}>
+        <input data-tour="production-wo-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by WO number or product…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="production-wo-priority-filter" style={{ ...inputStyle, flex: '0 1 160px' }} value={priority} onChange={(e) => setPriority(e.target.value)}>
           <option value="">All priorities</option>
           {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer' }}>
+        <label data-tour="production-wo-overdue-filter" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.secondary, cursor: 'pointer' }}>
           <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} /> Overdue only
         </label>
       </div>
 
-      <div style={{
+      <div data-tour="production-wo-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 360px)',
       }}>
@@ -135,7 +139,7 @@ export default function ProductionWorkOrdersPage() {
               <tr><td colSpan={9} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No work orders found.</td></tr>
             ) : (
               orders.map((o) => (
-                <tr key={o.id} onClick={() => router.push(`/dashboard/production/work-orders/${o.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={o.id} onClick={() => router.push(recordPath('/dashboard/production/work-orders', o))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading }}>{o.wo_number}</td>
                   <td style={cellStyle}>{o.product_code} — {o.product_name}</td>
                   <td style={cellStyle}>{o.project_label || '—'}</td>
@@ -160,7 +164,7 @@ export default function ProductionWorkOrdersPage() {
                     </span>
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/production/work-orders/${o.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/production/work-orders', o))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

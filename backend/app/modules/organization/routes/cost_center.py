@@ -3,7 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.main.models.user import User
-from app.modules.main.routes.users import require_admin
+from app.core.permissions import require_tab_action
+from app.core.permission_registry import can_view_tab
+from app.modules.main.routes.auth import get_current_user
 from app.modules.organization.models.branch import Branch
 from app.modules.organization.models.department import Department
 from app.modules.organization.models.cost_center import CostCenter
@@ -11,6 +13,22 @@ from app.modules.organization.schemas.cost_center import CostCenterCreate, CostC
 from app.modules.accounts.models.gl_account import GLAccount
 
 router = APIRouter(prefix="/organization/cost-centers", tags=["Organization"])
+
+# Cost centers are maintained on the Plant (Organization › Branches) pages, so
+# writes need Branches 'Edit'.
+
+
+def _cost_center_reader(user: User = Depends(get_current_user)) -> User:
+    """Reading the cost-center list: Organization › Branches viewers, plus
+    Finance (accounts) users — the ledger, payments, assets and masters pages
+    use it as a picker (cross-module lookup, so an app-access gate)."""
+    if can_view_tab(user, "organization", "branches") or "accounts" in user.get_apps():
+        return user
+    raise HTTPException(
+        status_code=403,
+        detail="You need 'View' on Organization › Branches or access to Finance to see cost centers. "
+               "Ask an admin to add it to one of your roles in Organization › Role & Permissions.",
+    )
 
 
 def _to_response(cc: CostCenter, db: Session) -> CostCenterResponse:
@@ -34,7 +52,7 @@ def _to_response(cc: CostCenter, db: Session) -> CostCenterResponse:
 async def list_cost_centers(
     branch_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(_cost_center_reader),
 ):
     query = db.query(CostCenter)
     if branch_id is not None:
@@ -47,7 +65,7 @@ async def list_cost_centers(
 async def create_cost_center(
     payload: CostCenterCreate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_tab_action("organization", "branches", "edit")),
 ):
     if db.query(CostCenter).filter(CostCenter.code == payload.code).first():
         raise HTTPException(status_code=409, detail=f"Cost center code '{payload.code}' already exists")
@@ -63,7 +81,7 @@ async def update_cost_center(
     cost_center_id: int,
     payload: CostCenterUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_tab_action("organization", "branches", "edit")),
 ):
     cost_center = db.query(CostCenter).filter(CostCenter.id == cost_center_id).first()
     if not cost_center:
@@ -82,7 +100,7 @@ async def update_cost_center(
 async def delete_cost_center(
     cost_center_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
+    _user: User = Depends(require_tab_action("organization", "branches", "edit")),
 ):
     cost_center = db.query(CostCenter).filter(CostCenter.id == cost_center_id).first()
     if not cost_center:
@@ -91,6 +109,35 @@ async def delete_cost_center(
         raise HTTPException(status_code=409, detail="Cannot delete — this cost center is set as a branch's default cost center.")
     if db.query(CostCenter).filter(CostCenter.parent_cost_center_id == cost_center_id).first():
         raise HTTPException(status_code=409, detail="Cannot delete — other cost centers reference this one as their parent.")
+    # ERP standard: a cost center that has been posted to is never hard-deleted
+    # — it is set Inactive, so ledger lines keep a valid reference and cost
+    # reports/audit trail stay intact. The DB FK error can't name the
+    # documents (and SQLite tests don't enforce FKs), so count each use here.
+    from app.modules.accounts.models.ar_transaction import ARTransactionLine
+    from app.modules.accounts.models.fixed_asset import FixedAsset
+    from app.modules.accounts.models.internal_order import InternalOrder
+    from app.modules.accounts.models.journal_entry import JournalEntryLine
+    from app.modules.accounts.models.party_note import PartyNoteLine
+    from app.modules.accounts.models.payment_transaction import PaymentLine
+    from app.modules.accounts.models.vendor_invoice import VendorInvoiceLine
+
+    usage = [
+        (db.query(JournalEntryLine).filter(JournalEntryLine.cost_center_id == cost_center_id).count(), "journal line(s)"),
+        (db.query(PaymentLine).filter(PaymentLine.cost_center_id == cost_center_id).count(), "payment line(s)"),
+        (db.query(VendorInvoiceLine).filter(VendorInvoiceLine.cost_center_id == cost_center_id).count(), "purchase invoice line(s)"),
+        (db.query(ARTransactionLine).filter(ARTransactionLine.cost_center_id == cost_center_id).count(), "sales invoice line(s)"),
+        (db.query(PartyNoteLine).filter(PartyNoteLine.cost_center_id == cost_center_id).count(), "debit/credit note line(s)"),
+        (db.query(FixedAsset).filter(FixedAsset.cost_center_id == cost_center_id).count(), "fixed asset(s)"),
+        (db.query(InternalOrder).filter(InternalOrder.cost_center_id == cost_center_id).count(), "internal order(s)"),
+    ]
+    if in_use := [f"{n} {what}" for n, what in usage if n]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cost center '{cost_center.code}' can't be deleted — it is used on {', '.join(in_use)}. "
+                "Set its status to Inactive instead."
+            ),
+        )
     db.delete(cost_center)
     db.commit()
     return {"ok": True}

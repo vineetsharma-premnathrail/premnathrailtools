@@ -30,11 +30,14 @@ export default function MaintenanceAttachments({
   entityType,
   entityId,
   canUpload = true,
+  canDeleteFiles = true,
   defaultDocType = 'other',
 }: {
   entityType: 'asset' | 'request' | 'work_order'
   entityId: number
   canUpload?: boolean
+  // The record's Documents feature › Delete (deleting stays uploader-only).
+  canDeleteFiles?: boolean
   defaultDocType?: string
 }) {
   const { user } = useAuth()
@@ -117,7 +120,7 @@ export default function MaintenanceAttachments({
               <span style={{ fontSize: 11, fontWeight: 600, color: TEXT.secondary }}>{DOC_TYPE_LABELS[a.doc_type] || a.doc_type}</span>
               <span style={{ fontSize: 12, color: TEXT.muted }}>{formatSize(a.size)}</span>
               <span style={{ fontSize: 12, color: TEXT.muted }}>{a.created_by_name || ''} · {formatDateTime(a.created_at)}</span>
-              {(user?.role === 'admin' || user?.id === a.created_by_id) && (
+              {canDeleteFiles && (user?.role === 'admin' || user?.id === a.created_by_id) && (
                 <span onClick={() => setPendingDelete(a)} style={{ fontSize: 12, fontWeight: 600, color: '#DC2626', cursor: 'pointer' }}>Delete</span>
               )}
             </div>
@@ -126,7 +129,7 @@ export default function MaintenanceAttachments({
       )}
 
       {canUpload && (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+        <div data-tour="maint-attach-upload" style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 14, flexWrap: 'wrap' }}>
           <select style={{ ...inputStyle, flex: '0 1 160px' }} value={docType} onChange={(e) => setDocType(e.target.value)}>
             {Object.entries(DOC_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>

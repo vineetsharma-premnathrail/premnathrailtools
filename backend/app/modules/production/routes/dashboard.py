@@ -4,9 +4,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.data_scope import scope_filter
 from app.core.permissions import require_app_access, require_tab_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.production import authz as _authz  # noqa: F401 — registers the Production data-scope models
 from app.modules.production.models.bom import ProductionBom
 from app.modules.production.models.work_order import (
     ProductionWorkOrder, ProductionWorkOrderOperation, ProductionTimeLog, WORK_ORDER_REFERENCE_TYPE,
@@ -32,6 +34,11 @@ async def get_dashboard(
     today = date.today()
     since = today - timedelta(days=30)
     live = ProductionWorkOrder.is_deleted == False  # noqa: E712
+    # Work-order counts / lists follow the user's Production data scope.
+    wo_scope = scope_filter(db, _tab, ProductionWorkOrder)
+    if wo_scope is not None:
+        live = live & wo_scope
+    log_scope = scope_filter(db, _tab, ProductionTimeLog)
 
     counts = dict(db.query(ProductionWorkOrder.status, func.count(ProductionWorkOrder.id)).filter(live).group_by(ProductionWorkOrder.status).all())
     overdue = db.query(ProductionWorkOrder).filter(
@@ -42,9 +49,15 @@ async def get_dashboard(
         StoreStockTransaction.transaction_type == "receipt",
         StoreStockTransaction.transaction_date >= since,
     ).scalar()
+    # Inspection-controlled products are received into Quality stock under a
+    # final-inspection lot (ledger rows reference the lot, not the WO).
+    from app.modules.quality.models.inspection_lot import QualityInspectionLot as _Lot
+    output_30d += db.query(func.coalesce(func.sum(_Lot.quantity), 0.0)).filter(
+        _Lot.source_type == "work_order", _Lot.status != "cancelled", _Lot.lot_date >= since,
+    ).scalar()
     scrap_30d, hours_30d = db.query(
         func.coalesce(func.sum(ProductionTimeLog.qty_scrap), 0.0), func.coalesce(func.sum(ProductionTimeLog.hours), 0.0),
-    ).filter(ProductionTimeLog.log_date >= since).one()
+    ).filter(ProductionTimeLog.log_date >= since, *([log_scope] if log_scope is not None else [])).one()
     pending_inspections = db.query(ProductionWorkOrderOperation).join(
         ProductionWorkOrder, ProductionWorkOrder.id == ProductionWorkOrderOperation.work_order_id
     ).join(

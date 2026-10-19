@@ -5,6 +5,7 @@ import { useRequireErpPermission } from '@/hooks/useAuth'
 import { erpApi } from '@/lib/api'
 import ErpNav from '@/components/erp/ErpNav'
 import ServiceRequestForm from '@/components/erp/ServiceRequestForm'
+import { recordPath } from '@/lib/recordRef'
 
 export default function NewServiceRequestPage() {
   const { isAuthorized, isLoading } = useRequireErpPermission('sr_create', '/dashboard/erp/service-requests')
@@ -14,23 +15,10 @@ export default function NewServiceRequestPage() {
 
   return (
     <div>
-      <ErpNav />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, color: '#a8a29e', margin: '0 0 6px' }}>
-            <span onClick={() => router.push('/dashboard/erp/service-requests')} style={{ cursor: 'pointer' }}>Service Operations</span> › New Request
-          </p>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1f1108', margin: 0 }}>Create Service Request</h1>
-        </div>
-        <button
-          onClick={() => router.push('/dashboard/erp/service-requests')}
-          style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', cursor: 'pointer' }}
-        >
-          ‹ Back
-        </button>
-      </div>
-
       <ServiceRequestForm
+        nav={<ErpNav />}
+        title="Create Service Request"
+        subtitle="Log a fault or service job against a machine — warranty cover is checked as you pick it."
         submitLabel="Create Request"
         onCancel={() => router.push('/dashboard/erp/service-requests')}
         onSubmit={async (payload, files) => {
@@ -38,7 +26,7 @@ export default function NewServiceRequestPage() {
           if (files.length > 0) {
             await erpApi.uploadAttachments(created.id, files)
           }
-          router.push(`/dashboard/erp/service-requests/${created.id}`)
+          router.push(recordPath('/dashboard/erp/service-requests', created))
         }}
       />
     </div>

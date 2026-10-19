@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 import { authApi } from '@/lib/api'
 import { GRADIENTS, TEXT } from '@/lib/theme'
+import { WarningCircle, Info } from '@phosphor-icons/react'
 import { extractErrorMessages } from '@/lib/validation'
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -61,7 +62,8 @@ function LoginPageInner() {
         const teams = await import('@microsoft/teams-js')
         await Promise.race([
           teams.app.initialize(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('not in Teams')), 1500)),
+          // Teams mobile can take a few seconds to hand over the host context.
+          new Promise((_, reject) => setTimeout(() => reject(new Error('not in Teams')), 4000)),
         ])
         if (cancelled) return
         setInTeams(true)
@@ -71,15 +73,50 @@ function LoginPageInner() {
       }
     }
 
+    // Auto sign-in inside Teams, with no button: silent SSO, one silent
+    // retry (Teams sometimes isn't ready to hand out a token on the first
+    // call), then the Microsoft sign-in window opens on its own. Only if
+    // that is blocked too (e.g. a browser popup blocker on Teams web) does
+    // the user see the reason and the button.
+    const finish = async () => {
+      if (cancelled) return
+      await fetchUser()
+      router.push('/dashboard')
+    }
+
     const silentTeamsLogin = async (teams: typeof import('@microsoft/teams-js')) => {
+      let lastErr: unknown = null
+      for (let attempt = 0; attempt < 2 && !cancelled; attempt++) {
+        try {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 1500))
+          const token = await teams.authentication.getAuthToken()
+          await authApi.teamsTokenLogin(token)
+          await finish()
+          return
+        } catch (err) {
+          lastErr = err
+        }
+      }
+      if (cancelled) return
       try {
-        const token = await teams.authentication.getAuthToken()
-        await authApi.teamsTokenLogin(token)
+        setBusy(true)
+        const code = await teams.authentication.authenticate({
+          url: `${process.env.NEXT_PUBLIC_API_URL}/auth/microsoft-login?next=/auth/teams-success`,
+          width: 600,
+          height: 640,
+        })
+        await authApi.teamsExchange(code)
+        await finish()
+      } catch (err) {
         if (cancelled) return
-        await fetchUser()
-        router.push('/dashboard')
-      } catch {
-        if (!cancelled) setTeamsMessage('Sign-in required — tap below to continue.')
+        // Keep the real reason visible (account not allowed, exited employee,
+        // consent missing, popup blocked) instead of a generic prompt.
+        const reason = extractErrorMessages(err, '').join(' ') || extractErrorMessages(lastErr, '').join(' ')
+        setTeamsMessage(reason
+          ? `Automatic Teams sign-in didn't work: ${reason} Tap below to sign in.`
+          : "Automatic Teams sign-in didn't work — tap below to sign in with Microsoft.")
+      } finally {
+        if (!cancelled) setBusy(false)
       }
     }
 
@@ -195,11 +232,7 @@ function LoginPageInner() {
 
           {errorMessage && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 18, padding: '13px 15px', borderRadius: 14, background: 'rgba(220,38,38,.08)', border: '1px solid rgba(220,38,38,.25)' }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
+              <WarningCircle size={15} color="#dc2626" style={{ flex: 'none' }} />
               <span style={{ fontSize: 12.5, color: '#991b1b' }}>{errorMessage}</span>
             </div>
           )}
@@ -249,11 +282,7 @@ function LoginPageInner() {
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginTop: 16, padding: '15px 17px', borderRadius: 16, background: 'rgba(255,255,255,.5)', border: '1px solid rgba(255,255,255,.7)' }}>
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#c07038" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}>
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="16" x2="12" y2="12" />
-              <line x1="12" y1="8" x2="12.01" y2="8" />
-            </svg>
+            <Info size={17} color="#c07038" style={{ flex: 'none' }} />
             <span style={{ fontSize: 14, color: '#8a6547' }}>Use your official work email address to sign in.</span>
           </div>
 

@@ -4,43 +4,39 @@ import { Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
-import { TEXT } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
+import RetiredBanner from '@/components/hydraulic/RetiredBanner'
 import SparePartForm from '@/components/hydraulic/SparePartForm'
 
 function NewSpareInner() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
   const router = useRouter()
   const searchParams = useSearchParams()
-  const raw = searchParams.get('component_id') || ''
-  const componentId = /^\d+$/.test(raw) ? raw : ''
+  const componentRef = searchParams.get('component_id')
+  const { id: presetComponentId, error: linkError, loading: linkLoading } = useRecordId(componentRef)
+  const componentId = presetComponentId ? String(presetComponentId) : ''
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/spares" listLabel="Back to spare parts" /></div>)
+  if (linkLoading) return <div><HydraulicNav /></div>
 
+  const back = () => router.push(componentRef ? `/dashboard/hydraulic/components/${componentRef}` : '/dashboard/hydraulic/spares')
   return (
-    <div>
-      <HydraulicNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Hydraulic &amp; Pneumatic
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New Spare Part</h1>
-        </div>
-        <button onClick={() => router.push(componentId ? `/dashboard/hydraulic/components/${componentId}` : '/dashboard/hydraulic/spares')} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
-
-      <SparePartForm
-        defaultComponentId={componentId}
-        submitLabel="Create Spare"
-        onSubmit={async (payload) => {
-          const spare = await hydraulicApi.createSpare(payload)
-          router.push(`/dashboard/hydraulic/spares/${spare.id}`)
-        }}
-      />
-    </div>
+    <SparePartForm
+      nav={<><HydraulicNav /><RetiredBanner what="Hydraulic spare parts" /></>}
+      title="New Spare Part"
+      subtitle="Retired — the server refuses new spare parts (410); kept for reference only."
+      onBack={back}
+      onCancel={back}
+      defaultComponentId={componentId}
+      submitLabel="Create Spare"
+      onSubmit={async (payload) => {
+        const spare = await hydraulicApi.createSpare(payload)
+        router.push(recordPath('/dashboard/hydraulic/spares', spare))
+      }}
+    />
   )
 }
 

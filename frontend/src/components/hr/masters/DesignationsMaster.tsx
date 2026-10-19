@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrDesignation, HrLookups } from '@/types'
 import { TEXT } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 import {
-  sectionStyle, tableWrapStyle, thStyle, tdStyle, labelStyle, hintStyle, linkActionStyle, dangerActionStyle, mutedActionStyle,
+  sectionStyle, tableWrapStyle, thStyle, tdStyle, linkActionStyle, dangerActionStyle, mutedActionStyle,
   ErrorBanner, ActiveBadge, Modal, MasterToolbar,
 } from './masterUi'
 
@@ -18,6 +19,7 @@ type Form = { id: number | null; name: string; code: string; department_id: stri
 const EMPTY: Form = { id: null, name: '', code: '', department_id: '', grade_id: '', description: '', is_active: true }
 
 export default function DesignationsMaster() {
+  const { can, canDelete } = useCan()
   const [rows, setRows] = useState<HrDesignation[]>([])
   const [lookups, setLookups] = useState<HrLookups | null>(null)
   const [loading, setLoading] = useState(true)
@@ -113,13 +115,13 @@ export default function DesignationsMaster() {
   }
 
   return (
-    <div style={sectionStyle}>
+    <div data-tour="hr-mst-desig-section" style={sectionStyle}>
       <div style={{ marginBottom: 14 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Designations</h3>
         <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Job titles. The name is copied onto each holder&apos;s portal profile, so renaming here updates everyone who has it.</p>
       </div>
 
-      <MasterToolbar search={search} onSearch={setSearch} showInactive={showInactive} onToggleInactive={setShowInactive} addLabel="Add Designation" onAdd={() => openEdit()} placeholder="Search name, code or department…" />
+      <MasterToolbar search={search} onSearch={setSearch} showInactive={showInactive} onToggleInactive={setShowInactive} addLabel="Add Designation" onAdd={can('hr', 'masters', 'create') ? () => openEdit() : undefined} placeholder="Search name, code or department…" />
 
       <ErrorBanner errors={loadError} />
       <MessageDialog open={actionErrors.length > 0} variant="error" title="Action Not Completed" message={actionErrors} onClose={() => setActionErrors([])} />
@@ -144,48 +146,54 @@ export default function DesignationsMaster() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <Modal open={!!form} title={form?.id ? 'Edit Designation' : 'Add Designation'} onClose={() => setForm(null)} busy={saving}>
+      <Modal open={!!form} icon={form?.id ? 'edit' : 'plus'} title={form?.id ? 'Edit Designation' : 'Add Designation'}
+        subtitle={form?.id ? 'Renaming updates the title on every holder’s profile.' : 'A job title your organisation uses.'}
+        onClose={() => setForm(null)} busy={saving}
+        footer={<>
+          <button type="button" data-tour="hr-mst-desig-cancel-btn" onClick={() => setForm(null)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+          <button type="button" data-tour="hr-mst-desig-save-btn" onClick={save} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Designation'}</button>
+        </>}>
         {form && (
           <>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-              <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
-                <label style={labelStyle}>Name *</label>
-                <input style={inputStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Senior Engineer" />
+            <ErrorBanner errors={formErrors} />
+            <SheetSection icon="tag" title="Designation">
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+                <div data-tour="hr-mst-desig-name" style={{ flex: '1 1 220px', maxWidth: 320 }}>
+                  <label style={sheetLabel}>Name <Req /></label>
+                  <input style={sheetInput} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Senior Engineer" autoFocus />
+                </div>
+                <div data-tour="hr-mst-desig-code" style={{ flex: '0 1 120px', minWidth: 110 }}>
+                  <label style={sheetLabel}>Code <Req /></label>
+                  <input style={sheetInput} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="SE" />
+                </div>
               </div>
-              <div style={{ flex: '0 1 120px', minWidth: 110 }}>
-                <label style={labelStyle}>Code *</label>
-                <input style={inputStyle} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="SE" />
+              <div data-tour="hr-mst-desig-description">
+                <label style={sheetLabel}>Description <Optional /></label>
+                <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </div>
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Department</label>
-              <SearchableSelect value={form.department_id} onChange={(v) => setForm({ ...form, department_id: v })} options={deptOptions} placeholder="— Any department —" />
-              <p style={hintStyle}>Optional. Leave blank if the title is used across departments.</p>
-            </div>
-            <div style={{ marginBottom: 14, maxWidth: 260 }}>
-              <label style={labelStyle}>Default Grade</label>
-              <select style={inputStyle} value={form.grade_id} onChange={(e) => setForm({ ...form, grade_id: e.target.value })}>
-                <option value="">— None —</option>
-                {gradeOptions.map((g) => <option key={g.id} value={g.id}>{g.code} · {g.name}{g.is_active ? '' : ' (inactive)'}</option>)}
-              </select>
-            </div>
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Description</label>
-              <textarea style={{ ...inputStyle, minHeight: 64, resize: 'vertical', fontFamily: 'inherit' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.secondary, marginBottom: 16, cursor: 'pointer' }}>
+            </SheetSection>
+            <SheetSection icon="building" title="Placement">
+              <div data-tour="hr-mst-desig-department" style={{ marginBottom: 14 }}>
+                <label style={sheetLabel}>Department <Optional /></label>
+                <SearchableSelect value={form.department_id} onChange={(v) => setForm({ ...form, department_id: v })} options={deptOptions} placeholder="— Any department —" />
+                <p style={sheetHint}>Leave blank if the title is used across departments.</p>
+              </div>
+              <div data-tour="hr-mst-desig-grade" style={{ maxWidth: 260 }}>
+                <label style={sheetLabel}>Default Grade</label>
+                <select style={sheetInput} value={form.grade_id} onChange={(e) => setForm({ ...form, grade_id: e.target.value })}>
+                  <option value="">— None —</option>
+                  {gradeOptions.map((g) => <option key={g.id} value={g.id}>{g.code} · {g.name}{g.is_active ? '' : ' (inactive)'}</option>)}
+                </select>
+              </div>
+            </SheetSection>
+            <label data-tour="hr-mst-desig-active" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer' }}>
               <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active
             </label>
-            <ErrorBanner errors={formErrors} />
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setForm(null)} disabled={saving} style={secondaryBtnStyle}>Cancel</button>
-              <button type="button" onClick={save} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save Designation'}</button>
-            </div>
           </>
         )}
       </Modal>
 
-      <div style={tableWrapStyle}>
+      <div data-tour="hr-mst-desig-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr>{['Name', 'Code', 'Department', 'Grade', 'Employees', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
@@ -206,10 +214,10 @@ export default function DesignationsMaster() {
                 <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.employee_count}</td>
                 <td style={tdStyle}><ActiveBadge active={r.is_active} /></td>
                 <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <span style={{ display: 'inline-flex', gap: 14 }}>
-                    <button type="button" style={linkActionStyle} onClick={() => openEdit(r)}>Edit</button>
-                    <button type="button" style={mutedActionStyle} onClick={() => setToggleTarget(r)}>{r.is_active ? 'Deactivate' : 'Activate'}</button>
-                    <button type="button" style={dangerActionStyle} onClick={() => setDeleteTarget(r)}>Delete</button>
+                  <span data-tour="hr-mst-desig-row-actions" style={{ display: 'inline-flex', gap: 14 }}>
+                    {can('hr', 'masters', 'edit') && <button type="button" style={linkActionStyle} onClick={() => openEdit(r)}>Edit</button>}
+                    {can('hr', 'masters', 'edit') && <button type="button" style={mutedActionStyle} onClick={() => setToggleTarget(r)}>{r.is_active ? 'Deactivate' : 'Activate'}</button>}
+                    {canDelete('hr', 'masters', null) && <button type="button" style={dangerActionStyle} onClick={() => setDeleteTarget(r)}>Delete</button>}
                   </span>
                 </td>
               </tr>

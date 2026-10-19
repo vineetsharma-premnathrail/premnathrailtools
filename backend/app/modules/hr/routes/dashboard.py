@@ -7,11 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.modules.hr.schemas.dashboard import HrDashboardResponse
-from app.modules.hr.services.access import require_hr
+from app.modules.hr.services.access import require_hr_tab
 from app.modules.hr.services.dashboard import build_dashboard
 from app.modules.main.models.user import User
 
 router = APIRouter(prefix="/hr/dashboard", tags=["HR"])
+
+# HR-team gate for this file: hr app + Permission Matrix › HR › dashboard.
+require_hr = require_hr_tab("dashboard")
 
 
 @router.get("", response_model=HrDashboardResponse)
@@ -19,4 +22,4 @@ def get_hr_dashboard(db: Session = Depends(get_db), _user: User = Depends(requir
     """Headcount, joiners/exits this month, leave and attendance today,
     pending approvals, open lifecycle events, assets, visitors inside,
     expiring documents and probations ending in the next 30 days."""
-    return build_dashboard(db)
+    return build_dashboard(db, user=_user)  # numbers limited to the viewer's HR data access

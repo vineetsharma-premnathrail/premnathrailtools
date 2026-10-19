@@ -2,126 +2,179 @@
 
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { PmProject } from '@/types'
-import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { PmProject, PmProjectAction } from '@/types'
+import { projectsApi } from '@/lib/api'
+import { TEXT } from '@/lib/theme'
+import { formatDate } from '@/lib/format'
 import { secondaryBtnStyle } from '@/components/shared/ui'
+import { useCan } from '@/lib/permissions'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import PromptDialog from '@/components/erp/PromptDialog'
+import { extractErrorMessages } from '@/lib/validation'
+import {
+  ErrorBanner, Notice, PROJECT_HEX, PROJECT_LABELS, Pill, actionBtn, sectionStyle,
+} from '@/components/projects/work/pmUi'
 import OverviewTab from './tabs/OverviewTab'
-import DetailsScopeTab from './tabs/DetailsScopeTab'
-import ProjectHistoryTab from './tabs/ProjectHistoryTab'
-import PlanningTab from './tabs/PlanningTab'
-import TasksTab from './tabs/TasksTab'
-import MilestonesTab from './tabs/MilestonesTab'
-import ResourcesTab from './tabs/ResourcesTab'
-import BudgetCostTab from './tabs/BudgetCostTab'
-import DeliverablesTab from './tabs/DeliverablesTab'
 import DocumentsTab from './tabs/DocumentsTab'
-import IssuesTab from './tabs/IssuesTab'
-import RisksTab from './tabs/RisksTab'
-import ChangesTab from './tabs/ChangesTab'
-import ApprovalsTab from './tabs/ApprovalsTab'
+import TasksTab from './tabs/TasksTab'
+import ProjectHistoryTab from './tabs/ProjectHistoryTab'
 
-const TABS = [
-  'Overview', 'Details & Scope', 'Planning', 'Tasks', 'Milestones', 'Budget & Cost', 'Resources',
-  'Deliverables', 'Documents', 'Issues', 'Risks', 'Changes', 'Activities', 'Meetings & Communication',
-  'Approvals', 'Reports', 'Project History', 'Closure',
-] as const
-
-const STATUS_LABELS: Record<string, string> = {
-  planning: 'Planning', active: 'Active', on_hold: 'On Hold', completed: 'Completed', cancelled: 'Cancelled',
-}
-const STATUS_HEX: Record<string, string> = {
-  planning: '#2563eb', active: '#16a34a', on_hold: '#f59e0b', completed: '#0d9488', cancelled: '#dc2626',
-}
-const PRIORITY_LABELS: Record<string, string> = {
-  low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical',
-}
-const PRIORITY_HEX: Record<string, string> = {
-  low: '#64748b', medium: '#2563eb', high: '#f59e0b', critical: '#dc2626',
+// WBS, Discussions and Activity Log were removed from the UI: a project is
+// its details, its milestones, documents and history. Old ?tab= links open
+// Overview; ?tab=Tasks (before the rename) opens Milestones.
+const TABS = ['Overview', 'Milestones', 'Documents', 'History'] as const
+const TAB_KEYS: Record<typeof TABS[number], string> = {
+  Overview: 'overview', Milestones: 'overview', Documents: 'documents', History: 'project_history',
 }
 
-function Pill({ value, labels, hex }: { value: string; labels: Record<string, string>; hex: Record<string, string> }) {
-  const color = hex[value] || '#64748b'
-  return (
-    <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${color}1a`, color, whiteSpace: 'nowrap' }}>
-      {labels[value] || value}
-    </span>
-  )
+// Lifecycle buttons per status — management / the project manager only.
+// Projects close from the closure panel on Overview. Resume / Release stay
+// only for older projects left On hold or in Planning with WBS elements.
+type ActionDef = { action: PmProjectAction; label: string; kind: 'primary' | 'secondary' | 'danger'; prompt?: string; confirm: string }
+const ACTIONS: Record<string, ActionDef[]> = {
+  on_hold: [
+    { action: 'resume', label: 'Resume', kind: 'primary', confirm: 'Resume the project? Departments can work on their tasks again.' },
+  ],
 }
 
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-
-export default function ProjectWorkspace({
-  project,
-  onProjectUpdate,
-  onDeleted,
-}: {
+export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }: {
   project: PmProject
   onProjectUpdate: () => void
   onDeleted: () => void
 }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const initialTab = (t: string | null): typeof TABS[number] =>
-    (TABS as readonly string[]).includes(t || '') ? (t as typeof TABS[number]) : 'Overview'
-  const [tab, setTab] = useState<typeof TABS[number]>(() => initialTab(searchParams.get('tab')))
+  const params = useSearchParams()
+  const asked = params.get('tab')
+  const initial = ((asked === 'Tasks' ? 'Milestones' : asked) as typeof TABS[number]) || 'Overview'
+  const { can, canDelete, canFeature } = useCan()
+  // Milestones is a feature of Overview (core/features/projects.py: projects:overview.milestones).
+  const visibleTabs = TABS.filter((t) => (t === 'Milestones' ? canFeature('projects', 'overview', 'milestones', 'view') : can('projects', TAB_KEYS[t], 'view')))
+  const [chosen, setTab] = useState<typeof TABS[number]>(TABS.includes(initial) ? initial : 'Overview')
+  const tab = visibleTabs.includes(chosen) ? chosen : visibleTabs[0]
+  const [pending, setPending] = useState<ActionDef | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | string[]>('')
+
+  const run = async (def: ActionDef, text?: string) => {
+    setPending(null)
+    setBusy(true)
+    setError('')
+    try {
+      await projectsApi.transition(project.id, {
+        action: def.action,
+        reason: text || undefined,
+      })
+      onProjectUpdate()
+    } catch (err) {
+      setError(extractErrorMessages(err, `Could not ${def.label.toLowerCase()}.`))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async () => {
+    setConfirmDelete(false)
+    try {
+      await projectsApi.remove(project.id)
+      onDeleted()
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not delete the project.'))
+    }
+  }
+
+  // Workflow authority (management / PM) AND Overview › Edit in the matrix.
+  // Projects that got WBS elements before auto-release existed still sit in
+  // Planning — only they get a Release button.
+  const legacyRelease: ActionDef[] = project.status === 'planning' && project.milestones_total > 0
+    ? [{ action: 'activate', label: 'Release project', kind: 'primary', confirm: 'Release the project? Every department WBS is sent to its department head, who can then create and assign tasks.' }]
+    : []
+  const actions = project.can_manage && can('projects', 'overview', 'edit') ? [...legacyRelease, ...(ACTIONS[project.status] || [])] : []
+  const mayDelete = project.can_manage && canDelete('projects', 'all_projects', project.created_by_id ?? null)
+  const showDelete = mayDelete && project.status === 'planning' && project.milestones_total === 0
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, color: TEXT.muted, margin: '0 0 4px' }}>{project.project_code}</p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{project.name}</h1>
-            <Pill value={project.status} labels={STATUS_LABELS} hex={STATUS_HEX} />
-            <Pill value={project.priority} labels={PRIORITY_LABELS} hex={PRIORITY_HEX} />
+      <div style={sectionStyle}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, margin: '0 0 4px', letterSpacing: '.04em' }}>{project.project_code}</p>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>{project.name}</h1>
+            <div data-tour="pm-proj-badges" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Planning only means "open" — nobody chose it, so no badge. */}
+              {project.status !== 'planning' && <Pill value={project.status} labels={PROJECT_LABELS} hex={PROJECT_HEX} />}
+              <span style={{ fontSize: 12.5, color: TEXT.secondary }}>
+                {project.client_name} · PM {project.project_manager_name || '—'} · Handover {formatDate(project.target_handover_date)}
+              </span>
+            </div>
           </div>
+          <button data-tour="pm-proj-back" type="button" onClick={() => router.push('/dashboard/projects/all')} style={secondaryBtnStyle}>← Back</button>
         </div>
-        <button onClick={() => router.push('/dashboard/projects/all')} type="button" style={secondaryBtnStyle}>← Back</button>
+        {(actions.length > 0 || showDelete) && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {actions.map((a) => (
+              <button key={a.action} data-tour={`pm-proj-action-${a.action}`} type="button" disabled={busy} onClick={() => setPending(a)} style={actionBtn(a.kind, busy)}>{a.label}</button>
+            ))}
+            {showDelete && (
+              <button data-tour="pm-proj-delete" type="button" onClick={() => setConfirmDelete(true)} style={actionBtn('danger')}>Delete</button>
+            )}
+          </div>
+        )}
+        {project.status === 'technically_complete' && (
+          <div style={{ marginTop: 12 }}>
+            <Notice tone="info">
+              Every WBS is accepted. {project.can_manage ? 'Finish the closure checklist and the Final Project Report' : 'The project manager is closing the project'} — see Project closure on the{' '}
+              <button type="button" onClick={() => setTab('Overview')} style={{ border: 'none', background: 'none', padding: 0, color: '#4f46e5', fontWeight: 600, cursor: 'pointer', fontSize: 'inherit' }}>Overview</button> tab.
+            </Notice>
+          </div>
+        )}
+        {project.status === 'on_hold' && project.hold_reason && <div style={{ marginTop: 12 }}><Notice tone="warn">On hold: {project.hold_reason}</Notice></div>}
+        {project.status === 'cancelled' && project.cancel_reason && <div style={{ marginTop: 12 }}><Notice tone="bad">Cancelled: {project.cancel_reason}</Notice></div>}
+        <ErrorBanner error={error} />
       </div>
 
-      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, flexWrap: 'wrap', padding: 4, borderRadius: 14, background: 'rgba(0,0,0,0.05)' }}>
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              padding: '9px 14px', border: 'none', borderRadius: 10, whiteSpace: 'nowrap',
-              background: tab === t ? '#fff' : 'transparent',
-              boxShadow: tab === t ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
-              color: tab === t ? '#6366f1' : '#78716c', fontWeight: 600, fontSize: 12.5, cursor: 'pointer',
-              transition: 'background .15s, box-shadow .15s, color .15s',
-            }}
-          >
-            {t}
-          </button>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+        {visibleTabs.map((t) => (
+          <button key={t} data-tour={`pm-proj-tab-${t.toLowerCase().replace(' ', '-')}`} type="button" onClick={() => setTab(t)} style={{
+            padding: '10px 16px', marginBottom: -1, border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+            color: tab === t ? '#6366f1' : '#78716c', borderBottom: tab === t ? '2px solid #6366f1' : '2px solid transparent',
+          }}>{t}</button>
         ))}
       </div>
 
-      {tab === 'Overview' && <OverviewTab project={project} />}
-      {tab === 'Details & Scope' && <DetailsScopeTab project={project} onSaved={onProjectUpdate} onDeleted={onDeleted} />}
-      {tab === 'Planning' && <PlanningTab projectId={project.id} />}
-      {tab === 'Tasks' && <TasksTab projectId={project.id} />}
-      {tab === 'Milestones' && <MilestonesTab projectId={project.id} />}
-      {tab === 'Resources' && <ResourcesTab projectId={project.id} />}
-      {tab === 'Budget & Cost' && <BudgetCostTab projectId={project.id} />}
-      {tab === 'Deliverables' && <DeliverablesTab projectId={project.id} />}
-      {tab === 'Documents' && <DocumentsTab projectId={project.id} />}
-      {tab === 'Issues' && <IssuesTab projectId={project.id} />}
-      {tab === 'Risks' && <RisksTab projectId={project.id} />}
-      {tab === 'Changes' && <ChangesTab projectId={project.id} />}
-      {tab === 'Approvals' && <ApprovalsTab projectId={project.id} />}
-      {tab === 'Project History' && <ProjectHistoryTab projectId={project.id} />}
-      {![
-        'Overview', 'Details & Scope', 'Planning', 'Tasks', 'Milestones', 'Resources', 'Budget & Cost',
-        'Deliverables', 'Documents', 'Issues', 'Risks', 'Changes', 'Approvals', 'Project History',
-      ].includes(tab) && (
-        <div style={{ ...sectionStyle, textAlign: 'center', padding: 48 }}>
-          <p style={{ fontSize: 14, color: TEXT.muted, margin: 0 }}>{tab} is coming in a later phase.</p>
-        </div>
-      )}
+      {tab === 'Overview' && <OverviewTab project={project} onProjectUpdate={onProjectUpdate} />}
+      {tab === 'Milestones' && <TasksTab project={project} />}
+      {tab === 'Documents' && <DocumentsTab project={project} />}
+      {tab === 'History' && <ProjectHistoryTab projectId={project.id} />}
+      {!tab && <Notice tone="warn">You can see this project&apos;s header, but none of its tabs (Overview, Tasks, Documents, History). Ask an admin to add &apos;View&apos; on them to one of your roles in Organization › Role &amp; Permissions.</Notice>}
+
+      <ConfirmDialog
+        open={!!pending && !pending.prompt}
+        title={pending?.label || ''}
+        message={pending?.confirm || ''}
+        confirmLabel={pending?.label}
+        danger={pending?.kind === 'danger'}
+        onConfirm={() => pending && run(pending)}
+        onCancel={() => setPending(null)}
+      />
+      <PromptDialog
+        open={!!pending?.prompt}
+        title={pending?.label || ''}
+        message={pending?.prompt}
+        confirmLabel={pending?.label}
+        danger={pending?.kind === 'danger'}
+        requireValue
+        onConfirm={(v) => pending && run(pending, v)}
+        onCancel={() => setPending(null)}
+      />
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete this project?"
+        message={`Delete ${project.project_code}? It has no WBS elements yet, so nothing else is lost.`}
+        confirmLabel="Delete"
+        onConfirm={remove}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   )
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import type { HrExpenseClaim } from '@/types'
@@ -14,10 +15,13 @@ import {
   tableWrapStyle, thStyle, tdStyle, linkActionStyle, fmtDate, fmtINR,
 } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
+import { recordPath } from '@/lib/recordRef'
 
 export default function MyClaimsPage() {
   // Self-service: any logged-in user.
   const { user, isLoading } = useAuth()
+  // Self-service: My HR create / edit (hr:me:*), not the HR-team tabs.
+  const { can } = useCan()
   const router = useRouter()
   const [rows, setRows] = useState<HrExpenseClaim[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,7 +46,7 @@ export default function MyClaimsPage() {
 
   if (isLoading || !user) return null
 
-  const open = (c: HrExpenseClaim) => router.push(`/dashboard/hr/me/claims/${c.id}`)
+  const open = (c: HrExpenseClaim) => router.push(recordPath('/dashboard/hr/me/claims', c))
 
   return (
     <div>
@@ -52,13 +56,13 @@ export default function MyClaimsPage() {
       <PageHeader
         title="My Expense Claims"
         subtitle="Claim reimbursement for business expenses. Attach receipts, submit to your manager, and track payment."
-        actions={<button type="button" style={primaryActionStyle} onClick={() => setCreateOpen(true)}>+ New Claim</button>}
+        actions={can('hr', 'me', 'create') ? <button type="button" data-tour="hr-myclaims-new-btn" style={primaryActionStyle} onClick={() => setCreateOpen(true)}>+ New Claim</button> : undefined}
       />
 
       <ErrorBanner error={error} />
 
       {!status && rows.length > 0 && (
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+        <div data-tour="hr-myclaims-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
           <StatCard label="Drafts / to fix" value={totals.drafts} hex="#64748B" />
           <StatCard label="Awaiting approval" value={fmtINR(totals.pending)} hex="#F59E0B" />
           <StatCard label="Approved, not paid" value={fmtINR(totals.approved)} hex="#16A34A" />
@@ -67,13 +71,13 @@ export default function MyClaimsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <select style={{ ...filterInputStyle, flex: '0 1 170px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select data-tour="hr-myclaims-status-filter" style={{ ...filterInputStyle, flex: '0 1 170px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(CLAIM_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
-      <div style={tableWrapStyle}>
+      <div data-tour="hr-myclaims-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
           <thead>
             <tr>{['Claim', 'Title', 'Date', 'Trip', 'Lines', 'Amount', 'Status', ''].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}</th>)}</tr>
@@ -108,7 +112,7 @@ export default function MyClaimsPage() {
       <ClaimHeaderDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onSaved={(c) => { setCreateOpen(false); router.push(`/dashboard/hr/me/claims/${c.id}`) }}
+        onSaved={(c) => { setCreateOpen(false); router.push(recordPath('/dashboard/hr/me/claims', c)) }}
       />
     </div>
   )

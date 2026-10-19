@@ -34,9 +34,16 @@ class Branch(Base, TimestampMixin):
     default_warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("store_locations.id"), nullable=True)
     default_cost_center_id: Mapped[int | None] = mapped_column(ForeignKey("cost_centers.id"), nullable=True)
     default_profit_center: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # The plant's profit centre (KE51 master); the free-text field above is legacy.
+    default_profit_center_id: Mapped[int | None] = mapped_column(ForeignKey("profit_centers.id"), nullable=True)
     working_calendar: Mapped[str | None] = mapped_column(String(100), nullable=True)
     working_days: Mapped[str | None] = mapped_column(String(100), nullable=True)
     working_hours: Mapped[str | None] = mapped_column(String(100), nullable=True)
     timezone: Mapped[str | None] = mapped_column(String(60), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(10), nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # GST identity of the plant (one GSTIN per state registration). Plants in
+    # different states are "distinct persons" under GST: a stock transfer
+    # between them is a taxable supply on a tax invoice (store stock transfers).
+    gstin: Mapped[str | None] = mapped_column(String(15), nullable=True)
+    state_code: Mapped[str | None] = mapped_column(String(2), nullable=True)

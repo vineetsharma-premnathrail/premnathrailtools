@@ -6,17 +6,17 @@ import { extractErrorMessages } from '@/lib/validation'
 import type { HrVisitor, HrBranchLookup, DirectoryUser } from '@/types'
 import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { secondaryBtnStyle } from '@/components/shared/ui'
-import { FormDialog, ErrorBanner, formInputStyle, labelStyle, primaryActionStyle, todayIso } from './adminUi'
+import { SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { FormDialog, ErrorBanner, todayIso } from './adminUi'
 
 export const ID_PROOF_TYPES = ['Aadhaar', 'PAN', 'Driving Licence', 'Passport', 'Voter ID', 'Company ID', 'Other']
 
 const row: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12 }
 
-function Fld({ label, children, basis = 200, grow = false, max }: { label: string; children: React.ReactNode; basis?: number; grow?: boolean; max?: number }) {
+function Fld({ label, children, basis = 200, grow = false, max, req = false }: { label: string; children: React.ReactNode; basis?: number; grow?: boolean; max?: number; req?: boolean }) {
   return (
     <div style={{ flex: grow ? `1 1 ${basis}px` : `0 1 ${basis}px`, minWidth: Math.min(basis, 130), maxWidth: max }}>
-      <label style={labelStyle}>{label}</label>
+      <label style={sheetLabel}>{label}{req && <> <Req /></>}</label>
       {children}
     </div>
   )
@@ -89,74 +89,259 @@ export function RegisterVisitorDialog({
       open={open}
       title={isHr ? 'Register visitor' : 'Pre-register a visitor'}
       subtitle={isHr ? 'Pre-register an expected visitor, or tick “Walk-in” to check them in right away. The host is notified on check-in.' : 'Reception will see this visitor on the gate board and notify you when they check in.'}
+      icon="users"
       onClose={onClose}
-      maxWidth={680}
+      busy={saving}
+      maxWidth={960}
+      bare
       footer={<>
-        <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-        <button type="button" style={{ ...primaryActionStyle, opacity: saving ? 0.7 : 1 }} onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : f.check_in_now ? 'Register & check in' : 'Register visitor'}
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onClose} disabled={saving}>Cancel</button>
+        <button type="button" data-tour="hr-visitor-form-save" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={save} disabled={saving}>
+          <SheetIcon name={f.check_in_now ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : f.check_in_now ? 'Register & check in' : 'Register visitor'}
         </button>
       </>}
     >
-      <ErrorBanner error={error} />
-      <div style={row}>
-        <Fld label="Visitor name *" basis={220} grow max={320}><input style={formInputStyle} value={f.visitor_name} onChange={(e) => set('visitor_name')(e.target.value)} /></Fld>
-        <Fld label="Company" basis={200} grow max={300}><input style={formInputStyle} value={f.visitor_company} onChange={(e) => set('visitor_company')(e.target.value)} /></Fld>
-      </div>
-      <div style={row}>
-        <Fld label="Phone" basis={160}><input style={formInputStyle} inputMode="tel" value={f.visitor_phone} onChange={(e) => set('visitor_phone')(e.target.value)} /></Fld>
-        <Fld label="Email" basis={220} grow max={300}><input style={formInputStyle} type="email" value={f.visitor_email} onChange={(e) => set('visitor_email')(e.target.value)} /></Fld>
-        <Fld label="Persons" basis={90}><input style={formInputStyle} inputMode="numeric" value={f.number_of_persons} onChange={(e) => set('number_of_persons')(e.target.value.replace(/\D/g, ''))} /></Fld>
-      </div>
-      <div>
-        <label style={labelStyle}>Purpose of visit</label>
-        <input style={formInputStyle} value={f.purpose} onChange={(e) => set('purpose')(e.target.value)} placeholder="Vendor meeting, interview, audit, delivery…" />
-      </div>
-      <div style={row}>
-        {isHr && (
-          <Fld label="Host (meeting) *" basis={240} grow max={340}>
-            <SearchableSelect value={f.host_user_id} onChange={set('host_user_id')} placeholder="Search employee…" options={people.map((p) => ({ value: String(p.id), label: `${p.name}${p.department ? ` · ${p.department}` : ''}` }))} />
-          </Fld>
-        )}
-        <Fld label="Plant" basis={190}>
-          <select style={formInputStyle} value={f.branch_id} onChange={(e) => set('branch_id')(e.target.value)}>
-            <option value="">{isHr ? "Host's plant" : 'My plant'}</option>
-            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        </Fld>
-      </div>
-      {isHr && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
-          <input type="checkbox" checked={f.check_in_now} onChange={(e) => set('check_in_now')(e.target.checked)} />
-          Walk-in — check the visitor in now
-        </label>
-      )}
-      {f.check_in_now ? (
-        <div style={row}>
-          <Fld label="Badge no." basis={130}><input style={formInputStyle} value={f.badge_no} onChange={(e) => set('badge_no')(e.target.value)} /></Fld>
-          <Fld label="ID proof" basis={170}>
-            <select style={formInputStyle} value={f.id_proof_type} onChange={(e) => set('id_proof_type')(e.target.value)}>
-              <option value="">—</option>
-              {ID_PROOF_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </Fld>
-          <Fld label="ID last 4" basis={110}><input style={formInputStyle} maxLength={4} value={f.id_proof_last4} onChange={(e) => set('id_proof_last4')(e.target.value)} /></Fld>
-        </div>
-      ) : (
-        <div style={row}>
-          <Fld label="Expected date" basis={160}><DateField value={f.expected_date} onChange={set('expected_date')} /></Fld>
-          <Fld label="Time" basis={120}><input type="time" style={formInputStyle} value={f.expected_time} onChange={(e) => set('expected_time')(e.target.value)} /></Fld>
-        </div>
-      )}
-      <div style={row}>
-        <Fld label="Vehicle no." basis={150}><input style={formInputStyle} value={f.vehicle_no} onChange={(e) => set('vehicle_no')(e.target.value.toUpperCase())} /></Fld>
-        <Fld label="Items carried" basis={240} grow max={420}><input style={formInputStyle} value={f.items_carried} onChange={(e) => set('items_carried')(e.target.value)} placeholder="Laptop, samples, tools…" /></Fld>
-      </div>
-      <div>
-        <label style={labelStyle}>Remarks</label>
-        <textarea rows={2} style={{ ...formInputStyle, resize: 'vertical' }} value={f.remarks} onChange={(e) => set('remarks')(e.target.value)} />
-      </div>
-      <p style={{ fontSize: 11.5, color: '#78716c', margin: 0 }}>Only the last 4 characters of an ID proof are stored.</p>
+      <SheetColumns
+        left={<>
+          <ErrorBanner error={error} />
+          <SheetSection icon="user" title="Visitor">
+            <div style={row}>
+              <Fld label="Visitor name" req basis={220} grow max={320}><input data-tour="hr-visitor-form-name" style={sheetInput} value={f.visitor_name} onChange={(e) => set('visitor_name')(e.target.value)} /></Fld>
+              <Fld label="Company" basis={200} grow max={300}><input data-tour="hr-visitor-form-company" style={sheetInput} value={f.visitor_company} onChange={(e) => set('visitor_company')(e.target.value)} /></Fld>
+            </div>
+            <div style={{ ...row, marginTop: 12 }}>
+              <Fld label="Phone" basis={160}><input data-tour="hr-visitor-form-phone" style={sheetInput} inputMode="tel" value={f.visitor_phone} onChange={(e) => set('visitor_phone')(e.target.value)} /></Fld>
+              <Fld label="Email" basis={220} grow max={300}><input data-tour="hr-visitor-form-email" style={sheetInput} type="email" value={f.visitor_email} onChange={(e) => set('visitor_email')(e.target.value)} /></Fld>
+              <Fld label="Persons" basis={90}><input data-tour="hr-visitor-form-persons" style={sheetInput} inputMode="numeric" value={f.number_of_persons} onChange={(e) => set('number_of_persons')(e.target.value.replace(/\D/g, ''))} /></Fld>
+            </div>
+            <label style={{ ...sheetLabel, marginTop: 12 }}>Purpose of visit</label>
+            <input data-tour="hr-visitor-form-purpose" style={sheetInput} value={f.purpose} onChange={(e) => set('purpose')(e.target.value)} placeholder="Vendor meeting, interview, audit, delivery…" />
+          </SheetSection>
+          <SheetSection icon="calendar" title="Host & Visit">
+            <div data-tour="hr-visitor-form-host-plant" style={row}>
+              {isHr && (
+                <Fld label="Host (meeting)" req basis={240} grow max={340}>
+                  <SearchableSelect value={f.host_user_id} onChange={set('host_user_id')} placeholder="Search employee…" options={people.map((p) => ({ value: String(p.id), label: `${p.name}${p.department ? ` · ${p.department}` : ''}` }))} />
+                </Fld>
+              )}
+              <Fld label="Plant" basis={190}>
+                <select style={sheetInput} value={f.branch_id} onChange={(e) => set('branch_id')(e.target.value)}>
+                  <option value="">{isHr ? "Host's plant" : 'My plant'}</option>
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </Fld>
+            </div>
+            {isHr && (
+              <label data-tour="hr-visitor-form-walkin" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer', marginTop: 12 }}>
+                <input type="checkbox" checked={f.check_in_now} onChange={(e) => set('check_in_now')(e.target.checked)} />
+                Walk-in — check the visitor in now
+              </label>
+            )}
+            {f.check_in_now ? (
+              <div data-tour="hr-visitor-form-badge-id" style={{ ...row, marginTop: 12 }}>
+                <Fld label="Badge no." basis={130}><input style={sheetInput} value={f.badge_no} onChange={(e) => set('badge_no')(e.target.value)} /></Fld>
+                <Fld label="ID proof" basis={170}>
+                  <select style={sheetInput} value={f.id_proof_type} onChange={(e) => set('id_proof_type')(e.target.value)}>
+                    <option value="">—</option>
+                    {ID_PROOF_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </Fld>
+                <Fld label="ID last 4" basis={110}><input style={sheetInput} maxLength={4} value={f.id_proof_last4} onChange={(e) => set('id_proof_last4')(e.target.value)} /></Fld>
+              </div>
+            ) : (
+              <div data-tour="hr-visitor-form-expected" style={{ ...row, marginTop: 12 }}>
+                <Fld label="Expected date" basis={160}><DateField value={f.expected_date} onChange={set('expected_date')} /></Fld>
+                <Fld label="Time" basis={120}><input type="time" style={sheetInput} value={f.expected_time} onChange={(e) => set('expected_time')(e.target.value)} /></Fld>
+              </div>
+            )}
+          </SheetSection>
+        </>}
+        right={<>
+          <SheetSection icon="shield" title="Gate Details" extra={<Optional />}>
+            <label style={sheetLabel}>Vehicle no.</label>
+            <input data-tour="hr-visitor-form-vehicle" style={sheetInput} value={f.vehicle_no} onChange={(e) => set('vehicle_no')(e.target.value.toUpperCase())} />
+            <label style={{ ...sheetLabel, marginTop: 14 }}>Items carried</label>
+            <input data-tour="hr-visitor-form-items" style={sheetInput} value={f.items_carried} onChange={(e) => set('items_carried')(e.target.value)} placeholder="Laptop, samples, tools…" />
+            <p style={sheetHint}>Only the last 4 characters of an ID proof are stored.</p>
+          </SheetSection>
+          <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+            <textarea rows={4} data-tour="hr-visitor-form-remarks" style={{ ...sheetInput, resize: 'vertical' }} value={f.remarks} onChange={(e) => set('remarks')(e.target.value)} />
+          </SheetSection>
+        </>}
+      />
+    </FormDialog>
+  )
+}
+
+// ── Edit ────────────────────────────────────────────────────────────────────
+
+/** Stored ISO timestamp → IST wall-clock { date: 'YYYY-MM-DD', time: 'HH:MM' }. */
+function istParts(iso?: string | null): { date: string; time: string } {
+  if (!iso) return { date: '', time: '' }
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return { date: '', time: '' }
+  const ist = new Date(d.getTime() + 330 * 60_000).toISOString()
+  return { date: ist.slice(0, 10), time: ist.slice(11, 16) }
+}
+
+/**
+ * Edit a visitor entry. The host or registrant may edit while the visitor is
+ * still expected; reception (HR) may edit any entry that isn't cancelled and
+ * is the only one who can change the host. Only changed fields are sent.
+ */
+export function EditVisitorDialog({
+  visitor, isHr, people, branches, onClose, onSaved,
+}: {
+  visitor: HrVisitor | null
+  isHr: boolean
+  people: DirectoryUser[]
+  branches: HrBranchLookup[]
+  onClose: () => void
+  onSaved: (v: HrVisitor) => void
+}) {
+  const fromVisitor = (v: HrVisitor) => {
+    const exp = istParts(v.expected_at)
+    return {
+      visitor_name: v.visitor_name || '', visitor_company: v.visitor_company || '', visitor_phone: v.visitor_phone || '',
+      visitor_email: v.visitor_email || '', purpose: v.purpose || '', host_user_id: String(v.host_user_id || ''),
+      branch_id: v.branch_id ? String(v.branch_id) : '', expected_date: exp.date, expected_time: exp.time,
+      number_of_persons: String(v.number_of_persons || 1), vehicle_no: v.vehicle_no || '', id_proof_type: v.id_proof_type || '',
+      id_proof_last4: v.id_proof_last4 || '', items_carried: v.items_carried || '', remarks: v.remarks || '', badge_no: v.badge_no || '',
+    }
+  }
+  type Form = ReturnType<typeof fromVisitor>
+  const [f, setF] = useState<Form | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string[]>([])
+
+  useEffect(() => {
+    if (visitor) { setF(fromVisitor(visitor)); setError([]) }
+    else setF(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visitor])
+
+  if (!visitor || !f) return null
+  const set = <K extends keyof Form>(k: K) => (v: Form[K]) => setF((p) => (p ? { ...p, [k]: v } : p))
+  const expected = visitor.status === 'expected'
+
+  const save = async () => {
+    const problems: string[] = []
+    if (!f.visitor_name.trim()) problems.push("Enter the visitor's name.")
+    if (isHr && !f.host_user_id) problems.push('Pick the employee the visitor is meeting (host).')
+    const persons = Number(f.number_of_persons)
+    if (!Number.isInteger(persons) || persons < 1) problems.push('Number of persons must be a whole number, 1 or more.')
+    if (f.id_proof_last4 && f.id_proof_last4.length !== 4) problems.push('Enter exactly the last 4 characters of the ID proof, or leave it blank.')
+    if (problems.length) { setError(problems); return }
+
+    const before = fromVisitor(visitor)
+    const payload: Record<string, unknown> = {}
+    const text = (k: keyof Form, value: string | null) => { if (f[k] !== before[k]) payload[k] = value }
+    text('visitor_name', f.visitor_name.trim())
+    text('visitor_company', f.visitor_company || null)
+    text('visitor_phone', f.visitor_phone || null)
+    text('visitor_email', f.visitor_email || null)
+    text('purpose', f.purpose || null)
+    text('vehicle_no', f.vehicle_no || null)
+    text('id_proof_type', f.id_proof_type || null)
+    text('id_proof_last4', f.id_proof_last4 || null)
+    text('items_carried', f.items_carried || null)
+    text('remarks', f.remarks || null)
+    if (isHr) text('badge_no', f.badge_no || null)
+    if (f.number_of_persons !== before.number_of_persons) payload.number_of_persons = persons
+    if (f.branch_id !== before.branch_id && f.branch_id) payload.branch_id = Number(f.branch_id)
+    if (isHr && f.host_user_id !== before.host_user_id) payload.host_user_id = Number(f.host_user_id)
+    if (expected && (f.expected_date !== before.expected_date || f.expected_time !== before.expected_time)) {
+      payload.expected_at = toIstIso(f.expected_date, f.expected_time)
+    }
+    if (Object.keys(payload).length === 0) { onClose(); return }
+
+    setSaving(true); setError([])
+    try {
+      onSaved(await hrApi.updateVisitor(visitor.id, payload))
+    } catch (err) {
+      setError(extractErrorMessages(err, `Visit ${visitor.visit_no} could not be updated. Check the fields above and try again; if it keeps failing, the entry may have been checked in or cancelled meanwhile — refresh the list.`))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <FormDialog
+      open={!!visitor}
+      title={`Edit visit ${visitor.visit_no}`}
+      subtitle={isHr ? 'Correct the entry. Changing the host notifies the new host.' : 'You can change the details until reception checks the visitor in.'}
+      icon="edit"
+      onClose={onClose}
+      busy={saving}
+      maxWidth={960}
+      bare
+      footer={<>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onClose} disabled={saving}>Cancel</button>
+        <button type="button" style={sheetBtn('primary', SHEET.BLUE, saving)} onClick={save} disabled={saving}>
+          <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save changes'}
+        </button>
+      </>}
+    >
+      <SheetColumns
+        left={<>
+          <ErrorBanner error={error} />
+          <SheetSection icon="user" title="Visitor">
+            <div style={row}>
+              <Fld label="Visitor name" req basis={220} grow max={320}><input style={sheetInput} value={f.visitor_name} onChange={(e) => set('visitor_name')(e.target.value)} /></Fld>
+              <Fld label="Company" basis={200} grow max={300}><input style={sheetInput} value={f.visitor_company} onChange={(e) => set('visitor_company')(e.target.value)} /></Fld>
+            </div>
+            <div style={{ ...row, marginTop: 12 }}>
+              <Fld label="Phone" basis={160}><input style={sheetInput} inputMode="tel" value={f.visitor_phone} onChange={(e) => set('visitor_phone')(e.target.value)} /></Fld>
+              <Fld label="Email" basis={220} grow max={300}><input style={sheetInput} type="email" value={f.visitor_email} onChange={(e) => set('visitor_email')(e.target.value)} /></Fld>
+              <Fld label="Persons" basis={90}><input style={sheetInput} inputMode="numeric" value={f.number_of_persons} onChange={(e) => set('number_of_persons')(e.target.value.replace(/\D/g, ''))} /></Fld>
+            </div>
+            <label style={{ ...sheetLabel, marginTop: 12 }}>Purpose of visit</label>
+            <input style={sheetInput} value={f.purpose} onChange={(e) => set('purpose')(e.target.value)} />
+          </SheetSection>
+          <SheetSection icon="calendar" title="Host & Visit">
+            <div style={row}>
+              {isHr && (
+                <Fld label="Host (meeting)" req basis={240} grow max={340}>
+                  <SearchableSelect value={f.host_user_id} onChange={set('host_user_id')} placeholder="Search employee…" options={people.map((p) => ({ value: String(p.id), label: `${p.name}${p.department ? ` · ${p.department}` : ''}` }))} />
+                </Fld>
+              )}
+              <Fld label="Plant" basis={190}>
+                <select style={sheetInput} value={f.branch_id} onChange={(e) => set('branch_id')(e.target.value)}>
+                  {!f.branch_id && <option value="">—</option>}
+                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </Fld>
+            </div>
+            {expected && (
+              <div style={{ ...row, marginTop: 12 }}>
+                <Fld label="Expected date" basis={160}><DateField value={f.expected_date} onChange={set('expected_date')} /></Fld>
+                <Fld label="Time" basis={120}><input type="time" style={sheetInput} value={f.expected_time} onChange={(e) => set('expected_time')(e.target.value)} /></Fld>
+              </div>
+            )}
+          </SheetSection>
+        </>}
+        right={<>
+          <SheetSection icon="shield" title="Gate Details" extra={<Optional />}>
+            <div style={row}>
+              {isHr && <Fld label="Badge no." basis={130}><input style={sheetInput} value={f.badge_no} onChange={(e) => set('badge_no')(e.target.value)} /></Fld>}
+              <Fld label="ID proof" basis={150} grow>
+                <select style={sheetInput} value={f.id_proof_type} onChange={(e) => set('id_proof_type')(e.target.value)}>
+                  <option value="">—</option>
+                  {ID_PROOF_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </Fld>
+              <Fld label="ID last 4" basis={110}><input style={sheetInput} maxLength={4} value={f.id_proof_last4} onChange={(e) => set('id_proof_last4')(e.target.value)} /></Fld>
+            </div>
+            <label style={{ ...sheetLabel, marginTop: 12 }}>Vehicle no.</label>
+            <input style={sheetInput} value={f.vehicle_no} onChange={(e) => set('vehicle_no')(e.target.value.toUpperCase())} />
+            <label style={{ ...sheetLabel, marginTop: 12 }}>Items carried</label>
+            <input style={sheetInput} value={f.items_carried} onChange={(e) => set('items_carried')(e.target.value)} />
+          </SheetSection>
+          <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+            <textarea rows={4} style={{ ...sheetInput, resize: 'vertical' }} value={f.remarks} onChange={(e) => set('remarks')(e.target.value)} />
+          </SheetSection>
+        </>}
+      />
     </FormDialog>
   )
 }
@@ -196,26 +381,36 @@ export function CheckInDialog({ visitor, onClose, onDone }: { visitor: HrVisitor
       open={!!visitor}
       title={`Check in ${visitor?.visitor_name || ''}`}
       subtitle={visitor ? `Meeting ${visitor.host_name || 'host'}${visitor.visitor_company ? ` · ${visitor.visitor_company}` : ''}. The host gets a notification.` : undefined}
+      icon="check"
+      iconColor="#16A34A"
       onClose={onClose}
+      busy={saving}
+      bare
       footer={<>
-        <button type="button" style={secondaryBtnStyle} onClick={onClose} disabled={saving}>Cancel</button>
-        <button type="button" style={{ ...primaryActionStyle, opacity: saving ? 0.7 : 1 }} onClick={submit} disabled={saving}>{saving ? 'Checking in…' : 'Check in now'}</button>
+        <button type="button" style={sheetBtn('secondary', SHEET.INK, saving)} onClick={onClose} disabled={saving}>Cancel</button>
+        <button type="button" data-tour="hr-visitor-checkin-save" style={sheetBtn('primary', '#16A34A', saving)} onClick={submit} disabled={saving}><SheetIcon name="check" size={16} />{saving ? 'Checking in…' : 'Check in now'}</button>
       </>}
     >
-      <ErrorBanner error={error} />
-      <div style={row}>
-        <Fld label="Badge no." basis={130}><input autoFocus style={formInputStyle} value={badge} onChange={(e) => setBadge(e.target.value)} /></Fld>
-        <Fld label="ID proof" basis={170}>
-          <select style={formInputStyle} value={idType} onChange={(e) => setIdType(e.target.value)}>
-            <option value="">—</option>
-            {ID_PROOF_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </Fld>
-        <Fld label="ID last 4" basis={110}><input style={formInputStyle} maxLength={4} value={idLast4} onChange={(e) => setIdLast4(e.target.value)} /></Fld>
-      </div>
-      <div style={row}>
-        <Fld label="Vehicle no." basis={150}><input style={formInputStyle} value={vehicle} onChange={(e) => setVehicle(e.target.value.toUpperCase())} /></Fld>
-        <Fld label="Items carried" basis={240} grow><input style={formInputStyle} value={items} onChange={(e) => setItems(e.target.value)} /></Fld>
+      <div style={{ padding: '20px 24px' }}>
+        <ErrorBanner error={error} />
+        <SheetSection icon="shield" title="Badge & ID">
+          <div data-tour="hr-visitor-checkin-badge-id" style={row}>
+            <Fld label="Badge no." basis={130}><input autoFocus style={sheetInput} value={badge} onChange={(e) => setBadge(e.target.value)} /></Fld>
+            <Fld label="ID proof" basis={170}>
+              <select style={sheetInput} value={idType} onChange={(e) => setIdType(e.target.value)}>
+                <option value="">—</option>
+                {ID_PROOF_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Fld>
+            <Fld label="ID last 4" basis={110}><input style={sheetInput} maxLength={4} value={idLast4} onChange={(e) => setIdLast4(e.target.value)} /></Fld>
+          </div>
+        </SheetSection>
+        <SheetSection icon="truck" title="Vehicle & Items" extra={<Optional />}>
+          <div data-tour="hr-visitor-checkin-vehicle-items" style={row}>
+            <Fld label="Vehicle no." basis={150}><input style={sheetInput} value={vehicle} onChange={(e) => setVehicle(e.target.value.toUpperCase())} /></Fld>
+            <Fld label="Items carried" basis={240} grow><input style={sheetInput} value={items} onChange={(e) => setItems(e.target.value)} /></Fld>
+          </div>
+        </SheetSection>
       </div>
     </FormDialog>
   )

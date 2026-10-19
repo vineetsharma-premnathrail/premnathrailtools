@@ -8,11 +8,14 @@ import { StoreMaterialIssue } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
 import { primaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
+import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 export default function StoreMaterialIssuesPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
+  const { can } = useCan()
   const router = useRouter()
   const [issues, setIssues] = useState<StoreMaterialIssue[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,9 +40,11 @@ export default function StoreMaterialIssuesPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Material Issues</h1>
         </div>
-        <button data-tour="issues-add-btn" onClick={() => router.push('/dashboard/store/issues/new')} style={primaryBtnStyle}>
-          <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> New Issue
-        </button>
+        {can('store', 'issues', 'create') && (
+          <button data-tour="issues-add-btn" onClick={() => router.push('/dashboard/store/issues/new')} style={primaryBtnStyle}>
+            <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> New Issue
+          </button>
+        )}
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Failed to Load Material Issues" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
@@ -59,9 +64,9 @@ export default function StoreMaterialIssuesPage() {
               <tr><td colSpan={13} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material issues yet.</td></tr>
             )}
             {issues.map((i) => (
-              <tr key={i.id} onClick={() => router.push(`/dashboard/store/issues/${i.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
+              <tr key={i.id} onClick={() => router.push(recordPath('/dashboard/store/issues', i))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{i.issue_number}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13 }} onClick={(e) => { if (i.p2p_request_id) { e.stopPropagation(); router.push(`/dashboard/p2p/${i.p2p_request_id}`) } }}>
+                <td style={{ padding: '12px 16px', fontSize: 13 }} onClick={(e) => { if (i.p2p_request_id) { e.stopPropagation(); router.push(recordPath('/dashboard/p2p', i, 'p2p_request_id')) } }}>
                   {i.p2p_number ? <span style={{ color: '#2563eb', fontWeight: 600, cursor: 'pointer' }}>{i.p2p_number}</span> : <span style={{ color: TEXT.muted }}>—</span>}
                 </td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.location_name}</td>
@@ -75,7 +80,7 @@ export default function StoreMaterialIssuesPage() {
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.issue_date}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{i.items.length}</td>
                 <td onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(`/dashboard/store/issues/${i.id}`)} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</span>
+                  <span onClick={() => router.push(recordPath('/dashboard/store/issues', i))} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

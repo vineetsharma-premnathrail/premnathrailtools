@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.permissions import require_app_access
+from app.core.permissions import require_app_access, require_tab_action
 from app.modules.main.models.user import User
 from app.modules.crm.models.product import Product
 from app.modules.crm.schemas.product import ProductCreate, ProductUpdate, ProductResponse
@@ -18,6 +18,7 @@ def _can_modify(record, user: User) -> bool:
 
 @router.get("", response_model=list[ProductResponse])
 async def list_products(
+    # Lookup read by every CRM form (inquiry/quotation pickers) — any CRM user; writes need Settings › Edit.
     search: str | None = None,
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("crm")),
@@ -35,7 +36,7 @@ async def list_products(
 async def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "settings", "edit")),
 ):
     clash = db.query(Product).filter(
         Product.is_deleted == False,  # noqa: E712
@@ -61,7 +62,7 @@ async def update_product(
     product_id: int,
     payload: ProductUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "settings", "edit")),
 ):
     product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()  # noqa: E712
     if not product:
@@ -79,7 +80,7 @@ async def update_product(
 async def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "settings", "edit")),
 ):
     product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()  # noqa: E712
     if not product:

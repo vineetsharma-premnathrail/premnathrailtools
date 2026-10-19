@@ -3,7 +3,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.permissions import require_app_access
+from app.core.permissions import require_tab_access
+from app.core.data_scope import apply_scope
+from app.modules.crm.access import apply_activity_scope
 from app.modules.main.models.user import User
 from app.modules.crm.models.organization import Organization
 from app.modules.crm.models.inquiry import Inquiry
@@ -17,31 +19,31 @@ router = APIRouter(prefix="/crm/dashboard", tags=["CRM - Dashboard"])
 @router.get("", response_model=CrmDashboardResponse)
 async def get_crm_dashboard(
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("crm")),
+    _user: User = Depends(require_tab_access("crm", "dashboard")),
 ):
     today = date.today()
+    # Every count / recent list is limited to the user's CRM data scope.
+    orgs = apply_scope(db.query(Organization), _user, Organization).filter(Organization.is_deleted == False)  # noqa: E712
+    inquiries = apply_scope(db.query(Inquiry), _user, Inquiry).filter(Inquiry.is_deleted == False)  # noqa: E712
+    tenders = apply_scope(db.query(Tender), _user, Tender).filter(Tender.is_deleted == False)  # noqa: E712
+    activities = apply_activity_scope(db.query(Activity), db, _user).filter(Activity.is_deleted == False)  # noqa: E712
 
-    total_organizations = db.query(Organization).filter(Organization.is_deleted == False).count()  # noqa: E712
-    total_inquiries = db.query(Inquiry).filter(Inquiry.is_deleted == False).count()  # noqa: E712
-    total_tenders = db.query(Tender).filter(Tender.is_deleted == False).count()  # noqa: E712
+    total_organizations = orgs.count()
+    total_inquiries = inquiries.count()
+    total_tenders = tenders.count()
 
-    open_followups = db.query(Activity).filter(Activity.is_deleted == False, Activity.status == "Open").count()  # noqa: E712
-    overdue_followups = db.query(Activity).filter(
-        Activity.is_deleted == False, Activity.status == "Open", Activity.next_followup < today  # noqa: E712
+    open_followups = activities.filter(Activity.status == "Open").count()
+    overdue_followups = activities.filter(Activity.status == "Open", Activity.next_followup < today).count()
+    today_activities = activities.filter(Activity.status == "Open", Activity.next_followup == today).count()
+
+    pending_tenders = tenders.filter(
+        Tender.status.notin_(["Closed – Ordered", "Closed – Not Ordered", "Tender Cancelled"]),
     ).count()
-    today_activities = db.query(Activity).filter(
-        Activity.is_deleted == False, Activity.status == "Open", Activity.next_followup == today  # noqa: E712
-    ).count()
 
-    pending_tenders = db.query(Tender).filter(
-        Tender.is_deleted == False,
-        Tender.status.notin_(["Closed – Ordered", "Closed – Not Ordered", "Tender Cancelled"]),  # noqa: E712
-    ).count()
-
-    recent_organizations = db.query(Organization).filter(Organization.is_deleted == False).order_by(Organization.created_at.desc()).limit(5).all()  # noqa: E712
-    recent_inquiries = db.query(Inquiry).filter(Inquiry.is_deleted == False).order_by(Inquiry.created_at.desc()).limit(5).all()  # noqa: E712
-    recent_tenders = db.query(Tender).filter(Tender.is_deleted == False).order_by(Tender.created_at.desc()).limit(5).all()  # noqa: E712
-    recent_activities = db.query(Activity).filter(Activity.is_deleted == False).order_by(Activity.created_at.desc()).limit(5).all()  # noqa: E712
+    recent_organizations = orgs.order_by(Organization.created_at.desc()).limit(5).all()
+    recent_inquiries = inquiries.order_by(Inquiry.created_at.desc()).limit(5).all()
+    recent_tenders = tenders.order_by(Tender.created_at.desc()).limit(5).all()
+    recent_activities = activities.order_by(Activity.created_at.desc()).limit(5).all()
 
     return CrmDashboardResponse(
         total_organizations=total_organizations,

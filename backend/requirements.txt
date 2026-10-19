@@ -19,3 +19,4 @@ numpy>=2.2.6  # 2.2.6 has no prebuilt wheel for Python 3.14 (no C compiler on th
 
 # P2P MIS report Excel export (backend/app/modules/p2p/routes/mis.py) — pure Python, no C build needed
 openpyxl==3.1.5
+segno==1.6.6

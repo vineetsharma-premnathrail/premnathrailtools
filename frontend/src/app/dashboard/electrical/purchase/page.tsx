@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { electricalApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { ElectricalBomItem, ElectricalMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import {
-  inputStyle, thStyle, tdStyle, linkStyle, Pill, ErrorBanner, PROCUREMENT_LABELS, PROCUREMENT_HEX,
+  inputStyle, thStyle, tdStyle, linkStyle, Pill, ErrorBanner, useLookupErrors, PROCUREMENT_LABELS, PROCUREMENT_HEX,
 } from '@/components/electrical/shared'
 
 // '' = the API default: every line still open (To Buy / PR Raised / Ordered).
@@ -38,6 +39,7 @@ export default function ElectricalPurchaseRequirementsPage() {
   const [meta, setMeta] = useState<ElectricalMeta | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
+  const [lookupErrors, addLookupError] = useLookupErrors()
   const [status, setStatus] = useState('')
   const [category, setCategory] = useState('')
   const [searchInput, setSearchInput] = useState('')
@@ -45,7 +47,8 @@ export default function ElectricalPurchaseRequirementsPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
-    electricalApi.getMeta().then(setMeta).catch(() => setMeta(null))
+    electricalApi.getMeta().then(setMeta).catch((err) => { setMeta(null); addLookupError(extractErrorMessages(err,
+      "Couldn't load the electrical category list for the Category filter — the list below still works unfiltered; refresh to try again.")) })
   }, [isAuthorized])
 
   // Debounce the free-text search so each keystroke isn't a request.
@@ -69,7 +72,7 @@ export default function ElectricalPurchaseRequirementsPage() {
   const categoryLabel = (k: string) => meta?.component_categories?.[k] || k.replace(/_/g, ' ')
   const toBuy = rows.filter((r) => r.procurement_status === 'required').length
   const jobCount = new Set(rows.map((r) => r.job_id)).size
-  const go = (r: ElectricalBomItem) => router.push(`/dashboard/electrical/jobs/${r.job_id}?tab=bom`)
+  const go = (r: ElectricalBomItem) => router.push(`${recordPath('/dashboard/electrical/jobs', r, 'job_id')}?tab=bom`)
 
   if (isLoading || !isAuthorized) return null
 
@@ -90,25 +93,27 @@ export default function ElectricalPurchaseRequirementsPage() {
       </div>
 
       <ErrorBanner error={error} />
+      <ErrorBanner error={lookupErrors} />
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
+          data-tour="elec-pur-search"
           style={{ ...inputStyle, width: 'auto', flex: '1 1 240px', minWidth: 200, maxWidth: 360 }}
           placeholder="Search description, make, part no. or job…"
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
         />
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 280px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select data-tour="elec-pur-status-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 280px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           {STATUS_FILTERS.map((s) => <option key={s.value || 'open'} value={s.value}>{s.label}</option>)}
         </select>
-        <select style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
+        <select data-tour="elec-pur-category-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">All categories</option>
           {Object.entries(meta?.component_categories || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
       {!loading && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div data-tour="elec-pur-summary" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
           <span style={chipStyle(toBuy ? '#DC2626' : '#16A34A')}>
             <strong style={{ fontSize: 18 }}>{toBuy}</strong>
             <span style={{ fontSize: 12, fontWeight: 600 }}>{toBuy === 1 ? 'line' : 'lines'} to buy</span>
@@ -123,7 +128,7 @@ export default function ElectricalPurchaseRequirementsPage() {
         </div>
       )}
 
-      <div style={{
+      <div data-tour="elec-pur-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>

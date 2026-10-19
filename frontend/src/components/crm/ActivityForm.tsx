@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { CaretDown } from '@phosphor-icons/react'
 import { useAuth } from '@/hooks/useAuth'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { crmApi } from '@/lib/api'
@@ -10,8 +11,8 @@ import PhoneField from '@/components/erp/PhoneField'
 import ValidatedInput from '@/components/ValidatedInput'
 import { isValidEmail, VALIDATION_MESSAGES, extractErrorMessages } from '@/lib/validation'
 import { ACTIVITY_TYPES, FOLLOW_UP_STATUSES } from './constants'
-import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle, XIcon } from './ui'
-import MessageDialog from '@/components/erp/MessageDialog'
+import { XIcon } from './ui'
+import { FormSheet, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import CameraCapture from '@/components/CameraCapture'
 import RichTextEditor from '@/components/RichTextEditor'
@@ -78,10 +79,11 @@ export default function ActivityForm({
   const [savingContact, setSavingContact] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const inputStyle = sheetInput
 
   const saveNewContact = async () => {
     if (!orgId) {
-      setError('No organization is associated with this record.')
+      setError('No customer organization is associated with this record.')
       return
     }
     if (!newContact.name.trim()) {
@@ -108,7 +110,7 @@ export default function ActivityForm({
       setSelectedContactIds((ids) => (ids.includes(contact.id) ? ids : [...ids, contact.id]))
       setNewContact({ name: '', designation: '', department: '', mobile: '', email: '' })
       setAddingContact(false)
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save contact.'))
     } finally {
       setSavingContact(false)
@@ -116,10 +118,7 @@ export default function ActivityForm({
   }
 
   useEffect(() => {
-    if (!orgId) {
-      setContacts([])
-      return
-    }
+    if (!orgId) return
     crmApi.listOrgContacts(orgId).then(setContacts)
   }, [orgId])
 
@@ -136,13 +135,6 @@ export default function ActivityForm({
     return () => document.removeEventListener('mousedown', onClick)
   }, [contactsOpen])
 
-  useEffect(() => {
-    if (!initial?.assigned_to && user?.name) {
-      setForm((f) => (f.assigned_to ? f : { ...f, assigned_to: user.name }))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.name])
-
   const set = (field: keyof FormState, value: string) => setForm((f) => ({ ...f, [field]: value }))
 
   const toggleContact = (id: number) =>
@@ -151,7 +143,7 @@ export default function ActivityForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (addingContact && !orgId) {
-      setError('No organization is associated with this record.')
+      setError('No customer organization is associated with this record.')
       return
     }
     if (addingContact && !newContact.name.trim()) {
@@ -161,7 +153,7 @@ export default function ActivityForm({
     setSaving(true)
     setError('')
     try {
-      let contactIds = [...selectedContactIds]
+      const contactIds = [...selectedContactIds]
       if (addingContact && orgId) {
         const nameLower = newContact.name.trim().toLowerCase()
         const existing = contacts.find((c) => c.name.trim().toLowerCase() === nameLower)
@@ -182,6 +174,8 @@ export default function ActivityForm({
 
       const payload: Record<string, unknown> = {
         ...form,
+        // Defaults to the signed-in user when the record has no assignee yet.
+        assigned_to: form.assigned_to || user?.name || '',
         org_id: orgId,
         related_module: initial?.related_module,
         related_id: initial?.related_id,
@@ -194,7 +188,7 @@ export default function ActivityForm({
       })
       await onSubmit(payload, stagedPhotos)
       setStagedPhotos([])
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to save activity.'))
     } finally {
       setSaving(false)
@@ -219,183 +213,172 @@ export default function ActivityForm({
     }
   }
 
+  const isEdit = !!initial?.id
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <MessageDialog open={!!error} variant="error" title="Cannot Save" message={error} onClose={() => setError('')} />
-
-      <Section title="Follow Up Details">
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', flex: '1 1 480px' }}>
-            <div style={{ flex: '2 1 200px', minWidth: 180 }}>
-              <Field label="Subject" tourId="activity-subject">
-                <input value={form.subject} onChange={(e) => set('subject', e.target.value)} placeholder="Brief subject of this activity" style={inputStyle} />
-              </Field>
-            </div>
-            <div style={{ flex: '2 1 240px', minWidth: 220 }} ref={contactsRef}>
-              <Field label="Contact Person(s)" tourId="activity-contacts">
-                <div style={{ position: 'relative' }}>
-                  <div
-                    onClick={() => setContactsOpen((v) => !v)}
-                    style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minHeight: 20, cursor: 'pointer' }}
-                  >
-                    {selectedContactIds.length === 0 && <span style={{ color: '#a8a29e' }}>Select contacts…</span>}
-                    {selectedContactIds.map((id) => {
-                      const c = contacts.find((x) => x.id === id)
-                      if (!c) return null
-                      return (
-                        <span key={id} onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '3px 6px 3px 10px', borderRadius: 8, background: 'rgba(244,113,59,0.1)', border: '1px solid rgba(244,113,59,0.25)', color: '#c2410c' }}>
-                          {c.name}
-                          <span onClick={() => toggleContact(id)} style={{ cursor: 'pointer', fontWeight: 700 }}>×</span>
-                        </span>
-                      )
-                    })}
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a8a29e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', marginLeft: 'auto' }}>
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </div>
-
-                  {contactsOpen && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, background: '#fff', borderRadius: 12, border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 16px 36px rgba(0,0,0,0.14)', display: 'flex', flexDirection: 'column' }}>
-                      {addingContact ? (
-                        <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          <Row>
-                            <Field label="Name *"><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Contact name" style={inputStyle} /></Field>
-                            <Field label="Designation"><input value={newContact.designation} onChange={(e) => setNewContact((c) => ({ ...c, designation: e.target.value }))} placeholder="e.g. DEN" style={inputStyle} /></Field>
-                          </Row>
-                          <Row>
-                            <Field label="Department"><input value={newContact.department} onChange={(e) => setNewContact((c) => ({ ...c, department: e.target.value }))} placeholder="Dept." style={inputStyle} /></Field>
-                            <Field label="Mobile *"><PhoneField value={newContact.mobile} onChange={(v) => setNewContact((c) => ({ ...c, mobile: v }))} style={inputStyle} /></Field>
-                          </Row>
-                          <Field label="Email"><ValidatedInput type="email" value={newContact.email} onChange={(v) => setNewContact((c) => ({ ...c, email: v }))} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="email" style={inputStyle} /></Field>
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                            <button type="button" onClick={() => { setAddingContact(false); setNewContact({ name: '', designation: '', department: '', mobile: '', email: '' }) }} style={secondaryBtnStyle}>
-                              Cancel
-                            </button>
-                            <button type="button" onClick={saveNewContact} disabled={savingContact} style={{ ...primaryBtnStyle, opacity: savingContact ? 0.7 : 1 }}>
-                              {savingContact ? 'Saving…' : 'Save Contact'}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div style={{ padding: 8, borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-                            <input autoFocus value={contactSearch} onChange={(e) => setContactSearch(e.target.value)} placeholder="Search contacts…" style={{ ...inputStyle, padding: '8px 10px' }} />
-                          </div>
-                          <div style={{ maxHeight: 160, overflowY: 'auto' }}>
-                            {contacts.filter((c) => c.name.toLowerCase().includes(contactSearch.trim().toLowerCase())).length === 0 ? (
-                              <p style={{ fontSize: 12.5, color: '#a8a29e', padding: '10px 14px', margin: 0 }}>No matches.</p>
-                            ) : (
-                              contacts
-                                .filter((c) => c.name.toLowerCase().includes(contactSearch.trim().toLowerCase()))
-                                .map((c) => (
-                                  <div
-                                    key={c.id}
-                                    onClick={() => toggleContact(c.id)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: selectedContactIds.includes(c.id) ? 'rgba(244,113,59,0.08)' : 'transparent', color: selectedContactIds.includes(c.id) ? '#c2410c' : '#1f1108' }}
-                                  >
-                                    <span style={{ pointerEvents: 'none' }}>
-                                      <Checkbox checked={selectedContactIds.includes(c.id)} onChange={() => {}} />
-                                    </span>
-                                    {c.name}
-                                  </div>
-                                ))
-                            )}
-                          </div>
-                          <div
-                            onClick={() => setAddingContact(true)}
-                            style={{ padding: '10px 14px', fontSize: 12.5, fontWeight: 600, color: '#FF7A45', cursor: 'pointer', borderTop: '1px solid rgba(0,0,0,0.06)' }}
-                          >
-                            + Add New Contact
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
+    <FormSheet tour="activity-form" icon={isEdit ? 'edit' : 'chat'} title={isEdit ? 'Edit Follow Up' : 'Add Follow Up'}
+      subtitle={isEdit ? 'Change this follow-up — remarks, action plan, next date or status.' : 'Log a meeting, call or visit with the customer and set when to follow up next.'}
+      onClose={onCancel} busy={saving}
+      footer={<>
+        <button type="button" onClick={onCancel} disabled={saving} data-tour="activity-cancel-btn" style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+        <button type="submit" form="crm-activity-form" data-tour="activity-save" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+          <SheetIcon name={isEdit ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
+        </button>
+      </>}>
+      <form id="crm-activity-form" onSubmit={handleSubmit}>
+        <SheetColumns
+          left={<>
+            <SheetError error={error} />
+            <SheetSection icon="list" title="Follow Up Details">
+              <div data-tour="activity-subject">
+                <label style={sheetLabel}>Subject</label>
+                <input value={form.subject} onChange={(e) => set('subject', e.target.value)} placeholder="Brief subject of this activity" style={inputStyle} autoFocus />
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
+                <div data-tour="activity-type" style={{ flex: '1 1 150px', minWidth: 140 }}>
+                  <label style={sheetLabel}>Activity Type</label>
+                  <select value={form.activity_type} onChange={(e) => set('activity_type', e.target.value)} style={inputStyle}>
+                    {ACTIVITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
                 </div>
-              </Field>
-            </div>
+                <div data-tour="activity-next-followup" style={{ flex: '1 1 150px', minWidth: 140 }}>
+                  <label style={sheetLabel}>Next Follow-up Date</label>
+                  <DateField value={form.next_followup} onChange={(v) => set('next_followup', v)} />
+                </div>
+                <div data-tour="activity-status" style={{ flex: '1 1 120px', minWidth: 120 }}>
+                  <label style={sheetLabel}>Status</label>
+                  <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
+                    {FOLLOW_UP_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+            </SheetSection>
+            <SheetSection icon="chat" title="Observation / Remarks">
+              <div data-tour="activity-remarks">
+                <RichTextEditor value={form.remarks} onChange={(v) => set('remarks', v)} placeholder="What was discussed or observed" tourId="activity-remarks" />
+              </div>
+            </SheetSection>
+            <SheetSection icon="flag" title="Action Plan">
+              <div data-tour="activity-action-plan">
+                <RichTextEditor value={form.action_plan} onChange={(v) => set('action_plan', v)} placeholder="What needs to be done next" tourId="activity-action-plan" />
+              </div>
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="users" title="Contact Person(s)" extra={<Optional />}>
+              <div ref={contactsRef} data-tour="activity-contacts" style={{ position: 'relative' }}>
+                <div
+                  onClick={() => setContactsOpen((v) => !v)}
+                  style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minHeight: 20, cursor: 'pointer' }}
+                >
+                  {selectedContactIds.length === 0 && <span style={{ color: SHEET.MUTED }}>Select contacts…</span>}
+                  {selectedContactIds.map((id) => {
+                    const c = contacts.find((x) => x.id === id)
+                    if (!c) return null
+                    return (
+                      <span key={id} onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, padding: '3px 6px 3px 10px', borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', color: SHEET.BLUE }}>
+                        {c.name}
+                        <span onClick={() => toggleContact(id)} style={{ cursor: 'pointer', fontWeight: 700 }}>×</span>
+                      </span>
+                    )
+                  })}
+                  <CaretDown size={14} color="#94a3b8" style={{ flex: 'none', marginLeft: 'auto' }} />
+                </div>
 
-            <div style={{ flex: '1 1 150px', minWidth: 140 }}>
-              <Field label="Activity Type" tourId="activity-type">
-                <select value={form.activity_type} onChange={(e) => set('activity_type', e.target.value)} style={inputStyle}>
-                  {ACTIVITY_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div style={{ flex: '1 1 150px', minWidth: 140 }}>
-              <Field label="Next Follow-up Date" tourId="activity-next-followup"><DateField value={form.next_followup} onChange={(v) => set('next_followup', v)} /></Field>
-            </div>
-            <div style={{ flex: '1 1 120px', minWidth: 120 }}>
-              <Field label="Status" tourId="activity-status">
-                <select value={form.status} onChange={(e) => set('status', e.target.value)} style={inputStyle}>
-                  {FOLLOW_UP_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </Field>
-            </div>
-          </div>
+                {contactsOpen && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 50, background: '#fff', borderRadius: 12, border: `1px solid ${SHEET.LINE}`, boxShadow: '0 16px 36px rgba(0,0,0,0.14)', display: 'flex', flexDirection: 'column' }}>
+                    {addingContact ? (
+                      <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div><label style={sheetLabel}>Name <Req /></label><input value={newContact.name} onChange={(e) => setNewContact((c) => ({ ...c, name: e.target.value }))} placeholder="Contact name" style={inputStyle} /></div>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1 1 120px' }}><label style={sheetLabel}>Designation</label><input value={newContact.designation} onChange={(e) => setNewContact((c) => ({ ...c, designation: e.target.value }))} placeholder="e.g. DEN" style={inputStyle} /></div>
+                          <div style={{ flex: '1 1 120px' }}><label style={sheetLabel}>Department</label><input value={newContact.department} onChange={(e) => setNewContact((c) => ({ ...c, department: e.target.value }))} placeholder="Dept." style={inputStyle} /></div>
+                        </div>
+                        <div><label style={sheetLabel}>Mobile <Req /></label><PhoneField value={newContact.mobile} onChange={(v) => setNewContact((c) => ({ ...c, mobile: v }))} style={inputStyle} /></div>
+                        <div><label style={sheetLabel}>Email</label><ValidatedInput type="email" value={newContact.email} onChange={(v) => setNewContact((c) => ({ ...c, email: v }))} validator={isValidEmail} errorMessage={VALIDATION_MESSAGES.email} placeholder="email" style={inputStyle} /></div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                          <button type="button" onClick={() => { setAddingContact(false); setNewContact({ name: '', designation: '', department: '', mobile: '', email: '' }) }} style={sheetBtn('secondary', SHEET.INK)}>
+                            Cancel
+                          </button>
+                          <button type="button" onClick={saveNewContact} disabled={savingContact} style={sheetBtn('primary', SHEET.BLUE, savingContact)}>
+                            {savingContact ? 'Saving…' : 'Save Contact'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ padding: 8, borderBottom: `1px solid ${SHEET.LINE}` }}>
+                          <input autoFocus value={contactSearch} onChange={(e) => setContactSearch(e.target.value)} placeholder="Search contacts…" style={{ ...inputStyle, padding: '8px 10px' }} />
+                        </div>
+                        <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+                          {contacts.filter((c) => c.name.toLowerCase().includes(contactSearch.trim().toLowerCase())).length === 0 ? (
+                            <p style={{ fontSize: 12.5, color: SHEET.MUTED, padding: '10px 14px', margin: 0 }}>No matches.</p>
+                          ) : (
+                            contacts
+                              .filter((c) => c.name.toLowerCase().includes(contactSearch.trim().toLowerCase()))
+                              .map((c) => (
+                                <div
+                                  key={c.id}
+                                  onClick={() => toggleContact(c.id)}
+                                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: selectedContactIds.includes(c.id) ? '#eff6ff' : 'transparent', color: selectedContactIds.includes(c.id) ? SHEET.BLUE : SHEET.INK }}
+                                >
+                                  <span style={{ pointerEvents: 'none' }}>
+                                    <Checkbox checked={selectedContactIds.includes(c.id)} onChange={() => {}} />
+                                  </span>
+                                  {c.name}
+                                </div>
+                              ))
+                          )}
+                        </div>
+                        <div
+                          onClick={() => setAddingContact(true)}
+                          style={{ padding: '10px 14px', fontSize: 12.5, fontWeight: 600, color: SHEET.BLUE, cursor: 'pointer', borderTop: `1px solid ${SHEET.LINE}` }}
+                        >
+                          + Add New Contact
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+              <p style={sheetHint}>People of this customer organization who took part. Add a new contact here if they are not saved yet.</p>
+            </SheetSection>
 
-          <div style={{ flex: 'none' }}>
-            <Field label="Attachment" tourId="activity-attachment">
-              <div style={{ display: 'flex', gap: 8 }}>
+            <SheetSection icon="clip" title="Photos" extra={<Optional />}>
+              <div data-tour="activity-attachment" style={{ display: 'flex', gap: 8 }}>
                 {showCamera && <CameraCapture onCapture={(file) => stagePhotos([file])} onClose={() => setShowCamera(false)} />}
                 <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { stagePhotos(e.target.files); e.target.value = '' }} />
-                <button
-                  type="button"
-                  onClick={() => setShowCamera(true)}
-                  aria-label="Take photo"
-                  title="Take photo"
-                  style={{ width: 34, height: 34, flex: 'none', borderRadius: 8, border: '1px solid rgba(0,0,0,0.06)', background: '#fff', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  📷
+                <button type="button" onClick={() => setShowCamera(true)} aria-label="Take photo" title="Take photo" style={sheetBtn('secondary', SHEET.INK)}>
+                  📷 Take Photo
                 </button>
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  style={{ fontSize: 12.5, fontWeight: 600, padding: '8px 12px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.06)', background: '#fff', color: '#78716c', cursor: 'pointer', whiteSpace: 'nowrap' }}
-                >
-                  + Add Photo
+                <button type="button" onClick={() => fileRef.current?.click()} style={sheetBtn('secondary', SHEET.INK)}>
+                  <SheetIcon name="plus" size={15} />Add Photo
                 </button>
               </div>
-            </Field>
-          </div>
-        </div>
-
-        <Field label="Observation / Remarks" tourId="activity-remarks">
-          <RichTextEditor value={form.remarks} onChange={(v) => set('remarks', v)} placeholder="What was discussed or observed" tourId="activity-remarks" />
-        </Field>
-        <Field label="Action Plan" tourId="activity-action-plan">
-          <RichTextEditor value={form.action_plan} onChange={(v) => set('action_plan', v)} placeholder="What needs to be done next" tourId="activity-action-plan" />
-        </Field>
-
-        {(!!existingAttachments?.length || stagedPhotos.length > 0) && (
-          <Field label="Photos">
-            <PhotoThumbnails
-              activityId={initial?.id}
-              stagedPhotos={stagedPhotos}
-              onRemoveStaged={(i) => setStagedPhotos((prev) => prev.filter((_, idx) => idx !== i))}
-              existingAttachments={existingAttachments}
-              onDeleteExisting={(id) => setConfirmDeletePhotoId(id)}
-              deletingAttachmentId={deletingAttachmentId}
-            />
-          </Field>
-        )}
-        <ConfirmDialog
-          open={confirmDeletePhotoId != null}
-          title="Delete Photo"
-          message="Delete this photo? This cannot be undone."
-          confirmLabel="Delete"
-          onConfirm={() => { const id = confirmDeletePhotoId; setConfirmDeletePhotoId(null); if (id != null) deleteExistingPhoto(id) }}
-          onCancel={() => setConfirmDeletePhotoId(null)}
+              {(!!existingAttachments?.length || stagedPhotos.length > 0) && (
+                <div style={{ marginTop: 12 }}>
+                  <PhotoThumbnails
+                    activityId={initial?.id}
+                    stagedPhotos={stagedPhotos}
+                    onRemoveStaged={(i) => setStagedPhotos((prev) => prev.filter((_, idx) => idx !== i))}
+                    existingAttachments={existingAttachments}
+                    onDeleteExisting={(id) => setConfirmDeletePhotoId(id)}
+                    deletingAttachmentId={deletingAttachmentId}
+                  />
+                </div>
+              )}
+              <ConfirmDialog
+                open={confirmDeletePhotoId != null}
+                title="Delete Photo"
+                message="Delete this photo? This cannot be undone."
+                confirmLabel="Delete"
+                onConfirm={() => { const id = confirmDeletePhotoId; setConfirmDeletePhotoId(null); if (id != null) deleteExistingPhoto(id) }}
+                onCancel={() => setConfirmDeletePhotoId(null)}
+              />
+            </SheetSection>
+          </>}
         />
-      </Section>
-
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-        <button type="button" onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-        <button type="submit" data-tour="activity-save" disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-      </div>
-    </form>
+      </form>
+    </FormSheet>
   )
 }
 

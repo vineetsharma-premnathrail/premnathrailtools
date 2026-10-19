@@ -116,7 +116,7 @@ def start_problem(db: Session, wo, op) -> str | None:
 
 
 def request_gate_lot(db: Session, wo, op, user: User) -> QualityInspectionLot:
-    from app.modules.quality.services.lots import create_lot
+    from app.modules.quality.services.lots import create_lot, order_project_link_of
     g = gate_state(db, op)
     if g.requested and g.status != "failed":
         raise GateError(f"Inspection {g.number} is already {g.status.replace('_', ' ')} for this operation.")
@@ -127,7 +127,7 @@ def request_gate_lot(db: Session, wo, op, user: User) -> QualityInspectionLot:
     lot = create_lot(
         db, inspection_type="in_process", source_type=GATE_SOURCE, item=product, quantity=qty, location_id=None,
         user_id=user.id, source_id=op.id, source_reference=f"{wo.wo_number} · Op {op.sequence} {op.operation_name}",
-        batch_number=wo.wo_number,
+        batch_number=wo.wo_number, **order_project_link_of(wo),
         remarks=f"In-process gate requested from Production by {user.name or user.email} for work order {wo.wo_number}, "
                 f"operation {op.sequence} {op.operation_name}.",
     )

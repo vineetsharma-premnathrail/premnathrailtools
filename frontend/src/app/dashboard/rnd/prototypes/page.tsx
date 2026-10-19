@@ -8,7 +8,11 @@ import { RndProject, RndPrototype } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import RndNav from '@/components/rnd/RndNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath } from '@/lib/recordRef'
+import { projectLinkHref, useUrlProjectId } from '@/components/rnd/projectLink'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { design: 'Design', building: 'Building', testing: 'Testing', validated: 'Validated', rejected: 'Rejected' }
 const STATUS_HEX: Record<string, string> = { design: '#78716c', building: '#2563EB', testing: '#7C3AED', validated: '#16A34A', rejected: '#DC2626' }
@@ -18,8 +22,9 @@ const inputStyle: React.CSSProperties = {
   background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
 }
 
+// null = hidden by the server (R&D › Prototypes › BOM costs).
 const formatInr = (n: number | null | undefined) =>
-  `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+  n == null ? '—' : `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 
 export default function RndPrototypesListPage() {
   return (
@@ -31,6 +36,7 @@ export default function RndPrototypesListPage() {
 
 function RndPrototypesListPageInner() {
   const { isAuthorized, isLoading } = useRequireApp('rnd')
+  const { can } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -39,7 +45,8 @@ function RndPrototypesListPageInner() {
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
-  const [projectFilter, setProjectFilter] = useState(searchParams.get('project_id') || '')
+  const [projectFilter, setProjectFilter] = useState('')
+  const projectLink = useUrlProjectId(searchParams.get('project_id'), setProjectFilter)
   const [statusFilter, setStatusFilter] = useState('')
 
   useEffect(() => {
@@ -54,7 +61,7 @@ function RndPrototypesListPageInner() {
   const loading = loadedKey !== queryKey
 
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || projectLink.loading) return
     const params: Record<string, unknown> = {}
     if (projectFilter) params.project_id = Number(projectFilter)
     if (statusFilter) params.status = statusFilter
@@ -65,11 +72,12 @@ function RndPrototypesListPageInner() {
       .catch((err) => { if (!cancelled) setError(extractErrorMessages(err, 'Failed to load prototypes.')) })
       .finally(() => { if (!cancelled) setLoadedKey(queryKey) })
     return () => { cancelled = true }
-  }, [isAuthorized, projectFilter, statusFilter, search, queryKey])
+  }, [isAuthorized, projectLink.loading, projectFilter, statusFilter, search, queryKey])
 
-  const newHref = `/dashboard/rnd/prototypes/new${projectFilter ? `?project_id=${projectFilter}` : ''}`
+  const newHref = projectLinkHref('/dashboard/rnd/prototypes/new', projects, projectFilter)
 
   if (isLoading || !isAuthorized) return null
+  if (projectLink.error) return (<div><RndNav /><InvalidRecordLink message={projectLink.error} listHref="/dashboard/rnd/prototypes" listLabel="Back to prototypes" /></div>)
 
   return (
     <div>
@@ -82,16 +90,19 @@ function RndPrototypesListPageInner() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Prototypes</h1>
         </div>
-        <button
-          onClick={() => router.push(newHref)}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New Prototype
-        </button>
+        {can('rnd', 'prototypes', 'create') && (
+          <button
+            data-tour="rnd-proto-new-btn"
+            onClick={() => router.push(newHref)}
+            style={{
+              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
+              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
+            }}
+          >
+            + New Prototype
+          </button>
+        )}
       </div>
 
       {error && (
@@ -102,12 +113,13 @@ function RndPrototypesListPageInner() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
+          data-tour="rnd-proto-search"
           style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }}
           placeholder="Search by prototype number, name, or version…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <div style={{ flex: '0 1 280px', minWidth: 220 }}>
+        <div data-tour="rnd-proto-project-filter" style={{ flex: '0 1 280px', minWidth: 220 }}>
           <SearchableSelect
             value={projectFilter}
             onChange={setProjectFilter}
@@ -118,7 +130,7 @@ function RndPrototypesListPageInner() {
             placeholder="All projects"
           />
         </div>
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="rnd-proto-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">All statuses</option>
           <option value="design">Design</option>
           <option value="building">Building</option>
@@ -132,7 +144,7 @@ function RndPrototypesListPageInner() {
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+        <table data-tour="rnd-proto-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr>
               {['Prototype No.', 'Name', 'Version', 'Project', 'Status', 'BOM Cost', 'Experiments', ''].map((h, i) => (
@@ -149,7 +161,7 @@ function RndPrototypesListPageInner() {
               <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No prototypes found.</td></tr>
             ) : (
               prototypes.map((p) => (
-                <tr key={p.id} onClick={() => router.push(`/dashboard/rnd/prototypes/${p.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={p.id} onClick={() => router.push(recordPath('/dashboard/rnd/prototypes', p))} style={{ cursor: 'pointer' }}>
                   <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: TEXT.heading, borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>{p.prototype_number}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{p.name}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{p.version}</td>
@@ -162,7 +174,7 @@ function RndPrototypesListPageInner() {
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, textAlign: 'right', whiteSpace: 'nowrap' }}>{formatInr(p.bom_cost)}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, textAlign: 'right' }}>{p.experiment_count ?? 0}</td>
                   <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span onClick={() => router.push(`/dashboard/rnd/prototypes/${p.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/rnd/prototypes', p))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

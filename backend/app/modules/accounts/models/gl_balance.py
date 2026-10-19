@@ -1,8 +1,9 @@
 from __future__ import annotations
-from sqlalchemy import Integer, Float, String, Boolean, ForeignKey, UniqueConstraint
+from sqlalchemy import Integer, String, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
+from app.modules.accounts.models._types import Money
 
 
 class GLBalance(Base, TimestampMixin):
@@ -19,10 +20,10 @@ class GLBalance(Base, TimestampMixin):
     gl_account_id: Mapped[int] = mapped_column(Integer, ForeignKey("gl_accounts.id"), nullable=False, index=True)
     accounting_period: Mapped[str] = mapped_column(String(7), nullable=False, index=True)
 
-    opening_balance: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    total_debits: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    total_credits: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    closing_balance: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    opening_balance: Mapped[float] = mapped_column(Money, nullable=False, default=0)
+    total_debits: Mapped[float] = mapped_column(Money, nullable=False, default=0)
+    total_credits: Mapped[float] = mapped_column(Money, nullable=False, default=0)
+    closing_balance: Mapped[float] = mapped_column(Money, nullable=False, default=0)
     # Blocks new postings to this account for this period once set — Phase 5
     # (Period Closing) is what ever sets this True; dormant until then.
     is_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

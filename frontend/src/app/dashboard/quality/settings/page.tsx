@@ -8,7 +8,9 @@ import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { Field, Section, inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
-import { PageHeader, ErrorBanner, Pill } from '@/components/quality/QualityBits'
+import { PageHeader, ErrorBanner, Pill, ActionSheet, sheetGap } from '@/components/quality/QualityBits'
+import { sheetInput, sheetLabel, sheetHint, Req } from '@/components/shared/FormSheet'
+import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface Spec { key: string; group: string; label: string; type: 'int' | 'float' | 'str' | 'choice'; help?: string; choices?: [string, string][]; min?: number; max?: number }
@@ -32,6 +34,9 @@ export default function QualitySettingsPage() {
   const [roles, setRoles] = useState<{ key: string; label: string }[]>([])
   const [users, setUsers] = useState<RoleUser[]>([])
   const [roleForm, setRoleForm] = useState({ user_id: '', role: 'inspector' })
+  const [granting, setGranting] = useState(false)
+  const [addingList, setAddingList] = useState<string | null>(null)
+  const [sheetError, setSheetError] = useState<string | string[]>('')
   const [error, setError] = useState<string | string[]>('')
   const [saved, setSaved] = useState('')
   const [busy, setBusy] = useState(false)
@@ -67,14 +72,18 @@ export default function QualitySettingsPage() {
 
   const addValue = async (listKey: string) => {
     const label = (newValue[listKey] || '').trim()
-    if (!label) return
-    setError('')
+    if (!label) return setSheetError('Type the value to add (e.g. the agency or category name).')
+    setSheetError('')
+    setBusy(true)
     try {
       await qualityApi.createMasterValue({ list_key: listKey, value: label, label })
       setNewValue({ ...newValue, [listKey]: '' })
+      setAddingList(null)
       load()
     } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to add the value.'))
+      setSheetError(extractErrorMessages(err, 'Failed to add the value.'))
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -89,14 +98,18 @@ export default function QualitySettingsPage() {
   }
 
   const assign = async () => {
-    if (!roleForm.user_id) return setError('Pick the user.')
-    setError('')
+    if (!roleForm.user_id) return setSheetError('Pick the user.')
+    setSheetError('')
+    setBusy(true)
     try {
       const r = await qualityApi.assignQualityRole(Number(roleForm.user_id), roleForm.role)
+      setGranting(false)
       setSaved(r.added?.length ? `Granted ${r.added.length} permission(s).` : 'The user already had every permission of this role.')
       load()
     } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to grant the role.'))
+      setSheetError(extractErrorMessages(err, 'Failed to grant the role.'))
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -109,6 +122,10 @@ export default function QualitySettingsPage() {
       <PageHeader title="Quality Settings" />
       {!canEdit && <p style={{ fontSize: 13, color: '#b45309', margin: '-8px 0 14px' }}>Read-only — only a Quality head or an admin can change Quality settings.</p>}
       <ErrorBanner error={error} />
+      <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 14px' }}>
+        Who approves — NCR dispositions (incl. the scrap value that needs a Partner), inspection plans, vendor blocks, CAPA D8 and
+        complaint closure — is set in Organization › Approval Workflows, not here.
+      </p>
 
       {groups.map((g) => (
         <Section key={g.key} title={g.label} style={{ marginBottom: 16 }}>
@@ -147,10 +164,7 @@ export default function QualitySettingsPage() {
                 </div>
               ))}
               {canEdit && (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input style={inputStyle} placeholder="New value" value={newValue[l.key] || ''} onChange={(e) => setNewValue({ ...newValue, [l.key]: e.target.value })} />
-                  <button type="button" style={secondaryBtnStyle} onClick={() => addValue(l.key)}>Add</button>
-                </div>
+                <div><button type="button" style={secondaryBtnStyle} onClick={() => { setSheetError(''); setAddingList(l.key) }}>+ Add value</button></div>
               )}
             </div>
           ))}
@@ -162,24 +176,7 @@ export default function QualitySettingsPage() {
           Roles are Permission Matrix sets. Usage decisions, plan approval, NCR disposition approvals and these settings need the role explicitly (admins always pass). Partner approval comes from Company Info → Partners; Design and Purchase approvals from module access.
         </p>
         {user?.role === 'admin' && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
-            <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-              <Field label="User">
-                <select style={inputStyle} value={roleForm.user_id} onChange={(e) => setRoleForm({ ...roleForm, user_id: e.target.value })}>
-                  <option value="">Select user…</option>
-                  {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div style={{ flex: '0 1 220px' }}>
-              <Field label="Role">
-                <select style={inputStyle} value={roleForm.role} onChange={(e) => setRoleForm({ ...roleForm, role: e.target.value })}>
-                  {roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-                </select>
-              </Field>
-            </div>
-            <button type="button" style={primaryBtnStyle} onClick={assign}>Grant role</button>
-          </div>
+          <div><button type="button" style={primaryBtnStyle} onClick={() => { setSheetError(''); setGranting(true) }}>+ Grant role</button></div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {users.map((u) => (
@@ -193,6 +190,29 @@ export default function QualitySettingsPage() {
           ))}
         </div>
       </Section>
+
+      {granting && user?.role === 'admin' && (
+        <ActionSheet icon="shield" title="Grant Quality Role" subtitle="Adds the role's Permission Matrix grants to the user." onClose={() => setGranting(false)}
+          onSubmit={assign} busy={busy} error={sheetError} submitLabel="Grant role" busyLabel="Granting…">
+          <label style={sheetLabel}>User <Req /></label>
+          <SearchableSelect value={roleForm.user_id} onChange={(v) => setRoleForm({ ...roleForm, user_id: v })} placeholder="Select user…"
+            options={users.map((u) => ({ value: String(u.id), label: u.name }))} />
+          <label style={{ ...sheetLabel, ...sheetGap }}>Role <Req /></label>
+          <select style={sheetInput} value={roleForm.role} onChange={(e) => setRoleForm({ ...roleForm, role: e.target.value })}>
+            {roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+          </select>
+          <p style={sheetHint}>The user gets every permission of this role; permissions they already hold are kept.</p>
+        </ActionSheet>
+      )}
+
+      {addingList && canEdit && (
+        <ActionSheet icon="plus" title="Add Value" subtitle={LISTS.find((l) => l.key === addingList)?.label || addingList} onClose={() => setAddingList(null)}
+          onSubmit={() => addValue(addingList)} busy={busy} error={sheetError} submitLabel="Add">
+          <label style={sheetLabel}>Value <Req /></label>
+          <input style={sheetInput} autoFocus placeholder="New value" value={newValue[addingList] || ''} onChange={(e) => setNewValue({ ...newValue, [addingList]: e.target.value })} />
+          <p style={sheetHint}>{LISTS.find((l) => l.key === addingList)?.note}</p>
+        </ActionSheet>
+      )}
     </div>
   )
 }

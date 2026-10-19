@@ -8,7 +8,8 @@ const config: TourConfig = {
       target: 'org-dept-add-btn',
       title: '+ Add Department',
       purpose: 'Manually create a department that Azure AD sync didn\'t already populate — most departments are auto-created from Azure AD on sign-in and admin Azure sync.',
-      after: 'Opens the Add Department dialog.',
+      after: 'Opens the Add Department dialog (the tour opens it for you when you click Next).',
+      autoActivateOnAdvance: true,
     },
     {
       target: 'org-dept-name',
@@ -32,6 +33,13 @@ const config: TourConfig = {
       target: 'org-dept-save',
       title: 'Save Department',
       purpose: 'Creates the department. It then appears in the table below and is available wherever department is picked elsewhere in the app.',
+      why: 'Departments drive approvals and reporting — the Head of Department is who the department\'s requests escalate to.',
+    },
+    {
+      target: 'org-dept-cancel',
+      title: 'Cancel',
+      purpose: 'Closes the dialog without creating anything. (The tour closes it for you when you click Next, so the table behind it is visible.)',
+      autoActivateOnAdvance: true,
     },
     {
       target: 'org-dept-branch-filter',
@@ -47,13 +55,14 @@ const config: TourConfig = {
       target: 'org-dept-row',
       title: 'Department row',
       purpose: 'Click any row to expand it and see the members linked to that department.',
-      after: 'Expands to show a member list with the head marked "Head", plus a search box to add more members.',
+      after: 'Expands to show a member list with the head marked "Head", plus an Add member button. The tour expands the first row for you when you click Next.',
+      autoActivateOnAdvance: true,
     },
     {
       target: 'org-dept-add-member',
       title: '+ Add member',
-      purpose: 'Search by name or email and click a match to link that user to this department.',
-      after: 'The user appears immediately in the member list above. Non-head members can be removed with the "Remove" link next to their name.',
+      purpose: 'Opens the Add member popup: search by name or email and click a match to link that user to this department.',
+      after: 'Each person you click is saved at once and appears in the member list; click Done to close the popup. Non-head members can be removed with the "Remove" link next to their name.',
     },
   ],
 }

@@ -278,6 +278,8 @@ def approve(db: Session, fai: QualityFirstArticle, *, remarks: str | None, user:
     fai.decided_by_id = user.id
     fai.decided_at = _now()
     fai.decision_remarks = (remarks or "").strip() or None
+    from app.modules.quality.services.supplier_quality import on_fai_approved
+    on_fai_approved(db, fai, user)  # Phase 3: Trial → Approved on the approved vendor list
     _notify(db, fai, user, approved=True)
     return fai
 

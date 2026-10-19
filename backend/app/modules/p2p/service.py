@@ -84,6 +84,17 @@ def generate_grn_number(db: Session) -> str:
     return f"{prefix}0001"
 
 
+def generate_rtv_number(db: Session) -> str:
+    """RTV-[YEAR]-[NUMBER] (Return to Vendor), sequence scoped per year."""
+    from app.modules.p2p.models.vendor_return import P2PVendorReturn
+
+    year = date.today().year
+    prefix = f"RTV-{year}-"
+    _lock_number_series(db, prefix)
+    last = db.query(func.max(P2PVendorReturn.rtv_number)).filter(P2PVendorReturn.rtv_number.like(f"{prefix}%")).scalar()
+    return f"{prefix}{(int(last.rsplit('-', 1)[-1]) + 1) if last else 1:04d}"
+
+
 def compute_line_total(quantity: float, unit_price: float | None, tax_rate: float | None) -> float | None:
     if unit_price is None:
         return None
@@ -93,52 +104,36 @@ def compute_line_total(quantity: float, unit_price: float | None, tax_rate: floa
     return round(subtotal, 2)
 
 
-def resolve_pr_approvers(db: Session, requester: "User", project_type: str, approver_ids: dict) -> dict[str, "User"]:
-    """Validates the PR approvers under the manager-role matrix and returns
-    them keyed by role. The role set comes from project_type ('existing' or
-    'new' — see PR_APPROVAL_ROLE_SETS); every role slot is mandatory, and the
-    requester picks ANY active user for each slot (per the 2026-09-30
-    requirement change, neither the is_*_manager flags nor module access
-    restrict PR approver pickers — being named on a PR itself grants access
-    to that PR, see _requester_or_purchase in routes/p2p_requests.py). Per
-    the 2026-09-30 "user self select kar sake" requirement, the requester MAY
-    pick themselves for a slot and later sign it — the business accepted
-    that this waives the PR-level four-eyes control (PO approval keeps its
-    own SoD: the requester and the PO's creator can never approve the PO).
-    Shared by every PR creation path (P2P New PR form and ERP "Raise PR").
-    Raises ValueError with a user-facing reason."""
-    from app.modules.p2p.models.p2p_request import PR_APPROVAL_ROLE_SETS, P2P_ROLE_LABELS
+# ---------------------------------------------------------------- Legacy approval (in-flight items)
 
-    if project_type not in PR_APPROVAL_ROLE_SETS:
-        raise ValueError("Choose whether this requisition is for an existing project or a new project.")
+# Who approves is the central approval engine now (app/modules/p2p/approvals.py,
+# Organization › Approval Workflows). Only the Partner lookup is still needed, by
+# the old Settings-scheme PO approval path that finishes POs already in flight.
 
-    approvers: dict[str, User] = {}
-    for role in PR_APPROVAL_ROLE_SETS[project_type]:
-        label = P2P_ROLE_LABELS[role]
-        approver_id = (approver_ids or {}).get(role)
-        if approver_id is None:
-            raise ValueError(f"{label} is required — pick who must approve this requisition.")
-        approver = db.query(User).filter(User.id == approver_id, User.is_active == True).first()  # noqa: E712
-        if not approver:
-            raise ValueError(f"The selected {label} was not found or is no longer active — pick another user.")
-        approvers[role] = approver
-    return approvers
+def active_partners(db: Session) -> list[User]:
+    """The company's Partners (Company Info → Partners) — any one gives the final PO approval."""
+    return db.query(User).filter(User.is_active == True, User.is_partner == True).order_by(User.name).all()  # noqa: E712
 
 
-def resolve_po_approvers(db: Session, project_type: str, approver_ids: dict) -> dict[str, "User"]:
-    """Validates the PO approvers picked on the New PR form — one person per
-    role in PO_PICKED_ROLE_SETS[project_type] (Director isn't picked; every
-    Director gets the PO). Raises ValueError with a user-facing reason."""
-    from app.modules.p2p.models.p2p_request import PO_PICKED_ROLE_SETS, P2P_ROLE_LABELS
+def generate_ses_number(db: Session) -> str:
+    """SES-[YEAR]-[NUMBER] — service entry sheets, sequence scoped per year."""
+    from app.modules.p2p.models.service_entry import P2PServiceEntry
 
-    approvers: dict[str, User] = {}
-    for role in PO_PICKED_ROLE_SETS.get(project_type, ()):
-        label = P2P_ROLE_LABELS[role]
-        approver_id = (approver_ids or {}).get(role)
-        if approver_id is None:
-            raise ValueError(f"PO approver {label} is required — pick who approves this requisition's PO as {label}.")
-        approver = db.query(User).filter(User.id == approver_id, User.is_active == True).first()  # noqa: E712
-        if not approver:
-            raise ValueError(f"The selected PO approver ({label}) was not found or is no longer active — pick another user.")
-        approvers[role] = approver
-    return approvers
+    year = date.today().year
+    prefix = f"SES-{year}-"
+    _lock_number_series(db, prefix)
+    last = db.query(func.max(P2PServiceEntry.ses_number)).filter(P2PServiceEntry.ses_number.like(f"{prefix}%")).scalar()
+    if last:
+        return f"{prefix}{int(last.rsplit('-', 1)[-1]) + 1:04d}"
+    return f"{prefix}0001"
+
+
+def accepted_service_qty_by_po_item(db: Session, po_id: int) -> dict[int, float]:
+    """Accepted service-entry quantity per PO line — what counts as
+    "received" for a service line (it never goes through a GRN)."""
+    from app.modules.p2p.models.service_entry import P2PServiceEntry
+
+    rows = (db.query(P2PServiceEntry.po_item_id, func.coalesce(func.sum(P2PServiceEntry.quantity), 0))
+            .filter(P2PServiceEntry.purchase_order_id == po_id, P2PServiceEntry.status == "accepted")
+            .group_by(P2PServiceEntry.po_item_id).all())
+    return {pid: float(q) for pid, q in rows}

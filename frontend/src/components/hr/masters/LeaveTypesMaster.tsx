@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrLeaveType } from '@/types'
 import { TEXT } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 import {
-  sectionStyle, tableWrapStyle, thStyle, tdStyle, labelStyle, hintStyle, linkActionStyle, mutedActionStyle,
+  sectionStyle, tableWrapStyle, thStyle, tdStyle, linkActionStyle, mutedActionStyle,
   ErrorBanner, ActiveBadge, Modal, MasterToolbar,
 } from './masterUi'
 
@@ -50,6 +51,7 @@ function Check({ label, checked, onChange, hint }: { label: string; checked: boo
 }
 
 export default function LeaveTypesMaster() {
+  const { can } = useCan()
   const [rows, setRows] = useState<HrLeaveType[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -147,7 +149,7 @@ export default function LeaveTypesMaster() {
   }
 
   return (
-    <div style={sectionStyle}>
+    <div data-tour="hr-mst-lt-section" style={sectionStyle}>
       <div style={{ marginBottom: 14 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Leave Types</h3>
         <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
@@ -155,7 +157,7 @@ export default function LeaveTypesMaster() {
         </p>
       </div>
 
-      <MasterToolbar search={search} onSearch={setSearch} showInactive={showInactive} onToggleInactive={setShowInactive} addLabel="Add Leave Type" onAdd={() => openEdit()} placeholder="Search code or name…" />
+      <MasterToolbar search={search} onSearch={setSearch} showInactive={showInactive} onToggleInactive={setShowInactive} addLabel="Add Leave Type" onAdd={can('hr', 'masters', 'create') ? () => openEdit() : undefined} placeholder="Search code or name…" />
 
       <ErrorBanner errors={loadError} />
       <ErrorBanner errors={actionErrors} />
@@ -171,29 +173,38 @@ export default function LeaveTypesMaster() {
         onCancel={() => setToggleTarget(null)}
       />
 
-      <Modal open={!!form} title={form?.id ? 'Edit Leave Type' : 'Add Leave Type'} onClose={() => setForm(null)} busy={saving} width={620}>
+      <Modal open={!!form} icon={form?.id ? 'edit' : 'plus'} title={form?.id ? 'Edit Leave Type' : 'Add Leave Type'}
+        subtitle="Leave policy for this type — quota, paid/unpaid, carry forward and limits." onClose={() => setForm(null)} busy={saving} width={620}
+        footer={<>
+          <button type="button" data-tour="hr-mst-lt-cancel-btn" onClick={() => setForm(null)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+          <button type="button" data-tour="hr-mst-lt-save-btn" onClick={save} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Leave Type'}</button>
+        </>}>
         {form && (
           <>
+            <ErrorBanner errors={formErrors} />
+            <SheetSection icon="tag" title="Leave Type">
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-              <div style={{ flex: '0 1 100px', minWidth: 90 }}>
-                <label style={labelStyle}>Code *</label>
-                <input style={inputStyle} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="CL" maxLength={20} />
+              <div data-tour="hr-mst-lt-code" style={{ flex: '0 1 100px', minWidth: 90 }}>
+                <label style={sheetLabel}>Code <Req /></label>
+                <input style={sheetInput} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="CL" maxLength={20} />
               </div>
-              <div style={{ flex: '1 1 200px', maxWidth: 300 }}>
-                <label style={labelStyle}>Name *</label>
-                <input style={inputStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Casual Leave" />
+              <div data-tour="hr-mst-lt-name" style={{ flex: '1 1 200px', maxWidth: 300 }}>
+                <label style={sheetLabel}>Name <Req /></label>
+                <input style={sheetInput} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Casual Leave" />
               </div>
-              <div style={{ flex: '0 1 120px', minWidth: 110 }}>
-                <label style={labelStyle}>Annual quota</label>
-                <input style={inputStyle} inputMode="decimal" value={form.annual_quota} onChange={(e) => setForm({ ...form, annual_quota: decimalOnly(e.target.value) })} />
+              <div data-tour="hr-mst-lt-quota" style={{ flex: '0 1 120px', minWidth: 110 }}>
+                <label style={sheetLabel}>Annual quota</label>
+                <input style={sheetInput} inputMode="decimal" value={form.annual_quota} onChange={(e) => setForm({ ...form, annual_quota: decimalOnly(e.target.value) })} />
               </div>
-              <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-                <label style={labelStyle}>Order</label>
-                <input style={inputStyle} inputMode="numeric" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: intOnly(e.target.value) })} />
+              <div data-tour="hr-mst-lt-order" style={{ flex: '0 1 90px', minWidth: 80 }}>
+                <label style={sheetLabel}>Order</label>
+                <input style={sheetInput} inputMode="numeric" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: intOnly(e.target.value) })} />
               </div>
             </div>
+            </SheetSection>
 
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+            <SheetSection icon="shield" title="Policy">
+            <div data-tour="hr-mst-lt-flags" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
               <Check label="Paid" hint="Balance is checked and deducted" checked={form.is_paid} onChange={(v) => setForm({ ...form, is_paid: v, annual_quota: v ? form.annual_quota : '0' })} />
               <Check label="Half days allowed" checked={form.allow_half_day} onChange={(v) => setForm({ ...form, allow_half_day: v })} />
               <Check label="Carry forward" hint="Unused days move to next year" checked={form.carry_forward} onChange={(v) => setForm({ ...form, carry_forward: v })} />
@@ -201,44 +212,40 @@ export default function LeaveTypesMaster() {
 
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
               {form.carry_forward && (
-                <div style={{ flex: '0 1 150px', minWidth: 140 }}>
-                  <label style={labelStyle}>Max carry forward *</label>
-                  <input style={inputStyle} inputMode="decimal" value={form.max_carry_forward} onChange={(e) => setForm({ ...form, max_carry_forward: decimalOnly(e.target.value) })} />
+                <div data-tour="hr-mst-lt-max-cf" style={{ flex: '0 1 150px', minWidth: 140 }}>
+                  <label style={sheetLabel}>Max carry forward <Req /></label>
+                  <input style={sheetInput} inputMode="decimal" value={form.max_carry_forward} onChange={(e) => setForm({ ...form, max_carry_forward: decimalOnly(e.target.value) })} />
                 </div>
               )}
-              <div style={{ flex: '0 1 170px', minWidth: 160 }}>
-                <label style={labelStyle}>Document after (days)</label>
-                <input style={inputStyle} inputMode="numeric" value={form.requires_document_after_days} onChange={(e) => setForm({ ...form, requires_document_after_days: intOnly(e.target.value) })} placeholder="No document" />
+              <div data-tour="hr-mst-lt-doc-after" style={{ flex: '0 1 170px', minWidth: 160 }}>
+                <label style={sheetLabel}>Document after (days)</label>
+                <input style={sheetInput} inputMode="numeric" value={form.requires_document_after_days} onChange={(e) => setForm({ ...form, requires_document_after_days: intOnly(e.target.value) })} placeholder="No document" />
               </div>
-              <div style={{ flex: '0 1 170px', minWidth: 160 }}>
-                <label style={labelStyle}>Max days at a stretch</label>
-                <input style={inputStyle} inputMode="numeric" value={form.max_consecutive_days} onChange={(e) => setForm({ ...form, max_consecutive_days: intOnly(e.target.value) })} placeholder="No limit" />
+              <div data-tour="hr-mst-lt-max-stretch" style={{ flex: '0 1 170px', minWidth: 160 }}>
+                <label style={sheetLabel}>Max days at a stretch</label>
+                <input style={sheetInput} inputMode="numeric" value={form.max_consecutive_days} onChange={(e) => setForm({ ...form, max_consecutive_days: intOnly(e.target.value) })} placeholder="No limit" />
               </div>
-              <div style={{ flex: '0 1 150px', minWidth: 140 }}>
-                <label style={labelStyle}>Only for</label>
-                <select style={inputStyle} value={form.gender_restriction} onChange={(e) => setForm({ ...form, gender_restriction: e.target.value as Form['gender_restriction'] })}>
+              <div data-tour="hr-mst-lt-gender" style={{ flex: '0 1 150px', minWidth: 140 }}>
+                <label style={sheetLabel}>Only for</label>
+                <select style={sheetInput} value={form.gender_restriction} onChange={(e) => setForm({ ...form, gender_restriction: e.target.value as Form['gender_restriction'] })}>
                   <option value="">Everyone</option>
                   <option value="female">Female employees</option>
                   <option value="male">Male employees</option>
                 </select>
               </div>
             </div>
-            <p style={{ ...hintStyle, margin: '0 0 14px' }}>
+            <p style={{ ...sheetHint, margin: '0 0 14px' }}>
               &quot;Document after 2&quot; means a request longer than 2 days must carry a supporting document (e.g. medical certificate).
             </p>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.secondary, marginBottom: 16, cursor: 'pointer' }}>
+            <label data-tour="hr-mst-lt-active" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer' }}>
               <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active
             </label>
-            <ErrorBanner errors={formErrors} />
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setForm(null)} disabled={saving} style={secondaryBtnStyle}>Cancel</button>
-              <button type="button" onClick={save} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save Leave Type'}</button>
-            </div>
+            </SheetSection>
           </>
         )}
       </Modal>
 
-      <div style={tableWrapStyle}>
+      <div data-tour="hr-mst-lt-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr>{['Code', 'Name', 'Quota / yr', 'Paid', 'Rules', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
@@ -259,9 +266,9 @@ export default function LeaveTypesMaster() {
                 <td style={{ ...tdStyle, fontSize: 12, color: TEXT.secondary }}>{rules(r).join(' · ') || '—'}</td>
                 <td style={tdStyle}><ActiveBadge active={r.is_active} /></td>
                 <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <span style={{ display: 'inline-flex', gap: 14 }}>
-                    <button type="button" style={linkActionStyle} onClick={() => openEdit(r)}>Edit</button>
-                    <button type="button" style={mutedActionStyle} onClick={() => setToggleTarget(r)}>{r.is_active ? 'Deactivate' : 'Activate'}</button>
+                  <span data-tour="hr-mst-lt-row-actions" style={{ display: 'inline-flex', gap: 14 }}>
+                    {can('hr', 'masters', 'edit') && <button type="button" style={linkActionStyle} onClick={() => openEdit(r)}>Edit</button>}
+                    {can('hr', 'masters', 'edit') && <button type="button" style={mutedActionStyle} onClick={() => setToggleTarget(r)}>{r.is_active ? 'Deactivate' : 'Activate'}</button>}
                   </span>
                 </td>
               </tr>

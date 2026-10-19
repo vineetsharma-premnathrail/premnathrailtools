@@ -19,6 +19,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
 from reportlab.lib.colors import HexColor
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer
+from xml.sax.saxutils import escape as _xml_escape
 
 from app.modules.crm.reports.quotation_pdf import (
     _draw_letterhead, _p, _sentence_case, FONT_NAME, FONT_NAME_BOLD, BODY_SIZE, HEADER_SIZE,
@@ -53,6 +54,29 @@ def _field_table(rows: list[tuple[str, str]]) -> Table:
     return t
 
 
+def _multiline(text: str | None, placeholder: str) -> list[Any]:
+    """Free-text fields (spec, requirement, project background) are typed or
+    pasted with line breaks, numbered clauses, tabs and bullets. A single
+    Paragraph collapses all of that whitespace into one run-on block, so emit
+    one Paragraph per line: blank lines become spacing, leading indentation
+    and tabs become non-breaking spaces so clause numbering stays aligned."""
+    text = _sentence_case(text).replace("\r\n", "\n").replace("\r", "\n").strip("\n") if text else ""
+    if not text.strip():
+        return [_p(placeholder)]
+    out: list[Any] = []
+    for line in text.split("\n"):
+        if not line.strip():
+            out.append(Spacer(1, BODY_SIZE * 0.6))
+            continue
+        line = line.rstrip().replace("\t", "    ")
+        indent = len(line) - len(line.lstrip(" "))
+        body = _xml_escape(line.lstrip(" "))
+        # Runs of 2+ spaces inside the line (e.g. "1.1.2.    Total Length") would also collapse.
+        body = body.replace("  ", "&nbsp; ")
+        out.append(_p("&nbsp;" * indent + body, escape=False))
+    return out
+
+
 def build_technical_offer_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     """Build the Technical Offer PDF from a plain dict context.
 
@@ -84,12 +108,12 @@ def build_technical_offer_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
 
     # Customer / Organization Details
     n += 1
-    story.append(_section_heading(n, "Customer / Organization Details"))
+    story.append(_section_heading(n, "Customer Organization Details"))
     story.append(Spacer(1, 6))
-    org_rows = [("Organization", ctx.get("org_name") or "-")]
+    org_rows = [("Customer Organization", ctx.get("org_name") or "-")]
     if ctx.get("org_gst_number"):
         org_rows.append(("GST Number", ctx["org_gst_number"]))
-    org_rows.append(("Organization Type", ctx.get("org_type") or "-"))
+    org_rows.append(("Customer Organization Type", ctx.get("org_type") or "-"))
     city_state = ", ".join(v for v in (ctx.get("org_city"), ctx.get("org_state")) if v)
     if city_state:
         org_rows.append(("City / State", city_state))
@@ -132,21 +156,21 @@ def build_technical_offer_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     n += 1
     story.append(_section_heading(n, "Technical Specification"))
     story.append(Spacer(1, 6))
-    story.append(_p(_sentence_case(ctx.get("product_spec")) or "Not specified."))
+    story.extend(_multiline(ctx.get("product_spec"), "Not specified."))
     story.append(Spacer(1, 14))
 
     # Requirement Description
     n += 1
     story.append(_section_heading(n, "Requirement Description"))
     story.append(Spacer(1, 6))
-    story.append(_p(_sentence_case(ctx.get("requirement_desc")) or "Not provided."))
+    story.extend(_multiline(ctx.get("requirement_desc"), "Not provided."))
     story.append(Spacer(1, 14))
 
     # Project Background
     n += 1
     story.append(_section_heading(n, "Project Background"))
     story.append(Spacer(1, 6))
-    story.append(_p(_sentence_case(ctx.get("project_details")) or "Not provided."))
+    story.extend(_multiline(ctx.get("project_details"), "Not provided."))
     story.append(Spacer(1, 14))
 
     # Technical Compliance Statement

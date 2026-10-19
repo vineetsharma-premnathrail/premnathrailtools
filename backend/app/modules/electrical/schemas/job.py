@@ -38,6 +38,8 @@ class ElectricalJobStageResponse(BaseModel):
 class ElectricalJobCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     erp_project_id: int | None = None
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
     rrv_model: str | None = Field(None, max_length=150)
     vehicle_number: str | None = Field(None, max_length=100)
     customer_name: str | None = Field(None, max_length=255)
@@ -58,6 +60,8 @@ class ElectricalJobCreate(BaseModel):
 class ElectricalJobUpdate(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=255)
     erp_project_id: int | None = None
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
     rrv_model: str | None = Field(None, max_length=150)
     vehicle_number: str | None = Field(None, max_length=100)
     customer_name: str | None = Field(None, max_length=255)
@@ -96,6 +100,8 @@ class ElectricalJobResponse(BaseModel):
     job_number: str
     title: str
     erp_project_id: int | None = None
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
     rrv_model: str | None = None
     vehicle_number: str | None = None
     customer_name: str | None = None
@@ -130,6 +136,11 @@ class ElectricalJobResponse(BaseModel):
 
     # Denormalized display fields, filled in by the route.
     project_label: str | None = None
+    # Order Project chip (OrderProjectChip): OP number, element no / label.
+    order_project_number: str | None = None
+    order_project_element_no: str | None = None
+    order_project_element_label: str | None = None
+    order_project_display: str | None = None
     branch_name: str | None = None
     lead_engineer_name: str | None = None
     created_by_name: str | None = None
@@ -146,7 +157,7 @@ class ElectricalJobSummary(BaseModel):
     """Counters for the detail page's tab badges and QC & Handover panel."""
     bom_count: int = 0
     bom_required: int = 0
-    bom_estimated_cost: float = 0.0
+    bom_estimated_cost: float | None = 0.0  # None = hidden (Electrical › Jobs › BOM costs)
     cable_count: int = 0
     cables_installed: int = 0
     panel_count: int = 0

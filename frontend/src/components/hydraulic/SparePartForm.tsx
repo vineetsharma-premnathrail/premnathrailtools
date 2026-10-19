@@ -3,21 +3,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
 import { HydLookupOption, HydSparePart } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import { SheetSection, sheetInput, sheetLabel, Req, SheetError } from '@/components/shared/FormSheet'
+import HydFormShell, { HydShellProps, SheetBody } from '@/components/hydraulic/HydFormShell'
 import { extractErrorMessages } from '@/lib/validation'
 import { SPARE_CATEGORY_LABELS, MEDIA_TYPE_LABELS, CRITICALITY_LABELS } from '@/components/hydraulic/labels'
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: 0 }
+const inputStyle: React.CSSProperties = sheetInput
+const labelStyle: React.CSSProperties = sheetLabel
 const hintStyle: React.CSSProperties = { fontSize: 12, color: TEXT.muted, margin: '8px 0 0' }
 
 const numOrNull = (v: string) => (v.trim() === '' ? null : Number(v))
@@ -28,7 +22,8 @@ export default function SparePartForm({
   defaultComponentId,
   submitLabel,
   onSubmit,
-}: {
+  mode, title: shellTitle, subtitle, nav, onBack, onCancel,
+}: HydShellProps & {
   initial?: HydSparePart | null
   defaultComponentId?: string
   submitLabel: string
@@ -86,8 +81,7 @@ export default function SparePartForm({
     if (itemUom) setUom(itemUom.toUpperCase())
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async () => {
     setError('')
     if (!name.trim()) { setError('Spare name is required, e.g. "Piston seal kit Ø63/36".'); return }
     if (!uom.trim()) { setError('Unit of measure is required (NOS, SET, L, M…).'); return }
@@ -132,39 +126,39 @@ export default function SparePartForm({
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
+    <HydFormShell
+      mode={mode} title={shellTitle} subtitle={subtitle} nav={nav} onBack={onBack} onCancel={onCancel}
+      icon={initial ? 'edit' : 'box'} busy={saving} submitLabel={submitLabel} submitIcon={initial ? 'check' : 'plus'}
+      onSubmit={handleSubmit} tour="hyd-sparef-form" backTour="hyd-sparef-back-btn" submitTour="hyd-sparef-submit-btn"
+    >
+      <SheetBody>
+        <SheetError error={error} />
 
-      <div style={sectionStyle}>
-        <p style={{ ...sectionTitle, marginBottom: 14 }}>Identity</p>
+        <SheetSection icon="tag" title="Identity">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
-            <label style={labelStyle}>Name *</label>
+          <div data-tour="hyd-sparef-name" style={{ flex: '1 1 260px', maxWidth: 380 }}>
+            <label style={labelStyle}>Name <Req /></label>
             <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} maxLength={200} placeholder="Piston seal kit Ø63/36" />
           </div>
-          <div style={{ flex: '0 1 200px', minWidth: 180 }}>
+          <div data-tour="hyd-sparef-category" style={{ flex: '0 1 200px', minWidth: 180 }}>
             <label style={labelStyle}>Category</label>
             <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
               {Object.entries(SPARE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
-          <div style={{ flex: '0 1 140px', minWidth: 130 }}>
+          <div data-tour="hyd-sparef-medium" style={{ flex: '0 1 140px', minWidth: 130 }}>
             <label style={labelStyle}>Medium</label>
             <select style={inputStyle} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
               {Object.entries(MEDIA_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
-          <div style={{ flex: '0 1 140px', minWidth: 130 }}>
+          <div data-tour="hyd-sparef-criticality" style={{ flex: '0 1 140px', minWidth: 130 }}>
             <label style={labelStyle}>Criticality</label>
             <select style={inputStyle} value={criticality} onChange={(e) => setCriticality(e.target.value)}>
               {Object.entries(CRITICALITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
-          <div style={{ flex: '0 1 130px', minWidth: 120 }}>
+          <div data-tour="hyd-sparef-status" style={{ flex: '0 1 130px', minWidth: 120 }}>
             <label style={labelStyle}>Status</label>
             <select style={inputStyle} value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="active">Active</option>
@@ -175,30 +169,29 @@ export default function SparePartForm({
         {!initial && <p style={hintStyle}>The part code (HSP-00001…) is generated when you save.</p>}
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-          <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
+          <div data-tour="hyd-sparef-manufacturer" style={{ flex: '1 1 200px', maxWidth: 280 }}>
             <label style={labelStyle}>Manufacturer</label>
             <input style={inputStyle} value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} maxLength={150} placeholder="Parker, Hallite, Hydac…" />
           </div>
-          <div style={{ flex: '1 1 180px', maxWidth: 240 }}>
+          <div data-tour="hyd-sparef-part-number" style={{ flex: '1 1 180px', maxWidth: 240 }}>
             <label style={labelStyle}>Part / Order Number</label>
             <input style={inputStyle} value={partNumber} onChange={(e) => setPartNumber(e.target.value)} maxLength={100} />
           </div>
-          <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
+          <div data-tour="hyd-sparef-interchangeable" style={{ flex: '1 1 240px', maxWidth: 360 }}>
             <label style={labelStyle}>Interchangeable With</label>
             <input style={inputStyle} value={interchangeable} onChange={(e) => setInterchangeable(e.target.value)} maxLength={255} placeholder="Equivalent part numbers from other makes" />
           </div>
         </div>
-      </div>
+        </SheetSection>
 
-      <div style={sectionStyle}>
-        <p style={{ ...sectionTitle, marginBottom: 14 }}>Links</p>
+        <SheetSection icon="link" title="Links">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 300px', maxWidth: 440 }}>
+          <div data-tour="hyd-sparef-component" style={{ flex: '1 1 300px', maxWidth: 440 }}>
             <label style={labelStyle}>Spare For Component</label>
             <SearchableSelect value={componentId} onChange={setComponentId} placeholder="Search component…" options={componentOptions} />
             <p style={hintStyle}>Which component this spare fits — used to show the systems that carry it.</p>
           </div>
-          <div style={{ flex: '1 1 300px', maxWidth: 440 }}>
+          <div data-tour="hyd-sparef-store-item" style={{ flex: '1 1 300px', maxWidth: 440 }}>
             <label style={labelStyle}>Linked Store Item</label>
             <SearchableSelect value={storeItemId} onChange={pickStoreItem} placeholder="Search Store item…" options={storeItemOptions} />
             <p style={hintStyle}>
@@ -206,32 +199,31 @@ export default function SparePartForm({
             </p>
           </div>
         </div>
-      </div>
+        </SheetSection>
 
-      <div style={sectionStyle}>
-        <p style={{ ...sectionTitle, marginBottom: 14 }}>Stocking</p>
+        <SheetSection icon="cart" title="Stocking">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '0 1 110px', minWidth: 100 }}>
-            <label style={labelStyle}>UOM *</label>
+          <div data-tour="hyd-sparef-uom" style={{ flex: '0 1 110px', minWidth: 100 }}>
+            <label style={labelStyle}>UOM <Req /></label>
             <input style={inputStyle} value={uom} onChange={(e) => setUom(e.target.value)} maxLength={20} placeholder="NOS" />
           </div>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
+          <div data-tour="hyd-sparef-unit-cost" style={{ flex: '0 1 150px', minWidth: 140 }}>
             <label style={labelStyle}>Unit Cost (₹)</label>
             <input style={inputStyle} type="number" min={0} step="0.01" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
           </div>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
+          <div data-tour="hyd-sparef-min-stock" style={{ flex: '0 1 150px', minWidth: 140 }}>
             <label style={labelStyle}>Min Stock Qty</label>
             <input style={inputStyle} type="number" min={0} step="any" value={minStock} onChange={(e) => setMinStock(e.target.value)} />
           </div>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
+          <div data-tour="hyd-sparef-reorder" style={{ flex: '0 1 150px', minWidth: 140 }}>
             <label style={labelStyle}>Reorder Qty</label>
             <input style={inputStyle} type="number" min={0} step="any" value={reorderQty} onChange={(e) => setReorderQty(e.target.value)} />
           </div>
-          <div style={{ flex: '0 1 150px', minWidth: 140 }}>
+          <div data-tour="hyd-sparef-lead-time" style={{ flex: '0 1 150px', minWidth: 140 }}>
             <label style={labelStyle}>Lead Time (days)</label>
             <input style={inputStyle} type="number" min={0} step={1} value={leadTime} onChange={(e) => setLeadTime(e.target.value)} />
           </div>
-          <div style={{ flex: '0 1 170px', minWidth: 160 }}>
+          <div data-tour="hyd-sparef-shelf-life" style={{ flex: '0 1 170px', minWidth: 160 }}>
             <label style={labelStyle}>Shelf Life (months)</label>
             <input style={inputStyle} type="number" min={0} step={1} value={shelfLife} onChange={(e) => setShelfLife(e.target.value)} />
           </div>
@@ -241,27 +233,19 @@ export default function SparePartForm({
           Elastomer seals, O-rings and hoses age on the shelf — set a shelf life for them (see ISO 2230).
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-          <div style={{ flex: '1 1 300px' }}>
+          <div data-tour="hyd-sparef-storage" style={{ flex: '1 1 300px' }}>
             <label style={labelStyle}>Storage Notes</label>
             <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={storageNotes} onChange={(e) => setStorageNotes(e.target.value)}
               placeholder="Store flat in sealed bags, away from ozone and sunlight, 5–25 °C…" />
           </div>
-          <div style={{ flex: '1 1 300px' }}>
+          <div data-tour="hyd-sparef-remarks" style={{ flex: '1 1 300px' }}>
             <label style={labelStyle}>Remarks</label>
             <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
           </div>
         </div>
-      </div>
+        </SheetSection>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button type="submit" disabled={saving} style={{
-          padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-          background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
-          boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-        }}>
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-      </div>
-    </form>
+      </SheetBody>
+    </HydFormShell>
   )
 }

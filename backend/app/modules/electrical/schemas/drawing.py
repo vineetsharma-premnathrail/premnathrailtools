@@ -25,6 +25,9 @@ class ElectricalDrawingRevisionResponse(BaseModel):
     prepared_by_name: str | None = None
     decided_by_name: str | None = None
     has_file: bool = False
+    # Pending central approval request (Organization › Approval Workflows);
+    # None on a revision submitted before the engine — decided the old way.
+    approval_request_id: int | None = None
 
 
 class ElectricalDrawingUpdate(BaseModel):

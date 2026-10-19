@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { useRequireAdmin } from '@/hooks/useAuth'
+import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi, storeApi, costCentersApi } from '@/lib/api'
 import { Branch, BranchAddress, BranchUserAssignment, BranchDocument, Department, StoreLocation, CostCenter } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useRecordId } from '@/lib/recordRef'
 import { PLANT_STATUS_LABELS, PLANT_STATUS_HEX } from '@/components/organization/PlantForm'
 import { secondaryBtnStyle } from '@/components/shared/ui'
+import { useCan } from '@/lib/permissions'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -35,10 +38,17 @@ const DETAIL_TAB_TOUR_IDS: Record<typeof TABS[number], string> = {
 }
 
 export default function PlantDetailPage() {
-  const { isAuthorized, isLoading } = useRequireAdmin()
+  const { isAuthorized, isLoading } = useRequireOrgTab('branches')
+  const { can, canFeature } = useCan()
+  // Plant features (core/features/organization.py): Branch Users / Branch Documents.
+  const seeUsers = canFeature('organization', 'branches', 'user_assignments', 'view')
+  const seeDocs = canFeature('organization', 'branches', 'documents', 'view')
+  const seeTab = (t: typeof TABS[number]) => (t === 'Branch Users' ? seeUsers : t === 'Branch Documents' ? seeDocs : true)
   const params = useParams()
   const router = useRouter()
-  const plantId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedPlantId, error: linkError } = useRecordId(ref)
+  const plantId = resolvedPlantId ?? 0
 
   const [plant, setPlant] = useState<Branch | null>(null)
   const [addresses, setAddresses] = useState<BranchAddress[]>([])
@@ -55,11 +65,11 @@ export default function PlantDetailPage() {
     Promise.all([
       organizationApi.getBranch(plantId),
       organizationApi.listBranchAddresses(plantId),
-      organizationApi.listBranchUserAssignments(plantId),
+      seeUsers ? organizationApi.listBranchUserAssignments(plantId) : Promise.resolve([]),
       organizationApi.listDepartments(plantId),
       storeApi.listLocations(plantId),
       costCentersApi.listCostCenters(plantId),
-      organizationApi.listBranchDocuments(plantId),
+      seeDocs ? organizationApi.listBranchDocuments(plantId) : Promise.resolve([]),
     ])
       .then(([p, a, u, d, w, cc, docs]) => {
         setPlant(p); setAddresses(a); setAssignments(u); setDepartments(d); setWarehouses(w); setCostCenters(cc); setDocuments(docs)
@@ -73,6 +83,8 @@ export default function PlantDetailPage() {
   }, [isAuthorized, plantId])
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><OrganizationNav /><InvalidRecordLink message={linkError} listHref="/dashboard/organization/plants" listLabel="Back to branches" /></div>)
+  if (!plantId) return <div><OrganizationNav /></div>
 
   if (error) {
     return (
@@ -98,7 +110,7 @@ export default function PlantDetailPage() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{plant.name}</h1>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PLANT_STATUS_HEX[plant.status]}1a`, color: PLANT_STATUS_HEX[plant.status] }}>
+              <span data-tour="org-plant-detail-status" style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${PLANT_STATUS_HEX[plant.status]}1a`, color: PLANT_STATUS_HEX[plant.status] }}>
                 {PLANT_STATUS_LABELS[plant.status] || plant.status}
               </span>
             </div>
@@ -106,18 +118,18 @@ export default function PlantDetailPage() {
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={() => router.push('/dashboard/organization/plants')} type="button" data-tour="org-plant-detail-back" style={secondaryBtnStyle}>← Back</button>
-            <button
-              onClick={() => router.push(`/dashboard/organization/plants/${plantId}/edit`)}
+            {can('organization', 'branches', 'edit') && <button
+              onClick={() => router.push(`/dashboard/organization/plants/${ref}/edit`)}
               data-tour="org-plant-detail-edit-btn"
               style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
             >
               Edit
-            </button>
+            </button>}
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
-          {TABS.map((t) => (
+          {TABS.filter(seeTab).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -133,7 +145,7 @@ export default function PlantDetailPage() {
           ))}
         </div>
 
-        {tab === 'Basic' && (
+        {(tab === 'Basic' || !seeTab(tab)) && (
           <div style={sectionStyle}>
             <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Basic Information</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -186,11 +198,12 @@ export default function PlantDetailPage() {
               <div><div style={labelStyle}>Default Cost Center</div><div style={valueStyle}>{plant.default_cost_center_name || '—'}</div></div>
               <div><div style={labelStyle}>Default Profit Center</div><div style={valueStyle}>{plant.default_profit_center || '—'}</div></div>
               <div><div style={labelStyle}>Currency</div><div style={valueStyle}>{plant.currency || '—'}</div></div>
+              <div><div style={labelStyle}>GSTIN / State</div><div style={valueStyle}>{plant.gstin || '—'}{plant.state_code ? ` · ${plant.state_code}` : ''}</div></div>
             </div>
           </div>
         )}
 
-        {tab === 'Branch Users' && (
+        {tab === 'Branch Users' && seeUsers && (
           <div style={sectionStyle}>
             <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branch Users</h2>
             {assignments.length === 0 ? (
@@ -279,7 +292,7 @@ export default function PlantDetailPage() {
           </div>
         )}
 
-        {tab === 'Branch Documents' && (
+        {tab === 'Branch Documents' && seeDocs && (
           <div style={sectionStyle}>
             <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Branch Documents</h2>
             {documents.length === 0 ? (
@@ -298,7 +311,7 @@ export default function PlantDetailPage() {
                           {d.filename}{d.expiry_date ? ` · Expires ${d.expiry_date}` : ''}{d.version ? ` · v${d.version}` : ''}
                         </p>
                       </div>
-                      {d.sharepoint_url && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive }}>Open</a>}
+                      {d.sharepoint_url && canFeature('organization', 'branches', 'documents', 'export') && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive }}>Open</a>}
                     </div>
                   </div>
                 ))}

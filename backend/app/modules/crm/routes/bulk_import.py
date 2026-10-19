@@ -53,7 +53,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access
+from app.core.permissions import require_tab_action
 from app.core.validators import validate_email_format, validate_gst_format
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -189,7 +189,7 @@ _EXAMPLE_ROWS = [
 
 
 @router.get("/template")
-async def download_template(_user: User = Depends(require_app_access("crm"))):
+async def download_template(_user: User = Depends(require_tab_action("crm", "organizations", "import"))):
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(_HEADER)
@@ -209,7 +209,7 @@ async def download_template(_user: User = Depends(require_app_access("crm"))):
 async def bulk_import(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "organizations", "import")),
 ):
     _require_admin(user)
     rows = _read_csv_rows(await file.read())
@@ -284,10 +284,10 @@ async def bulk_import(
                     raise ValueError(f"org_type is required the first time '{org_name}' appears")
                 gst = validate_gst_format(_get(row, "gst_number") or None)
                 if gst and gst in existing_gsts:
-                    raise ValueError(f"GST number '{gst}' is already used by another organization")
+                    raise ValueError(f"GST number '{gst}' is already used by another customer organization")
                 official_email = validate_email_format(_get(row, "official_email") or None)
                 if official_email and official_email.lower() in existing_org_emails:
-                    raise ValueError(f"official email '{official_email}' is already used by another organization")
+                    raise ValueError(f"official email '{official_email}' is already used by another customer organization")
                 org = Organization(
                     name=org_name, org_type=org_type,
                     parent_org=_get(row, "parent_org") or None,
@@ -327,10 +327,10 @@ async def bulk_import(
                 # details — leave it untouched.
                 gst = validate_gst_format(_get(row, "gst_number") or None)
                 if gst and gst != org.gst_number and gst in existing_gsts:
-                    raise ValueError(f"GST number '{gst}' is already used by another organization")
+                    raise ValueError(f"GST number '{gst}' is already used by another customer organization")
                 official_email = validate_email_format(_get(row, "official_email") or None)
                 if official_email and official_email.lower() != (org.official_email or "").lower() and official_email.lower() in existing_org_emails:
-                    raise ValueError(f"official email '{official_email}' is already used by another organization")
+                    raise ValueError(f"official email '{official_email}' is already used by another customer organization")
 
                 simple_fields = [
                     "org_type", "parent_org", "railway_zone", "division_workshop", "address",
@@ -605,7 +605,7 @@ async def bulk_import(
         db.add(AuditLog(
             entity_type="organization", entity_id=None, action="bulk_imported", performed_by_id=user.id,
             summary=(
-                f"{user.name or user.email} bulk-imported/updated {orgs_created} new + {orgs_updated} updated organization(s), "
+                f"{user.name or user.email} bulk-imported/updated {orgs_created} new + {orgs_updated} updated customer organization(s), "
                 f"{contacts_created} new + {contacts_updated} updated contact(s), "
                 f"{inquiries_created} new + {inquiries_updated} updated inquiry(ies), "
                 f"{product_lines_added} additional product line(s) and {followups_created} follow-up(s) from a CSV file."

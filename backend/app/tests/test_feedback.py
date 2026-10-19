@@ -1,5 +1,6 @@
 from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
+from app.modules.main.routes import feedback as feedback_routes
 
 
 def make_user(db, email, role="user"):
@@ -27,6 +28,27 @@ def test_user_can_submit_feedback(client, db):
     assert body["message"] == "Please add dark mode."
     assert body["user_email"] == "feedback_user@premnathrail.com"
     assert body["is_read"] is False
+
+
+def test_feedback_is_saved_when_admin_notification_fails(client, db, monkeypatch):
+    make_user(db, "feedback_notification_admin@premnathrail.com", role="admin")
+    user = make_user(db, "feedback_notification_failure@premnathrail.com")
+
+    def fail_notification(*args, **kwargs):
+        raise RuntimeError("notification service unavailable")
+
+    monkeypatch.setattr(feedback_routes, "notify_user", fail_notification)
+
+    response = client.post(
+        "/api/v1/feedback",
+        json={"message": "Please keep this feedback even if notifications fail."},
+        headers=auth_header(user),
+    )
+
+    assert response.status_code == 201
+    feedback_id = response.json()["id"]
+    saved = db.query(feedback_routes.Feedback).filter(feedback_routes.Feedback.id == feedback_id).one()
+    assert saved.message == "Please keep this feedback even if notifications fail."
 
 
 def test_submit_feedback_rejects_empty_message(client, db):

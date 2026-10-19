@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { electricalApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { ElectricalJob } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
@@ -11,7 +13,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', in_progress: 'In Progress', on_hold: 'On Hold', handed_over: 'Handed Over', closed: 'Closed', cancelled: 'Cancelled' }
-const STATUS_HEX: Record<string, string> = { draft: '#78716c', in_progress: '#F59E0B', on_hold: '#9333EA', handed_over: '#2563EB', closed: '#16A34A', cancelled: '#DC2626' }
+const STATUS_HEX: Record<string, string> = { draft: '#78716c', in_progress: '#F59E0B', on_hold: '#9333EA', handed_over: '#2563EB', closed: '#16A34A', cancelled: '#a8a29e' }
 const PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
 const PHASE_LABELS: Record<string, string> = { design: 'Design', procurement: 'Procurement', build: 'Assembly', test_qc: 'Testing & QC', handover: 'Handover' }
@@ -26,6 +28,7 @@ const pill = (hex: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 
 export default function ElectricalJobsPage() {
   const { isAuthorized, isLoading } = useRequireApp('electrical')
   const router = useRouter()
+  const { can } = useCan()
 
   const [jobs, setJobs] = useState<ElectricalJob[]>([])
   const [loading, setLoading] = useState(true)
@@ -61,16 +64,19 @@ export default function ElectricalJobsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>RRV Electrical Jobs</h1>
         </div>
-        <button
-          onClick={() => router.push('/dashboard/electrical/jobs/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New Job
-        </button>
+        {can('electrical', 'jobs', 'create') && (
+          <button
+            data-tour="elec-jobs-new-btn"
+            onClick={() => router.push('/dashboard/electrical/jobs/new')}
+            style={{
+              padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
+              background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
+              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
+            }}
+          >
+            + New Job
+          </button>
+        )}
       </div>
 
       {error && (
@@ -80,22 +86,22 @@ export default function ElectricalJobsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200, maxWidth: 420 }} placeholder="Search job no., title, model, vehicle, customer…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <input data-tour="elec-jobs-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200, maxWidth: 420 }} placeholder="Search job no., title, model, vehicle, customer…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="elec-jobs-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="open">Open (draft / active / hold)</option>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)}>
+        <select data-tour="elec-jobs-phase-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={phaseFilter} onChange={(e) => setPhaseFilter(e.target.value)}>
           <option value="">Any phase</option>
           {Object.entries(PHASE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
+        <label data-tour="elec-jobs-mine" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
           <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> My jobs
         </label>
       </div>
 
-      <div style={{
+      <div data-tour="elec-jobs-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
@@ -116,7 +122,7 @@ export default function ElectricalJobsPage() {
               <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No electrical jobs match. Create one for each RRV whose electrical system you&apos;re building.</td></tr>
             ) : (
               jobs.map((j) => (
-                <tr key={j.id} onClick={() => router.push(`/dashboard/electrical/jobs/${j.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={j.id} onClick={() => router.push(recordPath('/dashboard/electrical/jobs', j))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{j.job_number}</td>
                   <td style={cellStyle}>
                     <div style={{ fontWeight: 600, color: TEXT.heading }}>{j.title}</div>
@@ -146,7 +152,7 @@ export default function ElectricalJobsPage() {
                   <td style={cellStyle}><span style={pill(PRIORITY_HEX[j.priority])}>{PRIORITY_LABELS[j.priority] || j.priority}</span></td>
                   <td style={cellStyle}><span style={pill(STATUS_HEX[j.status])}>{STATUS_LABELS[j.status] || j.status}</span></td>
                   <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                    <span onClick={() => router.push(`/dashboard/electrical/jobs/${j.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/electrical/jobs', j))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               ))

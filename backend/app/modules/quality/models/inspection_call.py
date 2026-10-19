@@ -29,6 +29,14 @@ class QualityInspectionCall(Base, TimestampMixin):
     erp_project_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("erp_projects.id"), index=True, nullable=True)
     order_reference: Mapped[str | None] = mapped_column(String(150), nullable=True)
     customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The build this call is for (Sales › Order Projects): the vehicle / lot
+    # element. When set, the agency and the third-party requirement come from
+    # the element's Sales Order (single source of truth) and an accepted call
+    # makes that SO's 'inspection' billing milestone due.
+    order_project_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sales_order_projects.id", ondelete="SET NULL"), index=True, nullable=True)
+    order_project_element_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("sales_order_project_elements.id", ondelete="SET NULL"), index=True, nullable=True)
 
     item_id: Mapped[int] = mapped_column(Integer, ForeignKey("store_items.id"), index=True, nullable=False)
     item_code: Mapped[str | None] = mapped_column(String(100), nullable=True)

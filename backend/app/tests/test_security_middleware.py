@@ -117,7 +117,9 @@ def test_rate_limit_blocks_after_threshold(client, db):
 def test_repeated_violations_trigger_ip_ban(client, db):
     store = get_rate_store()
     store.reset()
-    user = make_user(db, "sec11@premnathrail.com")
+    # An outside-domain token — @premnathrail.com staff are exempt from bans
+    # (see test_company_user_is_never_banned_or_rate_limited).
+    user = make_user(db, "sec11@outside-vendor.com")
     # Each blocked injection attempt records a violation; the 10th trips the
     # ban (but is itself still answered as the 400 that caused it) — the ban
     # only takes effect starting with the request after that.
@@ -131,6 +133,33 @@ def test_repeated_violations_trigger_ip_ban(client, db):
     response = client.get("/api/v1/erp/projects", headers=auth_header(user))
     assert response.status_code == 429
     store.reset()
+
+
+def test_company_user_is_never_banned_or_rate_limited(client, db):
+    store = get_rate_store()
+    store.reset()
+    outsider = make_user(db, "sec13@outside-vendor.com")
+    staff = make_user(db, "sec14@premnathrail.com")
+    # The outsider gets the shared office IP banned...
+    for _ in range(11):
+        client.get("/api/v1/erp/projects?search=<script>x</script>", headers=auth_header(outsider))
+    assert client.get("/api/v1/erp/projects", headers=auth_header(outsider)).status_code == 429
+    # ...but staff on the same IP keep working, and their own blocked
+    # requests are still blocked yet never count toward a ban.
+    assert client.get("/api/v1/erp/projects", headers=auth_header(staff)).status_code != 429
+    for _ in range(15):
+        assert client.get("/api/v1/erp/projects?search=<script>x</script>", headers=auth_header(staff)).status_code == 400
+    # Sign-in stays reachable for everyone even while the IP is banned.
+    assert client.get("/api/v1/auth/microsoft-login", follow_redirects=False).status_code in (302, 307, 503)
+    store.reset()
+
+
+def test_session_refresh_is_not_limited_to_five_per_minute(client):
+    get_rate_store().reset()
+    # Whole office shares one IP and every browser refreshes every 15 min.
+    codes = [client.post("/api/v1/auth/refresh").status_code for _ in range(20)]
+    assert 429 not in codes
+    get_rate_store().reset()
 
 
 # ── Security response headers ────────────────────────────────────────────────

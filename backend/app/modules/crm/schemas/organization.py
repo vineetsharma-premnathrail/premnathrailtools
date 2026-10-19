@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from app.core.validators import validate_email_format, validate_gst_format
 
 
@@ -41,6 +41,7 @@ class OrgContactBase(BaseModel):
     additional_mobiles: list[str] | None = None
     additional_emails: list[str] | None = None
     department: str | None = None
+    address_id: int | None = None
 
     _validate_email = field_validator("email")(validate_email_format)
     _validate_additional_emails = field_validator("additional_emails")(_validate_email_list)
@@ -59,15 +60,27 @@ class OrgContactUpdate(BaseModel):
     additional_mobiles: list[str] | None = None
     additional_emails: list[str] | None = None
     department: str | None = None
+    address_id: int | None = None
 
     _validate_email = field_validator("email")(validate_email_format)
     _validate_additional_emails = field_validator("additional_emails")(_validate_email_list)
     _validate_additional_mobiles = field_validator("additional_mobiles")(_validate_phone_list)
 
 
-class OrgContactResponse(OrgContactBase):
+class OrgContactResponse(BaseModel):
+    # Not derived from OrgContactBase: its format validators are for input
+    # only. Re-running them on read meant one legacy contact with a malformed
+    # email (e.g. "developer@premnathrail") 500'd every contact list.
     model_config = {"from_attributes": True}
 
+    name: str
+    designation: str | None = None
+    mobile: str | None = None
+    email: str | None = None
+    additional_mobiles: list[str] | None = None
+    additional_emails: list[str] | None = None
+    department: str | None = None
+    address_id: int | None = None
     id: int
     org_id: int
     created_by_id: int | None = None
@@ -86,14 +99,16 @@ class OrganizationCreate(BaseModel):
     city: str | None = None
     pin_code: str | None = None
     gst_number: str | None = None
+    pan: str | None = None
+    gst_state_code: str | None = None
     official_phone: str | None = None
     official_email: str | None = None
     additional_phones: list[str] | None = None
     additional_emails: list[str] | None = None
     website: str | None = None
-    credit_limit: float | None = None
-    credit_days: int | None = None
-    discount_percentage: float | None = None
+    credit_limit: float | None = Field(default=None, ge=0, description="Credit limit (INR) — 0 or more; leave empty for no limit.")
+    credit_days: int | None = Field(default=None, ge=0, description="Credit days — 0 or more.")
+    discount_percentage: float | None = Field(default=None, ge=0, le=100, description="Discount % — between 0 and 100.")
     gl_reconciliation_account_id: int | None = None
 
     _validate_email = field_validator("official_email")(validate_email_format)
@@ -105,7 +120,7 @@ class OrganizationCreate(BaseModel):
     @classmethod
     def _validate_org_type(cls, v: str) -> str:
         if not v or not v.strip():
-            raise ValueError("Organization Type is required.")
+            raise ValueError("Customer Organization Type is required.")
         return v
 
 
@@ -121,14 +136,16 @@ class OrganizationUpdate(BaseModel):
     city: str | None = None
     pin_code: str | None = None
     gst_number: str | None = None
+    pan: str | None = None
+    gst_state_code: str | None = None
     official_phone: str | None = None
     official_email: str | None = None
     additional_phones: list[str] | None = None
     additional_emails: list[str] | None = None
     website: str | None = None
-    credit_limit: float | None = None
-    credit_days: int | None = None
-    discount_percentage: float | None = None
+    credit_limit: float | None = Field(default=None, ge=0, description="Credit limit (INR) — 0 or more; leave empty for no limit.")
+    credit_days: int | None = Field(default=None, ge=0, description="Credit days — 0 or more.")
+    discount_percentage: float | None = Field(default=None, ge=0, le=100, description="Discount % — between 0 and 100.")
     gl_reconciliation_account_id: int | None = None
 
     _validate_email = field_validator("official_email")(validate_email_format)
@@ -153,6 +170,8 @@ class OrganizationResponse(BaseModel):
     city: str | None = None
     pin_code: str | None = None
     gst_number: str | None = None
+    pan: str | None = None
+    gst_state_code: str | None = None
     official_phone: str | None = None
     official_email: str | None = None
     additional_phones: list[str] | None = None
@@ -173,3 +192,56 @@ class OrganizationDetailResponse(OrganizationResponse):
     contacts: list[OrgContactResponse] = []
     inquiry_count: int = 0
     tender_count: int = 0
+
+
+# ---------- Ship-to / consignee / bill-to / payer addresses ----------
+
+class OrgAddressCreate(BaseModel):
+    address_type: str = "ship_to"
+    name: str = Field(min_length=1, max_length=255, description="Address name — e.g. 'Electric Loco Shed, Ghaziabad'.")
+    address: str = Field(min_length=1, description="Street address.")
+    city: str | None = None
+    state: str | None = None
+    state_code: str | None = None
+    pin_code: str | None = None
+    gstin: str | None = None
+    phone: str | None = None
+    is_default: bool = False
+
+    _validate_gst = field_validator("gstin")(validate_gst_format)
+
+
+class OrgAddressUpdate(BaseModel):
+    address_type: str | None = None
+    name: str | None = None
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    state_code: str | None = None
+    pin_code: str | None = None
+    gstin: str | None = None
+    phone: str | None = None
+    is_default: bool | None = None
+    is_active: bool | None = None
+
+    _validate_gst = field_validator("gstin")(validate_gst_format)
+
+
+class OrgAddressResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: int
+    org_id: int
+    address_type: str
+    name: str
+    address: str
+    city: str | None = None
+    state: str | None = None
+    state_code: str | None = None
+    pin_code: str | None = None
+    gstin: str | None = None
+    phone: str | None = None
+    is_default: bool = False
+    is_active: bool = True
+    created_at: datetime | None = None
+    contacts: list[OrgContactResponse] = []

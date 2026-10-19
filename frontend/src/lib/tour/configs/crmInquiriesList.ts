@@ -6,15 +6,25 @@ const config: TourConfig = {
   steps: [
     {
       target: 'iq-add-btn',
-      title: '+ New Record',
+      title: '+ Add Inquiries & Tenders',
       purpose: 'Creates a new Inquiry — this button always opens the Inquiry form, not a Tender.',
       after: 'Takes you to a separate Create Inquiry page — its own guided tour covers every field there.',
     },
     {
+      target: 'iq-export-btn',
+      title: 'Export',
+      purpose: 'Downloads to Excel — one file with an Inquiries sheet and a Tenders sheet. All (optionally only records created between two dates — both optional) or Selective (tick exactly which inquiries / tenders).',
+    },
+    {
+      target: 'iq-import-btn',
+      title: 'Import',
+      purpose: 'Admins only: upload the CRM CSV to add or update customer organizations, contacts, inquiries and follow-ups in one go.',
+    },
+    {
       target: 'iq-search',
       title: 'Search',
-      purpose: 'Searches across ID, organization, product, owner, zone, and stage in one box — matching Inquiries and Tenders together.',
-      whatToEnter: 'Any part of an ID, organization name, product name, owner, etc. Updates the list automatically as you type.',
+      purpose: 'Searches across ID, customer organization, product, owner, zone, and stage in one box — matching Inquiries and Tenders together.',
+      whatToEnter: 'Any part of an ID, customer organization name, product name, owner, etc. Updates the list automatically as you type.',
     },
     {
       target: 'iq-clear-btn',
@@ -58,11 +68,6 @@ const config: TourConfig = {
       title: 'Inquiry / Tender rows',
       purpose: 'Click anywhere on a row (other than the pin icon) to open that record\'s full detail page. If it says "No records found" right now, that just means nothing matches the current search/filters yet — nothing to click until an inquiry or tender exists.',
       after: 'An Inquiry opens its detail page with Info/Quotations/Documents/Follow Ups/Timeline tabs; a Tender opens its own detail page.',
-    },
-    {
-      target: 'iq-pagination',
-      title: 'Pagination',
-      purpose: '16 records are shown per page. Use these controls once the filtered list is larger than that.',
     },
   ],
 }

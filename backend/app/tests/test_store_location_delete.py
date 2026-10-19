@@ -4,6 +4,7 @@ from app.auth.jwt_handler import create_access_token
 from app.modules.main.models.user import User
 from app.modules.organization.models.branch import Branch
 from app.modules.store.models.location import StoreLocation
+from app.tests._stock_seed import seed_opening_stock
 
 
 def _admin(db):
@@ -40,7 +41,7 @@ def test_store_with_stock_history_is_blocked(client, db):
     headers = _admin(db)
     loc_id = client.post("/api/v1/store/locations", json={"name": "Busy", "code": "BUSY"}, headers=headers).json()["id"]
     item_id = client.post("/api/v1/store/items", json={"item_code": "ITM-D", "item_name": "Bolt", "uom": "NOS"}, headers=headers).json()["id"]
-    client.post("/api/v1/store/stock/transactions", json={"item_id": item_id, "location_id": loc_id, "transaction_type": "receipt", "quantity": 5}, headers=headers)
+    seed_opening_stock(db, item_id, loc_id, 5)
 
     resp = client.delete(f"/api/v1/store/locations/{loc_id}", headers=headers)
     assert resp.status_code == 409

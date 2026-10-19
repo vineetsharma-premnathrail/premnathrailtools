@@ -97,13 +97,19 @@ def seed_stages(job: ElectricalJob) -> None:
 # Lookups shared by the routers
 # ---------------------------------------------------------------------------
 
-def get_job_or_404(db: Session, job_id: int, lock: bool = False) -> ElectricalJob:
+def get_job_or_404(db: Session, job_id: int, lock: bool = False, user: User | None = None) -> ElectricalJob:
+    """The job, 404 if missing — and, when `user` is given, 403 if it's
+    outside their data scope (every child record checks its job this way)."""
     query = db.query(ElectricalJob).filter(ElectricalJob.id == job_id, ElectricalJob.is_deleted == False)  # noqa: E712
     if lock and db.get_bind().dialect.name == "postgresql":
         query = query.with_for_update()
     job = query.first()
     if not job:
         raise HTTPException(status_code=404, detail=f"Electrical job #{job_id} not found (it may have been deleted).")
+    if user is not None:
+        from app.modules.electrical.access import ensure_job_in_scope
+
+        ensure_job_in_scope(db, user, job)
     return job
 
 
@@ -373,3 +379,106 @@ def job_progress(job: ElectricalJob) -> dict:
             job.target_handover_date and job.target_handover_date < date.today() and job.status in OPEN_JOB_STATUSES
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Permissions & file responses
+# ---------------------------------------------------------------------------
+
+def require_any_tab_action(*pairs: tuple[str, str]):
+    """Dependency factory: passes when the user holds ANY of the given
+    (subtab, action) Permission Matrix grants on Electrical — e.g. a QC
+    technician with testing:create can record tests without jobs:edit.
+    Same opt-in rule as can_perform (admins and unconfigured users pass).
+    The 403 names every grant that would have allowed the action."""
+    from fastapi import Depends
+    from app.core.permission_registry import MODULES, can_perform
+    from app.modules.main.routes.auth import get_current_user
+
+    def _dependency(user: User = Depends(get_current_user)) -> User:
+        if any(can_perform(user, ELECTRICAL_APP, subtab, action) for subtab, action in pairs):
+            return user
+        module = MODULES.get(ELECTRICAL_APP, {})
+        label = module.get("label", ELECTRICAL_APP)
+        tabs = module.get("subtabs", {})
+        options = " or ".join(f"'{action}' on {label} › {tabs.get(subtab, subtab)}" for subtab, action in pairs)
+        raise HTTPException(
+            status_code=403,
+            detail=f"You don't have permission for this action — it needs {options}. "
+                   "Ask an admin to grant one of these in Users › Permission Matrix.",
+        )
+
+    return _dependency
+
+
+def inline_file_headers(file_name: str | None) -> dict[str, str]:
+    """Content-Disposition for viewing an uploaded file in the browser.
+    Starlette encodes headers as latin-1, so a raw non-ASCII name (an en
+    dash from Word, a Hindi title) would 500 — send an ASCII fallback plus
+    the RFC 5987 UTF-8 name. nosniff stops the browser second-guessing the
+    uploader-supplied mime type."""
+    from urllib.parse import quote
+    name = file_name or "download"
+    ascii_name = (name.encode("ascii", "ignore").decode() or "download").replace('"', "")
+    return {
+        "Content-Disposition": f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}",
+        "X-Content-Type-Options": "nosniff",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Job features (Electrical › RRV Electrical Jobs › <feature>) —
+# app/core/features/electrical.py
+# ---------------------------------------------------------------------------
+
+def outside_jobs_tab(user: User) -> bool:
+    """True for someone with Electrical access but no Jobs › View — they open
+    a job from Testing / Troubleshooting / Drawings / Purchase. The Jobs-tab
+    features don't narrow their read-only view of the job (as before features)."""
+    from app.core.permission_registry import can_view_tab
+    return not can_view_tab(user, ELECTRICAL_APP, "jobs")
+
+
+def ensure_job_view(user: User, allowed: bool, feature: str) -> None:
+    """403 unless `allowed` (the caller's feature / alternate-tab check) or
+    the user is outside the Jobs tab (see outside_jobs_tab)."""
+    if allowed or outside_jobs_tab(user):
+        return
+    from app.core.permissions import ensure_feature_action
+    ensure_feature_action(user, ELECTRICAL_APP, "jobs", feature, "view")
+
+
+def can_see_costs(user: User) -> bool:
+    """Electrical › RRV Electrical Jobs › BOM costs (sensitive)."""
+    from app.core.permission_registry import can_feature
+    return can_feature(user, "electrical", "jobs", "costs", "view") or outside_jobs_tab(user)
+
+
+def require_job_feature(feature: str, action: str, *alt_pairs: tuple[str, str]):
+    """Dependency: passes with the job feature action, or ANY of the given
+    (tab, action) Electrical grants (e.g. testing:create for Tests). The 403
+    names every grant that would have allowed it."""
+    from fastapi import Depends
+    from app.core.permission_registry import MODULES, can_feature, can_perform
+    from app.modules.main.routes.auth import get_current_user
+
+    def _dependency(user: User = Depends(get_current_user)) -> User:
+        if can_feature(user, ELECTRICAL_APP, "jobs", feature, action) or any(
+            can_perform(user, ELECTRICAL_APP, tab, act) for tab, act in alt_pairs
+        ):
+            return user
+        module = MODULES.get(ELECTRICAL_APP, {})
+        label = module.get("label", ELECTRICAL_APP)
+        tabs = module.get("subtabs", {})
+        spec = module.get("features", {}).get("jobs", {}).get(feature, {})
+        legacy = spec.get("inherit", {}).get(action, action)
+        options = [f"'{legacy}' on {label} › {tabs.get('jobs', 'jobs')} (or its {spec.get('label', feature)} '{action}' "
+                   f"feature, electrical:jobs.{feature}:{action})"]
+        options += [f"'{act}' on {label} › {tabs.get(tab, tab)}" for tab, act in alt_pairs]
+        raise HTTPException(
+            status_code=403,
+            detail=f"You don't have permission for this action — it needs {' or '.join(options)}. "
+                   "Ask an admin to grant it in Organization › Role & Permissions.",
+        )
+
+    return _dependency

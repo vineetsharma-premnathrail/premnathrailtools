@@ -37,6 +37,9 @@ class ProductionRequirementOrder(BaseModel):
     status: str
     outstanding_qty: float
     planned_start_date: date | None = None
+    # Order Project vehicle / lot the work order is for (prefills the PR).
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
 
 
 class ProductionMaterialRequirement(BaseModel):
@@ -158,3 +161,38 @@ class ProductionLookupOption(BaseModel):
     label: str
     code: str | None = None
     extra: str | None = None
+
+
+class ProductionWipRow(BaseModel):
+    """One open work order's cost at the as-of date (KKAX)."""
+    work_order_id: int
+    wo_number: str
+    status: str
+    product_item_id: int
+    product_code: str | None = None
+    product_name: str | None = None
+    rrv_build_id: int | None = None
+    rrv_build_number: str | None = None
+    quantity_planned: float
+    quantity_completed: float
+    material_cost: float
+    labour_cost: float
+    cost_relieved: float
+    wip_value: float
+
+
+class ProductionWipBuildTotal(BaseModel):
+    rrv_build_id: int
+    rrv_build_number: str | None = None
+    orders: int
+    wip_value: float
+
+
+class ProductionWipResponse(BaseModel):
+    as_of: date
+    total_wip: float
+    total_material: float
+    total_labour: float
+    total_relieved: float
+    rows: list[ProductionWipRow] = []
+    by_rrv_build: list[ProductionWipBuildTotal] = []

@@ -10,6 +10,8 @@ class BankReconciliationCreate(BaseModel):
 
 class ReconcilePaymentsPayload(BaseModel):
     payment_transaction_ids: list[int] = Field(default_factory=list)
+    # Bank (clearing) date; defaults to the statement date.
+    cleared_date: date | None = None
 
 
 class UnreconciledPaymentResponse(BaseModel):
@@ -21,8 +23,12 @@ class UnreconciledPaymentResponse(BaseModel):
     payment_mode: str
     payment_date: date
     amount: float
+    direction: str | None = None
+    cheque_number: str | None = None
+    reference_no: str | None = None
     vendor_name: str | None = None
     customer_name: str | None = None
+    party_name: str | None = None
 
 
 class BankReconciliationResponse(BaseModel):

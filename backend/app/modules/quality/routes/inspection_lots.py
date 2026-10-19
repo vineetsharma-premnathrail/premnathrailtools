@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 
-from app.core.permissions import require_app_access, require_tab_action
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permission_registry import can_view_tab
+from app.core.permissions import ensure_feature_action, require_app_access, require_feature_action, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.quality.models.inspection_lot import (
@@ -23,7 +25,8 @@ from app.modules.quality.schemas.inspection_lot import (
     QualityInspectionLotCreate, QualityInspectionLotResponse, QualityLotRecordResultsPayload, QualityLotAssignPayload,
     QualityLotSeverityPayload, QualityLotCertificatePayload, QualityLotDecisionPayload, QualityLotCancelPayload,
 )
-from app.modules.quality.services import lots as lot_service
+from app.modules.quality.services import authz, lots as lot_service
+from app.modules.quality.services import order_project_inspection as opi
 from app.modules.quality.services.lots import LotError
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
@@ -47,9 +50,13 @@ def _to_responses(db: Session, lots: list[QualityInspectionLot], detail: bool = 
     locs = {x.id: x.name for x in db.query(StoreLocation).filter(StoreLocation.id.in_({l.location_id for l in lots} - {None})).all()}
     plans = {p.id: p.plan_number for p in db.query(QualityInspectionPlan).filter(QualityInspectionPlan.id.in_({l.plan_id for l in lots} - {None})).all()}
     codes = {c.id: f"{c.code} — {c.name}" for c in db.query(QualityDefectCode).all()} if detail else {}
+    links = opi.link_display(db, lots)
     out = []
     for l in lots:
         resp = QualityInspectionLotResponse.model_validate(l)
+        link = links.get(l.id) or {}
+        resp.op_number, resp.element_no = link.get("op_number"), link.get("element_no")
+        resp.element_label, resp.so_number = link.get("element_label"), link.get("so_number")
         resp.location_name = locs.get(l.location_id)
         resp.plan_number = plans.get(l.plan_id)
         resp.assigned_to_name = users.get(l.assigned_to_id)
@@ -85,11 +92,13 @@ def _to_responses(db: Session, lots: list[QualityInspectionLot], detail: bool = 
     return out
 
 
-def _get_or_404(db: Session, lot_id: int, lock: bool = False) -> QualityInspectionLot:
+def _get_or_404(db: Session, lot_id: int, user: User | None = None, lock: bool = False) -> QualityInspectionLot:
     q = db.query(QualityInspectionLot).options(selectinload(QualityInspectionLot.results)).filter(QualityInspectionLot.id == lot_id)
     lot = (q.with_for_update() if lock else q).first()
     if not lot:
-        raise HTTPException(status_code=404, detail=f"Inspection lot #{lot_id} not found")
+        raise HTTPException(status_code=404, detail=f"Inspection lot #{lot_id} not found — it may have been removed. Reload the list.")
+    if user is not None:
+        ensure_in_scope(db, user, lot)
     return lot
 
 
@@ -118,15 +127,20 @@ async def lots_meta():
 async def list_lots(
     status_filter: str | None = Query(None, alias="status"), inspection_type: str | None = None,
     mine: bool = False, open_only: bool = False, search: str | None = None,
+    order_project_id: int | None = None, order_project_element_id: int | None = None,
     db: Session = Depends(get_db), user: User = Depends(require_app_access("quality")),
 ):
-    q = db.query(QualityInspectionLot).options(selectinload(QualityInspectionLot.results))
+    q = apply_scope(db.query(QualityInspectionLot).options(selectinload(QualityInspectionLot.results)), user, QualityInspectionLot)
     if status_filter:
         q = q.filter(QualityInspectionLot.status == status_filter)
     if open_only:
         q = q.filter(QualityInspectionLot.status.in_(QUALITY_LOT_OPEN_STATUSES))
     if inspection_type:
         q = q.filter(QualityInspectionLot.inspection_type == inspection_type)
+    if order_project_id:
+        q = q.filter(QualityInspectionLot.order_project_id == order_project_id)
+    if order_project_element_id:
+        q = q.filter(QualityInspectionLot.order_project_element_id == order_project_element_id)
     if mine:
         # My Inspections: assigned to me, plus unassigned open lots anyone can pick up.
         q = q.filter(QualityInspectionLot.status.in_(QUALITY_LOT_OPEN_STATUSES)).filter(
@@ -153,72 +167,81 @@ async def create_manual_lot(payload: QualityInspectionLotCreate, db: Session = D
         raise HTTPException(status_code=422, detail="Pick the store whose Free stock should be held for this inspection.")
     if payload.location_id and not db.query(StoreLocation.id).filter(StoreLocation.id == payload.location_id).first():
         raise HTTPException(status_code=404, detail=f"Store #{payload.location_id} not found")
+    authz.ensure_may_assign(db, user, authz.LOT_INSPECTOR_RULE, payload.assigned_to_id)
+    try:
+        op_project, op_element = opi.resolve_link(db, payload.order_project_id, payload.order_project_element_id)
+    except opi.LinkError as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
     lot = _run(db, lambda: lot_service.create_lot(
         db, inspection_type=payload.inspection_type, source_type="manual", item=item, quantity=payload.quantity,
         location_id=payload.location_id if payload.take_from_free else None, user_id=user.id,
         source_reference=payload.source_reference, batch_number=payload.batch_number, vendor_name=payload.vendor_name,
         assigned_to_id=payload.assigned_to_id, remarks=payload.remarks, take_from_free=payload.take_from_free,
+        order_project_id=op_project.id if op_project else None, order_project_element_id=op_element.id if op_element else None,
     ))
     return _detail(db, lot.id)
 
 
 @router.get("/{lot_id}", response_model=QualityInspectionLotResponse)
-async def get_lot(lot_id: int, db: Session = Depends(get_db)):
+async def get_lot(lot_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
+    _get_or_404(db, lot_id, user)
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/refresh-plan", response_model=QualityInspectionLotResponse)
 async def refresh_plan(lot_id: int, db: Session = Depends(get_db), _user: User = Depends(_CAN_EDIT)):
-    lot = _get_or_404(db, lot_id, lock=True)
+    lot = _get_or_404(db, lot_id, _user, lock=True)
     _run(db, lambda: lot_service.refresh_plan(db, lot))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/sampling", response_model=QualityInspectionLotResponse)
 async def set_sampling(lot_id: int, payload: QualityLotSeverityPayload, db: Session = Depends(get_db), _user: User = Depends(_CAN_EDIT)):
-    lot = _get_or_404(db, lot_id, lock=True)
+    lot = _get_or_404(db, lot_id, _user, lock=True)
     _run(db, lambda: lot_service.set_sampling_severity(db, lot, payload.sampling_severity))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/assign", response_model=QualityInspectionLotResponse)
 async def assign_lot(lot_id: int, payload: QualityLotAssignPayload, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    lot = _get_or_404(db, lot_id, lock=True)
+    lot = _get_or_404(db, lot_id, user, lock=True)
+    authz.ensure_may_assign(db, user, authz.LOT_INSPECTOR_RULE, payload.user_id, lot.assigned_to_id)
     _run(db, lambda: lot_service.assign(db, lot, payload.user_id, user))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/start", response_model=QualityInspectionLotResponse)
 async def start_lot(lot_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    lot = _get_or_404(db, lot_id, lock=True)
+    lot = _get_or_404(db, lot_id, user, lock=True)
     _run(db, lambda: lot_service.start(db, lot, user))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/results", response_model=QualityInspectionLotResponse)
-async def record_results(lot_id: int, payload: QualityLotRecordResultsPayload, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    lot = _get_or_404(db, lot_id, lock=True)
+async def record_results(lot_id: int, payload: QualityLotRecordResultsPayload, db: Session = Depends(get_db), user: User = Depends(require_feature_action("quality", "inspection_lots", "results", "edit"))):
+    lot = _get_or_404(db, lot_id, user, lock=True)
     _run(db, lambda: lot_service.record_results(db, lot, [e.model_dump() for e in payload.entries], user))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/submit-results", response_model=QualityInspectionLotResponse)
-async def submit_results(lot_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    lot = _get_or_404(db, lot_id, lock=True)
+async def submit_results(lot_id: int, db: Session = Depends(get_db), user: User = Depends(require_feature_action("quality", "inspection_lots", "results", "submit"))):
+    lot = _get_or_404(db, lot_id, user, lock=True)
     _run(db, lambda: lot_service.submit_results(db, lot, user))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/test-certificate", response_model=QualityInspectionLotResponse)
 async def set_certificate(lot_id: int, payload: QualityLotCertificatePayload, db: Session = Depends(get_db), _user: User = Depends(_CAN_EDIT)):
-    lot = _get_or_404(db, lot_id, lock=True)
+    lot = _get_or_404(db, lot_id, _user, lock=True)
     _run(db, lambda: lot_service.set_test_certificate(db, lot, payload.received, payload.reference))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/decision", response_model=QualityInspectionLotResponse)
 async def usage_decision(lot_id: int, payload: QualityLotDecisionPayload, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
-    lot = _get_or_404(db, lot_id, lock=True)
+    ensure_feature_action(user, "quality", "inspection_lots", "usage_decision", "approve")
+    lot = _get_or_404(db, lot_id, user, lock=True)
     _run(db, lambda: lot_service.decide(
         db, lot, decision=payload.decision, user=user, accepted_qty=payload.accepted_qty, rejected_qty=payload.rejected_qty,
         deviation_reference=payload.deviation_reference, remarks=payload.remarks,
@@ -228,14 +251,14 @@ async def usage_decision(lot_id: int, payload: QualityLotDecisionPayload, db: Se
 
 @router.post("/{lot_id}/close", response_model=QualityInspectionLotResponse)
 async def close_lot(lot_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    lot = _get_or_404(db, lot_id, lock=True)
+    lot = _get_or_404(db, lot_id, user, lock=True)
     _run(db, lambda: lot_service.close(db, lot, user))
     return _detail(db, lot_id)
 
 
 @router.post("/{lot_id}/cancel", response_model=QualityInspectionLotResponse)
 async def cancel_lot(lot_id: int, payload: QualityLotCancelPayload, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    lot = _get_or_404(db, lot_id, lock=True)
+    lot = _get_or_404(db, lot_id, user, lock=True)
     _run(db, lambda: lot_service.cancel(db, lot, user, payload.reason))
     return _detail(db, lot_id)
 
@@ -255,10 +278,10 @@ def _require_sharepoint() -> None:
 @router.post("/{lot_id}/photos", response_model=QualityInspectionLotResponse)
 async def upload_photos(
     lot_id: int, files: list[UploadFile] = File(...), result_id: int | None = Form(None), caption: str | None = Form(None),
-    db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT),
+    db: Session = Depends(get_db), user: User = Depends(require_feature_action("quality", "inspection_lots", "photos", "create")),
 ):
     from app.utils.sharepoint import upload_file_to_sharepoint, sanitize_folder_name
-    lot = _get_or_404(db, lot_id)
+    lot = _get_or_404(db, lot_id, user)
     if lot.status not in QUALITY_LOT_OPEN_STATUSES:
         raise HTTPException(status_code=409, detail=f"Lot {lot.lot_number} is {lot.status.replace('_', ' ')} — photos are part of the record "
                                                     "once the usage decision is made, so they can only be added while the lot is open.")
@@ -287,8 +310,13 @@ async def upload_photos(
 
 
 @router.get("/{lot_id}/photos/{photo_id}")
-async def get_photo(lot_id: int, photo_id: int, db: Session = Depends(get_db)):
+async def get_photo(lot_id: int, photo_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
+    # A lot opens for every Quality user in scope (My Inspections, NCR / FAI
+    # links), so the photos switch binds roles that hold the Inspection Lots tab.
+    if can_view_tab(user, "quality", "inspection_lots"):
+        ensure_feature_action(user, "quality", "inspection_lots", "photos", "view")
     from app.utils.sharepoint import download_file_content
+    _get_or_404(db, lot_id, user)
     ph = db.query(QualityLotPhoto).filter(QualityLotPhoto.id == photo_id, QualityLotPhoto.lot_id == lot_id).first()
     if not ph:
         raise HTTPException(status_code=404, detail="Photo not found — it may have been removed. Refresh the page.")
@@ -299,8 +327,8 @@ async def get_photo(lot_id: int, photo_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{lot_id}/photos/{photo_id}", response_model=QualityInspectionLotResponse)
-async def delete_photo(lot_id: int, photo_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    lot = _get_or_404(db, lot_id)
+async def delete_photo(lot_id: int, photo_id: int, db: Session = Depends(get_db), user: User = Depends(require_feature_action("quality", "inspection_lots", "photos", "delete"))):
+    lot = _get_or_404(db, lot_id, user)
     ph = db.query(QualityLotPhoto).filter(QualityLotPhoto.id == photo_id, QualityLotPhoto.lot_id == lot_id).first()
     if not ph:
         raise HTTPException(status_code=404, detail="Photo not found — it may have been removed already. Refresh the page.")

@@ -20,6 +20,10 @@ class StoreItemCategory(Base, TimestampMixin):
     item_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("store_item_categories.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Default purchase / sales ledger for every item in this category (SAP
+    # valuation class); an item can override it. Top-level categories only.
+    purchase_gl_account_id: Mapped[int | None] = mapped_column(ForeignKey("gl_accounts.id"), nullable=True)
+    sales_gl_account_id: Mapped[int | None] = mapped_column(ForeignKey("gl_accounts.id"), nullable=True)
     # Unused (2026-10-05): Part Code is now always an optional field on the
     # item form, not switched per category. Column kept only so the migration
     # chain (d4e5f6a7b8c0 -> e5f6a7b8c9d1) stays intact; nothing reads it.

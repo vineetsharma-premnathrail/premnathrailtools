@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { feedbackApi } from '@/lib/api'
 import { Feedback } from '@/types'
 import { useAuth } from '@/hooks/useAuth'
+import { Bell, X } from '@phosphor-icons/react'
 
 export default function FeedbackBell() {
   const { user } = useAuth()
@@ -75,10 +76,7 @@ export default function FeedbackBell() {
         aria-label="Feedback"
         title="User feedback"
       >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#57534e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.73 21a2 2 0 01-3.46 0" />
-        </svg>
+        <Bell size={17} color="#57534e" />
         {unreadCount > 0 && (
           <span
             style={{
@@ -129,10 +127,7 @@ export default function FeedbackBell() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#78716c',
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
+              <X size={14} />
             </button>
           </div>
 

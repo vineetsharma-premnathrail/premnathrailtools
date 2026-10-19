@@ -58,6 +58,9 @@ def make_ncr(db, number="NCR-2026-0001"):
 
 def test_ncr_update_records_field_level_old_and_new_values(client, db):
     user = make_user(db, "qa@premnathrail.com", name="QA Engineer")
+    # Editing an NCR is Quality-engineer authority — an explicit grant since roles.
+    user.granular_permissions = ["quality:ncr:view", "quality:ncr:edit"]
+    db.commit()
     ncr = make_ncr(db)
 
     resp = client.patch(f"/api/v1/quality/ncr/{ncr.id}", json={"root_cause": "Die wear", "severity": "major"}, headers=auth_header(user))
@@ -126,18 +129,17 @@ def test_store_item_create_update_delete_are_audited(client, db):
     assert json.loads(logs[2].old_value)["item_code"] == "ITM-1"
 
 
-def test_manual_stock_posting_is_audited(client, db):
-    user = make_user(db, "store2@premnathrail.com")
+def test_opening_stock_import_is_audited(client, db):
+    # Manual stock posting was removed (2026-10-12); the only free-standing
+    # stock-in left is the admin-only Opening Stock Import, audited per row.
+    user = make_user(db, "store2@premnathrail.com", role="admin")
     headers = auth_header(user)
-    location_id = client.post("/api/v1/store/locations", json={"name": "Main", "code": "WH-1"}, headers=headers).json()["id"]
-    item_id = client.post("/api/v1/store/items", json={"item_code": "ITM-2", "item_name": "Nut", "uom": "NOS"}, headers=headers).json()["id"]
+    client.post("/api/v1/store/locations", json={"name": "Main", "code": "WH-1"}, headers=headers)
+    client.post("/api/v1/store/items", json={"item_code": "ITM-2", "item_name": "Nut", "uom": "NOS"}, headers=headers)
 
-    resp = client.post(
-        "/api/v1/store/stock/transactions",
-        json={"item_id": item_id, "location_id": location_id, "transaction_type": "receipt", "quantity": 10},
-        headers=headers,
-    )
-    assert resp.status_code == 200, resp.text
+    csv = "item_code,warehouse,quantity,reference_number,remarks\nITM-2,WH-1,10,OPENING-STOCK,Opening stock\n"
+    resp = client.post("/api/v1/store/stock/import", files={"file": ("s.csv", csv, "text/csv")}, headers=headers)
+    assert resp.status_code == 200 and resp.json()["errors"] == [], resp.text
 
     txn_logs = db.query(AuditLog).filter(AuditLog.entity_type == "store_stock_transaction").all()
     assert len(txn_logs) == 1

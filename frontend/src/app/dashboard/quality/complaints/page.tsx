@@ -2,144 +2,120 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { qualityApi } from '@/lib/api'
 import { QualityCustomerComplaint } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
+import { primaryBtnStyle } from '@/components/shared/ui'
+import {
+  Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, fmtMoney,
+  COMPLAINT_STATUS_LABELS, COMPLAINT_STATUS_HEX, SEVERITY_HEX,
+} from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 
-const STATUS_LABELS: Record<string, string> = { open: 'Open', under_investigation: 'Under Investigation', capa_assigned: 'CAPA Assigned', resolved: 'Resolved', closed: 'Closed', rejected: 'Rejected' }
-const STATUS_HEX: Record<string, string> = { open: '#F59E0B', under_investigation: '#2563EB', capa_assigned: '#7C3AED', resolved: '#0EA5E9', closed: '#16A34A', rejected: '#DC2626' }
-const SEVERITY_LABELS: Record<string, string> = { minor: 'Minor', major: 'Major', critical: 'Critical' }
-const SEVERITY_HEX: Record<string, string> = { minor: '#16A34A', major: '#F59E0B', critical: '#DC2626' }
+interface Stats { total: number; open: number; this_year: number; repeats: number; avg_response_days: number | null; total_cost: number }
 
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
+const kpiStyle: React.CSSProperties = {
+  flex: '1 1 150px', maxWidth: 220, padding: '12px 14px', borderRadius: 14, background: GLASS.card, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(),
 }
 
-export default function QualityComplaintsListPage() {
+export default function QualityComplaintsPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
   const router = useRouter()
-
-  const [complaints, setComplaints] = useState<QualityCustomerComplaint[]>([])
+  const { can, canFeature } = useCan()
+  // Complaint costs: Quality › Complaints › costs switch (binds roles holding the tab).
+  const seeCosts = !can('quality', 'complaints', 'view') || canFeature('quality', 'complaints', 'costs', 'view')
+  const [rows, setRows] = useState<QualityCustomerComplaint[]>([])
+  const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [severityFilter, setSeverityFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('live')
+  const [severity, setSeverity] = useState('')
+
+  useEffect(() => {
+    if (!isAuthorized) return
+    qualityApi.getComplaintStats().then(setStats).catch(() => setStats(null))
+  }, [isAuthorized])
 
   useEffect(() => {
     if (!isAuthorized) return
     setLoading(true)
     const params: Record<string, unknown> = {}
-    if (statusFilter) params.status = statusFilter
-    if (severityFilter) params.severity = severityFilter
+    if (statusFilter === 'live') params.open_only = true
+    else if (statusFilter) params.status = statusFilter
+    if (severity) params.severity = severity
     if (search.trim()) params.search = search.trim()
     qualityApi.listComplaints(params)
-      .then((data) => setComplaints(Array.isArray(data) ? data : []))
+      .then((d) => setRows(Array.isArray(d) ? d : []))
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load complaints.')))
       .finally(() => setLoading(false))
-  }, [isAuthorized, statusFilter, severityFilter, search])
+  }, [isAuthorized, statusFilter, severity, search])
 
   if (isLoading || !isAuthorized) return null
+  const cols = ['Complaint', 'Customer', 'Item / serial-batch', 'Severity', 'NCR / CAPA', 'Response', ...(seeCosts ? ['Cost'] : []), 'Status', 'Date', '']
 
   return (
     <div>
       <QualityNav />
+      <PageHeader title="Customer Complaints">
+        {can('quality', 'complaints', 'create') && (<button type="button" onClick={() => router.push('/dashboard/quality/complaints/new')} style={primaryBtnStyle}>+ Log complaint</button>)}
+      </PageHeader>
+      <ErrorBanner error={error} />
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Quality Module
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Customer Complaints</h1>
-        </div>
-        <button
-          onClick={() => router.push('/dashboard/quality/complaints/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New Complaint
-        </button>
-      </div>
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
+      {stats && (
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          {[['Open', String(stats.open)], ['This year', String(stats.this_year)], ['Repeats', String(stats.repeats)],
+            ['Avg. response', stats.avg_response_days == null ? '—' : `${stats.avg_response_days} days`], ...(seeCosts ? [['Total cost', fmtMoney(stats.total_cost)]] : [])].map(([l, v]) => (
+            <div key={l} style={kpiStyle}>
+              <p style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, margin: 0 }}>{l}</p>
+              <p style={{ fontSize: 20, fontWeight: 700, color: TEXT.heading, margin: '4px 0 0' }}>{v}</p>
+            </div>
+          ))}
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input
-          style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }}
-          placeholder="Search by complaint number, customer, or item…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={severityFilter} onChange={(e) => setSeverityFilter(e.target.value)}>
-          <option value="">All severities</option>
-          <option value="minor">Minor</option>
-          <option value="major">Major</option>
-          <option value="critical">Critical</option>
-        </select>
-        <select style={{ ...inputStyle, flex: '0 1 190px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input style={{ ...filterInputStyle, flex: '1 1 240px', maxWidth: 420 }} placeholder="Search number, customer, item, serial / batch…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select style={{ ...filterInputStyle, flex: '0 1 200px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <option value="live">All open</option>
           <option value="">All statuses</option>
-          <option value="open">Open</option>
-          <option value="under_investigation">Under Investigation</option>
-          <option value="capa_assigned">CAPA Assigned</option>
-          <option value="resolved">Resolved</option>
-          <option value="closed">Closed</option>
-          <option value="rejected">Rejected</option>
+          {Object.entries(COMPLAINT_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <select style={{ ...filterInputStyle, flex: '0 1 150px' }} value={severity} onChange={(e) => setSeverity(e.target.value)}>
+          <option value="">All severities</option><option value="critical">Critical</option><option value="major">Major</option><option value="minor">Minor</option>
         </select>
       </div>
 
-      <div style={{
-        borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-        border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
-      }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-          <thead>
-            <tr>
-              {['Complaint Number', 'Customer', 'Item', 'Severity', 'Status', 'Complaint Date', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
+      <div style={tableWrapStyle}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
+          <thead><tr>{cols.map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
-            ) : complaints.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No complaints found.</td></tr>
-            ) : (
-              complaints.map((c) => (
-                <tr key={c.id} onClick={() => router.push(`/dashboard/quality/complaints/${c.id}`)} style={{ cursor: 'pointer' }}>
-                  <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: TEXT.heading, borderTop: `1px solid ${BORDER.light}` }}>{c.complaint_number}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{c.customer_name}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{c.item_name}</td>
-                  <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${SEVERITY_HEX[c.severity]}1a`, color: SEVERITY_HEX[c.severity], whiteSpace: 'nowrap' }}>
-                      {SEVERITY_LABELS[c.severity] || c.severity}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[c.status]}1a`, color: STATUS_HEX[c.status], whiteSpace: 'nowrap' }}>
-                      {STATUS_LABELS[c.status] || c.status}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{c.complaint_date || '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span onClick={() => router.push(`/dashboard/quality/complaints/${c.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
-                  </td>
-                </tr>
-              ))
-            )}
+              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
+            ) : rows.length === 0 ? (
+              <tr><td colSpan={cols.length} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No complaints found.</td></tr>
+            ) : rows.map((c) => (
+              <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/quality/complaints', c))} style={{ cursor: 'pointer' }}>
+                <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>
+                  {c.complaint_number}{c.repeat_of_number ? <span style={{ color: '#DC2626', fontWeight: 600 }}> · repeat</span> : null}
+                </td>
+                <td style={tdStyle}>{c.customer_name}</td>
+                <td style={tdStyle}>{c.item_name || '—'}{(c.serial_number || c.batch_number) ? ` · ${c.serial_number || c.batch_number}` : ''}</td>
+                <td style={tdStyle}><Pill text={c.severity} hex={SEVERITY_HEX[c.severity]} /></td>
+                <td style={tdStyle}>{[c.ncr_number, c.capa_number].filter(Boolean).join(' / ') || '—'}</td>
+                <td style={tdStyle}>{c.response_days != null ? `${c.response_days} days` : `${c.age_days} days open`}</td>
+                {seeCosts && <td style={tdStyle}>{c.total_cost ? fmtMoney(c.total_cost) : '—'}</td>}
+                <td style={tdStyle}><Pill text={COMPLAINT_STATUS_LABELS[c.status] || c.status} hex={COMPLAINT_STATUS_HEX[c.status]} /></td>
+                <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtDate(c.complaint_date)}</td>
+                <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
+                  <span onClick={() => router.push(recordPath('/dashboard/quality/complaints', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

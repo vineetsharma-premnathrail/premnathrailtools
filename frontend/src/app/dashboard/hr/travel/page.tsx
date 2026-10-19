@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import type { HrTravelRequest, HrExpenseClaim } from '@/types'
@@ -16,12 +17,14 @@ import {
   tableWrapStyle, thStyle, tdStyle, linkActionStyle, fmtDate, fmtINR,
 } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
+import { recordPath } from '@/lib/recordRef'
 
 type Tab = 'travel' | 'claims'
 type TravelAction = { kind: 'approve' | 'reject' | 'complete'; t: HrTravelRequest }
 
 export default function HrTravelPage() {
   const { isAuthorized, isLoading } = useRequireApp('hr')
+  const { canFeature } = useCan()
   const router = useRouter()
 
   const [tab, setTab] = useState<Tab>('travel')
@@ -103,6 +106,7 @@ export default function HrTravelPage() {
   const tabBtn = (key: Tab, label: string) => (
     <button
       type="button"
+      data-tour={`hr-travel-tab-${key}`}
       onClick={() => { setTab(key); setNotice('') }}
       style={{
         fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer',
@@ -130,33 +134,34 @@ export default function HrTravelPage() {
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input
+          data-tour="hr-travel-search"
           style={{ ...filterInputStyle, flex: '1 1 220px', maxWidth: 320 }}
           placeholder={tab === 'travel' ? 'Search no., employee, city, purpose…' : 'Search no., employee, title, payment ref…'}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
         {tab === 'travel' ? (
-          <select style={{ ...filterInputStyle, flex: '0 1 160px' }} value={travelStatus} onChange={(e) => setTravelStatus(e.target.value)}>
+          <select data-tour="hr-travel-status-filter" style={{ ...filterInputStyle, flex: '0 1 160px' }} value={travelStatus} onChange={(e) => setTravelStatus(e.target.value)}>
             <option value="">All statuses</option>
             {Object.entries(TRAVEL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         ) : (
-          <select style={{ ...filterInputStyle, flex: '0 1 180px' }} value={claimStatus} onChange={(e) => setClaimStatus(e.target.value)}>
+          <select data-tour="hr-claims-status-filter" style={{ ...filterInputStyle, flex: '0 1 180px' }} value={claimStatus} onChange={(e) => setClaimStatus(e.target.value)}>
             <option value="">All submitted claims</option>
             {Object.entries(CLAIM_STATUS_LABELS).filter(([k]) => k !== 'draft').map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         )}
         <span style={{ fontSize: 12, color: TEXT.muted }}>{tab === 'travel' ? 'Departing' : 'Claim date'}</span>
-        <div style={{ flex: '0 1 150px' }}><DateField value={dateFrom} onChange={setDateFrom} /></div>
+        <div data-tour="hr-travel-date-from" style={{ flex: '0 1 150px' }}><DateField value={dateFrom} onChange={setDateFrom} /></div>
         <span style={{ fontSize: 12, color: TEXT.muted }}>to</span>
-        <div style={{ flex: '0 1 150px' }}><DateField value={dateTo} onChange={setDateTo} /></div>
+        <div data-tour="hr-travel-date-to" style={{ flex: '0 1 150px' }}><DateField value={dateTo} onChange={setDateTo} /></div>
         {(search || dateFrom || dateTo || travelStatus || claimStatus) && (
           <button type="button" style={linkActionStyle} onClick={() => { setSearch(''); setDateFrom(''); setDateTo(''); setTravelStatus(''); setClaimStatus('') }}>Clear filters</button>
         )}
       </div>
 
       {tab === 'travel' ? (
-        <div style={tableWrapStyle}>
+        <div data-tour="hr-travel-table" style={tableWrapStyle}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
             <thead>
               <tr>{['Request', 'Employee', 'Trip', 'Dates', 'Mode', 'Est. / Advance', 'Approver', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
@@ -180,12 +185,12 @@ export default function HrTravelPage() {
                     {t.decided_by_name || t.approver_name || 'HR (no manager)'}
                     {t.decision_remarks && <div style={{ fontSize: 12, color: TEXT.muted, whiteSpace: 'pre-wrap', maxWidth: 220 }}>“{t.decision_remarks}”</div>}
                   </td>
-                  <td style={tdStyle}><Pill hex={TRAVEL_STATUS_HEX[t.status] || '#64748B'} label={TRAVEL_STATUS_LABELS[t.status] || t.status} /></td>
+                  <td data-tour="hr-travel-status-badge" style={tdStyle}><Pill hex={TRAVEL_STATUS_HEX[t.status] || '#64748B'} label={TRAVEL_STATUS_LABELS[t.status] || t.status} /></td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                    <div style={{ display: 'flex', gap: 10 }}>
+                    <div data-tour="hr-travel-row-actions" style={{ display: 'flex', gap: 10 }}>
                       {t.can_decide && <button type="button" style={linkActionStyle} onClick={() => setAction({ kind: 'approve', t })}>Approve</button>}
                       {t.can_decide && <button type="button" style={{ ...linkActionStyle, color: '#DC2626' }} onClick={() => setAction({ kind: 'reject', t })}>Reject</button>}
-                      {t.status === 'approved' && <button type="button" style={linkActionStyle} onClick={() => setAction({ kind: 'complete', t })}>Mark completed</button>}
+                      {t.status === 'approved' && canFeature('hr', 'travel', 'complete_trip', 'edit') && <button type="button" style={linkActionStyle} onClick={() => setAction({ kind: 'complete', t })}>Mark completed</button>}
                     </div>
                   </td>
                 </tr>
@@ -195,19 +200,19 @@ export default function HrTravelPage() {
         </div>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div data-tour="hr-claims-stats" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
             <StatCard label="Awaiting approval" value={fmtINR(claimTotals.submitted)} hex="#F59E0B" />
             <StatCard label="Approved — to pay" value={fmtINR(claimTotals.approved)} hex="#16A34A" />
             <StatCard label="Paid" value={fmtINR(claimTotals.paid)} hex="#2563EB" />
           </div>
-          <div style={tableWrapStyle}>
+          <div data-tour="hr-claims-table" style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
               <thead>
                 <tr>{['Claim', 'Employee', 'Title', 'Date', 'Trip', 'Amount', 'Approver', 'Status', ''].map((h) => <th key={h} style={{ ...thStyle, textAlign: h === 'Amount' ? 'right' : 'left' }}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {claimsLoading ? <EmptyRow colSpan={9} text="Loading…" /> : claims.length === 0 ? <EmptyRow colSpan={9} text="No claims match these filters. Drafts stay private until the employee submits them." /> : claims.map((c) => (
-                  <tr key={c.id} onClick={() => router.push(`/dashboard/hr/travel/claims/${c.id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/hr/travel/claims', c))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.claim_no}</td>
                     <td style={tdStyle}>
                       <div>{c.user_name}</div>
@@ -218,12 +223,12 @@ export default function HrTravelPage() {
                     <td style={tdStyle}>{c.travel_request_no || '—'}</td>
                     <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>{fmtINR(c.total_amount)}</td>
                     <td style={tdStyle}>{c.decided_by_name || c.approver_name || 'HR (no manager)'}</td>
-                    <td style={tdStyle}>
+                    <td data-tour="hr-claims-status-badge" style={tdStyle}>
                       <Pill hex={CLAIM_STATUS_HEX[c.status] || '#64748B'} label={CLAIM_STATUS_LABELS[c.status] || c.status} />
                       {c.status === 'paid' && c.payment_reference && <div style={{ fontSize: 11.5, color: TEXT.muted, marginTop: 4 }}>{c.payment_reference}</div>}
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                      <span onClick={() => router.push(`/dashboard/hr/travel/claims/${c.id}`)} style={linkActionStyle}>
+                      <span data-tour="hr-claims-open-link" onClick={() => router.push(recordPath('/dashboard/hr/travel/claims', c))} style={linkActionStyle}>
                         {c.can_mark_paid ? 'Record payment' : c.can_decide ? 'Review' : 'View'}
                       </span>
                     </td>

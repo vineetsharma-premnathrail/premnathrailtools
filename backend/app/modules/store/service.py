@@ -10,6 +10,7 @@ from app.modules.store.models.material_return import StoreMaterialReturn
 from app.modules.store.models.stock_transfer import StoreStockTransfer
 from app.modules.store.models.stock_adjustment import StoreStockAdjustment
 from app.modules.store.models.stock_reservation import StoreStockReservation
+from app.modules.store.models.stock_entry import StoreStockEntry
 
 
 def _lock_number_series(db: Session, prefix: str) -> None:
@@ -57,6 +58,17 @@ def generate_stock_adjustment_number(db: Session) -> str:
         last_num = int(last.rsplit("-", 1)[-1])
         return f"{prefix}{last_num + 1:04d}"
     return f"{prefix}0001"
+
+
+def generate_physical_count_number(db: Session) -> str:
+    """PC-[YEAR]-[NUMBER] (physical stock count), sequence scoped per year."""
+    from app.modules.store.models.physical_count import StorePhysicalCount
+
+    year = date.today().year
+    prefix = f"PC-{year}-"
+    _lock_number_series(db, prefix)
+    last = db.query(func.max(StorePhysicalCount.count_number)).filter(StorePhysicalCount.count_number.like(f"{prefix}%")).scalar()
+    return f"{prefix}{(int(last.rsplit('-', 1)[-1]) + 1) if last else 1:04d}"
 
 
 def generate_stock_reservation_number(db: Session) -> str:
@@ -114,3 +126,12 @@ def generate_item_code(db: Session, item_type: str | None, category_name: str | 
     rows = db.query(StoreItem.item_code).filter(StoreItem.item_code.like(f"{prefix}%")).all()
     numbers = [int(code.rsplit("-", 1)[-1]) for (code,) in rows if code.rsplit("-", 1)[-1].isdigit()]
     return f"{prefix}{(max(numbers) + 1) if numbers else 1:04d}"
+
+
+def generate_stock_entry_number(db: Session) -> str:
+    """SE-[YEAR]-[NUMBER], sequence scoped per year."""
+    year = date.today().year
+    prefix = f"SE-{year}-"
+    _lock_number_series(db, prefix)
+    last = db.query(func.max(StoreStockEntry.entry_number)).filter(StoreStockEntry.entry_number.like(f"{prefix}%")).scalar()
+    return f"{prefix}{int(last.rsplit('-', 1)[-1]) + 1:04d}" if last else f"{prefix}0001"

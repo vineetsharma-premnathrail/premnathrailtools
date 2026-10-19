@@ -10,6 +10,8 @@ import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import CalcResults from '@/components/hydraulic/CalcResults'
 import { SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
@@ -81,6 +83,8 @@ function CalculatorInner() {
   const { isAuthorized, isLoading, user } = useRequireApp('hydraulic')
   const router = useRouter()
   const searchParams = useSearchParams()
+  // ?system_id= carries a signed record ref (lib/recordRef.ts).
+  const { id: presetSystemId, error: linkError, loading: linkLoading } = useRecordId(searchParams.get('system_id'))
 
   const [types, setTypes] = useState<HydCalcTypeMeta[]>([])
   const [selectedKey, setSelectedKey] = useState('')
@@ -92,7 +96,7 @@ function CalculatorInner() {
 
   const [title, setTitle] = useState('')
   const [titleTouched, setTitleTouched] = useState(false)
-  const [systemId, setSystemId] = useState(searchParams.get('system_id') || '')
+  const [systemId, setSystemId] = useState(presetSystemId ? String(presetSystemId) : '')
   const [systems, setSystems] = useState<HydLookupOption[]>([])
   const [remarks, setRemarks] = useState('')
   const [saving, setSaving] = useState(false)
@@ -104,9 +108,10 @@ function CalculatorInner() {
   // Load the catalogue once, then pick the starting calculation: ?type=,
   // else the first one matching the ?system_id='s medium, else the first.
   useEffect(() => {
-    if (!isAuthorized) return
+    if (!isAuthorized || linkLoading) return
+    if (presetSystemId) setSystemId(String(presetSystemId))
     const typeParam = searchParams.get('type')
-    const systemParam = searchParams.get('system_id')
+    const systemParam = presetSystemId ? String(presetSystemId) : null
     const inputsParam = searchParams.get('inputs')
     Promise.all([
       hydraulicApi.listCalcTypes(),
@@ -127,7 +132,7 @@ function CalculatorInner() {
         setTitle(start.label)
       })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load the list of calculations.')))
-  }, [isAuthorized, searchParams])
+  }, [isAuthorized, searchParams, presetSystemId, linkLoading])
 
   // Systems of the same medium as the calculation — a hydraulic sizing can't
   // be filed against a pneumatic system (the backend rejects it too).
@@ -194,7 +199,7 @@ function CalculatorInner() {
         title: title.trim(), calc_type: calc.key, system_id: systemId ? Number(systemId) : null,
         inputs: buildInputs(calc, values), remarks: remarks.trim() || null,
       })
-      router.push(`/dashboard/hydraulic/calculations/${saved.id}`)
+      router.push(recordPath('/dashboard/hydraulic/calculations', saved))
     } catch (err) {
       setSaveError(extractErrorMessages(err, 'Failed to save the calculation.'))
       setSaving(false)
@@ -235,6 +240,8 @@ function CalculatorInner() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/calculations" listLabel="Back to calculations" /></div>)
+  if (linkLoading) return <div><HydraulicNav /></div>
 
   return (
     <div>
@@ -247,7 +254,7 @@ function CalculatorInner() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>Engineering Calculator</h1>
         </div>
-        <button onClick={() => router.push('/dashboard/hydraulic/calculations')} type="button" style={secondaryBtnStyle}>← Back</button>
+        <button data-tour="hyd-calcnew-back-btn" onClick={() => router.push('/dashboard/hydraulic/calculations')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
 
       {error && <div style={errorBanner}>{Array.isArray(error) ? error.join(' ') : error}</div>}
@@ -255,7 +262,7 @@ function CalculatorInner() {
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
         {/* Picker */}
         <div style={{ flex: '0 1 290px', minWidth: 250, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ ...sectionStyle, padding: 14 }}>
+          <div data-tour="hyd-calcnew-picker" style={{ ...sectionStyle, padding: 14 }}>
             {MEDIA_ORDER.map((m) => {
               const group = types.filter((t) => t.system_type === m)
               if (!group.length) return null
@@ -299,17 +306,17 @@ function CalculatorInner() {
                 <span style={pill(SYSTEM_TYPE_HEX[calc.system_type])}>{SYSTEM_TYPE_LABELS[calc.system_type] || calc.system_type}</span>
               </div>
               <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 16px', lineHeight: 1.5 }}>{calc.description}</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+              <div data-tour="hyd-calcnew-inputs" style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
                 {calc.inputs.map(renderInput)}
               </div>
               <div style={{ marginTop: 14 }}>
-                <button type="button" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={() => setValues(defaultValues(calc))}>
+                <button data-tour="hyd-calcnew-reset-btn" type="button" style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 12 }} onClick={() => setValues(defaultValues(calc))}>
                   Reset to defaults
                 </button>
               </div>
             </div>
 
-            <div style={sectionStyle}>
+            <div data-tour="hyd-calcnew-results" style={sectionStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <p style={sectionTitle}>Results</p>
                 {computing && <span style={{ fontSize: 12, color: TEXT.muted }}>Calculating…</span>}
@@ -323,9 +330,9 @@ function CalculatorInner() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 260px', maxWidth: 400 }}>
                   <label style={labelStyle}>Title *</label>
-                  <input style={inputStyle} value={title} maxLength={255} onChange={(e) => { setTitle(e.target.value); setTitleTouched(true) }} />
+                  <input data-tour="hyd-calcnew-title" style={inputStyle} value={title} maxLength={255} onChange={(e) => { setTitle(e.target.value); setTitleTouched(true) }} />
                 </div>
-                <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
+                <div data-tour="hyd-calcnew-system" style={{ flex: '1 1 260px', maxWidth: 380 }}>
                   <label style={labelStyle}>System ({SYSTEM_TYPE_LABELS[calc.system_type]} only)</label>
                   <SearchableSelect value={systemId} onChange={setSystemId} placeholder="Search system…"
                     options={[{ value: '', label: '— Not linked to a system —' }, ...systems.map((s) => ({ value: String(s.id), label: s.label }))]} />
@@ -333,12 +340,12 @@ function CalculatorInner() {
               </div>
               <div style={{ marginTop: 14 }}>
                 <label style={labelStyle}>Remarks</label>
-                <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)}
+                <textarea data-tour="hyd-calcnew-remarks" style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)}
                   placeholder="Assumptions, the load case, where the figures came from…" />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, color: TEXT.muted }}>The server re-runs the calculation when saving, so the stored results always match the inputs.</span>
-                <button type="button" onClick={handleSave} disabled={saving} style={{
+                <button data-tour="hyd-calcnew-save-btn" type="button" onClick={handleSave} disabled={saving} style={{
                   padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
                   background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
                   boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,

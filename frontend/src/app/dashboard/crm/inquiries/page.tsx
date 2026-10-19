@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { CaretUp, PushPin } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -9,13 +10,19 @@ import { Inquiry, Tender, Organization } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
 import InquiryDetailPanel from '@/components/crm/InquiryDetailPanel'
 import TenderDetailPanel from '@/components/crm/TenderDetailPanel'
-import { secondaryBtnStyle, pageBtnStyle } from '@/components/crm/ui'
+import { secondaryBtnStyle } from '@/components/crm/ui'
 import { BRAND, TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import MessageDialog from '@/components/erp/MessageDialog'
+import ExportDialog from '@/components/erp/ExportDialog'
+import CrmImportDialog from '@/components/crm/CrmImportDialog'
+import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+import { PINNED_INQUIRY_TENDER_KEY } from '@/lib/crmShortcuts'
+import { recordHref, useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
-const PAGE_SIZE = 16
-const PINNED_KEY = 'crm_pinned_inquiry_tender_keys'
+const PINNED_KEY = PINNED_INQUIRY_TENDER_KEY
 
 const panelOuterStyle: React.CSSProperties = {
   borderRadius: 18,
@@ -32,6 +39,8 @@ type Kind = 'inquiry' | 'tender'
 interface CombinedRow {
   key: string
   id: number
+  /** the API row (carries id_ref for links) */
+  record: object
   kind: Kind
   universal_id: string
   org_id: number
@@ -47,7 +56,10 @@ interface CombinedRow {
 }
 
 export default function InquiriesPage() {
-  const { isAuthorized, isLoading } = useRequireApp('crm')
+  const { user, isAuthorized, isLoading } = useRequireApp('crm')
+  const { can } = useCan()
+  const [showExport, setShowExport] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
@@ -55,14 +67,22 @@ export default function InquiriesPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [page, setPage] = useState(1)
 
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<'all' | Kind>('all')
   const [pinnedKeys, setPinnedKeys] = useState<string[]>([])
 
-  const selectedId = searchParams.get('id') ? Number(searchParams.get('id')) : null
+  const selectedRef = searchParams.get('id')
+  const { id: selectedId, error: linkError } = useRecordId(selectedRef)
   const selectedType: Kind = searchParams.get('type') === 'tender' ? 'tender' : 'inquiry'
+
+  // A list link like ?type=tender (e.g. the dashboard's Tenders cards) opens
+  // the list pre-filtered; with ?id= the type only says which detail to open.
+  useEffect(() => {
+    if (searchParams.get('id')) return
+    const t = searchParams.get('type')
+    if (t === 'tender' || t === 'inquiry') setTypeFilter(t)
+  }, [searchParams])
 
   useEffect(() => {
     try {
@@ -77,7 +97,11 @@ export default function InquiriesPage() {
     e.stopPropagation()
     setPinnedKeys((prev) => {
       const next = prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]
-      localStorage.setItem(PINNED_KEY, JSON.stringify(next))
+      try {
+        localStorage.setItem(PINNED_KEY, JSON.stringify(next))
+      } catch {
+        // storage unavailable (private mode / blocked): the pin stays for this session only
+      }
       return next
     })
   }
@@ -89,14 +113,13 @@ export default function InquiriesPage() {
       const [inquiryData, tenderData, orgData] = await Promise.all([
         crmApi.listInquiries({ search: search || undefined }),
         crmApi.listTenders({ search: search || undefined }),
-        crmApi.listOrganizations(),
+        crmApi.listOrganizations({ picker: true }),
       ])
       setInquiries(inquiryData)
       setTenders(tenderData)
       setOrganizations(orgData)
-      setPage(1)
-    } catch {
-      setError('Failed to load inquiries & tenders.')
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not load inquiries & tenders — check your connection and reload; if it persists your account may lack access to this module.').join(' '))
     } finally {
       setLoading(false)
     }
@@ -131,6 +154,7 @@ export default function InquiriesPage() {
     const fromInquiries: CombinedRow[] = inquiries.map((i) => ({
       key: `inquiry-${i.id}`,
       id: i.id,
+      record: i,
       kind: 'inquiry',
       universal_id: i.universal_id,
       org_id: i.org_id,
@@ -147,6 +171,7 @@ export default function InquiriesPage() {
     const fromTenders: CombinedRow[] = tenders.map((t) => ({
       key: `tender-${t.id}`,
       id: t.id,
+      record: t,
       kind: 'tender',
       universal_id: t.universal_id,
       org_id: t.org_id,
@@ -197,7 +222,7 @@ export default function InquiriesPage() {
 
   const columns: { label: string; key: SortKey | ColFilterKey | 'kind' | 'org_name' | 'secondary' | 'product'; type: 'sort' | 'filter' | 'none'; sortLabels?: [string, string] }[] = [
     { label: 'ID', key: 'universal_id', type: 'none' },
-    { label: 'Organization', key: 'org_name', type: 'none' },
+    { label: 'Customer Organization', key: 'org_name', type: 'none' },
     { label: 'Product', key: 'product', type: 'none' },
     { label: 'Stage', key: 'stage', type: 'filter' },
     { label: 'Created Date', key: 'created_at', type: 'sort', sortLabels: ['Old', 'Latest'] },
@@ -226,11 +251,10 @@ export default function InquiriesPage() {
   }, [filteredRows, pinnedKeys, sortKey, sortDir])
 
   const openRow = (row: CombinedRow) => {
-    router.push(`/dashboard/crm/inquiries?id=${row.id}&type=${row.kind}`)
+    router.push(recordHref('/dashboard/crm/inquiries', row.record, 'id', { type: row.kind }))
   }
 
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE))
-  const paged = sortedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const paged = sortedRows
 
   if (isLoading || !isAuthorized) return null
 
@@ -239,15 +263,33 @@ export default function InquiriesPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Inquiries &amp; Tenders</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <Link
+          {can('crm', 'inquiries_tenders', 'create') && <Link
             href="/dashboard/crm/inquiries/new"
             data-tour="iq-add-btn"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14.5, fontWeight: 700, padding: '12px 24px', borderRadius: 10, background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: TEXT.white, textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
           >
-            <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> New Record
-          </Link>
+            <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add Inquiries &amp; Tenders
+          </Link>}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            {can('crm', 'inquiries_tenders', 'export') && <button type="button" data-tour="iq-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>}
+            {user?.role === 'admin' && can('crm', 'organizations', 'import') && <button type="button" data-tour="iq-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
+          </div>
         </div>
       </div>
+
+      {showExport && (
+        <ExportDialog onClose={() => setShowExport(false)} filename="inquiries_tenders" noun="inquiries & tenders" dateLabel="Created date"
+          download={(params) => crmApi.exportExcel('inquiries-tenders', params)}
+          items={sortedRows.map((r) => ({ id: r.key, label: `${r.universal_id} — ${r.title || r.product || ''}`, sub: [r.kind === 'tender' ? 'Tender' : 'Inquiry', r.org_name, r.stage].filter(Boolean).join(' · ') }))}
+          selectionParams={(keys) => {
+            const byKey = new Map(sortedRows.map((r) => [r.key, r]))
+            const picked = keys.map((k) => byKey.get(String(k))).filter((r): r is CombinedRow => !!r)
+            const ids = (kind: Kind) => picked.filter((r) => r.kind === kind).map((r) => r.id).join(',') || undefined
+            return { inquiry_ids: ids('inquiry'), tender_ids: ids('tender') }
+          }}
+          filterParams={{ search: search || undefined, type: typeFilter }} />
+      )}
+      {showImport && <CrmImportDialog onClose={() => setShowImport(false)} onImported={() => load()} />}
 
       <MessageDialog
         open={!!error}
@@ -267,7 +309,7 @@ export default function InquiriesPage() {
         data-tour="iq-search"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search ID, organization, product, owner, zone, stage..."
+        placeholder="Search ID, customer organization, product, owner, zone, stage..."
         style={{ flex: '1 1 auto', minWidth: 0, padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', fontSize: 12.5, outline: 'none' }}
       />
       <div data-tour="iq-col-type" role="radiogroup" aria-label="Show" style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto', padding: '0 10px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff' }}>
@@ -291,7 +333,8 @@ export default function InquiriesPage() {
 
   const fullTable = (
     <>
-      <div style={{ ...panelOuterStyle, height: 'auto', overflowX: 'auto' }}>
+      <div style={{ ...panelOuterStyle, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000, tableLayout: 'fixed' }}>
           {/* Fixed widths so headers don't shift when the Inquiry/Tender filter changes the rows. */}
           <colgroup>
@@ -324,7 +367,7 @@ export default function InquiriesPage() {
                 }
                 if (col.type === 'none') {
                   return (
-                    <th key={col.key} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
+                    <th key={col.key} data-tour={`iq-col-${col.key}`} style={{ textAlign: 'left', padding: '7px 16px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
                       {col.label}
                     </th>
                   )
@@ -343,10 +386,8 @@ export default function InquiriesPage() {
                           ({sortKey === col.key ? col.sortLabels[sortDir === 'asc' ? 0 : 1] : `${col.sortLabels[0]}/${col.sortLabels[1]}`})
                         </span>
                       )}
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                        style={{ opacity: sortKey === col.key ? 1 : 0.35, transform: sortKey === col.key && sortDir === 'desc' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
-                        <path d="M18 15l-6-6-6 6" />
-                      </svg>
+                      <CaretUp size={9}
+                        style={{ opacity: sortKey === col.key ? 1 : 0.35, transform: sortKey === col.key && sortDir === 'desc' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
                     </span>
                   </th>
                 )
@@ -368,9 +409,7 @@ export default function InquiriesPage() {
                       title={pinned ? 'Unpin' : 'Pin to top'}
                       style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? '#FF7A45' : 'none'} stroke={pinned ? '#FF7A45' : '#a8a29e'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z" />
-                      </svg>
+                      <PushPin size={14} weight={pinned ? 'fill' : 'regular'} color={pinned ? '#FF7A45' : '#a8a29e'} />
                     </button>
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', whiteSpace: 'nowrap', lineHeight: 1.35 }}>
                       {/* INQ-20260917- on line 1, the serial on line 2 */}
@@ -394,41 +433,15 @@ export default function InquiriesPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
-      {!loading && sortedRows.length > 0 && (
-        <div data-tour="iq-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 10 }}>
-          <span style={{ fontSize: 12.5, color: '#78716c' }}>
-            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sortedRows.length)} of {sortedRows.length}
-          </span>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={pageBtnStyle(page === 1)}>‹</button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
-              .reduce<number[]>((acc, p) => {
-                if (acc.length && p - acc[acc.length - 1] > 1) acc.push(-1)
-                acc.push(p)
-                return acc
-              }, [])
-              .map((p, i) =>
-                p === -1 ? (
-                  <span key={`gap-${i}`} style={{ fontSize: 12.5, color: '#a8a29e', padding: '0 4px' }}>…</span>
-                ) : (
-                  <button key={p} onClick={() => setPage(p)} style={{ ...pageBtnStyle(false), background: p === page ? '#FF7A45' : '#fff', color: p === page ? '#fff' : '#57534e' }}>
-                    {p}
-                  </button>
-                )
-              )}
-            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={pageBtnStyle(page === totalPages)}>›</button>
-          </div>
-        </div>
-      )}
     </>
   )
 
-  if (!selectedId) {
+  if (!selectedRef) {
     return (
-      <div>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
         <CrmNav />
         {header}
         {searchBar}
@@ -436,6 +449,9 @@ export default function InquiriesPage() {
       </div>
     )
   }
+
+  if (linkError) return (<div><CrmNav /><InvalidRecordLink message={linkError} listHref="/dashboard/crm/inquiries" listLabel="Back to inquiries &amp; tenders" /></div>)
+  if (!selectedId) return <div><CrmNav /></div>
 
   return (
     <div>

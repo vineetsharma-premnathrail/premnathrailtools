@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
 import QualityNav from '@/components/quality/QualityNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
-import { Field, Section, inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
-import { PageHeader, ErrorBanner, INSPECTION_TYPE_LABELS } from '@/components/quality/QualityBits'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional } from '@/components/shared/FormSheet'
+import { ErrorBanner, INSPECTION_TYPE_LABELS, sheetGap } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 
 interface ItemOpt { id: number; item_code: string; item_name: string }
@@ -41,7 +42,7 @@ export default function NewInspectionPlanPage() {
         inspection_level: form.inspection_level, fixed_sample_size: form.sampling_type === 'fixed' ? Number(form.fixed_sample_size) : null,
         lines: [],
       })
-      router.push(`/dashboard/quality/inspection-plans/${plan.id}`)
+      router.push(recordPath('/dashboard/quality/inspection-plans', plan))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create the plan.'))
     } finally {
@@ -50,68 +51,61 @@ export default function NewInspectionPlanPage() {
   }
 
   if (isLoading || !isAuthorized) return null
+  const back = () => router.push('/dashboard/quality/inspection-plans')
 
   return (
-    <div>
-      <QualityNav />
-      <PageHeader title="New Inspection Plan">
-        <button type="button" onClick={() => router.push('/dashboard/quality/inspection-plans')} style={secondaryBtnStyle}>← Back</button>
-      </PageHeader>
-      <ErrorBanner error={error} />
-      <Section title="Plan header" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 300px', maxWidth: 460 }}>
-            <Field label="Item *">
-              <SearchableSelect value={form.item_id} onChange={(v) => setForm({ ...form, item_id: v })} placeholder="Search item"
-                options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
-            </Field>
-          </div>
-          <div style={{ flex: '0 1 220px', minWidth: 200 }}>
-            <Field label="Inspection type">
-              <select style={inputStyle} value={form.inspection_type} onChange={(e) => setForm({ ...form, inspection_type: e.target.value })}>
-                {Object.entries(INSPECTION_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </Field>
-          </div>
-          <div style={{ flex: '1 1 240px', maxWidth: 360 }}>
-            <Field label="Title (optional)"><input style={inputStyle} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '0 1 220px', minWidth: 200 }}>
-            <Field label="Sampling">
-              <select style={inputStyle} value={form.sampling_type} onChange={(e) => setForm({ ...form, sampling_type: e.target.value })}>
-                <option value="aql">AQL table (ISO 2859-1)</option><option value="full">100% inspection</option><option value="fixed">Fixed quantity</option>
-              </select>
-            </Field>
-          </div>
-          {form.sampling_type === 'aql' && (
-            <>
-              <div style={{ flex: '0 1 120px' }}>
-                <Field label="AQL">
-                  <select style={inputStyle} value={form.aql} onChange={(e) => setForm({ ...form, aql: e.target.value })}>
+    <FormPage nav={<QualityNav />} icon="list" title="New Inspection Plan" subtitle="Create the draft plan header — characteristics are added on the plan next." onBack={back} backTour="qa-plan-new-back"
+      footer={<>
+        <button type="button" onClick={back} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button type="button" onClick={submit} disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name="plus" size={16} />{busy ? 'Creating…' : 'Create draft & add characteristics'}</button>
+      </>}>
+      <SheetColumns
+        left={<>
+          <ErrorBanner error={error} />
+          <SheetSection icon="list" title="Plan header">
+            <label style={sheetLabel}>Item <Req /></label>
+            <SearchableSelect value={form.item_id} onChange={(v) => setForm({ ...form, item_id: v })} placeholder="Search item"
+              options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+            <label style={{ ...sheetLabel, ...sheetGap }}>Inspection type</label>
+            <select style={sheetInput} value={form.inspection_type} onChange={(e) => setForm({ ...form, inspection_type: e.target.value })}>
+              {Object.entries(INSPECTION_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <label style={{ ...sheetLabel, ...sheetGap }}>Title <Optional /></label>
+            <input style={sheetInput} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          </SheetSection>
+        </>}
+        right={<>
+          <SheetSection icon="search" title="Sampling">
+            <label style={sheetLabel}>Sampling</label>
+            <select style={sheetInput} value={form.sampling_type} onChange={(e) => setForm({ ...form, sampling_type: e.target.value })}>
+              <option value="aql">AQL table (ISO 2859-1)</option><option value="full">100% inspection</option><option value="fixed">Fixed quantity</option>
+            </select>
+            {form.sampling_type === 'aql' && (
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', ...sheetGap }}>
+                <div style={{ flex: '1 1 110px' }}>
+                  <label style={sheetLabel}>AQL</label>
+                  <select style={sheetInput} value={form.aql} onChange={(e) => setForm({ ...form, aql: e.target.value })}>
                     {['0.065', '0.10', '0.15', '0.25', '0.40', '0.65', '1.0', '1.5', '2.5', '4.0', '6.5', '10.0'].map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
-                </Field>
-              </div>
-              <div style={{ flex: '0 1 130px' }}>
-                <Field label="Level">
-                  <select style={inputStyle} value={form.inspection_level} onChange={(e) => setForm({ ...form, inspection_level: e.target.value })}>
+                </div>
+                <div style={{ flex: '1 1 130px' }}>
+                  <label style={sheetLabel}>Level</label>
+                  <select style={sheetInput} value={form.inspection_level} onChange={(e) => setForm({ ...form, inspection_level: e.target.value })}>
                     <option value="I">General I</option><option value="II">General II</option><option value="III">General III</option>
                   </select>
-                </Field>
+                </div>
               </div>
-            </>
-          )}
-          {form.sampling_type === 'fixed' && (
-            <div style={{ flex: '0 1 150px' }}>
-              <Field label="Sample size"><input type="number" min={1} style={inputStyle} value={form.fixed_sample_size} onChange={(e) => setForm({ ...form, fixed_sample_size: e.target.value })} /></Field>
-            </div>
-          )}
-        </div>
-        <p style={{ fontSize: 12, color: '#78716c', margin: 0 }}>Critical characteristics are always inspected 100% with accept number 0, whatever the sampling.</p>
-      </Section>
-      <button type="button" disabled={busy} onClick={submit} style={{ ...primaryBtnStyle, opacity: busy ? 0.7 : 1 }}>{busy ? 'Creating…' : 'Create draft & add characteristics'}</button>
-    </div>
+            )}
+            {form.sampling_type === 'fixed' && (
+              <>
+                <label style={{ ...sheetLabel, ...sheetGap }}>Sample size</label>
+                <input type="number" min={1} style={sheetInput} value={form.fixed_sample_size} onChange={(e) => setForm({ ...form, fixed_sample_size: e.target.value })} />
+              </>
+            )}
+            <p style={sheetHint}>Critical characteristics are always inspected 100% with accept number 0, whatever the sampling.</p>
+          </SheetSection>
+        </>}
+      />
+    </FormPage>
   )
 }

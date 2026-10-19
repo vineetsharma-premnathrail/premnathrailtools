@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRequireApp, hasErpPermission } from '@/hooks/useAuth'
+import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { erpApi } from '@/lib/api'
 import ErpNav from '@/components/erp/ErpNav'
 import { Section } from '@/components/shared/ui'
@@ -25,12 +26,16 @@ interface DeletedSR {
   issue_description?: string
   deleted_at: string | null
   days_remaining: number
+  created_by_id?: number | null
 }
 
 export default function RecycleBinPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('erp')
-  const canRestoreProjects = hasErpPermission(user, 'project_delete')
-  const canRestoreSrs = hasErpPermission(user, 'sr_delete')
+  // Restoring = Recycle Bin › Edit; an SR can only be restored by its creator (or an admin).
+  const { can } = useCan()
+  const canRestoreProjects = can('erp', 'recycle_bin', 'edit')
+  const canRestoreSr = (sr: DeletedSR) =>
+    canRestoreProjects && (user?.role === 'admin' || sr.created_by_id == null || sr.created_by_id === user?.id)
   const [projects, setProjects] = useState<DeletedProject[]>([])
   const [srs, setSrs] = useState<DeletedSR[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,7 +49,7 @@ export default function RecycleBinPage() {
       setProjects(p)
       setSrs(s)
     } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to load recycle bin.').join(' '))
+      setError(extractErrorMessages(err, 'Could not load the Recycle Bin — check your connection and reload the page.').join(' '))
     } finally {
       setLoading(false)
     }
@@ -60,7 +65,7 @@ export default function RecycleBinPage() {
       await erpApi.restoreProject(id)
       load()
     } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to restore machine.'))
+      setError(extractErrorMessages(err, 'Could not restore the machine — check you have Recycle Bin › Edit permission and your connection, then try again.'))
     }
   }
 
@@ -69,7 +74,7 @@ export default function RecycleBinPage() {
       await erpApi.restoreServiceRequest(id)
       load()
     } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to restore service request.'))
+      setError(extractErrorMessages(err, 'Could not restore the service request — if its machine is also in the Recycle Bin, restore the machine first; otherwise check your connection and try again.'))
     }
   }
 
@@ -79,7 +84,7 @@ export default function RecycleBinPage() {
     <div>
       <ErpNav />
       <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Recycle Bin</h1>
-      <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>Deleted items are auto-purged after 10 days</p>
+      <p data-tour="erp-bin-purge-note" style={{ fontSize: 13, color: '#78716c', margin: '0 0 24px' }}>Deleted items are auto-purged after 10 days</p>
 
       <MessageDialog open={!!error} variant="error" title="Restore Failed" message={error} onClose={() => setError('')} />
 
@@ -87,6 +92,7 @@ export default function RecycleBinPage() {
         <p style={{ fontSize: 13, color: '#a8a29e' }}>Loading…</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div data-tour="erp-bin-projects">
           <Section title="Deleted Projects">
             {projects.length === 0 ? (
               <p style={{ fontSize: 13, color: '#a8a29e' }}>Nothing here.</p>
@@ -102,7 +108,9 @@ export default function RecycleBinPage() {
               ))
             )}
           </Section>
+          </div>
 
+          <div data-tour="erp-bin-srs">
           <Section title="Deleted Service Requests">
             {srs.length === 0 ? (
               <p style={{ fontSize: 13, color: '#a8a29e' }}>Nothing here.</p>
@@ -113,11 +121,12 @@ export default function RecycleBinPage() {
                   primary={sr.request_number}
                   secondary={`${sr.issue_description || ''} — ${sr.days_remaining} day(s) left`}
                   deletedAt={sr.deleted_at}
-                  onRestore={canRestoreSrs ? () => restoreSr(sr.id) : undefined}
+                  onRestore={canRestoreSr(sr) ? () => restoreSr(sr.id) : undefined}
                 />
               ))
             )}
           </Section>
+          </div>
         </div>
       )}
     </div>
@@ -135,6 +144,7 @@ function RecycleRow({ primary, secondary, deletedAt, onRestore }: { primary: str
       </div>
       {onRestore && (
         <button
+          data-tour="erp-bin-restore-btn"
           onClick={onRestore}
           style={{ fontSize: 12.5, fontWeight: 600, padding: '7px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
         >

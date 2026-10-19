@@ -51,10 +51,10 @@ export default function EmployeeLeaveTab({ userId }: { userId: number }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Leave</h3>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ padding: '7px 10px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', fontSize: 13 }}>
+          <select data-tour="hr-emp-leave-year" value={year} onChange={(e) => setYear(Number(e.target.value))} style={{ padding: '7px 10px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.7)', fontSize: 13 }}>
             {[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
-          <Link href="/dashboard/hr/leave" style={{ fontSize: 12.5, fontWeight: 600, color: '#E85A1F', textDecoration: 'none' }}>Manage leave →</Link>
+          <Link href="/dashboard/hr/leave" data-tour="hr-emp-leave-manage" style={{ fontSize: 12.5, fontWeight: 600, color: '#E85A1F', textDecoration: 'none' }}>Manage leave →</Link>
         </div>
       </div>
 
@@ -71,7 +71,7 @@ export default function EmployeeLeaveTab({ userId }: { userId: number }) {
           {balances.length === 0 ? (
             <p style={{ fontSize: 13, color: TEXT.muted, margin: '0 0 16px' }}>No leave balances for {year}. Use “Allot year” on the Leave page, or adjust a balance for this employee.</p>
           ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+            <div data-tour="hr-emp-leave-balances" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
               {balances.map((b) => (
                 <div key={b.id} style={{ flex: '0 1 170px', padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,.55)', border: `1px solid ${BORDER.light}` }}>
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: TEXT.secondary }}>{b.leave_type_name}</div>
@@ -84,7 +84,7 @@ export default function EmployeeLeaveTab({ userId }: { userId: number }) {
             </div>
           )}
 
-          <div style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${BORDER.light}` }}>
+          <div data-tour="hr-emp-leave-requests" style={{ overflowX: 'auto', borderRadius: 12, border: `1px solid ${BORDER.light}` }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
               <thead><tr>{['Request', 'Type', 'Dates', 'Days', 'Status', 'Decided by'].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
               <tbody>

@@ -1,20 +1,21 @@
-from datetime import date
-from sqlalchemy import JSON, ForeignKey, Date
-from sqlalchemy.orm import Mapped, mapped_column
+from datetime import date, datetime
+from sqlalchemy import JSON, ForeignKey, Date, DateTime, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, object_session, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
+from app.modules.main.models.role import Role, user_roles
 
-# Modules a user's `assigned_apps` list may contain. The admin role
-# bypasses this entirely and gets access to every module regardless
-# of what's in the list (see get_user_apps() usage in routes).
-AVAILABLE_APPS = {"erp", "rnd", "crm", "p2p", "store", "purchase", "quality", "projects", "accounts", "hr", "production", "design", "electrical", "hydraulic", "maintenance"}
+# Every portal app (module) key. Which of them a user sees is derived from
+# their effective permissions (see get_apps) — admins get all of them.
+AVAILABLE_APPS = {"erp", "rnd", "crm", "p2p", "store", "purchase", "quality", "projects", "accounts", "hr", "production", "design", "electrical", "hydraulic", "maintenance", "sales", "products"}
 
 
 class User(Base, TimestampMixin):
     """Portal user account. Authentication is Microsoft SSO only — see
     app/auth/jwt_handler.py and docs/adr/0002-microsoft-sso.md. Authorization
-    is role-based (see get_apps() below); `role` and `assigned_apps` are the
-    two fields routes/services actually check.
+    is `role == "admin"` (sees and does everything) or, for everyone else,
+    the Roles they hold plus extra grants — see effective_permissions and
+    core/permission_registry.py.
     """
 
     __tablename__ = "users"
@@ -26,6 +27,10 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(default=True)
     designation: Mapped[str | None] = mapped_column(nullable=True)
     department: Mapped[str | None] = mapped_column(nullable=True)
+    # The Department the user belongs to; `department` above is its name,
+    # kept for display. Set both via organization/services/department_membership.
+    department_id: Mapped[int | None] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL", use_alter=True), nullable=True, index=True)
     phone: Mapped[str | None] = mapped_column(nullable=True)
     # Azure AD "Office Location" (Graph `officeLocation`) — free-text per
     # tenant convention (e.g. a building/floor label), synced read-only from
@@ -35,7 +40,11 @@ class User(Base, TimestampMixin):
     # Azure value for reference/re-matching.
     office_location: Mapped[str | None] = mapped_column(nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
+    # Legacy, from before roles — get_apps no longer reads it; the roles
+    # migration (c4e8a1f3b7d2) turned each assigned app into a role.
     assigned_apps: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Legacy ERP ids (project_create, sr_delete…); has_erp_permission now maps
+    # them onto erp:projects:* / erp:service_requests:* grants.
     erp_permissions: Mapped[list[str]] = mapped_column(JSON, default=list)
     is_azure_admin: Mapped[bool] = mapped_column(default=False)
 
@@ -51,7 +60,7 @@ class User(Base, TimestampMixin):
     is_plant_head: Mapped[bool] = mapped_column(default=False)
     is_purchase_head: Mapped[bool] = mapped_column(default=False)
     is_director: Mapped[bool] = mapped_column(default=False)
-    is_md: Mapped[bool] = mapped_column(default=False)
+    is_partner: Mapped[bool] = mapped_column(default=False)
     # Manager roles for the P2P approval matrix (see p2p_request.py
     # PO_APPROVAL_ROLE_SETS): PO approval is offered to every holder of each
     # role in the PR's set, any one of whom approves. PR approver pickers
@@ -102,25 +111,76 @@ class User(Base, TimestampMixin):
     # aren't per-user notifications.
     notifications_enabled: Mapped[bool] = mapped_column(default=True)
 
-    # Granular permission matrix (module:subtab:action ids, e.g.
-    # "erp:projects:approve") — additive to `assigned_apps`/`erp_permissions`
-    # above, not a replacement. Like `erp_permissions`, nothing enforces these
-    # at the route level yet; they're captured so the admin UI has somewhere
-    # real to write to ahead of routes actually checking them.
+    # The user's own EXTRA Permission Matrix grants (module:tab:action ids or
+    # module wildcards), on top of whatever their roles give — see
+    # effective_permissions. Most users need none; roles are the normal path.
     granular_permissions: Mapped[list[str]] = mapped_column(JSON, default=list)
-    # module_key -> scope ("own" | "department" | "branch" | "company" | "all")
+    # Personal data-scope overrides, module_key -> level; beats whatever the
+    # user's roles give for that module (core/data_scope.py user_scope).
     data_access_scopes: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # App password (app lock, services/app_lock.py): asked after every
+    # Microsoft sign-in and after idle time, because shared laptops share the
+    # Windows/Microsoft password. Only a salted PBKDF2 hash is stored. A
+    # forgotten one is reset with a one-time temporary password sent by email.
+    app_password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    app_password_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    app_password_failed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    app_password_locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    app_temp_password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    app_temp_password_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    app_temp_password_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    roles: Mapped[list[Role]] = relationship(Role, secondary=user_roles, lazy="selectin")
+
+    def role_grants(self) -> list[str]:
+        """Raw grants (wildcards unexpanded) from this user's active roles plus
+        every active "applies to everyone" role."""
+        return [g for src in self.role_grant_lists() for g in src]
+
+    def role_grant_lists(self) -> list[list[str]]:
+        """The same grants, one list per role — features inherit per role
+        (permission_registry.expand_grants), so roles are expanded apart."""
+        lists: list[list[str]] = []
+        from app.modules.main.services.grc import inactive_access
+        off_roles = inactive_access(self)[0]
+        for role in self.roles or []:
+            if role.is_active and role.id not in off_roles:
+                lists.append(list(role.permissions or []))
+        session = object_session(self)
+        if session is not None:
+            for role in session.query(Role).filter(Role.is_default.is_(True), Role.is_active.is_(True)).all():
+                lists.append(list(role.permissions or []))
+        return lists
+
+    @property
+    def effective_permissions(self) -> set[str]:
+        """Concrete `module:tab:action` ids this user holds: the union of
+        their roles' grants (assigned + applies-to-everyone) and their own
+        extra grants, wildcards expanded. Cached on the instance until their
+        roles or extra grants change."""
+        from app.core.permission_registry import expand_grant_sources
+
+        from app.modules.main.services.grc import inactive_access
+        off_roles, off_grants = inactive_access(self)
+        key = (
+            tuple(self.granular_permissions or ()), tuple(sorted(off_roles)), tuple(sorted(off_grants)),
+            tuple((r.id, r.is_active, tuple(r.permissions or ())) for r in self.roles or []),
+        )
+        cached = self.__dict__.get("_effective_permissions_cache")
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        eff = expand_grant_sources([g for g in (self.granular_permissions or []) if g not in off_grants], *self.role_grant_lists())
+        self.__dict__["_effective_permissions_cache"] = (key, eff)
+        return eff
+
+    def invalidate_permissions(self) -> None:
+        self.__dict__.pop("_effective_permissions_cache", None)
 
     def get_apps(self) -> list[str]:
-        """Modules this user can see: admins and the allow-listed emails in
-        app/core/module_visibility.py get every module; everyone else gets
-        whatever was explicitly assigned to them, minus the modules locked
-        there."""
-        from app.core.module_visibility import RESTRICTED_APPS, can_see_restricted_apps
-
-        if can_see_restricted_apps(self.email):
-            # Allow-listed = sees the whole portal, whatever their role or
-            # assigned_apps say (not just the locked modules).
+        """Modules this user can see: portal admins and Azure tenant admins get
+        every module; everyone else gets each module they can view at least
+        one tab of (through a role or an extra grant)."""
+        if self.role == "admin" or self.is_azure_admin:
             return sorted(AVAILABLE_APPS)
-        apps = set(AVAILABLE_APPS) if self.role == "admin" else set(self.assigned_apps or [])
-        return sorted(apps - set(RESTRICTED_APPS))
+        modules = {g.split(":", 1)[0] for g in self.effective_permissions if g.endswith(":view")}
+        return sorted(modules & AVAILABLE_APPS)

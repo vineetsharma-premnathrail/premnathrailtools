@@ -11,6 +11,9 @@ import DateField from '@/components/erp/DateField'
 import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { recordPath } from '@/lib/recordRef'
+import WipReportSection from '@/components/production/WipReportSection'
+import { useCan } from '@/lib/permissions'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -40,6 +43,8 @@ function downloadCsv(filename: string, header: string[], rows: (string | number 
 export default function ProductionReportsPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
   const router = useRouter()
+  // Cost table, cost KPIs and WIP valuation: Production › Reports › costs switch.
+  const seeCosts = useCan().canFeature('production', 'reports', 'costs', 'view')
   const [dateFrom, setDateFrom] = useState(isoDaysAgo(29))
   const [dateTo, setDateTo] = useState(isoDaysAgo(0))
   const [report, setReport] = useState<ProductionReport | null>(null)
@@ -71,11 +76,11 @@ export default function ProductionReportsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Production Reports</h1>
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ width: 170 }}>
+          <div data-tour="production-rpt-from" style={{ width: 170 }}>
             <label style={labelStyle}>From</label>
             <DateField value={dateFrom} onChange={setDateFrom} />
           </div>
-          <div style={{ width: 170 }}>
+          <div data-tour="production-rpt-to" style={{ width: 170 }}>
             <label style={labelStyle}>To</label>
             <DateField value={dateTo} onChange={setDateTo} />
           </div>
@@ -91,12 +96,14 @@ export default function ProductionReportsPage() {
 
       {report && !loading && (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
+          <div data-tour="production-rpt-kpis" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
             {[
               ['Output', String(report.total_output), `${formatDate(report.date_from)} – ${formatDate(report.date_to)}`],
               ['Scrap', String(report.total_scrap), report.scrap_rate_percent != null ? `${report.scrap_rate_percent}% scrap rate` : 'No bookings'],
-              ['Orders Finished', String(report.costs.length), 'Completed or closed in range'],
-              ['Cost Variance', totals.est ? `${totals.act - totals.est >= 0 ? '+' : ''}${inr(totals.act - totals.est)}` : '—', totals.est ? `${inr(totals.act)} actual vs ${inr(totals.est)} estimated` : 'No finished orders'],
+              ...(seeCosts ? [
+                ['Orders Finished', String(report.costs.length), 'Completed or closed in range'],
+                ['Cost Variance', totals.est ? `${totals.act - totals.est >= 0 ? '+' : ''}${inr(totals.act - totals.est)}` : '—', totals.est ? `${inr(totals.act)} actual vs ${inr(totals.est)} estimated` : 'No finished orders'],
+              ] : []),
             ].map(([label, value, sub]) => (
               <div key={label} style={{ ...sectionStyle, marginBottom: 0, padding: 16 }}>
                 <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{label}</p>
@@ -106,10 +113,10 @@ export default function ProductionReportsPage() {
             ))}
           </div>
 
-          <div style={sectionStyle}>
+          <div data-tour="production-rpt-output" style={sectionStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <p style={sectionTitle}>Finished Goods Output</p>
-              <button type="button" style={secondaryBtnStyle} disabled={!report.output.length}
+              <button data-tour="production-rpt-output-csv-btn" type="button" style={secondaryBtnStyle} disabled={!report.output.length}
                 onClick={() => downloadCsv(`production_output_${range}.csv`, ['Item Code', 'Item', 'UOM', 'Quantity', 'Work Orders'],
                   report.output.map((r) => [r.item_code, r.item_name, r.uom, r.quantity, r.work_orders]))}>Export CSV</button>
             </div>
@@ -132,10 +139,10 @@ export default function ProductionReportsPage() {
             </div>
           </div>
 
-          <div style={sectionStyle}>
+          {seeCosts && <div data-tour="production-rpt-cost" style={sectionStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <p style={sectionTitle}>Work Order Cost — Estimated vs Actual</p>
-              <button type="button" style={secondaryBtnStyle} disabled={!report.costs.length}
+              <button data-tour="production-rpt-cost-csv-btn" type="button" style={secondaryBtnStyle} disabled={!report.costs.length}
                 onClick={() => downloadCsv(`production_cost_${range}.csv`,
                   ['WO Number', 'Product', 'Planned', 'Completed', 'Scrapped', 'Estimated Cost', 'Actual Cost', 'Variance', 'Variance %', 'Cost per Unit'],
                   report.costs.map((c) => [c.wo_number, c.product_name, c.quantity_planned, c.quantity_completed, c.quantity_scrapped, c.estimated_total_cost, c.actual_total_cost, c.variance, c.variance_percent, c.cost_per_unit]))}>Export CSV</button>
@@ -147,7 +154,7 @@ export default function ProductionReportsPage() {
                   {report.costs.length === 0 ? (
                     <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No work orders were completed in this range.</td></tr>
                   ) : report.costs.map((c) => (
-                    <tr key={c.work_order_id} onClick={() => router.push(`/dashboard/production/work-orders/${c.work_order_id}`)} style={{ cursor: 'pointer' }}>
+                    <tr key={c.work_order_id} onClick={() => router.push(recordPath('/dashboard/production/work-orders', c, 'work_order_id'))} style={{ cursor: 'pointer' }}>
                       <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{c.wo_number}</td>
                       <td style={tdStyle}>{c.product_name || '—'}</td>
                       <td style={tdStyle}>{c.quantity_completed} / {c.quantity_planned}</td>
@@ -163,12 +170,12 @@ export default function ProductionReportsPage() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </div>}
 
-          <div style={sectionStyle}>
+          <div data-tour="production-rpt-utilization" style={sectionStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <p style={sectionTitle}>Workstation Utilization</p>
-              <button type="button" style={secondaryBtnStyle} disabled={!report.utilization.length}
+              <button data-tour="production-rpt-utilization-csv-btn" type="button" style={secondaryBtnStyle} disabled={!report.utilization.length}
                 onClick={() => downloadCsv(`production_utilization_${range}.csv`, ['Workstation', 'Hours Logged', 'Capacity Hours', 'Utilization %', 'Good Qty', 'Scrap Qty'],
                   report.utilization.map((u) => [u.workstation_name, u.hours_logged, u.capacity_hours, u.utilization_percent, u.qty_good, u.qty_scrap]))}>Export CSV</button>
             </div>
@@ -204,6 +211,8 @@ export default function ProductionReportsPage() {
           </div>
         </>
       )}
+
+      {seeCosts && <WipReportSection />}
     </div>
   )
 }

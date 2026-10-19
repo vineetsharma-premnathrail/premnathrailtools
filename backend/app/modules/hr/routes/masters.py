@@ -24,9 +24,18 @@ from app.modules.hr.schemas.masters import (
     HrShiftCreate, HrShiftUpdate, HrShiftResponse,
     HrLookupOption, HrLookupUser, HrLookupsResponse,
 )
-from app.modules.hr.services.access import require_hr
+from app.core.permissions import ensure_can_delete
+from app.modules.hr.services.access import require_hr_tab
+from app.modules.hr.services.access import require_hr as require_hr_app
 
 router = APIRouter(prefix="/hr/masters", tags=["HR"])
+
+# HR-team gate for this file: hr app + Permission Matrix › HR › masters.
+require_hr = require_hr_tab("masters")
+require_hr_create = require_hr_tab("masters", "create")
+require_hr_edit = require_hr_tab("masters", "edit")
+# The employee edit form also reads the designation list (department filter).
+require_hr_designations_read = require_hr_tab(("masters", "employees"))
 
 
 def _plural(n: int, word: str) -> str:
@@ -44,7 +53,7 @@ def _count_by(db: Session, column) -> dict[int, int]:
 async def get_lookups(
     include_inactive: bool = Query(False, description="Also return inactive masters and deactivated users"),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_hr),
+    _user: User = Depends(require_hr_app),  # shared by every HR tab's forms
 ):
     """Dropdown data for every HR form: departments, plants, designations,
     grades, shifts and people (for manager / handover pickers)."""
@@ -110,7 +119,7 @@ async def list_grades(
 
 
 @router.post("/grades", response_model=HrGradeResponse, status_code=201)
-async def create_grade(payload: HrGradeCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def create_grade(payload: HrGradeCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr_create)):
     _ensure_grade_unique(db, payload.code)
     grade = HrGrade(**payload.model_dump())
     db.add(grade)
@@ -120,7 +129,7 @@ async def create_grade(payload: HrGradeCreate, db: Session = Depends(get_db), _u
 
 
 @router.patch("/grades/{grade_id}", response_model=HrGradeResponse)
-async def update_grade(grade_id: int, payload: HrGradeUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def update_grade(grade_id: int, payload: HrGradeUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr_edit)):
     grade = db.get(HrGrade, grade_id)
     if not grade:
         raise HTTPException(status_code=404, detail=f"Grade #{grade_id} does not exist. It may have been deleted — refresh the list.")
@@ -141,6 +150,7 @@ async def delete_grade(grade_id: int, db: Session = Depends(get_db), _user: User
     grade = db.get(HrGrade, grade_id)
     if not grade:
         raise HTTPException(status_code=404, detail=f"Grade #{grade_id} does not exist. It may already have been deleted — refresh the list.")
+    ensure_can_delete(_user, grade, "hr", "masters", what="grade")  # no creator column: 'delete' decides
     uses = []
     n = db.query(HrEmployeeProfile).filter(HrEmployeeProfile.grade_id == grade_id).count()
     if n:
@@ -217,7 +227,7 @@ async def list_designations(
     department_id: int | None = Query(None),
     search: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_hr),
+    _user: User = Depends(require_hr_designations_read),
 ):
     q = db.query(HrDesignation)
     if not include_inactive:
@@ -234,7 +244,7 @@ async def list_designations(
 
 
 @router.post("/designations", response_model=HrDesignationResponse, status_code=201)
-async def create_designation(payload: HrDesignationCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def create_designation(payload: HrDesignationCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr_create)):
     _ensure_designation_unique(db, payload.name, payload.code)
     _validate_designation_refs(db, payload.department_id, payload.grade_id)
     d = HrDesignation(**payload.model_dump())
@@ -245,7 +255,7 @@ async def create_designation(payload: HrDesignationCreate, db: Session = Depends
 
 
 @router.patch("/designations/{designation_id}", response_model=HrDesignationResponse)
-async def update_designation(designation_id: int, payload: HrDesignationUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def update_designation(designation_id: int, payload: HrDesignationUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr_edit)):
     d = db.get(HrDesignation, designation_id)
     if not d:
         raise HTTPException(status_code=404, detail=f"Designation #{designation_id} does not exist. It may have been deleted — refresh the list.")
@@ -262,7 +272,7 @@ async def update_designation(designation_id: int, payload: HrDesignationUpdate, 
     if renamed:
         # Keep the mirrored free-text User.designation in step for everyone
         # who holds this designation (see services/employee_sync).
-        user_ids = [uid for (uid,) in db.query(HrEmployeeProfile.user_id).filter(HrEmployeeProfile.designation_id == d.id).all()]
+        user_ids = [uid for (uid,) in db.query(HrEmployeeProfile.user_id).filter(HrEmployeeProfile.designation_id == d.id).all() if uid]
         for u in db.query(User).filter(User.id.in_(user_ids)).all() if user_ids else []:
             u.designation = d.name
     db.commit()
@@ -275,6 +285,7 @@ async def delete_designation(designation_id: int, db: Session = Depends(get_db),
     d = db.get(HrDesignation, designation_id)
     if not d:
         raise HTTPException(status_code=404, detail=f"Designation #{designation_id} does not exist. It may already have been deleted — refresh the list.")
+    ensure_can_delete(_user, d, "hr", "masters", what="designation")
     uses = []
     n = db.query(HrEmployeeProfile).filter(HrEmployeeProfile.designation_id == designation_id).count()
     if n:
@@ -352,7 +363,7 @@ async def list_shifts(
 
 
 @router.post("/shifts", response_model=HrShiftResponse, status_code=201)
-async def create_shift(payload: HrShiftCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def create_shift(payload: HrShiftCreate, db: Session = Depends(get_db), _user: User = Depends(require_hr_create)):
     _ensure_shift_unique(db, payload.code)
     _validate_shift(db, payload.start_time, payload.end_time, payload.branch_id, True)
     data = payload.model_dump()
@@ -368,7 +379,7 @@ async def create_shift(payload: HrShiftCreate, db: Session = Depends(get_db), _u
 
 
 @router.patch("/shifts/{shift_id}", response_model=HrShiftResponse)
-async def update_shift(shift_id: int, payload: HrShiftUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr)):
+async def update_shift(shift_id: int, payload: HrShiftUpdate, db: Session = Depends(get_db), _user: User = Depends(require_hr_edit)):
     s = db.get(HrShift, shift_id)
     if not s:
         raise HTTPException(status_code=404, detail=f"Shift #{shift_id} does not exist. It may have been deleted — refresh the list.")
@@ -397,6 +408,7 @@ async def delete_shift(shift_id: int, db: Session = Depends(get_db), _user: User
     s = db.get(HrShift, shift_id)
     if not s:
         raise HTTPException(status_code=404, detail=f"Shift #{shift_id} does not exist. It may already have been deleted — refresh the list.")
+    ensure_can_delete(_user, s, "hr", "masters", what="shift")
     uses = []
     n = db.query(HrEmployeeProfile).filter(HrEmployeeProfile.shift_id == shift_id).count()
     if n:

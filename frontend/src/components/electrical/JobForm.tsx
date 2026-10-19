@@ -1,14 +1,16 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { electricalApi } from '@/lib/api'
+import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { ElectricalJob, ElectricalLookupOption } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetHint, Optional } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
+import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
 import {
-  inputStyle, sectionStyle, sectionTitle, primaryBtn, ErrorBanner, F, rowStyle, PRIORITY_LABELS, toOptions, strOrNull,
+  ErrorBanner, useLookupErrors, F, rowStyle, PRIORITY_LABELS, toOptions, strOrNull,
 } from '@/components/electrical/shared'
 
 type Values = Record<string, string>
@@ -33,33 +35,76 @@ function initialValues(job?: ElectricalJob | null): Values {
 
 /** Create / edit form for an RRV electrical job: identity, planning and the
  * Electrical Requirement (stage 1). */
-export default function JobForm({ initial, submitLabel, onSubmit, onCancel }: {
+export default function JobForm({ initial, submitLabel, onSubmit, onCancel, title, subtitle, nav, onBack }: {
   initial?: ElectricalJob | null
   submitLabel: string
+  /** Header of the FormPage the form renders in. */
+  title: string
+  subtitle: string
+  /** Module sub-nav, rendered above the header (create page only). */
+  nav?: React.ReactNode
+  /** Shows the app-wide "← Back" pill in the header. */
+  onBack?: () => void
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
   onCancel: () => void
 }) {
   const [values, setValues] = useState<Values>(() => initialValues(initial))
+  const [orderProject, setOrderProject] = useState<OrderProjectValue | null>(() =>
+    initial?.order_project_id ? { projectId: initial.order_project_id, elementId: initial.order_project_element_id ?? null } : null)
   const [projects, setProjects] = useState<ElectricalLookupOption[]>([])
   const [branches, setBranches] = useState<ElectricalLookupOption[]>([])
   const [users, setUsers] = useState<ElectricalLookupOption[]>([])
+  // Role "Assign to" rule (Role & Permissions › Electrical › RRV Electrical Jobs › Lead engineer); the current lead stays listed.
+  const allowLead = useAssigneeFilter('electrical:jobs.lead_engineer')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const [lookupErrors, addLookupError] = useLookupErrors()
+  // Server-side search — the machine lookup returns only the newest 200.
+  const [projectSearch, setProjectSearch] = useState('')
+  // Label of the machine picked in this session, so it stays visible after
+  // the search text (and so the option list) changes.
+  const [pickedProjectLabel, setPickedProjectLabel] = useState('')
 
   useEffect(() => {
-    electricalApi.lookupProjects().then(setProjects).catch(() => setProjects([]))
-    electricalApi.lookupBranches().then(setBranches).catch(() => setBranches([]))
-    electricalApi.lookupUsers().then(setUsers).catch(() => setUsers([]))
+    electricalApi.lookupBranches().then(setBranches).catch((err) => addLookupError(extractErrorMessages(err,
+      "Couldn't load branches for the Branch picker — you can still save the job without one, or refresh to try again.")))
+    electricalApi.lookupUsers().then(setUsers).catch((err) => addLookupError(extractErrorMessages(err,
+      "Couldn't load users for the Lead Engineer picker — you can still save the job without one, or refresh to try again.")))
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const q = projectSearch.trim()
+    const t = setTimeout(() => {
+      electricalApi.lookupProjects(q || undefined)
+        .then((rows: ElectricalLookupOption[]) => { if (!cancelled) setProjects(rows) })
+        .catch((err) => { if (!cancelled) addLookupError(extractErrorMessages(err,
+          "Couldn't load ERP machines for the RRV picker — you can still save the job without linking one, or refresh to try again.")) })
+    }, q ? 300 : 0)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [projectSearch])
 
   const set = (key: string) => (value: string) => setValues((v) => ({ ...v, [key]: value }))
   const bind = (key: string) => ({ value: values[key], onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => set(key)(e.target.value) })
+
+  // Keep the linked / picked machine in the options even when it isn't in the
+  // latest search result (outside the newest 200, or the search text changed).
+  const projectOptions = useMemo(() => {
+    const opts = toOptions(projects, '— Not linked —')
+    const id = values.erp_project_id
+    if (id && !opts.some((o) => o.value === id)) {
+      const initialLabel = initial && String(initial.erp_project_id ?? '') === id ? initial.project_label : null
+      opts.push({ value: id, label: pickedProjectLabel || initialLabel || `ERP machine #${id}` })
+    }
+    return opts
+  }, [projects, values.erp_project_id, pickedProjectLabel, initial])
 
   const pickProject = (value: string) => {
     set('erp_project_id')(value)
     // Prefill customer / model / serial from the ERP machine when those are still blank.
     const p = projects.find((x) => String(x.id) === value)
     if (!p) return
+    setPickedProjectLabel(p.label)
     setValues((v) => ({
       ...v,
       erp_project_id: value,
@@ -84,6 +129,8 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel }: {
       else if (f === 'priority' || f === 'title') payload[f] = raw.trim()
       else payload[f] = strOrNull(raw)
     }
+    payload.order_project_id = orderProject?.projectId ?? null
+    payload.order_project_element_id = orderProject?.elementId ?? null
     setSaving(true)
     try {
       await onSubmit(payload)
@@ -95,93 +142,117 @@ export default function JobForm({ initial, submitLabel, onSubmit, onCancel }: {
 
   return (
     <form onSubmit={submit}>
-      <ErrorBanner error={error} />
-
-      <div style={sectionStyle}>
-        <p style={sectionTitle}>RRV & Job</p>
-        <div style={rowStyle}>
-          <F label="Job Title *" basis={320} grow max={560}>
-            <input style={inputStyle} {...bind('title')} placeholder="e.g. RRV-450 electrical — Northern Railway" />
-          </F>
-          <F label="Priority" basis={130}>
-            <select style={inputStyle} {...bind('priority')}>
-              {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="RRV / Machine (ERP)" basis={320} grow max={480}>
-            <SearchableSelect value={values.erp_project_id} onChange={pickProject} options={toOptions(projects, '— Not linked —')} placeholder="Search by serial, model or customer" />
-          </F>
-          <F label="RRV Model" basis={180} grow max={260}>
-            <input style={inputStyle} {...bind('rrv_model')} placeholder="e.g. RRV-450" />
-          </F>
-          <F label="Vehicle / Serial No." basis={170} grow max={240}>
-            <input style={inputStyle} {...bind('vehicle_number')} />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Customer" basis={260} grow max={400}>
-            <input style={inputStyle} {...bind('customer_name')} />
-          </F>
-          <F label="Plant" basis={200} grow max={280}>
-            <select style={inputStyle} {...bind('branch_id')}>
-              <option value="">— Select plant —</option>
-              {branches.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
-            </select>
-          </F>
-          <F label="Lead Engineer" basis={240} grow max={320}>
-            <SearchableSelect value={values.lead_engineer_id} onChange={set('lead_engineer_id')} options={toOptions(users, '— Unassigned —')} placeholder="Search people" />
-          </F>
-        </div>
-        <div style={{ ...rowStyle, marginBottom: 0 }}>
-          <F label="Planned Start" basis={160}>
-            <DateField value={values.planned_start_date} onChange={set('planned_start_date')} />
-          </F>
-          <F label="Target Handover" basis={160}>
-            <DateField value={values.target_handover_date} onChange={set('target_handover_date')} />
-          </F>
-        </div>
-      </div>
-
-      <div style={sectionStyle}>
-        <p style={sectionTitle}>Electrical Requirement</p>
-        <div style={rowStyle}>
-          <F label="System Voltage" basis={150}>
-            <input style={inputStyle} {...bind('system_voltage')} placeholder="e.g. 24 V DC" />
-          </F>
-          <F label="Battery" basis={220} grow max={320}>
-            <input style={inputStyle} {...bind('battery_spec')} placeholder="e.g. 2 × 12 V 150 Ah" />
-          </F>
-          <F label="Alternator / Charger" basis={220} grow max={320}>
-            <input style={inputStyle} {...bind('alternator_spec')} placeholder="e.g. 28 V 100 A" />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Applicable Standards" basis={300} grow max={480}>
-            <input style={inputStyle} {...bind('applicable_standards')} placeholder="e.g. RDSO spec, IS/IEC references" />
-          </F>
-          <F label="Customer Spec Ref." basis={220} grow max={320}>
-            <input style={inputStyle} {...bind('customer_spec_ref')} />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Requirement" basis={400} grow>
-            <textarea style={{ ...inputStyle, minHeight: 110, resize: 'vertical' }} {...bind('requirement_notes')}
-              placeholder="Loads and circuits the customer needs — lighting, beacons, horns, cab controls, instruments, interlocks…" />
-          </F>
-        </div>
-        <div style={{ ...rowStyle, marginBottom: 0 }}>
-          <F label="Remarks" basis={400} grow>
-            <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} {...bind('remarks')} />
-          </F>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-        <button type="button" onClick={onCancel} style={secondaryBtnStyle} disabled={saving}>Cancel</button>
-        <button type="submit" style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }} disabled={saving}>{saving ? 'Saving…' : submitLabel}</button>
-      </div>
+      <FormPage
+        tour="elec-job-form" icon={initial ? 'edit' : 'gear'} title={title} subtitle={subtitle} nav={nav} onBack={onBack} backTour="elec-job-form-back-btn"
+        footer={<>
+          <button data-tour="elec-job-form-cancel" type="button" onClick={onCancel} style={sheetBtn('secondary', SHEET.INK, saving)} disabled={saving}>Cancel</button>
+          <button data-tour="elec-job-form-submit" type="submit" style={sheetBtn('primary', SHEET.BLUE, saving)} disabled={saving}>
+            <SheetIcon name={initial ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
+          </button>
+        </>}
+      >
+        <SheetColumns
+          left={<>
+            <ErrorBanner error={error} />
+            <ErrorBanner error={lookupErrors} />
+            <SheetSection icon="truck" title="RRV & Job">
+              <div style={rowStyle}>
+                <F tour="elec-job-title" label="Job Title" req basis={300} grow>
+                  <input style={sheetInput} {...bind('title')} placeholder="e.g. RRV-450 electrical — Northern Railway" />
+                </F>
+                <F tour="elec-job-priority" label="Priority" basis={130}>
+                  <select style={sheetInput} {...bind('priority')}>
+                    {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </F>
+              </div>
+              <div style={rowStyle}>
+                <F tour="elec-job-order-project" label="Order Project / Vehicle" optional basis={320} grow>
+                  <OrderProjectPicker value={orderProject} requireElement={false} kind="vehicle"
+                    onChange={(v, item) => {
+                      setOrderProject(v)
+                      if (item?.customer_name) setValues((x) => ({ ...x, customer_name: x.customer_name || item.customer_name || '' }))
+                    }} />
+                </F>
+              </div>
+              <div style={rowStyle}>
+                <F tour="elec-job-erp-project" label="RRV / Machine (ERP)" optional basis={320} grow>
+                  <input style={{ ...sheetInput, marginBottom: 6 }} value={projectSearch} onChange={(e) => setProjectSearch(e.target.value)}
+                    placeholder="Search ERP machines by serial, model or customer…" aria-label="Search ERP machines" />
+                  <SearchableSelect value={values.erp_project_id} onChange={pickProject} options={projectOptions} placeholder="Pick an ERP machine" />
+                </F>
+              </div>
+              <p style={{ ...sheetHint, margin: '-4px 0 12px' }}>Picking a machine fills in the serial number and customer when those are still blank.</p>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-job-rrv-model" label="RRV Model" basis={160} grow max={260}>
+                  <input style={sheetInput} {...bind('rrv_model')} placeholder="e.g. RRV-450" />
+                </F>
+                <F tour="elec-job-vehicle" label="Vehicle / Serial No." basis={160} grow max={240}>
+                  <input style={sheetInput} {...bind('vehicle_number')} />
+                </F>
+                <F tour="elec-job-customer" label="Customer" basis={220} grow max={400}>
+                  <input style={sheetInput} {...bind('customer_name')} />
+                </F>
+              </div>
+            </SheetSection>
+            <SheetSection icon="calendar" title="Ownership & Schedule">
+              <div style={rowStyle}>
+                <F tour="elec-job-plant" label="Plant" basis={200} grow max={280}>
+                  <select style={sheetInput} {...bind('branch_id')}>
+                    <option value="">— Select plant —</option>
+                    {branches.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+                  </select>
+                </F>
+                <F tour="elec-job-lead-engineer" label="Lead Engineer" basis={240} grow max={320}>
+                  <SearchableSelect value={values.lead_engineer_id} onChange={set('lead_engineer_id')} options={toOptions(users.filter((u) => u.id === initial?.lead_engineer_id || allowLead(u.id)), '— Unassigned —')} placeholder="Search people" />
+                </F>
+              </div>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-job-planned-start" label="Planned Start" basis={160}>
+                  <DateField value={values.planned_start_date} onChange={set('planned_start_date')} />
+                </F>
+                <F tour="elec-job-target-handover" label="Target Handover" basis={160}>
+                  <DateField value={values.target_handover_date} onChange={set('target_handover_date')} />
+                </F>
+              </div>
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="gear" title="Electrical Requirement">
+              <div style={rowStyle}>
+                <F tour="elec-job-voltage" label="System Voltage" basis={130}>
+                  <input style={sheetInput} {...bind('system_voltage')} placeholder="e.g. 24 V DC" />
+                </F>
+                <F tour="elec-job-battery" label="Battery" basis={180} grow>
+                  <input style={sheetInput} {...bind('battery_spec')} placeholder="e.g. 2 × 12 V 150 Ah" />
+                </F>
+              </div>
+              <div style={rowStyle}>
+                <F tour="elec-job-alternator" label="Alternator / Charger" basis={200} grow>
+                  <input style={sheetInput} {...bind('alternator_spec')} placeholder="e.g. 28 V 100 A" />
+                </F>
+              </div>
+              <div style={rowStyle}>
+                <F tour="elec-job-standards" label="Applicable Standards" basis={200} grow>
+                  <input style={sheetInput} {...bind('applicable_standards')} placeholder="e.g. RDSO spec, IS/IEC references" />
+                </F>
+                <F tour="elec-job-spec-ref" label="Customer Spec Ref." basis={150} grow>
+                  <input style={sheetInput} {...bind('customer_spec_ref')} />
+                </F>
+              </div>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-job-requirement" label="Requirement" basis={300} grow>
+                  <textarea style={{ ...sheetInput, minHeight: 110, resize: 'vertical' }} {...bind('requirement_notes')}
+                    placeholder="Loads and circuits the customer needs — lighting, beacons, horns, cab controls, instruments, interlocks…" />
+                </F>
+              </div>
+            </SheetSection>
+            <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+              <textarea data-tour="elec-job-remarks" style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} {...bind('remarks')} aria-label="Remarks" />
+            </SheetSection>
+          </>}
+        />
+      </FormPage>
     </form>
   )
 }

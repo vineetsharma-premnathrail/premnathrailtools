@@ -1,5 +1,5 @@
 from __future__ import annotations
-from sqlalchemy import String, Integer, Text, Float
+from sqlalchemy import String, Integer, Text, Float, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, SoftDeleteMixin
@@ -17,3 +17,6 @@ class Product(Base, TimestampMixin, SoftDeleteMixin):
     default_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Legacy → master mapping (COMMPR01 merge): the Product Management product this
+    # catalogue row is. Set by exact match in the migration or on the Product Mapping screen.
+    product_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)

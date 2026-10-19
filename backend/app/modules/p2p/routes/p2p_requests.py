@@ -1,12 +1,13 @@
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
 from sqlalchemy import or_
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, object_session, selectinload
 
+from app.core import assignee_rules
 from app.core.config import settings
-from app.core.permissions import require_app_access
+from app.core.permission_registry import can_feature, can_perform, can_view_tab
+from app.core.permissions import GRANT_HINT, ensure_can_delete, ensure_feature_action, ensure_tab_action, require_app_access
 from app.db.session import get_db, SessionLocal
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
@@ -14,16 +15,21 @@ from app.modules.main.routes.auth import get_current_user
 from app.modules.erp.models.project import Project
 from app.modules.p2p.models.p2p_request import (
     P2PRequest, P2P_REQUEST_STATUSES, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, resolve_auto_buyer_id,
-    PO_APPROVAL_ROLE_SETS, P2P_ROLE_FLAGS, P2P_ROLE_LABELS,
+    PO_APPROVAL_ROLE_SETS, P2P_ROLE_FLAGS, P2P_ROLE_LABELS, P2P_PO_APPROVER_FLAGS, P2P_PROJECT_TYPES,
+    P2P_EDITABLE_STATUSES,
 )
 from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover
+from app.modules.p2p.item_link import item_category_for, item_snapshot, purchasable_item
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment, P2P_ATTACHMENT_DOC_TYPES
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
+from app.modules.p2p.models.rfq import RFQ
+from app.modules.erp.models.service_material import ServiceMaterial
 from app.modules.p2p.schemas.p2p_request import (
     P2PRequestApprovalResponse,
     P2PRequestCreate,
+    P2PRequestEdit,
     P2PRequestResponse,
     P2PRequestUpdate,
     P2PRequestActionPayload,
@@ -37,7 +43,15 @@ from app.modules.p2p.schemas.p2p_request import (
     P2PRequestItemStockLocationInfo,
     P2PRequestIssueFromStockPayload,
 )
-from app.modules.p2p.service import generate_p2p_number, compute_line_total, resolve_pr_approvers, resolve_po_approvers
+from app.modules.p2p.service import generate_p2p_number, compute_line_total, active_partners
+from app.modules.p2p.models.p2p_request import SETTINGS_SCHEME, ENGINE_SCHEME
+from app.modules.p2p import approvals as p2p_approvals
+# Registers the Order Project hooks (PO/GRN line inheritance, 360 "purchase" column).
+from app.modules.p2p import order_project_links
+from app.modules.p2p.access import ensure_pr_in_scope, scope_prs
+from app.modules.p2p.pricing import mask_for
+from app.modules.organization.services import approval_engine as engine
+from app.core.notify_rules import fire_rule
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_balance import StoreStockBalance
@@ -49,12 +63,13 @@ from app.utils.notifications import notify_user
 from app.utils.email import send_p2p_pr_approval_email, send_p2p_po_approval_email
 
 router = APIRouter(prefix="/p2p/requests", tags=["P2P"])
+BUYER_RULE_KEY = "p2p:purchase_requisitions.buyer"  # core/assignee_rules.PICKERS
 
 _PR_APPROVAL_SLOT_LABELS = (("approver_id", "Department Head"), ("project_head_id", "Project Head"), ("plant_head_id", "Plant Head"))
 # Role key -> User flag for every PO approval role: the manager-matrix roles
-# plus the legacy Purchase Head -> Director -> MD chain that in-flight PRs
+# plus the legacy Purchase Head -> Director -> Partner chain that in-flight PRs
 # (project_type is NULL) still finish on.
-_PO_APPROVAL_ROLE_FLAGS = {"purchase_head": "is_purchase_head", "director": "is_director", "md": "is_md", **P2P_ROLE_FLAGS}
+_PO_APPROVAL_ROLE_FLAGS = {"purchase_head": "is_purchase_head", "director": "is_director", "partner": "is_partner", **P2P_ROLE_FLAGS}
 
 
 def po_approver_users(db: Session, pr: "P2PRequest") -> list[tuple["User", str]]:
@@ -62,7 +77,18 @@ def po_approver_users(db: Session, pr: "P2PRequest") -> list[tuple["User", str]]
     Matrix PRs: the people picked per role on the New PR form plus every
     Director. Legacy PRs: holders of their still-pending chain role flags."""
     out: dict[int, tuple[User, str]] = {}
-    if pr.project_type in PO_APPROVAL_ROLE_SETS:
+    if pr.approval_scheme == SETTINGS_SCHEME:
+        # Level 1 (Settings PO approvers) first; the Partners only once they are all done.
+        pending_rows = [a for a in pr.po_approvers if a.approved_at is None]
+        if pending_rows:
+            for row in pending_rows:
+                u = db.query(User).filter(User.id == row.approver_id, User.is_active == True).first()  # noqa: E712
+                if u:
+                    out.setdefault(u.id, (u, row.role))
+        elif pr.partner_approved_at is None:
+            for u in active_partners(db):
+                out.setdefault(u.id, (u, "partner"))
+    elif pr.project_type in PO_APPROVAL_ROLE_SETS:
         for row in pr.po_approvers:
             u = db.query(User).filter(User.id == row.approver_id, User.is_active == True).first()  # noqa: E712
             if u:
@@ -91,6 +117,9 @@ async def _send_p2p_pr_approval_emails_background(pr_id: int) -> None:
             return
         if pr.approvals:
             slots = [(a.approver_id, P2P_ROLE_LABELS.get(a.role, a.role)) for a in pr.approvals]
+        elif pr.approval_scheme == ENGINE_SCHEME:
+            # The approval engine's current stage (Organization › Approval Workflows).
+            slots = [(u.id, stage) for u, stage in p2p_approvals.pending_approvers(db, p2p_approvals.pr_request(db, pr.id))]
         else:
             slots = [(getattr(pr, field), role_label) for field, role_label in _PR_APPROVAL_SLOT_LABELS]
         for approver_id, role_label in slots:
@@ -108,7 +137,7 @@ async def _send_p2p_pr_approval_emails_background(pr_id: int) -> None:
 
 async def _send_p2p_po_approval_emails_background(pr_id: int) -> None:
     """Best-effort email to every user holding a still-pending PO approval
-    role (purchase head / director / MD), run after the PO has already been
+    role (purchase head / director / Partner), run after the PO has already been
     committed. Opens its own DB session for the same reason as above."""
     db = SessionLocal()
     try:
@@ -120,7 +149,11 @@ async def _send_p2p_po_approval_emails_background(pr_id: int) -> None:
         ).order_by(P2PPurchaseOrder.id.desc()).first()
         if not po:
             return
-        for approver, role in po_approver_users(db, pr):
+        if pr.approval_scheme == ENGINE_SCHEME:
+            people = p2p_approvals.pending_approvers(db, engine.latest_request(db, p2p_approvals.PO_ENTITY, po.id))
+        else:
+            people = po_approver_users(db, pr)
+        for approver, role in people:
             await send_p2p_po_approval_email(db, pr, po, approver, P2P_ROLE_LABELS.get(role, role))
         db.commit()
     except Exception:
@@ -129,29 +162,71 @@ async def _send_p2p_po_approval_emails_background(pr_id: int) -> None:
         db.close()
 
 
-def _requester_or_purchase(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
-    """Anyone with the `p2p` app (raise/view own PRs) OR the `purchase` app
-    (process all PRs) OR a PO-approver flag OR anyone named as an approver on
-    at least one PR may call these routes — being picked as a PR approver
-    itself grants access, since approvers are picked from the whole user
-    directory and most don't hold the p2p app. Per-route logic below narrows
-    what each actually gets to see/do (a mere approver only ever sees PRs
-    routed to them — see list_p2p_requests / _check_view_access)."""
-    apps = user.get_apps()
-    if "p2p" in apps or "purchase" in apps or _is_po_approver(user):
+# RBAC (2026-10-08) — how the Permission Matrix and approver routing combine:
+#   * The matrix decides whether a user may open requisitions at all: 'View' on
+#     Procurement › Purchase Requisitions (or › Purchase Orders, for PO
+#     approvers who open the PR to see the PO they sign). Deny by default —
+#     being named as an approver no longer grants access by itself.
+#   * Routing stays the authority on WHICH requisitions a user approves: the
+#     central approval engine (Organization › Approval Workflows, see
+#     app/modules/p2p/approvals.py) for everything submitted since 2026-10-08,
+#     and — for items already in flight then — the old Settings / matrix-picked
+#     approvers and Director / Purchase Head / Partner flags. A named PR approver
+#     approves/rejects with purchase_requisitions:view only, and a PO approver
+#     with purchase_orders:view only — approvers are chosen per PR, so also
+#     demanding the matrix 'Approve' box would block legitimate named
+#     approvers. 'approve'/'reject' grants are used only where there is no
+#     named routing (the legacy no-approvers-assigned PR, RFQ evaluations).
+#   * Working a PR (edit/buyer/stock decisions), creating, exporting,
+#     importing and deleting use the matching tab action on top of the
+#     existing purchase-team / requester checks; resubmitting a returned PR
+#     needs 'Submit' and cancelling one needs 'Cancel'.
+#   * Data scope (core/data_scope.py, registrations in p2p/access.py) narrows
+#     every list and record on top of those checks.
+
+def _can_view_prs(user: User) -> bool:
+    return can_view_tab(user, "p2p", "purchase_requisitions")
+
+
+def _can_view_pos(user: User) -> bool:
+    return can_view_tab(user, "p2p", "purchase_orders")
+
+
+def _requester_or_purchase(user: User = Depends(get_current_user)) -> User:
+    """Who may call the requisition routes at all: 'View' on Procurement ›
+    Purchase Requisitions or › Purchase Orders (admins always). Per-route
+    logic below narrows what each actually gets to see/do (a requester sees
+    their own PRs, an approver only PRs routed to them — see
+    list_p2p_requests / _check_view_access)."""
+    if _can_view_prs(user) or _can_view_pos(user):
         return user
-    is_assigned_approver = (
-        db.query(P2PRequestApproval.id).filter(P2PRequestApproval.approver_id == user.id).first() is not None
-        or db.query(P2PRequestPOApprover.id).filter(P2PRequestPOApprover.approver_id == user.id).first() is not None
-        or db.query(P2PRequest.id).filter(
-            (P2PRequest.approver_id == user.id)
-            | (P2PRequest.project_head_id == user.id)
-            | (P2PRequest.plant_head_id == user.id)
-        ).first() is not None
+    raise HTTPException(
+        status_code=403,
+        detail="You don't have 'View' permission on Procurement › Purchase Requisitions (or › Purchase Orders), so you "
+               f"can't open requisitions — even ones you are named to approve. {GRANT_HINT}",
     )
-    if is_assigned_approver:
-        return user
-    raise HTTPException(status_code=403, detail="Access to the P2P module required")
+
+
+def _ensure_pr_view(user: User) -> None:
+    ensure_tab_action(user, "p2p", "purchase_requisitions", "view")
+
+
+def _ensure_pr_action(user: User, action: str) -> None:
+    ensure_tab_action(user, "p2p", "purchase_requisitions", action)
+
+
+# Features of the Purchase Requisitions tab (core/features/p2p.py). PO
+# approvers reach requisitions through Purchase Orders › View alone (see
+# _requester_or_purchase); the PR tab's features don't govern them, so a
+# viewer without PR-tab View passes these and gets the PO tab's price switch.
+def _sees_pr_feature(user: User, feature: str, action: str) -> bool:
+    if not _can_view_prs(user):
+        return True
+    return can_feature(user, "p2p", "purchase_requisitions", feature, action)
+
+
+def _price_tab(user: User) -> str:
+    return "purchase_requisitions" if _can_view_prs(user) else "purchase_orders"
 
 
 def _is_purchase_team(user: User) -> bool:
@@ -159,7 +234,12 @@ def _is_purchase_team(user: User) -> bool:
 
 
 def _is_po_approver(user: User) -> bool:
-    return any(getattr(user, flag, False) for flag in _PO_APPROVAL_ROLE_FLAGS.values())
+    """Holders of a company-wide PO approval flag (Director / Partner /
+    Purchase Head) — the only people who may see every PO-stage PR.
+    Department managers (store/design/R&D/production/...) are NOT: on matrix
+    PRs they approve only POs they were picked on, and get access to those
+    through their P2PRequestPOApprover rows."""
+    return any(getattr(user, flag, False) for flag in P2P_PO_APPROVER_FLAGS)
 
 
 def _write_audit(db: Session, pr_id: int, action: str, user: User, summary: str | None = None,
@@ -170,23 +250,97 @@ def _write_audit(db: Session, pr_id: int, action: str, user: User, summary: str 
     ))
 
 
-def _to_response(db: Session, pr: P2PRequest) -> P2PRequestResponse:
+def _latest_po_response(db: Session, pr: P2PRequest):
+    """The PR's latest non-cancelled PO with its lines, for approvers who
+    can't call /p2p/purchase-orders (that needs the 'purchase' app)."""
+    from app.modules.p2p.schemas.purchase_order import P2PPurchaseOrderResponse
+    po = db.query(P2PPurchaseOrder).options(selectinload(P2PPurchaseOrder.items)).filter(
+        P2PPurchaseOrder.p2p_request_id == pr.id, P2PPurchaseOrder.status != "cancelled",
+    ).order_by(P2PPurchaseOrder.id.desc()).first()
+    if not po:
+        return None
+    return P2PPurchaseOrderResponse.model_validate(po).model_copy(update={"p2p_request_number": pr.p2p_number})
+
+
+# Statuses at which a list row needs the live engine approval (inline
+# Approve/Reject, "waiting for me") — other rows skip those queries.
+_LIVE_APPROVAL_STATUSES = ("submitted", "returned", "po_drafted", "po_raised")
+
+
+def _apply_account_assignment(db: Session, pr: P2PRequest, payload) -> None:
+    """PR account assignment FKs (p2p/account_assignment.py) — 422 with the fix."""
+    from app.modules.p2p.account_assignment import apply
+    try:
+        apply(db, pr, payload.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+def _to_response(db: Session, pr: P2PRequest, *, include_po: bool = False, user: User | None = None,
+                 with_approval: bool = False) -> P2PRequestResponse:
     resp = P2PRequestResponse.model_validate(pr)
+    if include_po:
+        resp.purchase_order = _latest_po_response(db, pr)
+    if user is not None and (with_approval or pr.status in _LIVE_APPROVAL_STATUSES):
+        # The central approval engine's view of this requisition (PR stage or
+        # its PO) for the viewer — None for items still on the old path.
+        resp.engine_approval = p2p_approvals.approval_info(db, pr, user)
     resp.category_label = P2P_CATEGORIES.get(pr.category_code, pr.category_code)
+    from app.modules.p2p.account_assignment import label_for
+    resp.account_assignment_label = label_for(db, pr)
+    if pr.order_project_id:
+        from app.modules.sales.models.order_project import OrderProject
+        op = db.get(OrderProject, pr.order_project_id)
+        resp.order_project_number = op.op_number if op is not None else None
     resp.approvals = [
         P2PRequestApprovalResponse.model_validate(a).model_copy(update={"role_label": P2P_ROLE_LABELS.get(a.role, a.role)})
         for a in pr.approvals
     ]
-    if pr.project_type in PO_APPROVAL_ROLE_SETS:
+    if pr.approval_scheme == SETTINGS_SCHEME:
+        # Level 1: the Settings PO approvers (snapshotted when the PO goes for
+        # approval); level 2: any one Partner.
+        resp.po_approval_role_labels = ["PO Approver"] * len(pr.po_approvers) + ["Partner (any one)"]
+        partners = [{"id": u.id, "name": u.name or u.email} for u in active_partners(db)]
+        resp.po_approval_panel = [
+            {
+                "role": a.role, "role_label": "PO Approver",
+                "people": [{"id": a.approver_id, "name": a.approver_name}],
+                "approved_at": a.approved_at.isoformat() if a.approved_at else None,
+                "approved_by_name": a.approved_by_name, "comment": a.comment,
+            }
+            for a in pr.po_approvers
+        ] + [{
+            "role": "partner", "role_label": "Partner (any one)", "people": partners,
+            "approved_at": pr.partner_approved_at.isoformat() if pr.partner_approved_at else None,
+            "approved_by_name": pr.partner_approved_by_name, "comment": pr.partner_comment,
+        }]
+    elif pr.project_type in PO_APPROVAL_ROLE_SETS:
         resp.po_approval_role_labels = [P2P_ROLE_LABELS[r] for r in PO_APPROVAL_ROLE_SETS[pr.project_type]]
+        # Each entry carries its own approval state so the panel can show a
+        # per-role Approved/Pending pill — ALL of these must approve.
         picked = [
-            {"role": a.role, "role_label": P2P_ROLE_LABELS.get(a.role, a.role), "people": [{"id": a.approver_id, "name": a.approver_name}]}
+            {
+                "role": a.role, "role_label": P2P_ROLE_LABELS.get(a.role, a.role),
+                "people": [{"id": a.approver_id, "name": a.approver_name}],
+                "approved_at": a.approved_at.isoformat() if a.approved_at else None,
+                "approved_by_name": a.approved_by_name, "comment": a.comment,
+            }
             for a in pr.po_approvers
         ]
         directors = [{"id": u.id, "name": u.name or u.email} for u in db.query(User).filter(User.is_active == True, User.is_director == True).all()]  # noqa: E712
-        resp.po_approval_panel = picked + [{"role": "director", "role_label": "Director", "people": directors}]
+        resp.po_approval_panel = picked + [{
+            "role": "director", "role_label": "Director", "people": directors,
+            "approved_at": pr.director_po_approved_at.isoformat() if pr.director_po_approved_at else None,
+            "approved_by_name": pr.director_po_approved_by_name, "comment": pr.director_po_comment,
+        }]
     if pr.po_approved_role:
         resp.po_approved_role_label = P2P_ROLE_LABELS.get(pr.po_approved_role, pr.po_approved_role)
+    if user is not None and with_approval:
+        reason = _edit_block_reason(db, pr, user)
+        resp.can_edit = reason is None
+        # Only the people who could otherwise edit it need to be told why not.
+        if reason and (pr.requested_by_id == user.id or _is_purchase_team(user)):
+            resp.edit_block_reason = reason
     resp.pending_quantity = pr.pending_quantity
     resp.pending_approval_roles = pr.pending_approval_roles
     resp.pending_po_approval_roles = pr.pending_po_approval_roles
@@ -204,10 +358,15 @@ def _to_response(db: Session, pr: P2PRequest) -> P2PRequestResponse:
         for item_resp in resp.items:
             if item_resp.issued_from_location_id and item_resp.issued_from_location_id in locations:
                 item_resp.issued_from_location_name = locations[item_resp.issued_from_location_id].name
+    if user is not None:
+        # Purchase Requisitions › Prices & PO values (PO approvers: the PO tab's switch).
+        mask_for(user, _price_tab(user), resp)
     return resp
 
 
-def _get_pr_or_404(db: Session, pr_id: int, *, for_update: bool = False) -> P2PRequest:
+def _get_pr_or_404(db: Session, pr_id: int, *, for_update: bool = False, user: User | None = None) -> P2PRequest:
+    """The requisition (404 if missing); with `user`, also 403 when it is
+    outside their Procurement data scope."""
     query = db.query(P2PRequest).options(
         selectinload(P2PRequest.items).selectinload(P2PRequestItem.attachments),
         selectinload(P2PRequest.attachments),
@@ -222,17 +381,53 @@ def _get_pr_or_404(db: Session, pr_id: int, *, for_update: bool = False) -> P2PR
     pr = query.first()
     if not pr:
         raise HTTPException(status_code=404, detail="P2P request not found")
+    if user is not None:
+        ensure_pr_in_scope(db, user, pr)
     return pr
 
 
+def _can_see_po_commercials(pr: P2PRequest, user: User) -> bool:
+    """Whether the PR detail may carry the full PO (vendor, unit prices, tax,
+    line totals). Only the people who buy or approve it see vendor commercial
+    terms: Purchase, admins, company-wide PO approvers (Director / Partner /
+    Purchase Head) and the PO approvers picked on this PR. The requester and
+    the PR-stage heads see the requisition, not the vendor's prices."""
+    if user.role == "admin" or _is_purchase_team(user) or _is_po_approver(user):
+        return True
+    if any(a.approver_id == user.id for a in pr.po_approvers):
+        return True
+    # PO approvers through the engine (incl. delegates / escalation targets).
+    db = object_session(pr)
+    if db is None:
+        return False
+    is_po_party = db.query(P2PRequest.id).filter(
+        P2PRequest.id == pr.id, P2PRequest.id.in_(p2p_approvals.po_engine_party_pr_ids(user)),
+    ).first() is not None
+    return is_po_party or p2p_approvals.can_act_now(db, user, pr)
+
+
 def _check_view_access(pr: P2PRequest, user: User) -> None:
+    if pr.status == "draft":
+        # A draft is the requester's private working copy until submitted.
+        if pr.requested_by_id == user.id or user.role == "admin":
+            return
+        raise HTTPException(status_code=403, detail=f"{pr.p2p_number} is still a draft — only the person who raised it can open it until they submit it.")
     if _is_purchase_team(user) or _is_po_approver(user):
         return
     allowed = {pr.requested_by_id, pr.approver_id, pr.project_head_id, pr.plant_head_id}
     allowed.update(a.approver_id for a in pr.approvals)
     allowed.update(a.approver_id for a in pr.po_approvers)
-    if user.id not in allowed:
-        raise HTTPException(status_code=403, detail="You may only view your own P2P requests")
+    if user.id in allowed:
+        return
+    # Approvers of the requisition or its PO in the approval engine — and
+    # their delegates / escalation targets while a step is open.
+    db = object_session(pr)
+    if db is not None and (
+        db.query(P2PRequest.id).filter(P2PRequest.id == pr.id, P2PRequest.id.in_(p2p_approvals.engine_party_pr_ids(user))).first()
+        or p2p_approvals.can_act_now(db, user, pr)
+    ):
+        return
+    raise HTTPException(status_code=403, detail="You may only view your own P2P requests, or ones you are an approver of.")
 
 
 def _check_approve_access(pr: P2PRequest, user: User) -> list[str] | None:
@@ -258,6 +453,9 @@ def _check_approve_access(pr: P2PRequest, user: User) -> list[str] | None:
             )
         if user.role != "admin" and not _is_purchase_team(user):
             raise HTTPException(status_code=403, detail="Purchase module access required to approve or reject this PR.")
+        # No named approvers to route to — the decision falls to the purchase
+        # team, so the matrix 'Approve' grant is what authorises it.
+        _ensure_pr_action(user, "approve")
         return None
 
     # Collect every role this user is assigned to that is still pending.
@@ -289,6 +487,8 @@ def _check_reject_access(pr: P2PRequest, user: User) -> str:
     if not assigned:
         if not _is_purchase_team(user):
             raise HTTPException(status_code=403, detail="Purchase module access required to approve or reject this PR.")
+        # No named approvers — a purchase-team-wide decision needs the 'Reject' grant.
+        _ensure_pr_action(user, "reject")
         return "purchase_team"
     for role, assigned_id in assigned.items():
         if assigned_id == user.id:
@@ -301,10 +501,26 @@ def _check_po_reject_access(pr: P2PRequest, user: User) -> str:
     PO approval roles, or an admin."""
     if user.role == "admin":
         return "admin"
+    if pr.approval_scheme == SETTINGS_SCHEME:
+        row = next((a for a in pr.po_approvers if a.approver_id == user.id), None)
+        if row:
+            return row.role
+        if user.is_partner:
+            return "partner"
+        raise HTTPException(status_code=403, detail="Only this PO's approvers (Procurement → Settings), a Partner or an admin can reject this PO.")
     if pr.project_type in PO_APPROVAL_ROLE_SETS:
-        role_set = PO_APPROVAL_ROLE_SETS[pr.project_type]
-    else:
-        role_set = ("purchase_head", "director", "md")
+        # Matrix PRs: the PO goes to the people picked on this PR plus every
+        # Director — role flags are irrelevant (picked approvers needn't hold
+        # them, and an unpicked flag-holder has no say on this PO).
+        picked_role = next((a.role for a in pr.po_approvers if a.approver_id == user.id), None)
+        if picked_role:
+            return picked_role
+        if user.is_director:
+            return "director"
+        names = ", ".join(f"{a.approver_name} ({P2P_ROLE_LABELS.get(a.role, a.role)})" for a in pr.po_approvers)
+        who = f" — {names}" if names else ""
+        raise HTTPException(status_code=403, detail=f"Only the PO approvers picked on this requisition{who}, a Director or an admin can reject this PO.")
+    role_set = ("purchase_head", "director", "partner")
     for role in role_set:
         if getattr(user, _PO_APPROVAL_ROLE_FLAGS[role], False):
             return role
@@ -320,7 +536,7 @@ def _check_po_approve_access(pr: P2PRequest, user: User) -> list[str]:
     role_flags = {
         "purchase_head": user.is_purchase_head,
         "director": user.is_director,
-        "md": user.is_md,
+        "partner": user.is_partner,
     }
     roles = [role for role, enabled in role_flags.items() if enabled and role in pr.pending_po_approval_roles]
     if roles:
@@ -375,26 +591,9 @@ async def create_p2p_request(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("p2p")),
 ):
-    if payload.category_code not in P2P_CATEGORIES:
-        raise HTTPException(status_code=400, detail=f"Invalid category code '{payload.category_code}'")
-    if not payload.items:
-        raise HTTPException(status_code=400, detail="At least one item is required")
-    # Every line must say whether it's for the Project or Inhouse (2026-09-30)
-    # — Store issue/consumption and reporting split on it downstream.
-    for idx, item in enumerate(payload.items, start=1):
-        if item.project_inhouse not in ("Project", "Inhouse"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Line {idx} ({item.item_name.strip() or 'unnamed item'}): choose Project or Inhouse.",
-            )
-
-    if not (payload.project_label or "").strip():
-        raise HTTPException(status_code=400, detail="Project is required — pick the existing project, or give the new project's name.")
-    try:
-        approvers = resolve_pr_approvers(db, user, payload.project_type, payload.approvers)
-        po_approvers = resolve_po_approvers(db, payload.project_type, payload.po_approvers) if payload.po_approvers else {}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    _ensure_pr_action(user, "create")
+    draft = payload.save_as_draft
+    lines = _validate_pr_payload(db, payload, draft=draft)
 
     # Buyer is auto-assigned from the category — no manual "Assign Buyer"
     # step needed once the PR is raised.
@@ -405,6 +604,7 @@ async def create_p2p_request(
         category_code=payload.category_code,
         project_label=payload.project_label,
         project_type=payload.project_type,
+        approval_scheme=ENGINE_SCHEME,
         required_date=payload.required_date,
         requirement_type=payload.requirement_type,
         request_date=date.today(),
@@ -414,57 +614,228 @@ async def create_p2p_request(
         assigned_buyer_id=auto_buyer_id,
         assignment_date=date.today() if auto_buyer_id else None,
         remarks=payload.remarks,
-        status="submitted",
+        status="draft" if draft else "submitted",
     )
+    _apply_account_assignment(db, pr, payload)
     db.add(pr)
     db.flush()
 
-    created_items: list[P2PRequestItem] = []
-    for item in payload.items:
-        row = P2PRequestItem(
-            p2p_request_id=pr.id,
-            item_name=item.item_name,
-            make=item.make,
-            part_code=item.part_code,
-            unit=item.unit,
-            quantity=item.quantity,
-            project_inhouse=item.project_inhouse,
-            category=item.category,
-            ship_to=item.ship_to,
-        )
-        db.add(row)
-        created_items.append(row)
-    # Store-stock snapshot up front, so the approvers see per line whether
-    # it's already sitting in store before they sign.
-    _refresh_stock_snapshot(db, created_items)
+    try:
+        _sync_pr_lines(db, pr, lines, draft=draft)
+    except HTTPException:
+        # A line refused (e.g. its Order Project vehicle) — nothing is saved.
+        db.rollback()
+        raise
 
-    for role, approver in approvers.items():
-        db.add(P2PRequestApproval(
-            p2p_request_id=pr.id, role=role, approver_id=approver.id,
-            approver_name=approver.name or approver.email,
-        ))
-    for role, approver in po_approvers.items():
-        db.add(P2PRequestPOApprover(
-            p2p_request_id=pr.id, role=role, approver_id=approver.id,
-            approver_name=approver.name or approver.email,
-        ))
+    if draft:
+        _write_audit(db, pr.id, "draft_saved", user, summary=f"{user.name or user.email} saved P2P request {pr.p2p_number} as a draft.",
+                     new_status="draft")
+        db.commit()
+        db.refresh(pr)
+        return _to_response(db, pr, user=user)
 
     _write_audit(db, pr.id, "created", user, summary=f"{user.name or user.email} raised P2P request {pr.p2p_number}.", new_status="submitted")
+    db.flush()
 
-    # One user may hold several roles on this PR — notify them once.
-    for head_id in {approver.id for approver in approvers.values()}:
-        notify_user(
-            db, user_id=head_id,
-            title="New P2P Request for Review",
-            message=f"PR '{pr.p2p_number}' was raised by {user.name or user.email} and awaits your review.",
-            notification_type="p2p_request_submitted", entity_type="p2p_request", entity_id=pr.id,
-            teams=True,
-        )
+    # Into approval: the engine resolves the approvers, notifies them (bell +
+    # Teams) and refuses with the exact reason when a stage has nobody — in
+    # which case nothing is saved. With the workflow switched off the PR is
+    # approved at once (and its lines routed).
+    p2p_approvals.submit_pr(db, pr, user)
 
+    fire_rule(db, background_tasks, "p2p", "pr_create", "New Purchase Requisition",
+              f"PR '{pr.p2p_number}' was raised by {user.name or user.email} for {pr.project_label}.", "p2p_request", pr.id, user,
+              _pr_details(pr, user))
     db.commit()
     db.refresh(pr)
     background_tasks.add_task(_send_p2p_pr_approval_emails_background, pr.id)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
+
+
+def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool) -> list[tuple]:
+    """Check a create/edit payload and return its lines as (payload line,
+    Item Master row). A draft needs only a valid category and, per line it
+    keeps, a real item and quantity — lines with no item picked yet are
+    left out. Submitting needs everything."""
+    if payload.category_code not in P2P_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Pick a valid Purchase Requisition category (got '{payload.category_code or 'none'}').")
+    if payload.project_type and payload.project_type not in P2P_PROJECT_TYPES:
+        raise HTTPException(status_code=400, detail="Project Type must be 'Existing project' or 'New project'.")
+    items = [i for i in payload.items if i.store_item_id] if draft else list(payload.items)
+    if not draft and not items:
+        raise HTTPException(status_code=400, detail="Add at least one item line before submitting the requisition.")
+    # Every line is an Item Master item (2026-10-11 — never a typed name) and
+    # must say whether it's for the Project or Inhouse (2026-09-30) — Store
+    # issue/consumption and reporting split on it downstream.
+    lines = []
+    for idx, item in enumerate(items, start=1):
+        master = purchasable_item(db, item.store_item_id, f"Line {idx}")
+        if not draft and item.project_inhouse not in ("Project", "Inhouse"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Line {idx} ({master.item_code} {master.item_name}): choose Project or Inhouse.",
+            )
+        if not item.quantity or item.quantity <= 0:
+            raise HTTPException(status_code=400, detail=f"Line {idx} ({master.item_code} {master.item_name}): quantity must be more than 0.")
+        lines.append((item, master))
+
+    if not draft:
+        if not (payload.project_label or "").strip() and not getattr(payload, "account_assignment", None):
+            raise HTTPException(status_code=400, detail="Project is required — pick the existing project, or give the new project's name.")
+        if payload.project_type not in P2P_PROJECT_TYPES:
+            raise HTTPException(status_code=400, detail="Choose whether this requisition is for an existing project or a new project.")
+    # Who approves is decided by the central approval engine — the
+    # "Purchase requisition" workflow in Organization › Approval Workflows
+    # (seeded from the old Procurement › Settings PR approvers). Approver
+    # names sent by older clients (`approvers` / `po_approvers`) are ignored.
+    return lines
+
+
+def _sync_pr_lines(db: Session, pr: P2PRequest, lines: list[tuple], *, draft: bool = False) -> None:
+    """Make the PR's lines match `lines`: a payload line carrying the id of an
+    existing line updates it in place (keeping its attachments), new ones are
+    added, and existing lines not sent are removed. Every line goes back to
+    'pending' fulfilment with a fresh store-stock snapshot, so the approvers
+    see per line whether it's already sitting in store before they sign."""
+    existing = {row.id: row for row in pr.items}
+    kept: list[P2PRequestItem] = []
+    linked: list[tuple] = []
+    for idx, (item, master) in enumerate(lines, start=1):
+        row = existing.pop(item.id, None) if item.id else None
+        if row is None:
+            row = P2PRequestItem(p2p_request_id=pr.id)
+            pr.items.append(row)
+        for field, value in item_snapshot(master).items():
+            setattr(row, field, value)
+        # Make comes from the Item Master only — a different brand is a
+        # different item code, never a free-text override on the PR line.
+        row.make = master.make
+        row.quantity = item.quantity
+        row.project_inhouse = item.project_inhouse
+        row.ship_to = item.ship_to
+        row.fulfillment_status = "pending"
+        kept.append(row)
+        linked.append((idx, item, master, row))
+    # Order Project vehicle / lot per line (mandatory for project lines of a
+    # PR charged to an order that has an Order Project).
+    order_project_links.link_pr_lines(db, pr, linked, draft=draft)
+    for row in existing.values():
+        pr.items.remove(row)
+    db.flush()
+    _refresh_stock_snapshot(db, kept)
+
+
+def _edit_block_reason(db: Session, pr: P2PRequest, user: User) -> str | None:
+    """None when `user` may edit the requisition's content now; otherwise the
+    reason, worded for the person who asked. Editable by the requester (or
+    Purchase with 'Edit') until an RFQ is raised against it."""
+    is_requester = pr.requested_by_id == user.id
+    if not (is_requester or user.role == "admin" or (_is_purchase_team(user) and can_perform(user, "p2p", "purchase_requisitions", "edit"))):
+        return "Only the person who raised this requisition (or Purchase, with 'Edit' on Procurement › Purchase Requisitions) can edit it."
+    if pr.status not in P2P_EDITABLE_STATUSES:
+        return (f"This requisition is {pr.status.replace('_', ' ')}, so it can no longer be edited — a requisition can only be "
+                "changed until an RFQ is raised against it.")
+    rfq = db.query(RFQ.rfq_number).filter(RFQ.p2p_request_id == pr.id).order_by(RFQ.id).first()
+    if rfq:
+        return (f"RFQ {rfq[0]} has been raised against this requisition, so it can no longer be edited. "
+                "If the requirement has changed, ask the buyer to cancel this requisition and raise a new one.")
+    po = db.query(P2PPurchaseOrder.po_number).filter(
+        P2PPurchaseOrder.p2p_request_id == pr.id, P2PPurchaseOrder.status != "cancelled").first()
+    if po:
+        return f"Purchase order {po[0]} already exists for this requisition, so it can no longer be edited."
+    issued = [i for i in pr.items if i.fulfillment_status == "stock_issued"]
+    if issued:
+        return (f"Store has already issued {', '.join(i.item_name for i in issued[:3])} from stock against this requisition, "
+                "so it can no longer be edited. Ask the buyer to cancel it and raise a new one if the requirement changed.")
+    sr = db.query(ServiceMaterial.id).filter(ServiceMaterial.pr_id == pr.id).first()
+    if sr:
+        return ("This requisition was raised from a Service Request's Materials tab — change the materials there "
+                "instead, so the service request and the requisition stay in step.")
+    return None
+
+
+@router.put("/{pr_id}", response_model=P2PRequestResponse)
+async def edit_p2p_request(
+    pr_id: int,
+    payload: P2PRequestEdit,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(_requester_or_purchase),
+):
+    """Re-write a requisition's header and lines. Allowed until an RFQ is
+    raised against it (see _edit_block_reason). A requisition in approval or
+    already approved loses that approval — what the approvers signed has
+    changed — and is saved as a draft or sent for approval afresh."""
+    pr = _get_pr_or_404(db, pr_id, for_update=True, user=user)
+    _check_view_access(pr, user)
+    reason = _edit_block_reason(db, pr, user)
+    if reason:
+        raise HTTPException(status_code=409, detail=reason)
+    draft = payload.save_as_draft
+    if not draft:
+        # Submitting a draft is raising it; anything else is a resubmission.
+        _ensure_pr_action(user, "create" if pr.status == "draft" else "submit")
+    lines = _validate_pr_payload(db, payload, draft=draft)
+
+    if payload.category_code != pr.category_code:
+        # The category is part of the PR number; once approvers have seen the
+        # number it stays — only a draft is renumbered.
+        if pr.status != "draft":
+            raise HTTPException(status_code=400, detail=(
+                f"The category can't be changed once the requisition has been submitted — it is part of the number "
+                f"{pr.p2p_number}. Cancel this requisition and raise a new one under the right category."))
+        pr.p2p_number = generate_p2p_number(db, payload.category_code)
+        pr.category_code = payload.category_code
+        pr.assigned_buyer_id = resolve_auto_buyer_id(db, payload.category_code)
+        pr.assignment_date = date.today() if pr.assigned_buyer_id else None
+
+    old_status = pr.status
+    if old_status == "submitted":
+        # Withdraw the live approval so the approvers' inbox doesn't keep the old version.
+        engine.cancel_for_entity(db, p2p_approvals.PR_ENTITY, pr.id, user, "Requisition edited — resubmitted with changes")
+    if old_status in ("submitted", "approved"):
+        pr.approved_by_id = None
+        pr.approved_at = None
+
+    pr.project_label = payload.project_label
+    _apply_account_assignment(db, pr, payload)
+    pr.project_type = payload.project_type
+    pr.required_date = payload.required_date
+    pr.requirement_type = payload.requirement_type
+    pr.priority = payload.priority
+    pr.remarks = payload.remarks
+    try:
+        _sync_pr_lines(db, pr, lines, draft=draft)
+    except HTTPException:
+        db.rollback()
+        raise
+
+    who = user.name or user.email
+    if draft:
+        pr.status = "draft"
+        _write_audit(db, pr.id, "edited", user, old_status=old_status, new_status="draft",
+                     summary=f"{who} edited {pr.p2p_number} and saved it as a draft"
+                             + (" — its earlier approval was withdrawn." if old_status in ("submitted", "approved") else "."))
+        db.commit()
+        db.refresh(pr)
+        return _to_response(db, pr, user=user, with_approval=True)
+
+    requester = db.get(User, pr.requested_by_id) if pr.requested_by_id else None
+    p2p_approvals.submit_pr(db, pr, requester or user)
+    _write_audit(db, pr.id, "edited", user, old_status=old_status, new_status=pr.status,
+                 summary=f"{who} edited {pr.p2p_number} and sent it for approval"
+                         + (" again — the earlier approval was withdrawn." if old_status in ("submitted", "approved") else "."))
+    if old_status == "draft":
+        fire_rule(db, background_tasks, "p2p", "pr_create", "New Purchase Requisition",
+                  f"PR '{pr.p2p_number}' was raised by {who} for {pr.project_label}.", "p2p_request", pr.id, user,
+                  _pr_details(pr, user))
+    db.commit()
+    db.refresh(pr)
+    background_tasks.add_task(_send_p2p_pr_approval_emails_background, pr.id)
+    return _to_response(db, pr, user=user, with_approval=True)
+
+
+_PO_STAGE_STATUSES = ("po_raised", "po_approved", "partially_received", "received", "closed", "rejected")
 
 
 @router.get("", response_model=list[P2PRequestResponse])
@@ -477,17 +848,28 @@ async def list_p2p_requests(
     priority: str | None = None,
     required_date: date | None = None,
     search: str | None = None,
+    order_project_id: int | None = None,
+    order_project_element_id: int | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=1000),
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
+    # The P.O Approval queue is the Purchase Orders tab; everything else is
+    # the Purchase Requisitions tab. A user holding only Purchase Orders view
+    # (a PO approver) sees just PO-stage requisitions in the plain list.
+    if queue == "po-approval":
+        ensure_tab_action(user, "p2p", "purchase_orders", "view")
+    elif queue == "pr-approval":
+        _ensure_pr_view(user)
     query = db.query(P2PRequest).options(
         selectinload(P2PRequest.items).selectinload(P2PRequestItem.attachments),
         selectinload(P2PRequest.attachments),
         selectinload(P2PRequest.approvals),
         selectinload(P2PRequest.po_approvers),
     )
+    if queue is None and not _can_view_prs(user):
+        query = query.filter(P2PRequest.status.in_(_PO_STAGE_STATUSES))
     if queue == "pr-approval" and user.role != "admin":
         # The P.R Approval queue: ONLY PRs where the viewer holds an approver
         # slot — even for the purchase team, whose monitoring view is the
@@ -497,16 +879,24 @@ async def list_p2p_requests(
             | (P2PRequest.approver_id == user.id)
             | (P2PRequest.project_head_id == user.id)
             | (P2PRequest.plant_head_id == user.id)
+            | P2PRequest.id.in_(p2p_approvals.pr_engine_party_pr_ids(user))
         )
     elif queue == "po-approval" and user.role != "admin":
         # The P.O Approval queue: ONLY PRs whose PO this viewer is eligible
         # to approve — their role flags intersected with each PR's role set
-        # (matrix by project_type, legacy PH/Director/MD otherwise) — anyone
+        # (matrix by project_type, legacy PH/Director/Partner otherwise) — anyone
         # holding a role may approve, including whoever raised the PR or PO.
-        eligibility = [P2PRequest.po_approvers.any(P2PRequestPOApprover.approver_id == user.id)]
+        eligibility = [
+            # Approval engine: PO steps addressed to (or decided by) the viewer.
+            P2PRequest.id.in_(p2p_approvals.po_engine_party_pr_ids(user)),
+            # In-flight POs from before the engine: picked rows / role flags.
+            P2PRequest.po_approvers.any(P2PRequestPOApprover.approver_id == user.id),
+        ]
         if user.is_director:
-            eligibility.append(P2PRequest.project_type.in_(tuple(PO_APPROVAL_ROLE_SETS)))
-        if user.is_purchase_head or user.is_director or user.is_md:
+            eligibility.append(P2PRequest.project_type.in_(tuple(PO_APPROVAL_ROLE_SETS)) & P2PRequest.approval_scheme.is_(None))
+        if user.is_partner:
+            eligibility.append(P2PRequest.approval_scheme == SETTINGS_SCHEME)
+        if user.is_purchase_head or user.is_director or user.is_partner:
             eligibility.append(P2PRequest.project_type.is_(None))
         if not eligibility:
             return []
@@ -519,9 +909,7 @@ async def list_p2p_requests(
             # tabs filter this same result set client-side by exact status,
             # so restricting the query to "po_raised" here made those tabs
             # always render empty for such users.
-            query = query.filter(P2PRequest.status.in_(
-                ("po_raised", "po_approved", "partially_received", "received", "closed", "rejected")
-            ))
+            query = query.filter(P2PRequest.status.in_(_PO_STAGE_STATUSES))
         else:
         # Requesters see their own history; an assigned department/project/
         # plant head also sees PRs routed to them for approval — regardless
@@ -533,7 +921,12 @@ async def list_p2p_requests(
                 | (P2PRequest.plant_head_id == user.id)
                 | P2PRequest.approvals.any(P2PRequestApproval.approver_id == user.id)
                 | P2PRequest.po_approvers.any(P2PRequestPOApprover.approver_id == user.id)
+                | P2PRequest.id.in_(p2p_approvals.engine_party_pr_ids(user))
             )
+    # Drafts are private to whoever raised them — nobody else's list shows them.
+    query = query.filter((P2PRequest.status != "draft") | (P2PRequest.requested_by_id == user.id))
+    # Data scope (Organization › Role & Permissions › Data access) on top.
+    query = scope_prs(query, db, user)
     if status:
         query = query.filter(P2PRequest.status == status)
     if category_code:
@@ -548,10 +941,48 @@ async def list_p2p_requests(
         query = query.filter(P2PRequest.required_date == required_date)
     if search:
         query = query.filter(P2PRequest.p2p_number.ilike(f"%{search}%"))
+    if order_project_element_id:
+        query = query.filter(P2PRequest.items.any(P2PRequestItem.order_project_element_id == order_project_element_id))
+    elif order_project_id:
+        query = query.filter((P2PRequest.order_project_id == order_project_id)
+                             | P2PRequest.items.any(P2PRequestItem.order_project_id == order_project_id))
 
     prs = query.order_by(P2PRequest.created_at.desc()).offset(skip).limit(limit).all()
 
-    return [_to_response(db, pr) for pr in prs]
+    return [_to_response(db, pr, user=user) for pr in prs]
+
+
+@router.get("/approver-flags")
+async def my_approver_flags(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Whether the viewer approves requisitions / POs at all — shows the
+    Approvals views. /auth/me's is_pr_approver / is_po_approver only know the
+    old routing tables; this adds the approval engine's steps."""
+    if user.role == "admin":
+        return {"is_pr_approver": True, "is_po_approver": True}
+    engine_pr, engine_po = p2p_approvals.is_approver_user(db, user)
+    legacy_pr = db.query(P2PRequest.id).filter(
+        P2PRequest.approvals.any(P2PRequestApproval.approver_id == user.id)
+        | (P2PRequest.approver_id == user.id) | (P2PRequest.project_head_id == user.id) | (P2PRequest.plant_head_id == user.id)
+    ).first() is not None
+    legacy_po = _is_po_approver(user) or db.query(P2PRequestPOApprover.id).filter(P2PRequestPOApprover.approver_id == user.id).first() is not None
+    return {"is_pr_approver": engine_pr or legacy_pr, "is_po_approver": engine_po or legacy_po}
+
+
+@router.get("/by-po/{po_id}", response_model=P2PRequestResponse)
+async def get_p2p_request_by_po(
+    po_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_requester_or_purchase),
+):
+    """The requisition a purchase order belongs to — the approval engine links
+    a PO approval to /dashboard/p2p/purchase-orders/{po_id}, which opens the
+    requisition page where the PO is approved."""
+    po = db.get(P2PPurchaseOrder, po_id)
+    if po is None or po.p2p_request_id is None:
+        raise HTTPException(status_code=404, detail=f"Purchase order #{po_id} was not found or isn't linked to a requisition — it may have been deleted.")
+    pr = _get_pr_or_404(db, po.p2p_request_id, user=user)
+    _check_view_access(pr, user)
+    return _to_response(db, pr, user=user, with_approval=True)
 
 
 @router.get("/{pr_id}", response_model=P2PRequestResponse)
@@ -560,9 +991,10 @@ async def get_p2p_request(
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    pr = _get_pr_or_404(db, pr_id, user=user)
     _check_view_access(pr, user)
-    return _to_response(db, pr)
+    include_po = _can_see_po_commercials(pr, user) and _sees_pr_feature(user, "purchase_order", "view")
+    return _to_response(db, pr, include_po=include_po, user=user, with_approval=True)
 
 
 @router.get("/{pr_id}/audit")
@@ -571,7 +1003,9 @@ async def get_p2p_request_audit(
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    if _can_view_prs(user):
+        ensure_feature_action(user, "p2p", "purchase_requisitions", "history", "view")
+    pr = _get_pr_or_404(db, pr_id, user=user)
     _check_view_access(pr, user)
     logs = db.query(AuditLog).filter(
         AuditLog.entity_type == "p2p_request", AuditLog.entity_id == pr_id
@@ -610,9 +1044,10 @@ async def update_p2p_request(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
+    _ensure_pr_action(user, "edit")
     # Status and the approver slots used to be editable here, which let any
     # purchase user jump a PR straight to 'po_approved' (skipping Purchase
-    # Head / Director / MD) or swap themselves in as a head mid-flow. Status
+    # Head / Director / Partner) or swap themselves in as a head mid-flow. Status
     # now only moves through the dedicated transition endpoints, and heads
     # are fixed at creation — reject those keys explicitly rather than
     # silently dropping them, so a caller knows the change didn't happen.
@@ -623,7 +1058,12 @@ async def update_p2p_request(
             detail=f"{', '.join(blocked)} can't be edited directly — status only changes through approve/reject/cancel/close, and approvers are fixed when the requisition is raised.",
         )
 
-    pr = _get_pr_or_404(db, pr_id)
+    pr = _get_pr_or_404(db, pr_id, user=user)
+    _check_view_access(pr, user)
+    # Same lock as the full edit: nothing changes once an RFQ is raised.
+    reason = _edit_block_reason(db, pr, user)
+    if reason:
+        raise HTTPException(status_code=409, detail=reason)
     updates = payload.model_dump(exclude_unset=True, exclude=set(payload.model_extra or {}))
 
     for field, val in updates.items():
@@ -634,7 +1074,7 @@ async def update_p2p_request(
 
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
 
 
 
@@ -642,14 +1082,28 @@ async def update_p2p_request(
 @router.post("/{pr_id}/approve", response_model=P2PRequestResponse)
 async def approve_p2p_request(
     pr_id: int,
+    background_tasks: BackgroundTasks,
     payload: P2PRequestApprovePayload = P2PRequestApprovePayload(),
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    # Named-approver routing decides who approves; the matrix only needs
+    # 'View' on Purchase Requisitions (see the RBAC note at the top).
+    _ensure_pr_view(user)
+    pr = _get_pr_or_404(db, pr_id, user=user)
     if pr.status != "submitted":
         raise HTTPException(status_code=409, detail=f"Only a submitted PR can be approved (current status: {pr.status})")
 
+    # Submitted through the approval engine: the engine decides who may act
+    # (approver, delegate, escalation target, admin stand-in with a comment).
+    req = p2p_approvals.pr_request(db, pr.id)
+    if req is not None:
+        engine.decide(db, req.id, user, "approve", payload.comment)
+        db.commit()
+        db.refresh(pr)
+        return _to_response(db, pr, user=user)
+
+    # ── In-flight PR from before the engine (no approval request): old path.
     # An approval comment is mandatory (2026-09-30) — it's the approver's
     # recorded reasoning on the requisition's approval trail. Applies to the
     # admin override too. Rejections keep their own separate reason field.
@@ -704,25 +1158,42 @@ async def approve_p2p_request(
                 message=f"Your PR '{pr.p2p_number}' was approved by {user.name or user.email}.",
                 notification_type="p2p_request_approved", entity_type="p2p_request", entity_id=pr.id,
             )
+        fire_rule(db, background_tasks, "p2p", "pr_approved", "Purchase Requisition Approved",
+                  f"PR '{pr.p2p_number}' got its final approval from {user.name or user.email}.", "p2p_request", pr.id, user,
+                  _pr_details(pr, user))
 
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
 
 
 @router.post("/{pr_id}/approve-po", response_model=P2PRequestResponse)
 async def approve_po(
     pr_id: int,
+    background_tasks: BackgroundTasks,
     payload: P2PRequestApprovePayload = P2PRequestApprovePayload(),
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
+    # PO approver routing (Settings PO approvers, Partners, Directors, picked
+    # roles) decides who approves; the matrix only needs 'View' on Purchase
+    # Orders (see the RBAC note at the top).
+    ensure_tab_action(user, "p2p", "purchase_orders", "view")
     # Locks the PR row so two approvers clicking at the same moment can't
     # both stamp the any-one approval.
-    pr = _get_pr_or_404(db, pr_id, for_update=True)
+    pr = _get_pr_or_404(db, pr_id, for_update=True, user=user)
     if pr.status != "po_raised":
         raise HTTPException(status_code=409, detail=f"Only a PO raised request can be approved (current status: {pr.status})")
 
+    # PO sent for approval through the engine: just decide it there.
+    po, req = p2p_approvals.po_request(db, pr.id)
+    if req is not None and pr.approval_scheme == ENGINE_SCHEME:
+        engine.decide(db, req.id, user, "approve", payload.comment)
+        db.commit()
+        db.refresh(pr)
+        return _to_response(db, pr, user=user)
+
+    # ── In-flight PO from before the engine (no approval request): old path.
     # Same rule as PR approval: the approver's comment is mandatory.
     comment = (payload.comment or "").strip()
     if not comment:
@@ -731,27 +1202,56 @@ async def approve_po(
 
     now = datetime.now(timezone.utc)
 
-    if pr.project_type in PO_APPROVAL_ROLE_SETS:
+    if pr.approval_scheme == SETTINGS_SCHEME:
+        _approve_po_settings_scheme(db, pr, user, payload.comment, now, background_tasks)
+    elif pr.project_type in PO_APPROVAL_ROLE_SETS:
         # Manager matrix: ALL roles must approve (production_manager,
         # purchase_manager, project_manager, director). Named roles are
         # picked persons; director is any ONE of the directors.
-        named_role = next((a.role for a in pr.po_approvers if a.approver_id == user.id), None)
+        my_rows = [a for a in pr.po_approvers if a.approver_id == user.id]
         is_director = user.is_director
 
-        if not named_role and not is_director:
+        if not my_rows and not is_director:
             names = ", ".join(f"{a.approver_name} ({P2P_ROLE_LABELS.get(a.role, a.role)})" for a in pr.po_approvers)
             who = f" ({names})" if names else ""
             raise HTTPException(status_code=403, detail=f"Only the PO approvers picked on this requisition{who} or a Director can approve this PO.")
 
-        # Stamp the appropriate role approval
-        if named_role:
-            approver_row = next(a for a in pr.po_approvers if a.role == named_role)
-            approver_row.approved_at = now
-            approver_row.approved_by_id = user.id
-            approver_row.approved_by_name = user.name or user.email
-            approver_row.comment = payload.comment
-            role_label = P2P_ROLE_LABELS.get(named_role, named_role)
+        # A user picked in several roles clears every one of their pending
+        # slots in one click (same as PR approval). Already-stamped slots are
+        # never re-stamped, so a second click can't overwrite the first
+        # approver's name/comment.
+        pending_rows = [a for a in my_rows if a.approved_at is None]
+        pending_roles = pr.pending_po_approval_roles
+        if pending_rows:
+            for approver_row in pending_rows:
+                approver_row.approved_at = now
+                approver_row.approved_by_id = user.id
+                approver_row.approved_by_name = user.name or user.email
+                approver_row.comment = payload.comment
+            role_label = " & ".join(P2P_ROLE_LABELS.get(a.role, a.role) for a in pending_rows)
+        elif not (is_director and "director" in pending_roles):
+            done = [P2P_ROLE_LABELS.get(a.role, a.role) for a in my_rows]
+            if is_director and pr.director_po_approved_by_id == user.id:
+                done.append("Director")
+            waiting = ", ".join(P2P_ROLE_LABELS.get(r, r) for r in pending_roles) or "nobody"
+            if done:
+                detail = f"You have already approved this PO as {' & '.join(done)}; it is waiting on {waiting}."
+            else:
+                detail = (f"The Director approval on this PO was already given by "
+                          f"{pr.director_po_approved_by_name or 'another Director'}; it is waiting on {waiting}.")
+            raise HTTPException(status_code=409, detail=detail)
         else:
+            # The all-roles rule needs an independent Director: someone who
+            # already approved this PO in a picked role (e.g. a Purchase
+            # Manager who also holds is_director) can't fill the Director
+            # slot with a second click — one person never covers two roles.
+            my_stamped = [P2P_ROLE_LABELS.get(a.role, a.role) for a in pr.po_approvers if a.approved_by_id == user.id]
+            if my_stamped:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(f"You approved this PO as {' & '.join(my_stamped)}; another Director must give the "
+                            f"Director approval — one person can't fill two approval roles on the same PO."),
+                )
             pr.director_po_approved_at = now
             pr.director_po_approved_by_id = user.id
             pr.director_po_approved_by_name = user.name or user.email
@@ -776,7 +1276,7 @@ async def approve_po(
                 )
     else:
         # Legacy chain (pre-matrix PRs): every one of Purchase Head, Director
-        # and MD must stamp their own slot.
+        # and Partner must stamp their own slot.
         roles = _check_po_approve_access(pr, user)
         for role in roles:
             setattr(pr, f"{role}_approved_at", now)
@@ -795,19 +1295,119 @@ async def approve_po(
 
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
+
+
+def _approve_po_settings_scheme(db: Session, pr: P2PRequest, user: User, comment: str, now: datetime,
+                                background_tasks: BackgroundTasks) -> None:
+    """Level 1: every Settings PO approver stamps their own row. Level 2 (only
+    after level 1 is complete): any ONE Partner gives the final approval —
+    someone who already approved at level 1 can't also be that Partner."""
+    my_pending = [a for a in pr.po_approvers if a.approver_id == user.id and a.approved_at is None]
+    level1_pending = [a for a in pr.po_approvers if a.approved_at is None]
+    if my_pending:
+        for row in my_pending:
+            row.approved_at = now
+            row.approved_by_id = user.id
+            row.approved_by_name = user.name or user.email
+            row.comment = comment
+        _write_audit(db, pr.id, "po_role_approved", user, summary=f"{user.name or user.email} approved the PO for {pr.p2p_number} (PO approver).")
+        if not [a for a in pr.po_approvers if a.approved_at is None]:
+            for partner in active_partners(db):
+                if partner.id != user.id:
+                    notify_user(db, partner.id, "Purchase Order Awaiting Final Approval",
+                                f"The PO for PR '{pr.p2p_number}' is approved by the PO approvers and needs one Partner's final approval.",
+                                notification_type="p2p_po_approval_pending", entity_type="p2p_request", entity_id=pr.id, teams=True)
+        return
+    if not user.is_partner:
+        waiting = ", ".join(a.approver_name or f"user #{a.approver_id}" for a in level1_pending)
+        if any(a.approver_id == user.id for a in pr.po_approvers):
+            raise HTTPException(status_code=409, detail=f"You have already approved this PO; it is waiting on {waiting or 'a Partner'}.")
+        raise HTTPException(status_code=403, detail="Only this PO's approvers (Procurement → Settings) or a Partner can approve it.")
+    if level1_pending:
+        waiting = ", ".join(a.approver_name or f"user #{a.approver_id}" for a in level1_pending)
+        raise HTTPException(status_code=409, detail=f"The PO approvers must approve first — still waiting on {waiting}. The Partner approval comes after them.")
+    if pr.partner_approved_at is not None:
+        raise HTTPException(status_code=409, detail=f"The Partner approval was already given by {pr.partner_approved_by_name or 'another Partner'}.")
+    if any(a.approved_by_id == user.id for a in pr.po_approvers):
+        raise HTTPException(status_code=409, detail="You approved this PO as a PO approver; another Partner must give the final approval — "
+                                                    "one person can't fill both levels.")
+    pr.partner_approved_at = now
+    pr.partner_approved_by_name = user.name or user.email
+    pr.partner_comment = comment
+    pr.status = "po_approved"
+    _write_audit(db, pr.id, "po_fully_approved", user, summary=f"{user.name or user.email} (Partner) gave the final approval for the PO of {pr.p2p_number}.",
+                 old_status="po_raised", new_status="po_approved")
+    if pr.requested_by_id:
+        notify_user(db, pr.requested_by_id, "Purchase Order Fully Approved",
+                    f"The PO for your PR '{pr.p2p_number}' was approved by {user.name or user.email} (Partner) and is now active.",
+                    notification_type="p2p_po_approved", entity_type="p2p_request", entity_id=pr.id)
+    fire_rule(db, background_tasks, "p2p", "po_approved", "Purchase Order Approved",
+              f"The PO for PR '{pr.p2p_number}' got its final approval from {user.name or user.email} (Partner).",
+              "p2p_request", pr.id, user, _pr_details(pr, user))
+
+
+def _pr_details(pr: P2PRequest, user: User) -> list[tuple[str, str]]:
+    """Rows for notification emails."""
+    return [
+        ("Requisition", pr.p2p_number), ("Project", pr.project_label or ""),
+        ("Category", P2P_CATEGORIES.get(pr.category_code, pr.category_code or "")),
+        ("Required by", pr.required_date.strftime("%d-%m-%Y") if pr.required_date else ""),
+        ("Items", ", ".join(i.item_name for i in pr.items[:8]) + (" …" if len(pr.items) > 8 else "")),
+        ("PO value", f"{pr.po_value:,.2f}" if pr.po_value else ""), ("By", user.name or user.email),
+    ]
+
+
+def _cancel_linked_pos(db: Session, pr: P2PRequest, user: User, why: str) -> list[str]:
+    """Cancels every not-yet-cancelled PO raised against `pr` and writes an
+    audit line on the PR naming each one. Returns the cancelled PO numbers."""
+    pos = db.query(P2PPurchaseOrder).filter(
+        P2PPurchaseOrder.p2p_request_id == pr.id, P2PPurchaseOrder.status != "cancelled",
+    ).all()
+    for po in pos:
+        old = po.status
+        po.status = "cancelled"
+        _write_audit(db, pr.id, "po_cancelled", user,
+                     summary=f"PO '{po.po_number}' cancelled (was {old}) because {why}",
+                     old_status=old, new_status="cancelled")
+    return [po.po_number for po in pos]
 
 
 @router.post("/{pr_id}/reject", response_model=P2PRequestResponse)
 async def reject_p2p_request(
     pr_id: int,
     payload: P2PRequestActionPayload,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    pr = _get_pr_or_404(db, pr_id, user=user)
     if pr.status not in ("submitted", "approved", "po_raised"):
         raise HTTPException(status_code=409, detail=f"Cannot reject a PR with status '{pr.status}'")
+    # Routing decides who may reject; the matrix needs 'View' on the tab the
+    # decision sits on (PO approval -> Purchase Orders, else Requisitions).
+    if pr.status == "po_raised":
+        ensure_tab_action(user, "p2p", "purchase_orders", "view")
+    else:
+        _ensure_pr_view(user)
+
+    # Waiting in the approval engine (PR approval, or its PO's): reject there —
+    # the engine checks who may act and needs the reason as the comment.
+    live = None
+    if pr.status == "submitted":
+        live = p2p_approvals.pr_request(db, pr.id)
+    elif pr.status == "po_raised" and pr.approval_scheme == ENGINE_SCHEME:
+        live = p2p_approvals.po_request(db, pr.id)[1]
+    if live is not None:
+        if not (payload.reason or "").strip():
+            raise HTTPException(status_code=422, detail="Give the reason for rejecting — the requester needs it to understand what to change.")
+        engine.decide(db, live.id, user, "reject", payload.reason)
+        db.commit()
+        db.refresh(pr)
+        return _to_response(db, pr, user=user)
+
+    # ── Old path: in-flight items from before the engine, and an approved PR
+    # the purchase team / an assigned head turns down before any PO.
     role = _check_po_reject_access(pr, user) if pr.status == "po_raised" else _check_reject_access(pr, user)
 
     old_status = pr.status
@@ -818,6 +1418,10 @@ async def reject_p2p_request(
     reason_note = f" Reason: {payload.reason}" if payload.reason else ""
     _write_audit(db, pr.id, "rejected", user, summary=f"{user.name or user.email} rejected P2P request {pr.p2p_number}.{reason_note}",
                  old_status=old_status, new_status="rejected")
+    if old_status == "po_raised":
+        # Rejecting at PO approval kills the PO too — otherwise it stays
+        # 'issued' in PO Tracking forever against a terminal PR (C-43).
+        _cancel_linked_pos(db, pr, user, f"the PO was rejected at approval.{reason_note}")
 
     if pr.requested_by_id:
         notify_user(
@@ -826,10 +1430,30 @@ async def reject_p2p_request(
             message=f"Your PR '{pr.p2p_number}' was rejected by {user.name or user.email}.{reason_note}",
             notification_type="p2p_request_rejected", entity_type="p2p_request", entity_id=pr.id,
         )
+    fire_rule(db, background_tasks, "p2p", "pr_rejected", "Purchase Requisition Rejected",
+              f"PR '{pr.p2p_number}' was rejected by {user.name or user.email}{' at PO approval' if old_status == 'po_raised' else ''}.{reason_note}",
+              "p2p_request", pr.id, user, _pr_details(pr, user))
 
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
+
+
+def _grn_awaiting_inspection(db: Session, pr: P2PRequest) -> str | None:
+    """GRN number of a goods receipt against one of this PR's live POs that
+    hasn't finished quality inspection (a draft GRN, or a line still pending /
+    in quality). Its accepted quantity would still roll up onto the PR, so
+    the PR can't be cancelled or short-closed while one exists."""
+    from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
+    grns = db.query(P2PGoodsReceipt).join(
+        P2PPurchaseOrder, P2PPurchaseOrder.id == P2PGoodsReceipt.purchase_order_id,
+    ).options(selectinload(P2PGoodsReceipt.items)).filter(
+        P2PPurchaseOrder.p2p_request_id == pr.id, P2PPurchaseOrder.status != "cancelled",
+    ).all()
+    for g in grns:
+        if g.status == "draft" or any(it.quality_status in ("pending", "in_quality") for it in g.items):
+            return g.grn_number
+    return None
 
 
 @router.post("/{pr_id}/cancel", response_model=P2PRequestResponse)
@@ -839,37 +1463,94 @@ async def cancel_p2p_request(
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    _ensure_pr_action(user, "cancel")
+    pr = _get_pr_or_404(db, pr_id, user=user)
     if not _is_purchase_team(user) and pr.requested_by_id != user.id:
         raise HTTPException(status_code=403, detail="You may only cancel your own P2P requests")
-    if pr.status in ("closed", "rejected", "cancelled", "po_raised", "partially_received", "received"):
-        raise HTTPException(status_code=409, detail=f"Cannot cancel a PR with status '{pr.status}'")
+    if pr.status in ("closed", "rejected", "cancelled"):
+        raise HTTPException(status_code=409, detail=f"This requisition is already {pr.status} — there is nothing left to cancel.")
+    if pr.status == "po_raised":
+        raise HTTPException(status_code=409, detail="The PO for this requisition is awaiting approval — ask a PO approver to reject it instead of cancelling the requisition.")
+    if pr.status == "partially_received":
+        raise HTTPException(status_code=409, detail="Part of this order has already been received, so the requisition can't be cancelled. If the vendor won't supply the balance, Purchase can short-close it: Close Requisition with a reason.")
+    if pr.status == "received":
+        raise HTTPException(status_code=409, detail="Every ordered item has already been received, so there is nothing left to cancel. Purchase can close the requisition instead.")
+    if pr.status == "po_approved":
+        # The PO is approved and with the vendor. Only Purchase (or an admin)
+        # can call it off, with a reason, and only while no goods are booked
+        # against it; the PO is cancelled together with the requisition.
+        if not (_is_purchase_team(user) or user.role == "admin"):
+            raise HTTPException(status_code=403, detail="The PO for this requisition is approved and with the vendor, so only Purchase (or an admin) can cancel it now. Ask the buyer to cancel the requisition and the PO.")
+        if not (payload.reason or "").strip():
+            raise HTTPException(status_code=400, detail="Give a reason for cancelling: the PO is already approved and with the vendor, and the reason is recorded on the PO and the requisition history.")
+        open_grn = _grn_awaiting_inspection(db, pr)
+        if open_grn:
+            raise HTTPException(status_code=409, detail=f"Goods receipt {open_grn} is booked against this requisition's PO and still awaiting quality inspection, so the requisition can't be cancelled yet. Finish the GRN's inspection first: if every item is rejected you can then cancel; if any is accepted, Purchase can short-close the requisition instead.")
+        payload.reason = payload.reason.strip()
 
     old_status = pr.status
+    # Still waiting for PR approval in the engine: withdraw that request too,
+    # so the approvers' inbox doesn't keep a requisition that no longer exists.
+    engine.cancel_for_entity(db, p2p_approvals.PR_ENTITY, pr.id, user, payload.reason or "Requisition cancelled")
     pr.status = "cancelled"
     pr.cancelled_reason = payload.reason
     reason_note = f" Reason: {payload.reason}" if payload.reason else ""
     _write_audit(db, pr.id, "cancelled", user, summary=f"{user.name or user.email} cancelled P2P request {pr.p2p_number}.{reason_note}",
                  old_status=old_status, new_status="cancelled")
+    # A PO still in draft (po_drafted) dies with its requisition.
+    _cancel_linked_pos(db, pr, user, f"its requisition was cancelled.{reason_note}")
+    if pr.requested_by_id and pr.requested_by_id != user.id:
+        notify_user(
+            db, user_id=pr.requested_by_id,
+            title="P2P Request Cancelled",
+            message=f"Your PR '{pr.p2p_number}' was cancelled by {user.name or user.email}.{reason_note}",
+            notification_type="p2p_request_cancelled", entity_type="p2p_request", entity_id=pr.id,
+        )
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
+
+
+@router.delete("/{pr_id}")
+async def discard_draft(
+    pr_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(_requester_or_purchase),
+):
+    """Throw away a draft. Only drafts — a requisition anyone else has seen
+    is cancelled (with its history), never deleted."""
+    pr = _get_pr_or_404(db, pr_id, user=user)
+    if pr.status != "draft":
+        raise HTTPException(status_code=409, detail=f"Only a draft can be discarded — {pr.p2p_number} is {pr.status.replace('_', ' ')}. Use Cancel instead.")
+    if pr.requested_by_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only the person who raised this draft can discard it.")
+    _write_audit(db, pr.id, "draft_discarded", user, summary=f"{user.name or user.email} discarded draft {pr.p2p_number}.",
+                 old_status="draft")
+    db.delete(pr)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/{pr_id}/assign-buyer", response_model=P2PRequestResponse)
 async def assign_buyer(
     pr_id: int,
     payload: P2PRequestAssignBuyerPayload,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    _ensure_pr_action(user, "edit")
+    ensure_feature_action(user, "p2p", "purchase_requisitions", "buyer", "edit")
+    pr = _get_pr_or_404(db, pr_id, user=user)
     if pr.status != "approved":
         raise HTTPException(status_code=409, detail=f"A buyer can only be assigned to an approved PR (current status: {pr.status})")
 
     buyer = db.query(User).filter(User.id == payload.assigned_buyer_id).first()
     if not buyer:
         raise HTTPException(status_code=404, detail="Buyer not found")
+    # The role's assign-to rule (Role & Permissions › Procurement › Purchase Requisitions › Assign buyer).
+    if buyer.id != pr.assigned_buyer_id:
+        assignee_rules.ensure_allowed(db, user, BUYER_RULE_KEY, buyer)
 
     pr.assigned_buyer_id = payload.assigned_buyer_id
     pr.assignment_date = payload.assignment_date or date.today()
@@ -882,10 +1563,12 @@ async def assign_buyer(
         message=f"You have been assigned as the buyer for PR '{pr.p2p_number}'.",
         notification_type="p2p_request_buyer_assigned", entity_type="p2p_request", entity_id=pr.id,
     )
+    from app.modules.p2p import notify as p2p_notify
+    p2p_notify.buyer_assigned(db, background_tasks, pr, user)
 
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
 
 
 def _get_pr_item_or_404(pr: P2PRequest, item_id: int) -> P2PRequestItem:
@@ -895,16 +1578,16 @@ def _get_pr_item_or_404(pr: P2PRequest, item_id: int) -> P2PRequestItem:
     raise HTTPException(status_code=404, detail="P2P request item not found on this PR")
 
 
-def _match_store_item(db: Session, item: P2PRequestItem) -> StoreItem | None:
-    """Matches a free-text PR item to the store item master by name, and by
-    part code too when the PR item has one — see plan doc for why name-only
-    matching was rejected (too many false positives)."""
-    query = db.query(StoreItem).filter(StoreItem.item_name.ilike(item.item_name))
-    if item.part_code:
-        query = query.filter(
-            (StoreItem.part_number.ilike(item.part_code)) | (StoreItem.manufacturer_part_number.ilike(item.part_code))
-        )
-    return query.first()
+def _linked_store_item(db: Session, item: P2PRequestItem) -> StoreItem | None:
+    """The Item Master row this PR line was raised for (its store_item_id).
+    None only for an older line the 2026-10-11 migration couldn't link —
+    lines are never matched to the master by name."""
+    return db.get(StoreItem, item.store_item_id) if item.store_item_id else None
+
+
+_UNLINKED_LINE = ("'{name}' was raised before PR lines were picked from the Item Master and isn't linked to an item, "
+                  "so its store stock can't be checked or issued. Send it to procurement; link it to its item on the "
+                  "PO (Link to Item Master) before receiving it.")
 
 
 def _stock_balance_info(db: Session, item_id: int, location_id: int | None = None) -> P2PRequestItemStockLocationInfo:
@@ -939,7 +1622,7 @@ def _refresh_stock_snapshot(db: Session, items: list[P2PRequestItem]) -> dict[st
         # None (the column default fires at INSERT) — that's a pending line.
         if item.fulfillment_status not in (None, "pending"):
             continue
-        store_item = _match_store_item(db, item)
+        store_item = _linked_store_item(db, item)
         if not store_item:
             item.stock_status = "no_match"
             item.stock_available_qty = None
@@ -984,6 +1667,10 @@ def _route_lines_on_approval(db: Session, pr: P2PRequest, user: User) -> None:
     summary = "; ".join(parts)
     _write_audit(db, pr.id, "stock_checked", user,
                  summary=f"Automatic store-stock check on approval of {pr.p2p_number}: {summary}.")
+    # Role event for the buying team (the assigned buyer is told directly below).
+    from app.modules.p2p import notify as p2p_notify
+    from app.modules.p2p.approvals import _AfterDecisionTasks
+    p2p_notify.pr_to_procurement(db, _AfterDecisionTasks(), pr, user, to_procure)
 
     if pr.assigned_buyer_id:
         if not to_procure and not buckets["partial"]:
@@ -996,6 +1683,13 @@ def _route_lines_on_approval(db: Session, pr: P2PRequest, user: User) -> None:
             message=message,
             notification_type="p2p_stock_routing", entity_type="p2p_request", entity_id=pr.id,
         )
+
+
+# A requisition whose lines can't be checked / issued from stock / sent to
+# procurement: not yet approved (draft, in approval, sent back) or already
+# finished (rejected, cancelled, closed). Stock must never leave the store
+# against an unapproved requisition.
+_NOT_APPROVED_PR_STATUSES = ("draft", "submitted", "returned", "rejected", "cancelled", "closed")
 
 
 def _pr_store_manager_id(pr: P2PRequest) -> int | None:
@@ -1021,23 +1715,21 @@ async def check_item_stock(
     the requested item is already sitting in store stock before deciding to
     raise a purchase for it — see issue_item_from_stock / send_item_to_procurement
     for the two follow-up decisions."""
-    pr = _get_pr_or_404(db, pr_id)
+    _ensure_pr_view(user)
+    ensure_feature_action(user, "p2p", "purchase_requisitions", "fulfilment", "view")
+    pr = _get_pr_or_404(db, pr_id, user=user)
     if not (user.role == "admin" or "purchase" in user.get_apps() or _pr_store_manager_id(pr) == user.id):
         raise HTTPException(status_code=403, detail="Only the Purchase team or this requisition's Store Manager can check its store stock.")
-    if pr.status == "submitted" or pr.status in ("rejected", "cancelled"):
+    if pr.status in _NOT_APPROVED_PR_STATUSES:
         raise HTTPException(status_code=409, detail=f"Stock can only be checked on an approved PR (current status: {pr.status})")
     item = _get_pr_item_or_404(pr, item_id)
     if item.fulfillment_status != "pending":
         raise HTTPException(status_code=409, detail=f"This item has already been decided ('{item.fulfillment_status}')")
 
-    store_item = _match_store_item(db, item)
+    store_item = _linked_store_item(db, item)
     if not store_item:
-        message = (
-            f"No store item found matching name '{item.item_name}' and part code '{item.part_code}'."
-            if item.part_code else
-            f"No store item found matching name '{item.item_name}'. (PR item has no part code to narrow the match.)"
-        )
-        return P2PRequestItemStockCheckResponse(matched=False, requested_qty=item.quantity, message=message)
+        return P2PRequestItemStockCheckResponse(matched=False, requested_qty=item.quantity,
+                                                message=_UNLINKED_LINE.format(name=item.item_name))
 
     ship_to_location = None
     if item.ship_to:
@@ -1060,7 +1752,7 @@ async def check_item_stock(
         store_item_id=store_item.id,
         store_item_code=store_item.item_code,
         store_item_name=store_item.item_name,
-        part_code_matched=bool(item.part_code),
+        part_code_matched=True,
         requested_qty=item.quantity,
         ship_to_location=ship_to_location,
         total_across_locations=_stock_balance_info(db, store_item.id),
@@ -1079,9 +1771,13 @@ async def issue_item_from_stock(
     comment = (payload.comment or "").strip()
     if not comment:
         raise HTTPException(status_code=400, detail="Add a comment before issuing — e.g. who received it or where it was handed over. It is recorded on the material issue and the requisition history.")
-    pr = _get_pr_or_404(db, pr_id)
+    # Routed to the Store Manager named on this PR (like a named approver),
+    # so the matrix only needs 'View' on Purchase Requisitions.
+    _ensure_pr_view(user)
+    ensure_feature_action(user, "p2p", "purchase_requisitions", "fulfilment", "create")
+    pr = _get_pr_or_404(db, pr_id, user=user)
     _check_can_issue(pr, user)
-    if pr.status == "submitted" or pr.status in ("rejected", "cancelled"):
+    if pr.status in _NOT_APPROVED_PR_STATUSES:
         raise HTTPException(status_code=409, detail=f"An item can only be issued from stock on an approved PR (current status: {pr.status})")
     # Locks this specific PR-item row so two concurrent/double-clicked calls
     # against the same item can't both read fulfillment_status=='pending'
@@ -1097,9 +1793,9 @@ async def issue_item_from_stock(
     if not db.query(StoreLocation).filter(StoreLocation.id == payload.location_id).first():
         raise HTTPException(status_code=404, detail="Store location not found")
 
-    store_item = _match_store_item(db, item)
+    store_item = _linked_store_item(db, item)
     if not store_item:
-        raise HTTPException(status_code=404, detail=f"No store item found matching name '{item.item_name}'" + (f" and part code '{item.part_code}'" if item.part_code else ""))
+        raise HTTPException(status_code=409, detail=_UNLINKED_LINE.format(name=item.item_name))
 
     quantity = payload.quantity if payload.quantity is not None else item.quantity
     if quantity <= 0:
@@ -1164,18 +1860,21 @@ async def issue_item_from_stock(
 
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
 
 
 @router.post("/{pr_id}/items/{item_id}/send-to-procurement", response_model=P2PRequestResponse)
 async def send_item_to_procurement(
     pr_id: int,
     item_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
-    pr = _get_pr_or_404(db, pr_id)
-    if pr.status == "submitted" or pr.status in ("rejected", "cancelled"):
+    _ensure_pr_action(user, "edit")
+    ensure_feature_action(user, "p2p", "purchase_requisitions", "fulfilment", "edit")
+    pr = _get_pr_or_404(db, pr_id, user=user)
+    if pr.status in _NOT_APPROVED_PR_STATUSES:
         raise HTTPException(status_code=409, detail=f"This decision can only be made on an approved PR (current status: {pr.status})")
     item = _get_pr_item_or_404(pr, item_id)
     if item.fulfillment_status != "pending":
@@ -1184,10 +1883,12 @@ async def send_item_to_procurement(
     item.fulfillment_status = "sent_to_procurement"
     _write_audit(db, pr.id, "item_sent_to_procurement", user,
                  summary=f"{user.name or user.email} confirmed '{item.item_name}' is not in store stock and sent it to procurement for {pr.p2p_number}.")
+    from app.modules.p2p import notify as p2p_notify
+    p2p_notify.pr_to_procurement(db, background_tasks, pr, user, [item])
 
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
 
 
 @router.post("/{pr_id}/request-quotations", response_model=P2PRequestResponse)
@@ -1197,7 +1898,8 @@ async def request_quotations(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    _ensure_pr_action(user, "edit")
+    pr = _get_pr_or_404(db, pr_id, user=user)
     if pr.status != "approved":
         raise HTTPException(status_code=409, detail=f"Quotations can only be recorded on an approved PR (current status: {pr.status})")
 
@@ -1208,42 +1910,62 @@ async def request_quotations(
                  summary=f"{user.name or user.email} recorded vendor/RFQ details for {pr.p2p_number}.")
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
 
 
-class P2PRequestSetPOApproversPayload(BaseModel):
-    po_approvers: dict[str, int] = Field(default_factory=dict)
+def _check_draft_complete(pr: P2PRequest) -> None:
+    """A draft is saved with whatever was filled in; before it goes for
+    approval it must be as complete as a requisition raised directly."""
+    missing = []
+    if not (pr.project_label or "").strip():
+        missing.append("the project")
+    if pr.project_type not in P2P_PROJECT_TYPES:
+        missing.append("the project type (existing / new)")
+    if not pr.items:
+        missing.append("at least one item line")
+    for idx, item in enumerate(pr.items, start=1):
+        if item.project_inhouse not in ("Project", "Inhouse"):
+            missing.append(f"Project or Inhouse on line {idx} ({item.item_name})")
+    if missing:
+        raise HTTPException(status_code=400, detail=f"{pr.p2p_number} can't be submitted yet — fill in {', '.join(missing)}. Click Edit to complete the draft.")
 
 
-@router.post("/{pr_id}/set-po-approvers", response_model=P2PRequestResponse)
-async def set_po_approvers(
+@router.post("/{pr_id}/submit", response_model=P2PRequestResponse)
+async def resubmit_p2p_request(
     pr_id: int,
-    payload: P2PRequestSetPOApproversPayload,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("purchase")),
+    user: User = Depends(_requester_or_purchase),
 ):
-    """Set PO approvers before raising the PO — called from RFQ page."""
-    pr = _get_pr_or_404(db, pr_id)
-    if pr.status not in ("approved", "vendor_quotations", "technical_evaluation", "commercial_evaluation", "vendor_selected", "po_drafted"):
-        raise HTTPException(status_code=409, detail=f"PO approvers can only be set before the PO is raised (current status: {pr.status})")
-
-    try:
-        po_approvers = resolve_po_approvers(db, pr.project_type, payload.po_approvers)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    db.query(P2PRequestPOApprover).filter(P2PRequestPOApprover.p2p_request_id == pr.id).delete()
-    for role, approver in po_approvers.items():
-        db.add(P2PRequestPOApprover(
-            p2p_request_id=pr.id, role=role, approver_id=approver.id,
-            approver_name=approver.name or approver.email,
-        ))
-
-    _write_audit(db, pr.id, "po_approvers_set", user,
-                 summary=f"{user.name or user.email} set PO approvers for {pr.p2p_number}.")
+    """Send a draft, or a returned requisition (sent back by an approver, or
+    withdrawn by the requester), into approval — a new submission in the
+    approval engine; any earlier one stays as history."""
+    pr = _get_pr_or_404(db, pr_id, user=user)
+    _ensure_pr_action(user, "create" if pr.status == "draft" else "submit")
+    if not _is_purchase_team(user) and pr.requested_by_id != user.id:
+        raise HTTPException(status_code=403, detail="Only the requester (or Purchase) can submit this requisition.")
+    if pr.status == "draft" and pr.requested_by_id != user.id:
+        raise HTTPException(status_code=403, detail="Only the person who raised this draft can submit it.")
+    if pr.status not in ("draft", "returned"):
+        raise HTTPException(status_code=409, detail=f"Only a draft, or a requisition returned for changes, can be submitted (current status: {pr.status.replace('_', ' ')}).")
+    old_status = pr.status
+    if old_status == "draft":
+        _check_draft_complete(pr)
+    order_project_links.check_saved_pr(db, pr)
+    requester = db.get(User, pr.requested_by_id) if pr.requested_by_id else None
+    p2p_approvals.submit_pr(db, pr, requester or user)
+    who = user.name or user.email
+    _write_audit(db, pr.id, "submitted" if old_status == "draft" else "resubmitted", user,
+                 summary=f"{who} {'submitted' if old_status == 'draft' else 'resubmitted'} {pr.p2p_number} for approval.",
+                 old_status=old_status, new_status=pr.status)
+    if old_status == "draft":
+        fire_rule(db, background_tasks, "p2p", "pr_create", "New Purchase Requisition",
+                  f"PR '{pr.p2p_number}' was raised by {who} for {pr.project_label}.", "p2p_request", pr.id, user,
+                  _pr_details(pr, user))
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    background_tasks.add_task(_send_p2p_pr_approval_emails_background, pr.id)
+    return _to_response(db, pr, user=user)
 
 
 @router.post("/{pr_id}/select-vendor", response_model=P2PRequestResponse)
@@ -1253,7 +1975,8 @@ async def select_vendor(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    _ensure_pr_action(user, "edit")
+    pr = _get_pr_or_404(db, pr_id, user=user)
     if pr.status != "approved":
         raise HTTPException(status_code=409, detail=f"A vendor can only be selected on an approved PR (current status: {pr.status})")
 
@@ -1262,7 +1985,7 @@ async def select_vendor(
                  summary=f"{user.name or user.email} selected vendor '{payload.selected_vendor}' for {pr.p2p_number}.")
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
 
 
 @router.post("/{pr_id}/create-po", response_model=P2PRequestResponse)
@@ -1273,10 +1996,12 @@ async def create_po(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
+    ensure_tab_action(user, "p2p", "purchase_orders", "create")
+    ensure_tab_action(user, "p2p", "purchase_orders", "submit")  # it goes straight into PO approval
     # Locks the PR row for the rest of this request so a concurrent/
     # double-submitted create-PO call can't both pass the status check below
     # before either commits.
-    pr = _get_pr_or_404(db, pr_id, for_update=True)
+    pr = _get_pr_or_404(db, pr_id, for_update=True, user=user)
     if pr.status != "approved":
         raise HTTPException(status_code=409, detail=f"A PO can only be raised on an approved PR (current status: {pr.status})")
     if db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.po_number == payload.po_number).first():
@@ -1286,11 +2011,16 @@ async def create_po(
     ).first()
     if existing_po:
         raise HTTPException(status_code=409, detail=f"PR '{pr.p2p_number}' already has a PO ('{existing_po.po_number}') — cancel it first to raise a new one")
-
     # Items already fulfilled from existing store stock (see
     # issue_item_from_stock above) aren't purchased — they're excluded from
-    # the PO entirely.
-    procurable_items = [i for i in pr.items if i.fulfillment_status != "stock_issued"]
+    # the PO entirely, and a partially-issued line only orders the shortfall
+    # (same as rfq.create_po_draft).
+    def _to_order(i: P2PRequestItem) -> float:
+        return (i.quantity or 0) - (i.issued_qty or 0)
+
+    procurable_items = [i for i in pr.items if i.fulfillment_status != "stock_issued" and _to_order(i) > 0]
+    if not procurable_items:
+        raise HTTPException(status_code=409, detail=f"Every line on '{pr.p2p_number}' was already issued from store stock — there is nothing left to order.")
 
     # Per-line pricing (see P2PRequestCreatePOItemPricing) is what derives
     # the PO's total — payload.po_value is ignored, so this total is grounded
@@ -1304,7 +2034,7 @@ async def create_po(
         pricing = pricing_by_item_id.get(item.id)
         unit_price = pricing.unit_price if pricing else None
         tax_rate = pricing.tax_rate if pricing else None
-        line_total = compute_line_total(item.quantity, unit_price, tax_rate)
+        line_total = compute_line_total(_to_order(item), unit_price, tax_rate)
         if line_total is not None:
             computed_total += line_total
         line_pricing.append((unit_price, tax_rate, line_total))
@@ -1319,13 +2049,20 @@ async def create_po(
         )
     po_value = round(computed_total, 2)
 
+    # Quality: a vendor BLOCKED on the approved vendor list gets no PO for
+    # those items (services/supplier_quality.ensure_po_allowed).
+    from app.modules.quality.services.supplier_quality import ensure_po_allowed, SupplierError
+    try:
+        ensure_po_allowed(db, pr.selected_vendor, [i.store_item_id for i in procurable_items])
+    except SupplierError as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
+
     old_status = pr.status
     pr.po_number = payload.po_number
     pr.po_date = payload.po_date or date.today()
     pr.po_value = po_value
     pr.expected_delivery = payload.expected_delivery
-    pr.ordered_quantity = payload.ordered_quantity if payload.ordered_quantity is not None else sum(i.quantity for i in procurable_items)
-    pr.status = "po_raised"
+    pr.ordered_quantity = payload.ordered_quantity if payload.ordered_quantity is not None else sum(_to_order(i) for i in procurable_items)
 
     # The PR's po_* fields above are a denormalized snapshot for quick display;
     # this linked P2PPurchaseOrder is the real record — see
@@ -1345,16 +2082,24 @@ async def create_po(
     for item, (unit_price, tax_rate, line_total) in zip(procurable_items, line_pricing):
         db.add(P2PPurchaseOrderItem(
             purchase_order_id=po.id,
+            store_item_id=item.store_item_id,
             item_name=item.item_name,
             make=item.make,
             part_code=item.part_code,
             unit=item.unit,
-            quantity=item.quantity,
+            quantity=_to_order(item),
             unit_price=unit_price,
             tax_rate=tax_rate,
             line_total=line_total,
+            item_category=item_category_for(db, item.store_item_id),
+            order_project_id=item.order_project_id,
+            order_project_element_id=item.order_project_element_id,
         ))
 
+    db.flush()
+    # Into PO approval (the "Purchase order" workflow in Organization ›
+    # Approval Workflows) — PR → po_raised. The engine notifies the approvers.
+    p2p_approvals.submit_po(db, pr, po, user)
     _write_audit(db, pr.id, "po_raised", user,
                  summary=f"{user.name or user.email} raised PO '{payload.po_number}' for {pr.p2p_number}.",
                  old_status=old_status, new_status="po_raised")
@@ -1367,19 +2112,10 @@ async def create_po(
             notification_type="p2p_request_po_raised", entity_type="p2p_request", entity_id=pr.id,
         )
 
-    for approver, role in po_approver_users(db, pr):
-        notify_user(
-            db, user_id=approver.id,
-            title="Purchase Order Awaiting Approval",
-            message=f"PO '{payload.po_number}' for PR '{pr.p2p_number}' awaits your approval as {P2P_ROLE_LABELS.get(role, role)}.",
-            notification_type="p2p_po_approval_pending", entity_type="p2p_request", entity_id=pr.id,
-            teams=True,
-        )
-
     db.commit()
     db.refresh(pr)
     background_tasks.add_task(_send_p2p_po_approval_emails_background, pr.id)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
 
 
 # Receiving used to be a single flat "update-receipt" call directly on the
@@ -1394,31 +2130,54 @@ async def create_po(
 @router.post("/{pr_id}/close", response_model=P2PRequestResponse)
 async def close_p2p_request(
     pr_id: int,
+    payload: P2PRequestActionPayload | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("purchase")),
 ):
-    pr = _get_pr_or_404(db, pr_id)
-    if pr.status != "received":
-        raise HTTPException(status_code=409, detail="A P2P request can only be closed once fully received.")
+    """Closes a fully received PR, or short-closes a partially received one
+    (the vendor won't supply the balance) — a short-close needs a reason and
+    no GRN still awaiting inspection. Once closed, no further GRN can be
+    booked against its PO (goods receipt requires po_approved /
+    partially_received), so the unsupplied balance is written off."""
+    _ensure_pr_action(user, "edit")
+    ensure_feature_action(user, "p2p", "purchase_requisitions", "close", "edit")
+    pr = _get_pr_or_404(db, pr_id, user=user)
+    reason = ((payload.reason if payload else None) or "").strip()
+    if pr.status not in ("received", "partially_received"):
+        raise HTTPException(status_code=409, detail=f"Only a received or partially received requisition can be closed (current status: {pr.status.replace('_', ' ')}). Receive the goods against its PO first, or cancel the requisition if nothing will be ordered.")
+    short_close = pr.status == "partially_received"
+    if short_close:
+        if not reason:
+            raise HTTPException(status_code=400, detail="Only part of this order has been received. Give a reason to short-close it (e.g. the vendor won't supply the balance); the unreceived quantity is written off and no more goods can be received against this PO.")
+        open_grn = _grn_awaiting_inspection(db, pr)
+        if open_grn:
+            raise HTTPException(status_code=409, detail=f"Goods receipt {open_grn} is still awaiting quality inspection. Finish its inspection first, then short-close the requisition.")
 
     old_status = pr.status
     pr.status = "closed"
     pr.closed_by_id = user.id
     pr.closed_at = datetime.now(timezone.utc)
-    _write_audit(db, pr.id, "closed", user, summary=f"{user.name or user.email} closed P2P request {pr.p2p_number}.",
+    reason_note = f" Reason: {reason}" if reason else ""
+    if short_close:
+        summary = (f"{user.name or user.email} short-closed P2P request {pr.p2p_number} with "
+                   f"{pr.received_quantity or 0:g} of {pr.ordered_quantity or 0:g} received; the balance is written off.{reason_note}")
+    else:
+        summary = f"{user.name or user.email} closed P2P request {pr.p2p_number}.{reason_note}"
+    _write_audit(db, pr.id, "short_closed" if short_close else "closed", user, summary=summary,
                  old_status=old_status, new_status="closed")
 
     if pr.requested_by_id:
+        verb = "short-closed (the balance won't be supplied)" if short_close else "closed"
         notify_user(
             db, user_id=pr.requested_by_id,
             title="P2P Request Closed",
-            message=f"Your PR '{pr.p2p_number}' has been closed by {user.name or user.email}.",
+            message=f"Your PR '{pr.p2p_number}' has been {verb} by {user.name or user.email}.{reason_note}",
             notification_type="p2p_request_closed", entity_type="p2p_request", entity_id=pr.id,
         )
 
     db.commit()
     db.refresh(pr)
-    return _to_response(db, pr)
+    return _to_response(db, pr, user=user)
 
 
 @router.post("/{pr_id}/attachments", response_model=list[P2PRequestAttachmentResponse])
@@ -1430,7 +2189,10 @@ async def upload_attachments(
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    pr = _get_pr_or_404(db, pr_id, user=user)
+    if not (pr.requested_by_id == user.id and can_perform(user, "p2p", "purchase_requisitions", "create")):
+        _ensure_pr_action(user, "edit")
+    ensure_feature_action(user, "p2p", "purchase_requisitions", "attachments", "create")
     if not _is_purchase_team(user) and pr.requested_by_id != user.id:
         raise HTTPException(status_code=403, detail="You may only add attachments to your own P2P requests")
     if doc_type not in P2P_ATTACHMENT_DOC_TYPES:
@@ -1478,9 +2240,12 @@ async def get_p2p_attachment_content(
 ):
     """Raw bytes for in-app preview, fetched via the app-only Graph token —
     never the raw SharePoint webUrl."""
-    pr = _get_pr_or_404(db, pr_id)
-    if not _is_purchase_team(user) and pr.requested_by_id != user.id:
-        raise HTTPException(status_code=403, detail="You may only view attachments on your own P2P requests")
+    pr = _get_pr_or_404(db, pr_id, user=user)
+    # Anyone who may see the PR (incl. its named PR/PO approvers) may open
+    # its files — approvers must see the specs they sign off on.
+    _check_view_access(pr, user)
+    if not _sees_pr_feature(user, "attachments", "view"):
+        ensure_feature_action(user, "p2p", "purchase_requisitions", "attachments", "view")
 
     attachment = db.query(P2PRequestAttachment).filter(
         P2PRequestAttachment.id == attachment_id, P2PRequestAttachment.p2p_request_id == pr_id
@@ -1505,7 +2270,7 @@ async def delete_attachment(
     db: Session = Depends(get_db),
     user: User = Depends(_requester_or_purchase),
 ):
-    pr = _get_pr_or_404(db, pr_id)
+    pr = _get_pr_or_404(db, pr_id, user=user)
     if not _is_purchase_team(user) and pr.requested_by_id != user.id:
         raise HTTPException(status_code=403, detail="You may only remove attachments from your own P2P requests")
 
@@ -1514,7 +2279,20 @@ async def delete_attachment(
     ).first()
     if not attachment:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    # Company delete rule: 'Delete' on Purchase Requisitions AND only a file
+    # you uploaded yourself (admins any).
+    ensure_can_delete(user, attachment, "p2p", "purchase_requisitions", what="attachment")
+    ensure_feature_action(user, "p2p", "purchase_requisitions", "attachments", "delete")
+    # Supporting documents are part of what the approvers signed — once the
+    # requisition leaves 'submitted' only Purchase may remove one.
+    if pr.status not in ("submitted", "returned") and not _is_purchase_team(user):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Attachments are locked once the requisition is approved (current status: {pr.status}) — ask Purchase (or an admin) to remove it.",
+        )
 
+    _write_audit(db, pr.id, "attachment_deleted", user,
+                 summary=f"{user.name or user.email} removed attachment '{attachment.filename}' from {pr.p2p_number}.")
     db.delete(attachment)
     db.commit()
     return {"message": "Attachment deleted"}

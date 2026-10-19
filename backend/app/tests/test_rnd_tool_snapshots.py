@@ -138,7 +138,13 @@ def test_snapshot_failure_does_not_break_primary_history_save(client, db):
     assert r.json()["calculation_name"] == "Bad"
 
 
-def test_unknown_tool_name_skips_snapshot_without_error(client, db):
+def test_unknown_tool_name_rejected_at_api_and_snapshot_helper_skips_it(client, db):
+    # The API now restricts tool_name to the seven real calculators (422 for
+    # anything else); the snapshot helper itself must still no-op silently
+    # on a name it doesn't know, e.g. a legacy row or a future tool.
+    from app.modules.rnd.routes.history import _snapshot_tool_calculation
+
     user = make_user(db, "unknown-tool@premnathrail.com")
     r = save(client, user, "some_future_tool", {"x": 1}, {"y": 2}, "Future")
-    assert r.status_code == 200
+    assert r.status_code == 422
+    _snapshot_tool_calculation(db, "some_future_tool", user.id, "Future", {"x": 1}, {"y": 2})

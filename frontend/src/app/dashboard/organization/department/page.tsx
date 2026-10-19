@@ -1,23 +1,23 @@
 'use client'
 
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { CaretDown, CaretRight } from '@phosphor-icons/react'
 import { createPortal } from 'react-dom'
-import { useRequireAdmin } from '@/hooks/useAuth'
+import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi, usersApi } from '@/lib/api'
 import { Branch, Department, DepartmentMember, DirectoryUser } from '@/types'
-import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
+import { useCan } from '@/lib/permissions'
+import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 export default function OrganizationDepartmentPage() {
-  const { isAuthorized, isLoading } = useRequireAdmin()
+  const { isAuthorized, isLoading } = useRequireOrgTab('department')
+  const { can } = useCan()
+  const canCreate = can('organization', 'department', 'create')
+  const canEdit = can('organization', 'department', 'edit')
   const [departments, setDepartments] = useState<Department[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [directory, setDirectory] = useState<DirectoryUser[]>([])
@@ -144,6 +144,14 @@ export default function OrganizationDepartmentPage() {
 
   const [addMemberSearch, setAddMemberSearch] = useState('')
   const [addMemberSaving, setAddMemberSaving] = useState(false)
+  const [memberDept, setMemberDept] = useState<Department | null>(null)
+  const [memberError, setMemberError] = useState('')
+
+  const openAddMember = (d: Department) => {
+    setAddMemberSearch('')
+    setMemberError('')
+    setMemberDept(d)
+  }
 
   const refreshMembers = async (deptId: number) => {
     try {
@@ -156,12 +164,13 @@ export default function OrganizationDepartmentPage() {
 
   const handleAddMember = async (deptId: number, userId: number) => {
     setAddMemberSaving(true)
+    setMemberError('')
     try {
       await organizationApi.addDepartmentMember(deptId, userId)
       setAddMemberSearch('')
       await refreshMembers(deptId)
-    } catch {
-      // swallow — member list simply won't reflect the change
+    } catch (err) {
+      setMemberError(extractErrorMessages(err, 'Could not add this person to the department. Reload the page and try again; if it keeps failing, check they are still an active user.').join(' '))
     } finally {
       setAddMemberSaving(false)
     }
@@ -209,7 +218,7 @@ export default function OrganizationDepartmentPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Department</h1>
         </div>
-        <button
+        {canCreate && <button
           data-tour="org-dept-add-btn"
           onClick={openAddModal}
           style={{
@@ -220,7 +229,7 @@ export default function OrganizationDepartmentPage() {
           }}
         >
           <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add Department
-        </button>
+        </button>}
       </div>
       <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 20px' }}>
         Auto-populated from Azure AD on sign-in and admin Azure sync — see Organization &gt; Role &amp; Permissions &gt; Sync Azure Users. You can also add departments manually below.
@@ -237,108 +246,138 @@ export default function OrganizationDepartmentPage() {
       />
 
       {showAddModal && (
-        <div
-          onClick={() => !saving && setShowAddModal(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: '#fff', borderRadius: 16, maxWidth: 480, width: '100%', padding: 24 }}
-          >
-            <h2 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 16px 0', color: TEXT.heading }}>Add Department</h2>
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Name *</label>
-              <input data-tour="org-dept-name" style={inputStyle} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Accounts" />
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Branch</label>
-              <select data-tour="org-dept-branch" style={inputStyle} value={newBranchId} onChange={(e) => {
-                const next = e.target.value
-                setNewBranchId(next)
-                // Heads picked for the old unit don't belong to the new one.
-                if (next) setHeadIds((prev) => prev.filter((id) => String(directory.find((u) => u.id === id)?.branch_id) === next))
-              }}>
-                <option value="">— Select —</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: 14 }} data-tour="org-dept-heads">
-              <label style={labelStyle}>Head of Department (one or more)</label>
-              {headIds.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                  {headIds.map((id) => {
-                    const u = directory.find((d) => d.id === id)
-                    return (
-                      <span
-                        key={id}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999,
-                          background: 'rgba(255,122,69,0.12)', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600,
-                        }}
-                      >
-                        {u?.name || `User #${id}`}
-                        <span onClick={() => removeHead(id)} style={{ cursor: 'pointer', fontWeight: 700 }}>×</span>
-                      </span>
-                    )
-                  })}
-                </div>
-              )}
-              <input
-                style={inputStyle}
-                value={headSearch}
-                onChange={(e) => setHeadSearch(e.target.value)}
-                placeholder="Search name or email…"
-              />
-              {headMatches.length > 0 && (
-                <div style={{ marginTop: 6, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, overflow: 'hidden' }}>
-                  {headMatches.map((u) => (
-                    <div
-                      key={u.id}
-                      onClick={() => addHead(u.id)}
-                      style={{ padding: '8px 12px', fontSize: 12.5, cursor: 'pointer', color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.04)' }}
-                    >
-                      <span style={{ fontWeight: 600 }}>{u.name}</span> · {u.email}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
+        <FormSheet width={580} icon="building" title="Add Department" subtitle="Create a department Azure AD sync didn't already populate"
+          onClose={() => setShowAddModal(false)} busy={saving}
+          footer={<>
+            <button type="button" data-tour="org-dept-cancel" onClick={() => setShowAddModal(false)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+            <button type="button" data-tour="org-dept-save" onClick={handleCreate} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+              <SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Department'}
+            </button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
             {formError && (
-              <div style={{ padding: '10px 12px', borderRadius: 8, background: '#fee2e2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12.5, marginBottom: 14 }}>
+              <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
                 {formError}
               </div>
             )}
+            <SheetSection icon="building" title="Department">
+              <div style={{ marginBottom: 14 }}>
+                <label style={sheetLabel}>Name <Req /></label>
+                <input data-tour="org-dept-name" style={sheetInput} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Accounts" autoFocus />
+              </div>
+              <div>
+                <label style={sheetLabel}>Branch <Optional /></label>
+                <select data-tour="org-dept-branch" style={sheetInput} value={newBranchId} onChange={(e) => {
+                  const next = e.target.value
+                  setNewBranchId(next)
+                  // Heads picked for the old unit don't belong to the new one.
+                  if (next) setHeadIds((prev) => prev.filter((id) => String(directory.find((u) => u.id === id)?.branch_id) === next))
+                }}>
+                  <option value="">— Select —</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+                <p style={sheetHint}>Leave empty for a department that spans all branches.</p>
+              </div>
+            </SheetSection>
 
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setShowAddModal(false)}
-                disabled={saving}
-                style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid #d4d4d8', background: '#fff', color: TEXT.body, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.5 : 1 }}
-              >
-                Cancel
-              </button>
-              <button
-                data-tour="org-dept-save"
-                onClick={handleCreate}
-                disabled={saving}
-                style={{
-                  padding: '10px 20px', borderRadius: 8, border: 'none',
-                  background: saving ? '#999' : BRAND.primary, color: '#fff', fontSize: 13, fontWeight: 700,
-                  cursor: saving ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {saving ? 'Saving…' : 'Save Department'}
-              </button>
-            </div>
+            <SheetSection icon="users" title="Head of Department">
+              <div data-tour="org-dept-heads">
+                <label style={sheetLabel}>Heads (one or more) <Optional /></label>
+                {headIds.length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    {headIds.map((id) => {
+                      const u = directory.find((d) => d.id === id)
+                      return (
+                        <span
+                          key={id}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999,
+                            background: 'rgba(255,122,69,0.12)', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600,
+                          }}
+                        >
+                          {u?.name || `User #${id}`}
+                          <span onClick={() => removeHead(id)} style={{ cursor: 'pointer', fontWeight: 700 }}>×</span>
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
+                <input
+                  style={sheetInput}
+                  value={headSearch}
+                  onChange={(e) => setHeadSearch(e.target.value)}
+                  placeholder="Search name or email…"
+                />
+                {headMatches.length > 0 && (
+                  <div style={{ marginTop: 6, border: `1px solid ${SHEET.LINE}`, borderRadius: 10, overflow: 'hidden' }}>
+                    {headMatches.map((u) => (
+                      <div
+                        key={u.id}
+                        onClick={() => addHead(u.id)}
+                        style={{ padding: '8px 12px', fontSize: 12.5, cursor: 'pointer', color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.04)' }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{u.name}</span> · {u.email}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p style={sheetHint}>The first person picked is the primary head, the second the secondary head. Only people posted in the selected branch are offered.</p>
+              </div>
+            </SheetSection>
           </div>
-        </div>
+        </FormSheet>
       )}
+
+      {memberDept && (() => {
+        const list = members[memberDept.id] || []
+        const q = addMemberSearch.trim().toLowerCase()
+        const matches = q
+          ? directory
+              .filter((u) => !list.some((m) => m.id === u.id))
+              .filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+              .slice(0, 8)
+          : []
+        return (
+          <FormSheet width={580} icon="users" title="Add member" subtitle={`Department '${memberDept.name}'`}
+            onClose={() => setMemberDept(null)} busy={addMemberSaving}
+            footer={<button type="button" onClick={() => setMemberDept(null)} disabled={addMemberSaving} style={sheetBtn('secondary', SHEET.INK, addMemberSaving)}>Done</button>}>
+            <div style={{ padding: '20px 24px' }}>
+              {memberError && (
+                <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                  {memberError}
+                </div>
+              )}
+              <SheetSection icon="search" title="Find a person">
+                <label style={sheetLabel}>Name or email <Req /></label>
+                <input
+                  style={sheetInput}
+                  value={addMemberSearch}
+                  onChange={(e) => setAddMemberSearch(e.target.value)}
+                  placeholder="Search name or email…"
+                  disabled={addMemberSaving}
+                  autoFocus
+                />
+                {matches.length > 0 && (
+                  <div style={{ marginTop: 6, border: `1px solid ${SHEET.LINE}`, borderRadius: 10, overflow: 'hidden' }}>
+                    {matches.map((u) => (
+                      <div
+                        key={u.id}
+                        onClick={() => !addMemberSaving && handleAddMember(memberDept.id, u.id)}
+                        style={{ padding: '8px 12px', fontSize: 12.5, cursor: addMemberSaving ? 'wait' : 'pointer', color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.04)' }}
+                      >
+                        <span style={{ fontWeight: 600 }}>{u.name}</span> · {u.email}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p style={sheetHint}>Click a match to link that person to this department — it is saved at once and shows in the member list. Add as many as you need, then click Done.</p>
+              </SheetSection>
+            </div>
+          </FormSheet>
+        )
+      })()}
 
       <div data-tour="org-dept-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'hidden' }}>
        <div style={{ overflow: 'auto' }}>
@@ -359,9 +398,7 @@ export default function OrganizationDepartmentPage() {
                     >
                       {h}
                       {branchFilter && <span>({branches.find((b) => String(b.id) === branchFilter)?.name})</span>}
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
+                      <CaretDown size={10} />
                     </span>
                     {branchDropdownOpen && typeof document !== 'undefined' && createPortal(
                       <div
@@ -413,12 +450,10 @@ export default function OrganizationDepartmentPage() {
                     style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer', background: isOpen ? 'rgba(255,122,69,0.05)' : undefined }}
                   >
                     <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <svg
-                        width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                      <CaretRight
+                        size={14}
                         style={{ flex: 'none', color: TEXT.muted, transition: 'transform .15s', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
-                      >
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
+                      />
                       {d.name}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{d.code}</td>
@@ -443,7 +478,7 @@ export default function OrganizationDepartmentPage() {
                                 )}
                                 {m.designation && <span style={{ color: TEXT.muted }}>· {m.designation}</span>}
                                 <span style={{ color: TEXT.muted }}>· {m.email}</span>
-                                {!m.is_head && (
+                                {!m.is_head && canEdit && (
                                   <span
                                     onClick={() => handleRemoveMember(d.id, m.id)}
                                     style={{ color: '#b91c1c', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
@@ -456,32 +491,11 @@ export default function OrganizationDepartmentPage() {
                           </div>
                         )}
 
-                        <div style={{ maxWidth: 320 }} data-tour="org-dept-add-member">
-                          <input
-                            style={{ ...inputStyle, fontSize: 12.5, padding: '7px 10px' }}
-                            value={expandedId === d.id ? addMemberSearch : ''}
-                            onChange={(e) => setAddMemberSearch(e.target.value)}
-                            placeholder="+ Add member — search name or email…"
-                            disabled={addMemberSaving}
-                          />
-                          {addMemberSearch.trim() && (
-                            <div style={{ marginTop: 4, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
-                              {directory
-                                .filter((u) => !(list || []).some((m) => m.id === u.id))
-                                .filter((u) => u.name.toLowerCase().includes(addMemberSearch.toLowerCase()) || u.email.toLowerCase().includes(addMemberSearch.toLowerCase()))
-                                .slice(0, 8)
-                                .map((u) => (
-                                  <div
-                                    key={u.id}
-                                    onClick={() => handleAddMember(d.id, u.id)}
-                                    style={{ padding: '6px 10px', fontSize: 12, cursor: 'pointer', color: TEXT.secondary, borderTop: '1px solid rgba(0,0,0,0.04)' }}
-                                  >
-                                    <span style={{ fontWeight: 600 }}>{u.name}</span> · {u.email}
-                                  </div>
-                                ))}
-                            </div>
-                          )}
-                        </div>
+                        {canEdit && (
+                          <button type="button" data-tour="org-dept-add-member" onClick={() => openAddMember(d)} style={sheetBtn('secondary', SHEET.INK)}>
+                            <SheetIcon name="plus" size={14} />Add member
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )}

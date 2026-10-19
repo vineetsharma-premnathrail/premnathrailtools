@@ -8,13 +8,17 @@ import { StoreMaterialReturn } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
 import { primaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
+import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected' }
 const STATUS_HEX: Record<string, string> = { pending_approval: '#d97706', approved: '#16a34a', rejected: '#dc2626' }
 
 export default function StoreMaterialReturnsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
+  const { can } = useCan()
   const router = useRouter()
   const [returns, setReturns] = useState<StoreMaterialReturn[]>([])
   const [loading, setLoading] = useState(true)
@@ -23,7 +27,7 @@ export default function StoreMaterialReturnsPage() {
   useEffect(() => {
     if (!isAuthorized) return
     setLoading(true)
-    storeApi.listMaterialReturns().then(setReturns).catch(() => setError('Failed to load material returns.')).finally(() => setLoading(false))
+    storeApi.listMaterialReturns().then(setReturns).catch((err) => setError(extractErrorMessages(err, 'Could not load material returns — check your connection and reload; if it persists your account may lack access to this module.').join(' '))).finally(() => setLoading(false))
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
@@ -39,9 +43,11 @@ export default function StoreMaterialReturnsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Material Returns</h1>
         </div>
-        <button data-tour="returns-add-btn" onClick={() => router.push('/dashboard/store/returns/new')} style={primaryBtnStyle}>
-          <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> New Return
-        </button>
+        {can('store', 'returns', 'create') && (
+          <button data-tour="returns-add-btn" onClick={() => router.push('/dashboard/store/returns/new')} style={primaryBtnStyle}>
+            <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> New Return
+          </button>
+        )}
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Failed to Load Material Returns" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
@@ -61,7 +67,7 @@ export default function StoreMaterialReturnsPage() {
               <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No material returns yet.</td></tr>
             )}
             {returns.map((r) => (
-              <tr key={r.id} onClick={() => router.push(`/dashboard/store/returns/${r.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
+              <tr key={r.id} onClick={() => router.push(recordPath('/dashboard/store/returns', r))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{r.return_number}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.location_name}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{r.source_issue_number || r.source_description || r.source_type_label || '—'}</td>
@@ -73,7 +79,7 @@ export default function StoreMaterialReturnsPage() {
                   </span>
                 </td>
                 <td onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(`/dashboard/store/returns/${r.id}`)} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</span>
+                  <span onClick={() => router.push(recordPath('/dashboard/store/returns', r))} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

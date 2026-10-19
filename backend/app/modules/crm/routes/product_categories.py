@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.permissions import require_app_access
+from app.core.permissions import require_app_access, require_tab_action
 from app.modules.main.models.user import User
 from app.modules.crm.models.product_category import ProductCategory
 from app.modules.crm.schemas.product_category import ProductCategoryCreate, ProductCategoryUpdate, ProductCategoryResponse
@@ -17,6 +17,7 @@ def _can_modify(record, user: User) -> bool:
 
 @router.get("", response_model=list[ProductCategoryResponse])
 async def list_product_categories(
+    # Lookup read by every CRM form (inquiry/quotation pickers) — any CRM user; writes need Settings › Edit.
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("crm")),
 ):
@@ -27,7 +28,7 @@ async def list_product_categories(
 async def create_product_category(
     payload: ProductCategoryCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "settings", "edit")),
 ):
     name = payload.name.strip()
     existing = db.query(ProductCategory).filter(
@@ -47,7 +48,7 @@ async def update_product_category(
     category_id: int,
     payload: ProductCategoryUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "settings", "edit")),
 ):
     category = db.query(ProductCategory).filter(
         ProductCategory.id == category_id, ProductCategory.is_deleted == False  # noqa: E712
@@ -75,7 +76,7 @@ async def update_product_category(
 async def delete_product_category(
     category_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("crm")),
+    user: User = Depends(require_tab_action("crm", "settings", "edit")),
 ):
     category = db.query(ProductCategory).filter(
         ProductCategory.id == category_id, ProductCategory.is_deleted == False  # noqa: E712

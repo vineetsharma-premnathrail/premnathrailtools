@@ -21,6 +21,9 @@ class ProductionWorkstation(Base, TimestampMixin, SoftDeleteMixin):
     # Branch = "Plant" in the UI.
     branch_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("branches.id"), nullable=True)
     department_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("departments.id"), nullable=True)
+    # Cost centre that bears this workstation's cost (CO activity rates and
+    # activity-hour allocation bases are read through it).
+    cost_center_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("cost_centers.id"), nullable=True)
     capacity_hours_per_day: Mapped[float] = mapped_column(Float, default=8.0, nullable=False)
     hourly_rate: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="active", nullable=False)

@@ -5,7 +5,8 @@ services/first_article.py."""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_action
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permissions import ensure_feature_action, require_app_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.quality.models.first_article import (
@@ -45,11 +46,13 @@ def _responses(db: Session, rows: list[QualityFirstArticle], detail: bool = Fals
     return out
 
 
-def _get(db: Session, fai_id: int, lock: bool = False) -> QualityFirstArticle:
+def _get(db: Session, fai_id: int, user: User | None = None, lock: bool = False) -> QualityFirstArticle:
     q = db.query(QualityFirstArticle).filter(QualityFirstArticle.id == fai_id)
     fai = (q.with_for_update() if lock else q).first()
     if not fai:
-        raise HTTPException(status_code=404, detail=f"First article #{fai_id} not found")
+        raise HTTPException(status_code=404, detail=f"First article #{fai_id} not found — it may have been removed. Reload the list.")
+    if user is not None:
+        ensure_in_scope(db, user, fai)
     return fai
 
 
@@ -59,8 +62,9 @@ async def meta():
 
 
 @router.get("", response_model=list[QualityFirstArticleResponse])
-async def list_fais(status_filter: str | None = Query(None, alias="status"), search: str | None = None, db: Session = Depends(get_db)):
-    q = db.query(QualityFirstArticle)
+async def list_fais(status_filter: str | None = Query(None, alias="status"), search: str | None = None, db: Session = Depends(get_db),
+                    user: User = Depends(require_app_access("quality"))):
+    q = apply_scope(db.query(QualityFirstArticle), user, QualityFirstArticle)
     if status_filter:
         q = q.filter(QualityFirstArticle.status == status_filter)
     if search:
@@ -110,14 +114,15 @@ async def create_fai(payload: QualityFirstArticleCreate, db: Session = Depends(g
 
 
 @router.get("/{fai_id}", response_model=QualityFirstArticleResponse)
-async def get_fai(fai_id: int, db: Session = Depends(get_db)):
-    return _responses(db, [_get(db, fai_id)], detail=True)[0]
+async def get_fai(fai_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("quality"))):
+    return _responses(db, [_get(db, fai_id, user)], detail=True)[0]
 
 
 @router.post("/{fai_id}/decision", response_model=QualityFirstArticleResponse)
 async def decide_fai(fai_id: int, payload: QualityFirstArticleDecisionPayload, db: Session = Depends(get_db),
                      user: User = Depends(require_app_access("quality"))):
-    fai = _get(db, fai_id, lock=True)
+    ensure_feature_action(user, "quality", "first_article", "decision", "approve" if payload.approve else "reject")
+    fai = _get(db, fai_id, user, lock=True)
     try:
         if payload.approve:
             fai_service.approve(db, fai, remarks=payload.remarks, user=user)

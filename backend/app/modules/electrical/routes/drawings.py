@@ -5,23 +5,30 @@ SharePoint under Electrical-media/<job number>/<drawing number>/ and are
 streamed through the backend — the raw SharePoint URL is never exposed."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core.permission_registry import can_feature, can_view_tab
+from app.core.permissions import (
+    ensure_can_delete, require_app_access, require_feature_action, require_tab_access, require_tab_action,
+)
 from app.db.session import get_db
 from app.modules.electrical.models.drawing import (
     ElectricalDrawing, ElectricalDrawingRevision, ELECTRICAL_DRAWING_TYPES, ELECTRICAL_OPEN_REVISION_STATUSES,
 )
+from app.modules.electrical import access
 from app.modules.electrical.models.job import ElectricalJob
 from app.modules.electrical.schemas.drawing import (
     ElectricalDrawingUpdate, ElectricalRevisionDecisionPayload, ElectricalDrawingResponse,
     ElectricalDrawingRevisionResponse,
 )
-from app.modules.electrical.service import ELECTRICAL_APP, get_job_or_404, require_working, user_names
+from app.modules.electrical.service import (
+    ELECTRICAL_APP, ensure_job_view, get_job_or_404, inline_file_headers, require_working, user_names,
+)
 from app.modules.main.models.user import User
+from app.modules.organization.models.approval import ApprovalRequest
 from app.utils.notifications import notify_user
 from app.utils.sharepoint import (
     upload_file_to_sharepoint, delete_file_from_sharepoint, download_file_content, sanitize_folder_name,
@@ -32,7 +39,15 @@ router = APIRouter(
     dependencies=[Depends(require_app_access(ELECTRICAL_APP))],
 )
 
-_CAN_EDIT = require_tab_action(ELECTRICAL_APP, "jobs", "edit")
+# Any Electrical user — record-level access is the job's data scope.
+_VIEWER = require_app_access(ELECTRICAL_APP)
+
+# Electrical › RRV Electrical Jobs › Drawings (app/core/features/electrical.py); approving stays on
+# Electrical › Drawings › Approve.
+_CAN_CREATE = require_feature_action("electrical", "jobs", "drawings", "create")
+_CAN_EDIT = require_feature_action("electrical", "jobs", "drawings", "edit")
+_CAN_DELETE = require_feature_action("electrical", "jobs", "drawings", "delete")
+_CAN_SUBMIT = require_feature_action("electrical", "jobs", "drawings", "submit")
 _CAN_APPROVE = require_tab_action(ELECTRICAL_APP, "drawings", "approve")
 
 _STORAGE_NOT_CONFIGURED = (
@@ -53,6 +68,7 @@ def _to_responses(db: Session, drawings: list[ElectricalDrawing]) -> list[Electr
     job_ids = {d.job_id for d in drawings}
     jobs = {j.id: j for j in db.query(ElectricalJob).filter(ElectricalJob.id.in_(job_ids)).all()} if job_ids else {}
     revs = {d.id: _live_revisions(d) for d in drawings}
+    live = _live_requests(db, [r.id for rs in revs.values() for r in rs if r.status == "submitted"])
     names = user_names(db, {r.prepared_by_id for rs in revs.values() for r in rs} | {r.decided_by_id for rs in revs.values() for r in rs})
     out = []
     for d in drawings:
@@ -66,6 +82,7 @@ def _to_responses(db: Session, drawings: list[ElectricalDrawing]) -> list[Electr
             rr.prepared_by_name = names.get(r.prepared_by_id)
             rr.decided_by_name = names.get(r.decided_by_id)
             rr.has_file = bool(r.sharepoint_path)
+            rr.approval_request_id = live.get(r.id)
             rev_resps.append(rr)
         resp.revisions = rev_resps
         if rev_resps:
@@ -75,6 +92,18 @@ def _to_responses(db: Session, drawings: list[ElectricalDrawing]) -> list[Electr
         resp.approved_revision_label = approved.revision_label if approved else None
         out.append(resp)
     return out
+
+
+def _live_requests(db: Session, revision_ids: list[int]) -> dict[int, int]:
+    """revision id → its pending approval-engine request id (none for a
+    revision submitted before the engine, which the old routes decide)."""
+    if not revision_ids:
+        return {}
+    rows = db.query(ApprovalRequest.entity_id, ApprovalRequest.id).filter(
+        ApprovalRequest.entity_type == access.REVISION_ENTITY, ApprovalRequest.entity_id.in_(revision_ids),
+        ApprovalRequest.status == "pending",
+    ).all()
+    return {entity_id: req_id for entity_id, req_id in rows}
 
 
 def _get_drawing(db: Session, drawing_id: int) -> ElectricalDrawing:
@@ -137,6 +166,12 @@ async def _store_file(job: ElectricalJob, drawing: ElectricalDrawing, revision: 
             pass  # the replaced file is orphaned in SharePoint, but the revision now points at the new one
 
 
+def _ensure_drawings_view(user: User) -> None:
+    """Job › Drawings view, or the Electrical › Drawings tab (it lists them all)."""
+    ensure_job_view(user, can_feature(user, "electrical", "jobs", "drawings", "view")
+                    or can_view_tab(user, "electrical", "drawings"), "drawings")
+
+
 def _require_preparer(user: User, revision: ElectricalDrawingRevision, action: str) -> None:
     if user.role != "admin" and revision.prepared_by_id and revision.prepared_by_id != user.id:
         raise HTTPException(status_code=403, detail=f"Only the person who prepared {revision.revision_label} (or an admin) can {action}.")
@@ -159,6 +194,7 @@ async def list_drawings(
     query = db.query(ElectricalDrawing).join(ElectricalJob, ElectricalJob.id == ElectricalDrawing.job_id).filter(
         ElectricalDrawing.is_deleted == False, ElectricalJob.is_deleted == False  # noqa: E712
     )
+    query = access.scope_jobs(query, db, _tab)
     if job_id:
         query = query.filter(ElectricalDrawing.job_id == job_id)
     if drawing_type:
@@ -177,8 +213,9 @@ async def list_drawings(
 
 
 @router.get("/jobs/{job_id}/drawings", response_model=list[ElectricalDrawingResponse])
-async def list_job_drawings(job_id: int, db: Session = Depends(get_db)):
-    get_job_or_404(db, job_id)
+async def list_job_drawings(job_id: int, db: Session = Depends(get_db), user: User = Depends(_VIEWER)):
+    _ensure_drawings_view(user)
+    get_job_or_404(db, job_id, user=user)
     drawings = db.query(ElectricalDrawing).filter(
         ElectricalDrawing.job_id == job_id, ElectricalDrawing.is_deleted == False  # noqa: E712
     ).order_by(ElectricalDrawing.drawing_number).all()
@@ -196,9 +233,9 @@ async def create_drawing(
     change_summary: str | None = Form(None),
     file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    user: User = Depends(_CAN_EDIT),
+    user: User = Depends(_CAN_CREATE),
 ):
-    job = get_job_or_404(db, job_id, lock=True)
+    job = get_job_or_404(db, job_id, lock=True, user=user)
     require_working(job, "add drawings")
     if not title.strip():
         raise HTTPException(status_code=400, detail="Drawing title is required.")
@@ -226,14 +263,17 @@ async def create_drawing(
 
 
 @router.get("/drawings/{drawing_id}", response_model=ElectricalDrawingResponse)
-async def get_drawing(drawing_id: int, db: Session = Depends(get_db)):
-    return _to_responses(db, [_get_drawing(db, drawing_id)])[0]
+async def get_drawing(drawing_id: int, db: Session = Depends(get_db), user: User = Depends(_VIEWER)):
+    _ensure_drawings_view(user)
+    drawing = _get_drawing(db, drawing_id)
+    get_job_or_404(db, drawing.job_id, user=user)
+    return _to_responses(db, [drawing])[0]
 
 
 @router.patch("/drawings/{drawing_id}", response_model=ElectricalDrawingResponse)
 async def update_drawing(drawing_id: int, payload: ElectricalDrawingUpdate, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
     drawing = _get_drawing(db, drawing_id)
-    job = get_job_or_404(db, drawing.job_id, lock=True)
+    job = get_job_or_404(db, drawing.job_id, lock=True, user=_perm)
     require_working(job, "change its drawings")
     updates = payload.model_dump(exclude_unset=True)
     _check_type(updates.get("drawing_type"))
@@ -250,14 +290,17 @@ async def update_drawing(drawing_id: int, payload: ElectricalDrawingUpdate, db: 
 
 
 @router.delete("/drawings/{drawing_id}")
-async def delete_drawing(drawing_id: int, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
+async def delete_drawing(drawing_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_DELETE)):
     drawing = _get_drawing(db, drawing_id)
-    job = get_job_or_404(db, drawing.job_id, lock=True)
+    ensure_can_delete(user, drawing, ELECTRICAL_APP, "drawings", what="drawing")
+    job = get_job_or_404(db, drawing.job_id, lock=True, user=user)
     require_working(job, "change its drawings")
     if any(r.status in ("approved", "superseded") for r in _live_revisions(drawing)):
         raise HTTPException(status_code=409, detail=f"Drawing {drawing.drawing_number} has an approved revision on record, so it can't be deleted. Raise a new revision instead.")
     now = datetime.now(timezone.utc)
     for r in _live_revisions(drawing):
+        if r.status == "submitted":
+            access.cancel_live(db, access.REVISION_ENTITY, r.id, user, "Drawing deleted")
         r.is_deleted = True
         r.deleted_at = now
     drawing.is_deleted = True
@@ -276,10 +319,10 @@ async def create_revision(
     change_summary: str = Form(...),
     file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    user: User = Depends(_CAN_EDIT),
+    user: User = Depends(_CAN_CREATE),
 ):
     drawing = _get_drawing(db, drawing_id)
-    job = get_job_or_404(db, drawing.job_id, lock=True)
+    job = get_job_or_404(db, drawing.job_id, lock=True, user=user)
     require_working(job, "revise its drawings")
     if not change_summary.strip():
         raise HTTPException(status_code=400, detail="Describe what changed in this revision.")
@@ -309,7 +352,7 @@ async def upload_revision_file(
 ):
     revision = _get_revision(db, revision_id)
     drawing = _get_drawing(db, revision.drawing_id)
-    job = get_job_or_404(db, drawing.job_id, lock=True)
+    job = get_job_or_404(db, drawing.job_id, lock=True, user=user)
     require_working(job, "change its drawings")
     if revision.status != "draft":
         raise HTTPException(status_code=409, detail=f"{drawing.drawing_number} {revision.revision_label} is {revision.status} — its file is part of the record now. Raise a new revision to change it.")
@@ -321,10 +364,11 @@ async def upload_revision_file(
 
 
 @router.post("/revisions/{revision_id}/submit", response_model=ElectricalDrawingResponse)
-async def submit_revision(revision_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
+async def submit_revision(revision_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+                          user: User = Depends(_CAN_SUBMIT)):
     revision = _get_revision(db, revision_id)
     drawing = _get_drawing(db, revision.drawing_id)
-    job = get_job_or_404(db, drawing.job_id, lock=True)
+    job = get_job_or_404(db, drawing.job_id, lock=True, user=user)
     require_working(job, "submit drawings")
     if revision.status != "draft":
         raise HTTPException(status_code=409, detail=f"{drawing.drawing_number} {revision.revision_label} is already {revision.status}.")
@@ -333,13 +377,26 @@ async def submit_revision(revision_id: int, db: Session = Depends(get_db), user:
         raise HTTPException(status_code=400, detail=f"Attach the drawing file to {revision.revision_label} before submitting it for approval.")
     revision.status = "submitted"
     revision.submitted_at = datetime.now(timezone.utc)
-    if job.lead_engineer_id and job.lead_engineer_id != user.id:
+    revision.decision_comment = None
+    db.flush()
+    # The engine routes it to the approvers (Organization › Approval Workflows)
+    # and notifies them; None = nobody but admins can approve, so it waits
+    # for an admin on the old route as before.
+    req = access.submit_revision(db, revision, job, user)
+    approvers = {s.approver_id for s in req.steps} if req is not None else set()
+    if job.lead_engineer_id and job.lead_engineer_id != user.id and job.lead_engineer_id not in approvers:
         notify_user(
             db, job.lead_engineer_id, title="Electrical Drawing Awaiting Approval",
             message=f"{drawing.drawing_number} {revision.revision_label} ({drawing.title}) on {job.job_number} was submitted for approval.",
             notification_type="electrical_drawing_submitted", entity_type="electrical_job", entity_id=job.id,
             teams=True,
         )
+    access.notify_job_event(
+        db, background_tasks, "drawing_submitted", job, title="Electrical Drawing Awaiting Approval",
+        message=f"{drawing.drawing_number} {revision.revision_label} ({drawing.title}) on {job.job_number} was submitted for "
+                f"approval by {user.name or user.email}. Review it from the job's Drawings tab or the approvals inbox.",
+        actor=user, skip=approvers | {job.lead_engineer_id},
+    )
     db.commit()
     db.refresh(drawing)
     return _to_responses(db, [drawing])[0]
@@ -352,26 +409,17 @@ async def approve_revision(
 ):
     revision = _get_revision(db, revision_id)
     drawing = _get_drawing(db, revision.drawing_id)
-    job = get_job_or_404(db, drawing.job_id, lock=True)
+    job = get_job_or_404(db, drawing.job_id, lock=True, user=user)
     require_working(job, "approve drawings")
     if revision.status != "submitted":
         raise HTTPException(status_code=409, detail=f"{drawing.drawing_number} {revision.revision_label} is {revision.status} — only a submitted revision can be approved.")
     if revision.prepared_by_id == user.id and user.role != "admin":
         raise HTTPException(status_code=403, detail="You prepared this revision, so someone else has to approve it.")
-    now = datetime.now(timezone.utc)
-    for r in _live_revisions(drawing):
-        if r.status == "approved":
-            r.status = "superseded"
-    revision.status = "approved"
-    revision.decided_by_id = user.id
-    revision.decided_at = now
-    revision.decision_comment = (payload.comment or "").strip() or None
-    if revision.prepared_by_id and revision.prepared_by_id != user.id:
-        notify_user(
-            db, revision.prepared_by_id, title="Electrical Drawing Approved",
-            message=f"{drawing.drawing_number} {revision.revision_label} ({drawing.title}) on {job.job_number} was approved by {user.name or user.email}.",
-            notification_type="electrical_drawing_approved", entity_type="electrical_job", entity_id=job.id,
-        )
+    req = access.live_request(db, access.REVISION_ENTITY, revision.id)
+    if req is not None:
+        access.decide_live(db, req, user, "approve", payload.comment)
+    else:  # submitted before the approval engine (or no engine approver): old rules
+        access.apply_revision_approval(db, revision, user, payload.comment)
     db.commit()
     db.refresh(drawing)
     return _to_responses(db, [drawing])[0]
@@ -384,39 +432,35 @@ async def reject_revision(
 ):
     revision = _get_revision(db, revision_id)
     drawing = _get_drawing(db, revision.drawing_id)
-    job = get_job_or_404(db, drawing.job_id, lock=True)
+    job = get_job_or_404(db, drawing.job_id, lock=True, user=user)
     require_working(job, "reject drawings")
     if revision.status != "submitted":
         raise HTTPException(status_code=409, detail=f"{drawing.drawing_number} {revision.revision_label} is {revision.status} — only a submitted revision can be rejected.")
     comment = (payload.comment or "").strip()
     if not comment:
         raise HTTPException(status_code=400, detail="Say why the revision is rejected so the author knows what to fix.")
-    revision.status = "rejected"
-    revision.decided_by_id = user.id
-    revision.decided_at = datetime.now(timezone.utc)
-    revision.decision_comment = comment
-    if revision.prepared_by_id and revision.prepared_by_id != user.id:
-        notify_user(
-            db, revision.prepared_by_id, title="Electrical Drawing Rejected",
-            message=f"{drawing.drawing_number} {revision.revision_label} on {job.job_number} was rejected: {comment}",
-            notification_type="electrical_drawing_rejected", entity_type="electrical_job", entity_id=job.id,
-        )
+    req = access.live_request(db, access.REVISION_ENTITY, revision.id)
+    if req is not None:
+        access.decide_live(db, req, user, "reject", comment)
+    else:  # submitted before the approval engine (or no engine approver): old rules
+        access.apply_revision_rejection(db, revision, user, comment)
     db.commit()
     db.refresh(drawing)
     return _to_responses(db, [drawing])[0]
 
 
 @router.delete("/revisions/{revision_id}", response_model=ElectricalDrawingResponse)
-async def discard_revision(revision_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
+async def discard_revision(revision_id: int, db: Session = Depends(get_db), user: User = Depends(_CAN_DELETE)):
     revision = _get_revision(db, revision_id)
     drawing = _get_drawing(db, revision.drawing_id)
-    job = get_job_or_404(db, drawing.job_id, lock=True)
+    job = get_job_or_404(db, drawing.job_id, lock=True, user=user)
     require_working(job, "change its drawings")
     if revision.status not in ELECTRICAL_OPEN_REVISION_STATUSES:
         raise HTTPException(status_code=409, detail=f"{drawing.drawing_number} {revision.revision_label} is {revision.status} and stays on record — only a draft or submitted revision can be discarded.")
     _require_preparer(user, revision, "discard it")
     if len(_live_revisions(drawing)) == 1:
         raise HTTPException(status_code=409, detail=f"{revision.revision_label} is the only revision of {drawing.drawing_number}. Delete the drawing instead.")
+    access.cancel_live(db, access.REVISION_ENTITY, revision.id, user, "Revision discarded")
     revision.is_deleted = True
     revision.deleted_at = datetime.now(timezone.utc)
     db.commit()
@@ -425,8 +469,10 @@ async def discard_revision(revision_id: int, db: Session = Depends(get_db), user
 
 
 @router.get("/revisions/{revision_id}/content")
-async def get_revision_content(revision_id: int, db: Session = Depends(get_db)):
+async def get_revision_content(revision_id: int, db: Session = Depends(get_db), user: User = Depends(_VIEWER)):
+    _ensure_drawings_view(user)
     revision = _get_revision(db, revision_id)
+    get_job_or_404(db, _get_drawing(db, revision.drawing_id).job_id, user=user)
     if not revision.sharepoint_path:
         raise HTTPException(status_code=404, detail=f"{revision.revision_label} has no file attached yet.")
     if not settings.SHAREPOINT_SITE_ID:
@@ -435,5 +481,5 @@ async def get_revision_content(revision_id: int, db: Session = Depends(get_db)):
     return Response(
         content=content,
         media_type=revision.mime_type or content_type,
-        headers={"Content-Disposition": f'inline; filename="{revision.file_name}"'},
+        headers=inline_file_headers(revision.file_name),
     )

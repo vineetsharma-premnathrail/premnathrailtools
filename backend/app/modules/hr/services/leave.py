@@ -3,7 +3,11 @@ movements and the attendance rows an approved leave creates.
 
 Day counting (see services/calendar.py for what is a weekly off/holiday):
 - Only working days count. Weekly offs and national/festival holidays that
-  apply to the employee's plant are skipped.
+  apply to the employee's plant are skipped — unless the HR setting
+  `leave_sandwich_rule` (HR → Settings, default off) is on: then an off or
+  holiday that falls between two leave days of the same request is charged
+  as a full leave day. Offs/holidays at the start or end of a request are
+  never charged.
 - Single-day leave: session 'full' = 1 day, 'first_half'/'second_half' = 0.5.
 - Multi-day leave: the first day may start in the 'second_half' (0.5) and
   the last day may end after the 'first_half' (0.5). Starting a multi-day
@@ -24,6 +28,7 @@ from app.modules.hr.models.attendance import HrAttendance
 from app.modules.hr.models.leave import HrLeaveBalance, HrLeaveRequest, HrLeaveType, LEAVE_SESSIONS
 from app.modules.hr.services.attendance import STATUS_LABELS
 from app.modules.hr.services.calendar import CalendarCache, EmployeeContext, active_employees, daterange
+from app.modules.hr.settings import get_setting as get_hr_setting
 
 HALF = Decimal("0.5")
 ONE = Decimal("1")
@@ -69,7 +74,9 @@ def count_leave_days(
     to_date: date,
     from_session: str,
     to_session: str,
+    sandwich: bool = False,
 ) -> tuple[Decimal, list[DayPortion], list[str]]:
+    """`sandwich=True` applies the sandwich rule (see module docstring)."""
     errors: list[str] = []
     if from_session not in LEAVE_SESSIONS or to_session not in LEAVE_SESSIONS:
         errors.append(f"Session must be one of: {', '.join(LEAVE_SESSIONS)}.")
@@ -116,6 +123,13 @@ def count_leave_days(
                 portion = HALF
         total += portion
         breakdown.append(DayPortion(date=d, kind=kind, portion=portion, holiday_name=name))
+    if sandwich:
+        leave_idx = [i for i, p in enumerate(breakdown) if p.portion > 0]
+        if len(leave_idx) >= 2:
+            for p in breakdown[leave_idx[0] + 1:leave_idx[-1]]:
+                if p.kind != "working":
+                    p.portion = ONE
+                    total += ONE
     return total, breakdown, errors
 
 
@@ -212,7 +226,10 @@ def evaluate_application(
     if not leave_type.allow_half_day and ("first_half" in (from_session, to_session) or "second_half" in (from_session, to_session)):
         ev.errors.append(f"{leave_type.name} can only be taken in full days. Set both sessions to 'Full day'.")
 
-    days, breakdown, errs = count_leave_days(cache, ctx, from_date, to_date, from_session, to_session)
+    days, breakdown, errs = count_leave_days(
+        cache, ctx, from_date, to_date, from_session, to_session,
+        sandwich=bool(get_hr_setting(db, "leave_sandwich_rule")),
+    )
     ev.days, ev.breakdown = days, breakdown
     ev.errors.extend(errs)
     if errs:
@@ -323,6 +340,10 @@ def leave_attendance_conflicts(db: Session, req: HrLeaveRequest, portions: list[
 def apply_leave_to_attendance(db: Session, req: HrLeaveRequest, leave_type: HrLeaveType, portions: list[DayPortion], actor_id: int | None) -> int:
     """Upsert hr_attendance for each leave day. Returns rows touched."""
     count = 0
+    from app.modules.hr.services.period_lock import assert_open
+
+    for p in portions:  # payroll period lock: approving leave rewrites the attendance of those days
+        assert_open(db, req.user_id, p.date)
     for p in portions:
         row = db.query(HrAttendance).filter(HrAttendance.user_id == req.user_id, HrAttendance.attendance_date == p.date).first()
         status = "on_leave" if p.portion >= ONE else "half_day"
@@ -354,9 +375,12 @@ def remove_leave_attendance(db: Session, req: HrLeaveRequest) -> int:
         )
         .all()
     )
+    from app.modules.hr.services.period_lock import assert_open
+
     n = 0
     for row in rows:
         if row.remarks and req.request_no in row.remarks:
+            assert_open(db, req.user_id, row.attendance_date)  # payroll period lock
             db.delete(row)
             n += 1
     db.flush()

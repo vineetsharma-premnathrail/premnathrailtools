@@ -2,26 +2,28 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useAuthStore } from '@/store/authStore'
+import { filterTabsByAccess } from '@/lib/tabAccess'
 
 // Sub-nav for the Store "Settings" tab — the master data every item and
 // stock transaction picks from. Categories/Stores keep their original
 // URLs so existing links and bookmarks still work.
-const SECTIONS = [
-  { href: '/dashboard/store/settings/item-types', label: 'Item Types', key: 'item-types' },
-  { href: '/dashboard/store/settings/uoms', label: 'Units of Measure', key: 'uoms' },
-  { href: '/dashboard/store/categories', label: 'Categories', key: 'categories' },
-  { href: '/dashboard/store/locations', label: 'Stores', key: 'warehouses' },
-  { href: '/dashboard/store/settings/entry-types', label: 'Stock Entry Types', key: 'entry-types' },
-  { href: '/dashboard/store/settings/issue-types', label: 'Issue Types', key: 'issue-types' },
-  { href: '/dashboard/store/settings/issue-rules', label: 'Issue Rules', key: 'issue-rules' },
+export const STORE_SETTINGS_SECTIONS = [
+  { href: '/dashboard/store/settings/item-types', label: 'Item Types', key: 'item-types', subtabKey: 'item_types' },
+  { href: '/dashboard/store/settings/uoms', label: 'Units of Measure', key: 'uoms', subtabKey: 'uoms' },
+  { href: '/dashboard/store/categories', label: 'Categories', key: 'categories', subtabKey: 'categories' },
+  { href: '/dashboard/store/locations', label: 'Stores', key: 'warehouses', subtabKey: 'warehouses' },
+  { href: '/dashboard/store/settings/issue-types', label: 'Issue Types', key: 'issue-types', subtabKey: 'issue_types' },
 ] as const
 
 export default function StoreSettingsNav() {
   const pathname = usePathname()
+  const user = useAuthStore((s) => s.user)
+  const sections = filterTabsByAccess('store', STORE_SETTINGS_SECTIONS, user)
 
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-      {SECTIONS.map((s) => {
+      {sections.map((s) => {
         const isActive = pathname.startsWith(s.href)
         return (
           <Link

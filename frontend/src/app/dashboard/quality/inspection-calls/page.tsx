@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
 import { QualityContract, QualityInspectionCall } from '@/types'
@@ -13,6 +14,8 @@ import {
   Pill, PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, filterInputStyle, fmtDate, fmtQty,
 } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
 
 const STATUS_LABELS: Record<string, string> = {
   requested: 'Requested', scheduled: 'Scheduled', accepted: 'Accepted', partially_accepted: 'Partly accepted', rejected: 'Rejected', cancelled: 'Cancelled',
@@ -26,21 +29,29 @@ type Tab = typeof TABS[number][0]
 function CallsTab() {
   const router = useRouter()
   const [rows, setRows] = useState<QualityInspectionCall[]>([])
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
+  const [op, setOp] = useState<OrderProjectValue | null>(null)
+  // Loading = the rows on screen aren't for the current filters yet.
+  const params: Record<string, unknown> = {}
+  if (status) params.status = status
+  if (search.trim()) params.search = search.trim()
+  if (op) {
+    if (op.elementId) params.order_project_element_id = op.elementId
+    else params.order_project_id = op.projectId
+  }
+  const filterKey = JSON.stringify(params)
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const loading = loadedKey !== filterKey
 
   useEffect(() => {
-    setLoading(true)
-    const params: Record<string, unknown> = {}
-    if (status) params.status = status
-    if (search.trim()) params.search = search.trim()
+    const params = JSON.parse(filterKey) as Record<string, unknown>
     qualityApi.listInspectionCalls(params)
       .then((d) => setRows(Array.isArray(d) ? d : []))
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load inspection calls.')))
-      .finally(() => setLoading(false))
-  }, [status, search])
+      .finally(() => setLoadedKey(filterKey))
+  }, [filterKey])
 
   const cols = ['Call', 'Agency', 'Order / contract', 'Item', 'Qty', 'Call date', 'Inspector', 'Status', 'Certificate', '']
   return (
@@ -52,6 +63,9 @@ function CallsTab() {
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
+        <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
+          <OrderProjectPicker value={op} onChange={(v) => setOp(v)} requireElement={false} placeholder="All order projects" />
+        </div>
       </div>
       <div style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
@@ -64,10 +78,13 @@ function CallsTab() {
             ) : rows.map((c) => {
               const soon = c.days_to_call != null && c.days_to_call <= 2
               return (
-                <tr key={c.id} onClick={() => router.push(`/dashboard/quality/inspection-calls/${c.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/quality/inspection-calls', c))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{c.call_number}</td>
                   <td style={tdStyle}>{c.agency_label || c.agency}</td>
-                  <td style={tdStyle}>{c.order_reference || '—'}<div style={{ fontSize: 11.5, color: TEXT.muted }}>{c.project_label || c.customer_name || ''}</div></td>
+                  <td style={tdStyle}>
+                    {c.order_reference || '—'}<div style={{ fontSize: 11.5, color: TEXT.muted }}>{c.project_label || c.customer_name || ''}</div>
+                    {c.op_number && <div style={{ marginTop: 4 }}><OrderProjectChip opNumber={c.op_number} elementNo={c.element_no} label={c.element_label} /></div>}
+                  </td>
                   <td style={tdStyle}>{c.item_code ? `${c.item_code} — ` : ''}{c.item_name}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtQty(c.quantity, c.uom)}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap', color: soon ? '#DC2626' : TEXT.body, fontWeight: soon ? 700 : 400 }}>{fmtDate(c.call_date)}</td>
@@ -75,7 +92,7 @@ function CallsTab() {
                   <td style={tdStyle}><Pill text={STATUS_LABELS[c.status] || c.status} hex={STATUS_HEX[c.status]} /></td>
                   <td style={tdStyle}>{c.certificate_number || '—'}</td>
                   <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                    <span onClick={() => router.push(`/dashboard/quality/inspection-calls/${c.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/quality/inspection-calls', c))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               )
@@ -87,7 +104,7 @@ function CallsTab() {
   )
 }
 
-function ContractsTab({ agencies }: { agencies: { value: string; label: string }[] }) {
+function ContractsTab({ agencies, canApprove }: { agencies: { value: string; label: string }[]; canApprove: boolean }) {
   const [rows, setRows] = useState<QualityContract[]>([])
   const [search, setSearch] = useState('')
   const [requiredOnly, setRequiredOnly] = useState(false)
@@ -137,11 +154,11 @@ function ContractsTab({ agencies }: { agencies: { value: string; label: string }
                 <td style={tdStyle}>{c.po_number || '—'}</td>
                 <td style={tdStyle}>{fmtDate(c.delivery_date)}</td>
                 <td style={tdStyle}>
-                  <input type="checkbox" checked={c.third_party_inspection_required}
+                  <input type="checkbox" checked={c.third_party_inspection_required} disabled={!canApprove}
                     onChange={(e) => save(c, e.target.checked, c.inspection_agency || agencies[0]?.value || '')} />
                 </td>
                 <td style={tdStyle}>
-                  <select style={{ ...inputStyle, width: 170 }} value={c.inspection_agency || ''} disabled={!c.third_party_inspection_required}
+                  <select style={{ ...inputStyle, width: 170 }} value={c.inspection_agency || ''} disabled={!canApprove || !c.third_party_inspection_required}
                     onChange={(e) => save(c, true, e.target.value)}>
                     <option value="">—</option>
                     {agencies.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
@@ -217,6 +234,7 @@ function DispatchTab() {
 export default function InspectionCallsPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
   const router = useRouter()
+  const { can } = useCan()
   const [tab, setTab] = useState<Tab>('calls')
   const [agencies, setAgencies] = useState<{ value: string; label: string }[]>([])
 
@@ -230,7 +248,7 @@ export default function InspectionCallsPage() {
     <div>
       <QualityNav />
       <PageHeader title="Customer / Third-party Inspection">
-        <button type="button" onClick={() => router.push('/dashboard/quality/inspection-calls/new')} style={primaryBtnStyle}>+ New Call</button>
+        {can('quality', 'inspection_calls', 'create') && <button type="button" onClick={() => router.push('/dashboard/quality/inspection-calls/new')} style={primaryBtnStyle}>+ New Call</button>}
       </PageHeader>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {TABS.map(([k, l]) => (
@@ -239,7 +257,7 @@ export default function InspectionCallsPage() {
         ))}
       </div>
       {tab === 'calls' && <CallsTab />}
-      {tab === 'contracts' && <ContractsTab agencies={agencies} />}
+      {tab === 'contracts' && <ContractsTab agencies={agencies} canApprove={can('quality', 'inspection_calls', 'approve')} />}
       {tab === 'dispatch' && <DispatchTab />}
     </div>
   )

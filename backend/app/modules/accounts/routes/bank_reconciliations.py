@@ -1,23 +1,32 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permissions import require_tab_access, require_tab_action, require_feature_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.accounts.models.bank_account import BankAccount
 from app.modules.accounts.models.vendor import Vendor
-from app.modules.accounts.models.ar_transaction import ARTransaction
-from app.modules.accounts.models.payment_transaction import PaymentTransaction
 from app.modules.accounts.models.bank_reconciliation import BankReconciliation
 from app.modules.accounts.schemas.bank_reconciliation import (
     BankReconciliationCreate, BankReconciliationResponse, ReconcilePaymentsPayload, UnreconciledPaymentResponse,
 )
 from app.modules.accounts.service import (
     create_bank_reconciliation, mark_payments_reconciled, complete_bank_reconciliation, compute_reconciliation_summary,
+    voucher_sides,
 )
+from app.modules.accounts import access  # noqa: F401 — registers BankReconciliation's data scope
 
 router = APIRouter(prefix="/accounts/bank-reconciliations", tags=["Accounts"])
+
+
+def _in_scope(db: Session, user: User, recon_id: int) -> BankReconciliation:
+    recon = db.query(BankReconciliation).filter(BankReconciliation.id == recon_id).first()
+    if not recon:
+        raise HTTPException(status_code=404, detail=f"Bank reconciliation #{recon_id} doesn't exist — it may have been removed. Refresh the Reconciliation list.")
+    ensure_in_scope(db, user, recon)
+    return recon
 
 
 def _write_audit(db: Session, entity_id: int, action: str, user: User, summary: str | None = None):
@@ -29,7 +38,7 @@ def _to_response(recon: BankReconciliation, db: Session) -> BankReconciliationRe
     completer = db.query(User).filter(User.id == recon.completed_by_id).first() if recon.completed_by_id else None
     summary = compute_reconciliation_summary(db, recon.id)
     return BankReconciliationResponse.model_validate(recon).model_copy(update={
-        "bank_account_label": f"{bank.bank_name} — {bank.account_no}" if bank else None,
+        "bank_account_label": (f"{bank.bank_name} — {bank.account_no}" if bank.account_no else bank.bank_name) if bank else None,
         "completed_by_name": (completer.name or completer.email) if completer else None,
         **summary,
     })
@@ -39,9 +48,9 @@ def _to_response(recon: BankReconciliation, db: Session) -> BankReconciliationRe
 async def list_bank_reconciliations(
     bank_account_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("accounts")),
+    user: User = Depends(require_tab_access("accounts", "reconciliation")),
 ):
-    query = db.query(BankReconciliation)
+    query = apply_scope(db.query(BankReconciliation), user, BankReconciliation)
     if bank_account_id is not None:
         query = query.filter(BankReconciliation.bank_account_id == bank_account_id)
     recons = query.order_by(BankReconciliation.statement_date.desc()).all()
@@ -52,11 +61,9 @@ async def list_bank_reconciliations(
 async def get_bank_reconciliation(
     bank_reconciliation_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("accounts")),
+    user: User = Depends(require_tab_access("accounts", "reconciliation")),
 ):
-    recon = db.query(BankReconciliation).filter(BankReconciliation.id == bank_reconciliation_id).first()
-    if not recon:
-        raise HTTPException(status_code=404, detail="Bank reconciliation not found")
+    recon = _in_scope(db, user, bank_reconciliation_id)
     return _to_response(recon, db)
 
 
@@ -64,32 +71,29 @@ async def get_bank_reconciliation(
 async def list_unreconciled_payments(
     bank_reconciliation_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("accounts")),
+    user: User = Depends(require_tab_access("accounts", "reconciliation")),
 ):
-    recon = db.query(BankReconciliation).filter(BankReconciliation.id == bank_reconciliation_id).first()
-    if not recon:
-        raise HTTPException(status_code=404, detail="Bank reconciliation not found")
+    recon = _in_scope(db, user, bank_reconciliation_id)
 
-    payments = db.query(PaymentTransaction).filter(
-        PaymentTransaction.bank_account_id == recon.bank_account_id,
-        PaymentTransaction.reconciliation_status == "pending",
-        PaymentTransaction.payment_date <= recon.statement_date,
-    ).order_by(PaymentTransaction.payment_date.asc()).all()
+    from app.modules.crm.models.organization import Organization
 
+    sides = voucher_sides(db, recon.bank_account_id, as_of=recon.statement_date)
+    payments = [s["payment"] for s in sides]
     vendor_ids = {p.vendor_id for p in payments} - {None}
     vendors = {v.id: v for v in db.query(Vendor).filter(Vendor.id.in_(vendor_ids)).all()} if vendor_ids else {}
-    ar_ids = {p.ar_transaction_id for p in payments} - {None}
-    ar_txns = {t.id: t for t in db.query(ARTransaction).filter(ARTransaction.id.in_(ar_ids)).all()} if ar_ids else {}
+    customer_ids = {p.customer_id for p in payments} - {None}
+    customers = {o.id: o for o in db.query(Organization).filter(Organization.id.in_(customer_ids)).all()} if customer_ids else {}
 
     results = []
-    for p in payments:
+    for s in sides:
+        p = s["payment"]
         resp = UnreconciledPaymentResponse.model_validate(p)
+        resp.direction = s["direction"]
         if p.vendor_id and p.vendor_id in vendors:
             resp.vendor_name = vendors[p.vendor_id].name
-        if p.ar_transaction_id and p.ar_transaction_id in ar_txns:
-            from app.modules.crm.models.organization import Organization
-            customer = db.query(Organization).filter(Organization.id == ar_txns[p.ar_transaction_id].customer_id).first()
-            resp.customer_name = customer.name if customer else None
+        if p.customer_id and p.customer_id in customers:
+            resp.customer_name = customers[p.customer_id].name
+        resp.party_name = resp.vendor_name or resp.customer_name or p.narration
         results.append(resp)
     return results
 
@@ -98,7 +102,7 @@ async def list_unreconciled_payments(
 async def create_bank_reconciliation_route(
     payload: BankReconciliationCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("accounts")),
+    user: User = Depends(require_tab_action("accounts", "reconciliation", "create")),
 ):
     try:
         recon = create_bank_reconciliation(
@@ -120,10 +124,12 @@ async def reconcile_payments_route(
     bank_reconciliation_id: int,
     payload: ReconcilePaymentsPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("accounts")),
+    user: User = Depends(require_tab_action("accounts", "reconciliation", "edit")),
 ):
+    _in_scope(db, user, bank_reconciliation_id)
     try:
-        mark_payments_reconciled(db, bank_reconciliation_id=bank_reconciliation_id, payment_transaction_ids=payload.payment_transaction_ids)
+        mark_payments_reconciled(db, bank_reconciliation_id=bank_reconciliation_id, payment_transaction_ids=payload.payment_transaction_ids,
+                                 cleared_date=payload.cleared_date)
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -138,8 +144,9 @@ async def reconcile_payments_route(
 async def complete_bank_reconciliation_route(
     bank_reconciliation_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("accounts")),
+    user: User = Depends(require_feature_action("accounts", "reconciliation", "completion", "approve")),
 ):
+    _in_scope(db, user, bank_reconciliation_id)
     try:
         complete_bank_reconciliation(db, bank_reconciliation_id=bank_reconciliation_id, completed_by_id=user.id)
     except ValueError as e:

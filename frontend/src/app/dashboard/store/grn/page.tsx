@@ -8,15 +8,17 @@ import { P2PGoodsReceipt, P2PReceivablePurchaseOrder } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 import StoreNav from '@/components/store/StoreNav'
+import { recordHref, recordPath } from '@/lib/recordRef'
 
 const primaryBtn: React.CSSProperties = {
   padding: '10px 18px', borderRadius: 10, border: 'none', cursor: 'pointer',
   background: GRADIENTS.primary, color: '#fff', fontSize: 13, fontWeight: 600,
 }
 
-const STATUS_LABELS: Record<string, string> = { draft: 'Pending Inspection', completed: 'Completed' }
-const STATUS_HEX: Record<string, string> = { draft: '#d97706', completed: '#16a34a' }
+const STATUS_LABELS: Record<string, string> = { draft: 'Pending Inspection', completed: 'Completed', reversed: 'Reversed' }
+const STATUS_HEX: Record<string, string> = { draft: '#d97706', completed: '#16a34a', reversed: '#dc2626' }
 const PO_STATUS_LABELS: Record<string, string> = { issued: 'Awaiting Delivery', acknowledged: 'Awaiting Delivery', partially_fulfilled: 'Partially Received' }
 const PO_STATUS_HEX: Record<string, string> = { issued: '#2563eb', acknowledged: '#2563eb', partially_fulfilled: '#d97706' }
 
@@ -46,11 +48,12 @@ function Badge({ label, hex }: { label: string; hex: string }) {
 
 export default function StoreGrnPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('store')
+  const { can } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
-  // Receiving against a PO is a Purchase-team action (backend enforces the
-  // same), so only they see the Upcoming queue.
-  const isPurchaseTeam = !!user?.apps?.includes('purchase')
+  // Goods land in the store, so Store keepers record GRNs as well as the
+  // Purchase team (plan §16 #3 — backend accepts either app).
+  const isPurchaseTeam = user?.role === 'admin' || !!user?.apps?.some((a) => a === 'store' || a === 'purchase')
   const buckets = BUCKETS.filter((b) => b.key !== 'upcoming' || isPurchaseTeam)
   const requested = searchParams.get('bucket') as Bucket
   const bucket: Bucket = buckets.some((b) => b.key === requested) ? requested : buckets[0].key
@@ -93,10 +96,10 @@ export default function StoreGrnPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Goods Receipt (GRN) & Inspection</h1>
         </div>
-        {isPurchaseTeam && <button onClick={() => router.push('/dashboard/store/grn/new')} style={primaryBtn}>+ New Goods Receipt</button>}
+        {isPurchaseTeam && can('store', 'grn', 'create') && <button data-tour="store-grn-new-btn" onClick={() => router.push('/dashboard/store/grn/new')} style={primaryBtn}>+ New Goods Receipt</button>}
       </div>
 
-      <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)', marginBottom: 16 }}>
+      <div data-tour="store-grn-buckets" style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)', marginBottom: 16 }}>
         {buckets.map((b) => (
           <button
             key={b.key}
@@ -115,7 +118,7 @@ export default function StoreGrnPage() {
 
       {error && <p style={{ fontSize: 13, color: '#b91c1c', marginBottom: 16 }}>{Array.isArray(error) ? error.join(' ') : error}</p>}
 
-      <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 360px)' }}>
+      <div data-tour="store-grn-table" style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 360px)' }}>
         {bucket === 'upcoming' ? (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead>
@@ -147,7 +150,7 @@ export default function StoreGrnPage() {
                       <Badge label={PO_STATUS_LABELS[po.status] || po.status} hex={PO_STATUS_HEX[po.status] || '#64748b'} />
                     </td>
                     <td style={tdStyle}>
-                      <span onClick={() => router.push(`/dashboard/store/grn/new?po_id=${po.id}`)} style={{ fontSize: 12.5, fontWeight: 600, color: '#c2410c', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      <span onClick={() => router.push(recordHref('/dashboard/store/grn/new', po, 'id', undefined, 'po_id'))} style={{ fontSize: 12.5, fontWeight: 600, color: '#c2410c', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         Receive →
                       </span>
                     </td>
@@ -170,7 +173,7 @@ export default function StoreGrnPage() {
                 <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>{active.emptyLabel}</td></tr>
               ) : (
                 rows.map((g) => (
-                  <tr key={g.id} onClick={() => router.push(`/dashboard/store/grn/${g.id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={g.id} onClick={() => router.push(recordPath('/dashboard/store/grn', g))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{g.grn_number}</td>
                     <td style={tdStyle}>{g.po_number || '—'}</td>
                     <td style={tdStyle}>{g.po_date ? formatDate(g.po_date) : '—'}</td>
@@ -180,7 +183,7 @@ export default function StoreGrnPage() {
                       <Badge label={STATUS_LABELS[g.status] || g.status} hex={STATUS_HEX[g.status] || '#64748b'} />
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                      <span onClick={() => router.push(`/dashboard/store/grn/${g.id}`)} style={{ fontSize: 12.5, fontWeight: 600, color: '#c2410c', cursor: 'pointer' }}>View</span>
+                      <span onClick={() => router.push(recordPath('/dashboard/store/grn', g))} style={{ fontSize: 12.5, fontWeight: 600, color: '#c2410c', cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 ))

@@ -8,12 +8,16 @@ A rejected claim can be edited and submitted again. Nobody decides their own
 claim, and HR cannot record payment of their own claim."""
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.audit import record_audit
+from app.core.permission_registry import can_feature
+from app.core.permissions import require_feature_action
+from app.core.data_scope import apply_scope
+from app.modules.hr.services import approvals as hr_approvals
 from app.core.config import settings
 from app.core.sequential_id import next_sequential_id
 from app.db.session import get_db
@@ -26,7 +30,9 @@ from app.modules.hr.schemas.expense import (
     HrExpenseClaimCreate, HrExpenseClaimUpdate, HrExpenseClaimDecisionPayload,
     HrExpenseClaimMarkPaidPayload, HrExpenseClaimResponse,
 )
-from app.modules.hr.services.access import can_decide, ensure_can_decide, is_hr, require_hr
+from app.modules.hr.services.access import (
+    can_decide, can_hr, ensure_can_decide, is_hr_for, require_hr_tab, require_me_create, require_me_edit, require_me_view,
+)
 from app.modules.hr.services.admin_common import users_by_id, display_name, require_choice, require_sharepoint
 from app.modules.hr.services.expenses import (
     RECEIPT_REQUIRED_ABOVE, EDITABLE_STATUSES, receipt_required, recompute_total, fmt_inr,
@@ -38,6 +44,12 @@ from app.utils.notifications import notify_user
 from app.utils.sharepoint import upload_file_to_sharepoint, delete_file_from_sharepoint, download_file_content
 
 router = APIRouter(prefix="/hr/expenses", tags=["HR"])
+
+# HR-team gate for this file: hr app + Permission Matrix › HR › travel.
+require_hr = require_hr_tab("travel")
+require_claim_payment = require_feature_action("hr", "travel", "claim_payment", "edit")  # record payment
+# Claims are self-service: the owner builds/edits/submits/withdraws their own
+# claim with hr:me:create / hr:me:edit (withdrawing is an edit, not a delete).
 
 MAX_RECEIPT_BYTES = 10 * 1024 * 1024
 
@@ -51,11 +63,29 @@ def _item_response(item: HrExpenseClaimItem) -> HrExpenseClaimItemResponse:
     return resp
 
 
+ENTITY = hr_approvals.EXPENSE_ENTITY
+
+
+def _can_decide(db: Session, viewer: User, c: HrExpenseClaim, areqs: dict) -> bool:
+    """Engine-routed (the latest submission has an engine request): whoever
+    the engine lets act now. Pre-engine submissions: the legacy
+    access.can_decide."""
+    if c.status != "submitted":
+        return False
+    req = areqs.get(c.id)
+    if req is not None and req.status == "pending":
+        return hr_approvals.can_decide_engine(db, viewer, req)
+    if req is not None:
+        return False  # the engine request already finished — nothing to decide
+    return can_decide(viewer, c.approver_id, c.user_id, "approve", ("travel",))
+
+
 def _to_responses(db: Session, viewer: User, claims: list[HrExpenseClaim], with_items: bool = False) -> list[HrExpenseClaimResponse]:
     users = users_by_id(db, [x for c in claims for x in (c.user_id, c.approver_id, c.decided_by_id, c.paid_by_id)])
+    areqs = hr_approvals.latest_by_entity(db, ENTITY, [c.id for c in claims])
     trip_ids = {c.travel_request_id for c in claims if c.travel_request_id}
     trips = {t.id: t for t in db.query(HrTravelRequest).filter(HrTravelRequest.id.in_(trip_ids)).all()} if trip_ids else {}
-    hr = is_hr(viewer)
+    hr = is_hr_for(viewer, "travel")
     out = []
     for c in claims:
         resp = HrExpenseClaimResponse.model_validate(c)
@@ -74,10 +104,11 @@ def _to_responses(db: Session, viewer: User, claims: list[HrExpenseClaim], with_
         if with_items:
             resp.items = [_item_response(i) for i in c.items]
         resp.receipt_threshold = RECEIPT_REQUIRED_ABOVE
-        resp.can_edit = c.user_id == viewer.id and c.status in EDITABLE_STATUSES
-        resp.can_decide = c.status == "submitted" and can_decide(viewer, c.approver_id, c.user_id)
-        resp.can_mark_paid = hr and c.status == "approved" and c.user_id != viewer.id
-        resp.can_cancel = c.user_id == viewer.id and c.status in ("draft", "rejected", "submitted")
+        resp.can_edit = c.user_id == viewer.id and c.status in EDITABLE_STATUSES and can_hr(viewer, "me", "edit")
+        resp.can_decide = _can_decide(db, viewer, c, areqs)
+        resp.approval_request_id = areqs[c.id].id if c.id in areqs else None
+        resp.can_mark_paid = hr and can_feature(viewer, "hr", "travel", "claim_payment", "edit") and c.status == "approved" and c.user_id != viewer.id and not c.posted_je_id
+        resp.can_cancel = c.user_id == viewer.id and c.status in ("draft", "rejected", "submitted") and can_hr(viewer, "me", "edit")
         out.append(resp)
     return out
 
@@ -100,9 +131,14 @@ def _get(db: Session, claim_id: int, lock: bool = False) -> HrExpenseClaim:
     return claim
 
 
-def _ensure_can_view(user: User, claim: HrExpenseClaim) -> None:
-    if user.id in (claim.user_id, claim.approver_id) or is_hr(user):
+def _ensure_can_view(db: Session, user: User, claim: HrExpenseClaim) -> None:
+    if user.id in (claim.user_id, claim.approver_id):
         return
+    if is_hr_for(user, ("travel", "approvals")):
+        hr_approvals.ensure_scope_unless_party(db, user, claim, claim.user_id, claim.approver_id)
+        return
+    if hr_approvals.can_decide_engine(db, user, hr_approvals.open_request(db, ENTITY, claim.id)):
+        return  # an engine approver / delegate / escalation target of this claim
     raise HTTPException(
         status_code=403,
         detail="You can only open your own expense claims or ones waiting for your approval. HR can see every claim.",
@@ -150,7 +186,7 @@ def _approver_for(user: User) -> int | None:
 # ── self-service ────────────────────────────────────────────────────────────
 
 @router.get("/meta")
-async def expense_meta(_user: User = Depends(get_current_user)):
+async def expense_meta(_user: User = Depends(get_current_user)):  # static lists; hr app (router-level) is enough
     return {
         "categories": list(EXPENSE_CATEGORIES),
         "statuses": list(EXPENSE_CLAIM_STATUSES),
@@ -162,7 +198,7 @@ async def expense_meta(_user: User = Depends(get_current_user)):
 async def list_my_claims(
     status_filter: str | None = Query(None, alias="status"),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_view),
 ):
     q = db.query(HrExpenseClaim).options(selectinload(HrExpenseClaim.items)).filter(HrExpenseClaim.user_id == user.id)
     if status_filter:
@@ -175,7 +211,7 @@ async def list_my_claims(
 @router.get("/travel-options")
 async def list_linkable_trips(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_view),
 ):
     """The signed-in employee's approved/completed trips a claim can link to."""
     rows = (
@@ -197,9 +233,15 @@ async def list_claim_approvals(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Engine-routed submissions: the engine's inbox. Pre-engine submissions:
+    # the captured approver, plus HR for claims with no approver.
     cond = HrExpenseClaim.approver_id == user.id
-    if is_hr(user):
+    if is_hr_for(user, "approvals"):
         cond = or_(cond, HrExpenseClaim.approver_id.is_(None))
+    cond = and_(cond, HrExpenseClaim.id.notin_(hr_approvals.engine_tracked_ids(ENTITY)))
+    engine_ids = hr_approvals.inbox_ids(db, user, ENTITY)
+    if engine_ids:
+        cond = or_(cond, HrExpenseClaim.id.in_(engine_ids))
     rows = (
         db.query(HrExpenseClaim).options(selectinload(HrExpenseClaim.items))
         .filter(HrExpenseClaim.status == "submitted", HrExpenseClaim.user_id != user.id, cond)
@@ -212,7 +254,7 @@ async def list_claim_approvals(
 async def create_claim(
     payload: HrExpenseClaimCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_create),
 ):
     _validate_trip(db, user, payload.travel_request_id)
     claim = HrExpenseClaim(
@@ -242,7 +284,7 @@ async def list_claims(
     db: Session = Depends(get_db),
     user: User = Depends(require_hr),
 ):
-    q = db.query(HrExpenseClaim).options(selectinload(HrExpenseClaim.items))
+    q = apply_scope(db.query(HrExpenseClaim).options(selectinload(HrExpenseClaim.items)), user, HrExpenseClaim)
     if status_filter:
         require_choice(status_filter, EXPENSE_CLAIM_STATUSES, "claim status")
         q = q.filter(HrExpenseClaim.status == status_filter)
@@ -275,7 +317,7 @@ async def get_claim(
     user: User = Depends(get_current_user),
 ):
     claim = _get(db, claim_id)
-    _ensure_can_view(user, claim)
+    _ensure_can_view(db, user, claim)
     if claim.status == "draft" and claim.user_id != user.id:
         raise HTTPException(status_code=403, detail=f"{claim.claim_no} is still a draft; only its owner can see it until it is submitted.")
     return _to_responses(db, user, [claim], with_items=True)[0]
@@ -286,7 +328,7 @@ async def update_claim(
     claim_id: int,
     payload: HrExpenseClaimUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_edit),
 ):
     claim = _get(db, claim_id)
     ensure_owner_can_edit(claim, user.id)
@@ -311,7 +353,7 @@ async def add_claim_item(
     claim_id: int,
     payload: HrExpenseClaimItemPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_edit),
 ):
     claim = _get(db, claim_id)
     ensure_owner_can_edit(claim, user.id)
@@ -329,7 +371,7 @@ async def update_claim_item(
     item_id: int,
     payload: HrExpenseClaimItemUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_edit),
 ):
     claim = _get(db, claim_id)
     ensure_owner_can_edit(claim, user.id)
@@ -351,7 +393,7 @@ async def delete_claim_item(
     claim_id: int,
     item_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_edit),
 ):
     claim = _get(db, claim_id)
     ensure_owner_can_edit(claim, user.id)
@@ -374,7 +416,7 @@ async def upload_item_receipt(
     item_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_edit),
 ):
     claim = _get(db, claim_id)
     ensure_owner_can_edit(claim, user.id)
@@ -411,7 +453,7 @@ async def delete_item_receipt(
     claim_id: int,
     item_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_edit),
 ):
     claim = _get(db, claim_id)
     ensure_owner_can_edit(claim, user.id)
@@ -439,7 +481,7 @@ async def get_item_receipt(
     """Receipt bytes streamed through the backend (never the raw SharePoint
     link), so only the owner, the approver and HR can open it."""
     claim = _get(db, claim_id)
-    _ensure_can_view(user, claim)
+    _ensure_can_view(db, user, claim)
     item = _get_item(claim, item_id)
     if not item.receipt_path:
         raise HTTPException(status_code=404, detail="This line has no receipt attached. The employee needs to upload one.")
@@ -453,7 +495,8 @@ async def get_item_receipt(
 async def submit_claim(
     claim_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_edit),
+    background_tasks: BackgroundTasks = None,
 ):
     claim = _get(db, claim_id, lock=True)
     ensure_owner_can_edit(claim, user.id)
@@ -465,43 +508,108 @@ async def submit_claim(
     claim.decided_by_id = None
     claim.decided_at = None
     recompute_total(claim)
-    if claim.approver_id:
-        notify_user(
-            db, claim.approver_id,
-            "Expense claim resubmitted for your approval" if resubmission else "Expense claim awaiting your approval",
-            f"{display_name(user)} submitted {claim.claim_no} '{claim.title}' for {fmt_inr(claim.total_amount)}. Open HR → Approvals to decide.",
-            "hr_expense_submitted", entity_type="hr_expense_claim", entity_id=claim.id, teams=True,
-        )
+    db.flush()
+    # Route through Organization › Approval Workflows (default: reporting
+    # manager + HR approvers). A resubmission is a new engine request
+    # (revision + 1); the engine notifies the approvers and refuses with the
+    # exact reason when nobody can approve.
+    appr = hr_approvals.submit(
+        db, hr_approvals.EXPENSE_KEY, entity_id=claim.id, requester=user,
+        title=f"Expense claim '{claim.title}' — {display_name(user)}" + (" (resubmitted)" if resubmission else ""),
+        reference=claim.claim_no, amount=float(claim.total_amount or 0),
+        context={"linked_trip": bool(claim.travel_request_id)},
+    )
+    from app.modules.hr.services import role_events
+    role_events.fire(
+        db, background_tasks, "claim_submitted", title=f"Expense claim waiting for approval — {claim.claim_no}",
+        message=(f"{display_name(user)} {'resubmitted' if resubmission else 'submitted'} '{claim.title}' for "
+                 f"{fmt_inr(claim.total_amount)}. Check the receipts and approve or reject it under HR › Approvals."),
+        entity_type=ENTITY, entity_id=claim.id, actor=user, can_open=role_events.employee_opener(db, user),
+        skip=role_events.approver_ids(appr),
+    )
     db.commit()
     return _one(db, user, claim)
 
 
 def _decide(db: Session, user: User, claim: HrExpenseClaim, approve: bool, remarks: str | None) -> None:
-    ensure_can_decide(user, claim.approver_id, claim.user_id, "expense claim")
+    if not approve and not (remarks or "").strip():
+        raise HTTPException(status_code=400, detail="Enter a reason when rejecting a claim, so the employee knows what to correct before resubmitting.")
+    # Engine-routed: the engine checks who may act and calls _on_claim_decided.
+    if hr_approvals.decide(db, ENTITY, claim.id, user, approve, (remarks or "").strip() or None,
+                          what="expense claim", record_pending=claim.status == "submitted"):
+        return
+    # Pre-engine submission: routed approver passes on routing alone; anyone
+    # else needs hr:approvals:<approve|reject> or hr:travel:<approve|reject>
+    # (claims live on Travel & Claims).
+    ensure_can_decide(user, claim.approver_id, claim.user_id, "expense claim", "approve" if approve else "reject", ("travel",))
+    hr_approvals.ensure_scope_unless_party(db, user, claim, claim.user_id, claim.approver_id)  # HR deciders: data access
+    _apply_decision(db, user, claim, approve, remarks)
+
+
+def _apply_decision(db: Session, user: User, claim: HrExpenseClaim, approve: bool, remarks: str | None,
+                    notify: bool = True, returned: bool = False) -> None:
     if claim.status != "submitted":
         raise HTTPException(
             status_code=409,
             detail=f"{claim.claim_no} is {claim.status}, not waiting for a decision. Refresh the page to see its current state.",
         )
-    if not approve and not (remarks or "").strip():
-        raise HTTPException(status_code=400, detail="Enter a reason when rejecting a claim, so the employee knows what to correct before resubmitting.")
     verb = "approved" if approve else "rejected"
+    # "Returned for changes" = rejected: a rejected claim is editable and can be submitted again.
     claim.status = verb
     claim.decided_by_id = user.id
     claim.decided_at = datetime.now(timezone.utc)
     claim.decision_remarks = (remarks or "").strip() or None
-    notify_user(
-        db, claim.user_id, f"Expense claim {verb}",
-        f"{display_name(user)} {verb} {claim.claim_no} ({fmt_inr(claim.total_amount)})"
-        + (f": {claim.decision_remarks}" if claim.decision_remarks else ".")
-        + (" Edit it under My HR → Expense Claims and submit again." if not approve else ""),
-        f"hr_expense_{verb}", entity_type="hr_expense_claim", entity_id=claim.id,
-    )
+    if returned and claim.decision_remarks:
+        claim.decision_remarks = f"Returned for changes: {claim.decision_remarks}"
+    if notify:
+        notify_user(
+            db, claim.user_id, f"Expense claim {verb}",
+            f"{display_name(user)} {verb} {claim.claim_no} ({fmt_inr(claim.total_amount)})"
+            + (f": {claim.decision_remarks}" if claim.decision_remarks else ".")
+            + (" Edit it under My HR → Expense Claims and submit again." if not approve else ""),
+            f"hr_expense_{verb}", entity_type="hr_expense_claim", entity_id=claim.id,
+        )
+    if approve:
+        # Role event: whoever records claim payments hears it is ready to pay
+        # (bell / Teams — this runs inside the approval engine callback too).
+        from app.modules.hr.services import role_events
+        claimant = db.get(User, claim.user_id)
+        role_events.fire(
+            db, None, "claim_ready_for_payment", title=f"Expense claim ready to pay — {claim.claim_no}",
+            message=(f"{display_name(claimant) if claimant else 'An employee'}'s claim '{claim.title}' for "
+                     f"{fmt_inr(claim.total_amount)} was approved by {display_name(user)}. Pay it and record the payment "
+                     "(HR › Travel & Claims › Mark paid, or Finance › HR claims to pay once it is posted)."),
+            entity_type="hr_expense_claim", entity_id=claim.id, actor=user,
+            can_open=role_events.employee_opener(db, claimant), skip={claim.user_id},
+        )
     record_audit(
         db, entity_type="hr_expense_claim", entity_id=claim.id, action=verb, module_key="hr",
         summary=f"Expense claim {claim.claim_no} {verb}" + (f": {claim.decision_remarks}" if claim.decision_remarks else ""),
         user_id=user.id,
     )
+    if approve:
+        # PR05: Dr expense / Cr employee payable (fail-soft — see services/expense_posting.py).
+        from app.modules.hr.services import expense_posting
+
+        expense_posting.post_on_approval(db, claim, user)
+
+
+def _on_claim_decided(db: Session, areq, outcome: str, actor: User) -> None:
+    """Approval engine callback (hr.expense). The engine has already notified
+    the employee, so no second notification here."""
+    claim = _get(db, areq.entity_id, lock=True)
+    if outcome in ("approved", "rejected", "returned"):
+        _apply_decision(db, actor, claim, outcome == "approved", hr_approvals.decision_comment(areq, actor),
+                        notify=False, returned=outcome == "returned")
+    elif outcome == "cancelled" and claim.status == "submitted":
+        claim.status = "cancelled"
+
+
+hr_approvals.register_hr_type(
+    hr_approvals.EXPENSE_KEY, "travel", "Expense claim", ENTITY, "/dashboard/hr/me/claims/{id}", _on_claim_decided,
+    description="Reimbursement claims (HR › Travel & Claims). Amount = claim total. Returned = rejected (editable, resubmittable).",
+    context_fields={"linked_trip": {"label": "Linked to a travel request", "type": "bool"}},
+)
 
 
 @router.post("/{claim_id}/approve", response_model=HrExpenseClaimResponse)
@@ -535,7 +643,7 @@ async def cancel_claim(
     claim_id: int,
     payload: HrExpenseClaimDecisionPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_me_edit),
 ):
     claim = _get(db, claim_id, lock=True)
     if claim.user_id != user.id:
@@ -547,6 +655,9 @@ async def cancel_claim(
             + (" Ask HR if the payment should be reversed." if claim.status in ("approved", "paid") else ""),
         )
     was_submitted = claim.status == "submitted"
+    if was_submitted:
+        # Close the live approval so it leaves every approver's inbox.
+        hr_approvals.withdraw(db, ENTITY, claim.id, user, payload.remarks or None)
     claim.status = "cancelled"
     if payload.remarks:
         claim.decision_remarks = f"{claim.decision_remarks}\nCancelled: {payload.remarks}" if claim.decision_remarks else f"Cancelled: {payload.remarks}"
@@ -565,16 +676,24 @@ async def mark_claim_paid(
     claim_id: int,
     payload: HrExpenseClaimMarkPaidPayload,
     db: Session = Depends(get_db),
-    user: User = Depends(require_hr),
+    user: User = Depends(require_claim_payment),
+    background_tasks: BackgroundTasks = None,
 ):
     claim = _get(db, claim_id, lock=True)
     if claim.user_id == user.id:
         raise HTTPException(status_code=403, detail="You cannot record payment of your own expense claim. Another HR user has to mark it paid.")
+    hr_approvals.ensure_scope_unless_party(db, user, claim)
     if claim.status != "approved":
         raise HTTPException(
             status_code=409,
             detail=f"{claim.claim_no} is {claim.status}; only approved claims can be marked paid."
             + (" It has to be approved first." if claim.status == "submitted" else ""),
+        )
+    if claim.posted_je_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"{claim.claim_no} is posted to Finance (employee payable), so its payment must be a payment voucher "
+                    "that clears the payable. Record it under Finance › HR claims to pay (or the Pay action on the claim)."),
         )
     paid_on = payload.paid_on or date.today()
     if claim.submitted_at and paid_on < claim.submitted_at.date():
@@ -590,6 +709,15 @@ async def mark_claim_paid(
         db, claim.user_id, "Expense claim paid",
         f"{claim.claim_no} for {fmt_inr(claim.total_amount)} was paid on {paid_on:%d-%m-%Y} (ref {claim.payment_reference}).",
         "hr_expense_paid", entity_type="hr_expense_claim", entity_id=claim.id,
+    )
+    from app.modules.hr.services import role_events
+    claimant = db.get(User, claim.user_id)
+    role_events.fire(
+        db, background_tasks, "claim_paid", title=f"Expense claim paid — {claim.claim_no}",
+        message=(f"{display_name(claimant) if claimant else 'An employee'}'s claim '{claim.title}' for "
+                 f"{fmt_inr(claim.total_amount)} was paid on {paid_on:%d-%m-%Y} (ref {claim.payment_reference}), recorded by {display_name(user)}."),
+        entity_type="hr_expense_claim", entity_id=claim.id, actor=user,
+        can_open=role_events.employee_opener(db, claimant), skip={claim.user_id},
     )
     db.commit()
     return _one(db, user, claim)

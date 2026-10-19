@@ -6,42 +6,45 @@ import { useAuth } from '@/hooks/useAuth'
 import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
+import NavSettingsGear from '@/components/shared/NavSettingsGear'
 import { BRAND } from '@/lib/theme'
+import { Buildings, FileText, Gear, Package, SquaresFour, UploadSimple, type Icon } from '@phosphor-icons/react'
 
 const TABS = [
   { href: '/dashboard/crm', label: 'Dashboard', icon: 'grid', subtabKey: 'dashboard' },
-  { href: '/dashboard/crm/organizations', label: 'Organizations', icon: 'building', subtabKey: 'organizations' },
+  { href: '/dashboard/crm/organizations', label: 'Customer Organizations', icon: 'building', subtabKey: 'organizations' },
   { href: '/dashboard/crm/inquiries', label: 'Inquiries & Tenders', icon: 'file', subtabKey: 'inquiries_tenders' },
+  // Products, categories, payment terms and notification rules live here
+  // (the old Masters and Bulk Import tabs were folded into Settings / the lists' Import button).
+  { href: '/dashboard/crm/settings', label: 'Settings', icon: 'gear', subtabKey: 'settings' },
 ] as const
 
-const ADMIN_TABS = [
-  { href: '/dashboard/crm/bulk-import', label: 'Bulk Import', icon: 'upload' },
-] as const
+// Tab icon key -> Phosphor icon (Regular weight). The key also feeds the
+// tab's data-tour id, so keys stay as they are.
+const TAB_ICONS: Record<string, Icon> = {
+  grid: SquaresFour,
+  building: Buildings,
+  file: FileText,
+  box: Package,
+  gear: Gear,
+  upload: UploadSimple,
+}
 
 function TabIcon({ name }: { name: string }) {
-  const common = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  switch (name) {
-    case 'grid':
-      return <svg {...common}><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
-    case 'building':
-      return <svg {...common}><rect x="4" y="2" width="16" height="20" /><line x1="9" y1="6" x2="9" y2="6.01" /><line x1="15" y1="6" x2="15" y2="6.01" /><line x1="9" y1="10" x2="9" y2="10.01" /><line x1="15" y1="10" x2="15" y2="10.01" /><line x1="9" y1="14" x2="9" y2="14.01" /><line x1="15" y1="14" x2="15" y2="14.01" /></svg>
-    case 'file':
-      return <svg {...common}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-    case 'box':
-      return <svg {...common}><path d="M21 8l-9-5-9 5 9 5 9-5z" /><path d="M3 8v8l9 5 9-5V8" /><path d="M12 13v8" /></svg>
-    case 'upload':
-      return <svg {...common}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-    default:
-      return null
-  }
+  const Cmp = TAB_ICONS[name]
+  return Cmp ? <Cmp size={15} /> : null
 }
 
 export default function CrmNav() {
   const pathname = usePathname()
   const { user } = useAuth()
-  const tabs = filterTabsByAccess('crm', user?.role === 'admin' ? [...TABS, ...ADMIN_TABS] : TABS, user)
+  // Settings sits as a gear next to the bell, not as a tab (same as R&D).
+  const allowedTabs = filterTabsByAccess('crm', TABS, user)
+  const tabs = allowedTabs.filter((t) => t.subtabKey !== 'settings')
+  const settingsTab = allowedTabs.find((t) => t.subtabKey === 'settings')
 
   return (
+    <>
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
       <div style={{ display: 'flex', gap: 4, flex: '1 1 auto', minWidth: 0, flexWrap: 'wrap' }}>
         {tabs.map((tab) => {
@@ -75,11 +78,15 @@ export default function CrmNav() {
         })}
       </div>
       <div style={{ paddingBottom: 8, flex: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+        {settingsTab && (
+          <NavSettingsGear href={settingsTab.href} active={pathname.startsWith(settingsTab.href)} label="CRM settings" tour="crm-nav-settings" />
+        )}
         <TourButton variant="icon" />
         <div data-tour="crm-nav-bell">
           <NotificationBell />
         </div>
       </div>
     </div>
+    </>
   )
 }

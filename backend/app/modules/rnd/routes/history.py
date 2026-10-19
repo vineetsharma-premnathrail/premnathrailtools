@@ -1,10 +1,12 @@
+import json
 import logging
-from typing import Any
+from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+from app.core.permissions import ensure_can_delete, require_app_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
@@ -16,7 +18,23 @@ from app.modules.rnd.models.tool_calculations import (
 
 logger = logging.getLogger("rnd.history")
 
-router = APIRouter(prefix="/history", tags=["RnD History"])
+# Every history endpoint is R&D-only: a user without the "rnd" app gets 403
+# even for their own rows (admins always pass — they get every module).
+router = APIRouter(
+    prefix="/history", tags=["RnD History"], dependencies=[Depends(require_app_access("rnd"))],
+)
+
+# The seven calculators that save history. Keep in sync with the frontend's
+# `tool_name` values (rndApi.saveHistory callers) and RND_TOOL_PATHS.
+ToolName = Literal[
+    "braking", "hydraulic", "qmax", "load_distribution",
+    "tractive_effort", "vehicle_performance", "spline",
+]
+
+# Upper bound on the serialized inputs+results of one history entry. Real
+# calculator payloads are a few KB (vehicle_performance with its curve data
+# is the largest); this blocks the endpoint being used as a blob store.
+MAX_HISTORY_PAYLOAD_BYTES = 200 * 1024
 
 TOOL_LABELS = {
     "braking": "Braking",
@@ -30,15 +48,35 @@ TOOL_LABELS = {
 
 
 class SaveHistoryRequest(BaseModel):
-    tool_name: str
+    tool_name: ToolName
     inputs: dict[str, Any]
     results: dict[str, Any]
-    calculation_name: str | None = None
+    calculation_name: str | None = Field(default=None, max_length=255)
 
 
 class RenameHistoryRequest(BaseModel):
-    name: str | None = None
-    calculation_name: str | None = None
+    name: str | None = Field(default=None, max_length=255)
+    calculation_name: str | None = Field(default=None, max_length=255)
+
+
+def _check_payload_size(inputs: dict[str, Any], results: dict[str, Any]) -> None:
+    size = len(json.dumps({"inputs": inputs, "results": results}, default=str).encode("utf-8"))
+    if size > MAX_HISTORY_PAYLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Calculation history entry is too large ({size / 1024:.0f} KB, limit "
+                f"{MAX_HISTORY_PAYLOAD_BYTES // 1024} KB). Save a smaller calculation, or "
+                "download the report instead of saving it to history."
+            ),
+        )
+
+
+_NOT_OWNER = "Only the person who saved this calculation (or an admin) can view, rename or delete it."
+
+
+def _not_found(calc_id: int) -> str:
+    return f"Calculation #{calc_id} not found — it may have been deleted; refresh the History list."
 
 
 def _is_admin(user: User) -> bool:
@@ -47,7 +85,10 @@ def _is_admin(user: User) -> bool:
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
     if not _is_admin(user):
-        raise HTTPException(status_code=403, detail="Admin privileges required")
+        raise HTTPException(
+            status_code=403,
+            detail='All-users history is admin-only — switch off "All users" to see your own calculations.',
+        )
     return user
 
 
@@ -156,6 +197,7 @@ async def save_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    _check_payload_size(body.inputs, body.results)
     calc_name = body.calculation_name
     if not calc_name:
         count = (
@@ -187,7 +229,7 @@ async def save_history(
 
 @router.get("/list")
 async def list_history(
-    tool_name: str | None = None,
+    tool_name: ToolName | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -210,7 +252,7 @@ async def list_history(
 @router.get("/admin/list")
 async def admin_list_history(
     user_id: int | None = None,
-    tool_name: str | None = None,
+    tool_name: ToolName | None = None,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -260,9 +302,9 @@ async def get_history_detail(
 ):
     record = db.query(CalculationHistory).filter(CalculationHistory.id == calc_id).first()
     if not record:
-        raise HTTPException(status_code=404, detail="History record not found")
+        raise HTTPException(status_code=404, detail=_not_found(calc_id))
     if record.user_id != current_user.id and not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail=_NOT_OWNER)
     return {
         "id": record.id,
         "tool_name": record.tool_name,
@@ -283,10 +325,12 @@ async def rename_history(
 ):
     record = db.query(CalculationHistory).filter(CalculationHistory.id == calc_id).first()
     if not record:
-        raise HTTPException(status_code=404, detail="History record not found")
+        raise HTTPException(status_code=404, detail=_not_found(calc_id))
     if record.user_id != current_user.id and not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Access denied")
-    new_name = body.calculation_name or body.name
+        raise HTTPException(status_code=403, detail=_NOT_OWNER)
+    new_name = (body.calculation_name or body.name or "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Enter a name for the calculation (up to 255 characters).")
     record.calculation_name = new_name
     db.commit()
     return {"id": record.id, "calculation_name": record.calculation_name}
@@ -300,9 +344,8 @@ async def delete_history(
 ):
     record = db.query(CalculationHistory).filter(CalculationHistory.id == calc_id).first()
     if not record:
-        raise HTTPException(status_code=404, detail="History record not found")
-    if record.user_id != current_user.id and not _is_admin(current_user):
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=404, detail=_not_found(calc_id))
+    ensure_can_delete(current_user, record, "rnd", "history", what="saved calculation")
     db.delete(record)
     db.commit()
     return {"message": "Deleted successfully"}

@@ -1,29 +1,68 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { UploadSimple } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { hasErpPermission, useRequireApp } from '@/hooks/useAuth'
+import { PermissionAction, useCan } from '@/lib/permissions'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { erpApi, productionApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { AuditEntry, ProductionScheduleEntry, Project, ServiceRequest } from '@/types'
+import { AuditEntry, ProductionScheduleEntry, Project, ProjectLetter, ServiceRequest } from '@/types'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import ApprovalBanner from '@/components/erp/ApprovalBanner'
+import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import LetterEditorDialog, { letterTypeTitle } from '@/components/erp/LetterEditorDialog'
+import ManagedDocumentPanel, { openRecordInWord } from '@/components/shared/ManagedDocumentPanel'
 import FileUploadPreview from '@/components/FileUploadPreview'
 import { Card, InfoRow, secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
+import { recordPath, useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import ContractChip from '@/components/erp/ContractChip'
 
-const TABS = ['Overview', 'Technical Specs', 'Maintenance History', 'Production', 'Documents', 'Audit Trail'] as const
+// Machine status pill: in service = green, service / build stages = amber / blue, parked or retired = grey.
+const MACHINE_STATUS_HEX: Record<string, string> = {
+  active: '#047857', under_service: '#B45309', manufacturing_under_progress: '#2563EB', work_in_progress: '#2563EB',
+  standby: '#78716c', inactive: '#64748b', decommissioned: '#78716c', cancel: '#78716c',
+}
+
+const TABS = ['Overview','Technical Specs', 'Maintenance History', 'Production', 'Documents', 'Audit Trail'] as const
+
+// Feature (erp:projects.<key>) each machine sub-tab needs — core/features/erp.py. Documents
+// shows when the user may see either uploaded files or created letters.
+const TAB_FEATURES: Partial<Record<typeof TABS[number], string[]>> = {
+  'Technical Specs': ['technical_specs'], 'Maintenance History': ['service_history'], Production: ['production'],
+  Documents: ['documents', 'letters'], 'Audit Trail': ['audit_trail'],
+}
+
+type MachineDocAccess = {
+  seeUploaded: boolean; upload: boolean; deleteUploaded: (ownerId?: number | null) => boolean
+  seeLetters: boolean; createLetter: boolean; editLetter: boolean; deleteLetter: (ownerId?: number | null) => boolean; printLetter: boolean
+}
 
 export default function ProjectDetailPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('erp')
   const canCreateSr = hasErpPermission(user, 'sr_create')
   const canEdit = hasErpPermission(user, 'project_edit')
-  const canDelete = hasErpPermission(user, 'project_delete')
+  const { can, canDelete: canDeleteOwn, canFeature } = useCan()
+  const feat = (key: string, action: PermissionAction = 'view') => canFeature('erp', 'projects', key, action)
+  // Company rule: Delete on Machines AND only records you created (admins: any).
+  const canDeleteRecord = (ownerId?: number | null) => canDeleteOwn('erp', 'projects', ownerId ?? null)
+  const canPrint = can('erp', 'projects', 'print')
+  const visibleTabs = TABS.filter((t) => !TAB_FEATURES[t] || TAB_FEATURES[t]!.some((k) => feat(k)))
+  const docAccess: MachineDocAccess = {
+    seeUploaded: feat('documents'), upload: canEdit && feat('documents', 'create'),
+    deleteUploaded: (o) => canDeleteRecord(o) && feat('documents', 'delete'),
+    seeLetters: feat('letters'), createLetter: canEdit && feat('letters', 'create'), editLetter: canEdit && feat('letters', 'edit'),
+    deleteLetter: (o) => canDeleteRecord(o) && feat('letters', 'delete'), printLetter: canPrint && feat('letters', 'print'),
+  }
   const params = useParams()
   const router = useRouter()
-  const projectId = Number(params.id)
+  const ref = params.id as string
+  const { id: projectId, error: linkError } = useRecordId(ref)
 
   const [project, setProject] = useState<Project | null>(null)
   const [activeTicketCount, setActiveTicketCount] = useState(0)
@@ -31,12 +70,13 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState('')
   const [tab, setTab] = useState<typeof TABS[number]>('Overview')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [actionError, setActionError] = useState('')
 
   const load = async () => {
     setLoading(true)
     setError('')
     try {
-      setProject(await erpApi.getProject(projectId))
+      setProject(await erpApi.getProject(projectId!))
     } catch (err) {
       setError(extractErrorMessages(err, 'Machine not found.').join(' '))
     } finally {
@@ -51,8 +91,10 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     if (!isAuthorized || !projectId) return
-    erpApi.listServiceRequests({ project_id: projectId }).then((srs: ServiceRequest[]) => {
-      setActiveTicketCount(srs.filter((s) => s.status !== 'closed').length)
+    erpApi.listServiceRequests({ project_id: projectId, limit: 1000 }).then((srs: ServiceRequest[]) => {
+      setActiveTicketCount(srs.filter((s) => !['closed', 'cancelled'].includes(s.status)).length)
+    }).catch((err) => {
+      setActionError(extractErrorMessages(err, 'Could not count the active service tickets for this machine — reload the page to try again.').join(' '))
     })
   }, [isAuthorized, projectId])
 
@@ -66,11 +108,17 @@ export default function ProjectDetailPage() {
 
   const handleDelete = async () => {
     if (!project) return
-    await erpApi.deleteProject(project.id)
-    router.push('/dashboard/erp/projects')
+    setActionError('')
+    try {
+      await erpApi.deleteProject(project.id)
+      router.push('/dashboard/erp/projects')
+    } catch (err) {
+      setActionError(extractErrorMessages(err, `Could not delete machine ${project.serial_number} — check that you hold the Delete Machine permission and your connection, then try again.`).join(' '))
+    }
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><ErpNav /><InvalidRecordLink message={linkError} listHref="/dashboard/erp/projects" listLabel="Back to projects" /></div>)
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
   if (error && !project) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
   if (!project) return null
@@ -83,19 +131,21 @@ export default function ProjectDetailPage() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{project.serial_number}</h1>
-            <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, textTransform: 'capitalize', background: project.status === 'active' ? 'rgba(16,185,129,0.12)' : 'rgba(220,38,38,0.1)', color: project.status === 'active' ? '#047857' : '#b91c1c' }}>
+            <span data-tour="erp-proj-status-badge" style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, textTransform: 'capitalize', background: `${MACHINE_STATUS_HEX[project.status] || '#78716c'}1a`, color: MACHINE_STATUS_HEX[project.status] || '#78716c' }}>
               {project.status}
             </span>
+            <ContractChip projectId={project.id} />
           </div>
           <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{project.model_name || 'Not provided'} {project.client_company ? `· ${project.client_company}` : ''}</p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button onClick={() => router.push('/dashboard/erp/projects')} type="button" style={secondaryBtnStyle}>
+          <button onClick={() => router.push('/dashboard/erp/projects')} type="button" style={secondaryBtnStyle} data-tour="erp-proj-back-btn">
             ← Back
           </button>
-          {canCreateSr && (
+          {canCreateSr && (project.approval_status ?? 'approved') === 'approved' && (
             <Link
               href={{ pathname: '/dashboard/erp/service-requests/new' }}
+              data-tour="erp-proj-new-sr-btn"
               style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, background: 'linear-gradient(140deg,#FF7A45,#ffe3d0)', color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap' }}
             >
               + New Service Request
@@ -103,35 +153,53 @@ export default function ProjectDetailPage() {
           )}
           {canEdit && (
             <Link
-              href={`/dashboard/erp/projects/${project.id}/edit`}
+              href={`/dashboard/erp/projects/${ref}/edit`}
+              data-tour="erp-proj-edit-btn"
               style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', textDecoration: 'none', whiteSpace: 'nowrap' }}
             >
               Edit Project
             </Link>
           )}
-          {canDelete && (
-            <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle}>Delete</button>
+          {project && canDeleteRecord(project.created_by_id) && (
+            <button onClick={() => setShowDeleteConfirm(true)} style={dangerBtnStyle} data-tour="erp-proj-delete-btn">Delete</button>
           )}
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 20 }}>
+      {actionError && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: '0 0 14px' }}>{actionError}</p>}
+
+      {project.approval_status === 'pending' && (
+        <ApprovalBanner tone="pending" title="Pending approval" entityType="erp_machine" entityId={project.id}
+          text="Service requests can't be raised on this machine until it is approved."
+          approveLabel="Approve machine" rejectLabel="Reject"
+          rejectPrompt="Say what is wrong with this machine's details — the person who registered it is notified and resubmits by editing it."
+          onApprove={async (r) => setProject(await erpApi.approveProject(project.id, r || undefined))}
+          onReject={async (r) => setProject(await erpApi.rejectProject(project.id, r))} />
+      )}
+      {project.approval_status === 'rejected' && (
+        <ApprovalBanner tone="rejected" title="Rejected"
+          text={`${project.approval_remarks || 'No reason given.'} Edit the machine to correct it — saving sends it back for approval.`} />
+      )}
+      <ApprovalPanel title="Machine approval" entityType="erp_machine" entityId={project.id} onChanged={() => { load() }} />
+
+      <div data-tour="erp-proj-kpis" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 20 }}>
         <div style={{ position: 'relative', overflow: 'hidden', padding: 18, borderRadius: 14, background: 'linear-gradient(140deg,#fffbeb,#fff)', border: '1px solid rgba(245,158,11,0.15)' }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 8px' }}>Active Tickets</p>
           <p style={{ fontSize: 28, fontWeight: 700, color: '#1f1108', margin: '0 0 6px' }}>{activeTicketCount}</p>
           <p style={{ fontSize: 12, color: '#a8a29e', margin: 0 }}>{activeTicketCount === 0 ? 'No open repair requests' : `${activeTicketCount} open repair request(s)`}</p>
         </div>
-        <div style={{ position: 'relative', overflow: 'hidden', padding: 18, borderRadius: 14, background: 'linear-gradient(140deg,#eff6ff,#fff)', border: '1px solid rgba(59,130,246,0.15)' }}>
+        {feat('warranty') && <div style={{ position: 'relative', overflow: 'hidden', padding: 18, borderRadius: 14, background: 'linear-gradient(140deg,#eff6ff,#fff)', border: '1px solid rgba(59,130,246,0.15)' }}>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#a8a29e', margin: '0 0 8px' }}>Warranty Status</p>
           <p style={{ fontSize: 28, fontWeight: 700, color: '#1f1108', margin: '0 0 6px' }}>{warranty.label}</p>
           <p style={{ fontSize: 12, color: '#a8a29e', margin: 0 }}>{warranty.sub}</p>
-        </div>
+        </div>}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t}
+            data-tour={`erp-proj-tab-${t.toLowerCase().replace(/\s+/g, '-')}`}
             onClick={() => setTab(t)}
             style={{
               padding: '10px 6px',
@@ -150,11 +218,11 @@ export default function ProjectDetailPage() {
         ))}
       </div>
 
-      {tab === 'Overview' && <OverviewTab project={project} />}
+      {tab === 'Overview' && <OverviewTab project={project} showContacts={feat('client_contacts')} showWarranty={feat('warranty')} />}
       {tab === 'Technical Specs' && <TechnicalSpecsTab project={project} />}
       {tab === 'Maintenance History' && <MaintenanceHistoryTab projectId={project.id} />}
       {tab === 'Production' && <ProductionTab projectId={project.id} canOpen={!!user?.apps?.includes('production')} />}
-      {tab === 'Documents' && <DocumentsTab projectId={project.id} canEdit={canEdit} canDelete={canDelete} />}
+      {tab === 'Documents' && <DocumentsTab project={project} signatory={{ name: user?.name, designation: user?.designation }} access={docAccess} />}
       {tab === 'Audit Trail' && <AuditTab projectId={project.id} />}
 
       <ConfirmDialog
@@ -168,10 +236,11 @@ export default function ProjectDetailPage() {
   )
 }
 
-function OverviewTab({ project }: { project: Project }) {
+function OverviewTab({ project, showContacts, showWarranty }: { project: Project; showContacts: boolean; showWarranty: boolean }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       <Card title="Machine Identity">
+        <InfoRow label="Product" value={project.product_name || 'Not linked to Product Management'} />
         <InfoRow label="Machine Type" value={project.machine_type || 'Not provided'} />
         <InfoRow label="Application Type" value={project.application_type || 'Not provided'} />
         <InfoRow label="Engine Number" value={project.engine_number || 'Not provided'} />
@@ -186,7 +255,8 @@ function OverviewTab({ project }: { project: Project }) {
         <InfoRow label="Handover Date" value={project.handover_date || 'Not provided'} />
       </Card>
 
-      <Card title="Client & Site">
+      {showContacts && <Card title="Client & Site">
+        <InfoRow label="CRM Customer" value={project.customer_name || 'Not linked — edit the machine and pick the Customer (needed for service invoices)'} />
         <InfoRow label="Client Company" value={project.client_company || 'Not provided'} />
         <InfoRow label="Contact Name" value={project.client_name || 'Not provided'} />
         <InfoRow label="Contact Designation" value={project.client_designation || 'Not provided'} />
@@ -201,16 +271,16 @@ function OverviewTab({ project }: { project: Project }) {
         <InfoRow label="Site Country" value={project.site_country || 'Not provided'} />
         <InfoRow label="Zone" value={project.zone || 'Not provided'} />
         <InfoRow label="Export Deployment" value={project.is_export ? 'Yes' : 'No'} />
-      </Card>
+      </Card>}
 
-      <Card title="Warranty & AMC">
+      {showWarranty && <Card title="Warranty & AMC">
         <InfoRow label="Warranty Start" value={project.warranty_start_date || 'Not provided'} />
         <InfoRow label="Warranty End" value={project.warranty_end_date || 'Not provided'} />
         <InfoRow label="Warranty Terms" value={project.warranty_override || 'Not provided'} />
         <InfoRow label="Extended Warranty" value={project.extended_warranty ? `Yes (until ${project.extended_warranty_end || 'Not provided'})` : 'No'} />
         <InfoRow label="AMC Status" value={project.amc_status || 'Not provided'} />
         <InfoRow label="AMC End Date" value={project.amc_end_date || 'Not provided'} />
-      </Card>
+      </Card>}
 
       {project.notes && (
         <Card title="Production Notes">
@@ -244,12 +314,17 @@ function TechnicalSpecsTab({ project }: { project: Project }) {
 function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
   const [srs, setSrs] = useState<ServiceRequest[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    erpApi.listServiceRequests({ project_id: projectId }).then(setSrs).finally(() => setLoading(false))
+    erpApi.listServiceRequests({ project_id: projectId, limit: 1000 })
+      .then(setSrs)
+      .catch((err) => setError(extractErrorMessages(err, 'Could not load the service history for this machine — check your connection and reload the page.').join(' ')))
+      .finally(() => setLoading(false))
   }, [projectId])
 
   if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
+  if (error) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
   if (srs.length === 0) return <p style={{ fontSize: 13, color: '#a8a29e' }}>No service requests raised for this machine yet.</p>
 
   return (
@@ -267,7 +342,7 @@ function MaintenanceHistoryTab({ projectId }: { projectId: number }) {
           {srs.map((sr) => (
             <tr key={sr.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
               <td style={{ padding: '10px 14px' }}>
-                <Link href={`/dashboard/erp/service-requests/${sr.id}`} style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', textDecoration: 'none' }}>
+                <Link href={recordPath('/dashboard/erp/service-requests', sr)} style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', textDecoration: 'none' }}>
                   {sr.request_number}
                 </Link>
               </td>
@@ -320,7 +395,7 @@ function ProductionTab({ projectId, canOpen }: { projectId: number; canOpen: boo
             <tr key={o.work_order_id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
               <td style={{ padding: '10px 14px' }}>
                 {canOpen ? (
-                  <Link href={`/dashboard/production/work-orders/${o.work_order_id}`} style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', textDecoration: 'none' }}>{o.wo_number}</Link>
+                  <Link href={recordPath('/dashboard/production/work-orders', o, 'work_order_id')} style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45', textDecoration: 'none' }}>{o.wo_number}</Link>
                 ) : <span style={{ fontSize: 13, fontWeight: 600 }}>{o.wo_number}</span>}
               </td>
               <td style={{ padding: '10px 14px', fontSize: 13 }}>{o.product_name || '—'}</td>
@@ -340,20 +415,219 @@ function ProductionTab({ projectId, canOpen }: { projectId: number; canOpen: boo
   )
 }
 
-function DocumentsTab({ projectId, canEdit, canDelete }: { projectId: number; canEdit: boolean; canDelete: boolean }) {
-  const fileRef = useRef<HTMLInputElement>(null)
+type DocView = 'uploaded' | 'created'
+
+function DocumentsTab({ project, signatory, access }: { project: Project; signatory: { name?: string; designation?: string }; access: MachineDocAccess }) {
+  const projectId = project.id
+  const [view, setView] = useState<DocView>(access.seeUploaded ? 'uploaded' : 'created')
   const [attachments, setAttachments] = useState<import('@/types').ProjectAttachment[]>([])
-  const [loading, setLoading] = useState(true)
+  const [letters, setLetters] = useState<ProjectLetter[]>([])
+  // A list the user has no feature for is never loaded (the server would refuse it).
+  const [loadingAttachments, setLoadingAttachments] = useState(access.seeUploaded)
+  const [loadingLetters, setLoadingLetters] = useState(access.seeLetters)
+  const [lettersError, setLettersError] = useState('')
+  const [editor, setEditor] = useState<{ open: boolean; letter: ProjectLetter | null }>({ open: false, letter: null })
+
+  const loadAttachments = () => {
+    erpApi.listProjectAttachments(projectId).then(setAttachments).finally(() => setLoadingAttachments(false))
+  }
+  const loadLetters = () => {
+    erpApi.listProjectLetters(projectId)
+      .then((rows: ProjectLetter[]) => { setLetters(rows); setLettersError('') })
+      .catch((err) => setLettersError(extractErrorMessages(err, 'Failed to load created documents.').join(' ')))
+      .finally(() => setLoadingLetters(false))
+  }
+
+  useEffect(() => {
+    if (access.seeUploaded) loadAttachments()
+    if (access.seeLetters) loadLetters()
+  }, [projectId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openLetterPdf = (letter: ProjectLetter) =>
+    openAttachmentBlob(() => erpApi.getProjectLetterBlob(projectId, letter.id, 'pdf'))
+      .catch((err) => setLettersError(`Could not generate the PDF for ${letter.letter_no}: ${extractErrorMessages(err, 'the server did not return a file — try again, or open it in Word instead.').join(' ')}`))
+
+  const VIEWS: { key: DocView; label: string; count: number }[] = [
+    ...(access.seeUploaded ? [{ key: 'uploaded' as const, label: 'Uploaded', count: attachments.length }] : []),
+    ...(access.seeLetters ? [{ key: 'created' as const, label: 'Created', count: letters.length }] : []),
+  ]
+
+  return (
+    <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', padding: '12px 18px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+        <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 12, background: 'rgba(0,0,0,0.05)' }}>
+          {VIEWS.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              data-tour={`erp-proj-docs-view-${v.key}`}
+              onClick={() => setView(v.key)}
+              style={{
+                padding: '8px 16px', borderRadius: 8, border: 'none', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                background: view === v.key ? '#fff' : 'transparent',
+                color: view === v.key ? '#FF7A45' : '#78716c',
+                boxShadow: view === v.key ? '0 2px 6px rgba(0,0,0,0.08)' : 'none',
+              }}
+            >
+              {v.label} <span style={{ fontSize: 11, opacity: 0.75 }}>({v.count})</span>
+            </button>
+          ))}
+        </div>
+        {view === 'created' && access.createLetter && (
+          <button
+            type="button"
+            onClick={() => setEditor({ open: true, letter: null })}
+            data-tour="erp-proj-letter-create-btn"
+            style={{ fontSize: 13, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(140deg,#FF7A45,#ff9a6b)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
+          >
+            + Create New
+          </button>
+        )}
+      </div>
+
+      {view === 'uploaded' ? (
+        <UploadedDocuments projectId={projectId} attachments={attachments} loading={loadingAttachments} reload={loadAttachments} canEdit={access.upload} canDelete={access.deleteUploaded} />
+      ) : (
+        <CreatedDocuments
+          projectId={projectId}
+          letters={letters}
+          loading={loadingLetters}
+          error={lettersError}
+          setError={setLettersError}
+          reload={loadLetters}
+          canCreate={access.createLetter}
+          canEdit={access.editLetter}
+          canDelete={access.deleteLetter}
+          canPrint={access.printLetter}
+          onOpenPdf={openLetterPdf}
+          onEdit={(letter) => setEditor({ open: true, letter })}
+        />
+      )}
+
+      <LetterEditorDialog
+        open={editor.open}
+        project={project}
+        letter={editor.letter}
+        letters={letters}
+        signatory={signatory}
+        onClose={() => setEditor({ open: false, letter: null })}
+        onSaved={(_saved, wordError) => {
+          setEditor({ open: false, letter: null })
+          loadLetters()
+          if (wordError) setLettersError(wordError)
+        }}
+      />
+    </div>
+  )
+}
+
+function CreatedDocuments({ projectId, letters, loading, error, setError, reload, canCreate, canEdit, canDelete, canPrint, onOpenPdf, onEdit }: {
+  projectId: number
+  letters: ProjectLetter[]
+  loading: boolean
+  error: string
+  setError: (msg: string) => void
+  reload: () => void
+  canCreate: boolean
+  canEdit: boolean
+  canDelete: (ownerId?: number | null) => boolean
+  canPrint: boolean
+  onOpenPdf: (letter: ProjectLetter) => void
+  onEdit: (letter: ProjectLetter) => void
+}) {
+  const [toDelete, setToDelete] = useState<ProjectLetter | null>(null)
+
+  const confirmDelete = async () => {
+    if (!toDelete) return
+    const letter = toDelete
+    setToDelete(null)
+    try {
+      await erpApi.deleteProjectLetter(projectId, letter.id)
+      reload()
+    } catch (err) {
+      setError(extractErrorMessages(err, `Failed to delete ${letter.letter_no}.`).join(' '))
+    }
+  }
+
+  const actionBtn: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(0,0,0,0.1)', background: '#fff', color: '#57534e', cursor: 'pointer', whiteSpace: 'nowrap' }
+
+  return (
+    <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {error && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: 0 }}>{error}</p>}
+      {loading ? (
+        <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>Loading…</p>
+      ) : letters.length === 0 ? (
+        <p style={{ fontSize: 13, color: '#a8a29e', margin: 0 }}>
+          No documents created yet.{canCreate ? ' Use “+ Create New” for a delivery cover letter, delivery confirmation or guarantee certificate.' : ''}
+        </p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {letters.map((l) => (
+            <div key={l.id} style={{ padding: '10px 14px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+                <a
+                  href="#"
+                  title={canEdit && canPrint ? 'Open in Word to edit' : 'Open PDF'}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    if (!canPrint) { setError('Opening letters needs Service & Commissioning › Projects (Machines) › Delivery letters & certificates › Print. Ask an admin to add it to one of your roles.'); return }
+                    if (!canEdit) { onOpenPdf(l); return }
+                    const tab = window.open('', '_blank')
+                    openRecordInWord('erp_project_letter', l.id, tab)
+                      .then(() => setTimeout(reload, 1500))
+                      .catch((err) => setError(`Could not open ${l.letter_no} in Word: ${extractErrorMessages(err, 'unknown error').join(' ')}`))
+                  }}
+                  style={{ fontSize: 13, fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}
+                >
+                  {l.subject}
+                </a>
+                <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '2px 0 0' }}>
+                  {l.letter_type && l.letter_type !== 'general' && (
+                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 999, background: 'rgba(255,122,69,0.1)', color: '#c2410c', marginRight: 6 }}>{letterTypeTitle(l.letter_type)}</span>
+                  )}
+                  {l.letter_no} · {formatDate(l.letter_date)}{l.created_by_name ? ` · by ${l.created_by_name}` : ''}
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {canPrint && <button type="button" onClick={() => onOpenPdf(l)} style={actionBtn}>PDF</button>}
+                {canEdit && <button type="button" onClick={() => onEdit(l)} style={actionBtn}>Edit</button>}
+                {canDelete(l.created_by_id) && (
+                  <button type="button" onClick={() => setToDelete(l)} style={{ ...actionBtn, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c' }}>
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+            <ManagedDocumentPanel entityType="erp_project_letter" entityId={l.id} revision={l.revision} canModify={canEdit && canPrint} recordLabel="letter" downloadName={l.letter_no.replace(/[^A-Za-z0-9._-]+/g, '-')} />
+            </div>
+          ))}
+        </div>
+      )}
+      <ConfirmDialog
+        open={!!toDelete}
+        title="Delete this letter?"
+        message={toDelete ? `Delete ${toDelete.letter_no} (“${toDelete.subject}”)? This cannot be undone; its reference number will not be reused.` : ''}
+        onConfirm={confirmDelete}
+        onCancel={() => setToDelete(null)}
+      />
+    </div>
+  )
+}
+
+function UploadedDocuments({ projectId, attachments, loading, reload, canEdit, canDelete }: {
+  projectId: number
+  attachments: import('@/types').ProjectAttachment[]
+  loading: boolean
+  reload: () => void
+  canEdit: boolean
+  canDelete: (ownerId?: number | null) => boolean
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState('')
   const [staged, setStaged] = useState<File[]>([])
-
-  const load = () => {
-    erpApi.listProjectAttachments(projectId).then(setAttachments).finally(() => setLoading(false))
-  }
-
-  useEffect(load, [projectId])
 
   // Stage the picked files for user review instead of uploading immediately.
   const stageFiles = (files: FileList | null) => {
@@ -368,7 +642,7 @@ function DocumentsTab({ projectId, canEdit, canDelete }: { projectId: number; ca
     try {
       await erpApi.uploadProjectAttachments(projectId, staged)
       setStaged([])
-      load()
+      reload()
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Upload failed.')
     } finally {
@@ -380,103 +654,88 @@ function DocumentsTab({ projectId, canEdit, canDelete }: { projectId: number; ca
   const handleDelete = async (attachmentId: number) => {
     try {
       await erpApi.deleteProjectAttachment(projectId, attachmentId)
-      load()
+      reload()
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Failed to delete document.')
     }
   }
 
   return (
-    <div style={{ borderRadius: 16, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#78716c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
-          </svg>
-          <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#57534e' }}>Attachments &amp; Documents</span>
-        </div>
-        <span style={{ fontSize: 12, color: '#a8a29e' }}>{attachments.length} file(s)</span>
-      </div>
-
-      <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {canEdit && (
-          <div
-            onClick={() => !uploading && fileRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => { e.preventDefault(); setDragOver(false); stageFiles(e.dataTransfer.files) }}
-            style={{
-              padding: '32px 20px',
-              borderRadius: 14,
-              border: `2px dashed ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.15)'}`,
-              background: dragOver ? 'rgba(244,113,59,0.05)' : '#fff',
-              textAlign: 'center',
-              cursor: uploading ? 'wait' : 'pointer',
-            }}
-          >
-            <input ref={fileRef} type="file" multiple hidden onChange={(e) => stageFiles(e.target.files)} disabled={uploading} />
-            <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#78716c" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-            </div>
-            <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: '0 0 4px' }}>
-              {uploading ? 'Uploading…' : 'Drag & drop files here'}
-            </p>
-            {!uploading && (
-              <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>
-                or <span style={{ color: '#FF7A45', fontWeight: 600 }}>click to browse</span>
-              </p>
-            )}
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
-              {['PDF', 'DOCX', 'XLSX', 'JPG/PNG', 'MP4'].map((t) => (
-                <span key={t} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 6, background: 'rgba(0,0,0,0.05)', color: '#78716c' }}>{t}</span>
-              ))}
-            </div>
+    <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {canEdit && (
+        <div
+          data-tour="erp-proj-docs-dropzone"
+          onClick={() => !uploading && fileRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); stageFiles(e.dataTransfer.files) }}
+          style={{
+            padding: '32px 20px',
+            borderRadius: 14,
+            border: `2px dashed ${dragOver ? '#FF7A45' : 'rgba(0,0,0,0.15)'}`,
+            background: dragOver ? 'rgba(244,113,59,0.05)' : '#fff',
+            textAlign: 'center',
+            cursor: uploading ? 'wait' : 'pointer',
+          }}
+        >
+          <input ref={fileRef} type="file" multiple hidden onChange={(e) => stageFiles(e.target.files)} disabled={uploading} />
+          <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(0,0,0,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+            <UploadSimple size={20} color="#78716c" />
           </div>
-        )}
-
-        {canEdit && (
-          <FileUploadPreview
-            files={staged}
-            uploading={uploading}
-            onRemove={(i) => setStaged((prev) => prev.filter((_, idx) => idx !== i))}
-            onConfirm={confirmUpload}
-            onCancel={() => { setStaged([]); if (fileRef.current) fileRef.current.value = '' }}
-          />
-        )}
-
-        {error && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: 0 }}>{error}</p>}
-
-        {loading ? (
-          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>Loading…</p>
-        ) : attachments.length === 0 ? (
-          <p style={{ fontSize: 13, color: '#a8a29e', margin: 0 }}>No documents uploaded.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {attachments.map((a) => (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
-                <a
-                  href="#"
-                  onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => erpApi.getProjectAttachmentBlob(projectId, a.id), a.filename) }}
-                  style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}
-                >
-                  {a.filename}
-                </a>
-                {canDelete && (
-                  <button onClick={() => handleDelete(a.id)} style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: 'pointer' }}>
-                    Delete
-                  </button>
-                )}
-              </div>
+          <p style={{ fontSize: 13.5, fontWeight: 600, color: '#1f1108', margin: '0 0 4px' }}>
+            {uploading ? 'Uploading…' : 'Drag & drop files here'}
+          </p>
+          {!uploading && (
+            <p style={{ fontSize: 12.5, color: '#a8a29e', margin: 0 }}>
+              or <span style={{ color: '#FF7A45', fontWeight: 600 }}>click to browse</span>
+            </p>
+          )}
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+            {['PDF', 'DOCX', 'XLSX', 'JPG/PNG', 'MP4'].map((t) => (
+              <span key={t} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 6, background: 'rgba(0,0,0,0.05)', color: '#78716c' }}>{t}</span>
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {canEdit && (
+        <FileUploadPreview
+          files={staged}
+          uploading={uploading}
+          onRemove={(i) => setStaged((prev) => prev.filter((_, idx) => idx !== i))}
+          onConfirm={confirmUpload}
+          onCancel={() => { setStaged([]); if (fileRef.current) fileRef.current.value = '' }}
+        />
+      )}
+
+      {error && <p style={{ fontSize: 12.5, color: '#b91c1c', margin: 0 }}>{error}</p>}
+
+      {loading ? (
+        <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>Loading…</p>
+      ) : attachments.length === 0 ? (
+        <p style={{ fontSize: 13, color: '#a8a29e', margin: 0 }}>No documents uploaded.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {attachments.map((a) => (
+            <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
+              <a
+                href="#"
+                onClick={(e) => { e.preventDefault(); openAttachmentBlob(() => erpApi.getProjectAttachmentBlob(projectId, a.id), a.filename) }}
+                style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none' }}
+              >
+                {a.filename}
+              </a>
+              {canDelete(a.created_by_id) && (
+                <button onClick={() => handleDelete(a.id)} style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: 'pointer' }}>
+                  Delete
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
-  )
+)
 }
 
 function AuditTab({ projectId }: { projectId: number }) {

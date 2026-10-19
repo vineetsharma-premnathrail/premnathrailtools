@@ -2,32 +2,22 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { hydraulicApi } from '@/lib/api'
+import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { HydLookupOption, HydTest } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
+import { SheetColumns, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, Req, Optional, SheetError } from '@/components/shared/FormSheet'
+import HydFormShell, { HydShellProps, Cell, fieldRow } from '@/components/hydraulic/HydFormShell'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
 import { extractErrorMessages } from '@/lib/validation'
 import { SYSTEM_TYPE_LABELS, TEST_TYPE_LABELS } from '@/components/hydraulic/labels'
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: 0 }
 const rowStyle: React.CSSProperties = {
   display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end', padding: 12, borderRadius: 12,
-  border: `1px solid ${BORDER.light}`, background: 'rgba(255,255,255,.45)',
+  border: `1px solid ${SHEET.LINE}`, background: SHEET.SOFT,
 }
-const rowLabel: React.CSSProperties = { ...labelStyle, fontSize: 11.5, marginBottom: 4 }
-const rowInput: React.CSSProperties = { ...inputStyle, padding: '8px 10px', fontSize: 13 }
-const removeBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '8px 12px', color: DANGER.primary, borderColor: DANGER.border }
-const readOnlyBox: React.CSSProperties = { ...inputStyle, background: 'rgba(0,0,0,0.03)' }
+const rowLabel: React.CSSProperties = { ...sheetLabel, fontSize: 11.5, marginBottom: 4 }
+const rowInput: React.CSSProperties = { ...sheetInput, padding: '8px 10px', fontSize: 13 }
+const readOnlyBox: React.CSSProperties = { ...sheetInput, background: SHEET.SOFT }
 
 const READING_RESULT_LABELS: Record<string, string> = { pass: 'Pass', fail: 'Fail', na: 'N/A' }
 const READING_RESULT_HEX: Record<string, string> = { pass: '#16A34A', fail: '#DC2626', na: '#78716c' }
@@ -93,7 +83,8 @@ export default function TestForm({
   submitLabel,
   onSubmit,
   onDirtyChange,
-}: {
+  mode, title: shellTitle, subtitle, nav, onBack, onCancel,
+}: HydShellProps & {
   initial?: HydTest | null
   presetSystemId?: string
   presetComponentId?: string
@@ -173,7 +164,10 @@ export default function TestForm({
 
   const systemOptions = useMemo(() => [{ value: '', label: '— None —' }, ...systems.map((s) => ({ value: String(s.id), label: s.label }))], [systems])
   const componentOptions = useMemo(() => [{ value: '', label: '— None —' }, ...components.map((c) => ({ value: String(c.id), label: c.label }))], [components])
-  const userOptions = useMemo(() => [{ value: '', label: '— Not set —' }, ...users.map((u) => ({ value: String(u.id), label: u.label }))], [users])
+  // Role "Assign to" rule (Role & Permissions › Hydraulic & Pneumatic › Testing › Tester); the current tester stays listed.
+  const allowTester = useAssigneeFilter('hydraulic:testing.tester')
+  const userOptions = useMemo(() => [{ value: '', label: '— Not set —' }, ...users.filter((u) => u.id === initial?.tested_by_id || allowTester(u.id))
+    .map((u) => ({ value: String(u.id), label: u.label }))], [users, initial, allowTester])
 
   const updateRow = (key: number, patch: Partial<ReadingRow>) => setReadings((rows) => rows.map((r) => (r.key === key ? { ...r, ...patch } : r)))
 
@@ -191,8 +185,7 @@ export default function TestForm({
     setReadings([...readings.filter((r) => !isBlankRow(r)), ...added])
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async () => {
     setError('')
     if (!title.trim()) { setError('Title is required — e.g. "Proof test of lift cylinder after rebuild".'); return }
     if (!systemId && !componentId) { setError('Pick the system or the component being tested (or both).'); return }
@@ -260,201 +253,200 @@ export default function TestForm({
   const failCount = readings.filter((r) => !isBlankRow(r) && (judgeRow(r) ?? r.result) === 'fail').length
 
   return (
-    <form onSubmit={handleSubmit}>
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
+    <HydFormShell
+      mode={mode} title={shellTitle} subtitle={subtitle} nav={nav} onBack={onBack} onCancel={onCancel}
+      icon={initial ? 'edit' : 'check'} busy={saving} submitLabel={submitLabel} submitIcon={initial ? 'check' : 'plus'}
+      onSubmit={handleSubmit} tour="hyd-testf-form" backTour="hyd-testf-back-btn" submitTour="hyd-testf-submit-btn"
+    >
+      <SheetColumns
+        left={<>
+          <SheetError error={error} />
+          <SheetSection icon="check" title="Test">
+            <div style={fieldRow}>
+              <Cell tour="hyd-testf-title" basis={260} grow>
+                <label style={sheetLabel}>Title <Req /></label>
+                <input style={sheetInput} value={title} maxLength={255} onChange={(e) => setTitle(e.target.value)} placeholder="Proof test — lift cylinder after rebuild" />
+              </Cell>
+            </div>
+            <div style={{ ...fieldRow, marginBottom: 0 }}>
+              <Cell tour="hyd-testf-type" basis={200} grow max={260}>
+                <label style={sheetLabel}>Test Type <Req /></label>
+                <select style={sheetInput} value={testType} onChange={(e) => setTestType(e.target.value)}>
+                  {Object.entries(TEST_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </Cell>
+              <Cell tour="hyd-testf-medium" basis={130}>
+                <label style={sheetLabel}>Medium</label>
+                {initial ? (
+                  <div style={readOnlyBox}>{SYSTEM_TYPE_LABELS[systemType] || systemType}</div>
+                ) : (
+                  <select style={sheetInput} value={systemType}
+                    onChange={(e) => { setSystemType(e.target.value); setSystemId(''); setComponentId('') }}>
+                    <option value="hydraulic">Hydraulic</option>
+                    <option value="pneumatic">Pneumatic</option>
+                  </select>
+                )}
+              </Cell>
+              <Cell tour="hyd-testf-date" basis={160}>
+                <label style={sheetLabel}>Test Date</label>
+                <DateField value={testDate} onChange={setTestDate} />
+              </Cell>
+            </div>
+          </SheetSection>
+          <SheetSection icon="box" title="What Is Tested">
+            <div style={{ ...fieldRow, marginBottom: 0 }}>
+              <Cell tour="hyd-testf-system" basis={240} grow max={380}>
+                <label style={sheetLabel}>System</label>
+                <SearchableSelect value={systemId} onChange={setSystemId} options={systemOptions} placeholder="Search system…" />
+              </Cell>
+              <Cell tour="hyd-testf-component" basis={240} grow max={400}>
+                <label style={sheetLabel}>Component</label>
+                <SearchableSelect value={componentId} onChange={setComponentId} options={componentOptions} placeholder="Search component…" />
+              </Cell>
+              <Cell tour="hyd-testf-serial" basis={160}>
+                <label style={sheetLabel}>Component Serial No.</label>
+                <input style={sheetInput} value={componentSerial} maxLength={100} onChange={(e) => setComponentSerial(e.target.value)} />
+              </Cell>
+            </div>
+            <p style={sheetHint}>
+              Pick the system, the component, or both <Req />. {initial ? 'The medium follows the system (or component) tested.' : 'Changing the medium clears both pickers.'}
+            </p>
+          </SheetSection>
+        </>}
+        right={<>
+          <SheetSection icon="gear" title="Conditions">
+            <div style={fieldRow}>
+              <Cell tour="hyd-testf-standard" basis={220} grow>
+                <label style={sheetLabel}>Test Standard</label>
+                <input style={sheetInput} value={testStandard} maxLength={150} onChange={(e) => setTestStandard(e.target.value)} placeholder="ISO 10100 / ISO 4413 / RDSO spec" />
+              </Cell>
+            </div>
+            <div style={fieldRow}>
+              <Cell tour="hyd-testf-pressure" basis={130} grow>
+                <label style={sheetLabel}>Test Pressure (bar)</label>
+                <input style={sheetInput} type="number" min={0} step="any" value={testPressure} onChange={(e) => setTestPressure(e.target.value)} />
+              </Cell>
+              <Cell tour="hyd-testf-hold" basis={120} grow>
+                <label style={sheetLabel}>Hold Time (min)</label>
+                <input style={sheetInput} type="number" min={0} step="any" value={holdTime} onChange={(e) => setHoldTime(e.target.value)} />
+              </Cell>
+            </div>
+            <div style={fieldRow}>
+              <Cell tour="hyd-testf-fluid" basis={220} grow>
+                <label style={sheetLabel}>Test Medium</label>
+                <input style={sheetInput} value={testMedium} maxLength={100} onChange={(e) => setTestMedium(e.target.value)} placeholder="HLP 46, water-glycol, dry air…" />
+              </Cell>
+            </div>
+            <div style={{ ...fieldRow, marginBottom: 0 }}>
+              <Cell tour="hyd-testf-ambient" basis={110} grow>
+                <label style={sheetLabel}>Ambient (°C)</label>
+                <input style={sheetInput} type="number" step="any" value={ambientTemp} onChange={(e) => setAmbientTemp(e.target.value)} />
+              </Cell>
+              <Cell tour="hyd-testf-fluid-temp" basis={110} grow>
+                <label style={sheetLabel}>Fluid (°C)</label>
+                <input style={sheetInput} type="number" step="any" value={fluidTemp} onChange={(e) => setFluidTemp(e.target.value)} />
+              </Cell>
+            </div>
+          </SheetSection>
+          <SheetSection icon="users" title="People">
+            <div data-tour="hyd-testf-tested-by" style={{ marginBottom: 12 }}>
+              <label style={sheetLabel}>Tested By</label>
+              <SearchableSelect value={testedById} onChange={setTestedById} options={userOptions} placeholder="Search person…" />
+            </div>
+            <div data-tour="hyd-testf-witness">
+              <label style={sheetLabel}>Witnessed By</label>
+              <input style={sheetInput} value={witnessedBy} maxLength={200} onChange={(e) => setWitnessedBy(e.target.value)} placeholder="RDSO / customer inspector, name & designation" />
+            </div>
+          </SheetSection>
+        </>}
+      />
 
-      <div style={sectionStyle}>
-        <p style={{ ...sectionTitle, marginBottom: 14 }}>Test</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 280px', maxWidth: 440 }}>
-            <label style={labelStyle}>Title *</label>
-            <input style={inputStyle} value={title} maxLength={255} onChange={(e) => setTitle(e.target.value)} placeholder="Proof test — lift cylinder after rebuild" />
-          </div>
-          <div style={{ flex: '0 1 230px', minWidth: 200 }}>
-            <label style={labelStyle}>Test Type *</label>
-            <select style={inputStyle} value={testType} onChange={(e) => setTestType(e.target.value)}>
-              {Object.entries(TEST_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </div>
-          <div style={{ flex: '0 1 140px', minWidth: 130 }}>
-            <label style={labelStyle}>Medium</label>
-            {initial ? (
-              <div style={readOnlyBox}>{SYSTEM_TYPE_LABELS[systemType] || systemType}</div>
-            ) : (
-              <select style={inputStyle} value={systemType}
-                onChange={(e) => { setSystemType(e.target.value); setSystemId(''); setComponentId('') }}>
-                <option value="hydraulic">Hydraulic</option>
-                <option value="pneumatic">Pneumatic</option>
-              </select>
-            )}
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 160 }}>
-            <label style={labelStyle}>Test Date</label>
-            <DateField value={testDate} onChange={setTestDate} />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-          <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
-            <label style={labelStyle}>System</label>
-            <SearchableSelect value={systemId} onChange={setSystemId} options={systemOptions} placeholder="Search system…" />
-          </div>
-          <div style={{ flex: '1 1 260px', maxWidth: 400 }}>
-            <label style={labelStyle}>Component</label>
-            <SearchableSelect value={componentId} onChange={setComponentId} options={componentOptions} placeholder="Search component…" />
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Component Serial No.</label>
-            <input style={inputStyle} value={componentSerial} maxLength={100} onChange={(e) => setComponentSerial(e.target.value)} />
-          </div>
-        </div>
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '8px 0 0' }}>
-          Pick the system, the component, or both. {initial ? 'The medium follows the system (or component) tested.' : 'Changing the medium clears both pickers.'}
-        </p>
-      </div>
-
-      <div style={sectionStyle}>
-        <p style={{ ...sectionTitle, marginBottom: 14 }}>Conditions</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 220px', maxWidth: 300 }}>
-            <label style={labelStyle}>Test Standard</label>
-            <input style={inputStyle} value={testStandard} maxLength={150} onChange={(e) => setTestStandard(e.target.value)} placeholder="ISO 10100 / ISO 4413 / RDSO spec" />
-          </div>
-          <div style={{ flex: '0 1 140px', minWidth: 130 }}>
-            <label style={labelStyle}>Test Pressure (bar)</label>
-            <input style={inputStyle} type="number" min={0} step="any" value={testPressure} onChange={(e) => setTestPressure(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 130px', minWidth: 120 }}>
-            <label style={labelStyle}>Hold Time (min)</label>
-            <input style={inputStyle} type="number" min={0} step="any" value={holdTime} onChange={(e) => setHoldTime(e.target.value)} />
-          </div>
-          <div style={{ flex: '1 1 180px', maxWidth: 260 }}>
-            <label style={labelStyle}>Test Medium</label>
-            <input style={inputStyle} value={testMedium} maxLength={100} onChange={(e) => setTestMedium(e.target.value)} placeholder="HLP 46, water-glycol, dry air…" />
-          </div>
-          <div style={{ flex: '0 1 130px', minWidth: 120 }}>
-            <label style={labelStyle}>Ambient (°C)</label>
-            <input style={inputStyle} type="number" step="any" value={ambientTemp} onChange={(e) => setAmbientTemp(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 130px', minWidth: 120 }}>
-            <label style={labelStyle}>Fluid (°C)</label>
-            <input style={inputStyle} type="number" step="any" value={fluidTemp} onChange={(e) => setFluidTemp(e.target.value)} />
-          </div>
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
-          <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-            <label style={labelStyle}>Tested By</label>
-            <SearchableSelect value={testedById} onChange={setTestedById} options={userOptions} placeholder="Search person…" />
-          </div>
-          <div style={{ flex: '1 1 240px', maxWidth: 340 }}>
-            <label style={labelStyle}>Witnessed By</label>
-            <input style={inputStyle} value={witnessedBy} maxLength={200} onChange={(e) => setWitnessedBy(e.target.value)} placeholder="RDSO / customer inspector, name & designation" />
-          </div>
-        </div>
-      </div>
-
-      <div style={sectionStyle}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 10, flexWrap: 'wrap' }}>
-          <p style={sectionTitle}>
-            Readings ({filledCount}){failCount > 0 && <span style={{ color: DANGER.primary, marginLeft: 8 }}>{failCount} failing</span>}
-          </p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+        <SheetSection icon="list" title={`Readings (${filledCount})`} extra={<>
+          {failCount > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: '#b91c1c' }}>{failCount} failing</span>}
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {typical && (
-              <button type="button" style={secondaryBtnStyle} onClick={loadTypical}>Load typical readings — {TEST_TYPE_LABELS[testType]}</button>
+              <button data-tour="hyd-testf-typical-btn" type="button" style={sheetBtn('secondary')} onClick={loadTypical}>Load typical readings — {TEST_TYPE_LABELS[testType]}</button>
             )}
-            <button type="button" style={secondaryBtnStyle} onClick={() => setReadings([...readings, emptyRow()])}>+ Add Reading</button>
+            <button data-tour="hyd-testf-add-reading-btn" type="button" style={sheetBtn('secondary')} onClick={() => setReadings([...readings, emptyRow()])}><SheetIcon name="plus" size={14} />Add Reading</button>
+          </span>
+        </>}>
+          <p style={{ ...sheetHint, margin: '0 0 14px' }}>
+            Give a min and/or max limit with a measured value and the result is judged automatically. For readings without numeric limits (visual checks, ISO codes), record the measurement as text and mark the result yourself.
+          </p>
+          <div data-tour="hyd-testf-readings" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {readings.map((r) => {
+              const auto = judgeRow(r)
+              return (
+                <div key={r.key} style={rowStyle}>
+                  <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
+                    <label style={rowLabel}>Parameter <Req /></label>
+                    <input style={rowInput} value={r.parameter} maxLength={200} placeholder="Pressure drop over hold time" onChange={(e) => updateRow(r.key, { parameter: e.target.value })} />
+                  </div>
+                  <div style={{ flex: '0 1 80px', minWidth: 70 }}>
+                    <label style={rowLabel}>Unit</label>
+                    <input style={rowInput} value={r.unit} maxLength={30} placeholder="bar" onChange={(e) => updateRow(r.key, { unit: e.target.value })} />
+                  </div>
+                  <div style={{ flex: '1 1 160px', maxWidth: 240 }}>
+                    <label style={rowLabel}>Specification</label>
+                    <input style={rowInput} value={r.specification} maxLength={255} onChange={(e) => updateRow(r.key, { specification: e.target.value })} />
+                  </div>
+                  <div style={{ flex: '0 1 90px', minWidth: 80 }}>
+                    <label style={rowLabel}>Min</label>
+                    <input style={rowInput} type="number" step="any" value={r.min} onChange={(e) => updateRow(r.key, { min: e.target.value })} />
+                  </div>
+                  <div style={{ flex: '0 1 90px', minWidth: 80 }}>
+                    <label style={rowLabel}>Max</label>
+                    <input style={rowInput} type="number" step="any" value={r.max} onChange={(e) => updateRow(r.key, { max: e.target.value })} />
+                  </div>
+                  <div style={{ flex: '0 1 100px', minWidth: 90 }}>
+                    <label style={rowLabel}>Measured</label>
+                    <input style={rowInput} type="number" step="any" value={r.measured} onChange={(e) => updateRow(r.key, { measured: e.target.value })} />
+                  </div>
+                  <div style={{ flex: '1 1 140px', maxWidth: 200 }}>
+                    <label style={rowLabel}>Measured (text)</label>
+                    <input style={rowInput} value={r.measuredText} maxLength={255} placeholder="18/16/13, no leak…" onChange={(e) => updateRow(r.key, { measuredText: e.target.value })} />
+                  </div>
+                  <div style={{ flex: '0 1 110px', minWidth: 100 }}>
+                    <label style={rowLabel}>Result</label>
+                    {auto ? (
+                      <div style={{ padding: '7px 0' }} title="Judged from the limits and the measured value">
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${READING_RESULT_HEX[auto]}1a`, color: READING_RESULT_HEX[auto], whiteSpace: 'nowrap' }}>
+                          {READING_RESULT_LABELS[auto]} · auto
+                        </span>
+                      </div>
+                    ) : (
+                      <select style={rowInput} value={r.result} onChange={(e) => updateRow(r.key, { result: e.target.value })}>
+                        {Object.entries(READING_RESULT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                      </select>
+                    )}
+                  </div>
+                  <div style={{ flex: '1 1 160px', maxWidth: 240 }}>
+                    <label style={rowLabel}>Remarks</label>
+                    <input style={rowInput} value={r.remarks} onChange={(e) => updateRow(r.key, { remarks: e.target.value })} />
+                  </div>
+                  <button type="button" style={{ ...sheetBtn('ghost', '#b91c1c'), paddingBottom: 9 }} onClick={() => setReadings(readings.filter((x) => x.key !== r.key))} aria-label="Remove reading"><SheetIcon name="trash" size={16} /></button>
+                </div>
+              )
+            })}
+            {readings.length === 0 && <p style={{ ...sheetHint, margin: 0 }}>No readings yet — a test needs at least one reading before it can be completed.</p>}
           </div>
-        </div>
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>
-          Give a min and/or max limit with a measured value and the result is judged automatically. For readings without numeric limits (visual checks, ISO codes), record the measurement as text and mark the result yourself.
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {readings.map((r) => {
-            const auto = judgeRow(r)
-            return (
-              <div key={r.key} style={rowStyle}>
-                <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
-                  <label style={rowLabel}>Parameter *</label>
-                  <input style={rowInput} value={r.parameter} maxLength={200} placeholder="Pressure drop over hold time" onChange={(e) => updateRow(r.key, { parameter: e.target.value })} />
-                </div>
-                <div style={{ flex: '0 1 80px', minWidth: 70 }}>
-                  <label style={rowLabel}>Unit</label>
-                  <input style={rowInput} value={r.unit} maxLength={30} placeholder="bar" onChange={(e) => updateRow(r.key, { unit: e.target.value })} />
-                </div>
-                <div style={{ flex: '1 1 160px', maxWidth: 240 }}>
-                  <label style={rowLabel}>Specification</label>
-                  <input style={rowInput} value={r.specification} maxLength={255} onChange={(e) => updateRow(r.key, { specification: e.target.value })} />
-                </div>
-                <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-                  <label style={rowLabel}>Min</label>
-                  <input style={rowInput} type="number" step="any" value={r.min} onChange={(e) => updateRow(r.key, { min: e.target.value })} />
-                </div>
-                <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-                  <label style={rowLabel}>Max</label>
-                  <input style={rowInput} type="number" step="any" value={r.max} onChange={(e) => updateRow(r.key, { max: e.target.value })} />
-                </div>
-                <div style={{ flex: '0 1 100px', minWidth: 90 }}>
-                  <label style={rowLabel}>Measured</label>
-                  <input style={rowInput} type="number" step="any" value={r.measured} onChange={(e) => updateRow(r.key, { measured: e.target.value })} />
-                </div>
-                <div style={{ flex: '1 1 140px', maxWidth: 200 }}>
-                  <label style={rowLabel}>Measured (text)</label>
-                  <input style={rowInput} value={r.measuredText} maxLength={255} placeholder="18/16/13, no leak…" onChange={(e) => updateRow(r.key, { measuredText: e.target.value })} />
-                </div>
-                <div style={{ flex: '0 1 110px', minWidth: 100 }}>
-                  <label style={rowLabel}>Result</label>
-                  {auto ? (
-                    <div style={{ padding: '7px 0' }} title="Judged from the limits and the measured value">
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${READING_RESULT_HEX[auto]}1a`, color: READING_RESULT_HEX[auto], whiteSpace: 'nowrap' }}>
-                        {READING_RESULT_LABELS[auto]} · auto
-                      </span>
-                    </div>
-                  ) : (
-                    <select style={rowInput} value={r.result} onChange={(e) => updateRow(r.key, { result: e.target.value })}>
-                      {Object.entries(READING_RESULT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                    </select>
-                  )}
-                </div>
-                <div style={{ flex: '1 1 160px', maxWidth: 240 }}>
-                  <label style={rowLabel}>Remarks</label>
-                  <input style={rowInput} value={r.remarks} onChange={(e) => updateRow(r.key, { remarks: e.target.value })} />
-                </div>
-                <button type="button" style={removeBtn} onClick={() => setReadings(readings.filter((x) => x.key !== r.key))} aria-label="Remove reading">×</button>
-              </div>
-            )
-          })}
-          {readings.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No readings yet — a test needs at least one reading before it can be completed.</p>}
-        </div>
-      </div>
+        </SheetSection>
 
-      <div style={sectionStyle}>
-        <p style={{ ...sectionTitle, marginBottom: 14 }}>Notes</p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ flex: '1 1 300px' }}>
-            <label style={labelStyle}>Observations</label>
-            <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={observations} onChange={(e) => setObservations(e.target.value)}
-              placeholder="What was seen during the test — sweating at a fitting, noise, temperature rise…" />
+        <SheetSection icon="chat" title="Notes" extra={<Optional />}>
+          <div style={{ ...fieldRow, marginBottom: 0 }}>
+            <Cell tour="hyd-testf-observations" basis={300} grow>
+              <label style={sheetLabel}>Observations</label>
+              <textarea style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={observations} onChange={(e) => setObservations(e.target.value)}
+                placeholder="What was seen during the test — sweating at a fitting, noise, temperature rise…" />
+            </Cell>
+            <Cell tour="hyd-testf-remarks" basis={300} grow>
+              <label style={sheetLabel}>Remarks</label>
+              <textarea style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+            </Cell>
           </div>
-          <div style={{ flex: '1 1 300px' }}>
-            <label style={labelStyle}>Remarks</label>
-            <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-          </div>
-        </div>
+        </SheetSection>
       </div>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button type="submit" disabled={saving} style={{
-          padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-          background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
-          boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-        }}>
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-      </div>
-    </form>
+    </HydFormShell>
   )
 }

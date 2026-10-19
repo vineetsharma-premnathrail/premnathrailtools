@@ -11,6 +11,7 @@ import MasterEditDialog from '@/components/store/MasterEditDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 type Uom = { code: string; label: string }
 
@@ -28,6 +29,7 @@ const toUom = (o: { value: string; label: string }): Uom => ({
 
 export default function StoreUomsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
+  const { can, canDelete } = useCan()
   const [uoms, setUoms] = useState<Uom[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -84,9 +86,11 @@ export default function StoreUomsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Units of Measure</h1>
         </div>
-        <button data-tour="uom-add-btn" onClick={() => setEditing('new')} style={primaryBtnStyle}>
-          <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> Add Unit
-        </button>
+        {can('store', 'uoms', 'create') && (
+          <button data-tour="uom-add-btn" onClick={() => setEditing('new')} style={primaryBtnStyle}>
+            <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> Add Unit
+          </button>
+        )}
       </div>
 
       <StoreSettingsNav />
@@ -129,8 +133,8 @@ export default function StoreUomsPage() {
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body, fontFamily: 'monospace' }}>{u.code}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{u.label || '—'}</td>
                 <td style={{ padding: '0 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <span onClick={() => setEditing(u)} style={{ color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Edit</span>
-                  <span onClick={() => setDeleteTarget(u)} style={{ color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginLeft: 14 }}>Delete</span>
+                  {can('store', 'uoms', 'edit') && <span data-tour="uom-edit-link" onClick={() => setEditing(u)} style={{ color: '#FF6A2A', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Edit</span>}
+                  {canDelete('store', 'uoms', null) && <span data-tour="uom-delete-link" onClick={() => setDeleteTarget(u)} style={{ color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginLeft: 14 }}>Delete</span>}
                 </td>
               </tr>
             ))}

@@ -4,6 +4,7 @@ from sqlalchemy import String, Integer, Float, Date, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
+from app.modules.store.models._types import Money, Quantity, Rate
 
 # The single append-only ledger every Store doc type posts to. `quantity` is
 # always stored positive; direction (in vs out of on-hand stock) is derived
@@ -32,6 +33,13 @@ STORE_STOCK_TXN_TYPES = (
     "blocked_to_quality",  # BLOCKED -> QUALITY — reworked/repaired, back for re-inspection
     "free_block",        # FREE -> BLOCKED    — non-conformance found in usable stock (manual NCR)
     "quality_hold",      # FREE -> QUALITY    — stock pulled back for re-inspection (manual lot)
+    # Job work / subcontracting (SAP special stock O). "Vendor" = WITH VENDOR
+    # stock — sent out on a job-work challan, still ours and still valued.
+    "jobwork_out",         # FREE -> VENDOR     — sent to the job-work vendor on a challan
+    "jobwork_in",          # VENDOR -> FREE     — came back from the vendor (same item)
+    "jobwork_to_quality",  # VENDOR -> QUALITY  — came back, held for a job work inspection lot
+    "jobwork_to_blocked",  # VENDOR -> BLOCKED  — came back damaged / rejected
+    "jobwork_consume",     # out of VENDOR      — used up at the vendor (into the processed item, or process scrap)
 )
 
 # Stock type(s) each transaction type touches: (from, to). None = outside the
@@ -47,13 +55,16 @@ STORE_STOCK_TYPE_EFFECT: dict[str, tuple[str | None, str | None]] = {
     "quality_block": ("quality", "blocked"), "blocked_release": ("blocked", "free"),
     "blocked_to_quality": ("blocked", "quality"), "free_block": ("free", "blocked"),
     "quality_hold": ("free", "quality"),
+    "jobwork_out": ("free", "vendor"), "jobwork_in": ("vendor", "free"),
+    "jobwork_to_quality": ("vendor", "quality"), "jobwork_to_blocked": ("vendor", "blocked"),
+    "jobwork_consume": ("vendor", None),
 }
 
 # Where a transaction's quantity came from, for traceability back to the
 # source document (a GRN number, an Issue number, ...). reference_number is
 # free text rather than a hard FK, since the source can be in another module
 # (P2P) or not exist yet (a manual correction has no source doc).
-STORE_STOCK_TXN_REFERENCE_TYPES = ("grn", "material_issue", "material_return", "stock_transfer", "stock_adjustment", "work_order", "manual", "maintenance_work_order", "inspection_lot", "ncr")
+STORE_STOCK_TXN_REFERENCE_TYPES = ("grn", "material_issue", "material_return", "stock_transfer", "stock_adjustment", "work_order", "manual", "maintenance_work_order", "inspection_lot", "ncr", "job_work_receipt")
 
 
 class StoreStockTransaction(Base, TimestampMixin):
@@ -79,3 +90,13 @@ class StoreStockTransaction(Base, TimestampMixin):
     transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    # Valuation (foundation plan §4.3) — written by services/valuation.py only
+    # while the Store setting `valuation_enabled` is on; NULL on legacy rows.
+    # `value` is always positive like `quantity`; direction comes from the type.
+    unit_cost: Mapped[float | None] = mapped_column(Rate, nullable=True)
+    value: Mapped[float | None] = mapped_column(Money, nullable=True)
+    cost_source: Mapped[str | None] = mapped_column(String(20), nullable=True)  # see STORE_COST_SOURCES
+    # Company-wide totals for the item after this row (stock card + integrity check).
+    valuation_qty_after: Mapped[float | None] = mapped_column(Quantity, nullable=True)
+    valuation_value_after: Mapped[float | None] = mapped_column(Money, nullable=True)

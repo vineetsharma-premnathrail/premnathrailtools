@@ -27,6 +27,7 @@ from urllib.parse import urlparse, unquote
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from jose import JWTError, jwt
 from app.core.config import settings
 from .rate_store import build_rate_store
 
@@ -45,7 +46,12 @@ def get_rate_store():
 # A07 — Rate limit buckets (requests / window_seconds)
 # ─────────────────────────────────────────────────────────────────────────────
 RATE_CONFIG = {
-    "auth":    {"limit": 5,   "window": 60},   # login / OAuth — max 5 attempts/min
+    "auth":    {"limit": 5,   "window": 60},   # other /auth routes — max 5 attempts/min
+    # Microsoft / Teams sign-in and session refresh. No passwords pass through
+    # these (Microsoft checks credentials; refresh tokens are 256-bit random),
+    # and the whole office shares one public IP — every signed-in browser
+    # refreshes every 15 min — so only a flood guard applies here.
+    "sso":     {"limit": 600, "window": 60},
     "delete":  {"limit": 10,  "window": 60},   # DELETE — max 10 deletes/min per IP
     "write":   {"limit": 40,  "window": 60},   # POST / PATCH
     "default": {"limit": 200, "window": 60},   # everything else (GET)
@@ -57,6 +63,16 @@ BULK_ID_PATTERN = re.compile(r"(?:ids|id_list|delete_ids)\s*=|[\[\{].*\d+.*,.*\d
 # A07 — Temporary IP ban: block IP for BAN_DURATION_SECONDS after BAN_THRESHOLD violations
 BAN_THRESHOLD = 10
 BAN_DURATION_SECONDS = 600  # 10-minute ban window
+
+# A01 — Record-ID guessing (IDOR probing) per signed-in user. Company users skip
+# the per-IP limits above (one shared office IP), so this is what catches an
+# insider walking ?id=1…5000: OBJECT_DENIAL_LIMIT *different* records answered
+# 403/404 (counted per record — a page's sub-requests for one record count
+# once) within OBJECT_DENIAL_WINDOW pauses that account for OBJECT_PAUSE_SECONDS.
+OBJECT_DENIAL_LIMIT = 25
+OBJECT_DENIAL_WINDOW = 300
+OBJECT_PAUSE_SECONDS = 600
+RECORD_PATH_RE = re.compile(r"/\d+(?:/|$)")
 
 # A04 — Max body sizes
 MAX_BODY_BYTES = 10 * 1024 * 1024 * 1024   # 10 GB (file uploads)
@@ -139,6 +155,10 @@ PUBLIC_PATHS = {
     "/api/v1/auth/me",
 }
 PUBLIC_PREFIXES = ("/static/",)
+# Signed share links (Technical Offer Request emails) are opened by recipients
+# with no portal session. Exempt ONLY this exact pattern — never a prefix; the
+# route's own signed-token check (crm/routes/documents.py) is the real gate.
+SHARED_DOC_RE = re.compile(r"^/api/v1/crm/documents/\d+/shared-content$")
 
 # A08 — Allowed Content-Type values for mutating requests
 ALLOWED_CONTENT_TYPES = {
@@ -172,8 +192,62 @@ def _client_ip(request: Request) -> str:
     return direct_ip
 
 
+# Sign-in / refresh routes: never IP-banned and only flood-limited (see
+# RATE_CONFIG["sso"]), so a company user can always get back in.
+SSO_PATHS = {
+    "/api/v1/auth/microsoft-login",
+    "/api/v1/auth/refresh",
+    "/api/v1/auth/teams-token",
+    "/api/v1/auth/teams-exchange",
+}
+
+
+def _company_domain() -> str:
+    return (settings.DOMAIN_EMAIL or "premnathrail.com").strip().lstrip("@").lower()
+
+
+def _is_company_user(request: Request) -> bool:
+    """True when the request carries a portal token WE signed for an
+    @<company domain> account. Expiry is ignored on purpose — a token that
+    just lapsed still proves who sent it (the route itself still answers 401
+    and the browser refreshes). Such requests are never rate-limited, never
+    counted as violations and never blocked by an IP ban: the whole office
+    shares one public IP, so per-IP limits would lock everyone out at once."""
+    token = request.cookies.get("session_token")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        token = auth[7:] if auth.startswith("Bearer ") else ""
+    if not token:
+        return False
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+    except JWTError:
+        return False
+    email = str(payload.get("email") or "").strip().lower()
+    return email.endswith("@" + _company_domain())
+
+
+def _token_user_key(request: Request) -> str | None:
+    """Stable per-account key from a portal token we signed (expiry ignored, as
+    in _is_company_user) — used to pause one account, never the shared IP."""
+    token = request.cookies.get("session_token")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        token = auth[7:] if auth.startswith("Bearer ") else ""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
+    except JWTError:
+        return None
+    sub = payload.get("sub") or payload.get("email")
+    return f"user:{sub}" if sub else None
+
+
 def _rate_bucket(path: str, method: str) -> str:
     _AUTH_EXCLUDE = {"/api/v1/auth/me", "/api/v1/auth/logout", "/api/v1/auth/callback"}
+    if path in SSO_PATHS:
+        return "sso"
     if "/auth" in path and path not in _AUTH_EXCLUDE:
         return "auth"
     if method == "DELETE":
@@ -190,8 +264,8 @@ def _is_rate_limited(bucket: str, ip: str) -> bool:
     return _store.is_rate_limited(f"{bucket}:{ip}", cfg["limit"], cfg["window"])
 
 
-def _record_violation(ip: str) -> bool:
-    if _is_exempt_from_abuse_checks(ip):
+def _record_violation(ip: str, trusted: bool = False) -> bool:
+    if trusted or _is_exempt_from_abuse_checks(ip):
         return False
     banned = _store.record_violation(ip, BAN_DURATION_SECONDS, BAN_THRESHOLD)
     if banned:
@@ -261,9 +335,12 @@ class OWASPMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         request_id = str(uuid.uuid4())[:8]
+        trusted = _is_company_user(request)
 
         # ── A07: Check IP ban first (fastest reject) ──────────────────────
-        if _is_banned(ip) and not _is_exempt_from_abuse_checks(ip):
+        # Company users and sign-in routes skip it, so an office IP ban can
+        # never lock @company staff out of the portal or out of logging in.
+        if not trusted and path not in SSO_PATHS and _is_banned(ip) and not _is_exempt_from_abuse_checks(ip):
             logger.warning("[A07] Banned IP request | ip=%s path=%s", ip, path)
             return JSONResponse(
                 status_code=429,
@@ -271,9 +348,29 @@ class OWASPMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Too many violations. Try again later."},
             )
 
+        # ── A01: Account paused for record-ID guessing (see OBJECT_DENIAL_*) ─
+        user_key = _token_user_key(request) if path.startswith("/api/") else None
+        if user_key and path not in SSO_PATHS and _store.is_banned(user_key) and not _is_exempt_from_abuse_checks(ip):
+            logger.warning("[A01] Paused account request | %s ip=%s path=%s", user_key, ip, path)
+            return JSONResponse(
+                status_code=429,
+                headers={"Retry-After": str(OBJECT_PAUSE_SECONDS)},
+                content={"detail": (
+                    f"Your access is paused for {OBJECT_PAUSE_SECONDS // 60} minutes: this account opened "
+                    f"{OBJECT_DENIAL_LIMIT} different records it has no access to (or that don't exist) within "
+                    f"{OBJECT_DENIAL_WINDOW // 60} minutes, which looks like record IDs being guessed. "
+                    "If you were following broken or old links, wait and try again; if it keeps happening, "
+                    "ask an admin to check your role's access in Organization › Role & Permissions."
+                )},
+            )
+
         # ── A01: Auth pre-check — API routes ─────────────────────────────
         if path.startswith("/api/"):
-            is_public = path in PUBLIC_PATHS or any(path.startswith(p) for p in PUBLIC_PREFIXES)
+            is_public = (
+                path in PUBLIC_PATHS
+                or any(path.startswith(p) for p in PUBLIC_PREFIXES)
+                or bool(SHARED_DOC_RE.match(path))
+            )
             if not is_public:
                 auth_header = request.headers.get("Authorization", "")
                 has_bearer = auth_header.startswith("Bearer ")
@@ -294,7 +391,7 @@ class OWASPMiddleware(BaseHTTPMiddleware):
         # ── A04: HTTP method allowlist ────────────────────────────────────
         if method not in ALLOWED_METHODS:
             logger.warning("[A04] Method not allowed | ip=%s method=%s path=%s", ip, method, path)
-            _record_violation(ip)
+            _record_violation(ip, trusted)
             return JSONResponse(status_code=405, content={"detail": "Method not allowed."})
 
         # ── Bulk DELETE protection ─────────────────────────────────────────
@@ -305,7 +402,7 @@ class OWASPMiddleware(BaseHTTPMiddleware):
                     "[BULK-DELETE] Bulk ID query blocked | ip=%s path=%s query=%s rid=%s",
                     ip, path, query_str[:200], request_id,
                 )
-                _record_violation(ip)
+                _record_violation(ip, trusted)
                 return JSONResponse(
                     status_code=400,
                     content={"detail": "Bulk delete is not allowed. Delete one record at a time."},
@@ -315,7 +412,7 @@ class OWASPMiddleware(BaseHTTPMiddleware):
                     "[BULK-DELETE] Collection DELETE blocked | ip=%s path=%s rid=%s",
                     ip, path, request_id,
                 )
-                _record_violation(ip)
+                _record_violation(ip, trusted)
                 return JSONResponse(status_code=405, content={"detail": "Bulk delete is not allowed."})
 
         # ── A03: Injection detection in URL + query string ────────────────
@@ -324,7 +421,7 @@ class OWASPMiddleware(BaseHTTPMiddleware):
         full_url = unquote(str(request.url))
         if INJECTION_PATTERNS.search(full_url):
             logger.warning("[A03] Injection attempt in URL | ip=%s url=%s rid=%s", ip, full_url[:300], request_id)
-            _record_violation(ip)
+            _record_violation(ip, trusted)
             return JSONResponse(status_code=400, content={"detail": "Bad request."})
 
         # ── A03: Injection detection in suspicious headers ────────────────
@@ -332,7 +429,7 @@ class OWASPMiddleware(BaseHTTPMiddleware):
             hval = request.headers.get(header_name, "")
             if hval and INJECTION_PATTERNS.search(hval):
                 logger.warning("[A03] Injection in header %s | ip=%s rid=%s", header_name, ip, request_id)
-                _record_violation(ip)
+                _record_violation(ip, trusted)
                 return JSONResponse(status_code=400, content={"detail": "Bad request."})
 
         # ── A03: SQLi scan on JSON body (POST/PATCH/DELETE to /api/ only) ──
@@ -350,7 +447,7 @@ class OWASPMiddleware(BaseHTTPMiddleware):
                         body_text = body_bytes.decode("utf-8", errors="ignore")
                         if SQLI_BODY_PATTERNS.search(body_text):
                             logger.warning("[A03] SQLi in request body | ip=%s path=%s rid=%s", ip, path, request_id)
-                            _record_violation(ip)
+                            _record_violation(ip, trusted)
                             return JSONResponse(status_code=400, content={"detail": "Bad request."})
                     except Exception:
                         pass
@@ -359,14 +456,14 @@ class OWASPMiddleware(BaseHTTPMiddleware):
         for param_value in request.query_params.values():
             if _check_ssrf(param_value):
                 logger.warning("[A10] SSRF in query param | ip=%s param=%s rid=%s", ip, param_value[:100], request_id)
-                _record_violation(ip)
+                _record_violation(ip, trusted)
                 return JSONResponse(status_code=400, content={"detail": "Bad request."})
 
         for ssrf_header in ("X-Forwarded-For", "X-Real-IP"):
             hval = request.headers.get(ssrf_header, "")
             if hval and _check_ssrf(hval):
                 logger.warning("[A10] SSRF in header %s | ip=%s rid=%s", ssrf_header, ip, request_id)
-                _record_violation(ip)
+                _record_violation(ip, trusted)
                 return JSONResponse(status_code=400, content={"detail": "Bad request."})
 
         # ── A04: Block oversized bodies ───────────────────────────────────
@@ -394,9 +491,9 @@ class OWASPMiddleware(BaseHTTPMiddleware):
 
         # ── A07: Rate limiting ────────────────────────────────────────────
         bucket = _rate_bucket(path, method)
-        if _is_rate_limited(bucket, ip):
+        if not trusted and _is_rate_limited(bucket, ip):
             logger.warning("[A07] Rate limit hit | ip=%s bucket=%s path=%s rid=%s", ip, bucket, path, request_id)
-            _record_violation(ip)
+            _record_violation(ip, trusted=bucket == "sso")
             cfg = RATE_CONFIG[bucket]
             return JSONResponse(
                 status_code=429,
@@ -409,11 +506,26 @@ class OWASPMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         duration_ms = round((time.time() - start) * 1000)
 
+        # ── A01: Track record-ID guessing per account (403/404 on /…/<id>) ─
+        if (
+            user_key
+            and response.status_code in (403, 404)
+            and RECORD_PATH_RE.search(path)
+            and not _is_exempt_from_abuse_checks(ip)
+            and _store.track_distinct(f"objdeny:{user_key}", path[:RECORD_PATH_RE.search(path).end()].rstrip("/"),
+                                  OBJECT_DENIAL_WINDOW, OBJECT_DENIAL_LIMIT)
+        ):
+            logger.critical(
+                "[A01] Possible record-ID enumeration — account paused %ds | %s ip=%s last=%s %s rid=%s",
+                OBJECT_PAUSE_SECONDS, user_key, ip, method, path, request_id,
+            )
+            _store.record_violation(user_key, OBJECT_PAUSE_SECONDS, 1)
+
         # ── A01: Track path scanning (mass 404s) ──────────────────────────
         if response.status_code == 404 and path.startswith("/api/"):
-            if _track_404(ip):
+            if not trusted and _track_404(ip):
                 logger.warning("[A01] Path scanning detected | ip=%s", ip)
-                _record_violation(ip)
+                _record_violation(ip, trusted)
 
         # ── A09: Structured logging ───────────────────────────────────────
         if response.status_code >= 400:

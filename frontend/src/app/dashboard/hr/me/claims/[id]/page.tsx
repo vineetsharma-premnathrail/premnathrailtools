@@ -9,6 +9,8 @@ import MyHrTabs from '@/components/hr/MyHrTabs'
 import ClaimDetail from '@/components/hr/admin/ClaimDetail'
 import { PageHeader } from '@/components/hr/admin/adminUi'
 import { secondaryBtnStyle } from '@/components/shared/ui'
+import { useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
 export default function MyClaimDetailPage() {
   // Self-service: any logged-in user (the backend only returns the claim to
@@ -16,10 +18,13 @@ export default function MyClaimDetailPage() {
   const { user, isLoading } = useAuth()
   const router = useRouter()
   const params = useParams<{ id: string }>()
-  const claimId = Number(params?.id)
+  const { id: claimIdResolved, error: linkError } = useRecordId(params?.id)
+  const claimId = claimIdResolved ?? 0
   const [claim, setClaim] = useState<HrExpenseClaim | null>(null)
 
   if (isLoading || !user) return null
+  if (linkError) return (<div><HrNav /><MyHrTabs /><InvalidRecordLink message={linkError} listHref="/dashboard/hr/me/claims" listLabel="Back to my claims" /></div>)
+  if (!claimId) return <div><HrNav /><MyHrTabs /></div>
 
   return (
     <div>

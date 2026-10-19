@@ -5,22 +5,18 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
 import { RndProject, RndPrototype, RndPrototypeBomItemInput, RndStoreItemLookup } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, BORDER } from '@/lib/theme'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import { secondaryBtnStyle } from '@/components/shared/ui'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import RndNav from '@/components/rnd/RndNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath } from '@/lib/recordRef'
+import { useUrlProjectId } from '@/components/rnd/projectLink'
 import { extractErrorMessages } from '@/lib/validation'
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
+const inputStyle = sheetInput
+const labelStyle = sheetLabel
 
 const formatInr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 
@@ -216,11 +212,12 @@ function BomEditor({ lines, onChange, onError }: { lines: BomLine[]; onChange: (
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
         <button
+          data-tour="rnd-pnf-add-line-btn"
           type="button"
           onClick={() => onChange([...lines, blankLine()])}
-          style={{ padding: '8px 14px', borderRadius: 10, border: `1px dashed ${BORDER.normal}`, background: 'transparent', color: '#FF6A2A', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+          style={sheetBtn('secondary')}
         >
-          + Add line
+          <SheetIcon name="plus" size={15} color={SHEET.BLUE} />Add line
         </button>
         <div style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading }}>
           BOM Total: {formatInr(total)}
@@ -246,7 +243,10 @@ function NewRndPrototypePageInner() {
 
   const [projects, setProjects] = useState<RndProject[]>([])
 
-  const [projectId, setProjectId] = useState(searchParams.get('project_id') || '')
+  const [projectId, setProjectId] = useState('')
+  // ?project_id=<signed ref> — resolved into the project select's numeric id.
+  const projectRef = searchParams.get('project_id')
+  const projectLink = useUrlProjectId(projectRef, setProjectId)
   const [name, setName] = useState('')
   const [version, setVersion] = useState('v1')
   const [buildDate, setBuildDate] = useState('')
@@ -263,7 +263,8 @@ function NewRndPrototypePageInner() {
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load R&D projects.')))
   }, [isAuthorized])
 
-  const backHref = `/dashboard/rnd/prototypes${searchParams.get('project_id') ? `?project_id=${searchParams.get('project_id')}` : ''}`
+  // Back keeps the list's project filter by passing the same signed ref along.
+  const backHref = projectRef ? `/dashboard/rnd/prototypes?project_id=${encodeURIComponent(projectRef)}` : '/dashboard/rnd/prototypes'
 
   const handleSubmit = async () => {
     setError('')
@@ -283,7 +284,7 @@ function NewRndPrototypePageInner() {
         description: description.trim() || undefined,
         bom_items: bom.items,
       })
-      router.push(`/dashboard/rnd/prototypes/${proto.id}`)
+      router.push(recordPath('/dashboard/rnd/prototypes', proto))
     } catch (err) {
       setError(extractErrorMessages(err, 'Failed to create prototype.'))
     } finally {
@@ -292,74 +293,88 @@ function NewRndPrototypePageInner() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (projectLink.error) return (<div><RndNav /><InvalidRecordLink message={projectLink.error} listHref="/dashboard/rnd/prototypes" listLabel="Back to prototypes" /></div>)
+
+  const draftTotal = bomLines.reduce((sum, l) => sum + lineCost(l), 0)
 
   return (
     <div style={{ width: '100%' }}>
-      <RndNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            R&amp;D Module
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New Prototype</h1>
-        </div>
-        <button onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
-
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Prototype Details</h2>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 18 }}>
-          <div style={{ flex: '1 1 300px', minWidth: 240, maxWidth: 460 }}>
-            <label style={labelStyle}>Project *</label>
-            <SearchableSelect
-              value={projectId}
-              onChange={setProjectId}
-              options={projects.map((p) => ({ value: String(p.id), label: `${p.project_number} — ${p.title}` }))}
-              placeholder="Search R&D project…"
-            />
+      <FormPage
+        tour="rnd-pnf-form"
+        nav={<RndNav />}
+        icon="box"
+        title="New Prototype"
+        subtitle="A physical build of an R&D project — its details and parts list (BOM)."
+        onBack={() => router.push(backHref)} backTour="rnd-pnf-back-btn"
+        footer={<>
+          <button data-tour="rnd-pnf-cancel-btn" onClick={() => router.push(backHref)} disabled={submitting} type="button" style={sheetBtn('secondary', SHEET.INK, submitting)}>
+            Cancel
+          </button>
+          <button data-tour="rnd-pnf-submit-btn" onClick={handleSubmit} disabled={submitting} type="button" style={sheetBtn('primary', SHEET.BLUE, submitting)}>
+            <SheetIcon name="check" size={16} />{submitting ? 'Saving…' : 'Save Prototype'}
+          </button>
+        </>}
+      >
+        {error && (
+          <div style={{ padding: '16px 24px 0' }}>
+            <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+              {Array.isArray(error) ? error.join(' ') : error}
+            </div>
           </div>
-          <div style={{ flex: '1 1 240px', minWidth: 200, maxWidth: 380 }}>
-            <label style={labelStyle}>Name *</label>
-            <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 110px', minWidth: 90 }}>
-            <label style={labelStyle}>Version *</label>
-            <input style={inputStyle} value={version} onChange={(e) => setVersion(e.target.value)} />
-          </div>
-          <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Build Date</label>
-            <DateField value={buildDate} onChange={setBuildDate} />
-          </div>
-        </div>
-        <div>
-          <label style={labelStyle}>Description</label>
-          <textarea style={{ ...inputStyle, minHeight: 80 }} value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
-      </div>
+        )}
 
-      <div style={sectionStyle}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Prototype BOM</h2>
-        <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 14px' }}>
-          Pick parts from the Item Master, or type a free-text name for parts that aren&apos;t in it yet. Empty lines are ignored.
-        </p>
-        <BomEditor lines={bomLines} onChange={setBomLines} onError={setError} />
-      </div>
+        <SheetColumns
+          left={
+            <SheetSection icon="list" title="Prototype Details">
+              <div data-tour="rnd-pnf-project">
+                <label style={labelStyle}>Project <Req /></label>
+                <SearchableSelect
+                  value={projectId}
+                  onChange={setProjectId}
+                  options={projects.map((p) => ({ value: String(p.id), label: `${p.project_number} — ${p.title}` }))}
+                  placeholder="Search R&D project…"
+                />
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
+                <div data-tour="rnd-pnf-name" style={{ flex: '1 1 220px', minWidth: 180, maxWidth: 360 }}>
+                  <label style={labelStyle}>Name <Req /></label>
+                  <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+                </div>
+                <div data-tour="rnd-pnf-version" style={{ flex: '0 1 110px', minWidth: 90 }}>
+                  <label style={labelStyle}>Version <Req /></label>
+                  <input style={inputStyle} value={version} onChange={(e) => setVersion(e.target.value)} />
+                </div>
+                <div data-tour="rnd-pnf-build-date" style={{ flex: '0 1 170px', minWidth: 150 }}>
+                  <label style={labelStyle}>Build Date</label>
+                  <DateField value={buildDate} onChange={setBuildDate} />
+                </div>
+              </div>
+            </SheetSection>
+          }
+          right={<>
+            <SheetSection icon="chat" title="Description" extra={<Optional />}>
+              <div data-tour="rnd-pnf-description">
+                <textarea style={{ ...inputStyle, minHeight: 96, resize: 'vertical' }} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this build is for and how it differs from the last version" />
+              </div>
+            </SheetSection>
+            <SheetSection icon="rupee" title="Summary">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: SHEET.BODY }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>BOM lines</span><b>{bomLines.filter((l) => !isEmptyLine(l)).length}</b></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>BOM total</span><b>{formatInr(draftTotal)}</b></div>
+              </div>
+            </SheetSection>
+          </>}
+        />
 
-      <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-        <button onClick={() => router.push(backHref)} type="button" style={{ padding: '12px 22px', borderRadius: 12, border: `1px solid ${BORDER.normal}`, background: 'transparent', color: TEXT.secondary, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-          Cancel
-        </button>
-        <button onClick={handleSubmit} disabled={submitting} type="button" style={{ padding: '12px 26px', borderRadius: 12, border: 'none', cursor: submitting ? 'not-allowed' : 'pointer', background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: submitting ? 0.6 : 1 }}>
-          {submitting ? 'Saving…' : 'Save Prototype'}
-        </button>
-      </div>
+        <div data-tour="rnd-pnf-bom" style={{ padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }}>
+          <SheetSection icon="box" title="Prototype BOM">
+            <p style={{ ...sheetHint, margin: '-6px 0 14px' }}>
+              Pick parts from the Item Master, or type a free-text name for parts that aren&apos;t in it yet. Empty lines are ignored.
+            </p>
+            <BomEditor lines={bomLines} onChange={setBomLines} onError={setError} />
+          </SheetSection>
+        </div>
+      </FormPage>
     </div>
   )
 }

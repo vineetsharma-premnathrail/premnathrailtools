@@ -8,12 +8,13 @@ import { electricalApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
+import { SheetColumns, SheetSection, sheetInput, Optional } from '@/components/shared/FormSheet'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { ElectricalCable, ElectricalJobDetail, ElectricalMeta } from '@/types'
 import {
   inputStyle, labelStyle, sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallBtn, smallDangerBtn,
-  tableWrap, Pill, ErrorBanner, NoticeBanner, Modal, F, rowStyle,
-  CABLE_STATUS_LABELS, CABLE_STATUS_HEX, numOrNull, strOrNull,
+  tableWrap, Pill, ErrorBanner, NoticeBanner, Modal, ModalFooter, F, rowStyle,
+  CABLE_STATUS_LABELS, CABLE_STATUS_HEX, numOrNull, strOrNull, useJobFeatures,
 } from './shared'
 
 type Msg = string | string[]
@@ -33,6 +34,10 @@ const blankForm = (): CableForm => ({
 
 // `meta` is part of the shared tab contract; the cable schedule has no coded lists of its own.
 export default function CablesTab({ job, canEdit, onChanged }: { job: ElectricalJobDetail; meta: ElectricalMeta; canEdit: boolean; onChanged: () => void }) {
+  // Electrical › RRV Electrical Jobs › Cables (canEdit = job open + edit).
+  const { jf } = useJobFeatures()
+  const canAdd = ['draft', 'in_progress', 'handed_over'].includes(job.status) && jf('cables', 'create')
+  const canRemove = ['draft', 'in_progress', 'handed_over'].includes(job.status) && jf('cables', 'delete')
   const [cables, setCables] = useState<ElectricalCable[]>([])
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<Msg>('')
@@ -210,25 +215,25 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
             <strong style={{ color: TEXT.heading }}>{installedCount}</strong> of {cables.length} installed
           </span>
         </div>
-        {canEdit && <button type="button" style={primaryBtn} onClick={openAdd}>+ Add Cable</button>}
+        {canAdd && <button data-tour="elec-cables-add-btn" type="button" style={primaryBtn} onClick={openAdd}>+ Add Cable</button>}
       </div>
 
       <ErrorBanner error={error} />
       <NoticeBanner notice={notice} />
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
-        <div style={{ flex: '1 1 240px', maxWidth: 340 }}>
+        <div data-tour="elec-cables-search" style={{ flex: '1 1 240px', maxWidth: 340 }}>
           <label style={labelStyle}>Search</label>
           <input style={inputStyle} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tag, circuit, from / to, harness…" />
         </div>
-        <div style={{ flex: '0 1 160px', minWidth: 140 }}>
+        <div data-tour="elec-cables-status-filter" style={{ flex: '0 1 160px', minWidth: 140 }}>
           <label style={labelStyle}>Status</label>
           <select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
             {Object.entries(CABLE_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
-        <div style={{ flex: '0 1 170px', minWidth: 140 }}>
+        <div data-tour="elec-cables-harness-filter" style={{ flex: '0 1 170px', minWidth: 140 }}>
           <label style={labelStyle}>Harness</label>
           <select style={inputStyle} value={harnessFilter} onChange={(e) => setHarnessFilter(e.target.value)}>
             <option value="">All harnesses</option>
@@ -239,14 +244,14 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
         {filtered && (
           <button type="button" style={secondaryBtnStyle} onClick={() => { setSearch(''); setStatusFilter(''); setHarnessFilter('') }}>Clear</button>
         )}
-        <span style={{ fontSize: 12, color: TEXT.muted, marginLeft: 'auto', paddingBottom: 10 }}>
+        <span data-tour="elec-cables-totals" style={{ fontSize: 12, color: TEXT.muted, marginLeft: 'auto', paddingBottom: 10 }}>
           {filtered ? `${visible.length} of ${cables.length} cables` : `${cables.length} cable${cables.length === 1 ? '' : 's'}`}
           {' · '}Total length <strong style={{ color: TEXT.heading }}>{fmtNum(visibleLength)} m</strong>
         </span>
       </div>
 
       {canEdit && selectedVisible.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', padding: '10px 14px', marginBottom: 12, borderRadius: 12, background: 'rgba(255,106,42,0.07)', border: '1px solid rgba(255,106,42,0.25)' }}>
+        <div data-tour="elec-cables-bulk-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', padding: '10px 14px', marginBottom: 12, borderRadius: 12, background: 'rgba(255,106,42,0.07)', border: '1px solid rgba(255,106,42,0.25)' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>{selectedVisible.length} selected</span>
           <select aria-label="New status for selected cables" style={{ ...inputStyle, width: 'auto', minWidth: 160 }} value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
             <option value="">Set status to…</option>
@@ -259,13 +264,13 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
         </div>
       )}
 
-      <div style={tableWrap}>
+      <div data-tour="elec-cables-table" style={tableWrap}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: canEdit ? 1180 : 1020 }}>
           <thead>
             <tr>
               {headers.map((h, idx) => h === '__check__' ? (
                 <th key="check" style={{ ...thStyle, width: 36 }}>
-                  <input type="checkbox" aria-label="Select all visible cables" checked={allVisibleSelected}
+                  <input data-tour="elec-cables-select-all" type="checkbox" aria-label="Select all visible cables" checked={allVisibleSelected}
                     disabled={!visible.length} onChange={toggleAllVisible} />
                 </th>
               ) : <th key={`${h}-${idx}`} style={thStyle}>{h}</th>)}
@@ -307,8 +312,8 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
                 {canEdit && (
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button type="button" style={smallBtn} disabled={busy} onClick={() => openEdit(c)}>Edit</button>
-                      <button type="button" style={smallDangerBtn} disabled={busy} onClick={() => setDeleting(c)}>Delete</button>
+                      <button data-tour="elec-cable-edit-btn" type="button" style={smallBtn} disabled={busy} onClick={() => openEdit(c)}>Edit</button>
+                      {canRemove && <button data-tour="elec-cable-delete-btn" type="button" style={smallDangerBtn} disabled={busy} onClick={() => setDeleting(c)}>Delete</button>}
                     </div>
                   </td>
                 )}
@@ -318,64 +323,81 @@ export default function CablesTab({ job, canEdit, onChanged }: { job: Electrical
         </table>
       </div>
 
-      <Modal open={formOpen} title={editing ? `Edit Cable ${editing.cable_tag}` : 'Add Cable'} onClose={() => setFormOpen(false)} width={720}>
-        <ErrorBanner error={formError} />
-        <div style={rowStyle}>
-          <F label="Cable Tag *" basis={130}>
-            <input style={{ ...inputStyle, textTransform: 'uppercase' }} value={form.cable_tag} maxLength={50}
-              onChange={(e) => set('cable_tag', e.target.value)} placeholder="W-101" />
-          </F>
-          <F label="Circuit" basis={220} grow max={320}>
-            <input style={inputStyle} value={form.circuit} maxLength={150} onChange={(e) => set('circuit', e.target.value)} placeholder="e.g. Headlamp LH" />
-          </F>
-          <F label="Harness Ref" basis={130}>
-            <input style={inputStyle} value={form.harness_ref} maxLength={50} onChange={(e) => set('harness_ref', e.target.value)} placeholder="H-01" />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="From *" basis={220} grow max={320}>
-            <input style={inputStyle} value={form.from_point} maxLength={150} onChange={(e) => set('from_point', e.target.value)} placeholder="e.g. MCP-01 / X1:5" />
-          </F>
-          <F label="To *" basis={220} grow max={320}>
-            <input style={inputStyle} value={form.to_point} maxLength={150} onChange={(e) => set('to_point', e.target.value)} placeholder="e.g. Headlamp LH" />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Cable Type" basis={180} grow max={260}>
-            <input style={inputStyle} value={form.cable_type} maxLength={100} onChange={(e) => set('cable_type', e.target.value)} placeholder="e.g. FRLS PVC, multi-strand Cu" />
-          </F>
-          <F label="Cores" basis={80}>
-            <input style={inputStyle} type="number" min={1} max={200} step={1} value={form.cores} onChange={(e) => set('cores', e.target.value)} />
-          </F>
-          <F label="Size mm²" basis={100}>
-            <input style={inputStyle} type="number" min={0} step="any" value={form.size_sqmm} onChange={(e) => set('size_sqmm', e.target.value)} />
-          </F>
-          <F label="Length m" basis={100}>
-            <input style={inputStyle} type="number" min={0} step="any" value={form.length_m} onChange={(e) => set('length_m', e.target.value)} />
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Voltage Rating" basis={130}>
-            <input style={inputStyle} value={form.voltage_rating} maxLength={50} onChange={(e) => set('voltage_rating', e.target.value)} placeholder="1.1 kV" />
-          </F>
-          <F label="Colour Code" basis={130}>
-            <input style={inputStyle} value={form.color_code} maxLength={50} onChange={(e) => set('color_code', e.target.value)} placeholder="Red / Black" />
-          </F>
-          <F label="Status" basis={150}>
-            <select style={inputStyle} value={form.status} onChange={(e) => set('status', e.target.value)}>
-              {Object.entries(CABLE_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-        </div>
-        <div style={rowStyle}>
-          <F label="Remarks" basis={300} grow>
-            <input style={inputStyle} value={form.remarks} onChange={(e) => set('remarks', e.target.value)} />
-          </F>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-          <button type="button" style={secondaryBtnStyle} onClick={() => setFormOpen(false)}>Cancel</button>
-          <button type="button" style={primaryBtn} disabled={busy} onClick={save}>{busy ? 'Saving…' : editing ? 'Save Changes' : 'Add Cable'}</button>
-        </div>
+      <Modal
+        open={formOpen} width={960} flush busy={busy} tour="elec-cable-form"
+        icon={editing ? 'edit' : 'link'} title={editing ? `Edit Cable ${editing.cable_tag}` : 'Add Cable'}
+        subtitle={editing ? `${editing.from_point} → ${editing.to_point} — ${job.job_number}` : `New cable in ${job.job_number}'s cable schedule.`}
+        onClose={() => setFormOpen(false)}
+        footer={<ModalFooter onCancel={() => setFormOpen(false)} onSubmit={save} busy={busy} icon={editing ? 'check' : 'plus'}
+          label={editing ? 'Save Changes' : 'Add Cable'} cancelTour="elec-cable-form-cancel" submitTour="elec-cable-form-save" />}
+      >
+        <SheetColumns
+          left={<>
+            <ErrorBanner error={formError} />
+            <SheetSection icon="tag" title="Cable & Circuit">
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-cable-tag" label="Cable Tag" req basis={120}>
+                  <input style={{ ...sheetInput, textTransform: 'uppercase' }} value={form.cable_tag} maxLength={50}
+                    onChange={(e) => set('cable_tag', e.target.value)} placeholder="W-101" />
+                </F>
+                <F tour="elec-cable-circuit" label="Circuit" basis={200} grow max={320}>
+                  <input style={sheetInput} value={form.circuit} maxLength={150} onChange={(e) => set('circuit', e.target.value)} placeholder="e.g. Headlamp LH" />
+                </F>
+                <F tour="elec-cable-harness" label="Harness Ref" basis={120}>
+                  <input style={sheetInput} value={form.harness_ref} maxLength={50} onChange={(e) => set('harness_ref', e.target.value)} placeholder="H-01" />
+                </F>
+              </div>
+            </SheetSection>
+            <SheetSection icon="right" title="Route">
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-cable-from" label="From" req basis={200} grow max={320}>
+                  <input style={sheetInput} value={form.from_point} maxLength={150} onChange={(e) => set('from_point', e.target.value)} placeholder="e.g. MCP-01 / X1:5" />
+                </F>
+                <F tour="elec-cable-to" label="To" req basis={200} grow max={320}>
+                  <input style={sheetInput} value={form.to_point} maxLength={150} onChange={(e) => set('to_point', e.target.value)} placeholder="e.g. Headlamp LH" />
+                </F>
+              </div>
+            </SheetSection>
+            <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+              <textarea style={{ ...sheetInput, minHeight: 56, resize: 'vertical' }} value={form.remarks} onChange={(e) => set('remarks', e.target.value)} data-tour="elec-cable-remarks" />
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="gear" title="Cable Specification">
+              <div style={rowStyle}>
+                <F tour="elec-cable-type" label="Cable Type" basis={240} grow>
+                  <input style={sheetInput} value={form.cable_type} maxLength={100} onChange={(e) => set('cable_type', e.target.value)} placeholder="e.g. FRLS PVC, multi-strand Cu" />
+                </F>
+              </div>
+              <div style={rowStyle}>
+                <F tour="elec-cable-cores" label="Cores" basis={70}>
+                  <input style={sheetInput} type="number" min={1} max={200} step={1} value={form.cores} onChange={(e) => set('cores', e.target.value)} />
+                </F>
+                <F tour="elec-cable-size" label="Size mm²" basis={90}>
+                  <input style={sheetInput} type="number" min={0} step="any" value={form.size_sqmm} onChange={(e) => set('size_sqmm', e.target.value)} />
+                </F>
+                <F tour="elec-cable-length" label="Length m" basis={90}>
+                  <input style={sheetInput} type="number" min={0} step="any" value={form.length_m} onChange={(e) => set('length_m', e.target.value)} />
+                </F>
+              </div>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-cable-voltage" label="Voltage Rating" basis={120} grow>
+                  <input style={sheetInput} value={form.voltage_rating} maxLength={50} onChange={(e) => set('voltage_rating', e.target.value)} placeholder="1.1 kV" />
+                </F>
+                <F tour="elec-cable-colour" label="Colour Code" basis={120} grow>
+                  <input style={sheetInput} value={form.color_code} maxLength={50} onChange={(e) => set('color_code', e.target.value)} placeholder="Red / Black" />
+                </F>
+              </div>
+            </SheetSection>
+            <SheetSection icon="flag" title="Status">
+              <div data-tour="elec-cable-status">
+                <select style={sheetInput} value={form.status} onChange={(e) => set('status', e.target.value)} aria-label="Status">
+                  {Object.entries(CABLE_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+            </SheetSection>
+          </>}
+        />
       </Modal>
 
       <ConfirmDialog

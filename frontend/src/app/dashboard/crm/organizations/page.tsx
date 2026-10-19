@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { CaretUp, PushPin } from '@phosphor-icons/react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -10,12 +11,17 @@ import { Organization } from '@/types'
 import CrmNav from '@/components/crm/CrmNav'
 import OrganizationDetailPanel from '@/components/crm/OrganizationDetailPanel'
 import ErrorRecoveryDialog from '@/components/erp/ErrorRecoveryDialog'
-import { secondaryBtnStyle, pageBtnStyle, XIcon } from '@/components/crm/ui'
+import ExportDialog from '@/components/erp/ExportDialog'
+import CrmImportDialog from '@/components/crm/CrmImportDialog'
+import { FormSheet, SheetSection, SHEET, sheetBtn } from '@/components/shared/FormSheet'
+import { secondaryBtnStyle } from '@/components/crm/ui'
 import { BRAND, TEXT } from '@/lib/theme'
 import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
+import { recordHref, useRecordId } from '@/lib/recordRef'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 
-const PAGE_SIZE = 16
 const PINNED_ORGS_KEY = 'crm_pinned_org_ids'
 
 const panelOuterStyle: React.CSSProperties = {
@@ -42,15 +48,17 @@ type DuplicateOrgGroup = { name: string; organizations: DuplicateOrgRow[] }
 
 export default function OrganizationsPage() {
   const { user, isAuthorized, isLoading } = useRequireApp('crm')
+  const { can } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [orgs, setOrgs] = useState<Organization[]>([])
   const [loading, setLoading] = useState(true)
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const [error, setError] = useState('')
-  const [page, setPage] = useState(1)
 
   const isAdmin = user?.role === 'admin'
+  const [showExport, setShowExport] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateOrgGroup[]>([])
   const [showDuplicates, setShowDuplicates] = useState(false)
   useEscapeKey(showDuplicates, () => setShowDuplicates(false))
@@ -58,12 +66,14 @@ export default function OrganizationsPage() {
   const [search, setSearch] = useState('')
   const [pinnedIds, setPinnedIds] = useState<number[]>([])
 
-  const selectedId = searchParams.get('id') ? Number(searchParams.get('id')) : null
+  const selectedRef = searchParams.get('id')
+  const { id: selectedId, error: linkError } = useRecordId(selectedRef)
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem(PINNED_ORGS_KEY)
-      if (stored) setPinnedIds(JSON.parse(stored))
+      // Deferred so the effect itself sets no state.
+      if (stored) { const ids = JSON.parse(stored); Promise.resolve().then(() => setPinnedIds(ids)) }
     } catch {
       // ignore malformed storage
     }
@@ -73,7 +83,11 @@ export default function OrganizationsPage() {
     e.stopPropagation()
     setPinnedIds((prev) => {
       const next = prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
-      localStorage.setItem(PINNED_ORGS_KEY, JSON.stringify(next))
+      try {
+        localStorage.setItem(PINNED_ORGS_KEY, JSON.stringify(next))
+      } catch {
+        // storage unavailable (private mode / blocked): the pin stays for this session only
+      }
       return next
     })
   }
@@ -86,9 +100,8 @@ export default function OrganizationsPage() {
         search: search || undefined,
       })
       setOrgs(data)
-      setPage(1)
     } catch (err) {
-      setError(extractErrorMessages(err, 'Failed to load organizations. The server did not respond, or your connection was interrupted.').join(' '))
+      setError(extractErrorMessages(err, 'Failed to load customer organizations. The server did not respond, or your connection was interrupted.').join(' '))
     } finally {
       setLoading(false)
       setHasLoadedOnce(true)
@@ -96,7 +109,7 @@ export default function OrganizationsPage() {
   }
 
   useEffect(() => {
-    if (isAuthorized) load()
+    if (isAuthorized) Promise.resolve().then(load)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
@@ -105,7 +118,6 @@ export default function OrganizationsPage() {
     crmApi.getDuplicateOrganizations()
       .then((data) => setDuplicateGroups(data.groups || []))
       .catch(() => setDuplicateGroups([]))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized, isAdmin])
 
   useEffect(() => {
@@ -120,8 +132,8 @@ export default function OrganizationsPage() {
     setFilters({ org_type: '', railway_zone: '', city: '', state: '', created_by_name: '' })
   }
 
-  const openOrg = (id: number) => {
-    router.push(`/dashboard/crm/organizations?id=${id}`)
+  const openOrg = (org: object) => {
+    router.push(recordHref('/dashboard/crm/organizations', org))
   }
 
   type SortKey = 'name' | 'created_at'
@@ -193,25 +205,35 @@ export default function OrganizationsPage() {
     return [...pinned, ...rest]
   }, [filteredOrgs, pinnedIds, sortKey, sortDir])
 
-  const totalPages = Math.max(1, Math.ceil(sortedOrgs.length / PAGE_SIZE))
-  const paged = sortedOrgs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const paged = sortedOrgs
 
   if (isLoading || !isAuthorized) return null
 
   const header = (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 10 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Organizations</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Customer Organizations</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <Link
+          {can('crm', 'organizations', 'create') && <Link
             href="/dashboard/crm/organizations/new"
             data-tour="orgs-add-btn"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14.5, fontWeight: 700, padding: '12px 24px', borderRadius: 10, background: `linear-gradient(140deg,${BRAND.primary},${BRAND.primaryHover})`, color: TEXT.white, textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: `0 4px 14px ${BRAND.primaryGlow}` }}
           >
-            <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add Organization
-          </Link>
-          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{sortedOrgs.length} Organizations Found</p>
+            <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Add Customer Organization
+          </Link>}
+          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{sortedOrgs.length} Customer Organizations Found</p>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            {can('crm', 'organizations', 'export') && <button type="button" data-tour="orgs-export-btn" onClick={() => setShowExport(true)} style={secondaryBtnStyle}>Export</button>}
+            {isAdmin && can('crm', 'organizations', 'import') && <button type="button" data-tour="orgs-import-btn" onClick={() => setShowImport(true)} style={secondaryBtnStyle}>Import</button>}
+          </div>
         </div>
+        {showExport && (
+          <ExportDialog onClose={() => setShowExport(false)} filename="organizations" noun="customer organizations" dateLabel="Created date"
+            download={(params) => crmApi.exportExcel('organizations', params)}
+            items={sortedOrgs.map((o) => ({ id: o.id, label: o.name, sub: [o.org_code, o.org_type, o.city].filter(Boolean).join(' · ') }))}
+            filterParams={{ search: search || undefined }} />
+        )}
+        {showImport && <CrmImportDialog onClose={() => setShowImport(false)} onImported={() => load()} />}
         {isAdmin && duplicateGroups.length > 0 && (
           <button
             onClick={() => setShowDuplicates(true)}
@@ -222,54 +244,44 @@ export default function OrganizationsPage() {
               color: '#b91c1c', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
             }}
           >
-            ⚠ {duplicateGroups.length} duplicate organization {duplicateGroups.length === 1 ? 'name' : 'names'} found — review
+            ⚠ {duplicateGroups.length} duplicate customer organization {duplicateGroups.length === 1 ? 'name' : 'names'} found — review
           </button>
         )}
       </div>
 
       {showDuplicates && (
-        <div
-          onClick={() => setShowDuplicates(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: '#fff', borderRadius: 14, maxWidth: 720, width: '100%', maxHeight: '80vh', overflow: 'auto', padding: 22 }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: TEXT.heading }}>Duplicate Organizations</h2>
-              <button onClick={() => setShowDuplicates(false)} aria-label="Close" style={{ border: 'none', background: 'transparent', display: 'flex', cursor: 'pointer', color: '#a8a29e', padding: 4 }}><XIcon size={16} /></button>
-            </div>
-            <p style={{ fontSize: 12.5, color: '#78716c', marginTop: 0 }}>
-              These organizations share the same name. Nothing has been changed automatically — review each group and merge/delete manually via each organization&apos;s detail page once you&apos;ve confirmed which one to keep.
-            </p>
+        <FormSheet width={720} icon="alert" iconColor="#dc2626" title="Duplicate Customer Organizations" onClose={() => setShowDuplicates(false)} busy={false}
+          subtitle="These customer organizations share the same name. Nothing has been changed automatically — review each group and merge/delete manually via each customer organization's detail page once you've confirmed which one to keep."
+          footer={<button type="button" onClick={() => setShowDuplicates(false)} style={sheetBtn('secondary', SHEET.INK)}>Close</button>}>
+          <div style={{ padding: '20px 24px' }}>
             {duplicateGroups.map((group) => (
-              <div key={group.name} style={{ border: '1px solid #f0e4d8', borderRadius: 10, padding: 12, marginBottom: 12 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: '#FF7A45', marginBottom: 8 }}>{group.name}</div>
-                {group.organizations.map((o) => (
-                  <div
-                    key={o.id}
-                    onClick={() => { setShowDuplicates(false); openOrg(o.id) }}
-                    style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, padding: '6px 0', borderTop: '1px solid #f5f5f4', cursor: 'pointer' }}
-                  >
-                    <span style={{ color: '#57534e' }}>
-                      #{o.id} · {o.org_code || 'no code'} · {o.city || '—'}, {o.state || '—'}
-                      {o.gst_number ? ` · GST ${o.gst_number}` : ''}
-                    </span>
-                    <span style={{ color: '#78716c', whiteSpace: 'nowrap' }}>
-                      {o.inquiry_count} inquiries · {o.tender_count} tenders
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <SheetSection key={group.name} icon="building" title={group.name}>
+                <div style={{ border: `1px solid ${SHEET.LINE}`, borderRadius: 10, overflow: 'hidden' }}>
+                  {group.organizations.map((o, i) => (
+                    <div
+                      key={o.id}
+                      onClick={() => { setShowDuplicates(false); openOrg(o) }}
+                      style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, padding: '8px 12px', borderTop: i ? `1px solid ${SHEET.LINE}` : 'none', cursor: 'pointer' }}
+                    >
+                      <span style={{ color: SHEET.BODY }}>
+                        #{o.id} · {o.org_code || 'no code'} · {o.city || '—'}, {o.state || '—'}
+                        {o.gst_number ? ` · GST ${o.gst_number}` : ''}
+                      </span>
+                      <span style={{ color: SHEET.MUTED, whiteSpace: 'nowrap' }}>
+                        {o.inquiry_count} inquiries · {o.tender_count} tenders
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </SheetSection>
             ))}
           </div>
-        </div>
+        </FormSheet>
       )}
 
       <ErrorRecoveryDialog
         open={!!error}
-        title="Failed to Load Organizations"
+        title="Failed to Load Customer Organizations"
         message={`${error} Please refresh the page. If the issue persists, reload the application and try again.`}
         onClose={() => setError('')}
       />
@@ -291,8 +303,8 @@ export default function OrganizationsPage() {
 
   const fullTable = (
     <>
-      <div style={panelOuterStyle}>
-        <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 260px)' }}>
+      <div style={{ ...panelOuterStyle, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
           <thead>
             <tr style={{ background: 'rgba(244,113,59,0.06)' }}>
@@ -335,10 +347,8 @@ export default function OrganizationsPage() {
                           ({sortKey === col.key ? col.sortLabels[sortDir === 'asc' ? 0 : 1] : `${col.sortLabels[0]}/${col.sortLabels[1]}`})
                         </span>
                       )}
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                        style={{ opacity: sortKey === col.key ? 1 : 0.35, transform: sortKey === col.key && sortDir === 'desc' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
-                        <path d="M18 15l-6-6-6 6" />
-                      </svg>
+                      <CaretUp size={9}
+                        style={{ opacity: sortKey === col.key ? 1 : 0.35, transform: sortKey === col.key && sortDir === 'desc' ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
                     </span>
                   </th>
                 )
@@ -347,22 +357,20 @@ export default function OrganizationsPage() {
           </thead>
           <tbody data-tour="orgs-table-rows" style={{ opacity: loading && hasLoadedOnce ? 0.5 : 1, transition: 'opacity .15s' }}>
             {loading && !hasLoadedOnce && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No organizations found.</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No customer organizations found.</td></tr>}
             {(!loading || hasLoadedOnce) && paged.map((o, idx) => {
               const pinned = pinnedIds.includes(o.id)
               return (
-              <tr key={o.id} onClick={() => openOrg(o.id)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
+              <tr key={o.id} onClick={() => openOrg(o)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '7px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button
                       onClick={(e) => togglePin(o.id, e)}
                       data-tour={idx === 0 ? 'orgs-pin-btn' : undefined}
-                      title={pinned ? 'Unpin organization' : 'Pin organization to top'}
+                      title={pinned ? 'Unpin customer organization' : 'Pin customer organization to top'}
                       style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 8, margin: -8, display: 'flex', alignItems: 'center', borderRadius: 6 }}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? '#FF7A45' : 'none'} stroke={pinned ? '#FF7A45' : '#a8a29e'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z" />
-                      </svg>
+                      <PushPin size={14} weight={pinned ? 'fill' : 'regular'} color={pinned ? '#FF7A45' : '#a8a29e'} />
                     </button>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>{o.name}</span>
@@ -383,39 +391,12 @@ export default function OrganizationsPage() {
         </div>
       </div>
 
-      {!loading && sortedOrgs.length > 0 && (
-        <div data-tour="orgs-pagination" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, flexWrap: 'wrap', gap: 10 }}>
-          <span style={{ fontSize: 12.5, color: '#78716c' }}>
-            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sortedOrgs.length)} of {sortedOrgs.length}
-          </span>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={pageBtnStyle(page === 1)}>‹</button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
-              .reduce<number[]>((acc, p) => {
-                if (acc.length && p - acc[acc.length - 1] > 1) acc.push(-1)
-                acc.push(p)
-                return acc
-              }, [])
-              .map((p, i) =>
-                p === -1 ? (
-                  <span key={`gap-${i}`} style={{ fontSize: 12.5, color: '#a8a29e', padding: '0 4px' }}>…</span>
-                ) : (
-                  <button key={p} onClick={() => setPage(p)} style={{ ...pageBtnStyle(false), background: p === page ? '#FF7A45' : '#fff', color: p === page ? '#fff' : '#57534e' }}>
-                    {p}
-                  </button>
-                )
-              )}
-            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={pageBtnStyle(page === totalPages)}>›</button>
-          </div>
-        </div>
-      )}
     </>
   )
 
-  if (!selectedId) {
+  if (!selectedRef) {
     return (
-      <div>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
         <CrmNav />
         {header}
         {searchBar}
@@ -423,6 +404,9 @@ export default function OrganizationsPage() {
       </div>
     )
   }
+
+  if (linkError) return (<div><CrmNav /><InvalidRecordLink message={linkError} listHref="/dashboard/crm/organizations" listLabel="Back to customer organizations" /></div>)
+  if (!selectedId) return <div><CrmNav /></div>
 
   return (
     <div>

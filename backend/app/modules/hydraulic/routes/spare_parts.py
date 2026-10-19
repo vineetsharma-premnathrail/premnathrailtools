@@ -1,24 +1,19 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core.permissions import require_app_access, require_tab_access
 from app.db.session import get_db
 from app.modules.hydraulic.models.bom import HydBom, HydBomItem
 from app.modules.hydraulic.models.maintenance import HydServicePart, HydServiceRecord
-from app.modules.hydraulic.models.spare_part import (
-    HydSparePart, HYD_SPARE_CATEGORIES, HYD_SPARE_CRITICALITY, HYD_SPARE_STATUSES,
-)
+from app.modules.hydraulic.models.spare_part import HydSparePart
 from app.modules.hydraulic.models.system import HydSystem
 from app.modules.hydraulic.schemas.spare_part import (
-    HydSparePartCreate, HydSparePartUpdate, HydSparePartResponse, HydSparePartSystemUsage,
+    HydSparePartResponse, HydSparePartSystemUsage,
 )
-from app.modules.hydraulic.service import (
-    generate_spare_code, check_choice, check_system_type, check_store_item, get_component_or_404,
-    components_by_id, store_stock, stock_status,
-)
+from app.modules.hydraulic.service import can_see_costs, components_by_id, store_stock, stock_status, raise_retired
 from app.modules.main.models.user import User
 from app.modules.store.models.item import StoreItem
 
@@ -65,32 +60,19 @@ def to_spare_responses(db: Session, spares: list[HydSparePart], with_usage: bool
     return out
 
 
+def _shown(rows: list[HydSparePartResponse], user: User) -> list[HydSparePartResponse]:
+    """Blank unit costs for anyone without Hydraulic › BOM › Prices & costs."""
+    if not can_see_costs(user):
+        for r in rows:
+            r.unit_cost = None
+    return rows
+
+
 def _get_or_404(db: Session, spare_id: int) -> HydSparePart:
     spare = db.query(HydSparePart).filter(HydSparePart.id == spare_id, HydSparePart.is_deleted == False).first()  # noqa: E712
     if not spare:
         raise HTTPException(status_code=404, detail=f"Spare part #{spare_id} not found (it may have been deleted).")
     return spare
-
-
-def _validate(db: Session, data: dict, current_id: int | None = None) -> None:
-    check_choice(data.get("category"), HYD_SPARE_CATEGORIES, "category")
-    check_choice(data.get("criticality"), HYD_SPARE_CRITICALITY, "criticality")
-    check_choice(data.get("status"), HYD_SPARE_STATUSES, "status")
-    check_system_type(data.get("system_type"), allow_both=True)
-    if data.get("component_id"):
-        get_component_or_404(db, data["component_id"])
-    if data.get("store_item_id"):
-        item = check_store_item(db, data["store_item_id"])
-        clash = db.query(HydSparePart).filter(
-            HydSparePart.store_item_id == item.id, HydSparePart.is_deleted == False,  # noqa: E712
-        )
-        if current_id:
-            clash = clash.filter(HydSparePart.id != current_id)
-        other = clash.first()
-        if other:
-            raise HTTPException(status_code=409, detail=f"Store item {item.item_code} is already linked to spare {other.part_code} ({other.name}). Edit that spare instead of adding a duplicate.")
-        if not data.get("uom") and item.uom:
-            data["uom"] = item.uom
 
 
 @router.get("", response_model=list[HydSparePartResponse])
@@ -103,7 +85,7 @@ async def list_spares(
     status_filter: str | None = Query(None, alias="status"),
     search: str | None = None,
     db: Session = Depends(get_db),
-    _tab: User = Depends(require_tab_access("hydraulic", "spare_parts")),
+    _tab: User = Depends(require_tab_access("hydraulic", "systems")),
 ):
     query = db.query(HydSparePart).filter(HydSparePart.is_deleted == False)  # noqa: E712
     if category:
@@ -124,67 +106,30 @@ async def list_spares(
         rows = [r for r in rows if r.stock_status in ("low", "out")]
     elif stock:
         rows = [r for r in rows if r.stock_status == stock]
-    return rows
+    return _shown(rows, _tab)
 
 
-@router.post("", response_model=HydSparePartResponse)
-async def create_spare(
-    payload: HydSparePartCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_tab_action("hydraulic", "spare_parts", "create")),
-):
-    data = payload.model_dump()
-    data["uom"] = (data.get("uom") or "").strip() or None
-    _validate(db, data)
-    data["uom"] = (data.get("uom") or "NOS").strip().upper()
-    spare = HydSparePart(**data, part_code=generate_spare_code(db), created_by_id=user.id)
-    db.add(spare)
-    db.commit()
-    db.refresh(spare)
-    return to_spare_responses(db, [spare], with_usage=True)[0]
+@router.post("", status_code=410)
+async def create_spare():
+    """Retired (plan rule R5): spares come from the Engineering BOM recommended-spares list."""
+    raise_retired("spare parts")
 
 
 @router.get("/{spare_id}", response_model=HydSparePartResponse)
-async def get_spare(spare_id: int, db: Session = Depends(get_db)):
-    return to_spare_responses(db, [_get_or_404(db, spare_id)], with_usage=True)[0]
-
-
-@router.patch("/{spare_id}", response_model=HydSparePartResponse)
-async def update_spare(
-    spare_id: int,
-    payload: HydSparePartUpdate,
-    db: Session = Depends(get_db),
-    _perm: User = Depends(require_tab_action("hydraulic", "spare_parts", "edit")),
+async def get_spare(
+    spare_id: int, db: Session = Depends(get_db),
+    _tab: User = Depends(require_tab_access("hydraulic", "systems")),
 ):
-    spare = _get_or_404(db, spare_id)
-    updates = payload.model_dump(exclude_unset=True)
-    _validate(db, updates, current_id=spare.id)
-    if updates.get("uom"):
-        updates["uom"] = updates["uom"].strip().upper()
-    for field, val in updates.items():
-        setattr(spare, field, val)
-    db.commit()
-    db.refresh(spare)
-    return to_spare_responses(db, [spare], with_usage=True)[0]
+    return _shown(to_spare_responses(db, [_get_or_404(db, spare_id)], with_usage=True), _tab)[0]
 
 
-@router.delete("/{spare_id}")
-async def delete_spare(
-    spare_id: int,
-    db: Session = Depends(get_db),
-    _perm: User = Depends(require_tab_action("hydraulic", "spare_parts", "delete")),
-):
-    spare = _get_or_404(db, spare_id)
-    on_open = db.query(HydServiceRecord.record_number).join(HydServicePart, HydServicePart.record_id == HydServiceRecord.id).filter(
-        HydServicePart.spare_part_id == spare.id, HydServiceRecord.is_deleted == False,  # noqa: E712
-        HydServiceRecord.status.in_(("open", "in_progress")),
-    ).distinct().all()
-    if on_open:
-        raise HTTPException(
-            status_code=409,
-            detail=f"{spare.part_code} is on open service record(s) {', '.join(r[0] for r in on_open)}. Remove it from those first, or mark the spare 'Obsolete'.",
-        )
-    spare.is_deleted = True
-    spare.deleted_at = datetime.now(timezone.utc)
-    db.commit()
-    return {"message": f"Spare part {spare.part_code} deleted"}
+@router.patch("/{spare_id}", status_code=410)
+async def update_spare(spare_id: int):
+    """Retired (plan rule R5): spares come from the Engineering BOM recommended-spares list."""
+    raise_retired("spare parts")
+
+
+@router.delete("/{spare_id}", status_code=410)
+async def delete_spare(spare_id: int):
+    """Retired (plan rule R5) — existing spares are read-only history, kept for the export."""
+    raise_retired("spare parts")

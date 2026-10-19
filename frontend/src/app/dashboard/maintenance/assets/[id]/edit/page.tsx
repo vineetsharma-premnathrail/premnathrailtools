@@ -5,9 +5,9 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { maintenanceApi } from '@/lib/api'
 import { MaintenanceAsset } from '@/types'
-import { TEXT } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { useRecordId } from '@/lib/recordRef'
 import AssetForm from '@/components/maintenance/AssetForm'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -15,7 +15,9 @@ export default function EditMaintenanceAssetPage() {
   const { isAuthorized, isLoading } = useRequireApp('maintenance')
   const router = useRouter()
   const params = useParams()
-  const id = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedId, error: linkError } = useRecordId(ref)
+  const id = resolvedId ?? 0
   const [asset, setAsset] = useState<MaintenanceAsset | null>(null)
   const [error, setError] = useState<string | string[]>('')
 
@@ -25,39 +27,34 @@ export default function EditMaintenanceAssetPage() {
   }, [isAuthorized, id])
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><MaintenanceNav /><InvalidRecordLink message={linkError} listHref="/dashboard/maintenance/assets" listLabel="Back to assets" /></div>)
+  if (!id) return <div><MaintenanceNav /></div>
+
+  if (!asset) {
+    return (
+      <div>
+        <MaintenanceNav />
+        {error && (
+          <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+            {Array.isArray(error) ? error.join(' ') : error}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
-    <div>
-      <MaintenanceNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Maintenance Module
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>
-            Edit {asset ? asset.asset_code : 'Asset'}
-          </h1>
-        </div>
-        <button onClick={() => router.push(`/dashboard/maintenance/assets/${id}`)} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
-        </div>
-      )}
-
-      {asset && (
-        <AssetForm
-          initial={asset}
-          submitLabel="Save Changes"
-          onSubmit={async (payload) => {
-            await maintenanceApi.updateAsset(id, payload)
-            router.push(`/dashboard/maintenance/assets/${id}`)
-          }}
-        />
-      )}
-    </div>
+    <AssetForm
+      nav={<MaintenanceNav />}
+      title={`Edit ${asset.asset_code}`}
+      subtitle={asset.name}
+      onBack={() => router.push(`/dashboard/maintenance/assets/${ref}`)}
+      initial={asset}
+      submitLabel="Save Changes"
+      onSubmit={async (payload) => {
+        await maintenanceApi.updateAsset(id, payload)
+        router.push(`/dashboard/maintenance/assets/${ref}`)
+      }}
+    />
   )
 }

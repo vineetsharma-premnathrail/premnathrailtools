@@ -55,7 +55,7 @@ export default function ExpenseApprovals() {
   if (rows.length === 0 && !error.length && !notice) return null
 
   return (
-    <div style={sectionStyle}>
+    <div style={sectionStyle} data-tour="hr-appr-expense-section">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: 0 }}>Expense claims</p>
         <span style={{ fontSize: 12, fontWeight: 700, color: '#F59E0B' }}>{rows.length} pending · {fmtINR(rows.reduce((a, c) => a + Number(c.total_amount || 0), 0))}</span>
@@ -84,12 +84,12 @@ export default function ExpenseApprovals() {
                       {c.item_count} line{c.item_count === 1 ? '' : 's'} · claim date {fmtDate(c.claim_date)}{c.travel_request_no ? ` · trip ${c.travel_request_no} (${c.travel_route})` : ''}
                     </p>
                     {missing > 0 && <p style={{ fontSize: 12, color: '#DC2626', margin: '4px 0 0' }}>{missing} line(s) have no receipt</p>}
-                    <button type="button" style={{ ...linkActionStyle, marginTop: 6 }} onClick={() => setExpanded((p) => ({ ...p, [c.id]: !open }))}>{open ? 'Hide lines' : 'Show lines & receipts'}</button>
+                    <button type="button" data-tour="hr-appr-expense-lines" style={{ ...linkActionStyle, marginTop: 6 }} onClick={() => setExpanded((p) => ({ ...p, [c.id]: !open }))}>{open ? 'Hide lines' : 'Show lines & receipts'}</button>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
                     <span style={{ fontSize: 18, fontWeight: 800, color: TEXT.heading }}>{fmtINR(c.total_amount)}</span>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button type="button" style={{ ...primaryActionStyle, padding: '8px 16px' }} onClick={() => setPending({ kind: 'approve', c })}>Approve</button>
+                      <button type="button" data-tour="hr-appr-expense-approve" style={{ ...primaryActionStyle, padding: '8px 16px' }} onClick={() => setPending({ kind: 'approve', c })}>Approve</button>
                       <button type="button" style={dangerBtnStyle} onClick={() => setPending({ kind: 'reject', c })}>Reject</button>
                     </div>
                   </div>

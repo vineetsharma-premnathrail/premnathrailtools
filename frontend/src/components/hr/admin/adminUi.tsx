@@ -6,6 +6,7 @@
 // layout shells those pages repeat.
 
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { FormSheet, SheetIconName } from '@/components/shared/FormSheet'
 import { TEXT, GLASS, SHADOWS, BORDER, GRADIENTS } from '@/lib/theme'
 
 const inrFormatter = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -141,10 +142,11 @@ export function EmptyRow({ colSpan, text }: { colSpan: number; text: string }) {
   )
 }
 
-/** Form dialog shell with the same backdrop/panel look as ConfirmDialog and
- * PromptDialog, for the issue / return / check-in style forms. */
+/** Form dialog shell for the issue / return / check-in style forms — the
+ * app-wide FormSheet popup (icon header, body, Cancel + primary footer).
+ * `bare` skips the padded column wrapper so callers can use SheetColumns. */
 export function FormDialog({
-  open, title, subtitle, children, onClose, footer, maxWidth = 520,
+  open, title, subtitle, children, onClose, footer, maxWidth = 580, icon = 'edit', iconColor, busy = false, tour, bare = false,
 }: {
   open: boolean
   title: string
@@ -153,26 +155,18 @@ export function FormDialog({
   onClose: () => void
   footer: React.ReactNode
   maxWidth?: number
+  icon?: SheetIconName
+  iconColor?: string
+  busy?: boolean
+  tour?: string
+  bare?: boolean
 }) {
-  useEscapeKey(open, onClose)
+  useEscapeKey(open && !busy, onClose)
   if (!open) return null
   return (
-    <div
-      onClick={onClose}
-      className="dialog-backdrop"
-      style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="dialog-panel"
-        style={{ width: '100%', maxWidth, maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}
-      >
-        <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>{title}</p>
-        {subtitle && <p style={{ fontSize: 13, color: '#78716c', margin: '0 0 14px', lineHeight: 1.5 }}>{subtitle}</p>}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: subtitle ? 0 : 12 }}>{children}</div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>{footer}</div>
-      </div>
-    </div>
+    <FormSheet width={maxWidth} icon={icon} iconColor={iconColor} title={title} subtitle={subtitle || ''} onClose={onClose} busy={busy} tour={tour} footer={footer}>
+      {bare ? children : <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>}
+    </FormSheet>
   )
 }
 

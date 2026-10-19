@@ -46,7 +46,7 @@ export default function MyAssetsPage() {
       ) : assets.length === 0 ? (
         <div style={sectionStyle}><p style={{ margin: 0, fontSize: 13.5, color: TEXT.muted }}>No company assets are issued to you right now.</p></div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16, marginBottom: 24 }}>
+        <div data-tour="hr-myassets-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16, marginBottom: 24 }}>
           {assets.map((a) => {
             const overdue = !!a.expected_return_on && a.expected_return_on < today
             return (
@@ -76,7 +76,7 @@ export default function MyAssetsPage() {
       {history.length > 0 && (
         <>
           <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '8px 0 10px' }}>Previously held</p>
-          <div style={tableWrapStyle}>
+          <div data-tour="hr-myassets-history" style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
               <thead><tr>{['Asset', 'Category', 'Issued', 'Returned', 'Condition on return'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
               <tbody>

@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useRequireAdmin } from '@/hooks/useAuth'
+import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { organizationApi } from '@/lib/api'
+import { useCan } from '@/lib/permissions'
+import { extractErrorMessages } from '@/lib/validation'
 import { Company, CompanyAddress, CompanyContact, CompanyFinancialYear, CompanyDocument } from '@/types'
 import { TEXT, GLASS, SHADOWS, BRAND, BORDER } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
+import CompanyPartnersPanel from '@/components/organization/CompanyPartnersPanel'
 
 const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
@@ -21,13 +24,14 @@ const cardRowStyle: React.CSSProperties = {
 }
 const linkBtnStyle: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }
 
-const TABS = ['Basic', 'Address', 'Legal & Registration', 'Tax Configuration', 'Contacts', 'Financial Year', 'Branding', 'Documents', 'Defaults & Controls'] as const
+const TABS = ['Basic', 'Address', 'Legal & Registration', 'Tax Configuration', 'Partners', 'Contacts', 'Financial Year', 'Branding', 'Documents', 'Defaults & Controls'] as const
 
 const TAB_TOUR_IDS: Record<typeof TABS[number], string> = {
   'Basic': 'org-info-tab-basic',
   'Address': 'org-info-tab-address',
   'Legal & Registration': 'org-info-tab-legal',
   'Tax Configuration': 'org-info-tab-tax',
+  'Partners': 'org-info-tab-partners',
   'Contacts': 'org-info-tab-contacts',
   'Financial Year': 'org-info-tab-fy',
   'Branding': 'org-info-tab-branding',
@@ -36,8 +40,16 @@ const TAB_TOUR_IDS: Record<typeof TABS[number], string> = {
 }
 
 export default function OrganizationInfoPage() {
-  const { isAuthorized, isLoading } = useRequireAdmin()
+  const { isAuthorized, isLoading } = useRequireOrgTab('info')
+  const { can, canFeature } = useCan()
   const router = useRouter()
+  // Company Info features (core/features/organization.py).
+  const seeStatutory = canFeature('organization', 'info', 'statutory', 'view')
+  const seeFy = canFeature('organization', 'info', 'financial_years', 'view')
+  const seeDocs = canFeature('organization', 'info', 'documents', 'view')
+  const seeTab = (t: typeof TABS[number]) => (t === 'Legal & Registration' || t === 'Tax Configuration' ? seeStatutory
+    : t === 'Partners' ? canFeature('organization', 'info', 'partners', 'view')
+      : t === 'Financial Year' ? seeFy : t === 'Documents' ? seeDocs : true)
   const [company, setCompany] = useState<Company | null>(null)
   const [addresses, setAddresses] = useState<CompanyAddress[]>([])
   const [contacts, setContacts] = useState<CompanyContact[]>([])
@@ -58,8 +70,8 @@ export default function OrganizationInfoPage() {
           Promise.all([
             organizationApi.listCompanyAddresses(),
             organizationApi.listCompanyContacts(),
-            organizationApi.listCompanyFinancialYears(),
-            organizationApi.listCompanyDocuments(),
+            seeFy ? organizationApi.listCompanyFinancialYears() : Promise.resolve([]),
+            seeDocs ? organizationApi.listCompanyDocuments() : Promise.resolve([]),
           ]).then(([a, ct, fy, d]) => {
             setCompany(c); setAddresses(a); setContacts(ct); setFinancialYears(fy); setDocuments(d)
           })
@@ -69,11 +81,12 @@ export default function OrganizationInfoPage() {
           if (status === 404) {
             setNotSetUp(true)
           } else {
-            setError('Failed to load company info.')
+            setError(extractErrorMessages(err, 'Could not load company info. Reload the page; if it keeps failing, the server may be down — contact IT.').join(' '))
           }
         })
         .finally(() => setLoading(false))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
@@ -89,7 +102,7 @@ export default function OrganizationInfoPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Info</h1>
         </div>
-        {(company || notSetUp) && (
+        {(company || notSetUp) && can('organization', 'info', 'edit') && (
           <button
             data-tour="org-info-edit-btn"
             onClick={() => router.push('/dashboard/organization/info/edit')}
@@ -128,7 +141,7 @@ export default function OrganizationInfoPage() {
       ) : !company ? null : (
         <>
           <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: `1px solid ${BORDER.normal}`, flexWrap: 'wrap' }}>
-            {TABS.map((t) => (
+            {TABS.filter(seeTab).map((t) => (
               <button
                 key={t}
                 data-tour={TAB_TOUR_IDS[t]}
@@ -154,7 +167,7 @@ export default function OrganizationInfoPage() {
             ))}
           </div>
 
-          {tab === 'Basic' && (
+          {(tab === 'Basic' || !seeTab(tab)) && (
             <div style={sectionStyle} data-tour="org-info-basic-panel">
               <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Basic Information</h2>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -200,7 +213,7 @@ export default function OrganizationInfoPage() {
             </div>
           )}
 
-          {tab === 'Legal & Registration' && (
+          {tab === 'Legal & Registration' && seeStatutory && (
             <div style={sectionStyle} data-tour="org-info-legal-panel">
               <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Legal & Registration</h2>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -227,7 +240,7 @@ export default function OrganizationInfoPage() {
             </div>
           )}
 
-          {tab === 'Tax Configuration' && (
+          {tab === 'Tax Configuration' && seeStatutory && (
             <div style={sectionStyle} data-tour="org-info-tax-panel">
               <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Tax Configuration</h2>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -241,6 +254,8 @@ export default function OrganizationInfoPage() {
               </div>
             </div>
           )}
+
+          {tab === 'Partners' && seeTab('Partners') && <CompanyPartnersPanel sectionStyle={sectionStyle} />}
 
           {tab === 'Contacts' && (
             <div style={sectionStyle} data-tour="org-info-contacts-panel">
@@ -267,7 +282,7 @@ export default function OrganizationInfoPage() {
             </div>
           )}
 
-          {tab === 'Financial Year' && (
+          {tab === 'Financial Year' && seeFy && (
             <div style={sectionStyle} data-tour="org-info-fy-panel">
               <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Financial Years</h2>
               {financialYears.length === 0 ? (
@@ -280,8 +295,8 @@ export default function OrganizationInfoPage() {
                         <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{fy.name}</span>
                         <span style={{
                           fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, textTransform: 'uppercase',
-                          background: fy.status === 'open' ? 'rgba(16,185,129,0.12)' : fy.status === 'locked' ? 'rgba(245,158,11,0.12)' : 'rgba(220,38,38,0.1)',
-                          color: fy.status === 'open' ? '#047857' : fy.status === 'locked' ? '#92400e' : '#b91c1c',
+                          background: fy.status === 'open' ? 'rgba(16,185,129,0.12)' : 'rgba(220,38,38,0.1)',
+                          color: fy.status === 'open' ? '#047857' : '#b91c1c',
                         }}>{fy.status}</span>
                       </div>
                       <p style={{ fontSize: 12.5, color: TEXT.secondary, margin: 0 }}>{fy.start_date} → {fy.end_date}{fy.fiscal_year_code ? ` · ${fy.fiscal_year_code}` : ''}</p>
@@ -326,7 +341,7 @@ export default function OrganizationInfoPage() {
             </div>
           )}
 
-          {tab === 'Documents' && (
+          {tab === 'Documents' && seeDocs && (
             <div style={sectionStyle} data-tour="org-info-documents-panel">
               <h2 style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', marginBottom: 12 }}>Company Documents</h2>
               {documents.length === 0 ? (
@@ -346,7 +361,7 @@ export default function OrganizationInfoPage() {
                             {d.filename}{d.expiry_date ? ` · Expires ${d.expiry_date}` : ''}{d.issuing_authority ? ` · ${d.issuing_authority}` : ''}
                           </p>
                         </div>
-                        {d.sharepoint_url && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a>}
+                        {d.sharepoint_url && canFeature('organization', 'info', 'documents', 'export') && <a href={d.sharepoint_url} target="_blank" rel="noreferrer" style={linkBtnStyle}>Open</a>}
                       </div>
                     </div>
                   ))}

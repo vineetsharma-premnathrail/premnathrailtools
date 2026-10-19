@@ -1,8 +1,9 @@
 import { TourConfig } from '../types'
+import editConfig from './orgPlantEdit'
 
-const config: TourConfig = {
+const newConfig: TourConfig = {
   id: 'org-plant-form',
-  pageTitle: 'Add / Edit Branch',
+  pageTitle: 'Add Branch',
   steps: [
     {
       target: 'org-plant-form-tabs',
@@ -91,16 +92,36 @@ const config: TourConfig = {
     },
     {
       target: 'org-plant-save',
-      title: 'Save Branch / Save Changes',
+      title: 'Save Branch',
       purpose: 'Validates the required fields (Name, Code, Company, Branch Type) and saves the branch.',
       after: 'When creating a new branch, this takes you straight to its Edit page, where the Address, Users, Stores, Cost Centers, and Documents tabs become available.',
     },
     {
+      target: 'org-plant-back',
+      title: '← Back',
+      purpose: 'Returns to the Branches list without saving — same as Cancel.',
+    },
+    {
       target: 'org-plant-cancel',
       title: 'Cancel',
-      purpose: 'Discards any unsaved changes on this tab and returns to the branch list or detail page.',
+      purpose: 'Discards what you typed and returns to the Branches list. Nothing is saved.',
     },
   ],
+}
+
+// The shared registry (registry.ts CORE_ENTRIES) maps BOTH /plants/new and
+// /plants/:id/edit to this module. The two screens differ a lot — Add Branch
+// shows only the Basic form, Edit Branch has eight live tabs with their own
+// child-record forms — so the config is picked from the current URL each
+// time it is read, instead of one merged tour whose edit-only steps would all
+// be skipped on the Add page.
+const isEditRoute = () =>
+  typeof window !== 'undefined' && /\/plants\/[A-Za-z0-9_-]{19}\/edit$/.test(window.location.pathname)
+
+const config: TourConfig = {
+  get id() { return isEditRoute() ? editConfig.id : newConfig.id },
+  get pageTitle() { return isEditRoute() ? editConfig.pageTitle : newConfig.pageTitle },
+  get steps() { return isEditRoute() ? editConfig.steps : newConfig.steps },
 }
 
 export default config

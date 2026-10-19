@@ -1,0 +1,257 @@
+import { TourConfig } from '../types'
+
+const config: TourConfig = {
+  id: 'hr-employee-detail',
+  pageTitle: 'Employee Record',
+  steps: [
+    {
+      target: 'hr-emp-header',
+      title: 'Name and status',
+      purpose: 'The employee\'s name with their current employment status badge.',
+      options: [
+        { value: 'Onboarding', meaning: 'Joining in progress — joining checklist still open.' },
+        { value: 'Probation', meaning: 'Joined, not yet confirmed.' },
+        { value: 'Active', meaning: 'Confirmed regular employee.' },
+        { value: 'On Notice', meaning: 'Resigned / notice served, exit scheduled.' },
+        { value: 'Exited', meaning: 'Has left the company.' },
+        { value: 'No HR profile', meaning: 'Only the Azure login exists — HR has not created the record yet.' },
+        { value: 'Account deactivated', meaning: 'Portal login switched off.' },
+      ],
+      why: 'Status changes only through Lifecycle events (Joining, Confirmation, Exit), so there is always a dated record of why it changed.',
+    },
+    {
+      target: 'hr-emp-edit-btn',
+      title: 'Edit Profile / Create HR Profile',
+      purpose: 'Opens the HR profile form for this person — employee code, department, designation, grade, plant, shift, manager, statutory IDs, emergency contact.',
+      after: 'Takes you to the profile form; its own tour explains every field.',
+    },
+    {
+      target: 'hr-emp-back-btn',
+      title: '← Back',
+      purpose: 'Returns to the Employees list.',
+    },
+    {
+      target: 'hr-emp-tab-profile',
+      title: 'Profile tab',
+      purpose: 'The read-only employee record.',
+      autoActivate: true,
+    },
+    {
+      target: 'hr-profile-employment',
+      title: 'Employment',
+      purpose: 'Where the person sits in the company: code, department, designation, grade, plant, shift, reporting manager, joining date (with length of service), employment type and status, probation / confirmation / exit dates and how many people report to them.',
+      why: 'Reporting Manager decides who approves this person\'s leave, attendance corrections and claims. Shift decides when they are late or absent.',
+    },
+    {
+      target: 'hr-profile-personal',
+      title: 'Personal Details',
+      purpose: 'Contact numbers, emails, date of birth, blood group, marital status and addresses.',
+    },
+    {
+      target: 'hr-profile-emergency',
+      title: 'Emergency Contact',
+      purpose: 'Who to call if something happens to the employee at work.',
+      why: 'Mandatory safety information on a shop floor — keep it current.',
+    },
+    {
+      target: 'hr-profile-statutory',
+      title: 'Statutory IDs',
+      purpose: 'PAN, Aadhaar (only the last 4 digits are shown), UAN for Provident Fund and ESIC number.',
+      why: 'Needed for PF/ESIC returns and Form 16 — payroll (ADP) reads these from HR.',
+    },
+    {
+      target: 'hr-profile-hr-notes',
+      title: 'HR Notes & Settings',
+      purpose: 'Visible to HR only. Shows whether HR or the Azure AD sync owns the department/designation fields, the portal account state, what Azure has on the user account, and private HR notes.',
+      why: 'If "Org fields owned by" says HR, the nightly Azure sync will not overwrite the department/designation HR has set.',
+    },
+    {
+      target: 'hr-emp-tab-documents',
+      title: 'Documents tab',
+      purpose: 'ID proofs, letters and certificates kept on the employee\'s file (stored in SharePoint).',
+      autoActivate: true,
+    },
+    {
+      target: 'hr-doc-upload-btn',
+      title: '+ Upload Document',
+      purpose: 'Opens the upload form below.',
+      autoActivateOnAdvance: true,
+    },
+    {
+      target: 'hr-doc-file',
+      title: 'File',
+      required: true,
+      whatToEnter: 'Choose or drag the scan / PDF / Word / Excel file. Maximum 25 MB.',
+      invalidExample: 'A 40 MB phone video — compress or split it first.',
+    },
+    {
+      target: 'hr-doc-type',
+      title: 'Document Type',
+      required: true,
+      purpose: 'What kind of document this is — ID Proof, Address Proof, PAN Card, Aadhaar Card, Passport, Driving Licence, Offer / Appointment / Confirmation / Relieving / Experience / Increment letters, Educational or Medical Certificate, Bank Details, Photograph, Warning / Disciplinary, Other.',
+      why: 'Lets HR find all PAN cards or all appointment letters quickly during an audit.',
+    },
+    {
+      target: 'hr-doc-name',
+      title: 'Document Name',
+      required: true,
+      whatToEnter: 'A short label people will recognise.',
+      validExample: 'PAN card',
+      invalidExample: 'scan001.pdf',
+    },
+    {
+      target: 'hr-doc-number',
+      title: 'Document Number',
+      whatToEnter: 'The number printed on the document, if any.',
+      validExample: 'ABCDE1234F',
+    },
+    {
+      target: 'hr-doc-issue-date',
+      title: 'Issue Date',
+      whatToEnter: 'Date the document was issued (optional).',
+    },
+    {
+      target: 'hr-doc-expiry-date',
+      title: 'Expiry Date',
+      whatToEnter: 'Date the document stops being valid — e.g. passport, driving licence, medical fitness. Must not be before the issue date.',
+      why: 'HR gets reminders 30 days and 7 days before, and on the expiry day, so renewals are never missed. Expiring documents also show on the HR Dashboard.',
+    },
+    {
+      target: 'hr-doc-authority',
+      title: 'Issuing Authority',
+      whatToEnter: 'Who issued it (optional).',
+      validExample: 'RTO Faridabad',
+    },
+    {
+      target: 'hr-doc-visibility',
+      title: 'Visibility',
+      options: [
+        { value: 'Confidential', meaning: 'Personal document; the employee can see it on their own My HR page.' },
+        { value: 'Internal', meaning: 'Normal company document; visible to the employee.' },
+        { value: 'HR Only', meaning: 'Hidden from the employee\'s My HR page — e.g. disciplinary notes.' },
+      ],
+    },
+    {
+      target: 'hr-doc-tags',
+      title: 'Tags',
+      whatToEnter: 'Optional keywords separated by commas.',
+      validExample: 'KYC, 2026',
+    },
+    {
+      target: 'hr-doc-remarks',
+      title: 'Remarks',
+      whatToEnter: 'Any note about the document (optional).',
+    },
+    {
+      target: 'hr-doc-save',
+      title: 'Save Document',
+      purpose: 'Uploads the file with its details.',
+      after: 'The document appears in the list below. If something is missing (file, name, wrong dates) the exact problem is listed above the buttons.',
+    },
+    {
+      target: 'hr-doc-cancel',
+      title: 'Cancel',
+      purpose: 'Closes the upload form without saving.',
+      autoActivateOnAdvance: true,
+    },
+    {
+      target: 'hr-doc-list',
+      title: 'Document list',
+      purpose: 'Every document on file with its type, visibility and an expiry badge: green "Valid till", orange "Expires in N days" (within 30 days) or red "Expired".',
+    },
+    {
+      target: 'hr-doc-open',
+      title: 'Open',
+      purpose: 'Opens the stored file in a new tab.',
+    },
+    {
+      target: 'hr-doc-delete',
+      title: 'Delete',
+      purpose: 'Removes the document from the record and from SharePoint after you confirm. Cannot be undone.',
+    },
+    {
+      target: 'hr-emp-tab-lifecycle',
+      title: 'Lifecycle tab',
+      purpose: 'Timeline of this person\'s joining, confirmation, transfers, promotions and exit.',
+      autoActivate: true,
+    },
+    {
+      target: 'hr-emp-lc-actions',
+      title: 'Start an event',
+      purpose: 'Starts a new Transfer, Promotion, Confirmation or Exit for this employee, with the employee already filled in. After a completed exit only "Rehire (joining)" is offered.',
+      why: 'Changing department, designation or status through an event (instead of editing the profile) keeps a dated, approved history of every move.',
+    },
+    {
+      target: 'hr-emp-lc-timeline',
+      title: 'Event timeline',
+      purpose: 'Each event with its type, number, status (Draft, In Progress, Completed, Cancelled), effective date, what changed, and checklist progress. Click one to open it.',
+    },
+    {
+      target: 'hr-emp-tab-leave',
+      title: 'Leave tab',
+      purpose: 'This employee\'s leave balances and requests for a year.',
+      autoActivate: true,
+    },
+    {
+      target: 'hr-emp-leave-year',
+      title: 'Year',
+      purpose: 'Pick which leave year to show.',
+    },
+    {
+      target: 'hr-emp-leave-manage',
+      title: 'Manage leave →',
+      purpose: 'Opens the HR Leave page to allot balances, adjust them, or apply on someone\'s behalf.',
+    },
+    {
+      target: 'hr-emp-leave-balances',
+      title: 'Balances',
+      purpose: 'Days available per leave type, with used and pending days. For unpaid leave it shows days taken instead.',
+    },
+    {
+      target: 'hr-emp-leave-requests',
+      title: 'Leave requests',
+      purpose: 'Every request in the year with dates, days and status.',
+      options: [
+        { value: 'Pending', meaning: 'Waiting for the approver named in "Decided by".' },
+        { value: 'Approved', meaning: 'Granted; days deducted from the balance.' },
+        { value: 'Rejected', meaning: 'Refused by the approver.' },
+        { value: 'Cancelled', meaning: 'Withdrawn; days returned to the balance.' },
+      ],
+    },
+    {
+      target: 'hr-emp-tab-attendance',
+      title: 'Attendance tab',
+      purpose: 'Month calendar of this person\'s attendance against their shift.',
+      autoActivate: true,
+    },
+    {
+      target: 'hr-emp-att-month',
+      title: 'Month and Mark / correct',
+      purpose: 'Change the month shown. "Mark / correct" opens the HR attendance register where entries are marked or fixed.',
+    },
+    {
+      target: 'hr-emp-att-legend',
+      title: 'Legend and calendar',
+      purpose: 'Counts per attendance status for the month (Present, Absent, Half day, On leave, Holiday, Weekly off, On duty, WFH), then the calendar with each day coloured by its status.',
+    },
+    {
+      target: 'hr-emp-tab-assets',
+      title: 'Assets tab',
+      purpose: 'Company assets (laptop, phone, tools, PPE…) ever issued to this person.',
+      autoActivate: true,
+    },
+    {
+      target: 'hr-emp-assets-register',
+      title: 'Open asset register →',
+      purpose: 'Goes to the full asset register to issue or take back assets.',
+    },
+    {
+      target: 'hr-emp-assets-table',
+      title: 'Issue history',
+      purpose: 'Each asset with issue and return dates and condition out → in. "Holding" means it is still with the employee. Click a row to open the asset.',
+      why: 'Every held asset must be returned before the exit can be completed — this list is the exit clearance check.',
+    },
+  ],
+}
+
+export default config

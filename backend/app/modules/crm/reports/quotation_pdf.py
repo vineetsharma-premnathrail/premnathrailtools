@@ -169,8 +169,10 @@ def _sentence_case(text: str | None) -> str:
 
 # Matches the start of an inline numbered point like "1. ", "2) " — including mid-sentence,
 # since terms text is often typed as one run-on line ("1. xyz 2. abc 3. def") rather than
-# with real newlines.
-_NUMBERED_POINT_START = re.compile(r"(?:^|\s)(?=\d{1,2}[.)]\s)")
+# with real newlines — and also without the space ("1.The prices ... 2.One-year ..."), as
+# long as a letter follows, so decimals like "2.5 tonnes" or "851.00" are never split.
+_NUMBERED_POINT_START = re.compile(r"(?:^|\s)(?=\d{1,2}[.)](?:\s|[^\W\d_]))")
+_POINT_NUMBER_NO_SPACE = re.compile(r"^(\d{1,2}[.)])(?=[^\W\d_])")
 
 
 def _split_numbered_points(text: str) -> list[str]:
@@ -179,8 +181,20 @@ def _split_numbered_points(text: str) -> list[str]:
     the whole string as a single point when no numbering is detected."""
     if not text:
         return []
-    parts = [p.strip() for p in _NUMBERED_POINT_START.split(text) if p and p.strip()]
+    parts = [_POINT_NUMBER_NO_SPACE.sub(r"\1 ", p.strip()) for p in _NUMBERED_POINT_START.split(text) if p and p.strip()]
     return parts if len(parts) > 1 else [text]
+
+
+def _terms_sections(ctx: Mapping[str, Any], lump_sum: bool) -> list[tuple[str | None, str]]:
+    """(sub-label, text) blocks under the terms heading. The official Commercial
+    Offer (lump sum) prints one plain numbered list — no "Payment Terms" /
+    "Terms & Conditions" sub-labels, and no separate Quote Conditions line, since
+    its terms text already states the price basis (e.g. "Ex. Factory")."""
+    if lump_sum:
+        keys = [(None, "payment_terms"), (None, "notes")]
+    else:
+        keys = [("Payment Terms", "payment_terms"), ("Terms & Conditions", "quote_conditions"), ("Notes", "notes")]
+    return [(label, _sentence_case(ctx[key])) for label, key in keys if ctx.get(key)]
 
 
 def _indian_grouping(int_part: str) -> str:
@@ -272,6 +286,43 @@ def _amount_in_words(value: Any, is_export: bool) -> str:
     return result
 
 
+# Lump-sum quotations follow the company's official "Commercial Offer" format:
+# S.No. / Particulars with no per-line prices, one "Total Price: Rs. X + 18% GST"
+# line, "PRICE TERMS & CONDITIONS" and the "FOR & ON BEHALF OF" signatory block.
+# Shared with quotation_docx.py so the PDF and Word file always read the same.
+LUMP_SUM_TITLE = "COMMERCIAL OFFER"
+LUMP_SUM_TERMS_HEADING = "PRICE TERMS & CONDITIONS"
+LUMP_SUM_SIGNATORY = ["FOR & ON BEHALF OF", "Premnath Rail", "C/o PREMNATH ENGINEERING WORKS"]
+
+
+def _is_lump_sum(ctx: Mapping[str, Any]) -> bool:
+    return (ctx.get("pricing_mode") or "itemwise") == "lumpsum"
+
+
+def _particular_lines(item: Mapping[str, Any]) -> list[str]:
+    """The Particulars cell of a lump-sum offer: the item name, "Model - <no.>" when
+    given, the item's details lines (e.g. warranty), then "Qty - <n>" when given."""
+    lines = [_sentence_case(line.strip()) for line in (item.get("description") or "").splitlines() if line.strip()] or ["-"]
+    if item.get("model_number"):
+        lines.insert(1, f"Model - {item['model_number']}")
+    lines.extend(_detail_lines(item))
+    if item.get("quantity"):
+        lines.append(f"Qty - {_fmt_quantity(item['quantity'])}")
+    return lines
+
+
+def _detail_lines(item: Mapping[str, Any]) -> list[str]:
+    return [_sentence_case(line.strip()) for line in (item.get("details") or "").splitlines() if line.strip()]
+
+
+def _lump_sum_price_line(ctx: Mapping[str, Any], currency: str, is_export: bool) -> str:
+    text = f"Total Price: {currency} {_fmt_amount(ctx.get('price'), is_export)}"
+    gst = ctx.get("lump_sum_gst_percent")
+    if not is_export and gst is not None:
+        text += f" + {float(gst):g}% GST"
+    return text
+
+
 def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     """Build a quotation PDF from a plain dict context.
 
@@ -295,9 +346,10 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     story: list[Any] = []
     currency = ctx.get("currency_symbol") or "Rs."
     is_export = (ctx.get("quotation_type") or "Domestic") == "Export"
+    lump_sum = _is_lump_sum(ctx)
 
     # ── Header band: company name/type on the left, big "QUOTATION" title on the right ──
-    story.append(_p("QUOTATION", size=HEADER_SIZE + 12, bold=True, align="right", color=ACCENT))
+    story.append(_p(LUMP_SUM_TITLE if lump_sum else "QUOTATION", size=HEADER_SIZE + 12, bold=True, align="right", color=ACCENT))
     story.append(Spacer(1, 2))
     story.append(_p(f"Quotation type: {ctx.get('quotation_type') or 'Domestic'}", size=BODY_SIZE, align="right", color=MUTED))
     story.append(Spacer(1, 14))
@@ -343,6 +395,47 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     story.append(top_block)
     story.append(Spacer(1, 16))
 
+    if lump_sum:
+        story.extend(_lump_sum_body(ctx, currency, is_export))
+    else:
+        story.extend(_itemwise_body(ctx, currency, is_export))
+
+    _append_terms_and_signatory(story, ctx, lump_sum)
+
+    doc.build(story, onFirstPage=_draw_letterhead, onLaterPages=_draw_letterhead)
+    buf.seek(0)
+    return buf
+
+
+def _lump_sum_body(ctx: Mapping[str, Any], currency: str, is_export: bool) -> list[Any]:
+    table_data = [[_p("S.No.", bold=True, align="center", color=white), _p("Particulars", bold=True, color=white)]]
+    for i, item in enumerate(ctx.get("items") or []):
+        table_data.append([
+            _p(str(i + 1), align="center"),
+            [_p(line, bold=(n == 0)) for n, line in enumerate(_particular_lines(item))],
+        ])
+    items_table = Table(table_data, colWidths=[0.7 * inch, USABLE_WIDTH - 0.7 * inch], repeatRows=1)
+    items_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), ACCENT),
+        ("GRID", (0, 0), (-1, -1), 0.75, black),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return [
+        items_table,
+        Spacer(1, 16),
+        KeepTogether([
+            _p(_lump_sum_price_line(ctx, currency, is_export), size=HEADER_SIZE + 1, bold=True, color=ACCENT),
+            Spacer(1, 6),
+            _p(f"<b>Amount in words: {_amount_in_words(ctx.get('price') or 0, is_export)}</b>", size=BODY_SIZE, escape=False),
+        ]),
+        Spacer(1, 20),
+    ]
+
+
+def _itemwise_body(ctx: Mapping[str, Any], currency: str, is_export: bool) -> list[Any]:
+    story: list[Any] = []
     headers = ["#", "Description", "Model no.", "Qty", f"Unit price ({currency})", f"Taxable value ({currency})"]
     if not is_export:
         headers.append("GST %")
@@ -376,7 +469,7 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
         gst_total += gst_amt
         row = [
             _p(str(i + 1), align="center"),
-            _p(_sentence_case(item.get("description")) or "-"),
+            [_p(_sentence_case(item.get("description")) or "-")] + [_p(line, size=BODY_SIZE - 1, color=MUTED) for line in _detail_lines(item)],
             _p(item.get("model_number") or "-", align="center"),
             _p(_fmt_quantity(item.get("quantity")), align="center"),
             _p(_fmt_amount(item.get("unit_price"), is_export), align="right"),
@@ -433,19 +526,17 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
         _p(f"<b>Amount in words: {_amount_in_words(grand_total, is_export)}</b>", size=BODY_SIZE, escape=False),
     ]))
     story.append(Spacer(1, 20))
+    return story
 
-    terms_sections = []
-    if ctx.get("payment_terms"):
-        terms_sections.append(("Payment Terms", _sentence_case(ctx["payment_terms"])))
-    if ctx.get("quote_conditions"):
-        terms_sections.append(("Terms & Conditions", _sentence_case(ctx["quote_conditions"])))
-    if ctx.get("notes"):
-        terms_sections.append(("Notes", _sentence_case(ctx["notes"])))
+
+def _append_terms_and_signatory(story: list[Any], ctx: Mapping[str, Any], lump_sum: bool) -> None:
+    terms_sections = _terms_sections(ctx, lump_sum)
     if terms_sections:
-        terms_block: list[Any] = [_p("TERMS AND CONDITIONS", size=BODY_SIZE + 1, bold=True, color=ACCENT), Spacer(1, 8)]
+        terms_block: list[Any] = [_p(LUMP_SUM_TERMS_HEADING if lump_sum else "TERMS AND CONDITIONS", size=BODY_SIZE + 1, bold=True, color=ACCENT), Spacer(1, 8)]
         for label, text in terms_sections:
-            terms_block.append(_p(label, size=BODY_SIZE, bold=True, color=MUTED))
-            terms_block.append(Spacer(1, 3))
+            if label:
+                terms_block.append(_p(label, size=BODY_SIZE, bold=True, color=MUTED))
+                terms_block.append(Spacer(1, 3))
             for point in _split_numbered_points(text):
                 terms_block.append(_p(point, size=BODY_SIZE))
                 terms_block.append(Spacer(1, 5))
@@ -455,6 +546,10 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
         story.append(KeepTogether(terms_block))
 
     story.append(Spacer(1, 24))
+    if lump_sum:
+        # Official Commercial Offer signature block: left-aligned, company names in bold.
+        story.append(KeepTogether([_p(line, bold=(n > 0)) for n, line in enumerate(LUMP_SUM_SIGNATORY)]))
+        return
     sign_table = Table(
         [[_p("_" * 34)], [_p("Authorized Signatory", color=MUTED)]],
         colWidths=[2.6 * inch],
@@ -463,7 +558,3 @@ def build_quotation_pdf(ctx: Mapping[str, Any]) -> io.BytesIO:
     wrapper = Table([["", sign_table]], colWidths=[USABLE_WIDTH - 2.6 * inch, 2.6 * inch])
     wrapper.setStyle(TableStyle([("ALIGN", (1, 0), (1, 0), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(wrapper)
-
-    doc.build(story, onFirstPage=_draw_letterhead, onLaterPages=_draw_letterhead)
-    buf.seek(0)
-    return buf

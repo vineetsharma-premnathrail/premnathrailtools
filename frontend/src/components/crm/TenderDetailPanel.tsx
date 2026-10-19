@@ -3,24 +3,36 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { crmApi } from '@/lib/api'
-import { Tender, Organization, OrgContact, CrmActivity, CrmDocument, CrmStageLogEntry } from '@/types'
+import { recordVisit } from '@/lib/crmShortcuts'
+import { Tender, Organization, OrgContact, CrmActivity, CrmDocument, CrmStageLogEntry, RndRequestAssignment } from '@/types'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import ReasonSheet from '@/components/shared/ReasonSheet'
+import CrmDocumentFolder, { DocumentSearch } from '@/components/crm/CrmDocumentFolder'
 import TenderForm from '@/components/crm/TenderForm'
 import { RichText } from '@/components/RichTextEditor'
 import ActivityViewDialog from '@/components/crm/ActivityViewDialog'
 import ActivityForm from '@/components/crm/ActivityForm'
 import MomExportDialog from '@/components/crm/MomExportDialog'
 import TechnicalOfferPickerDialog from '@/components/crm/TechnicalOfferPickerDialog'
-import { TND_STAGES, TENDER_STATUSES, DOC_CATEGORIES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
+import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
+import SalesOrderHandoff from '@/components/crm/SalesOrderHandoff'
+import { TND_STAGES, TENDER_STATUSES, tenderStatusColor, FOLLOW_UP_STATUSES } from '@/components/crm/constants'
 import { Card, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, RevisionSelector, SpecInfoRow, SpecRevision, StageProgress } from '@/components/crm/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { refOf } from '@/lib/recordRef'
 
-const TABS = ['Info', 'Dates', 'Documents', 'Follow Ups', 'Timeline'] as const
+// ?tab=discussion (from a @mention notification) opens the Discussion tab.
+const tabFromUrl = (): 'Discussion' | 'Info' =>
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'discussion' ? 'Discussion' : 'Info'
+
+const TABS = ['Info', 'Discussion', 'Documents', 'Dates', 'Follow Ups', 'Timeline'] as const
 
 export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: number; onDeleted?: () => void }) {
   const { user } = useAuth()
+  const { can, canDelete, canFeature } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
   const backParam = searchParams.get('back')
@@ -31,7 +43,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   const [contact, setContact] = useState<OrgContact | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
-  const [tab, setTab] = useState<typeof TABS[number]>('Info')
+  const [tab, setTab] = useState<typeof TABS[number]>(tabFromUrl)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [pendingStage, setPendingStage] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -47,7 +59,11 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
     try {
       const data = await crmApi.getTender(tenderId)
       setTender(data)
-      crmApi.getOrganization(data.org_id).then(setOrg).catch(() => {})
+      recordVisit({ kind: 'tender', id: data.id, ref: refOf(data), title: data.universal_id, sub: data.tender_name || data.current_stage })
+      crmApi.getOrganization(data.org_id).then((o: Organization) => {
+        setOrg(o)
+        recordVisit({ kind: 'tender', id: data.id, ref: refOf(data), title: data.universal_id, sub: [o.name, data.tender_name].filter(Boolean).join(' · ') })
+      }).catch(() => {})
       if (data.org_contact_id) {
         crmApi.listOrgContacts(data.org_id).then((contacts: OrgContact[]) => {
           setContact(contacts.find((c) => c.id === data.org_contact_id) || null)
@@ -64,25 +80,41 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
   }
 
   useEffect(() => {
-    if (tenderId) { setTab('Info'); setEditing(false); load() }
+    // Deferred so the effect itself sets no state.
+    if (tenderId) Promise.resolve().then(() => { setTab(tabFromUrl()); setEditing(false); load() })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenderId])
 
-  const canModify = !!tender && !!user && (user.role === 'admin' || tender.created_by_id === user.id)
+  // No discussion until the Technical Requirement has been sent to R&D.
+  useEffect(() => {
+    if (tab === 'Discussion' && tender && !tender.technical_offer_sent_at) Promise.resolve().then(() => setTab('Info'))
+  }, [tab, tender])
+
+  // Creator-or-admin (backend rule) AND Inquiries & Tenders › Edit in the Permission Matrix.
+  const canModify = !!tender && !!user && (user.role === 'admin' || tender.created_by_id === user.id) && can('crm', 'inquiries_tenders', 'edit')
+  const canDeleteRecord = !!tender && canDelete('crm', 'inquiries_tenders', tender.created_by_id ?? null)
+  // Tenders share the Inquiries & Tenders tab, so they share its features (core/features/crm.py).
+  const seeTab = (t: typeof TABS[number]) => t === 'Info'
+    || (t === 'Dates' && canFeature('crm', 'inquiries_tenders', 'tender_dates', 'view'))
+    || (t === 'Discussion' && canFeature('crm', 'inquiries_tenders', 'discussion', 'view'))
+    || (t === 'Documents' && canFeature('crm', 'inquiries_tenders', 'documents', 'view'))
+    || (t === 'Follow Ups' && canFeature('crm', 'inquiries_tenders', 'followups', 'view'))
+    || (t === 'Timeline' && canFeature('crm', 'inquiries_tenders', 'timeline', 'view'))
   const isAdmin = user?.role === 'admin'
+  const movingBack = !!pendingStage && !!tender && TND_STAGES.indexOf(pendingStage) < TND_STAGES.indexOf(tender.current_stage)
 
   const patch = async (payload: Record<string, unknown>) => {
     if (!tender) return
     try {
       setTender(await crmApi.updateTender(tender.id, payload))
       crmApi.getTenderSpecRevisions(tender.id).then(setRevisions).catch(() => {})
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Update failed.'))
     }
   }
 
   // Status is a quick lead-info toggle, not a requirement change — keep
-  // updated_at as it was so it doesn't re-arm the "Send Technical Offer Request"
+  // updated_at as it was so it doesn't re-arm the "Send Technical Requirement"
   // button (that button only cares about the requirement details changing).
   const patchLeadInfo = async (payload: Record<string, unknown>) => {
     if (!tender) return
@@ -90,7 +122,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       const prevUpdatedAt = tender.updated_at
       const updated = await crmApi.updateTender(tender.id, payload)
       setTender({ ...updated, updated_at: prevUpdatedAt })
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Update failed.'))
     }
   }
@@ -101,7 +133,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       await crmApi.deleteTender(tender.id)
       if (onDeleted) onDeleted()
       else router.push('/dashboard/crm/tenders')
-    } catch (err: any) {
+    } catch (err) {
       setError(extractErrorMessages(err, 'Failed to delete tender.'))
     }
   }
@@ -111,15 +143,16 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
     (!!tender.updated_at && new Date(tender.updated_at) > new Date(tender.technical_offer_sent_at))
   )
 
-  const sendTechnicalOfferRequest = async (documentIds: number[]) => {
+  const sendTechnicalOfferRequest = async (documentIds: number[], assignment: RndRequestAssignment) => {
     if (!tender || !torActive) return
     setSendingTOR(true)
     setTorError('')
     try {
-      setTender(await crmApi.createTenderTechnicalOfferRequest(tender.id, documentIds))
+      setTender(await crmApi.createTenderTechnicalOfferRequest(tender.id, documentIds, assignment))
       setShowTorPicker(false)
-    } catch (err: any) {
-      setTorError(extractErrorMessages(err, 'Failed to send Technical Offer Request.'))
+      setTab('Info')
+    } catch (err) {
+      setTorError(extractErrorMessages(err, 'Failed to send Technical Requirement to R&D.'))
     } finally {
       setSendingTOR(false)
     }
@@ -149,38 +182,40 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         )}
       </div>
 
-      <MessageDialog open={!!torError} variant="error" title="Technical Offer Request Failed" message={torError} onClose={() => setTorError('')} />
+      <MessageDialog open={!!torError} variant="error" title="Send Technical Requirement Failed" message={torError} onClose={() => setTorError('')} />
       <MessageDialog open={!!error} variant="error" title="Something Went Wrong" message={error} onClose={() => setError('')} />
 
       {editing && (
-        <StageProgress stage={tender.current_stage} stages={TND_STAGES} canModify={canModify} onRequestChange={setPendingStage} tourId="tender-stage-progress" />
+        <StageProgress stage={tender.current_stage} stages={TND_STAGES} canModify={canModify} allowBackward={isAdmin} onRequestChange={setPendingStage} tourId="tender-stage-progress" />
       )}
       {!editing && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
           <StageProgress
             stage={tender.current_stage}
             stages={TND_STAGES}
-            canModify={canModify}
+            canModify={canModify && canFeature('crm', 'inquiries_tenders', 'stage', 'edit')}
+            allowBackward={isAdmin}
             onRequestChange={setPendingStage}
             tourId="tender-stage-progress"
             style={{ marginBottom: 0, flex: '1 1 280px', minWidth: 240 }}
           />
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>
+              <button onClick={() => router.push(backHref)} type="button" data-tour="tender-back-btn" style={secondaryBtnStyle}>
                 ← Back
               </button>
-              <button
+              {canFeature('crm', 'inquiries_tenders', 'send_tor', 'create') && <button
                 onClick={() => setShowTorPicker(true)}
                 disabled={!torActive || sendingTOR}
                 data-tour="tender-tor-btn"
-                title={!torActive ? `Already sent as ${tender.technical_offer_number} — edit the tender to send again.` : 'Emails R&D the Organization, Project, and Product Requirement details as a PDF.'}
+                title={!torActive ? `Already sent as ${tender.technical_offer_number} — edit the tender to send again.` : 'Emails R&D the Customer Organization, Project, and Product Requirement details as a PDF.'}
                 style={{ ...secondaryBtnStyle, opacity: !torActive || sendingTOR ? 0.5 : 1, cursor: !torActive || sendingTOR ? 'not-allowed' : 'pointer' }}
               >
-                {sendingTOR ? 'Sending…' : 'Send Technical Offer Request to R&D'}
-              </button>
+                {sendingTOR ? 'Sending…' : 'Send Technical Requirement to R&D'}
+              </button>}
+              <SalesOrderHandoff source="tender" record={tender} tourId="tender-create-so-btn" />
               {canModify && <button onClick={() => { setEditing(true); setTab('Info') }} data-tour="tender-edit-btn" style={secondaryBtnStyle}>Edit</button>}
-              {canModify && <button onClick={() => setShowDeleteConfirm(true)} data-tour="tender-delete-btn" style={dangerBtnStyle}>Delete</button>}
+              {canDeleteRecord && <button onClick={() => setShowDeleteConfirm(true)} data-tour="tender-delete-btn" style={dangerBtnStyle}>Delete</button>}
             </div>
             {tender.technical_offer_number && (
               <span style={{ fontSize: 11, color: '#78716c' }}>
@@ -193,7 +228,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       )}
 
       <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 20, padding: 4, borderRadius: 999, background: 'rgba(0,0,0,0.05)', overflowX: 'auto', overflowY: 'visible' }}>
-        {TABS.map((t) => (
+        {TABS.filter((t) => (t !== 'Discussion' || !!tender.technical_offer_sent_at) && seeTab(t)).map((t) => (
           <div key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <button
               onClick={() => setTab(t)}
@@ -220,7 +255,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         ))}
       </div>
 
-      {tab === 'Info' && editing && (
+      {(tab === 'Info' || !seeTab(tab)) && editing && (
         <TenderForm
           initial={tender}
           submitLabel="Save Changes"
@@ -231,11 +266,14 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
           }}
         />
       )}
-      {tab === 'Info' && !editing && <InfoTab tender={tender} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canModify} onChangeLeadInfo={patchLeadInfo} />}
-      {tab === 'Dates' && <DatesTab tender={tender} />}
-      {tab === 'Documents' && <DocumentsTab tender={tender} canModify={canModify} isAdmin={isAdmin} />}
-      {tab === 'Follow Ups' && <ActivitiesTab tender={tender} org={org} />}
-      {tab === 'Timeline' && <TimelineTab tenderId={tender.id} />}
+      {(tab === 'Info' || !seeTab(tab)) && !editing && (
+        <InfoTab tender={tender} org={org} contact={contact} revisions={revisions} selectedRevId={selectedRevId} canModify={canModify} onChangeLeadInfo={patchLeadInfo} />
+      )}
+      {tab === 'Dates' && seeTab('Dates') && <DatesTab tender={tender} />}
+      {tab === 'Discussion' && seeTab('Discussion') && tender.technical_offer_sent_at && <RequirementDiscussionTab source="tender" recordId={tender.id} side="crm" />}
+      {tab === 'Documents' && seeTab('Documents') && <DocumentsTab tender={tender} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'documents', 'create')} isAdmin={isAdmin} />}
+      {tab === 'Follow Ups' && seeTab('Follow Ups') && <ActivitiesTab tender={tender} org={org} />}
+      {tab === 'Timeline' && seeTab('Timeline') && <TimelineTab tenderId={tender.id} />}
 
       <TechnicalOfferPickerDialog
         open={showTorPicker}
@@ -254,13 +292,27 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
         onCancel={() => setShowDeleteConfirm(false)}
       />
 
+      {/* Stages only move forward; going back is an admin correction and needs a reason. */}
       <ConfirmDialog
-        open={!!pendingStage}
+        open={!!pendingStage && !movingBack}
         title="Update Stage"
         danger={false}
         confirmLabel="Update Stage"
-        message={pendingStage ? `Move this tender from "${tender.current_stage}" to "${pendingStage}"?` : ''}
+        message={pendingStage ? `Move this tender from "${tender.current_stage}" to "${pendingStage}"? Stages only move forward — once moved, it cannot be undone except by an admin.` : ''}
         onConfirm={() => { const s = pendingStage; setPendingStage(null); if (s) patch({ current_stage: s }) }}
+        onCancel={() => setPendingStage(null)}
+      />
+      <ReasonSheet
+        open={!!pendingStage && movingBack}
+        title="Move Stage Back"
+        message={pendingStage ? `Move this tender back from "${tender.current_stage}" to "${pendingStage}"? This reverses the pipeline — the reason is kept on the timeline.` : ''}
+        placeholder="e.g. LOA cancelled by the railway — tender re-opened"
+        label="Reason for moving the stage back"
+        hint="Admin correction — the reason is kept on the tender's timeline."
+        confirmLabel="Move Back"
+        requireValue
+        requiredMessage="Enter the reason for moving the stage back — it is required and is kept on the record."
+        onConfirm={(reason) => { const s = pendingStage; setPendingStage(null); if (s) patch({ current_stage: s, stage_reason: reason.trim() }) }}
         onCancel={() => setPendingStage(null)}
       />
     </div>
@@ -270,6 +322,9 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
 function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, onChangeLeadInfo }: { tender: Tender; org: Organization | null; contact: OrgContact | null; revisions: SpecRevision[]; selectedRevId: number | null; canModify: boolean; onChangeLeadInfo: (payload: Record<string, unknown>) => void }) {
   const selectedRev = revisions.find((r) => r.id === selectedRevId) || null
   const changeFor = (field: string) => selectedRev?.changes.find((c) => c.field === field)
+  const { canFeature } = useCan()
+  const seeCustomer = canFeature('crm', 'inquiries_tenders', 'customer_contact', 'view')
+  const seePrices = canFeature('crm', 'inquiries_tenders', 'prices', 'view')
 
   return (
     <div data-tour="tender-info-view" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -293,21 +348,21 @@ function InfoTab({ tender, org, contact, revisions, selectedRevId, canModify, on
           <SpecInfoRow label="Portal" value={tender.tender_portal || '—'} change={changeFor('tender_portal')} />
           <SpecInfoRow label="Type" value={tender.tender_type || '—'} change={changeFor('tender_type')} />
           <SpecInfoRow label="Category" value={tender.tender_category || '—'} change={changeFor('tender_category')} />
-          <SpecInfoRow label="Value" value={tender.tender_value != null ? `${tender.currency} ${tender.tender_value.toLocaleString()}` : '—'} change={changeFor('tender_value') || changeFor('currency')} />
+          {seePrices && <SpecInfoRow label="Value" value={tender.tender_value != null ? `${tender.currency} ${tender.tender_value.toLocaleString()}` : '—'} change={changeFor('tender_value') || changeFor('currency')} />}
           <InfoRow label="Currency" value={tender.currency} />
           <InfoRow label="Current Stage" value={tender.current_stage} />
         </Card>
-        <Card title="Organization">
+        {seeCustomer && <Card title="Customer Organization">
           <InfoRow label="Name" value={org?.name || '—'} />
           <SpecInfoRow label="Railway Zone" value={tender.railway_zone || '—'} change={changeFor('railway_zone')} />
           <SpecInfoRow label="Division" value={tender.division || '—'} change={changeFor('division')} />
-        </Card>
-        <Card title="Contact Person">
+        </Card>}
+        {seeCustomer && <Card title="Contact Person">
           <InfoRow label="Name" value={contact?.name || 'Not provided'} />
           <InfoRow label="Mobile" value={contact?.mobile || 'Not provided'} />
           <InfoRow label="Email" value={contact?.email || 'Not provided'} />
           <InfoRow label="Department" value={contact?.department || 'Not provided'} />
-        </Card>
+        </Card>}
       </div>
     </div>
   )
@@ -346,117 +401,37 @@ function DatesTab({ tender }: { tender: Tender }) {
   )
 }
 
-function DocumentsTab({ tender, canModify, isAdmin }: { tender: Tender; canModify: boolean; isAdmin: boolean }) {
+function DocumentsTab({ tender, canModify }: { tender: Tender; canModify: boolean; isAdmin: boolean }) {
   const [documents, setDocuments] = useState<CrmDocument[]>([])
   const [error, setError] = useState<string | string[]>('')
+  const [loadError, setLoadError] = useState<string | string[]>('')
+  const [docSearch, setDocSearch] = useState('')
 
-  const load = () => crmApi.listDocuments({ related_module: 'tender', related_id: tender.id }).then(setDocuments)
-  useEffect(() => { load() }, [tender.id])
-
-  const remove = async (id: number) => {
-    await crmApi.deleteDocument(id)
-    load()
-  }
+  const load = () => crmApi.listDocuments({ related_module: 'tender', related_id: tender.id })
+    .then(setDocuments)
+    .catch((err) => setLoadError(extractErrorMessages(err, 'Could not load the documents of this tender. Reload the page; if it persists, check that you still have CRM access.')))
+  useEffect(() => { load() }, [tender.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const clientDocs = documents.filter((d) => d.folder_type === 'client')
-  const internalDocs = documents.filter((d) => d.folder_type === 'internal')
+  // Sent TOR PDFs are filed as internal; R&D's reply files are listed with them.
+  const internalDocs = documents.filter((d) => d.folder_type === 'internal' || d.doc_category === 'rnd_response')
+
+  const related = { module: 'tender' as const, id: tender.id, universalId: tender.universal_id, orgId: tender.org_id }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-      <MessageDialog open={!!error} variant="error" title="Upload Failed" message={error} onClose={() => setError('')} />
-      <TenderDocumentFolderPanel tourId="tender-docs-client" title="Client Documents" folderType="client" docs={clientDocs} tender={tender} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
-      <TenderDocumentFolderPanel tourId="tender-docs-internal" title="Internal Documents" folderType="internal" docs={internalDocs} tender={tender} canModify={canModify} canDelete={isAdmin} onUploaded={load} onRemove={remove} error={error} setError={setError} />
-    </div>
-  )
-}
-
-function TenderDocumentFolderPanel({ tourId, title, folderType, docs, tender, canModify, canDelete, onUploaded, onRemove, error, setError }: {
-  tourId?: string
-  title: string
-  folderType: 'client' | 'internal'
-  docs: CrmDocument[]
-  tender: Tender
-  canModify: boolean
-  canDelete: boolean
-  onUploaded: () => void
-  onRemove: (id: number) => void
-  error: string | string[]
-  setError: (v: string | string[]) => void
-}) {
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [docCategory, setDocCategory] = useState(DOC_CATEGORIES[DOC_CATEGORIES.length - 1])
-  const [uploading, setUploading] = useState(false)
-
-  const handleUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
-    setUploading(true)
-    setError('')
-    try {
-      await crmApi.uploadDocuments(
-        { related_module: 'tender', related_id: tender.id, folder_type: folderType, doc_category: docCategory, universal_id: tender.universal_id, org_id: tender.org_id },
-        Array.from(files)
-      )
-      onUploaded()
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Upload failed.'))
-    } finally {
-      setUploading(false)
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
-
-  return (
-    <div data-tour={tourId} style={{ position: 'relative', padding: 16, borderRadius: 14, background: '#fff', border: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {uploading && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 2, borderRadius: 14, background: 'rgba(255,255,255,.85)', backdropFilter: 'blur(2px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <div style={{ width: 26, height: 26, borderRadius: '50%', border: '3px solid rgba(255,122,69,0.2)', borderTopColor: '#FF7A45', animation: 'crm-spin 0.8s linear infinite' }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#FF7A45' }}>Uploading…</span>
-          <style>{'@keyframes crm-spin { to { transform: rotate(360deg) } }'}</style>
-        </div>
-      )}
-      <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#78716c', margin: 0 }}>{title}</p>
-      {docs.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#a8a29e' }}>None</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {docs.map((d) => (
-            <div key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
-              <div>
-                <a
-                  href="#"
-                  onClick={async (e) => {
-                    e.preventDefault()
-                    try {
-                      await crmApi.openDocument(d)
-                    } catch (err) {
-                      setError(extractErrorMessages(err, 'Unable to open document.'))
-                    }
-                  }}
-                  style={{ fontSize: 13, color: '#2563eb', textDecoration: 'none', cursor: 'pointer' }}
-                >{d.file_name}</a>
-                <p style={{ fontSize: 11, color: '#a8a29e', margin: '2px 0 0' }}>{d.doc_category || '—'}</p>
-              </div>
-              {canDelete && <button onClick={() => onRemove(d.id)} style={{ ...dangerBtnStyle, padding: '4px 10px', fontSize: 11.5 }}>Delete</button>}
-            </div>
-          ))}
-        </div>
-      )}
-      {canModify && (
-        <div style={{ paddingTop: 12, borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: '#78716c', margin: 0 }}>Upload {title.slice(0, -1)}</p>
-          <select value={docCategory} onChange={(e) => setDocCategory(e.target.value)} style={inputStyle}>
-            {DOC_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <input ref={fileRef} type="file" multiple onChange={(e) => handleUpload(e.target.files)} disabled={uploading} style={inputStyle} />
-        </div>
-      )}
-      {error && <p style={{ fontSize: 12.5, color: '#b91c1c' }}>{error}</p>}
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 16 }}>
+      <MessageDialog open={!!error} variant="error" title="Document Error" message={error} onClose={() => setError('')} />
+      <MessageDialog open={!!loadError} variant="error" title="Cannot Load Documents" message={loadError} onClose={() => setLoadError('')} />
+      <DocumentSearch value={docSearch} onChange={setDocSearch} />
+      <CrmDocumentFolder tourId="tender-docs-client" title="Client Documents" folderType="client" docs={clientDocs} related={related} canModify={canModify} onUploaded={load} setError={setError} query={docSearch} />
+      <CrmDocumentFolder tourId="tender-docs-internal" title="Internal Documents" folderType="internal" docs={internalDocs} related={related} canModify={canModify} onUploaded={load} setError={setError} query={docSearch} />
     </div>
   )
 }
 
 function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | null }) {
   const { user } = useAuth()
+  const { canFeature } = useCan()
   const [activities, setActivities] = useState<CrmActivity[]>([])
   const [showForm, setShowForm] = useState(false)
   const [editingActivity, setEditingActivity] = useState<CrmActivity | null>(null)
@@ -464,10 +439,13 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
   const [deletingActivity, setDeletingActivity] = useState<CrmActivity | null>(null)
   const [exportingMomId, setExportingMomId] = useState<number | null>(null)
   const [momError, setMomError] = useState<string | string[]>('')
+  const [loadError, setLoadError] = useState<string | string[]>('')
   const [showMomExport, setShowMomExport] = useState(false)
 
-  const load = () => crmApi.listActivities({ related_module: 'tender', related_id: tender.id }).then(setActivities)
-  useEffect(() => { load() }, [tender.id])
+  const load = () => crmApi.listActivities({ related_module: 'tender', related_id: tender.id })
+    .then(setActivities)
+    .catch((err) => setLoadError(extractErrorMessages(err, 'Could not load the follow-ups of this tender. Reload the page; if it persists, check that you still have CRM access.')))
+  useEffect(() => { load() }, [tender.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const exportMom = async (a: CrmActivity) => {
     setExportingMomId(a.id)
@@ -499,6 +477,7 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
     setShowForm(false)
   }
 
+  const canEditActivity = (a: CrmActivity) => canFeature('crm', 'inquiries_tenders', 'followups', 'edit') && !!user && (user.role === 'admin' || a.created_by_id === user.id)
   const changeStatus = (a: CrmActivity, status: string) => crmApi.updateActivity(a.id, { status }).then(load)
 
   const handleDelete = async () => {
@@ -511,10 +490,11 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <button onClick={() => { if (showForm) cancelForm(); else { setEditingActivity(null); setShowForm(true) } }} data-tour="activity-add-btn" style={primaryBtnStyle}>{showForm ? 'Cancel' : '+ Add Follow Up'}</button>
-        <button onClick={() => setShowMomExport(true)} data-tour="activity-export-meeting-mom-btn" style={secondaryBtnStyle}>Export Meeting MOM</button>
+        {canFeature('crm', 'inquiries_tenders', 'followups', 'create') && <button onClick={() => { setEditingActivity(null); setShowForm(true) }} data-tour="activity-add-btn" style={primaryBtnStyle}>+ Add Follow Up</button>}
+        {canFeature('crm', 'inquiries_tenders', 'followups', 'print') && <button onClick={() => setShowMomExport(true)} data-tour="activity-export-meeting-mom-btn" style={secondaryBtnStyle}>Export Meeting MOM</button>}
       </div>
       <MessageDialog open={!!momError} variant="error" title="Cannot Export MoM" message={momError} onClose={() => setMomError('')} />
+      <MessageDialog open={!!loadError} variant="error" title="Cannot Load Follow Ups" message={loadError} onClose={() => setLoadError('')} />
       <MomExportDialog
         open={showMomExport}
         onClose={() => setShowMomExport(false)}
@@ -539,7 +519,7 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
           }}
         />
       )}
-      {!showForm && (activities.length === 0 ? (
+      {activities.length === 0 ? (
         <p style={{ fontSize: 13, color: '#a8a29e' }}>No follow-ups logged.</p>
       ) : (
         activities.map((a, idx) => (
@@ -564,19 +544,19 @@ function ActivitiesTab({ tender, org }: { tender: Tender; org: Organization | nu
               <p style={{ fontSize: 11.5, color: '#a8a29e', margin: '2px 0 0' }}>Due: {a.next_followup || 'To Be Decided'}</p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <button onClick={() => setViewingActivity(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>View</button>
-              <button onClick={() => startEdit(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>
-              <ChangeStatusButton currentStatus={a.status || FOLLOW_UP_STATUSES[0]} statuses={FOLLOW_UP_STATUSES} onSelect={(s) => changeStatus(a, s)} tourId={idx === 0 ? 'tender-followup-change-status-btn' : undefined} />
-              <button disabled={exportingMomId === a.id} onClick={() => exportMom(a)} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: exportingMomId === a.id ? 0.7 : 1 }}>
+              <button onClick={() => setViewingActivity(a)} data-tour={idx === 0 ? 'activity-row-view-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>View</button>
+              {canEditActivity(a) && <button onClick={() => startEdit(a)} data-tour={idx === 0 ? 'activity-row-edit-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Edit</button>}
+              {canEditActivity(a) && <ChangeStatusButton currentStatus={a.status || FOLLOW_UP_STATUSES[0]} statuses={FOLLOW_UP_STATUSES} onSelect={(s) => changeStatus(a, s)} tourId={idx === 0 ? 'tender-followup-change-status-btn' : undefined} />}
+              {canFeature('crm', 'inquiries_tenders', 'followups', 'print') && <button disabled={exportingMomId === a.id} onClick={() => exportMom(a)} data-tour={idx === 0 ? 'activity-row-export-mom-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5, opacity: exportingMomId === a.id ? 0.7 : 1 }}>
                 {exportingMomId === a.id ? 'Exporting…' : 'Export MoM'}
-              </button>
-              {(user?.role === 'admin' || a.created_by_id === user?.id) && (
-                <button onClick={() => setDeletingActivity(a)} style={{ ...dangerBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Delete</button>
+              </button>}
+              {canFeature('crm', 'inquiries_tenders', 'followups', 'delete') && !!user && (user.role === 'admin' || a.created_by_id == null || a.created_by_id === user.id) && (
+                <button onClick={() => setDeletingActivity(a)} data-tour={idx === 0 ? 'activity-row-delete-btn' : undefined} style={{ ...dangerBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>Delete</button>
               )}
             </div>
           </div>
         ))
-      ))}
+      )}
 
       <ActivityViewDialog activity={viewingActivity} onClose={() => setViewingActivity(null)} />
 
@@ -659,7 +639,7 @@ const TENDER_AUDIT_FIELD_LABELS: Record<string, string> = {
   tender_number: 'Tender No.', tender_name: 'Tender Name', tender_authority: 'Tender Authority',
   tender_portal: 'Portal', tender_type: 'Type', tender_category: 'Category', tender_value: 'Value',
   currency: 'Currency', status: 'Status', current_stage: 'Stage', current_status_note: 'Current Status', railway_zone: 'Railway Zone',
-  division: 'Division', workshop: 'Workshop', org_id: 'Organization', org_contact_id: 'Contact',
+  division: 'Division', workshop: 'Workshop', org_id: 'Customer Organization', org_contact_id: 'Contact',
 }
 
 function escapeHtml(s: string): string {
@@ -699,12 +679,13 @@ function cleanAuditTitle(summary: string | null, actor: string | null | undefine
 
 function TimelineTab({ tenderId }: { tenderId: number }) {
   const [entries, setEntries] = useState<TenderTimelineEntry[] | null>(null)
+  const seeFollowupsTl = useCan().canFeature('crm', 'inquiries_tenders', 'followups', 'view')
 
   useEffect(() => {
     Promise.all([
       crmApi.getTenderAudit(tenderId),
       crmApi.listTenderStages(tenderId),
-      crmApi.listActivities({ related_module: 'tender', related_id: tenderId }),
+      seeFollowupsTl ? crmApi.listActivities({ related_module: 'tender', related_id: tenderId }) : Promise.resolve([]),
       crmApi.getTenderSpecRevisions(tenderId),
     ]).then(([audit, stages, activities, specRevisions]) => {
       const merged: TenderTimelineEntry[] = [
@@ -748,7 +729,7 @@ function TimelineTab({ tenderId }: { tenderId: number }) {
       merged.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
       setEntries(merged)
     })
-  }, [tenderId])
+  }, [tenderId, seeFollowupsTl])
 
   if (entries === null) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
   if (entries.length === 0) return <p style={{ fontSize: 13, color: '#a8a29e' }}>No timeline history yet.</p>

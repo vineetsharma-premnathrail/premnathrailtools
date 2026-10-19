@@ -1,254 +1,108 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { projectsApi } from '@/lib/api'
-import { PmProjectDocument, PmDocumentType } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
-import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { useCan } from '@/lib/permissions'
+import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
+import { PmProject, PmProjectDocument } from '@/types'
+import { TEXT } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
+import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { ErrorBanner, AttachmentList, inputStyle, sectionStyle } from '@/components/projects/work/pmUi'
 
-const DOC_TYPE_LABELS: Record<PmDocumentType, string> = {
-  charter: 'Charter',
-  plan: 'Plan',
-  specification: 'Specification',
-  contract: 'Contract',
-  report: 'Report',
-  other: 'Other',
-}
-
-const DOC_TYPE_HEX: Record<PmDocumentType, string> = {
-  charter: '#2563EB',
-  plan: '#7C3AED',
-  specification: '#0d9488',
-  contract: '#f59e0b',
-  report: '#16A34A',
-  other: '#78716c',
-}
-
-const inputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body, width: '100%',
-}
-
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-
-function formatBytes(n?: number) {
-  if (!n && n !== 0) return '—'
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
-}
-
-export default function DocumentsTab({ projectId }: { projectId: number }) {
-  const [documents, setDocuments] = useState<PmProjectDocument[]>([])
-  const [loading, setLoading] = useState(true)
+/** Every file of the project in one register: files attached on milestones
+ * and tasks in Project Plan & Milestones (with the milestone, task and person
+ * each came from), plus files uploaded on the project earlier and older WBS
+ * evidence / chat files when they exist. Upload happens on the milestone or
+ * task itself. */
+export default function DocumentsTab({ project }: { project: PmProject }) {
+  const { canDelete } = useCan()
+  const [docs, setDocs] = useState<PmProjectDocument[]>([])
+  const [toDelete, setToDelete] = useState<number | null>(null)
+  const [dept, setDept] = useState('')
+  const [milestone, setMilestone] = useState('')
   const [error, setError] = useState<string | string[]>('')
 
-  const [filterDocType, setFilterDocType] = useState('')
+  const load = useCallback(() => {
+    projectsApi.documents(project.id).then((d) => setDocs(Array.isArray(d) ? d : [])).catch((err) => setError(extractErrorMessages(err, 'Failed to load documents.')))
+  }, [project.id])
+  useEffect(() => { load() }, [load])
 
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [uploadDocType, setUploadDocType] = useState<PmDocumentType>('charter')
-  const [uploadTitle, setUploadTitle] = useState('')
-  const [uploadVersion, setUploadVersion] = useState('')
-  const [uploadDescription, setUploadDescription] = useState('')
-  const [uploading, setUploading] = useState(false)
-  const [uploadError, setUploadError] = useState<string | string[]>('')
+  const open = (id: number, name: string) =>
+    openAttachmentBlob(() => projectsApi.documentBlob(project.id, id), name).catch(() => setError(`Could not open ${name}. Try again; if it keeps failing, the file may be missing in SharePoint.`))
 
-  const [deletingDoc, setDeletingDoc] = useState<PmProjectDocument | null>(null)
-  const [deleting, setDeleting] = useState(false)
-
-  const load = () => {
-    setLoading(true)
-    const params: Record<string, unknown> = {}
-    if (filterDocType) params.doc_type = filterDocType
-    return projectsApi.listProjectDocuments(projectId, params)
-      .then((data) => setDocuments(Array.isArray(data) ? data : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load documents.')))
-      .finally(() => setLoading(false))
-  }
-
-  useEffect(() => { load() }, [projectId, filterDocType])
-
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const files = fileRef.current?.files
-    if (!files || files.length === 0) {
-      setUploadError('Select at least one file to upload.')
-      return
+  const src = (d: PmProjectDocument) => d.source || (d.task_id ? 'task' : d.message_id ? 'chat' : d.milestone_id ? 'evidence' : 'project')
+  const depts = Array.from(new Set(docs.map((d) => d.department_name).filter(Boolean) as string[])).sort()
+  const milestones = Array.from(new Map(docs.filter((d) => d.plan_milestone_id).map((d) => [String(d.plan_milestone_id), d.plan_milestone_title || ''])).entries())
+    .sort((a, b) => a[1].localeCompare(b[1]))
+  const shown = docs.filter((d) => (!dept || d.department_name === dept) && (!milestone || String(d.plan_milestone_id) === milestone))
+  const groups = [
+    { key: 'task', title: 'Milestone & task documents', rows: shown.filter((d) => src(d) === 'task') },
+    { key: 'project', title: 'Project documents', rows: dept || milestone ? [] : shown.filter((d) => src(d) === 'project') },
+    { key: 'evidence', title: 'WBS evidence', rows: shown.filter((d) => src(d) === 'evidence') },
+    { key: 'chat', title: 'Sent in WBS chats', rows: shown.filter((d) => src(d) === 'chat') },
+  ]
+  // "R&D · Step 1 GA drawing › Prepare BOM · title" — who it came from, at a glance.
+  const where = (d: PmProjectDocument) => {
+    if (d.plan_milestone_title) {
+      // "Milestone: Design release › Task: Frame GA drawing"
+      return [`Milestone: ${d.plan_milestone_title}`, d.plan_task_title ? `Task: ${d.plan_task_title}` : null,
+        d.title && d.title !== d.file_name ? d.title : null].filter(Boolean).join(' › ')
     }
-    if (!uploadTitle.trim()) {
-      setUploadError('Title is required.')
-      return
-    }
-    setUploading(true)
-    setUploadError('')
-    try {
-      const formData = new FormData()
-      formData.append('doc_type', uploadDocType)
-      formData.append('title', uploadTitle.trim())
-      if (uploadVersion.trim()) formData.append('version', uploadVersion.trim())
-      if (uploadDescription.trim()) formData.append('description', uploadDescription.trim())
-      Array.from(files).forEach((f) => formData.append('files', f))
-      await projectsApi.uploadProjectDocument(projectId, formData)
-      setUploadTitle('')
-      setUploadVersion('')
-      setUploadDescription('')
-      if (fileRef.current) fileRef.current.value = ''
-      load()
-    } catch (err: any) {
-      setUploadError(extractErrorMessages(err, 'Upload failed.'))
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const handleView = async (doc: PmProjectDocument) => {
-    try {
-      const blob = await projectsApi.getProjectDocumentContent(projectId, doc.id)
-      window.open(URL.createObjectURL(blob), '_blank')
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Unable to open document.'))
-    }
-  }
-
-  const confirmDelete = async () => {
-    if (!deletingDoc) return
-    setDeleting(true)
-    try {
-      await projectsApi.deleteProjectDocument(projectId, deletingDoc.id)
-      setDeletingDoc(null)
-      load()
-    } catch (err: any) {
-      setError(extractErrorMessages(err, 'Failed to delete document.'))
-    } finally {
-      setDeleting(false)
-    }
+    const parts = [
+      d.department_name,
+      d.milestone_title ? `Step ${d.milestone_sequence ?? '?'} ${d.milestone_title}${d.task_title ? ` › ${d.task_title}` : ''}` : d.task_title,
+      d.title && d.title !== d.file_name ? d.title : null,
+    ].filter(Boolean)
+    return parts.length ? parts.join(' · ') : d.title
   }
 
   return (
-    <div>
-      <ConfirmDialog
-        open={!!deletingDoc}
-        title="Delete document?"
-        message={`This permanently removes "${deletingDoc?.title}" (${deletingDoc?.file_name}). This cannot be undone.`}
-        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
-        onConfirm={confirmDelete}
-        onCancel={() => setDeletingDoc(null)}
-      />
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
+    <div data-tour="pm-docs-section" style={sectionStyle}>
+      <ErrorBanner error={error} />
+      {(depts.length > 0 || milestones.length > 0) && (
+        <div data-tour="pm-docs-dept-filter" style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+          {milestones.length > 0 && (
+            <select style={{ ...inputStyle, width: 240 }} value={milestone} onChange={(e) => setMilestone(e.target.value)}>
+              <option value="">All milestones</option>
+              {milestones.map(([id, title]) => <option key={id} value={id}>{title}</option>)}
+            </select>
+          )}
+          {depts.length > 0 && (
+            <select style={{ ...inputStyle, width: 220 }} value={dept} onChange={(e) => setDept(e.target.value)}>
+              <option value="">All departments</option>
+              {depts.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
+          <span style={{ fontSize: 12.5, color: TEXT.muted }}>{shown.length} file(s)</span>
         </div>
       )}
-
-      <div style={sectionStyle}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Upload Document</p>
-
-        {uploadError && (
-          <div style={{ padding: '10px 14px', marginBottom: 14, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-            {Array.isArray(uploadError) ? uploadError.join(' ') : uploadError}
-          </div>
-        )}
-
-        <form onSubmit={handleUpload}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginBottom: 14 }}>
-            <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-              <label style={labelStyle}>Doc Type</label>
-              <select style={inputStyle} value={uploadDocType} onChange={(e) => setUploadDocType(e.target.value as PmDocumentType)}>
-                {(Object.keys(DOC_TYPE_LABELS) as PmDocumentType[]).map((t) => (
-                  <option key={t} value={t}>{DOC_TYPE_LABELS[t]}</option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: '1 1 220px', maxWidth: 340 }}>
-              <label style={labelStyle}>Title *</label>
-              <input style={inputStyle} value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g. Project Charter" />
-            </div>
-            <div style={{ flex: '0 1 120px', minWidth: 100 }}>
-              <label style={labelStyle}>Version</label>
-              <input style={inputStyle} value={uploadVersion} onChange={(e) => setUploadVersion(e.target.value)} placeholder="e.g. v1.0" />
-            </div>
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>Description</label>
-            <input style={inputStyle} value={uploadDescription} onChange={(e) => setUploadDescription(e.target.value)} placeholder="Optional notes about this document" />
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={labelStyle}>File(s) *</label>
-            <input ref={fileRef} type="file" multiple style={inputStyle} disabled={uploading} />
-          </div>
-          <button
-            type="submit"
-            disabled={uploading}
-            style={{
-              padding: '11px 22px', borderRadius: 12, border: 'none', cursor: uploading ? 'not-allowed' : 'pointer',
-              background: GRADIENTS.primary, color: '#fff', fontSize: 13.5, fontWeight: 600,
-              boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`, opacity: uploading ? 0.7 : 1,
-            }}
-          >
-            {uploading ? 'Uploading…' : 'Upload'}
-          </button>
-        </form>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <select style={{ ...inputStyle, flex: '0 1 200px' }} value={filterDocType} onChange={(e) => setFilterDocType(e.target.value)}>
-          <option value="">All doc types</option>
-          {(Object.keys(DOC_TYPE_LABELS) as PmDocumentType[]).map((t) => (
-            <option key={t} value={t}>{DOC_TYPE_LABELS[t]}</option>
-          ))}
-        </select>
-      </div>
-
-      <div style={{
-        borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-        border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
-      }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-          <thead>
-            <tr>
-              {['Title', 'Type', 'Version', 'File', 'Size', 'Uploaded By', 'Uploaded On', ''].map((h) => (
-                <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
-            ) : documents.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>No documents found.</td></tr>
-            ) : (
-              documents.map((d) => (
-                <tr key={d.id}>
-                  <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: TEXT.heading, borderTop: `1px solid ${BORDER.light}` }}>{d.title}</td>
-                  <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${DOC_TYPE_HEX[d.doc_type]}1a`, color: DOC_TYPE_HEX[d.doc_type], whiteSpace: 'nowrap' }}>
-                      {DOC_TYPE_LABELS[d.doc_type] || d.doc_type}
-                    </span>
-                  </td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{d.version || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{d.file_name}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{formatBytes(d.file_size)}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{d.uploaded_by_name || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{d.created_at ? d.created_at.slice(0, 10) : '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()} style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}`, whiteSpace: 'nowrap' }}>
-                    <span onClick={() => handleView(d)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', marginRight: 14 }}>View</span>
-                    <span onClick={() => setDeletingDoc(d)} style={{ fontSize: 12, fontWeight: 600, color: '#dc2626', cursor: 'pointer' }}>Delete</span>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* Task documents always show; the other groups only exist on older projects — hide them when empty. */}
+      {groups.filter((g) => g.key === 'task' || g.rows.length > 0).map((g) => (
+        <div key={g.title} style={{ marginBottom: 16 }}>
+          <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 6px' }}>{g.title} ({g.rows.length})</p>
+          {g.rows.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>No files yet — files attached on a milestone or task in Project Plan &amp; Milestones show up here.</p>
+          ) : <AttachmentList
+            files={g.rows.map((d) => ({ ...d, title: g.key === 'project' ? d.title : where(d) }))}
+            onOpen={open}
+            onDelete={g.title === 'Project documents' ? (id) => setToDelete(id) : undefined}
+            canDelete={(f) => canDelete('projects', 'documents', f.uploaded_by_id ?? null)}
+          />}
+        </div>
+      ))}
+      <ConfirmDialog
+        open={toDelete !== null}
+        title="Delete this file?"
+        message="The file is removed from the project and from SharePoint."
+        confirmLabel="Delete"
+        onConfirm={async () => {
+          const id = toDelete!
+          setToDelete(null)
+          try { await projectsApi.deleteDocument(project.id, id); load() } catch (err) { setError(extractErrorMessages(err, 'Could not delete the file.')) }
+        }}
+        onCancel={() => setToDelete(null)}
+      />
     </div>
   )
 }

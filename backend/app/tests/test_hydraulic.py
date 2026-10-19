@@ -1,6 +1,7 @@
 """Tests for the Hydraulic & Pneumatic module: the calculation engine
 against hand-worked values, and the system → component → circuit → BOM →
-test → maintenance plan → service record (with Store issue) flow."""
+test flow. Maintenance plans, service records and spares are retired
+(plan rule R5) — only their read/delete paths remain."""
 from datetime import date, timedelta
 
 import pytest
@@ -8,12 +9,11 @@ import pytest
 from app.auth.jwt_handler import create_access_token
 from app.modules.hydraulic.calculations import CalculationError, run_calculation
 from app.modules.hydraulic.models.document import HydDocument
+from app.modules.hydraulic.models.maintenance import HydMaintenancePlan, HydServiceRecord
+from app.modules.hydraulic.models.system import HydSystem
 from app.modules.hydraulic.service import next_revision
 from app.modules.main.models.user import User
-from app.modules.store.models.item import StoreItem
-from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.stock_balance import StoreStockBalance
-from app.modules.store.services.stock_ledger import post_stock_transaction
 
 API = "/api/v1/hydraulic"
 
@@ -103,7 +103,7 @@ def ctx(client, db):
     h = auth(engineer)
     system = client.post(f"{API}/systems", json={
         "name": "Tamping unit power pack", "system_type": "hydraulic", "status": "in_service",
-        "working_pressure_bar": 180, "max_pressure_bar": 210, "flow_rate": 40, "running_hours": 1000,
+        "working_pressure_bar": 180, "max_pressure_bar": 210, "flow_rate": 40,
     }, headers=h)
     assert system.status_code == 200, system.text
     pump = client.post(f"{API}/components", json={
@@ -147,6 +147,7 @@ def test_circuit_review_and_revision(client, db, ctx):
     assert client.post(f"{API}/circuits/{c['id']}/approve", json={"remarks": "OK"}, headers=ha).json()["status"] == "approved"
     assert client.patch(f"{API}/circuits/{c['id']}", json={"title": "x"}, headers=h).status_code == 409
 
+    assert client.post(f"{API}/circuits/{c['id']}/revise", json={"change_note": "   "}, headers=h).status_code == 422
     rev_b = client.post(f"{API}/circuits/{c['id']}/revise", json={"change_note": "Added accumulator"}, headers=h).json()
     assert rev_b["revision"] == "B" and rev_b["circuit_number"] == c["circuit_number"]
     assert client.post(f"{API}/circuits/{c['id']}/revise", json={"change_note": "again"}, headers=h).status_code == 409
@@ -224,61 +225,52 @@ def test_test_readings_auto_judged_and_completion_rules(client, ctx):
     assert retest["status"] == "planned" and retest["readings"][0]["max_value"] == 2 and retest["readings"][0]["measured_value"] is None
 
 
-def test_plan_service_record_store_issue(client, db, ctx):
-    h = ctx["h"]
-    loc = StoreLocation(name="Main Store", code="MS01")
-    item = StoreItem(item_code="SP-FLT-10", item_name="Return filter element 10µ", item_type="spare_part", uom="NOS", standard_cost=1200, status="active")
-    db.add_all([loc, item])
-    db.commit()
-    post_stock_transaction(db, item_id=item.id, location_id=loc.id, transaction_type="receipt", quantity=3, reference_type="manual")
-    db.commit()
-
-    spare = client.post(f"{API}/spare-parts", json={
-        "name": "Return filter element", "category": "filter_element", "store_item_id": item.id,
-        "min_stock_qty": 4, "criticality": "critical",
-    }, headers=h).json()
-    assert spare["part_code"] == "HSP-00001" and spare["available_qty"] == 3 and spare["stock_status"] == "low"
-    assert client.post(f"{API}/spare-parts", json={"name": "dup", "store_item_id": item.id}, headers=h).status_code == 409
-
-    last = date.today() - timedelta(days=40)
-    plan = client.post(f"{API}/maintenance-plans", json={
-        "title": "Change return filter", "system_id": ctx["system"]["id"], "maintenance_type": "filter_change",
-        "frequency_days": 30, "last_done_date": last.isoformat(), "checklist": "Isolate pump\nReplace element",
-    }, headers=h).json()
-    assert plan["due_status"] == "overdue" and plan["next_due_date"] == (last + timedelta(days=30)).isoformat()
-    assert client.post(f"{API}/maintenance-plans", json={"title": "x", "system_id": ctx["system"]["id"]}, headers=h).status_code == 400
-
-    rec = client.post(f"{API}/service-records", json={
-        "system_id": ctx["system"]["id"], "plan_id": plan["id"], "service_type": "filter_change",
-        "service_date": date.today().isoformat(), "running_hours": 1250, "labour_cost": 500,
-        "parts": [{"spare_part_id": spare["id"], "quantity": 1}],
-    }, headers=h).json()
-    assert rec["checklist"] == "Isolate pump\nReplace element" and rec["parts"][0]["unit_cost"] == 1200
-    assert rec["total_cost"] == 1700
-    assert client.post(f"{API}/service-records/{rec['id']}/complete", json={}, headers=h).status_code == 400  # no work_done
-
-    done = client.post(f"{API}/service-records/{rec['id']}/complete", json={
-        "work_done": "Replaced return filter element", "issue_from_location_id": loc.id,
-    }, headers=h).json()
-    assert done["status"] == "completed" and done["parts"][0]["issued_location_name"] == "Main Store"
-    db.expire_all()
-    assert db.query(StoreStockBalance).filter_by(item_id=item.id, location_id=loc.id).first().on_hand_qty == 2
-
-    plan_after = client.get(f"{API}/maintenance-plans/{plan['id']}", headers=h).json()
-    assert plan_after["last_done_date"] == date.today().isoformat() and plan_after["due_status"] == "ok"
-    assert client.get(f"{API}/systems/{ctx['system']['id']}", headers=h).json()["running_hours"] == 1250
-    assert client.get(f"{API}/spare-parts/{spare['id']}", headers=h).json()["used_last_12m"] == 1
-
-
-def test_breakdown_takes_system_down_and_back(client, ctx):
+def test_retired_maintenance_service_spares_writes_return_410(client, db, ctx):
+    """Plan rule R5: maintenance plans, service records and spares are
+    read-only history. Every write answers 410 with the real reason, and no
+    Store stock moves."""
     h, sid = ctx["h"], ctx["system"]["id"]
-    rec = client.post(f"{API}/service-records", json={
-        "system_id": sid, "service_type": "breakdown", "service_date": date.today().isoformat(), "reported_problem": "Pump noisy",
-    }, headers=h).json()
-    assert client.get(f"{API}/systems/{sid}", headers=h).json()["status"] == "under_maintenance"
-    assert client.delete(f"{API}/systems/{sid}", headers=h).status_code == 409
-    client.post(f"{API}/service-records/{rec['id']}/complete", json={"work_done": "Replaced coupling"}, headers=h)
+    today = date.today().isoformat()
+    calls = [
+        ("post", f"{API}/maintenance-plans", {"title": "Filter", "system_id": sid, "frequency_days": 30}),
+        ("patch", f"{API}/maintenance-plans/1", {"title": "x"}),
+        ("post", f"{API}/service-records", {"system_id": sid, "service_date": today}),
+        ("patch", f"{API}/service-records/1", {"labour_cost": 1}),
+        ("post", f"{API}/service-records/1/start", None),
+        ("post", f"{API}/service-records/1/complete", {"work_done": "x", "issue_from_location_id": 1}),
+        ("post", f"{API}/spare-parts", {"name": "Seal kit"}),
+        ("patch", f"{API}/spare-parts/1", {"name": "x"}),
+        ("delete", f"{API}/maintenance-plans/1", None),
+        ("delete", f"{API}/service-records/1", None),
+        ("delete", f"{API}/spare-parts/1", None),
+    ]
+    for method, url, body in calls:
+        r = getattr(client, method)(url, json=body, headers=h) if body is not None else getattr(client, method)(url, headers=h)
+        assert r.status_code == 410, (method, url, r.text)
+        assert "plan rule R5" in r.json()["detail"] and "Service & Commissioning" in r.json()["detail"]
+    assert db.query(StoreStockBalance).count() == 0
+
+
+def test_retired_records_stay_readable_and_cancel_releases_system(client, db, ctx):
+    h, sid = ctx["h"], ctx["system"]["id"]
+    plan = HydMaintenancePlan(plan_number="HMP-OLD-0001", title="Old filter plan", system_id=sid, frequency_days=30,
+                              last_done_date=date.today() - timedelta(days=10))
+    rec = HydServiceRecord(record_number="HSR-OLD-0001", system_id=sid, service_type="breakdown", status="open", service_date=date.today())
+    db.add_all([plan, rec])
+    db.query(HydSystem).filter(HydSystem.id == sid).update({"status": "under_maintenance"})
+    db.commit()
+
+    assert client.get(f"{API}/maintenance-plans/{plan.id}", headers=h).json()["plan_number"] == "HMP-OLD-0001"
+    assert [r["record_number"] for r in client.get(f"{API}/service-records", headers=h).json()] == ["HSR-OLD-0001"]
+    # The system can't be deleted while the old job is open; the message no longer says "complete".
+    r = client.delete(f"{API}/systems/{sid}", headers=h)
+    assert r.status_code == 409 and "Cancel it" in r.json()["detail"]
+    # Deleting retired records is blocked (410); cancelling the open breakdown puts the system back in service.
+    assert client.delete(f"{API}/service-records/{rec.id}", headers=h).status_code == 410
+    assert client.post(f"{API}/service-records/{rec.id}/cancel", json={"reason": "Retired (rule R5)"}, headers=h).status_code == 200
     assert client.get(f"{API}/systems/{sid}", headers=h).json()["status"] == "in_service"
+    assert client.delete(f"{API}/maintenance-plans/{plan.id}", headers=h).status_code == 410
+    assert client.get(f"{API}/maintenance-plans/{plan.id}", headers=h).status_code == 200
 
 
 def test_dashboard(client, ctx):
@@ -286,27 +278,3 @@ def test_dashboard(client, ctx):
     assert d.status_code == 200, d.text
     k = d.json()["kpis"]
     assert k["hydraulic_systems"] == 1 and k["active_components"] == 1 and k["in_service"] == 1
-
-
-def test_changing_job_type_moves_system_status(client, ctx):
-    h, sid = ctx["h"], ctx["system"]["id"]
-    rec = client.post(f"{API}/service-records", json={"system_id": sid, "service_type": "preventive", "service_date": date.today().isoformat()}, headers=h).json()
-    assert client.get(f"{API}/systems/{sid}", headers=h).json()["status"] == "in_service"
-    client.patch(f"{API}/service-records/{rec['id']}", json={"service_type": "breakdown"}, headers=h)
-    assert client.get(f"{API}/systems/{sid}", headers=h).json()["status"] == "under_maintenance"
-    client.patch(f"{API}/service-records/{rec['id']}", json={"service_type": "inspection"}, headers=h)
-    assert client.get(f"{API}/systems/{sid}", headers=h).json()["status"] == "in_service"
-
-
-def test_spare_takes_store_unit_and_hours_only_plan_has_no_date(client, db, ctx):
-    h = ctx["h"]
-    item = StoreItem(item_code="SP-OIL-46", item_name="HLP 46 oil", item_type="consumable", uom="LTR", status="active")
-    db.add(item)
-    db.commit()
-    assert client.post(f"{API}/spare-parts", json={"name": "Hydraulic oil", "store_item_id": item.id}, headers=h).json()["uom"] == "LTR"
-    assert client.post(f"{API}/spare-parts", json={"name": "O-ring kit"}, headers=h).json()["uom"] == "NOS"
-    plan = client.post(f"{API}/maintenance-plans", json={
-        "title": "Oil change", "system_id": ctx["system"]["id"], "frequency_hours": 200, "start_date": date.today().isoformat(),
-    }, headers=h).json()
-    # System is at 1000 h, plan starts counting from there → due at 1200 h, no calendar date.
-    assert plan["next_due_date"] is None and plan["next_due_hours"] == 1200 and plan["due_status"] == "ok"

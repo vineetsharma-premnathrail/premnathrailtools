@@ -1,6 +1,8 @@
 # Braking Tool API Router
 
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from .schemas import BrakingInput
@@ -8,6 +10,7 @@ from .validation import validate_braking_inputs
 from .service import perform_braking_calculation
 from .reports.pdf_builder import generate_braking_pdf_report, create_braking_docx_report
 
+logger = logging.getLogger("rnd.tools.braking")
 router = APIRouter()
 
 @router.post("/braking_calculate")
@@ -21,8 +24,13 @@ async def calculate_braking(raw: BrakingInput):
             "gbr": context.get("gbr", 0),
             "max_force": context.get("max_braking_force", 0)
         }
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, f"{e} — correct the highlighted input and recalculate.")
+    except Exception:
+        logger.exception("Braking calculation failed")
+        raise HTTPException(500, "Calculation failed unexpectedly — report this with your inputs to the R&D tool owner.")
 
 
 # Endpoint to download braking PDF report
@@ -40,8 +48,13 @@ async def download_braking_pdf(raw: BrakingInput):
                 "Content-Disposition": "attachment; filename=braking_report.pdf"
             }
         )
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, f"{e} — correct the highlighted input and recalculate.")
+    except Exception:
+        logger.exception("Braking calculation failed")
+        raise HTTPException(500, "Calculation failed unexpectedly — report this with your inputs to the R&D tool owner.")
 
 
 # Endpoint to download braking DOCX report (detailed step-by-step)
@@ -59,5 +72,10 @@ async def download_braking_docx(raw: BrakingInput):
                 "Content-Disposition": "attachment; filename=Braking_Report.docx"
             }
         )
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, f"{e} — correct the highlighted input and recalculate.")
+    except Exception:
+        logger.exception("Braking calculation failed")
+        raise HTTPException(500, "Calculation failed unexpectedly — report this with your inputs to the R&D tool owner.")

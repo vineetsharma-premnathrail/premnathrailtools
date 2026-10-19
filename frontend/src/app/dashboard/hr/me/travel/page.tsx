@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hrApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import type { HrTravelRequest } from '@/types'
@@ -19,6 +20,8 @@ import { TEXT } from '@/lib/theme'
 export default function MyTravelPage() {
   // Self-service: any logged-in user.
   const { user, isLoading } = useAuth()
+  // Self-service: My HR create / edit (hr:me:*), not the HR-team tabs.
+  const { can } = useCan()
   const router = useRouter()
   const [rows, setRows] = useState<HrTravelRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -62,20 +65,20 @@ export default function MyTravelPage() {
       <PageHeader
         title="My Travel"
         subtitle="Request approval for business trips. After the trip, claim your expenses under Expense Claims and link them to the trip."
-        actions={<button type="button" style={primaryActionStyle} onClick={() => { setEditing(null); setFormOpen(true) }}>+ New Travel Request</button>}
+        actions={can('hr', 'me', 'create') ? <button type="button" data-tour="hr-mytravel-new-btn" style={primaryActionStyle} onClick={() => { setEditing(null); setFormOpen(true) }}>+ New Travel Request</button> : undefined}
       />
 
       <ErrorBanner error={error} />
       <SuccessBanner message={notice} />
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <select style={{ ...filterInputStyle, flex: '0 1 170px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
+        <select data-tour="hr-mytravel-status-filter" style={{ ...filterInputStyle, flex: '0 1 170px' }} value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
           {Object.entries(TRAVEL_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
-      <div style={tableWrapStyle}>
+      <div data-tour="hr-mytravel-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
           <thead>
             <tr>{['Request', 'Trip', 'Dates', 'Mode', 'Est. cost', 'Approver', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>

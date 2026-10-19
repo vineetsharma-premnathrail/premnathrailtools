@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access
+from app.core.data_scope import apply_scope
+from app.core.permissions import require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.store.access import require_store_lookup
 from app.modules.store.models.bin import StoreBin
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
@@ -12,11 +15,12 @@ from app.modules.store.models.stock_transaction import STORE_STOCK_TXN_TYPES, St
 from app.modules.store.schemas.stock import (
     StoreQuarantineClear,
     StoreStockBalanceResponse,
-    StoreStockTransactionCreate,
     StoreStockTransactionResponse,
 )
+from app.modules.store.services.plant_access import ensure_location_allowed, filter_by_location, visible_location_ids
 from app.modules.store.services.stock_ledger import post_stock_transaction
-from app.modules.store.routes.doc_types import doc_type_labels, get_doc_type
+from app.modules.store.routes.doc_types import doc_type_labels
+from app.modules.store.services.stock_values import blank_model, mask_for, sees_stock_values
 
 router = APIRouter(prefix="/store/stock", tags=["Store"])
 
@@ -27,6 +31,20 @@ router = APIRouter(prefix="/store/stock", tags=["Store"])
 # adjustment_in/out are NOT allowed (2026-10-01): adjustments must go
 # through Store → Adjustments so they get an approval and a number.
 _MANUAL_ALLOWED_TYPES = ("receipt", "issue", "damage")
+
+
+
+# Free-form stock posting is removed (2026-10-12, SAP standard: every goods
+# movement is a defined business event — there is no "add / remove stock"
+# screen). Each movement has its own document; opening stock at go-live is
+# the admin-only Opening Stock Import (stock_import.py, like SAP 561).
+MANUAL_ENTRY_REMOVED = (
+    "Stock can't be added or removed by hand any more — every movement has its own document: goods from a vendor "
+    "→ GRN; material given for a job → Issues; unused material coming back → Returns; store to store → Transfers; "
+    "damaged / lost / found stock → Adjustments (Store Manager approval) or Physical Count. Opening stock at go-live "
+    "is loaded by an admin with Stock › Opening Stock Import."
+)
+
 
 QUARANTINE_DISPOSITIONS = {
     "scrap": "Scrapped",
@@ -50,14 +68,17 @@ def _txn_to_response(db: Session, txn: StoreStockTransaction, entry_labels: dict
     })
 
 
+# Cross-module lookup (on-hand / available qty shown by other modules' and
+# Store's own forms); limited to the stores of the user's plant(s) unless
+# their Store data access is organization-wide (services/plant_access.py).
 @router.get("/balances", response_model=list[StoreStockBalanceResponse])
 async def list_balances(
     item_id: int | None = Query(None),
     location_id: int | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_store_lookup()),
 ):
-    query = db.query(StoreStockBalance)
+    query = filter_by_location(db.query(StoreStockBalance), StoreStockBalance.location_id, visible_location_ids(db, user))
     if item_id is not None:
         query = query.filter(StoreStockBalance.item_id == item_id)
     if location_id is not None:
@@ -81,70 +102,156 @@ async def list_balances(
     return result
 
 
-@router.get("/transactions", response_model=list[StoreStockTransactionResponse])
-async def list_transactions(
-    item_id: int | None = Query(None),
-    location_id: int | None = Query(None),
-    transaction_type: str | None = Query(None),
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
-):
-    query = db.query(StoreStockTransaction)
+def _mb51_query(db: Session, user: User, *, item_id=None, location_id=None, transaction_type=None, date_from=None, date_to=None,
+                reference_type=None, reference_number=None, created_by_id=None, vendor_name=None, bin_id=None, batch_number=None):
+    """MB51 material document list filters (all optional, AND-ed)."""
+    query = apply_scope(db.query(StoreStockTransaction), user, StoreStockTransaction)
     if item_id is not None:
         query = query.filter(StoreStockTransaction.item_id == item_id)
     if location_id is not None:
         query = query.filter(StoreStockTransaction.location_id == location_id)
-    if transaction_type is not None:
-        query = query.filter(StoreStockTransaction.transaction_type == transaction_type)
-    txns = query.order_by(StoreStockTransaction.transaction_date.desc(), StoreStockTransaction.id.desc()).limit(500).all()
-    labels = doc_type_labels(db, "stock_entry")
-    return [_txn_to_response(db, t, labels) for t in txns]
+    if transaction_type:
+        types = [t.strip() for t in transaction_type.split(",") if t.strip()]
+        unknown = [t for t in types if t not in STORE_STOCK_TXN_TYPES]
+        if unknown:
+            raise HTTPException(status_code=422, detail=f"Unknown movement type '{unknown[0]}' — pick one from the Movement type list.")
+        query = query.filter(StoreStockTransaction.transaction_type.in_(types))
+    df, dt = _parse_day(date_from, "date_from"), _parse_day(date_to, "date_to")
+    if df and dt and df > dt:
+        raise HTTPException(status_code=422, detail=f"'From' date {df:%d-%m-%Y} is after the 'to' date {dt:%d-%m-%Y} — swap them.")
+    if df:
+        query = query.filter(StoreStockTransaction.transaction_date >= df)
+    if dt:
+        query = query.filter(StoreStockTransaction.transaction_date <= dt)
+    if reference_type:
+        query = query.filter(StoreStockTransaction.reference_type == reference_type)
+    if reference_number and reference_number.strip():
+        query = query.filter(StoreStockTransaction.reference_number.ilike(f"%{reference_number.strip()}%"))
+    if created_by_id is not None:
+        query = query.filter(StoreStockTransaction.created_by_id == created_by_id)
+    if vendor_name and vendor_name.strip():
+        query = query.filter(StoreStockTransaction.vendor_name.ilike(f"%{vendor_name.strip()}%"))
+    if bin_id is not None:
+        query = query.filter(StoreStockTransaction.bin_id == bin_id)
+    if batch_number and batch_number.strip():
+        query = query.filter(StoreStockTransaction.batch_number.ilike(f"%{batch_number.strip()}%"))
+    return query.order_by(StoreStockTransaction.transaction_date.desc(), StoreStockTransaction.id.desc())
 
 
-@router.post("/transactions", response_model=StoreStockTransactionResponse)
-async def create_transaction(
-    payload: StoreStockTransactionCreate,
+# Store › Items › Stock value & rates (sensitive) — blanked without it.
+_TXN_VALUE_FIELDS = ("unit_cost", "value", "valuation_value_after")
+
+
+@router.get("/transactions", response_model=list[StoreStockTransactionResponse])
+async def list_transactions(
+    response: Response,
+    item_id: int | None = Query(None),
+    location_id: int | None = Query(None),
+    transaction_type: str | None = Query(None, description="One movement type, or several comma-separated"),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    reference_type: str | None = Query(None),
+    reference_number: str | None = Query(None, description="Document / reference no. (contains)"),
+    created_by_id: int | None = Query(None),
+    vendor_name: str | None = Query(None),
+    bin_id: int | None = Query(None),
+    batch_number: str | None = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(500, ge=1, le=5000),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_access("store", "movements")),
 ):
-    if payload.transaction_type in ("adjustment_in", "adjustment_out"):
-        raise HTTPException(
-            status_code=422,
-            detail="Stock adjustments can't be recorded here — use Store → Adjustments → New, so the adjustment gets an approver and shows in the Adjustments list.",
-        )
-    entry = get_doc_type(db, "stock_entry", payload.entry_type or payload.transaction_type, field="stock entry type")
-    if entry.value in _MANUAL_ALLOWED_TYPES:
-        txn_type = entry.value
-    else:
-        txn_type = "manual_in" if entry.stock_effect == "in" else "manual_out"
-    if not db.query(StoreItem).filter(StoreItem.id == payload.item_id).first():
-        raise HTTPException(status_code=404, detail="Item not found")
-    if not db.query(StoreLocation).filter(StoreLocation.id == payload.location_id).first():
-        raise HTTPException(status_code=404, detail="Store not found")
-    try:
-        txn = post_stock_transaction(
-            db,
-            item_id=payload.item_id,
-            location_id=payload.location_id,
-            bin_id=payload.bin_id,
-            transaction_type=txn_type,
-            entry_type=entry.value,
-            quantity=payload.quantity,
-            batch_number=payload.batch_number,
-            reference_type=payload.reference_type or "manual",
-            reference_number=payload.reference_number,
-            transaction_date=payload.transaction_date,
-            remarks=payload.remarks,
-            vendor_name=(payload.vendor_name or "").strip() or None,
-            created_by_id=user.id,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    db.commit()
-    db.refresh(txn)
-    return _txn_to_response(db, txn)
+    """MB51 material document list. The total row count (for paging) is in
+    the X-Total-Count response header."""
+    query = _mb51_query(db, user, item_id=item_id, location_id=location_id, transaction_type=transaction_type,
+                        date_from=date_from, date_to=date_to, reference_type=reference_type, reference_number=reference_number,
+                        created_by_id=created_by_id, vendor_name=vendor_name, bin_id=bin_id, batch_number=batch_number)
+    response.headers["X-Total-Count"] = str(query.order_by(None).count())
+    txns = query.offset(skip).limit(limit).all()
+    labels = doc_type_labels(db, "stock_entry")
+    return [blank_model(user, _txn_to_response(db, t, labels), _TXN_VALUE_FIELDS) for t in txns]
 
 
+@router.get("/transactions/posted-by")
+async def transaction_users(db: Session = Depends(get_db), _user: User = Depends(require_tab_access("store", "movements"))):
+    """Users who have posted stock movements — the MB51 'User' filter."""
+    ids = {i for (i,) in db.query(StoreStockTransaction.created_by_id).filter(StoreStockTransaction.created_by_id.isnot(None)).distinct().all()}
+    return sorted(({"id": u.id, "label": u.name or u.email} for u in db.query(User).filter(User.id.in_(ids)).all()) if ids else [],
+                  key=lambda r: (r["label"] or "").lower())
+
+
+@router.get("/transactions/export")
+async def export_transactions(
+    item_id: int | None = Query(None),
+    location_id: int | None = Query(None),
+    transaction_type: str | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    reference_type: str | None = Query(None),
+    reference_number: str | None = Query(None),
+    created_by_id: int | None = Query(None),
+    vendor_name: str | None = Query(None),
+    bin_id: int | None = Query(None),
+    batch_number: str | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_action("store", "movements", "export")),
+):
+    """MB51 to Excel — the same filters as the list, every matching row
+    (capped at 50,000; narrow the dates beyond that)."""
+    import io
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    query = _mb51_query(db, user, item_id=item_id, location_id=location_id, transaction_type=transaction_type,
+                        date_from=date_from, date_to=date_to, reference_type=reference_type, reference_number=reference_number,
+                        created_by_id=created_by_id, vendor_name=vendor_name, bin_id=bin_id, batch_number=batch_number)
+    total = query.order_by(None).count()
+    if total > 50000:
+        raise HTTPException(status_code=422, detail=f"{total:,} movements match — the export holds at most 50,000. Narrow the date range or add a store / item filter.")
+    txns = query.all()
+    items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_({t.item_id for t in txns})).all()} if txns else {}
+    locs = {l.id: l.name for l in db.query(StoreLocation).filter(StoreLocation.id.in_({t.location_id for t in txns})).all()} if txns else {}
+    bins = {b.id: b.code for b in db.query(StoreBin).filter(StoreBin.id.in_({t.bin_id for t in txns} - {None})).all()} if txns else {}
+    users = {u.id: u.name or u.email for u in db.query(User).filter(User.id.in_({t.created_by_id for t in txns} - {None})).all()} if txns else {}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Material documents"
+    ws.append(["Date", "Movement type", "Document type", "Document / reference no.", "Item code", "Item", "UoM", "Store", "Bin",
+               "Batch", "Direction", "Quantity", "Unit cost", "Value", "Stock qty after (all stores)", "Stock value after",
+               "Vendor", "Posted by", "Remarks"])
+    for c in ws[1]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill("solid", fgColor="FDF1E6")
+    from app.modules.store.services.bins import physical_sign
+    money = sees_stock_values(user)
+    for t in txns:
+        it = items.get(t.item_id)
+        sign = physical_sign(t.transaction_type)
+        ws.append([t.transaction_date, t.transaction_type, t.reference_type, t.reference_number, it.item_code if it else None,
+                   it.item_name if it else None, it.uom if it else None, locs.get(t.location_id), bins.get(t.bin_id), t.batch_number,
+                   "In" if sign > 0 else "Out" if sign < 0 else "Stock type", t.quantity,
+                   t.unit_cost if money else None, t.value if money else None,
+                   t.valuation_qty_after, t.valuation_value_after if money else None, t.vendor_name, users.get(t.created_by_id), t.remarks])
+        ws.cell(row=ws.max_row, column=1).number_format = "DD-MM-YYYY"
+    for col, w in zip("ABCDEFGHIJKLMNOPQRS", (12, 16, 16, 22, 16, 34, 7, 18, 10, 14, 10, 11, 11, 13, 14, 15, 24, 18, 40)):
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = "A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": 'attachment; filename="material_documents_MB51.xlsx"'})
+
+
+@router.post("/transactions", status_code=410)
+async def create_transaction(_user: User = Depends(require_tab_action("store", "adjustments", "create"))):
+    """Removed — see MANUAL_ENTRY_REMOVED."""
+    raise HTTPException(status_code=410, detail=MANUAL_ENTRY_REMOVED)
+
+
+# Clear Quarantine disposes of Blocked stock (scrap / vendor return / release)
+# — gated by Store › Adjustments › Create (hand-made stock corrections).
 @router.get("/vendor-options")
 async def vendor_options(db: Session = Depends(get_db), _user: User = Depends(require_app_access("store"))):
     """Vendor names for the stock-entry Vendor field: the Accounts vendor
@@ -165,7 +272,7 @@ async def list_transaction_types(_user: User = Depends(require_app_access("store
 async def clear_quarantine(
     payload: StoreQuarantineClear,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_feature_action("store", "adjustments", "quarantine_clear", "create")),
 ):
     """Takes damaged/rejected material out of a warehouse's quarantine
     bucket: scrapped, sent back to the vendor, or released to usable stock
@@ -179,6 +286,7 @@ async def clear_quarantine(
         raise HTTPException(status_code=404, detail="Item not found")
     if not db.query(StoreLocation).filter(StoreLocation.id == payload.location_id).first():
         raise HTTPException(status_code=404, detail="Store not found")
+    ensure_location_allowed(db, user, payload.location_id)
     # Quality: Blocked stock held by an open NCR (or a usage decision) moves
     # only through that NCR's disposition — never through a store clear.
     from app.modules.quality.services.ncr import held_in_blocked
@@ -204,4 +312,90 @@ async def clear_quarantine(
         db.rollback()
         raise HTTPException(status_code=409, detail=f"Can't clear quarantine for '{item.item_name}': {e}. Check the Quarantine column on the Stock page.")
     db.commit()
-    return [_txn_to_response(db, t) for t in txns]
+    return [blank_model(user, _txn_to_response(db, t), _TXN_VALUE_FIELDS) for t in txns]
+
+
+# ── Stock on a posting date (SAP MB5B) ─────────────────────────────────────
+# Rebuilt from the ledger (services/stock_asof.py), never from today's
+# balances: opening, receipts, issues and closing per item and store for a
+# date range, closing valued at the item's average on that date.
+
+def _as_of_report(db: Session, user: User, to_date, from_date, location_id, item_id) -> dict:
+    from datetime import date as _date
+    from app.modules.store.services.stock_asof import stock_on_date_report
+
+    to_date = to_date or _date.today()
+    from_date = from_date or to_date.replace(day=1)
+    try:
+        return stock_on_date_report(db, from_date=from_date, to_date=to_date, location_ids=visible_location_ids(db, user),
+                                    location_id=location_id, item_id=item_id)
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/as-of")
+async def stock_as_of_date(
+    date: str | None = Query(None, description="Closing date (YYYY-MM-DD), default today"),
+    from_date: str | None = Query(None, description="Start of the movement range, default the 1st of that month"),
+    location_id: int | None = Query(None),
+    item_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_feature_action("store", "stock", "as_of", "view")),
+):
+    return mask_for(user, _as_of_report(db, user, _parse_day(date, "date"), _parse_day(from_date, "from_date"), location_id, item_id))
+
+
+@router.get("/as-of/export")
+async def export_stock_as_of_date(
+    date: str | None = Query(None),
+    from_date: str | None = Query(None),
+    location_id: int | None = Query(None),
+    item_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_feature_action("store", "stock", "as_of", "export")),
+):
+    import io
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    rep = mask_for(user, _as_of_report(db, user, _parse_day(date, "date"), _parse_day(from_date, "from_date"), location_id, item_id))
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Stock on date"
+    ws.append([f"Stock on date — {rep['from_date']:%d-%m-%Y} to {rep['to_date']:%d-%m-%Y}"])
+    ws["A1"].font = Font(bold=True, size=12)
+    header = ["Item code", "Item", "UoM", "Store", "Opening qty", "Opening value", "Receipts", "Issues", "Closing qty",
+              "Free", "Quality", "Blocked", "With vendor", "Rate", "Closing value", "Rate basis"]
+    ws.append(header)
+    for c in ws[2]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill("solid", fgColor="FDF1E6")
+    basis = {"average_on_date": "Average on date", "current_average": "Today's average (no valued movement by then)",
+             "standard": "Standard cost", "none": "No cost"}
+    for r in rep["rows"]:
+        ws.append([r["item_code"], r["item_name"], r["uom"], r["location_name"], r["opening_qty"], r["opening_value"],
+                   r["receipt_qty"], r["issue_qty"], r["closing_qty"], r["closing_free_qty"], r["closing_quality_qty"],
+                   r["closing_blocked_qty"], r.get("closing_vendor_qty", 0), r["closing_rate"], r["closing_value"], basis.get(r["rate_source"], r["rate_source"])])
+    ws.append([])
+    ws.append(["", "Total", "", "", "", rep["total_opening_value"], "", "", "", "", "", "", "", "", rep["total_closing_value"]])
+    for col, w in zip("ABCDEFGHIJKLMNOP", (16, 36, 8, 20, 12, 14, 11, 11, 12, 10, 10, 10, 11, 11, 14, 28)):
+        ws.column_dimensions[col].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    name = f"stock_on_{rep['to_date']:%Y-%m-%d}.xlsx"
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+def _parse_day(value: str | None, field: str):
+    from datetime import date as _date
+    if not value:
+        return None
+    try:
+        return _date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"'{value}' is not a valid {field.replace('_', ' ')} — use YYYY-MM-DD.")

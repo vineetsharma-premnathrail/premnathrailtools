@@ -2,25 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { maintenanceApi } from '@/lib/api'
-import { MaintenanceAsset, MaintenanceAssetOption, MaintenanceLookups } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { MaintenanceAsset, MaintenanceLookups } from '@/types'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, Optional, Req, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import MaintenanceAssetPicker from '@/components/maintenance/MaintenanceAssetPicker'
 import DateField from '@/components/erp/DateField'
 import { extractErrorMessages } from '@/lib/validation'
 import { ASSET_CATEGORY_LABELS, ASSET_STATUS_LABELS, CRITICALITY_LABELS } from '@/components/maintenance/labels'
 
 const MANUAL_STATUSES = ['operational', 'standby', 'decommissioned']
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
-}
-const sectionTitle: React.CSSProperties = { fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 14px' }
 const rowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12 }
 
 const str = (v: unknown) => (v == null ? '' : String(v))
@@ -29,10 +20,20 @@ export default function AssetForm({
   initial,
   submitLabel,
   onSubmit,
+  title,
+  subtitle,
+  onBack,
+  nav,
 }: {
   initial?: MaintenanceAsset | null
   submitLabel: string
   onSubmit: (payload: Record<string, unknown>) => Promise<void>
+  title: string
+  subtitle: string
+  /** "← Back" pill (top-right) and the footer Cancel. */
+  onBack: () => void
+  /** Module sub-nav, rendered above the header. */
+  nav?: React.ReactNode
 }) {
   const isEdit = !!initial
   const [f, setF] = useState<Record<string, string>>({
@@ -65,13 +66,11 @@ export default function AssetForm({
   })
   const set = (key: string) => (value: string) => setF((prev) => ({ ...prev, [key]: value }))
   const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
-  const [parents, setParents] = useState<MaintenanceAssetOption[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     maintenanceApi.getLookups().then(setLookups).catch((err) => setError(extractErrorMessages(err, 'Failed to load plants, vendors and workstations.')))
-    maintenanceApi.lookupAssets().then(setParents).catch(() => { /* parent picker is optional */ })
   }, [])
 
   // System-managed statuses (breakdown / under maintenance) aren't editable
@@ -148,45 +147,53 @@ export default function AssetForm({
 
   return (
     <form onSubmit={handleSubmit}>
+      <FormPage tour="maint-af-page" icon={isEdit ? 'edit' : 'gear'} title={title} subtitle={subtitle} onBack={onBack} backTour="maint-af-back" nav={nav}
+        footer={<>
+          <button type="button" onClick={onBack} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+          <button data-tour="maint-af-submit" type="submit" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
+            <SheetIcon name={isEdit ? 'check' : 'plus'} size={16} />{saving ? 'Saving…' : submitLabel}
+          </button>
+        </>}>
+        <SheetColumns
+          left={<>
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {Array.isArray(error) ? error.join(' ') : error}
         </div>
       )}
 
-      <div style={sectionStyle}>
-        <p style={sectionTitle}>Identification</p>
+          <SheetSection icon="tag" title="Identification">
         <div style={rowStyle}>
           <div style={{ flex: '0 1 170px', minWidth: 140 }}>
-            <label style={labelStyle}>Asset Code</label>
-            <input style={inputStyle} value={f.asset_code} onChange={(e) => set('asset_code')(e.target.value.toUpperCase())}
+            <label style={sheetLabel}>Asset Code</label>
+            <input data-tour="maint-af-code" style={sheetInput} value={f.asset_code} onChange={(e) => set('asset_code')(e.target.value.toUpperCase())}
               placeholder={isEdit ? '' : 'Auto (EQ-0001)'} maxLength={50} />
           </div>
           <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
-            <label style={labelStyle}>Name *</label>
-            <input style={inputStyle} value={f.name} onChange={(e) => set('name')(e.target.value)} placeholder="CNC Lathe — LMW LL20" maxLength={200} />
+            <label style={sheetLabel}>Name <Req /></label>
+            <input data-tour="maint-af-name" style={sheetInput} value={f.name} onChange={(e) => set('name')(e.target.value)} placeholder="CNC Lathe — LMW LL20" maxLength={200} />
           </div>
           <div style={{ flex: '0 1 190px', minWidth: 170 }}>
-            <label style={labelStyle}>Category</label>
-            <select style={inputStyle} value={f.category} onChange={(e) => set('category')(e.target.value)}>
+            <label style={sheetLabel}>Category</label>
+            <select data-tour="maint-af-category" style={sheetInput} value={f.category} onChange={(e) => set('category')(e.target.value)}>
               {Object.entries(ASSET_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-            <label style={labelStyle}>Criticality</label>
-            <select style={inputStyle} value={f.criticality} onChange={(e) => set('criticality')(e.target.value)}>
+            <label style={sheetLabel}>Criticality</label>
+            <select data-tour="maint-af-criticality" style={sheetInput} value={f.criticality} onChange={(e) => set('criticality')(e.target.value)}>
               {Object.entries(CRITICALITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
           </div>
           {isEdit && (
-            <div style={{ flex: '0 1 180px', minWidth: 160 }}>
-              <label style={labelStyle}>Status</label>
+            <div data-tour="maint-af-status" style={{ flex: '0 1 180px', minWidth: 160 }}>
+              <label style={sheetLabel}>Status</label>
               {statusIsSystem ? (
-                <div style={{ ...inputStyle, background: 'rgba(0,0,0,0.03)', color: TEXT.secondary }} title="Set automatically by open work orders">
+                <div style={{ ...sheetInput, background: SHEET.SOFT, color: SHEET.MUTED }} title="Set automatically by open work orders">
                   {ASSET_STATUS_LABELS[initial!.status] || initial!.status}
                 </div>
               ) : (
-                <select style={inputStyle} value={f.status} onChange={(e) => set('status')(e.target.value)}>
+                <select style={sheetInput} value={f.status} onChange={(e) => set('status')(e.target.value)}>
                   {MANUAL_STATUSES.map((s) => <option key={s} value={s}>{ASSET_STATUS_LABELS[s]}</option>)}
                 </select>
               )}
@@ -194,150 +201,140 @@ export default function AssetForm({
           )}
         </div>
         {!isEdit && (
-          <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>
+          <p style={sheetHint}>
             Use the plant&apos;s existing machine number as the code if it has one. Leave it blank to auto-number.
           </p>
         )}
         {statusIsSystem && (
-          <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>
+          <p style={sheetHint}>
             Status is set automatically while a breakdown or work order is open, and returns to Operational when it&apos;s closed.
           </p>
         )}
-      </div>
+          </SheetSection>
 
-      <div style={sectionStyle}>
-        <p style={sectionTitle}>Location</p>
+          <SheetSection icon="building" title="Location">
         <div style={rowStyle}>
-          <div style={{ flex: '1 1 220px', maxWidth: 300 }}>
-            <label style={labelStyle}>Plant *</label>
+          <div data-tour="maint-af-plant" style={{ flex: '1 1 220px', maxWidth: 300 }}>
+            <label style={sheetLabel}>Plant <Req /></label>
             <SearchableSelect value={f.branch_id} onChange={(v) => setF((p) => ({ ...p, branch_id: v, department_id: '', workstation_id: '' }))} placeholder="Select plant…"
               options={(lookups?.branches || []).map((b) => ({ value: String(b.id), label: b.name }))} />
           </div>
           {lookups?.departments && (
-            <div style={{ flex: '1 1 220px', maxWidth: 300 }}>
-              <label style={labelStyle}>Department</label>
+            <div data-tour="maint-af-department" style={{ flex: '1 1 220px', maxWidth: 300 }}>
+              <label style={sheetLabel}>Department</label>
               <SearchableSelect value={f.department_id} onChange={set('department_id')} placeholder="Select department…"
                 options={[{ value: '', label: '— None —' }, ...departments.map((d) => ({ value: String(d.id), label: d.name }))]} />
             </div>
           )}
           <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
-            <label style={labelStyle}>Location in Plant</label>
-            <input style={inputStyle} value={f.location_text} onChange={(e) => set('location_text')(e.target.value)} placeholder="Bay 3, Line 2" maxLength={200} />
+            <label style={sheetLabel}>Location in Plant</label>
+            <input data-tour="maint-af-location" style={sheetInput} value={f.location_text} onChange={(e) => set('location_text')(e.target.value)} placeholder="Bay 3, Line 2" maxLength={200} />
           </div>
         </div>
         <div style={{ ...rowStyle, marginTop: 14 }}>
           {lookups?.workstations && (
-            <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-              <label style={labelStyle}>Production Workstation</label>
+            <div data-tour="maint-af-workstation" style={{ flex: '1 1 240px', maxWidth: 320 }}>
+              <label style={sheetLabel}>Production Workstation</label>
               <SearchableSelect value={f.workstation_id} onChange={set('workstation_id')} placeholder="Not linked"
                 options={[{ value: '', label: '— Not linked —' }, ...workstations.map((w) => ({ value: String(w.id), label: `${w.code} — ${w.name}` }))]} />
             </div>
           )}
-          <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-            <label style={labelStyle}>Part Of (Parent Asset)</label>
-            <SearchableSelect value={f.parent_asset_id} onChange={set('parent_asset_id')} placeholder="None"
-              options={[{ value: '', label: '— None —' }, ...parents.filter((p) => p.id !== initial?.id).map((p) => ({ value: String(p.id), label: `${p.asset_code} — ${p.name}` }))]} />
+          <div data-tour="maint-af-parent" style={{ flex: '1 1 240px', maxWidth: 320 }}>
+            <label style={sheetLabel}>Part Of (Parent Asset)</label>
+            <MaintenanceAssetPicker value={f.parent_asset_id ? Number(f.parent_asset_id) : null}
+              onChange={(v) => set('parent_asset_id')(v != null ? String(v) : '')}
+              placeholder="None" clearLabel="— None —" excludeIds={initial?.id ? [initial.id] : undefined}
+              fallbackOption={initial?.parent_asset_id ? { id: initial.parent_asset_id, asset_code: initial.parent_asset_code || `#${initial.parent_asset_id}`, name: '' } : null} />
           </div>
         </div>
         {lookups?.workstations && (
-          <p style={{ fontSize: 12, color: TEXT.muted, margin: '10px 0 0' }}>
+          <p style={sheetHint}>
             Linking a workstation blocks it in Production while this asset is broken down or under maintenance.
           </p>
         )}
-      </div>
+          </SheetSection>
 
-      <div style={sectionStyle}>
-        <p style={sectionTitle}>Make &amp; Purchase</p>
+          <SheetSection icon="cart" title="Make & Purchase">
         <div style={rowStyle}>
           <div style={{ flex: '1 1 180px', maxWidth: 240 }}>
-            <label style={labelStyle}>Make</label>
-            <input style={inputStyle} value={f.make} onChange={(e) => set('make')(e.target.value)} maxLength={100} />
+            <label style={sheetLabel}>Make</label>
+            <input data-tour="maint-af-make" style={sheetInput} value={f.make} onChange={(e) => set('make')(e.target.value)} maxLength={100} />
           </div>
           <div style={{ flex: '1 1 180px', maxWidth: 240 }}>
-            <label style={labelStyle}>Model</label>
-            <input style={inputStyle} value={f.model} onChange={(e) => set('model')(e.target.value)} maxLength={100} />
+            <label style={sheetLabel}>Model</label>
+            <input data-tour="maint-af-model" style={sheetInput} value={f.model} onChange={(e) => set('model')(e.target.value)} maxLength={100} />
           </div>
           <div style={{ flex: '1 1 180px', maxWidth: 240 }}>
-            <label style={labelStyle}>Serial Number</label>
-            <input style={inputStyle} value={f.serial_number} onChange={(e) => set('serial_number')(e.target.value)} maxLength={100} />
+            <label style={sheetLabel}>Serial Number</label>
+            <input data-tour="maint-af-serial" style={sheetInput} value={f.serial_number} onChange={(e) => set('serial_number')(e.target.value)} maxLength={100} />
           </div>
           <div style={{ flex: '0 1 110px', minWidth: 100 }}>
-            <label style={labelStyle}>Year Built</label>
-            <input style={inputStyle} type="number" min={1900} value={f.year_of_manufacture} onChange={(e) => set('year_of_manufacture')(e.target.value)} />
+            <label style={sheetLabel}>Year Built</label>
+            <input data-tour="maint-af-year" style={sheetInput} type="number" min={1900} value={f.year_of_manufacture} onChange={(e) => set('year_of_manufacture')(e.target.value)} />
           </div>
         </div>
         <div style={{ ...rowStyle, marginTop: 14 }}>
-          <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-            <label style={labelStyle}>Supplier</label>
+          <div data-tour="maint-af-supplier" style={{ flex: '1 1 240px', maxWidth: 320 }}>
+            <label style={sheetLabel}>Supplier</label>
             <SearchableSelect value={f.supplier_vendor_id} onChange={set('supplier_vendor_id')} placeholder="Select vendor…" options={vendorOptions} />
           </div>
-          <div style={{ flex: '0 1 160px', minWidth: 150 }}>
-            <label style={labelStyle}>Purchase Date</label>
+          <div data-tour="maint-af-purchase-date" style={{ flex: '0 1 160px', minWidth: 150 }}>
+            <label style={sheetLabel}>Purchase Date</label>
             <DateField value={f.purchase_date} onChange={set('purchase_date')} />
           </div>
           <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-            <label style={labelStyle}>Purchase Cost (₹)</label>
-            <input style={inputStyle} type="number" min={0} step="0.01" value={f.purchase_cost} onChange={(e) => set('purchase_cost')(e.target.value)} />
+            <label style={sheetLabel}>Purchase Cost (₹)</label>
+            <input data-tour="maint-af-purchase-cost" style={sheetInput} type="number" min={0} step="0.01" value={f.purchase_cost} onChange={(e) => set('purchase_cost')(e.target.value)} />
           </div>
-          <div style={{ flex: '0 1 160px', minWidth: 150 }}>
-            <label style={labelStyle}>Commissioned On</label>
+          <div data-tour="maint-af-commissioned" style={{ flex: '0 1 160px', minWidth: 150 }}>
+            <label style={sheetLabel}>Commissioned On</label>
             <DateField value={f.commissioned_on} onChange={set('commissioned_on')} />
           </div>
         </div>
-      </div>
+          </SheetSection>
 
-      <div style={sectionStyle}>
-        <p style={sectionTitle}>Warranty, AMC &amp; Meter</p>
+          <SheetSection icon="shield" title="Warranty, AMC & Meter">
         <div style={rowStyle}>
-          <div style={{ flex: '0 1 160px', minWidth: 150 }}>
-            <label style={labelStyle}>Warranty Expiry</label>
+          <div data-tour="maint-af-warranty" style={{ flex: '0 1 160px', minWidth: 150 }}>
+            <label style={sheetLabel}>Warranty Expiry</label>
             <DateField value={f.warranty_expiry} onChange={set('warranty_expiry')} />
           </div>
-          <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-            <label style={labelStyle}>AMC Vendor</label>
+          <div data-tour="maint-af-amc-vendor" style={{ flex: '1 1 240px', maxWidth: 320 }}>
+            <label style={sheetLabel}>AMC Vendor</label>
             <SearchableSelect value={f.amc_vendor_id} onChange={set('amc_vendor_id')} placeholder="Select vendor…" options={vendorOptions} />
           </div>
-          <div style={{ flex: '0 1 160px', minWidth: 150 }}>
-            <label style={labelStyle}>AMC Expiry</label>
+          <div data-tour="maint-af-amc-expiry" style={{ flex: '0 1 160px', minWidth: 150 }}>
+            <label style={sheetLabel}>AMC Expiry</label>
             <DateField value={f.amc_expiry} onChange={set('amc_expiry')} />
           </div>
           <div style={{ flex: '0 1 130px', minWidth: 110 }}>
-            <label style={labelStyle}>Meter Unit</label>
-            <input style={inputStyle} value={f.meter_unit} onChange={(e) => set('meter_unit')(e.target.value)} placeholder="hours" maxLength={20} />
+            <label style={sheetLabel}>Meter Unit</label>
+            <input data-tour="maint-af-meter-unit" style={sheetInput} value={f.meter_unit} onChange={(e) => set('meter_unit')(e.target.value)} placeholder="hours" maxLength={20} />
           </div>
           <div style={{ flex: '0 1 150px', minWidth: 130 }}>
-            <label style={labelStyle}>Meter Reading</label>
-            <input style={inputStyle} type="number" min={0} step="0.1" value={f.current_meter_reading} onChange={(e) => set('current_meter_reading')(e.target.value)} />
+            <label style={sheetLabel}>Meter Reading</label>
+            <input data-tour="maint-af-meter-reading" style={sheetInput} type="number" min={0} step="0.1" value={f.current_meter_reading} onChange={(e) => set('current_meter_reading')(e.target.value)} />
           </div>
           {isEdit && f.status === 'decommissioned' && (
-            <div style={{ flex: '0 1 170px', minWidth: 160 }}>
-              <label style={labelStyle}>Decommissioned On</label>
+            <div data-tour="maint-af-decommissioned" style={{ flex: '0 1 170px', minWidth: 160 }}>
+              <label style={sheetLabel}>Decommissioned On</label>
               <DateField value={f.decommissioned_on} onChange={set('decommissioned_on')} />
             </div>
           )}
         </div>
-      </div>
-
-      <div style={sectionStyle}>
-        <p style={sectionTitle}>Notes</p>
-        <label style={labelStyle}>Description / Technical Specs</label>
-        <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={f.description} onChange={(e) => set('description')(e.target.value)}
-          placeholder="Capacity, power rating, key specs…" />
-        <div style={{ marginTop: 14 }}>
-          <label style={labelStyle}>Remarks</label>
-          <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={f.remarks} onChange={(e) => set('remarks')(e.target.value)} />
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button type="submit" disabled={saving} style={{
-          padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
-          background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
-          boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-        }}>
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-      </div>
+          </SheetSection>
+          </>}
+          right={<>
+          <SheetSection icon="doc" title="Notes" extra={<Optional />}>
+            <label style={sheetLabel}>Description / Technical Specs</label>
+            <textarea data-tour="maint-af-description" style={{ ...sheetInput, minHeight: 110, resize: 'vertical' }} value={f.description} onChange={(e) => set('description')(e.target.value)}
+              placeholder="Capacity, power rating, key specs…" />
+            <label style={{ ...sheetLabel, marginTop: 14 }}>Remarks</label>
+            <textarea data-tour="maint-af-remarks" style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={f.remarks} onChange={(e) => set('remarks')(e.target.value)} />
+          </SheetSection>
+          </>}
+        />
+      </FormPage>
     </form>
   )
 }

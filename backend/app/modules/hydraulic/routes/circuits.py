@@ -1,11 +1,15 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access, require_tab_action
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permissions import (
+    ensure_can_delete, require_app_access, require_feature_action, require_tab_access, require_tab_action,
+)
 from app.db.session import get_db
+from app.modules.hydraulic import access
 from app.modules.hydraulic.models.circuit import HydCircuit
 from app.modules.hydraulic.models.document import HydDocument
 from app.modules.hydraulic.schemas.circuit import (
@@ -14,6 +18,7 @@ from app.modules.hydraulic.schemas.circuit import (
 )
 from app.modules.hydraulic.service import (
     generate_circuit_number, check_system_type, get_system_or_404, next_revision, systems_by_id, user_names,
+    circuit_approvers,
 )
 from app.modules.main.models.user import User
 from app.utils.notifications import notify_user
@@ -34,6 +39,7 @@ def _to_responses(db: Session, circuits: list[HydCircuit], with_revisions: bool 
     docs = dict(db.query(HydDocument.entity_id, func.count(HydDocument.id)).filter(
         HydDocument.entity_type == "circuit", HydDocument.entity_id.in_(ids), HydDocument.is_deleted == False,  # noqa: E712
     ).group_by(HydDocument.entity_id).all()) if ids else {}
+    live = access.live_request_ids(db, access.CIRCUIT_ENTITY, [c.id for c in circuits if c.status == "under_review"])
     out = []
     for c in circuits:
         resp = HydCircuitResponse.model_validate(c)
@@ -44,6 +50,7 @@ def _to_responses(db: Session, circuits: list[HydCircuit], with_revisions: bool 
         resp.submitted_by_name = names.get(c.submitted_by_id)
         resp.approved_by_name = names.get(c.approved_by_id)
         resp.document_count = docs.get(c.id, 0)
+        resp.approval_request_id = live.get(c.id)
         if with_revisions:
             resp.revisions = [
                 HydCircuitRevisionSummary(id=r.id, revision=r.revision, status=r.status, approved_at=r.approved_at, change_note=r.change_note)
@@ -55,13 +62,14 @@ def _to_responses(db: Session, circuits: list[HydCircuit], with_revisions: bool 
     return out
 
 
-def _get_or_404(db: Session, circuit_id: int, lock: bool = False) -> HydCircuit:
+def _get_or_404(db: Session, circuit_id: int, user: User, lock: bool = False) -> HydCircuit:
     q = db.query(HydCircuit).filter(HydCircuit.id == circuit_id, HydCircuit.is_deleted == False)  # noqa: E712
     if lock:
         q = q.with_for_update()
     circuit = q.first()
     if not circuit:
         raise HTTPException(status_code=404, detail=f"Circuit #{circuit_id} not found (it may have been deleted).")
+    ensure_in_scope(db, user, circuit)
     return circuit
 
 
@@ -84,7 +92,7 @@ async def list_circuits(
     db: Session = Depends(get_db),
     _tab: User = Depends(require_tab_access("hydraulic", "circuits")),
 ):
-    query = db.query(HydCircuit).filter(HydCircuit.is_deleted == False)  # noqa: E712
+    query = apply_scope(db.query(HydCircuit).filter(HydCircuit.is_deleted == False), _tab, HydCircuit)  # noqa: E712
     if system_id:
         query = query.filter(HydCircuit.system_id == system_id)
     if system_type:
@@ -118,8 +126,11 @@ async def create_circuit(
 
 
 @router.get("/{circuit_id}", response_model=HydCircuitResponse)
-async def get_circuit(circuit_id: int, db: Session = Depends(get_db)):
-    return _to_responses(db, [_get_or_404(db, circuit_id)], with_revisions=True)[0]
+async def get_circuit(
+    circuit_id: int, db: Session = Depends(get_db),
+    _tab: User = Depends(require_tab_access("hydraulic", "circuits")),
+):
+    return _to_responses(db, [_get_or_404(db, circuit_id, _tab)], with_revisions=True)[0]
 
 
 @router.patch("/{circuit_id}", response_model=HydCircuitResponse)
@@ -129,7 +140,7 @@ async def update_circuit(
     db: Session = Depends(get_db),
     _perm: User = Depends(_CAN_EDIT),
 ):
-    circuit = _get_or_404(db, circuit_id)
+    circuit = _get_or_404(db, circuit_id, _perm)
     _require_status(circuit, ("draft",), "edit")
     updates = payload.model_dump(exclude_unset=True)
     if updates.get("system_id"):
@@ -144,10 +155,11 @@ async def update_circuit(
 @router.post("/{circuit_id}/submit", response_model=HydCircuitResponse)
 async def submit_circuit(
     circuit_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(_CAN_EDIT),
+    user: User = Depends(require_feature_action("hydraulic", "circuits", "submit_review", "submit")),
 ):
-    circuit = _get_or_404(db, circuit_id, lock=True)
+    circuit = _get_or_404(db, circuit_id, user, lock=True)
     _require_status(circuit, ("draft",), "submit for review")
     has_file = db.query(HydDocument).filter(
         HydDocument.entity_type == "circuit", HydDocument.entity_id == circuit.id, HydDocument.is_deleted == False,  # noqa: E712
@@ -158,6 +170,28 @@ async def submit_circuit(
     circuit.submitted_by_id = user.id
     circuit.submitted_at = datetime.now(timezone.utc)
     circuit.review_remarks = None
+    db.flush()
+    # The approval engine routes and notifies the reviewers (Organization ›
+    # Approval Workflows). None = nobody but admins can approve: the circuit
+    # waits for an admin on the old route, notified as before (Teams too).
+    req = access.submit_circuit(db, circuit, user)
+    skip = access.approver_ids(req)
+    if req is None:
+        skip = {a.id for a in circuit_approvers(db)}
+        for approver in circuit_approvers(db):
+            if approver.id == user.id:
+                continue
+            notify_user(
+                db, user_id=approver.id, title=f"Circuit {circuit.circuit_number} Rev {circuit.revision} needs review",
+                message=f"{user.name or user.email} submitted \"{circuit.title}\" for approval.",
+                notification_type="hyd_circuit_review", entity_type="hyd_circuit", entity_id=circuit.id, teams=True,
+            )
+    access.notify_hyd_event(
+        db, background_tasks, "circuit_submitted", circuit, access.CIRCUIT_ENTITY,
+        title=f"Circuit {circuit.circuit_number} Rev {circuit.revision} needs review",
+        message=f"{user.name or user.email} submitted \"{circuit.title}\" for review. Check the drawing and approve or return it.",
+        actor=user, skip=skip,
+    )
     db.commit()
     db.refresh(circuit)
     return _to_responses(db, [circuit], with_revisions=True)[0]
@@ -170,18 +204,18 @@ async def approve_circuit(
     db: Session = Depends(get_db),
     user: User = Depends(_CAN_APPROVE),
 ):
-    circuit = _get_or_404(db, circuit_id, lock=True)
+    circuit = _get_or_404(db, circuit_id, user, lock=True)
     _require_status(circuit, ("under_review",), "approve")
     if circuit.submitted_by_id == user.id and user.role != "admin":
         raise HTTPException(status_code=403, detail="You submitted this circuit, so someone else has to approve it (four-eyes check). Ask another approver or an admin.")
-    # Approving a revision supersedes whichever revision was approved before.
-    db.query(HydCircuit).filter(
-        HydCircuit.circuit_number == circuit.circuit_number, HydCircuit.id != circuit.id, HydCircuit.status == "approved",
-    ).update({"status": "superseded"}, synchronize_session=False)
-    circuit.status = "approved"
-    circuit.approved_by_id = user.id
-    circuit.approved_at = datetime.now(timezone.utc)
-    circuit.review_remarks = payload.remarks
+    req = access.live_request(db, access.CIRCUIT_ENTITY, circuit.id)
+    if req is not None:  # decided on the approval engine, which notifies the submitter
+        access.decide_live(db, req, user, "approve", payload.remarks)
+        db.commit()
+        db.refresh(circuit)
+        return _to_responses(db, [circuit], with_revisions=True)[0]
+    # Sent for review before the approval engine (or no engine approver): old rules.
+    access.apply_circuit_approval(db, circuit, user, payload.remarks)
     if circuit.submitted_by_id:
         notify_user(
             db, user_id=circuit.submitted_by_id, title=f"Circuit {circuit.circuit_number} Rev {circuit.revision} approved",
@@ -197,13 +231,20 @@ async def approve_circuit(
 async def return_circuit(
     circuit_id: int,
     payload: HydCircuitReviewPayload,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(_CAN_APPROVE),
 ):
-    circuit = _get_or_404(db, circuit_id, lock=True)
+    circuit = _get_or_404(db, circuit_id, user, lock=True)
     _require_status(circuit, ("under_review",), "return")
     if not (payload.remarks or "").strip():
         raise HTTPException(status_code=400, detail="Say what needs fixing — review remarks are required when returning a circuit.")
+    req = access.live_request(db, access.CIRCUIT_ENTITY, circuit.id)
+    if req is not None:  # decided on the approval engine, which notifies the submitter
+        access.decide_live(db, req, user, "return", payload.remarks.strip())
+        db.commit()
+        db.refresh(circuit)
+        return _to_responses(db, [circuit], with_revisions=True)[0]
     circuit.status = "draft"
     circuit.review_remarks = payload.remarks.strip()
     if circuit.submitted_by_id:
@@ -212,6 +253,7 @@ async def return_circuit(
             message=f"{user.name or user.email}: {circuit.review_remarks}",
             notification_type="hyd_circuit_returned", entity_type="hyd_circuit", entity_id=circuit.id,
         )
+    access.notify_circuit_returned(db, background_tasks, circuit, user)
     db.commit()
     db.refresh(circuit)
     return _to_responses(db, [circuit], with_revisions=True)[0]
@@ -222,12 +264,14 @@ async def revise_circuit(
     circuit_id: int,
     payload: HydCircuitRevisePayload,
     db: Session = Depends(get_db),
-    user: User = Depends(_CAN_EDIT),
+    user: User = Depends(require_feature_action("hydraulic", "circuits", "revisions", "create")),
 ):
     """Raises the next revision of an approved circuit as a new draft. The
     approved revision stays in force until the new one is approved."""
-    circuit = _get_or_404(db, circuit_id, lock=True)
+    circuit = _get_or_404(db, circuit_id, user, lock=True)
     _require_status(circuit, ("approved",), "raise a new revision of")
+    if not payload.change_note.strip():
+        raise HTTPException(status_code=422, detail=f"Say what changes in the next revision of {circuit.circuit_number} (e.g. 'Relief valve set to 210 bar') — the change note is the revision record.")
     open_rev = db.query(HydCircuit).filter(
         HydCircuit.circuit_number == circuit.circuit_number, HydCircuit.is_deleted == False,  # noqa: E712
         HydCircuit.status.in_(("draft", "under_review")),
@@ -251,9 +295,10 @@ async def revise_circuit(
 async def delete_circuit(
     circuit_id: int,
     db: Session = Depends(get_db),
-    _perm: User = Depends(require_tab_action("hydraulic", "circuits", "delete")),
+    user: User = Depends(require_tab_action("hydraulic", "circuits", "delete")),
 ):
-    circuit = _get_or_404(db, circuit_id)
+    circuit = _get_or_404(db, circuit_id, user)
+    ensure_can_delete(user, circuit, "hydraulic", "circuits", what="circuit")
     _require_status(circuit, ("draft",), "delete")
     circuit.is_deleted = True
     circuit.deleted_at = datetime.now(timezone.utc)

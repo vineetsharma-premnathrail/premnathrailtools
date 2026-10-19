@@ -4,12 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_access
+from app.core.data_scope import apply_scope
+from app.core.permission_registry import can_feature
+from app.core.permissions import require_app_access, require_feature_action, require_tab_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.production.models.work_order import ProductionWorkOrder, ProductionTimeLog, WORK_ORDER_REFERENCE_TYPE
 from app.modules.production.models.workstation import ProductionWorkstation
-from app.modules.production.schemas.insights import ProductionReportResponse
+from app.modules.production.schemas.insights import ProductionReportResponse, ProductionWipResponse
+from app.modules.production.costing import wip_snapshot
 from app.modules.production.service import work_order_costing
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.stock_transaction import StoreStockTransaction
@@ -42,16 +45,31 @@ async def get_report(
         raise HTTPException(status_code=400, detail="Pick a range of one year or less — longer ranges are too slow to cost order by order.")
 
     # Finished-goods output, straight from the Store ledger.
-    receipts = db.query(
-        StoreStockTransaction.item_id,
-        func.sum(StoreStockTransaction.quantity),
-        func.count(func.distinct(StoreStockTransaction.reference_number)),
+    per_item: dict[int, list] = {}  # item_id -> [quantity, {wo numbers}]
+    for item_id, ref, qty in db.query(
+        StoreStockTransaction.item_id, StoreStockTransaction.reference_number, func.sum(StoreStockTransaction.quantity),
     ).filter(
         StoreStockTransaction.reference_type == WORK_ORDER_REFERENCE_TYPE,
         StoreStockTransaction.transaction_type == "receipt",
         StoreStockTransaction.transaction_date >= date_from,
         StoreStockTransaction.transaction_date <= date_to,
-    ).group_by(StoreStockTransaction.item_id).all()
+    ).group_by(StoreStockTransaction.item_id, StoreStockTransaction.reference_number).all():
+        row = per_item.setdefault(item_id, [0.0, set()])
+        row[0] += float(qty or 0)
+        row[1].add(ref)
+    # Inspection-controlled products are received into Quality stock under a
+    # final-inspection lot, so their ledger rows reference the lot, not the WO.
+    from app.modules.quality.models.inspection_lot import QualityInspectionLot
+    for item_id, ref, qty in db.query(
+        QualityInspectionLot.item_id, QualityInspectionLot.source_reference, func.sum(QualityInspectionLot.quantity),
+    ).filter(
+        QualityInspectionLot.source_type == "work_order", QualityInspectionLot.status != "cancelled",
+        QualityInspectionLot.lot_date >= date_from, QualityInspectionLot.lot_date <= date_to,
+    ).group_by(QualityInspectionLot.item_id, QualityInspectionLot.source_reference).all():
+        row = per_item.setdefault(item_id, [0.0, set()])
+        row[0] += float(qty or 0)
+        row[1].add(ref)
+    receipts = [(item_id, qty, len(refs)) for item_id, (qty, refs) in per_item.items()]
     items = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_({r[0] for r in receipts})).all()} if receipts else {}
     output = sorted((
         {"item_id": item_id, "item_code": items[item_id].item_code if item_id in items else None,
@@ -64,12 +82,12 @@ async def get_report(
     # Estimated vs actual cost of orders finished in the range.
     start_dt = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
     end_dt = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=timezone.utc)
-    finished = db.query(ProductionWorkOrder).filter(
+    finished = apply_scope(db.query(ProductionWorkOrder).filter(
         ProductionWorkOrder.is_deleted == False,  # noqa: E712
         ProductionWorkOrder.status.in_(("completed", "closed")),
         ProductionWorkOrder.actual_end_at >= start_dt,
         ProductionWorkOrder.actual_end_at < end_dt,
-    ).order_by(ProductionWorkOrder.actual_end_at.desc()).all()
+    ), _tab, ProductionWorkOrder).order_by(ProductionWorkOrder.actual_end_at.desc()).all()
     products = {i.id: i for i in db.query(StoreItem).filter(StoreItem.id.in_({o.product_item_id for o in finished})).all()} if finished else {}
     costs = []
     for wo in finished:
@@ -84,7 +102,7 @@ async def get_report(
         })
 
     # Workstation utilization = hours booked ÷ (capacity/day × working days).
-    logs = db.query(ProductionTimeLog).filter(ProductionTimeLog.log_date >= date_from, ProductionTimeLog.log_date <= date_to).all()
+    logs = apply_scope(db.query(ProductionTimeLog).filter(ProductionTimeLog.log_date >= date_from, ProductionTimeLog.log_date <= date_to), _tab, ProductionTimeLog).all()
     workstations = {w.id: w for w in db.query(ProductionWorkstation).filter(ProductionWorkstation.is_deleted == False).all()}  # noqa: E712
     days = _working_days(date_from, date_to)
     util: dict[int | None, dict] = {}
@@ -114,8 +132,38 @@ async def get_report(
     total_scrap = sum(log.qty_scrap for log in logs)
     return {
         "date_from": date_from, "date_to": date_to,
-        "output": output, "costs": costs, "utilization": utilization,
+        # Cost table only with the Reports › costs switch (core/features/production.py).
+        "output": output, "costs": costs if can_feature(_tab, "production", "reports", "costs", "view") else [], "utilization": utilization,
         "total_output": round(sum(r["quantity"] for r in output), 4),
         "total_scrap": round(total_scrap, 4),
         "scrap_rate_percent": round(total_scrap / (total_good + total_scrap) * 100, 1) if (total_good + total_scrap) else None,
+    }
+
+
+@router.get("/wip", response_model=ProductionWipResponse)
+async def get_wip(
+    as_of: date | None = None,
+    db: Session = Depends(get_db),
+    _tab: User = Depends(require_feature_action("production", "reports", "costs", "view")),
+):
+    """Work in progress at the end of `as_of` (default today): cost issued to
+    and booked on work orders (incl. RRV builds) not yet delivered into
+    stock. This is the figure Finance adds to Store stock in the period-end
+    closing-stock valuation (Finance › Inventory)."""
+    as_of = as_of or date.today()
+    if as_of > date.today():
+        raise HTTPException(status_code=400, detail=f"WIP can't be valued for a future date ({as_of:%d-%m-%Y}). Pick today or an earlier period end.")
+    rows = wip_snapshot(db, as_of)
+    builds: dict[int, dict] = {}
+    for r in rows:
+        if r["rrv_build_id"]:
+            b = builds.setdefault(r["rrv_build_id"], {"rrv_build_id": r["rrv_build_id"], "rrv_build_number": r["rrv_build_number"], "orders": 0, "wip_value": 0.0})
+            b["orders"] += 1
+            b["wip_value"] = round(b["wip_value"] + r["wip_value"], 2)
+    return {
+        "as_of": as_of, "rows": rows, "by_rrv_build": sorted(builds.values(), key=lambda b: b["rrv_build_number"] or ""),
+        "total_wip": round(sum(r["wip_value"] for r in rows), 2),
+        "total_material": round(sum(r["material_cost"] for r in rows), 2),
+        "total_labour": round(sum(r["labour_cost"] for r in rows), 2),
+        "total_relieved": round(sum(r["cost_relieved"] for r in rows), 2),
     }

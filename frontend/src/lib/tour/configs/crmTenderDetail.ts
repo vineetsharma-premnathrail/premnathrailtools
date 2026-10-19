@@ -1,17 +1,21 @@
 import { TourConfig, TourStep } from '../types'
+import activityConfig from './crmActivityForm'
+import momExportConfig from './crmMomExport'
+import torDialogConfig from './crmTorDialog'
+import { followUpListSteps } from './crmFollowUpList'
 
 const steps: TourStep[] = [
   {
     target: 'tender-stage-progress',
     title: 'Stage progress',
-    purpose: 'Shows where this tender sits in the bidding pipeline — click to expand the full stage list and jump to a different stage.',
-    why: 'Moving to a stage other than the current one asks for confirmation first, and is recorded on the Timeline.',
+    purpose: 'Shows where this tender sits in the bidding pipeline — click to expand the full stage list and move it to a later stage. Moving a stage needs the Move pipeline stage permission in your role.',
+    why: 'Stages only move forward, with a confirmation, and each move is recorded on the Timeline. Only an admin can move a stage back, and must give a reason. Once a sales order is raised from it, the stage is locked until that order is cancelled in Sales.',
     options: [{ value: 'Green circle', meaning: 'Completed stage' }, { value: 'Orange circle', meaning: 'Current stage' }, { value: 'Grey circle', meaning: 'Upcoming stage' }],
   },
   {
     target: 'tender-tab-Info',
     title: 'Info',
-    purpose: 'Read-only summary of the tender\'s core details and its linked organization — click Edit (top right) to change any of it.',
+    purpose: 'Read-only summary of the tender\'s core details and its linked customer organization — click Edit (top right) to change any of it. The Customer Organization / Contact Person cards and the Tender Value show only if your role includes them.',
     autoActivate: true,
   },
   {
@@ -21,7 +25,7 @@ const steps: TourStep[] = [
   },
   {
     target: 'tender-info-view',
-    title: 'Tender Details / Organization',
+    title: 'Tender Details / Customer Organization',
     purpose: 'Every core field entered when this tender was created/edited, laid out for quick reference.',
   },
   {
@@ -34,12 +38,12 @@ const steps: TourStep[] = [
     target: 'tnd-info-status',
     title: 'Status (quick edit)',
     purpose: 'Change the tender\'s status directly from here without opening the full Edit form.',
-    why: 'This is a quick lead-info toggle — changing it does not count as editing the requirement, so it won\'t re-arm the "Send Technical Offer Request" button. Every status change is recorded on the Timeline.',
+    why: 'This is a quick lead-info toggle — changing it does not count as editing the requirement, so it won\'t re-arm the "Send Technical Requirement" button. Every status change is recorded on the Timeline.',
   },
   {
     target: 'tender-tab-Dates',
     title: 'Dates',
-    purpose: 'Every milestone date for this tender — publish, document download, pre-bid meeting, submission, technical/financial opening, expected award — in one table.',
+    purpose: 'Every milestone date for this tender — publish, document download, pre-bid meeting, submission, technical/financial opening, expected award — in one table. Shown only if your role includes Inquiries & Tenders › Tender dates.',
     autoActivate: true,
   },
   {
@@ -48,9 +52,15 @@ const steps: TourStep[] = [
     purpose: 'A dash means that date hasn\'t been entered yet — edit the tender to fill it in.',
   },
   {
+    target: 'tender-tab-Discussion',
+    title: 'Discussion',
+    purpose: 'A chat shared with the R&D team about this requirement — the tab appears only after you click "Send Technical Requirement to R&D". Type @ (or use Tag people) to tag someone — they get a notification; attach files that both teams can open. "Attach files" asks whether to upload a new file or pick a Client / Internal document already uploaded on this record. The Files view lists every file shared, who sent it and when. Your role decides whether you see this tab and whether you can post (Discussion with R&D › Create).',
+    autoActivate: true,
+  },
+  {
     target: 'tender-tab-Documents',
     title: 'Documents',
-    purpose: 'Files attached to this tender, split into Client Documents (received from the tendering authority) and Internal Documents (your own working files).',
+    purpose: 'Files attached to this tender, split into Client Documents (received from the tendering authority) and Internal Documents (your own working files). Shown only if your role includes Inquiries & Tenders › Documents.',
     autoActivate: true,
   },
   {
@@ -68,24 +78,19 @@ const steps: TourStep[] = [
   {
     target: 'tender-tab-Follow Ups',
     title: 'Follow Ups',
-    purpose: 'Every call, email, or site visit logged against this tender, most recent first. This list is view-only here — follow-ups for a tender are logged from elsewhere, not added on this page.',
+    purpose: 'Every call, email, meeting or site visit logged against this tender, most recent first. Log new ones here with "+ Add Follow Up". Shown only if your role includes Inquiries & Tenders › Follow-ups.',
+    why: 'A tender is won by steady follow-up with the tendering authority: pre-bid queries, clarifications, document submission. A logged trail means nothing is forgotten when people change.',
     autoActivate: true,
   },
-  {
-    target: 'tender-followups-list',
-    title: 'Follow-up entries',
-    purpose: 'Click "View" on any entry to see its full remarks and details in a popup.',
-  },
-  {
-    target: 'tender-followup-change-status-btn',
-    title: 'Change Status',
-    purpose: 'Set this follow-up\'s own status — Open, Closed, or Hold — directly from the list, without opening Edit.',
-    why: 'Only a follow-up left as "Open" counts toward the "Open/Overdue Follow-ups" figures on the CRM Dashboard and the Follow-ups page\'s "Open" bucket.',
-  },
+  // Existing rows and the MOM export first (rows are hidden while the add
+  // form is open), then "+ Add Follow Up" and the shared form field steps.
+  ...followUpListSteps('tender'),
+  ...momExportConfig.steps,
+  ...activityConfig.steps.slice(1),
   {
     target: 'tender-tab-Timeline',
     title: 'Timeline',
-    purpose: 'A merged, chronological history of everything that happened to this tender — creation, field edits, stage changes, follow-ups, and Technical Offer emails — all in one feed.',
+    purpose: 'A merged, chronological history of everything that happened to this tender — creation, field edits, stage changes, follow-ups, and Technical Offer emails — all in one feed. Shown only if your role includes Inquiries & Tenders › Timeline.',
     autoActivate: true,
   },
   {
@@ -102,10 +107,24 @@ const steps: TourStep[] = [
     // but that distinction isn't obvious from outside, and the user should
     // always be the one who decides to open it.
     target: 'tender-tor-btn',
-    title: 'Send Technical Offer Request to R&D',
-    purpose: 'Emails R&D a PDF summarizing the Organization, Project, and Product Requirement details, so they can prepare a technical offer.',
+    title: 'Send Technical Requirement to R&D',
+    purpose: 'Emails R&D a PDF summarizing the Customer Organization, Project, and Product Requirement details, and puts it in the R&D team queue with a Response Due Date and your remarks — any R&D user can answer. Shown only to roles with Send Technical Requirement (TOR) to R&D.',
     why: 'Disabled once already sent — you\'d need to edit the tender before sending again, to avoid firing off duplicate requests for the same version of the details.',
-    after: 'Click it yourself to see the reference-document picker and Send/Cancel options — the tour won\'t open it for you.',
+    after: 'Click it yourself: first create the Technical Offer Word document, then set the due date, remarks and reference documents and send — the tour won\'t open it for you. If you open it now, press Next for a walkthrough of the dialog.',
+  },
+  ...torDialogConfig.steps,
+  {
+    // Only rendered for Sales-app users on a tender with LOA / Order Received (or one with an SO) — the tour skips it otherwise.
+    target: 'tender-create-so-btn',
+    title: 'Create Sales Order',
+    purpose: 'Hands the awarded tender over to Sales: opens a new Sales Order pre-filled with this customer, the LOA number, purchaser and contract value. Once an order exists, this becomes a green chip showing the SO number and status — click it to open the order.',
+    why: 'One live sales order per tender, so the same LOA can\'t be booked twice. Shown only to people with the Sales app, and only once the tender status is "LOA / Order Received".',
+    after: 'When Sales confirms the order (after its approvals), this tender is automatically set to Status "Closed – Ordered" and Stage "Awarded / Lost", and the timeline records which SO closed it.',
+  },
+  {
+    target: 'tender-back-btn',
+    title: '← Back',
+    purpose: 'Returns to the page you came from: the Inquiries & Tenders list, or the customer organization\'s page if you opened this tender from there.',
   },
   {
     target: 'tender-delete-btn',

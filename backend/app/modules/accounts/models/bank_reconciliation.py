@@ -1,9 +1,10 @@
 from __future__ import annotations
 from datetime import date, datetime
-from sqlalchemy import String, Integer, Float, Date, DateTime, ForeignKey
+from sqlalchemy import String, Integer, Date, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
+from app.modules.accounts.models._types import Money
 
 BANK_RECONCILIATION_STATUSES = ("in_progress", "completed")
 
@@ -21,11 +22,11 @@ class BankReconciliation(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     bank_account_id: Mapped[int] = mapped_column(Integer, ForeignKey("bank_accounts.id"), nullable=False)
     statement_date: Mapped[date] = mapped_column(Date, nullable=False)
-    statement_balance: Mapped[float] = mapped_column(Float, nullable=False)
+    statement_balance: Mapped[float] = mapped_column(Money, nullable=False)
     # Snapshot of BankAccount.current_balance at creation time — never
     # recomputed afterwards, so this record stays a faithful point-in-time
     # comparison even as later transactions move the live balance.
-    book_balance: Mapped[float] = mapped_column(Float, nullable=False)
+    book_balance: Mapped[float] = mapped_column(Money, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="in_progress")
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     completed_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)

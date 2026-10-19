@@ -63,14 +63,14 @@ class MaintenanceWorkOrderSpareResponse(BaseModel):
     qty_planned: float
     qty_issued: float
     qty_returned: float
-    unit_cost: float
+    unit_cost: float | None  # None without maintenance:work_orders.costs:view
     remarks: str | None = None
     item_code: str | None = None
     item_name: str | None = None
     uom: str | None = None
     location_name: str | None = None
     available_qty: float | None = None
-    net_cost: float = 0
+    net_cost: float | None = 0
 
 
 class MaintenanceLabourLogPayload(BaseModel):
@@ -90,10 +90,10 @@ class MaintenanceLabourLogResponse(BaseModel):
     start_time: datetime | None = None
     end_time: datetime | None = None
     hours: float
-    hourly_rate: float
+    hourly_rate: float | None  # None without maintenance:work_orders.costs:view
     remarks: str | None = None
     technician_name: str | None = None
-    cost: float = 0
+    cost: float | None = 0
 
 
 class MaintenanceWorkOrderCreate(BaseModel):
@@ -108,6 +108,9 @@ class MaintenanceWorkOrderCreate(BaseModel):
     planned_start: date | None = None
     planned_end: date | None = None
     estimated_hours: float | None = None
+    # Permit-to-work needed before the job starts. Blank = Maintenance ›
+    # Settings › "Permit required by default".
+    permit_required: bool | None = None
     tasks: list[MaintenanceWorkOrderTaskPayload] = []
 
 
@@ -126,6 +129,7 @@ class MaintenanceWorkOrderUpdate(BaseModel):
     action_taken: str | None = None
     external_vendor_id: int | None = None
     external_cost: float | None = None
+    permit_required: bool | None = None
 
 
 class MaintenanceWorkOrderAssignPayload(BaseModel):
@@ -141,6 +145,9 @@ class MaintenanceWorkOrderCompletePayload(BaseModel):
     root_cause: str | None = None
     action_taken: str | None = None
     handed_back_at: datetime | None = None  # machine back in service; defaults to now
+    # Main-counter reading at completion — required when the asset has a
+    # meter (booked as a measuring document; drives counter-based PM).
+    meter_reading: float | None = None
 
 
 class MaintenanceWorkOrderResponse(BaseModel):
@@ -150,6 +157,8 @@ class MaintenanceWorkOrderResponse(BaseModel):
     wo_number: str
     asset_id: int
     request_id: int | None = None
+    pm_plan_id: int | None = None
+    pm_due_date: date | None = None
     wo_type: str
     priority: str
     title: str
@@ -171,10 +180,15 @@ class MaintenanceWorkOrderResponse(BaseModel):
     hold_reason: str | None = None
     cancel_reason: str | None = None
     external_vendor_id: int | None = None
-    external_cost: float
-    labour_cost: float
-    spares_cost: float
-    total_cost: float
+    # Money is None without maintenance:work_orders.costs:view (maintenance/sensitive.py).
+    external_cost: float | None
+    labour_cost: float | None
+    spares_cost: float | None
+    total_cost: float | None
+    procured_cost: float | None = 0
+    permit_required: bool = False
+    meter_reading_at_completion: float | None = None
+    pm_trigger: str | None = None
     requester_confirmed_at: datetime | None = None
     requester_comment: str | None = None
     created_by_id: int | None = None
@@ -195,6 +209,7 @@ class MaintenanceWorkOrderResponse(BaseModel):
     branch_id: int | None = None
     branch_name: str | None = None
     request_number: str | None = None
+    pm_plan_code: str | None = None
     requester_id: int | None = None
     requester_name: str | None = None
     assigned_to_name: str | None = None
@@ -202,3 +217,7 @@ class MaintenanceWorkOrderResponse(BaseModel):
     verified_by_name: str | None = None
     awaiting_confirmation: bool = False
     live_downtime_minutes: int | None = None
+    asset_meter_unit: str | None = None
+    asset_meter_reading: float | None = None
+    active_permit_number: str | None = None  # the permit that lets the job run
+    open_permit_count: int = 0               # issued / active permits not closed yet

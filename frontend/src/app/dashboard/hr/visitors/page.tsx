@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { canActOnTab } from '@/lib/tabAccess'
+import { useCan } from '@/lib/permissions'
 import { hrApi, usersApi } from '@/lib/api'
 import { extractErrorMessages } from '@/lib/validation'
 import type { HrVisitor, HrVisitorBoard, HrBranchLookup, DirectoryUser } from '@/types'
@@ -11,7 +13,7 @@ import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import PromptDialog from '@/components/erp/PromptDialog'
 import { secondaryBtnStyle } from '@/components/shared/ui'
-import { RegisterVisitorDialog, CheckInDialog } from '@/components/hr/admin/VisitorDialogs'
+import { RegisterVisitorDialog, CheckInDialog, EditVisitorDialog } from '@/components/hr/admin/VisitorDialogs'
 import {
   PageHeader, ErrorBanner, SuccessBanner, Pill, EmptyRow, primaryActionStyle, filterInputStyle, sectionStyle,
   tableWrapStyle, thStyle, tdStyle, linkActionStyle, fmtDateTime, fmtTime, todayIso, fmtDate,
@@ -19,7 +21,7 @@ import {
 import { TEXT, BORDER } from '@/lib/theme'
 
 const STATUS_LABELS: Record<string, string> = { expected: 'Expected', checked_in: 'Inside', checked_out: 'Checked Out', cancelled: 'Cancelled' }
-const STATUS_HEX: Record<string, string> = { expected: '#F59E0B', checked_in: '#16A34A', checked_out: '#64748B', cancelled: '#DC2626' }
+const STATUS_HEX: Record<string, string> = { expected: '#F59E0B', checked_in: '#16A34A', checked_out: '#64748B', cancelled: '#94A3B8' }
 
 type PendingAction = { kind: 'cancel' | 'checkout'; visitor: HrVisitor }
 
@@ -64,7 +66,17 @@ export default function HrVisitorsPage() {
   // Reception (hr app) runs the full board; any other employee sees the
   // visitors they host and can pre-register their own.
   const { user, isLoading } = useAuth()
-  const isHr = !!user?.apps?.includes('hr')
+  // HR-staff view only with the hr app AND this tab in the Permission Matrix.
+  const isHr = canActOnTab('hr', 'visitors', user)
+  const { can, canFeature } = useCan()
+  // Reception work needs Create / Edit on HR › Visitors; an employee managing
+  // visitors they host is self-service (My HR create / edit).
+  const hrCreate = isHr && can('hr', 'visitors', 'create')
+  const hrEdit = isHr && can('hr', 'visitors', 'edit')
+  // HR › Visitors › Gate check-in / check-out feature
+  const gateDesk = isHr && canFeature('hr', 'visitors', 'gate_desk', 'edit')
+  const meCreate = can('hr', 'me', 'create')
+  const meEdit = can('hr', 'me', 'edit')
 
   const [tab, setTab] = useState<'board' | 'history'>('board')
   const [error, setError] = useState<string[]>([])
@@ -73,6 +85,7 @@ export default function HrVisitorsPage() {
   const [people, setPeople] = useState<DirectoryUser[]>([])
   const [registerOpen, setRegisterOpen] = useState(false)
   const [checkInFor, setCheckInFor] = useState<HrVisitor | null>(null)
+  const [editFor, setEditFor] = useState<HrVisitor | null>(null)
   const [pending, setPending] = useState<PendingAction | null>(null)
 
   // board
@@ -158,11 +171,14 @@ export default function HrVisitorsPage() {
 
   if (isLoading || !user) return null
 
-  const canCancel = (v: HrVisitor) => v.status === 'expected' && (isHr || v.host_user_id === user.id || v.created_by_id === user.id)
+  // Mirrors backend update_visitor: HR edits any non-cancelled entry; host / registrant only while expected.
+  const canEdit = (v: HrVisitor) => (hrEdit && v.status !== 'cancelled') || (meEdit && v.status === 'expected' && (v.host_user_id === user.id || v.created_by_id === user.id))
+  const canCancel = (v: HrVisitor) => v.status === 'expected' && (hrEdit || (meEdit && (v.host_user_id === user.id || v.created_by_id === user.id)))
 
   const tabBtn = (key: 'board' | 'history', label: string) => (
     <button
       type="button"
+      data-tour={`hr-visitors-tab-${key}`}
       onClick={() => setTab(key)}
       style={{
         fontSize: 12.5, fontWeight: 600, padding: '7px 14px', borderRadius: 9999, cursor: 'pointer',
@@ -182,7 +198,7 @@ export default function HrVisitorsPage() {
       <PageHeader
         title={isHr ? 'Visitors' : 'My Visitors'}
         subtitle={isHr ? 'Gate register — who is expected, who is inside right now, and who has left.' : 'Visitors you are hosting. Pre-register them so reception can check them in quickly.'}
-        actions={<button type="button" style={primaryActionStyle} onClick={() => setRegisterOpen(true)}>{isHr ? '+ Register Visitor' : '+ Pre-register Visitor'}</button>}
+        actions={(hrCreate || meCreate) ? <button type="button" data-tour="hr-visitors-register-btn" style={primaryActionStyle} onClick={() => setRegisterOpen(true)}>{hrCreate ? '+ Register Visitor' : '+ Pre-register Visitor'}</button> : undefined}
       />
 
       <ErrorBanner error={error} />
@@ -193,26 +209,30 @@ export default function HrVisitorsPage() {
       {isHr && tab === 'board' ? (
         <>
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ flex: '0 1 170px' }}><DateField value={boardDate} onChange={setBoardDate} /></div>
-            <select style={{ ...filterInputStyle, flex: '0 1 190px' }} value={boardBranch} onChange={(e) => setBoardBranch(e.target.value)}>
+            <div data-tour="hr-visitors-board-date" style={{ flex: '0 1 170px' }}><DateField value={boardDate} onChange={setBoardDate} /></div>
+            <select data-tour="hr-visitors-board-plant" style={{ ...filterInputStyle, flex: '0 1 190px' }} value={boardBranch} onChange={(e) => setBoardBranch(e.target.value)}>
               <option value="">All plants</option>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
             {boardDate !== todayIso() && <button type="button" style={linkActionStyle} onClick={() => setBoardDate(todayIso())}>Back to today</button>}
-            <button type="button" style={{ ...secondaryBtnStyle, marginLeft: 'auto' }} onClick={loadBoard}>{boardLoading ? 'Refreshing…' : 'Refresh'}</button>
+            <button type="button" data-tour="hr-visitors-board-refresh" style={{ ...secondaryBtnStyle, marginLeft: 'auto' }} onClick={loadBoard}>{boardLoading ? 'Refreshing…' : 'Refresh'}</button>
           </div>
           {boardLoading && !board ? (
             <div style={sectionStyle}><p style={{ margin: 0, fontSize: 13, color: TEXT.muted }}>Loading…</p></div>
           ) : board ? (
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <div data-tour="hr-visitors-board" style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
               <BoardColumn title="Expected" hex={STATUS_HEX.expected} rows={board.expected} render={(v) => (
                 <VisitorCard key={v.id} v={v} actions={<>
-                  <button type="button" style={linkActionStyle} onClick={() => setCheckInFor(v)}>Check in</button>
-                  <button type="button" style={{ ...linkActionStyle, color: '#DC2626' }} onClick={() => setPending({ kind: 'cancel', visitor: v })}>Cancel</button>
+                  {gateDesk && <button type="button" style={linkActionStyle} onClick={() => setCheckInFor(v)}>Check in</button>}
+                  {canEdit(v) && <button type="button" style={linkActionStyle} onClick={() => setEditFor(v)}>Edit</button>}
+                  {canCancel(v) && <button type="button" style={{ ...linkActionStyle, color: '#DC2626' }} onClick={() => setPending({ kind: 'cancel', visitor: v })}>Cancel</button>}
                 </>} />
               )} />
               <BoardColumn title="Inside now" hex={STATUS_HEX.checked_in} rows={board.inside} render={(v) => (
-                <VisitorCard key={v.id} v={v} actions={<button type="button" style={linkActionStyle} onClick={() => setPending({ kind: 'checkout', visitor: v })}>Check out</button>} />
+                <VisitorCard key={v.id} v={v} actions={<>
+                  {gateDesk && <button type="button" style={linkActionStyle} onClick={() => setPending({ kind: 'checkout', visitor: v })}>Check out</button>}
+                  {canEdit(v) && <button type="button" style={linkActionStyle} onClick={() => setEditFor(v)}>Edit</button>}
+                </>} />
               )} />
               <BoardColumn title="Checked out" hex={STATUS_HEX.checked_out} rows={board.checked_out} render={(v) => <VisitorCard key={v.id} v={v} />} />
             </div>
@@ -223,20 +243,20 @@ export default function HrVisitorsPage() {
           <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             {isHr && (
               <>
-                <input style={{ ...filterInputStyle, flex: '1 1 220px', maxWidth: 300 }} placeholder="Search name, company, phone, badge, vehicle…" value={search} onChange={(e) => setSearch(e.target.value)} />
-                <div style={{ flex: '0 1 150px' }}><DateField value={dateFrom} onChange={setDateFrom} /></div>
+                <input data-tour="hr-visitors-search" style={{ ...filterInputStyle, flex: '1 1 220px', maxWidth: 300 }} placeholder="Search name, company, phone, badge, vehicle…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <div data-tour="hr-visitors-date-from" style={{ flex: '0 1 150px' }}><DateField value={dateFrom} onChange={setDateFrom} /></div>
                 <span style={{ fontSize: 12, color: TEXT.muted }}>to</span>
                 <div style={{ flex: '0 1 150px' }}><DateField value={dateTo} onChange={setDateTo} /></div>
-                <div style={{ flex: '0 1 200px', minWidth: 170 }}>
+                <div data-tour="hr-visitors-host-filter" style={{ flex: '0 1 200px', minWidth: 170 }}>
                   <SearchableSelect value={hostF} onChange={setHostF} placeholder="Any host" options={[{ value: '', label: 'Any host' }, ...people.map((p) => ({ value: String(p.id), label: p.name }))]} />
                 </div>
-                <select style={{ ...filterInputStyle, flex: '0 1 160px' }} value={branchF} onChange={(e) => setBranchF(e.target.value)}>
+                <select data-tour="hr-visitors-plant-filter" style={{ ...filterInputStyle, flex: '0 1 160px' }} value={branchF} onChange={(e) => setBranchF(e.target.value)}>
                   <option value="">All plants</option>
                   {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </>
             )}
-            <select style={{ ...filterInputStyle, flex: '0 1 150px' }} value={statusF} onChange={(e) => setStatusF(e.target.value)}>
+            <select data-tour="hr-visitors-status-filter" style={{ ...filterInputStyle, flex: '0 1 150px' }} value={statusF} onChange={(e) => setStatusF(e.target.value)}>
               <option value="">All statuses</option>
               {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
@@ -244,7 +264,7 @@ export default function HrVisitorsPage() {
               <button type="button" style={linkActionStyle} onClick={() => { setDateFrom(''); setDateTo(''); setStatusF(''); setHostF(''); setBranchF(''); setSearch('') }}>Clear filters</button>
             )}
           </div>
-          <div style={tableWrapStyle}>
+          <div data-tour="hr-visitors-table" style={tableWrapStyle}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>
                 <tr>{['Visit', 'Visitor', 'Host', 'Purpose', 'Expected', 'In', 'Out', 'Badge / Vehicle', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
@@ -268,8 +288,9 @@ export default function HrVisitorsPage() {
                     <td style={tdStyle}><Pill hex={STATUS_HEX[v.status] || '#64748B'} label={STATUS_LABELS[v.status] || v.status} /></td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                       <div style={{ display: 'flex', gap: 10 }}>
-                        {isHr && v.status === 'expected' && <button type="button" style={linkActionStyle} onClick={() => setCheckInFor(v)}>Check in</button>}
-                        {isHr && v.status === 'checked_in' && <button type="button" style={linkActionStyle} onClick={() => setPending({ kind: 'checkout', visitor: v })}>Check out</button>}
+                        {gateDesk && v.status === 'expected' && <button type="button" style={linkActionStyle} onClick={() => setCheckInFor(v)}>Check in</button>}
+                        {gateDesk && v.status === 'checked_in' && <button type="button" style={linkActionStyle} onClick={() => setPending({ kind: 'checkout', visitor: v })}>Check out</button>}
+                        {canEdit(v) && <button type="button" style={linkActionStyle} onClick={() => setEditFor(v)}>Edit</button>}
                         {canCancel(v) && <button type="button" style={{ ...linkActionStyle, color: '#DC2626' }} onClick={() => setPending({ kind: 'cancel', visitor: v })}>Cancel</button>}
                       </div>
                     </td>
@@ -283,7 +304,7 @@ export default function HrVisitorsPage() {
 
       <RegisterVisitorDialog
         open={registerOpen}
-        isHr={isHr}
+        isHr={hrCreate}
         selfId={user.id}
         people={people}
         branches={branches}
@@ -293,6 +314,14 @@ export default function HrVisitorsPage() {
           setNotice(v.status === 'checked_in' ? `${v.visitor_name} checked in (${v.visit_no}). ${v.host_name} has been notified.` : `${v.visitor_name} registered as ${v.visit_no}.`)
           refresh()
         }}
+      />
+      <EditVisitorDialog
+        visitor={editFor}
+        isHr={hrEdit}
+        people={people}
+        branches={branches}
+        onClose={() => setEditFor(null)}
+        onSaved={(v) => { setEditFor(null); setNotice(`Visit ${v.visit_no} updated.`); refresh() }}
       />
       <CheckInDialog
         visitor={checkInFor}

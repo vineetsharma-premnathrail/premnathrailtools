@@ -1,0 +1,35 @@
+{
+  "name": "premnathrail-portal-desktop",
+  "version": "1.0.2",
+  "description": "Premnathrail Portal for Windows",
+  "author": "Premnath Rail Tools",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icon": "electron scripts/make-icon.js",
+    "build": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.premnathrail.portal",
+    "productName": "Premnathrail Portal",
+    "files": ["main.js", "offline.html", "assets/**"],
+    "directories": { "output": "dist" },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Premnathrail Portal"
+    }
+  }
+}

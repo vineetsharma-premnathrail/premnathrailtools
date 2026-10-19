@@ -3,7 +3,7 @@ import { TourConfig } from '../types'
 // A standalone tour for the RFQ's "Admin Edit" panel — kept separate from the
 // RFQ Detail (view) tour so starting the tour on the read-only view never
 // drags in edit-form field steps that aren't on screen yet, and vice versa.
-// Same URL as the detail page (the panel opens inline via the `editing`
+// Same URL as the detail page (the panel opens as a popup via the `editing`
 // state), so the registry picks between the two by probing for this form's
 // own Save button.
 const config: TourConfig = {

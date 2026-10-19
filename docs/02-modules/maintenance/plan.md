@@ -5,7 +5,7 @@
 **Frontend Location:** `frontend/src/app/dashboard/maintenance/` (empty scaffold folders already exist: `assets`, `requests`, `work-orders`, `schedule`, `spares`, `reports`)
 **Prepared by:** Vineet Sharma
 **Date:** 29 September 2026
-**Status:** Draft. The open questions in §12 need answers before Phase 1 starts.
+**Status:** Phase 1 (breakdown maintenance) shipped on 30 September 2026. As of 6 October 2026, Phase 2 (PM plans and scheduler, spares and bill of spares with Raise PR, reports, Excel import) and two Phase 3 items (AMC & warranty tracking, QR asset tags) are being built. Questions 1 and 3–7 in §12 were answered by the Phase 1 code. Question 2 is partly answered. The module reference is [overview.md](overview.md).
 
 ---
 
@@ -353,10 +353,19 @@ Notifications use the existing `notify_user` / `broadcast_notification` helpers,
 
 # 12. Open questions (need answers before Phase 1)
 
+Each question is marked with how the Phase 1 code answered it (checked 6 October 2026).
+
 1. **Asset scope.** The recommendation is to include all plant equipment: production machines, cranes, compressors, DG sets, utilities and facilities. IT and employee-issued assets stay in HR. Is that right?
+   **Answered (code):** yes. The `category` tuple covers all plant equipment. HR assets and customer machines are excluded.
 2. **Calibration ownership.** ISO 9001 calibration of gauges and instruments often sits with Quality. Should it live in Maintenance (reusing the asset, PM plan and work order machinery), or be built later in Quality?
+   **Partly answered:** `calibration` is a work-order type and a PM plan type in Maintenance, and attachments have a `certificate` doc type. A calibration certificate and due register is still open (Phase 3).
 3. **Who raises breakdowns?** Sign-in is Microsoft SSO only, so operators without accounts can't raise requests. Is it acceptable for supervisors and shift in-charges to raise them, or do we need a shared shop-floor login or kiosk?
+   **Answered (code):** supervisors and shift in-charges raise requests. The production app is enough (`require_any_app_access("maintenance", "production")`). There is no kiosk login. QR asset tags (in build) make raising quicker from a phone.
 4. **Closure sign-off.** Should closing a breakdown work order require the requester's confirmation (as recommended), or can the maintenance head close alone?
+   **Answered (code):** a work order raised from a request can't be closed until the requester confirms the machine is OK. An admin may confirm on their behalf. A requester who says "not OK" sends the job back to In Progress. Jobs with no request (for example PM jobs) are closed by the planner alone.
 5. **Maintenance store.** Is there a dedicated maintenance store location, or are spares issued from the plant's main store (`Branch.default_warehouse_id`)?
+   **Answered (code):** there is no dedicated maintenance store. Each spare line on a work order picks any active Store location. PM spares kits default to the plant's `default_warehouse_id`, else the plant's first active Store location.
 6. **Labour cost.** Should labour be costed with a per-technician hourly rate, a single maintenance rate per plant, or not costed at all (spares and external cost only)? Payroll is in ADP, so the portal has no salary data.
+   **Answered (code):** there is an optional `hourly_rate` on each labour entry, defaulting to 0. Hours are always tracked, and they are costed only when a rate is entered. There is no per-plant rate.
 7. **Existing data.** Is there an Excel machine list or PM schedule to import on day one? If so, Excel import moves into Phase 1.
+   **Answered (code):** Excel import of the machine list stayed in Phase 2 (in build). There is no PM schedule import. PM plans are entered through the form.

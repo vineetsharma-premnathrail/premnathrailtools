@@ -27,6 +27,7 @@ export default function MyHrTabs() {
           <Link
             key={tab.href}
             href={tab.href}
+            data-tour={`hr-me-tab-${tab.href === '/dashboard/hr/me' ? 'profile' : tab.href.split('/').pop()}`}
             style={{
               fontSize: 12.5,
               fontWeight: 600,

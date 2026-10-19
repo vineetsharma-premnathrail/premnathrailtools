@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import require_app_access, require_tab_access
+from app.core.permissions import ensure_can_delete, require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.rnd.scope import apply_scope, ensure_in_scope
 from app.modules.store.models.item import StoreItem
 from app.modules.production.models.bom import ProductionBom, ProductionBomItem
 from app.modules.production.service import generate_bom_number
@@ -17,7 +18,7 @@ from app.modules.rnd.models.document import RndDocument
 from app.modules.rnd.schemas.prototype import (
     RndPrototypeBomItemPayload, RndPrototypeCreate, RndPrototypeUpdate, RndPrototypeReleasePayload, RndPrototypeResponse,
 )
-from app.modules.rnd.service import generate_prototype_number, prototype_bom_cost, user_names
+from app.modules.rnd.service import generate_prototype_number, hide_costs, prototype_bom_cost, user_names
 
 router = APIRouter(
     prefix="/prototypes", tags=["RnD Prototypes"],
@@ -50,7 +51,7 @@ def _to_response(db: Session, proto: RndPrototype) -> RndPrototypeResponse:
     return resp
 
 
-def _get_or_404(db: Session, prototype_id: int) -> RndPrototype:
+def _get_or_404(db: Session, prototype_id: int, user: User | None = None) -> RndPrototype:
     proto = (
         db.query(RndPrototype).options(selectinload(RndPrototype.bom_items))
         .filter(RndPrototype.is_deleted == False, RndPrototype.id == prototype_id)  # noqa: E712
@@ -58,12 +59,18 @@ def _get_or_404(db: Session, prototype_id: int) -> RndPrototype:
     )
     if not proto:
         raise HTTPException(status_code=404, detail=f"Prototype #{prototype_id} not found (it may have been deleted).")
+    if user is not None:
+        ensure_in_scope(db, user, proto)
     return proto
 
 
-def _validate_project(db: Session, project_id: int) -> None:
-    if not db.query(RndProject).filter(RndProject.id == project_id, RndProject.is_deleted == False).first():  # noqa: E712
+def _validate_project(db: Session, project_id: int, user: User | None = None) -> None:
+    project = db.query(RndProject).filter(RndProject.id == project_id, RndProject.is_deleted == False).first()  # noqa: E712
+    if not project:
         raise HTTPException(status_code=404, detail=f"R&D project #{project_id} not found — pick the project again from the list.")
+    if user is not None:
+        # A prototype may only be filed under a project the user can open.
+        ensure_in_scope(db, user, project)
 
 
 def _build_bom(db: Session, lines: list[RndPrototypeBomItemPayload]) -> list[RndPrototypeBomItem]:
@@ -99,8 +106,10 @@ async def list_prototypes(
     status_filter: str | None = Query(None, alias="status"),
     search: str | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("rnd")),
 ):
     query = db.query(RndPrototype).options(selectinload(RndPrototype.bom_items)).filter(RndPrototype.is_deleted == False)  # noqa: E712
+    query = apply_scope(query, user, RndPrototype)
     if project_id:
         query = query.filter(RndPrototype.project_id == project_id)
     if status_filter:
@@ -108,10 +117,19 @@ async def list_prototypes(
     if search:
         like = f"%{search}%"
         query = query.filter((RndPrototype.name.ilike(like)) | (RndPrototype.prototype_number.ilike(like)))
-    return [_to_response(db, p) for p in query.order_by(RndPrototype.created_at.desc()).all()]
+    return [_masked(_to_response(db, p), user) for p in query.order_by(RndPrototype.created_at.desc()).all()]
 
 
-@router.post("", response_model=RndPrototypeResponse)
+def _masked(resp: RndPrototypeResponse, user: User) -> RndPrototypeResponse:
+    """Blank BOM costs for a user without R&D › Prototypes › BOM costs (see hide_costs)."""
+    if hide_costs(user):
+        resp.bom_cost = None
+        for line in resp.bom_items:
+            line.unit_cost = line.line_cost = None
+    return resp
+
+
+@router.post("", response_model=RndPrototypeResponse, dependencies=[Depends(require_tab_action("rnd", "prototypes", "create"))])
 async def create_prototype(
     payload: RndPrototypeCreate,
     db: Session = Depends(get_db),
@@ -121,7 +139,7 @@ async def create_prototype(
         raise HTTPException(status_code=400, detail="Prototype name is required.")
     if not (payload.version or "").strip():
         raise HTTPException(status_code=400, detail="Prototype version is required (e.g. v1).")
-    _validate_project(db, payload.project_id)
+    _validate_project(db, payload.project_id, user=user)
 
     proto = RndPrototype(
         prototype_number=generate_prototype_number(db),
@@ -140,13 +158,13 @@ async def create_prototype(
 
 
 @router.get("/{prototype_id}", response_model=RndPrototypeResponse)
-async def get_prototype(prototype_id: int, db: Session = Depends(get_db)):
-    return _to_response(db, _get_or_404(db, prototype_id))
+async def get_prototype(prototype_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("rnd"))):
+    return _masked(_to_response(db, _get_or_404(db, prototype_id, user=user)), user)
 
 
-@router.patch("/{prototype_id}", response_model=RndPrototypeResponse)
-async def update_prototype(prototype_id: int, payload: RndPrototypeUpdate, db: Session = Depends(get_db)):
-    proto = _get_or_404(db, prototype_id)
+@router.patch("/{prototype_id}", response_model=RndPrototypeResponse, dependencies=[Depends(require_tab_action("rnd", "prototypes", "edit"))])
+async def update_prototype(prototype_id: int, payload: RndPrototypeUpdate, db: Session = Depends(get_db), user: User = Depends(require_app_access("rnd"))):
+    proto = _get_or_404(db, prototype_id, user=user)
     updates = payload.model_dump(exclude_unset=True)
     bom_lines = updates.pop("bom_items", None)
 
@@ -157,7 +175,7 @@ async def update_prototype(prototype_id: int, payload: RndPrototypeUpdate, db: S
     if updates.get("status") and updates["status"] not in RND_PROTOTYPE_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status '{updates['status']}'. Valid statuses: {', '.join(RND_PROTOTYPE_STATUSES)}.")
     if updates.get("project_id") is not None and updates["project_id"] != proto.project_id:
-        _validate_project(db, updates["project_id"])
+        _validate_project(db, updates["project_id"], user=user)
         linked = db.query(func.count(RndExperiment.id)).filter(
             RndExperiment.prototype_id == proto.id, RndExperiment.is_deleted == False  # noqa: E712
         ).scalar() or 0
@@ -198,17 +216,22 @@ def _is_released(db: Session, proto: RndPrototype) -> bool:
     return bool(bom and not bom.is_deleted)
 
 
-@router.post("/{prototype_id}/release-to-production", response_model=RndPrototypeResponse)
+@router.post(
+    "/{prototype_id}/release-to-production", response_model=RndPrototypeResponse,
+    dependencies=[Depends(require_tab_action("rnd", "prototypes", "approve")),
+                  Depends(require_feature_action("rnd", "prototypes", "release_production", "approve"))],
+)
 async def release_to_production(
     prototype_id: int,
     payload: RndPrototypeReleasePayload,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("rnd")),
 ):
     """Hand the validated prototype's BOM to Production as a *draft*
     ProductionBom for the chosen finished-product item. Production adds the
     routing and activates it — R&D never creates an active BOM directly."""
-    proto = _get_or_404(db, prototype_id)
+    proto = _get_or_404(db, prototype_id, user=user)
     if _is_released(db, proto):
         bom = db.query(ProductionBom).filter(ProductionBom.id == proto.production_bom_id).first()
         raise HTTPException(
@@ -298,14 +321,27 @@ async def release_to_production(
     proto.production_bom_id = bom.id
     proto.released_at = datetime.now(timezone.utc)
     proto.released_by_id = user.id
+    from app.modules.rnd.services import events as rnd_events
+    rnd_events.project_event(
+        db, "prototype_released", proto, entity_type="rnd_prototype",
+        title=f"{proto.prototype_number} released to Production as {bom.bom_number}",
+        message=f"{user.name or user.email} released prototype {proto.prototype_number} ({proto.name}, project {project_ref}) "
+                f"to Production as draft BOM {bom.bom_number} v{bom.version} for {product.item_name}. Production adds the routing and activates it.",
+        actor=user, background_tasks=background_tasks,
+    )
     db.commit()
     db.expire_all()
     return _to_response(db, _get_or_404(db, proto.id))
 
 
 @router.delete("/{prototype_id}")
-async def delete_prototype(prototype_id: int, db: Session = Depends(get_db)):
-    proto = _get_or_404(db, prototype_id)
+async def delete_prototype(
+    prototype_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_tab_action("rnd", "prototypes", "delete")),
+):
+    proto = _get_or_404(db, prototype_id, user=user)
+    ensure_can_delete(user, proto, "rnd", "prototypes", what="prototype")
     if _is_released(db, proto):
         raise HTTPException(
             status_code=400,

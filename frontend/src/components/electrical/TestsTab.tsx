@@ -13,10 +13,12 @@ import DateField from '@/components/erp/DateField'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import {
-  inputStyle, sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallBtn, smallDangerBtn,
-  tableWrap, mutedText, pill, Pill, ErrorBanner, NoticeBanner, Modal, F, rowStyle,
-  TEST_RESULT_LABELS, TEST_RESULT_HEX, TEST_PHASE_LABELS, today, toOptions, strOrNull,
+  sectionStyle, sectionTitle, thStyle, tdStyle, primaryBtn, smallBtn, smallDangerBtn,
+  tableWrap, mutedText, pill, Pill, ErrorBanner, useLookupErrors, NoticeBanner, Modal, ModalFooter, F, rowStyle,
+  TEST_RESULT_LABELS, TEST_RESULT_HEX, TEST_PHASE_LABELS, today, toOptions, strOrNull, useJobFeatures,
 } from '@/components/electrical/shared'
+import { useCan } from '@/lib/permissions'
+import { SheetColumns, SheetSection, sheetInput, sheetHint, Optional } from '@/components/shared/FormSheet'
 
 type FormMode = 'create' | 'retest' | 'edit'
 
@@ -62,8 +64,19 @@ const smallMuted: React.CSSProperties = { fontSize: 11.5, color: TEXT.muted }
 
 export default function TestsTab({ job, meta, canEdit, onChanged }: { job: ElectricalJobDetail; meta: ElectricalMeta; canEdit: boolean; onChanged: () => void }) {
   const [tests, setTests] = useState<ElectricalTest[]>([])
+  const { can, canDelete } = useCan()
+  // The job page passes canEdit = job still open; the backend also needs
+  // the job's Tests feature (default: Jobs › Edit) or the Testing tab's action.
+  const { jf, sees } = useJobFeatures()
+  // Pickers load only what the role may see (job Panels / Cables features).
+  const seePanels = sees('panels')
+  const seeCables = sees('cables')
+  const canRecord = canEdit && (jf('tests', 'create') || can('electrical', 'testing', 'create'))
+  const canModify = canEdit && (jf('tests', 'edit') || can('electrical', 'testing', 'edit'))
+  const canRemove = jf('tests', 'delete') || can('electrical', 'testing', 'delete')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
+  const [lookupErrors, addLookupError] = useLookupErrors()
   const [notice, setNotice] = useState('')
   const [phase, setPhase] = useState<ElectricalTestPhase>('factory')
 
@@ -90,10 +103,13 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    electricalApi.listPanels(job.id).then((d) => setPanels(Array.isArray(d) ? d : [])).catch(() => setPanels([]))
-    electricalApi.listCables(job.id).then((d) => setCables(Array.isArray(d) ? d : [])).catch(() => setCables([]))
-    electricalApi.lookupUsers().then((d) => setUsers(Array.isArray(d) ? d : [])).catch(() => setUsers([]))
-  }, [job.id])
+    if (seePanels) electricalApi.listPanels(job.id).then((d) => setPanels(Array.isArray(d) ? d : [])).catch((err) => addLookupError(extractErrorMessages(err,
+      "Couldn't load this job's panels for the Panel picker — you can still record tests without a panel, or refresh to try again.")))
+    if (seeCables) electricalApi.listCables(job.id).then((d) => setCables(Array.isArray(d) ? d : [])).catch((err) => addLookupError(extractErrorMessages(err,
+      "Couldn't load this job's cable schedule for the Cable picker — you can still record tests without a cable, or refresh to try again.")))
+    electricalApi.lookupUsers().then((d) => setUsers(Array.isArray(d) ? d : [])).catch((err) => addLookupError(extractErrorMessages(err,
+      "Couldn't load users for the 'Tested by' picker — tests you record will default to you; refresh to try again.")))
+  }, [job.id, seePanels, seeCables])
 
   const counts = useMemo(() => {
     const c: Record<ElectricalTestPhase, number> = { factory: 0, commissioning: 0 }
@@ -237,6 +253,7 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
   return (
     <div>
       <ErrorBanner error={error} />
+      <ErrorBanner error={lookupErrors} />
       <NoticeBanner notice={notice} />
 
       <div style={sectionStyle}>
@@ -244,15 +261,15 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <h3 style={{ ...sectionTitle, margin: '0 8px 0 0' }}>Tests</h3>
             {PHASES.map((p) => (
-              <button key={p} type="button" onClick={() => setPhase(p)} style={phaseBtn(phase === p)}>
+              <button key={p} data-tour={`elec-tests-phase-${p}`} type="button" onClick={() => setPhase(p)} style={phaseBtn(phase === p)}>
                 {TEST_PHASE_LABELS[p]} ({counts[p] || 0})
               </button>
             ))}
           </div>
-          {canEdit && <button type="button" onClick={openCreate} style={primaryBtn}>+ Record Test</button>}
+          {canRecord && <button data-tour="elec-tests-add-btn" type="button" onClick={openCreate} style={primaryBtn}>+ Record Test</button>}
         </div>
 
-        <p style={{ ...mutedText, marginBottom: 4 }}>
+        <p data-tour="elec-tests-summary" style={{ ...mutedText, marginBottom: 4 }}>
           <strong style={{ color: TEXT.body }}>{visible.length}</strong> {visible.length === 1 ? 'test' : 'tests'}
           {' · '}<strong style={{ color: '#16A34A' }}>{passed}</strong> passed
           {' · '}<strong style={{ color: openFailures ? '#DC2626' : TEXT.body }}>{openFailures}</strong> open {openFailures === 1 ? 'failure' : 'failures'}
@@ -263,7 +280,7 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
             : 'Commissioning stage needs at least one commissioning test and every failure retested with a pass.'}
         </p>
 
-        <div style={tableWrap}>
+        <div data-tour="elec-tests-table" style={tableWrap}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
             <thead>
               <tr>
@@ -278,7 +295,7 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
               ) : visible.length === 0 ? (
                 <tr>
                   <td colSpan={colCount} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted, padding: 20 }}>
-                    No {TEST_PHASE_LABELS[phase].toLowerCase()} tests recorded yet.{canEdit ? ' Use "+ Record Test" to log one.' : ''}
+                    No {TEST_PHASE_LABELS[phase].toLowerCase()} tests recorded yet.{canRecord ? ' Use "+ Record Test" to log one.' : ''}
                   </td>
                 </tr>
               ) : visible.map((t) => {
@@ -308,9 +325,9 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
                     {canEdit && (
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                          {t.needs_retest && <button type="button" onClick={() => openRetest(t)} style={smallBtn}>Record Retest</button>}
-                          <button type="button" onClick={() => openEdit(t)} style={smallBtn}>Edit</button>
-                          <button type="button" onClick={() => setDeleteTarget(t)} style={smallDangerBtn}>Delete</button>
+                          {canRecord && t.needs_retest && <button data-tour="elec-test-retest-btn" type="button" onClick={() => openRetest(t)} style={smallBtn}>Record Retest</button>}
+                          {canModify && <button data-tour="elec-test-edit-btn" type="button" onClick={() => openEdit(t)} style={smallBtn}>Edit</button>}
+                          {canRemove && canDelete('electrical', 'testing', null) && <button data-tour="elec-test-delete-btn" type="button" onClick={() => setDeleteTarget(t)} style={smallDangerBtn}>Delete</button>}
                         </div>
                       </td>
                     )}
@@ -322,110 +339,109 @@ export default function TestsTab({ job, meta, canEdit, onChanged }: { job: Elect
         </div>
       </div>
 
-      <Modal open={mode !== null} title={modalTitle} onClose={closeModal} width={720}>
-        <ErrorBanner error={formError} />
-        {mode === 'retest' && retestOf && (
-          <p style={{ ...mutedText, marginBottom: 12 }}>
-            {retestOf.test_number} failed{retestOf.measured_value ? ` (measured ${retestOf.measured_value}${retestOf.unit ? ` ${retestOf.unit}` : ''})` : ''}.
-            Record the result after the fix — the phase stays {TEST_PHASE_LABELS[retestOf.phase]}.
-          </p>
-        )}
-
-        <div style={rowStyle}>
-          <F label="Phase" basis={150}>
-            <select
-              style={inputStyle}
-              value={form.phase}
-              disabled={mode !== 'create'}
-              onChange={(e) => set('phase', e.target.value as ElectricalTestPhase)}
-            >
-              {PHASES.map((p) => <option key={p} value={p}>{TEST_PHASE_LABELS[p]}</option>)}
-            </select>
-          </F>
-          <F label="Test Type *" basis={220} grow max={320}>
-            <select
-              style={inputStyle}
-              value={form.test_type}
-              disabled={mode === 'edit'}
-              onChange={(e) => set('test_type', e.target.value)}
-            >
-              <option value="">Select test type…</option>
-              {Object.entries(meta.test_types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </F>
-          <F label="Test Date *" basis={160}>
-            <DateField value={form.test_date} onChange={(v) => set('test_date', v)} />
-          </F>
-        </div>
-
-        <div style={rowStyle}>
-          <F label="Circuit" basis={200} grow max={320}>
-            <input style={inputStyle} value={form.circuit} maxLength={150} placeholder="e.g. Headlamp circuit L1" onChange={(e) => set('circuit', e.target.value)} />
-          </F>
-          <F label="Panel" basis={200} grow max={300}>
-            <select style={inputStyle} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
-              <option value="">— None —</option>
-              {panelOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </F>
-        </div>
-
-        <div style={rowStyle}>
-          <F label="Cable" basis={280} grow max={420}>
-            <SearchableSelect value={form.cable_id} onChange={(v) => set('cable_id', v)} options={cableOptions} placeholder={cables.length ? 'Select cable…' : 'No cables in this job'} />
-          </F>
-          <F label="Instrument" basis={200} grow max={300}>
-            <input style={inputStyle} value={form.instrument} maxLength={150} placeholder="e.g. Megger MIT420" onChange={(e) => set('instrument', e.target.value)} />
-          </F>
-        </div>
-
-        <div style={rowStyle}>
-          <F label="Expected Value" basis={150}>
-            <input style={inputStyle} value={form.expected_value} maxLength={100} placeholder="e.g. ≥ 1" onChange={(e) => set('expected_value', e.target.value)} />
-          </F>
-          <F label="Measured Value" basis={150}>
-            <input style={inputStyle} value={form.measured_value} maxLength={100} onChange={(e) => set('measured_value', e.target.value)} />
-          </F>
-          <F label="Unit" basis={90}>
-            <input style={inputStyle} value={form.unit} maxLength={20} placeholder="MΩ" onChange={(e) => set('unit', e.target.value)} />
-          </F>
-          <F label="Result *" basis={190}>
-            {mode === 'edit' ? (
-              <div style={{ paddingTop: 4 }}>
-                <Pill value={form.result || null} labels={TEST_RESULT_LABELS} hex={TEST_RESULT_HEX} />
+      <Modal
+        open={mode !== null} width={960} flush busy={saving} tour="elec-test-form"
+        icon={mode === 'edit' ? 'edit' : mode === 'retest' ? 'undo' : 'check'} title={modalTitle}
+        subtitle={mode === 'retest' && retestOf
+          ? `${retestOf.test_number} failed${retestOf.measured_value ? ` (measured ${retestOf.measured_value}${retestOf.unit ? ` ${retestOf.unit}` : ''})` : ''}. Record the result after the fix — the phase stays ${TEST_PHASE_LABELS[retestOf.phase]}.`
+          : mode === 'edit' && editing ? `${typeLabel(editing.test_type)} — ${job.job_number}` : `A factory or commissioning test on ${job.job_number}.`}
+        onClose={closeModal}
+        footer={<ModalFooter onCancel={closeModal} onSubmit={save} busy={saving} icon={mode === 'edit' ? 'check' : 'plus'}
+          label={mode === 'edit' ? 'Save Changes' : mode === 'retest' ? 'Record Retest' : 'Record Test'}
+          cancelTour="elec-test-form-cancel" submitTour="elec-test-form-save" />}
+      >
+        <SheetColumns
+          left={<>
+            <ErrorBanner error={formError} />
+            <SheetSection icon="list" title="Test">
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-test-phase" label="Phase" basis={140}>
+                  <select
+                    style={sheetInput}
+                    value={form.phase}
+                    disabled={mode !== 'create'}
+                    onChange={(e) => set('phase', e.target.value as ElectricalTestPhase)}
+                  >
+                    {PHASES.map((p) => <option key={p} value={p}>{TEST_PHASE_LABELS[p]}</option>)}
+                  </select>
+                </F>
+                <F tour="elec-test-type" label="Test Type" req={mode !== 'edit'} basis={200} grow max={320}>
+                  <select
+                    style={sheetInput}
+                    value={form.test_type}
+                    disabled={mode === 'edit'}
+                    onChange={(e) => set('test_type', e.target.value)}
+                  >
+                    <option value="">Select test type…</option>
+                    {Object.entries(meta.test_types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </F>
+                <F tour="elec-test-date" label="Test Date" req basis={150}>
+                  <DateField value={form.test_date} onChange={(v) => set('test_date', v)} />
+                </F>
               </div>
-            ) : (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => set('result', 'pass')} style={resultBtn(form.result === 'pass', TEST_RESULT_HEX.pass)}>Pass</button>
-                <button type="button" onClick={() => set('result', 'fail')} style={resultBtn(form.result === 'fail', TEST_RESULT_HEX.fail)}>Fail</button>
+            </SheetSection>
+            <SheetSection icon="search" title="What Was Tested" extra={<Optional />}>
+              <div style={rowStyle}>
+                <F tour="elec-test-circuit" label="Circuit" basis={200} grow max={320}>
+                  <input style={sheetInput} value={form.circuit} maxLength={150} placeholder="e.g. Headlamp circuit L1" onChange={(e) => set('circuit', e.target.value)} />
+                </F>
+                <F tour="elec-test-panel" label="Panel" basis={180} grow max={300}>
+                  <select style={sheetInput} value={form.panel_id} onChange={(e) => set('panel_id', e.target.value)}>
+                    <option value="">— None —</option>
+                    {panelOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </F>
               </div>
-            )}
-          </F>
-        </div>
-        {mode === 'edit' && (
-          <p style={{ ...smallMuted, margin: '-4px 0 12px' }}>
-            A result can&apos;t be changed — record a retest instead. The phase and test type are fixed too.
-          </p>
-        )}
-
-        <div style={rowStyle}>
-          <F label="Tested By" basis={240} grow max={320}>
-            <SearchableSelect value={form.tested_by_id} onChange={(v) => set('tested_by_id', v)} options={userOptions} placeholder="— Me (default) —" />
-          </F>
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <F label="Remarks" basis={400} grow>
-            <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical', fontFamily: 'inherit' }} value={form.remarks} onChange={(e) => set('remarks', e.target.value)} />
-          </F>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" onClick={closeModal} style={smallBtn} disabled={saving}>Cancel</button>
-          <button type="button" onClick={save} style={{ ...primaryBtn, opacity: saving ? 0.7 : 1 }} disabled={saving}>
-            {saving ? 'Saving…' : mode === 'edit' ? 'Save Changes' : mode === 'retest' ? 'Record Retest' : 'Record Test'}
-          </button>
-        </div>
+              <div style={{ ...rowStyle, marginBottom: 0 }}>
+                <F tour="elec-test-cable" label="Cable" basis={240} grow max={420}>
+                  <SearchableSelect value={form.cable_id} onChange={(v) => set('cable_id', v)} options={cableOptions} placeholder={cables.length ? 'Select cable…' : 'No cables in this job'} />
+                </F>
+                <F tour="elec-test-instrument" label="Instrument" basis={180} grow max={300}>
+                  <input style={sheetInput} value={form.instrument} maxLength={150} placeholder="e.g. Megger MIT420" onChange={(e) => set('instrument', e.target.value)} />
+                </F>
+              </div>
+            </SheetSection>
+          </>}
+          right={<>
+            <SheetSection icon="check" title="Reading & Result">
+              <div style={rowStyle}>
+                <F tour="elec-test-expected" label="Expected Value" basis={110} grow>
+                  <input style={sheetInput} value={form.expected_value} maxLength={100} placeholder="e.g. ≥ 1" onChange={(e) => set('expected_value', e.target.value)} />
+                </F>
+                <F tour="elec-test-measured" label="Measured Value" basis={110} grow>
+                  <input style={sheetInput} value={form.measured_value} maxLength={100} onChange={(e) => set('measured_value', e.target.value)} />
+                </F>
+                <F tour="elec-test-unit" label="Unit" basis={70}>
+                  <input style={sheetInput} value={form.unit} maxLength={20} placeholder="MΩ" onChange={(e) => set('unit', e.target.value)} />
+                </F>
+              </div>
+              <F tour="elec-test-result" label="Result" req={mode !== 'edit'} basis={190}>
+                {mode === 'edit' ? (
+                  <div style={{ paddingTop: 4 }}>
+                    <Pill value={form.result || null} labels={TEST_RESULT_LABELS} hex={TEST_RESULT_HEX} />
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" onClick={() => set('result', 'pass')} style={resultBtn(form.result === 'pass', TEST_RESULT_HEX.pass)}>Pass</button>
+                    <button type="button" onClick={() => set('result', 'fail')} style={resultBtn(form.result === 'fail', TEST_RESULT_HEX.fail)}>Fail</button>
+                  </div>
+                )}
+              </F>
+              {mode === 'edit' && (
+                <p style={sheetHint}>A result can&apos;t be changed — record a retest instead. The phase and test type are fixed too.</p>
+              )}
+            </SheetSection>
+            <SheetSection icon="user" title="Tested By">
+              <div data-tour="elec-test-tested-by">
+                <SearchableSelect value={form.tested_by_id} onChange={(v) => set('tested_by_id', v)} options={userOptions} placeholder="— Me (default) —" />
+              </div>
+            </SheetSection>
+            <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+              <textarea data-tour="elec-test-remarks" style={{ ...sheetInput, minHeight: 70, resize: 'vertical' }} value={form.remarks} onChange={(e) => set('remarks', e.target.value)} aria-label="Remarks" />
+            </SheetSection>
+          </>}
+        />
       </Modal>
 
       <ConfirmDialog

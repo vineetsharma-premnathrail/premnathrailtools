@@ -1,13 +1,29 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access
+from app.core.permissions import ensure_can_delete, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
+from app.modules.store.access import require_store_lookup
 from app.modules.store.models.location import StoreLocation
+from app.modules.store.services.plant_access import (
+    ensure_location_allowed,
+    filter_by_location,
+    is_unrestricted_user,
+    user_plant_ids,
+    visible_location_ids,
+)
 from app.modules.store.schemas.location import StoreLocationCreate, StoreLocationUpdate, StoreLocationResponse
 
 router = APIRouter(prefix="/store/locations", tags=["Store"])
+
+# A store's plant decides who sees its stock (Store data scope) and its manager
+# approves 'Other' returns and is the only non-admin who may post manual
+# stock entries there — so only an admin may set or change either.
+_ADMIN_ONLY_MSG = (
+    "Only an admin can move a store to another plant or change its manager — "
+    "ask an admin (Store → Settings → Stores)."
+)
 
 
 def _to_response(location: StoreLocation, db: Session) -> StoreLocationResponse:
@@ -22,13 +38,18 @@ def _to_response(location: StoreLocation, db: Session) -> StoreLocationResponse:
     )
 
 
+# Cross-module lookup (Organization › Plants, P2P GRN, Production, Quality
+# … pick stores); limited to the stores of the user's plant(s) by their Store data scope.
 @router.get("", response_model=list[StoreLocationResponse])
 async def list_locations(
     branch_id: int | None = Query(None),
+    all_plants: bool = Query(False, description="Every plant's stores — only for destination pickers (e.g. inter-unit transfer To)"),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_store_lookup()),
 ):
     query = db.query(StoreLocation)
+    if not all_plants:
+        query = filter_by_location(query, StoreLocation.id, visible_location_ids(db, user))
     if branch_id is not None:
         query = query.filter(StoreLocation.branch_id == branch_id)
     locations = query.order_by(StoreLocation.name.asc()).all()
@@ -39,8 +60,18 @@ async def list_locations(
 async def create_location(
     payload: StoreLocationCreate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_action("store", "warehouses", "create")),
 ):
+    if not is_unrestricted_user(user):
+        if payload.manager_user_id is not None:
+            raise HTTPException(status_code=403, detail="Only an admin can set a store's manager — create the store without a manager and ask an admin to set it (Store → Settings → Stores).")
+        plants = user_plant_ids(db, user)
+        if plants is not None and payload.branch_id not in plants:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only create stores in your own plant — pick your plant in the Plant field, or ask an admin "
+                       "to create a store for another plant (Store → Settings → Stores).",
+            )
     if db.query(StoreLocation).filter(StoreLocation.code == payload.code).first():
         raise HTTPException(status_code=409, detail=f"Location code '{payload.code}' already exists")
     location = StoreLocation(**payload.model_dump())
@@ -55,12 +86,18 @@ async def update_location(
     location_id: int,
     payload: StoreLocationUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_action("store", "warehouses", "edit")),
 ):
     location = db.query(StoreLocation).filter(StoreLocation.id == location_id).first()
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
-    for field, val in payload.model_dump(exclude_unset=True).items():
+    ensure_location_allowed(db, user, location_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if not is_unrestricted_user(user) and any(
+        f in changes and changes[f] != getattr(location, f) for f in ("branch_id", "manager_user_id")
+    ):
+        raise HTTPException(status_code=403, detail=_ADMIN_ONLY_MSG)
+    for field, val in changes.items():
         setattr(location, field, val)
     db.commit()
     db.refresh(location)
@@ -71,11 +108,13 @@ async def update_location(
 async def delete_location(
     location_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_access("store", "warehouses")),
 ):
     location = db.query(StoreLocation).filter(StoreLocation.id == location_id).first()
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
+    ensure_can_delete(user, location, "store", "warehouses", what="store")
+    ensure_location_allowed(db, user, location_id)
     # Local imports avoid cross-module cycles at startup.
     from app.modules.organization.models.branch import Branch
     from app.modules.organization.models.company import Company

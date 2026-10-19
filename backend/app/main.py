@@ -10,13 +10,28 @@ from app.core.config import settings
 from app.tasks.followup_reminders import send_activity_followup_reminders
 from app.tasks.po_overdue_reminders import send_po_overdue_reminders
 from app.tasks.hr_reminders import send_hr_reminders
+from app.tasks.pm_reminders import send_pm_reminders
+from app.tasks.design_reminders import send_design_reminders
 from app.tasks.quality_reminders import send_quality_reminders
+from app.tasks.gauge_calibration_reminders import send_gauge_reminders
+from app.tasks.store_jobwork_reminders import send_jobwork_reminders
+from app.tasks.maintenance_pm_scheduler import run_maintenance_pm_scheduler
+from app.tasks.erp_sla_reminders import run_erp_sla_reminders
+from app.tasks.maintenance_amc_reminders import send_maintenance_amc_reminders
+from app.tasks.sales_scheduler import run_sales_scheduler
+from app.tasks.bank_guarantee_reminders import send_bank_guarantee_reminders
+from app.tasks.erp_contract_scheduler import run_erp_contract_scheduler
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
+from app.modules.main.models.managed_document import ManagedDocument, ManagedDocumentEvent
 from app.modules.main.models.notification import Notification
 from app.modules.main.models.user_session import UserSession
 from app.modules.main.models.user_document import UserDocument
 from app.modules.main.models.module import Module
+from app.modules.main.models.role import Role  # noqa: F401
+from app.modules.main.models.grc import (  # noqa: F401
+    AccessValidity, AccessReview, AccessReviewLine, SodMitigation, PermissionDenial, JobRun, SystemErrorLog,
+)
 from app.modules.organization.models.company import Company
 from app.modules.organization.models.company_address import CompanyAddress
 from app.modules.organization.models.company_contact import CompanyContact
@@ -27,13 +42,17 @@ from app.modules.organization.models.branch_address import BranchAddress
 from app.modules.organization.models.branch_user_assignment import BranchUserAssignment
 from app.modules.organization.models.branch_document import BranchDocument
 from app.modules.organization.models.cost_center import CostCenter
+from app.modules.organization.models.profit_center import ProfitCenter
+from app.modules.production.models.cost_estimate import ProductionCostEstimate, ProductionCostEstimateLine, StoreItemStandardPrice
 from app.modules.organization.models.department import Department
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.project_attachment import ProjectAttachment
+from app.modules.erp.models.project_letter import ProjectLetter
 from app.modules.erp.models.service_request import ServiceRequest
 from app.modules.erp.models.service_material import ServiceMaterial
 from app.modules.erp.models.service_request_attachment import ServiceRequestAttachment
 from app.modules.erp.models.service_material_attachment import ServiceMaterialAttachment
+from app.modules.erp.models.service_contract import ServiceContract, ServiceContractMachine, ServiceContractBilling
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.p2p_request_item import P2PRequestItem
 from app.modules.p2p.models.p2p_request_attachment import P2PRequestAttachment
@@ -44,6 +63,13 @@ from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
+from app.modules.p2p.models.vendor_return import P2PVendorReturn, P2PVendorReturnItem  # noqa: F401
+from app.modules.p2p.models.service_entry import P2PServiceEntry  # noqa: F401
+from app.modules.p2p.models.landed_cost import P2PLandedCostAllocation, P2PLandedCostVoucher, P2PPOCharge  # noqa: F401
+from app.modules.p2p.models.vendor_quotation import VendorQuotationItem  # noqa: F401
+from app.modules.p2p.models.po_amendment import P2PPOAmendment  # noqa: F401
+from app.modules.p2p.models.source_list import P2PSourceListEntry  # noqa: F401
+from app.modules.store.models.item_plant import StoreItemPlant  # noqa: F401
 from app.modules.quality.models.quality_standard import QualityStandard
 from app.modules.quality.models.quality_checklist import QualityChecklist, QualityChecklistItem
 from app.modules.quality.models.inspection_plan import QualityInspectionPlan, QualityInspectionPlanLine
@@ -57,20 +83,38 @@ from app.modules.quality.models.lot_attachment import QualityLotPhoto
 from app.modules.quality.models.inspection import QualityInspection, QualityInspectionResult, QualityInspectionAttachment
 from app.modules.quality.models.ncr import QualityNcr, QualityNcrApproval
 from app.modules.quality.models.rejection import QualityRejection
-from app.modules.quality.models.capa import QualityCapa
-from app.modules.quality.models.customer_complaint import QualityCustomerComplaint
-from app.modules.quality.models.supplier_quality import QualitySupplierScorecard
+from app.modules.quality.models.capa import QualityCapa, QualityCapaTeamMember, QualityCapaNcr, QualityCapaAction
+from app.modules.quality.models.customer_complaint import QualityCustomerComplaint, QualityComplaintPhoto
+from app.modules.quality.models.supplier_quality import QualitySupplierScorecard, QualityApprovedVendor, QualityVendorStatusEvent, QualityVendorAudit
 from app.modules.quality.models.quality_document import QualityDocument
+from app.modules.quality.models.gauge import QualityGauge, QualityGaugeCalibration
 from app.modules.maintenance.models.asset import MaintenanceAsset
 from app.modules.maintenance.models.request import MaintenanceRequest
 from app.modules.maintenance.models.work_order import (
     MaintenanceWorkOrder, MaintenanceWorkOrderTask, MaintenanceWorkOrderSpare, MaintenanceLabourLog,
 )
 from app.modules.maintenance.models.attachment import MaintenanceAttachment
+from app.modules.maintenance.models.asset import MaintenanceAssetSpare
+from app.modules.maintenance.models.pm_plan import MaintenancePmPlan, MaintenancePmPlanTask, MaintenancePmPlanSpare
+from app.modules.maintenance.models.counters import MaintenanceMeasuringPoint, MaintenanceMeasurementDoc
+from app.modules.maintenance.models.permit import MaintenanceWorkPermit
+from app.modules.maintenance.models.wo_procurement import MaintenanceWorkOrderPurchaseRequest
+from app.modules.erp.models.service_visit import ServiceVisit
+from app.modules.sales.models.order import SalesOrder, SalesOrderLine, SalesOrderSchedule, SalesBillingPlanLine
+from app.modules.sales.models.amendment import SalesOrderAmendment
+from app.modules.sales.models.extension import SalesDeliveryExtension
+from app.modules.sales.models.approval import SalesApproval
+from app.modules.sales.models.attachment import SalesAttachment
+from app.modules.sales.models.delivery import SalesDeliveryEvent, SalesInvoiceLink
+from app.modules.sales.models.proforma import SalesProformaInvoice
+from app.modules.sales.models.order_project import OrderProject, OrderProjectElement
 from app.modules.production.models.workstation import ProductionWorkstation
+from app.modules.production.models.mrp import ProductionMrpRun, ProductionPlannedOrder, ProductionMrpException
 from app.modules.production.models.bom import ProductionBom, ProductionBomItem, ProductionBomOperation
+from app.modules.production.models.bom import ProductionBomDisciplineMerge
 from app.modules.production.models.work_order import (
     ProductionWorkOrder, ProductionWorkOrderMaterial, ProductionWorkOrderOperation, ProductionTimeLog,
+    ProductionOrderCostPosting,
 )
 from app.modules.production.models.rrv_build import (
     ProductionRrvBuild, ProductionRrvBuildStage, ProductionRrvTest, ProductionReworkOrder, ProductionRrvEvent,
@@ -95,18 +139,26 @@ from app.modules.electrical.models.document import ElectricalDocument
 from app.modules.design.models.document import DesignDocument, DesignDocumentRevision, DesignRevisionFile
 from app.modules.design.models.change_notice import DesignChangeNotice, DesignChangeNoticeDocument
 from app.modules.design.models.event import DesignEvent
+from app.modules.design.models.change_notice import DesignChangeNoticeBom, DesignEcnAcknowledgement
+from app.modules.design.models.setting import DesignSetting, DesignTeamMember
+from app.modules.design.models.library import (
+    DesignStandard, DesignStandardPart, DesignTemplate, DesignItemApprovedMake, DesignChecklist, DesignChecklistItem,
+    DesignReviewResult,
+)
+from app.modules.design.models.request import DesignRequest, DesignRequirementRevision, DesignTaskDeliverable
+from app.modules.design.models.submission import DesignCustomerSubmission, DesignSubmissionLine, DesignSubmissionComment
+from app.modules.design.models.bom import DesignBom, DesignBomRevision, DesignBomLine
+from app.modules.design.models.change_request import DesignChangeRequest, DesignChangeRequestItem, DesignEcrVote
+from app.modules.organization.models.approval import (
+    ApprovalWorkflow, ApprovalWorkflowStage, ApprovalRequest, ApprovalRequestStep, ApprovalDelegation, OrganizationSetting,
+)
+from app.modules.products.models.application import ProductApplication
+from app.modules.products.models.product import FinishedProduct, ProductSpecification
+from app.modules.products.models.price_condition import ProductPriceCondition
 from app.modules.projects.models.project import PmProject
-from app.modules.projects.models.phase import PmProjectPhase
-from app.modules.projects.models.task import PmProjectTask
+from app.modules.projects.models.task import PmProjectTask, PmTaskSubtask, PmTaskUpdate, PmTaskTimeLog, PmMilestoneMessage
 from app.modules.projects.models.milestone import PmProjectMilestone
-from app.modules.projects.models.resource import PmProjectResource
-from app.modules.projects.models.budget import PmBudgetLine, PmCostEntry
-from app.modules.projects.models.deliverable import PmDeliverable
 from app.modules.projects.models.document import PmProjectDocument
-from app.modules.projects.models.issue import PmIssue
-from app.modules.projects.models.risk import PmRisk
-from app.modules.projects.models.change_request import PmChangeRequest
-from app.modules.projects.models.approval import PmApproval
 from app.modules.store.models.location import StoreLocation
 from app.modules.store.models.category import StoreItemCategory
 from app.modules.store.models.item import StoreItem
@@ -117,15 +169,24 @@ from app.modules.store.models.material_issue import StoreMaterialIssue, StoreMat
 from app.modules.store.models.material_return import StoreMaterialReturn, StoreMaterialReturnItem
 from app.modules.store.models.stock_transfer import StoreStockTransfer, StoreStockTransferItem
 from app.modules.store.models.stock_adjustment import StoreStockAdjustment, StoreStockAdjustmentItem
+from app.modules.store.models.physical_count import StorePhysicalCount, StorePhysicalCountItem  # noqa: F401
 from app.modules.store.models.stock_reservation import StoreStockReservation
+from app.modules.store.models.valuation import StoreItemValuation, StoreValuationEvent
+from app.modules.store.models.batch import StoreBatch  # noqa: F401
+from app.modules.store.models.job_work import StoreJobWorkReceipt, StoreJobWorkReceiptComponent  # noqa: F401
+from app.modules.store.models.serial_number import StoreSerialNumber, StoreSerialEvent  # noqa: F401
+from app.modules.store.models.bin_move import StoreBinMove  # noqa: F401
 from app.modules.crm.models import (
     Organization, OrgContact, Inquiry, InquiryLineItem, Quotation, QuotationLineItem,
     Tender, Activity,
-    CrmDocument, CrmStageLog, Product, PaymentTerm,
+    CrmDocument, CrmStageLog, Product, PaymentTerm, CrmRndRequest, CrmRequirementComment,
+    CrmDocumentCategory,
 )
 from app.modules.accounts.models.gl_account import GLAccount
 from app.modules.accounts.models.bank_account import BankAccount
 from app.modules.accounts.models.vendor import Vendor
+from app.modules.accounts.models.vendor_document import VendorDocument
+from app.modules.accounts.models.vendor_catalog_item import VendorCatalogItem
 from app.modules.accounts.models.internal_order import InternalOrder
 from app.modules.accounts.models.journal_entry import JournalEntry, JournalEntryLine
 from app.modules.accounts.models.gl_balance import GLBalance
@@ -134,6 +195,26 @@ from app.modules.accounts.models.payment_transaction import PaymentTransaction
 from app.modules.accounts.models.ar_transaction import ARTransaction
 from app.modules.accounts.models.period_close import PeriodClose
 from app.modules.accounts.models.bank_reconciliation import BankReconciliation
+from app.modules.accounts.models.account_group import AccountGroup
+from app.modules.accounts.models.settings import AccountDetermination, NumberSeries, GSTRate
+from app.modules.accounts.models.vendor_invoice import VendorInvoiceLine
+from app.modules.accounts.models.ar_transaction import ARTransactionLine
+from app.modules.accounts.models.party_note import PartyNote, PartyNoteLine
+from app.modules.accounts.models.payment_transaction import PaymentLine, PaymentAllocation
+from app.modules.accounts.models.settlement_adjustment import SettlementAdjustment
+from app.modules.accounts.models.payment_proposal import PaymentProposal, PaymentProposalLine
+from app.modules.accounts.models.inventory_valuation import InventoryValuation, InventoryValuationLine
+from app.modules.accounts.models.fixed_asset import FixedAsset, DepreciationRun, DepreciationRunLine
+from app.modules.accounts.models.bank_statement import BankStatement, BankStatementLine  # noqa: F401
+from app.modules.accounts.models.cash_forecast_item import CashForecastItem  # noqa: F401
+from app.modules.accounts.models.bank_guarantee import BankGuarantee, BankGuaranteeEvent  # noqa: F401
+from app.modules.accounts.models.asset_accounting import AssetRetirement, ITAssetBlock, ITBlockBalance
+from app.modules.accounts.models.fx import Currency, ExchangeRate, FxRevaluation
+from app.modules.accounts.models.co_planning import CoPlanVersion, CoPlanLine
+from app.modules.accounts.models.co_activity import CoActivityRate
+from app.modules.accounts.models.co_allocation import CoAllocationCycle, CoAllocationSegment, CoAllocationRun
+from app.modules.accounts.models.co_overhead import CoCostingSheetRate, CoOverheadRun, CoOverheadRunLine
+from app.modules.accounts.models.collections import AccountsCreditRelease, AccountsCollectionNote, AccountsDunningLetter, AccountsDispute
 from app.modules.rnd.models.calculation_history import CalculationHistory
 from app.modules.rnd.models.tool_calculations import (
     BrakingCalculation, HydraulicCalculation, LoadDistributionCalculation, QmaxCalculation,
@@ -144,6 +225,10 @@ from app.modules.rnd.models.experiment import RndExperiment
 from app.modules.rnd.models.prototype import RndPrototype, RndPrototypeBomItem
 from app.modules.rnd.models.feasibility import RndFeasibilityStudy
 from app.modules.rnd.models.document import RndDocument
+from app.modules.rnd.models.requirement_work import RndTeamMember, RndRequirementAccess, RndRequirementTask, RndTaskEvent, RndRequirementProjectLink, RndRequirementShare, RndRequirementDocVisibility
+from app.modules.rnd.models.task_approval import RndTaskApproval
+from app.modules.rnd.models.technical_offer import RndTechnicalOffer
+from app.modules.rnd.models.project_task import RndProjectTask, RndProjectTaskEvent
 from app.modules.hr.models.masters import HrGrade, HrDesignation, HrShift
 from app.modules.hr.models.holiday import HrHoliday
 from app.modules.hr.models.employee_profile import HrEmployeeProfile
@@ -154,12 +239,27 @@ from app.modules.hr.models.asset import HrAsset, HrAssetAssignment
 from app.modules.hr.models.visitor import HrVisitor
 from app.modules.hr.models.travel import HrTravelRequest
 from app.modules.hr.models.expense import HrExpenseClaim, HrExpenseClaimItem
+from app.modules.hr.models.safety import HrSafetyIncident, HrSafetyIncidentPerson, HrSafetyAction, HrSafetyAttachment
+from app.modules.hr.models.overtime import HrOvertime
+from app.modules.hr.models.assignment import HrEmployeeAssignment
+from app.modules.hr.models.roster import HrShiftPattern, HrShiftRoster
+from app.modules.hr.models.punch import HrPunch
+from app.modules.hr.models.attendance_period import HrAttendancePeriod
+from app.modules.hr.models.statutory_register import HrStatutoryRegister
 from app.modules.main.routes import auth as auth_routes
+from app.modules.main.routes import app_lock as app_lock_routes
 from app.modules.main.routes import users as users_routes
+from app.modules.main.routes import roles as roles_routes
+from app.modules.main.routes import assignee_rules as assignee_rules_routes
+from app.modules.main.routes import grc as grc_routes
+from app.modules.main.routes import basis as basis_routes
+from app.modules.main.routes import analytics as analytics_routes
+from app.modules.main.routes import refs as refs_routes
 from app.modules.main.routes import notifications as notifications_routes
 from app.modules.main.routes import feedback as feedback_routes
 from app.modules.main.routes import modules as modules_routes
 from app.modules.main.routes import presence as presence_routes
+from app.modules.main.routes import documents as documents_routes
 from app.modules.accounts.routes import gl_accounts as accounts_gl_accounts_routes
 from app.modules.accounts.routes import bank_accounts as accounts_bank_accounts_routes
 from app.modules.accounts.routes import vendors as accounts_vendors_routes
@@ -172,19 +272,57 @@ from app.modules.accounts.routes import period_close as accounts_period_close_ro
 from app.modules.accounts.routes import bank_reconciliations as accounts_bank_reconciliations_routes
 from app.modules.accounts.routes import liquidity_forecast as accounts_liquidity_forecast_routes
 from app.modules.accounts.routes import reports as accounts_reports_routes
+from app.modules.accounts.routes import controlling as accounts_controlling_routes
+from app.modules.accounts.routes import co_controlling as accounts_co_controlling_routes
+from app.modules.accounts.routes import product_costing as accounts_product_costing_routes
+from app.modules.accounts.routes import profit_centers as accounts_profit_centers_routes
+from app.modules.accounts.routes import profitability as accounts_profitability_routes
+from app.modules.accounts.routes import account_setup as accounts_setup_routes
+from app.modules.accounts.routes import party_notes as accounts_party_notes_routes
+from app.modules.accounts.routes import gst as accounts_gst_routes
+from app.modules.accounts.routes import outstanding as accounts_outstanding_routes
+from app.modules.accounts.routes import inventory_accounting as accounts_inventory_routes
+from app.modules.accounts.routes import fixed_assets as accounts_fixed_assets_routes
+from app.modules.accounts.routes import asset_accounting as accounts_asset_accounting_routes
+from app.modules.accounts.routes import fx as accounts_fx_routes
+from app.modules.accounts.routes import payment_proposals as accounts_payment_proposals_routes
+from app.modules.accounts.routes import settings as accounts_settings_routes
+from app.modules.accounts.routes import bank_statements as accounts_bank_statements_routes
+from app.modules.accounts.routes import cash_position as accounts_cash_position_routes
+from app.modules.accounts.routes import bank_guarantees as accounts_bank_guarantees_routes
 from app.modules.erp.routes import projects as erp_projects_routes
+from app.modules.erp.routes import project_import as erp_project_import_routes
+from app.modules.erp.routes import service_request_import as erp_sr_import_routes
 from app.modules.erp.routes import service_requests as erp_sr_routes
+from app.modules.erp.routes import service_visits as erp_sr_visits_routes
+from app.modules.erp.routes import settings as erp_settings_routes
+from app.modules.erp.routes import service_contracts as erp_service_contracts_routes
+from app.modules.p2p.routes import pr_transfer as p2p_pr_transfer_routes
 from app.modules.p2p.routes import p2p_requests as p2p_requests_routes
 from app.modules.p2p.routes import purchase_orders as p2p_purchase_orders_routes
 from app.modules.p2p.routes import rfq as p2p_rfq_routes
 from app.modules.p2p.routes import goods_receipts as p2p_goods_receipts_routes
+from app.modules.p2p.routes import vendor_returns as p2p_vendor_returns_routes
+from app.modules.p2p.routes import po_reports as p2p_po_reports_routes
+from app.modules.p2p.routes import service_entries as p2p_service_entries_routes
+from app.modules.p2p.routes import landed_cost as p2p_landed_cost_routes
+from app.modules.p2p.routes import account_assignment as p2p_account_assignment_routes
+from app.modules.p2p.routes import mm_quotations as p2p_mm_quotations_routes
+from app.modules.p2p.routes import po_amendments as p2p_po_amendments_routes
+from app.modules.p2p.routes import info_records as p2p_info_records_routes
+from app.modules.store.routes import item_plants as store_item_plants_routes
+from app.modules.store.routes import in_transit as store_in_transit_routes
+from app.modules.accounts.routes import msme as accounts_msme_routes
 from app.modules.p2p.routes import mis as p2p_mis_routes
+from app.modules.p2p.routes import vendors as p2p_vendors_routes
+from app.modules.p2p.routes import settings as p2p_settings_routes
 from app.modules.quality.routes import standards as quality_standards_routes
 from app.modules.quality.routes import inspection_plans as quality_inspection_plans_routes
 from app.modules.quality.routes import inspections as quality_inspections_routes
 from app.modules.quality.routes import ncr as quality_ncr_routes
 from app.modules.quality.routes import inspection_lots as quality_inspection_lots_routes
 from app.modules.quality.routes import masters as quality_masters_routes
+from app.modules.quality.routes import gauges as quality_gauges_routes
 from app.modules.quality.routes import settings as quality_settings_routes
 from app.modules.quality.routes import capa as quality_capa_routes
 from app.modules.quality.routes import complaints as quality_complaints_routes
@@ -194,11 +332,33 @@ from app.modules.quality.routes import dashboard as quality_dashboard_routes
 from app.modules.quality.routes import first_articles as quality_first_articles_routes
 from app.modules.quality.routes import inspection_calls as quality_inspection_calls_routes
 from app.modules.quality.routes import records as quality_records_routes
+from app.modules.quality.routes import analysis as quality_analysis_routes
 from app.modules.maintenance.routes import assets as maintenance_assets_routes
 from app.modules.maintenance.routes import requests as maintenance_requests_routes
 from app.modules.maintenance.routes import work_orders as maintenance_work_orders_routes
 from app.modules.maintenance.routes import documents as maintenance_documents_routes
 from app.modules.maintenance.routes import dashboard as maintenance_dashboard_routes
+from app.modules.maintenance.routes import pm_plans as maintenance_pm_plans_routes
+from app.modules.maintenance.routes import spares as maintenance_spares_routes
+from app.modules.maintenance.routes import reports as maintenance_reports_routes
+from app.modules.maintenance.routes import contracts as maintenance_contracts_routes
+from app.modules.maintenance.routes import asset_tags as maintenance_asset_tags_routes
+from app.modules.maintenance.routes import settings as maintenance_settings_routes
+from app.modules.maintenance.routes import permits as maintenance_permits_routes
+from app.modules.maintenance.routes import readings as maintenance_readings_routes
+from app.modules.maintenance.routes import wo_procurement as maintenance_wo_procurement_routes
+from app.modules.sales.routes import orders as sales_orders_routes
+from app.modules.sales.routes import amendments as sales_amendments_routes
+from app.modules.sales.routes import schedule as sales_schedule_routes
+from app.modules.sales.routes import dashboard as sales_dashboard_routes
+from app.modules.sales.routes import lookups as sales_lookups_routes
+from app.modules.sales.routes import documents as sales_documents_routes
+from app.modules.sales.routes import settings as sales_settings_routes
+from app.modules.sales.routes import delivery as sales_delivery_routes
+from app.modules.sales.routes import proforma as sales_proforma_routes
+from app.modules.sales.routes import order_projects as sales_order_projects_routes
+from app.modules.accounts.routes import sales_billing as accounts_sales_billing_routes
+from app.modules.accounts.routes import receivables as accounts_receivables_routes
 from app.modules.production.routes import workstations as production_workstations_routes
 from app.modules.production.routes import boms as production_boms_routes
 from app.modules.production.routes import work_orders as production_work_orders_routes
@@ -209,6 +369,9 @@ from app.modules.production.routes import reports as production_reports_routes
 from app.modules.production.routes import lookups as production_lookups_routes
 from app.modules.production.routes import integrations as production_integrations_routes
 from app.modules.production.routes import rrv_builds as production_rrv_builds_routes
+from app.modules.production.routes import engineering_change as production_ecm_routes
+from app.modules.production.routes import engineering_lookups as production_engineering_lookups_routes
+from app.modules.production.routes import mrp as production_mrp_routes
 from app.modules.hydraulic.routes import systems as hydraulic_systems_routes
 from app.modules.hydraulic.routes import components as hydraulic_components_routes
 from app.modules.hydraulic.routes import circuits as hydraulic_circuits_routes
@@ -237,18 +400,23 @@ from app.modules.design.routes import change_notices as design_change_notices_ro
 from app.modules.design.routes import dashboard as design_dashboard_routes
 from app.modules.design.routes import reports as design_reports_routes
 from app.modules.design.routes import lookups as design_lookups_routes
+from app.modules.design.routes import boms as design_boms_routes
+from app.modules.design.routes import submissions as design_submissions_routes
+from app.modules.design.routes import change_requests as design_change_requests_routes
+from app.modules.design.routes import requests as design_requests_routes
+from app.modules.design.routes import library as design_library_routes
+from app.modules.design.routes import settings as design_settings_routes
+from app.modules.design.routes import insights as design_insights_routes
+from app.modules.products.routes import applications as products_applications_routes
+from app.modules.products.routes import products as products_products_routes
+from app.modules.products.routes import price_conditions as products_price_conditions_routes
+from app.modules.products.routes import product_mapping as products_mapping_routes
+from app.modules.products import linking as _products_linking  # noqa: F401 — before_flush auto-link to the product master
 from app.modules.projects.routes import project as pm_project_routes
-from app.modules.projects.routes import phases as pm_phases_routes
-from app.modules.projects.routes import tasks as pm_tasks_routes
 from app.modules.projects.routes import milestones as pm_milestones_routes
-from app.modules.projects.routes import resources as pm_resources_routes
-from app.modules.projects.routes import budget as pm_budget_routes
-from app.modules.projects.routes import deliverables as pm_deliverables_routes
 from app.modules.projects.routes import documents as pm_documents_routes
-from app.modules.projects.routes import issues as pm_issues_routes
-from app.modules.projects.routes import risks as pm_risks_routes
-from app.modules.projects.routes import change_requests as pm_change_requests_routes
-from app.modules.projects.routes import approvals as pm_approvals_routes
+from app.modules.projects.routes import work as pm_work_routes
+from app.modules.projects.routes import project_tasks as pm_project_tasks_routes
 from app.modules.store.routes import locations as store_locations_routes
 from app.modules.store.routes import categories as store_categories_routes
 from app.modules.store.routes import items as store_items_routes
@@ -264,8 +432,16 @@ from app.modules.store.routes import stock_import as store_stock_import_routes
 from app.modules.store.routes import material_issues as store_material_issues_routes
 from app.modules.store.routes import material_returns as store_material_returns_routes
 from app.modules.store.routes import stock_transfers as store_stock_transfers_routes
+from app.modules.store.routes import stock_entries as store_stock_entries_routes
 from app.modules.store.routes import stock_adjustments as store_stock_adjustments_routes
+from app.modules.store.routes import physical_counts as store_physical_counts_routes
+from app.modules.store.routes import reorder as store_reorder_routes
 from app.modules.store.routes import stock_reservations as store_stock_reservations_routes
+from app.modules.store.routes import batches as store_batches_routes
+from app.modules.store.routes import job_work as store_job_work_routes
+from app.modules.store.routes import serials as store_serials_routes
+from app.modules.store.routes import bin_stock as store_bin_stock_routes
+import app.modules.store.reports.job_work_challan  # noqa: E402,F401 — registers the managed Word job-work challan
 from app.modules.crm.routes import organizations as crm_organizations_routes
 from app.modules.crm.routes import inquiries as crm_inquiries_routes
 from app.modules.crm.routes import tenders as crm_tenders_routes
@@ -275,8 +451,15 @@ from app.modules.crm.routes import workflow as crm_workflow_routes
 from app.modules.crm.routes import dashboard as crm_dashboard_routes
 from app.modules.crm.routes import products as crm_products_routes
 from app.modules.crm.routes import payment_terms as crm_payment_terms_routes
+from app.modules.crm.routes import document_categories as crm_document_categories_routes
 from app.modules.crm.routes import product_categories as crm_product_categories_routes
 from app.modules.crm.routes import bulk_import as crm_bulk_import_routes
+from app.modules.crm.routes import rnd_requests as crm_rnd_requests_routes
+from app.modules.crm.routes import requirement_discussion as crm_requirement_discussion_routes
+from app.modules.crm.routes import settings as crm_settings_routes
+from app.modules.crm.routes import exports as crm_exports_routes
+from app.modules.crm.routes import quotation_status as crm_quotation_status_routes
+from app.modules.crm.routes import opportunity as crm_opportunity_routes
 from app.modules.rnd.routes import calculations as rnd_calculations_routes
 from app.modules.rnd.routes import history as rnd_history_routes
 from app.modules.rnd.routes import projects as rnd_projects_routes
@@ -284,11 +467,21 @@ from app.modules.rnd.routes import experiments as rnd_experiments_routes
 from app.modules.rnd.routes import prototypes as rnd_prototypes_routes
 from app.modules.rnd.routes import dashboard as rnd_dashboard_routes
 from app.modules.rnd.routes import documents as rnd_documents_routes
+from app.modules.rnd.routes import requirements as rnd_requirements_routes
+from app.modules.rnd.routes import requirement_work as rnd_requirement_work_routes
+from app.modules.rnd.routes import technical_offers as rnd_technical_offers_routes
+from app.modules.rnd.routes import department_requirements as rnd_department_requirements_routes
+from app.modules.rnd.routes import project_tasks as rnd_project_tasks_routes
+from app.modules.rnd.routes import settings as rnd_settings_routes
 from app.modules.organization.routes import company as organization_company_routes
 from app.modules.organization.routes import branch as organization_branch_routes
 from app.modules.organization.routes import department as organization_department_routes
 from app.modules.organization.routes import cost_center as organization_cost_center_routes
 from app.modules.organization.routes import audit_log as organization_audit_log_routes
+from app.modules.organization.routes import workflows as organization_workflows_routes
+from app.modules.organization.routes import delegations as organization_delegations_routes
+from app.modules.organization.routes import security as organization_security_routes
+from app.modules.organization.services.approval_engine import run_escalations
 from app.modules.hr.routes import employees as hr_employees_routes
 from app.modules.hr.routes import masters as hr_masters_routes
 from app.modules.hr.routes import lifecycle as hr_lifecycle_routes
@@ -300,6 +493,15 @@ from app.modules.hr.routes import visitors as hr_visitors_routes
 from app.modules.hr.routes import travel as hr_travel_routes
 from app.modules.hr.routes import expenses as hr_expenses_routes
 from app.modules.hr.routes import dashboard as hr_dashboard_routes
+from app.modules.hr.routes import settings as hr_settings_routes
+from app.modules.hr.routes import safety as hr_safety_routes
+from app.modules.hr.routes import time_evaluation as hr_time_evaluation_routes
+from app.modules.hr.routes import org_assignments as hr_org_assignments_routes
+from app.modules.hr.routes import roster as hr_roster_routes
+from app.modules.hr.routes import punches as hr_punches_routes
+from app.modules.hr.routes import attendance_periods as hr_attendance_periods_routes
+from app.modules.hr.routes import registers as hr_registers_routes
+from app.modules.hr.routes import expense_posting as hr_expense_posting_routes
 from app.middleware.error_handler import setup_error_handlers, LoggingMiddleware
 from app.middleware.owasp import OWASPMiddleware
 from app.core.audit_context import AuditContextMiddleware
@@ -312,19 +514,35 @@ import app.core.audit_registry  # noqa: F401
 # create_all() is no longer called here since it can't apply ALTER TABLE
 # changes to existing tables, only CREATE TABLE for brand-new ones.
 
-# Global gate for modules locked in app/core/module_visibility.py — applies
-# to every route registered below, so it must be set on the app itself.
-from app.core.module_visibility import module_visibility_gate
+# Every HR route (self-service included) needs the HR & Administration app.
+from app.modules.hr.services.access import require_hr_module
 from fastapi import Depends as _Depends
 
 app = FastAPI(
     title=settings.app_name,
     description="Premnathrail Portal - CRM, ERP, and R&D tools API",
     version="1.0.0",
-    dependencies=[_Depends(module_visibility_gate)],
+    # The API map (every route + record-ID shape) is not published in production.
+    docs_url=None if settings.environment == "production" else "/docs",
+    redoc_url=None if settings.environment == "production" else "/redoc",
+    openapi_url=None if settings.environment == "production" else "/openapi.json",
 )
 
 # ============ MIDDLEWARE ============
+
+# Signed record references next to every id in JSON for the portal frontend,
+# so page URLs carry tamper-proof links, not editable ids (core/record_ref.py).
+from app.middleware.record_refs import RecordRefMiddleware  # noqa: E402
+app.add_middleware(RecordRefMiddleware)
+
+# SM12 optimistic locking: X-Lock-Version on saves of locked documents.
+from app.core.optimistic_lock import OptimisticLockMiddleware, register_locked_models, setup_lock_handlers  # noqa: E402
+app.add_middleware(OptimisticLockMiddleware)
+register_locked_models()
+
+# CSRF: block cookie-authenticated unsafe requests from non-portal origins (C-07).
+from app.middleware.csrf import CSRFOriginMiddleware  # noqa: E402
+app.add_middleware(CSRFOriginMiddleware)
 
 # CORS Configuration - Allow frontend to communicate
 app.add_middleware(
@@ -332,7 +550,7 @@ app.add_middleware(
     allow_origins=settings.allowed_origins_list,
     allow_credentials=True,            # Allow cookies/auth headers
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "X-Record-Refs", "X-Lock-Version", "X-User-Active"],
 )
 
 # Security: Trusted hosts
@@ -354,6 +572,7 @@ app.add_middleware(OWASPMiddleware)
 
 # Error handlers
 setup_error_handlers(app)
+setup_lock_handlers(app)
 
 # Static assets (e.g. the logo embedded in outgoing emails — see
 # app/utils/email.py). Public by design: OWASPMiddleware's PUBLIC_PREFIXES
@@ -364,20 +583,48 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 
 # API v1 routes
 app.include_router(auth_routes.router, prefix="/api/v1")
+app.include_router(app_lock_routes.router, prefix="/api/v1")
 app.include_router(users_routes.router, prefix="/api/v1")
+app.include_router(roles_routes.router, prefix="/api/v1")
+app.include_router(assignee_rules_routes.router, prefix="/api/v1")
+app.include_router(grc_routes.router, prefix="/api/v1")
+app.include_router(basis_routes.router, prefix="/api/v1")
+app.include_router(analytics_routes.router, prefix="/api/v1")
+app.include_router(refs_routes.router, prefix="/api/v1")
+app.include_router(erp_project_import_routes.router, prefix="/api/v1")  # before /erp/projects/{id}
+app.include_router(erp_sr_import_routes.router, prefix="/api/v1")  # before /erp/service-requests/{id}
 app.include_router(erp_projects_routes.router, prefix="/api/v1")
 app.include_router(erp_sr_routes.router, prefix="/api/v1")
+app.include_router(erp_sr_visits_routes.router, prefix="/api/v1")
+app.include_router(erp_service_contracts_routes.router, prefix="/api/v1")
+app.include_router(erp_settings_routes.router, prefix="/api/v1")
+app.include_router(p2p_pr_transfer_routes.router, prefix="/api/v1")
 app.include_router(p2p_requests_routes.router, prefix="/api/v1")
 app.include_router(p2p_purchase_orders_routes.router, prefix="/api/v1")
 app.include_router(p2p_rfq_routes.router, prefix="/api/v1")
 app.include_router(p2p_goods_receipts_routes.router, prefix="/api/v1")
+app.include_router(p2p_vendor_returns_routes.router, prefix="/api/v1")
+app.include_router(p2p_po_reports_routes.router, prefix="/api/v1")
+app.include_router(p2p_service_entries_routes.router, prefix="/api/v1")
+app.include_router(p2p_landed_cost_routes.router, prefix="/api/v1")
+app.include_router(p2p_account_assignment_routes.router, prefix="/api/v1")
+app.include_router(p2p_mm_quotations_routes.router, prefix="/api/v1")
+app.include_router(p2p_po_amendments_routes.router, prefix="/api/v1")
+app.include_router(p2p_info_records_routes.router, prefix="/api/v1")
+app.include_router(store_item_plants_routes.router, prefix="/api/v1")
+app.include_router(store_in_transit_routes.router, prefix="/api/v1")
+app.include_router(accounts_msme_routes.router, prefix="/api/v1")
 app.include_router(p2p_mis_routes.router, prefix="/api/v1")
+app.include_router(p2p_vendors_routes.router, prefix="/api/v1")
+app.include_router(p2p_settings_routes.router, prefix="/api/v1")
+app.include_router(p2p_settings_routes.flow_router, prefix="/api/v1")
 app.include_router(quality_standards_routes.router, prefix="/api/v1")
 app.include_router(quality_inspection_plans_routes.router, prefix="/api/v1")
 app.include_router(quality_inspections_routes.router, prefix="/api/v1")
 app.include_router(quality_ncr_routes.router, prefix="/api/v1")
 app.include_router(quality_inspection_lots_routes.router, prefix="/api/v1")
 app.include_router(quality_masters_routes.router, prefix="/api/v1")
+app.include_router(quality_gauges_routes.router, prefix="/api/v1")
 app.include_router(quality_settings_routes.router, prefix="/api/v1")
 app.include_router(quality_capa_routes.router, prefix="/api/v1")
 app.include_router(quality_complaints_routes.router, prefix="/api/v1")
@@ -387,11 +634,33 @@ app.include_router(quality_dashboard_routes.router, prefix="/api/v1")
 app.include_router(quality_first_articles_routes.router, prefix="/api/v1")
 app.include_router(quality_inspection_calls_routes.router, prefix="/api/v1")
 app.include_router(quality_records_routes.router, prefix="/api/v1")
+app.include_router(quality_analysis_routes.router, prefix="/api/v1")
 app.include_router(maintenance_assets_routes.router, prefix="/api/v1")
 app.include_router(maintenance_requests_routes.router, prefix="/api/v1")
 app.include_router(maintenance_work_orders_routes.router, prefix="/api/v1")
 app.include_router(maintenance_documents_routes.router, prefix="/api/v1")
 app.include_router(maintenance_dashboard_routes.router, prefix="/api/v1")
+app.include_router(maintenance_pm_plans_routes.router, prefix="/api/v1")
+app.include_router(maintenance_spares_routes.router, prefix="/api/v1")
+app.include_router(maintenance_reports_routes.router, prefix="/api/v1")
+app.include_router(maintenance_contracts_routes.router, prefix="/api/v1")
+app.include_router(maintenance_asset_tags_routes.router, prefix="/api/v1")
+app.include_router(maintenance_settings_routes.router, prefix="/api/v1")
+app.include_router(maintenance_permits_routes.router, prefix="/api/v1")
+app.include_router(maintenance_readings_routes.router, prefix="/api/v1")
+app.include_router(maintenance_wo_procurement_routes.router, prefix="/api/v1")
+app.include_router(sales_orders_routes.router, prefix="/api/v1")
+app.include_router(sales_amendments_routes.router, prefix="/api/v1")
+app.include_router(sales_schedule_routes.router, prefix="/api/v1")
+app.include_router(sales_dashboard_routes.router, prefix="/api/v1")
+app.include_router(sales_lookups_routes.router, prefix="/api/v1")
+app.include_router(sales_documents_routes.router, prefix="/api/v1")
+app.include_router(sales_settings_routes.router, prefix="/api/v1")
+app.include_router(sales_delivery_routes.router, prefix="/api/v1")
+app.include_router(sales_proforma_routes.router, prefix="/api/v1")
+app.include_router(sales_order_projects_routes.router, prefix="/api/v1")
+app.include_router(accounts_sales_billing_routes.router, prefix="/api/v1")
+app.include_router(accounts_receivables_routes.router, prefix="/api/v1")
 app.include_router(production_workstations_routes.router, prefix="/api/v1")
 app.include_router(production_boms_routes.router, prefix="/api/v1")
 app.include_router(production_work_orders_routes.router, prefix="/api/v1")
@@ -402,6 +671,9 @@ app.include_router(production_reports_routes.router, prefix="/api/v1")
 app.include_router(production_lookups_routes.router, prefix="/api/v1")
 app.include_router(production_integrations_routes.router, prefix="/api/v1")
 app.include_router(production_rrv_builds_routes.router, prefix="/api/v1")
+app.include_router(production_ecm_routes.router, prefix="/api/v1")
+app.include_router(production_engineering_lookups_routes.router, prefix="/api/v1")
+app.include_router(production_mrp_routes.router, prefix="/api/v1")
 app.include_router(hydraulic_systems_routes.router, prefix="/api/v1")
 app.include_router(hydraulic_components_routes.router, prefix="/api/v1")
 app.include_router(hydraulic_circuits_routes.router, prefix="/api/v1")
@@ -430,18 +702,25 @@ app.include_router(design_change_notices_routes.router, prefix="/api/v1")
 app.include_router(design_dashboard_routes.router, prefix="/api/v1")
 app.include_router(design_reports_routes.router, prefix="/api/v1")
 app.include_router(design_lookups_routes.router, prefix="/api/v1")
+app.include_router(design_boms_routes.router, prefix="/api/v1")
+app.include_router(design_boms_routes.where_used_router, prefix="/api/v1")
+app.include_router(design_submissions_routes.router, prefix="/api/v1")
+app.include_router(design_change_requests_routes.router, prefix="/api/v1")
+app.include_router(design_requests_routes.router, prefix="/api/v1")
+app.include_router(design_library_routes.router, prefix="/api/v1")
+app.include_router(design_settings_routes.router, prefix="/api/v1")
+app.include_router(design_insights_routes.router, prefix="/api/v1")
+# applications before products: /products/{product_id} would swallow /products/applications.
+app.include_router(products_applications_routes.router, prefix="/api/v1")
+app.include_router(products_price_conditions_routes.router, prefix="/api/v1")  # before /products/{product_id}
+app.include_router(products_mapping_routes.router, prefix="/api/v1")
+app.include_router(products_products_routes.router, prefix="/api/v1")
 app.include_router(pm_project_routes.router, prefix="/api/v1")
-app.include_router(pm_phases_routes.router, prefix="/api/v1")
-app.include_router(pm_tasks_routes.router, prefix="/api/v1")
 app.include_router(pm_milestones_routes.router, prefix="/api/v1")
-app.include_router(pm_resources_routes.router, prefix="/api/v1")
-app.include_router(pm_budget_routes.router, prefix="/api/v1")
-app.include_router(pm_deliverables_routes.router, prefix="/api/v1")
 app.include_router(pm_documents_routes.router, prefix="/api/v1")
-app.include_router(pm_issues_routes.router, prefix="/api/v1")
-app.include_router(pm_risks_routes.router, prefix="/api/v1")
-app.include_router(pm_change_requests_routes.router, prefix="/api/v1")
-app.include_router(pm_approvals_routes.router, prefix="/api/v1")
+app.include_router(pm_project_tasks_routes.router, prefix="/api/v1")
+app.include_router(pm_project_tasks_routes.ongoing_router, prefix="/api/v1")
+app.include_router(pm_work_routes.router, prefix="/api/v1")
 app.include_router(store_locations_routes.router, prefix="/api/v1")
 app.include_router(store_categories_routes.router, prefix="/api/v1")
 app.include_router(store_item_import_routes.router, prefix="/api/v1")  # before /store/items/{id}
@@ -457,8 +736,15 @@ app.include_router(store_stock_import_routes.router, prefix="/api/v1")
 app.include_router(store_material_issues_routes.router, prefix="/api/v1")
 app.include_router(store_material_returns_routes.router, prefix="/api/v1")
 app.include_router(store_stock_transfers_routes.router, prefix="/api/v1")
+app.include_router(store_stock_entries_routes.router, prefix="/api/v1")
 app.include_router(store_stock_adjustments_routes.router, prefix="/api/v1")
+app.include_router(store_physical_counts_routes.router, prefix="/api/v1")
+app.include_router(store_reorder_routes.router, prefix="/api/v1")
 app.include_router(store_stock_reservations_routes.router, prefix="/api/v1")
+app.include_router(store_batches_routes.router, prefix="/api/v1")
+app.include_router(store_job_work_routes.router, prefix="/api/v1")
+app.include_router(store_serials_routes.router, prefix="/api/v1")
+app.include_router(store_bin_stock_routes.router, prefix="/api/v1")
 app.include_router(crm_organizations_routes.router, prefix="/api/v1")
 app.include_router(crm_inquiries_routes.router, prefix="/api/v1")
 app.include_router(crm_tenders_routes.router, prefix="/api/v1")
@@ -468,12 +754,20 @@ app.include_router(crm_workflow_routes.router, prefix="/api/v1")
 app.include_router(crm_dashboard_routes.router, prefix="/api/v1")
 app.include_router(crm_products_routes.router, prefix="/api/v1")
 app.include_router(crm_payment_terms_routes.router, prefix="/api/v1")
+app.include_router(crm_document_categories_routes.router, prefix="/api/v1")
 app.include_router(crm_product_categories_routes.router, prefix="/api/v1")
 app.include_router(crm_bulk_import_routes.router, prefix="/api/v1")
+app.include_router(crm_rnd_requests_routes.router, prefix="/api/v1")
+app.include_router(crm_requirement_discussion_routes.router, prefix="/api/v1")
+app.include_router(crm_settings_routes.router, prefix="/api/v1")
+app.include_router(crm_exports_routes.router, prefix="/api/v1")
+app.include_router(crm_quotation_status_routes.router, prefix="/api/v1")
+app.include_router(crm_opportunity_routes.router, prefix="/api/v1")
 app.include_router(notifications_routes.router, prefix="/api/v1")
 app.include_router(feedback_routes.router, prefix="/api/v1")
 app.include_router(modules_routes.router, prefix="/api/v1")
 app.include_router(presence_routes.router, prefix="/api/v1")
+app.include_router(documents_routes.router, prefix="/api/v1")
 app.include_router(accounts_gl_accounts_routes.router, prefix="/api/v1")
 app.include_router(accounts_bank_accounts_routes.router, prefix="/api/v1")
 app.include_router(accounts_vendors_routes.router, prefix="/api/v1")
@@ -486,6 +780,24 @@ app.include_router(accounts_period_close_routes.router, prefix="/api/v1")
 app.include_router(accounts_bank_reconciliations_routes.router, prefix="/api/v1")
 app.include_router(accounts_liquidity_forecast_routes.router, prefix="/api/v1")
 app.include_router(accounts_reports_routes.router, prefix="/api/v1")
+app.include_router(accounts_controlling_routes.router, prefix="/api/v1")
+app.include_router(accounts_co_controlling_routes.router, prefix="/api/v1")
+app.include_router(accounts_product_costing_routes.router, prefix="/api/v1")
+app.include_router(accounts_profit_centers_routes.router, prefix="/api/v1")
+app.include_router(accounts_profitability_routes.router, prefix="/api/v1")
+app.include_router(accounts_setup_routes.router, prefix="/api/v1")
+app.include_router(accounts_party_notes_routes.router, prefix="/api/v1")
+app.include_router(accounts_gst_routes.router, prefix="/api/v1")
+app.include_router(accounts_outstanding_routes.router, prefix="/api/v1")
+app.include_router(accounts_inventory_routes.router, prefix="/api/v1")
+app.include_router(accounts_fixed_assets_routes.router, prefix="/api/v1")
+app.include_router(accounts_asset_accounting_routes.router, prefix="/api/v1")
+app.include_router(accounts_fx_routes.router, prefix="/api/v1")
+app.include_router(accounts_payment_proposals_routes.router, prefix="/api/v1")
+app.include_router(accounts_settings_routes.router, prefix="/api/v1")
+app.include_router(accounts_bank_statements_routes.router, prefix="/api/v1")
+app.include_router(accounts_cash_position_routes.router, prefix="/api/v1")
+app.include_router(accounts_bank_guarantees_routes.router, prefix="/api/v1")
 app.include_router(rnd_calculations_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_history_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_projects_routes.router, prefix="/api/v1/rnd")
@@ -493,22 +805,43 @@ app.include_router(rnd_experiments_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_prototypes_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_dashboard_routes.router, prefix="/api/v1/rnd")
 app.include_router(rnd_documents_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_requirements_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_requirement_work_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_technical_offers_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_department_requirements_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_project_tasks_routes.router, prefix="/api/v1/rnd")
+app.include_router(rnd_settings_routes.router, prefix="/api/v1/rnd")
 app.include_router(organization_company_routes.router, prefix="/api/v1")
 app.include_router(organization_branch_routes.router, prefix="/api/v1")
 app.include_router(organization_department_routes.router, prefix="/api/v1")
 app.include_router(organization_cost_center_routes.router, prefix="/api/v1")
 app.include_router(organization_audit_log_routes.router, prefix="/api/v1")
-app.include_router(hr_employees_routes.router, prefix="/api/v1")
-app.include_router(hr_masters_routes.router, prefix="/api/v1")
-app.include_router(hr_lifecycle_routes.router, prefix="/api/v1")
-app.include_router(hr_leave_routes.router, prefix="/api/v1")
-app.include_router(hr_attendance_routes.router, prefix="/api/v1")
-app.include_router(hr_holidays_routes.router, prefix="/api/v1")
-app.include_router(hr_assets_routes.router, prefix="/api/v1")
-app.include_router(hr_visitors_routes.router, prefix="/api/v1")
-app.include_router(hr_travel_routes.router, prefix="/api/v1")
-app.include_router(hr_expenses_routes.router, prefix="/api/v1")
-app.include_router(hr_dashboard_routes.router, prefix="/api/v1")
+app.include_router(organization_workflows_routes.router, prefix="/api/v1")
+app.include_router(organization_workflows_routes.approvals_router, prefix="/api/v1")
+app.include_router(organization_delegations_routes.router, prefix="/api/v1")
+app.include_router(organization_security_routes.router, prefix="/api/v1")
+app.include_router(hr_employees_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_masters_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_lifecycle_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_leave_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_attendance_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_holidays_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_assets_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_visitors_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_travel_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_expenses_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_dashboard_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_settings_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_safety_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_time_evaluation_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_org_assignments_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_org_assignments_routes.lifecycle_router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_roster_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_punches_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_attendance_periods_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+app.include_router(hr_registers_routes.router, prefix="/api/v1", dependencies=[_Depends(require_hr_module)])
+# Finance screen for HR claims (PR05): accounts permissions, no HR app needed.
+app.include_router(hr_expense_posting_routes.router, prefix="/api/v1")
 
 
 @app.get("/health")
@@ -544,6 +877,13 @@ async def startup():
     print(f"[OK] {settings.app_name} started")
     print(f"[DOCS] API Docs: http://localhost:8000/docs")
 
+    # Central approval engine: escalate steps past their "escalate after N hours".
+    scheduler.add_job(
+        run_escalations,
+        CronTrigger(minute=5),
+        id="approval_escalations",
+        replace_existing=True,
+    )
     scheduler.add_job(
         send_activity_followup_reminders,
         CronTrigger(hour=8, minute=0),
@@ -556,10 +896,36 @@ async def startup():
         id="po_overdue_reminders",
         replace_existing=True,
     )
+    # PA40: effective-dated transfers / promotions / org changes (00:30 IST).
+    from app.tasks.hr_lifecycle_apply import run_hr_lifecycle_apply
+    scheduler.add_job(
+        run_hr_lifecycle_apply,
+        CronTrigger(hour=0, minute=30),
+        id="hr_lifecycle_apply",
+        replace_existing=True,
+    )
     scheduler.add_job(
         send_hr_reminders,
         CronTrigger(hour=9, minute=0),
         id="hr_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_pm_reminders,
+        CronTrigger(hour=9, minute=15),
+        id="pm_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_design_reminders,
+        CronTrigger(hour=9, minute=30),
+        id="design_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_jobwork_reminders,
+        CronTrigger(hour=9, minute=50),
+        id="store_jobwork_reminders",
         replace_existing=True,
     )
     scheduler.add_job(
@@ -568,6 +934,69 @@ async def startup():
         id="quality_reminders",
         replace_existing=True,
     )
+    scheduler.add_job(
+        send_gauge_reminders,
+        CronTrigger(hour=9, minute=40),
+        id="gauge_calibration_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_erp_sla_reminders,
+        CronTrigger(minute=20),  # hourly — service-request SLA at-risk / breach reminders
+        id="erp_sla_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_maintenance_pm_scheduler,
+        CronTrigger(hour=6, minute=0),
+        id="maintenance_pm_scheduler",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_maintenance_amc_reminders,
+        CronTrigger(hour=6, minute=15),
+        id="maintenance_amc_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_bank_guarantee_reminders,
+        CronTrigger(hour=7, minute=0),
+        id="accounts_bank_guarantee_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_sales_scheduler,
+        CronTrigger(hour=6, minute=30),
+        id="sales_scheduler",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_erp_contract_scheduler,  # AMC / CMC expiry, renewal reminders, periodic billing
+        CronTrigger(hour=6, minute=20),
+        id="erp_contract_scheduler",
+        replace_existing=True,
+    )
+    # Finance collections: settle promises to pay, remind collectors of broken
+    # promises and today's follow-ups (Teams — reminders only).
+    from app.modules.accounts.services.collections import run_collection_reminders_job
+    scheduler.add_job(
+        run_collection_reminders_job,
+        CronTrigger(hour=8, minute=45),
+        id="accounts_collection_reminders",
+        replace_existing=True,
+    )
+    # Nightly Entra → users sync so leavers lose access without an admin
+    # clicking "Sync Azure Users" (C-10).
+    from app.modules.main.services.azure_sync import run_azure_sync_job
+    scheduler.add_job(
+        run_azure_sync_job,
+        CronTrigger(hour=2, minute=0),
+        id="azure_user_sync",
+        replace_existing=True,
+    )
+    # SM36/SM37: governance jobs + run history for every job (core/jobs.py).
+    from app.core.jobs import instrument_scheduler
+    instrument_scheduler(scheduler)
     scheduler.start()
 
 

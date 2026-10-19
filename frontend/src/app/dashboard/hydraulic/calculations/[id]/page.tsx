@@ -10,10 +10,13 @@ import { secondaryBtnStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, refOf, useRecordId } from '@/lib/recordRef'
 import CalcResults, { formatCalcValue } from '@/components/hydraulic/CalcResults'
 import { SYSTEM_TYPE_LABELS, SYSTEM_TYPE_HEX } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDateTime } from '@/lib/format'
+import { useCan } from '@/lib/permissions'
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -35,9 +38,12 @@ interface InputRow { key: string; label: string; value: string; unit: string }
 
 export default function HydCalculationDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
+  const { canDelete } = useCan()
   const router = useRouter()
   const params = useParams()
-  const calcId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedId, error: linkError } = useRecordId(ref)
+  const calcId = resolvedId ?? 0
 
   const [calc, setCalc] = useState<HydCalculation | null>(null)
   const [types, setTypes] = useState<HydCalcTypeMeta[]>([])
@@ -132,11 +138,13 @@ export default function HydCalculationDetailPage() {
   const rerun = () => {
     if (!calc) return
     const qs = new URLSearchParams({ type: calc.calc_type, inputs: JSON.stringify(calc.inputs || {}) })
-    if (calc.system_id) qs.set('system_id', String(calc.system_id))
+    if (calc.system_id) qs.set('system_id', refOf(calc, 'system_id'))
     router.push(`/dashboard/hydraulic/calculations/new?${qs.toString()}`)
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><HydraulicNav /><InvalidRecordLink message={linkError} listHref="/dashboard/hydraulic/calculations" listLabel="Back to calculations" /></div>)
+  if (!resolvedId) return <div><HydraulicNav /></div>
 
   return (
     <div>
@@ -152,11 +160,11 @@ export default function HydCalculationDetailPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {calc && (
             <>
-              <button type="button" onClick={rerun} style={secondaryBtnStyle}>Re-run in calculator</button>
-              <button type="button" onClick={() => setConfirmDelete(true)} style={{ ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }}>Delete</button>
+              <button data-tour="hyd-calcd-rerun-btn" type="button" onClick={rerun} style={secondaryBtnStyle}>Re-run in calculator</button>
+              {canDelete('hydraulic', 'calculations', (calc as { created_by_id?: number | null } | null)?.created_by_id ?? null) && <button data-tour="hyd-calcd-delete-btn" type="button" onClick={() => setConfirmDelete(true)} style={{ ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }}>Delete</button>}
             </>
           )}
-          <button onClick={() => router.push('/dashboard/hydraulic/calculations')} type="button" style={secondaryBtnStyle}>← Back</button>
+          <button data-tour="hyd-calcd-back-btn" onClick={() => router.push('/dashboard/hydraulic/calculations')} type="button" style={secondaryBtnStyle}>← Back</button>
         </div>
       </div>
 
@@ -164,13 +172,13 @@ export default function HydCalculationDetailPage() {
 
       {calc && (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 16px', fontSize: 13, color: TEXT.secondary }}>
+          <div data-tour="hyd-calcd-meta" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '0 0 16px', fontSize: 13, color: TEXT.secondary }}>
             <span style={{ fontWeight: 600, color: TEXT.heading }}>{calc.calc_type_label || calc.calc_type}</span>
             <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${SYSTEM_TYPE_HEX[calc.system_type]}1a`, color: SYSTEM_TYPE_HEX[calc.system_type], whiteSpace: 'nowrap' }}>
               {SYSTEM_TYPE_LABELS[calc.system_type] || calc.system_type}
             </span>
             {calc.system_id && (
-              <span onClick={() => router.push(`/dashboard/hydraulic/systems/${calc.system_id}`)} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>
+              <span onClick={() => router.push(recordPath('/dashboard/hydraulic/systems', calc, 'system_id'))} style={{ color: '#FF6A2A', fontWeight: 600, cursor: 'pointer' }}>
                 {calc.system_number}{calc.system_name ? ` — ${calc.system_name}` : ''}
               </span>
             )}
@@ -180,7 +188,7 @@ export default function HydCalculationDetailPage() {
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
             <div style={{ flex: '1 1 340px', maxWidth: 520, display: 'flex', flexDirection: 'column' }}>
-              <div style={cardStyle}>
+              <div data-tour="hyd-calcd-inputs" style={cardStyle}>
                 <p style={sectionTitle}>Inputs</p>
                 {inputRows.length === 0 ? (
                   <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No inputs recorded.</p>
@@ -201,7 +209,7 @@ export default function HydCalculationDetailPage() {
             </div>
 
             <div style={{ flex: '1 1 420px', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              <div style={cardStyle}>
+              <div data-tour="hyd-calcd-results" style={cardStyle}>
                 <p style={sectionTitle}>Results</p>
                 <CalcResults results={calc.results?.results || []} warnings={calc.results?.warnings || []} emptyNote="No results were stored with this calculation." />
               </div>
@@ -219,9 +227,9 @@ export default function HydCalculationDetailPage() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '1 1 260px', maxWidth: 400 }}>
                 <label style={labelStyle}>Title *</label>
-                <input style={inputStyle} value={title} maxLength={255} onChange={(e) => setTitle(e.target.value)} />
+                <input data-tour="hyd-calcd-title" style={inputStyle} value={title} maxLength={255} onChange={(e) => setTitle(e.target.value)} />
               </div>
-              <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
+              <div data-tour="hyd-calcd-system" style={{ flex: '1 1 260px', maxWidth: 380 }}>
                 <label style={labelStyle}>System ({SYSTEM_TYPE_LABELS[calc.system_type]} only)</label>
                 <SearchableSelect value={systemId} onChange={setSystemId} placeholder="Search system…"
                   options={[{ value: '', label: '— Not linked to a system —' }, ...systems.map((s) => ({ value: String(s.id), label: s.label }))]} />
@@ -229,11 +237,11 @@ export default function HydCalculationDetailPage() {
             </div>
             <div style={{ marginTop: 14 }}>
               <label style={labelStyle}>Remarks</label>
-              <textarea style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+              <textarea data-tour="hyd-calcd-remarks" style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, color: TEXT.muted }}>Inputs can&apos;t be edited — re-run it in the calculator and save a new calculation instead.</span>
-              <button type="submit" disabled={saving} style={{
+              <button data-tour="hyd-calcd-save-btn" type="submit" disabled={saving} style={{
                 padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
                 background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
                 boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,

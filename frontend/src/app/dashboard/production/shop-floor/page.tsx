@@ -3,15 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { productionApi } from '@/lib/api'
 import { ProductionLookupOption, ProductionQueueEntry } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
+import { recordPath } from '@/lib/recordRef'
+import { useCan } from '@/lib/permissions'
+import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 const PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
@@ -20,11 +24,6 @@ const OP_STATUS_HEX: Record<string, string> = { pending: '#78716c', in_progress:
 const INSP_LABELS: Record<string, string> = { pending: 'Inspection pending', in_progress: 'Inspecting', passed: 'Passed', failed: 'Failed — rework', conditionally_passed: 'Passed (conditional)' }
 const INSP_HEX: Record<string, string> = { pending: '#F59E0B', in_progress: '#2563EB', passed: '#16A34A', failed: '#DC2626', conditionally_passed: '#0d9488' }
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 11px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13, outline: 'none', color: TEXT.body,
-}
-const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 const cardStyle: React.CSSProperties = {
   borderRadius: 16, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 16,
@@ -40,11 +39,16 @@ const fetchQueue = (wsFilter: string): Promise<ProductionQueueEntry[]> =>
 
 export default function ShopFloorPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
+  const { canFeature } = useCan()
+  // Start / complete / request inspection / book time: Production › Shop Floor › Run operations.
+  const canRun = canFeature('production', 'shop_floor', 'run_operations', 'edit')
   const router = useRouter()
 
   const [queue, setQueue] = useState<ProductionQueueEntry[]>([])
   const [workstations, setWorkstations] = useState<ProductionLookupOption[]>([])
   const [users, setUsers] = useState<ProductionLookupOption[]>([])
+  // Role assign-to rule (core/features/production.py) — the server enforces it on save too.
+  const allowOperator = useAssigneeFilter('production:shop_floor.run_operations')
   const [wsFilter, setWsFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
@@ -143,15 +147,15 @@ export default function ShopFloorPage() {
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: '4px 0 0' }}>Open operations on released work orders — running first, then by priority and due date.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ width: 260 }}>
+          <div data-tour="production-sf-ws-filter" style={{ width: 260 }}>
             <SearchableSelect value={wsFilter} onChange={setWsFilter} placeholder="All workstations"
               options={[{ value: '', label: 'All workstations' }, ...workstations.map((w) => ({ value: String(w.id), label: w.label }))]} />
           </div>
-          <button type="button" style={secondaryBtnStyle} onClick={load} disabled={loading}>Refresh</button>
+          <button data-tour="production-sf-refresh-btn" type="button" style={secondaryBtnStyle} onClick={load} disabled={loading}>Refresh</button>
         </div>
       </div>
 
-      {error && (
+      {error && !logFor && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {Array.isArray(error) ? error.join(' ') : error}
         </div>
@@ -159,42 +163,6 @@ export default function ShopFloorPage() {
       {notice && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>
           {notice}
-        </div>
-      )}
-
-      {logFor && (
-        <div style={{ ...cardStyle, marginBottom: 18, border: '1px solid rgba(255,106,42,0.35)' }}>
-          <p style={{ fontSize: 12, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.secondary, margin: '0 0 10px' }}>
-            Log Time — {logFor.wo_number} · {logFor.sequence} {logFor.operation_name}
-          </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-            <div style={{ flex: '0 1 170px', minWidth: 160 }}>
-              <label style={labelStyle}>Date</label>
-              <DateField value={logDate} onChange={setLogDate} />
-            </div>
-            <div style={{ flex: '0 1 100px', minWidth: 90 }}>
-              <label style={labelStyle}>Hours *</label>
-              <input style={inputStyle} type="number" min={0} max={24} step="0.25" value={logHours} onChange={(e) => setLogHours(e.target.value)} autoFocus />
-            </div>
-            <div style={{ flex: '0 1 100px', minWidth: 90 }}>
-              <label style={labelStyle}>Good Qty</label>
-              <input style={inputStyle} type="number" min={0} step="any" value={logGood} onChange={(e) => setLogGood(e.target.value)} />
-            </div>
-            <div style={{ flex: '0 1 100px', minWidth: 90 }}>
-              <label style={labelStyle}>Scrap Qty</label>
-              <input style={inputStyle} type="number" min={0} step="any" value={logScrap} onChange={(e) => setLogScrap(e.target.value)} />
-            </div>
-            <div style={{ flex: '1 1 200px', maxWidth: 280 }}>
-              <label style={labelStyle}>Operator</label>
-              <SearchableSelect value={logOperator} onChange={setLogOperator} options={[{ value: '', label: '— Me —' }, ...users.map((u) => ({ value: String(u.id), label: u.label }))]} />
-            </div>
-            <div style={{ flex: '1 1 200px', maxWidth: 320 }}>
-              <label style={labelStyle}>Remarks</label>
-              <input style={inputStyle} value={logRemarks} onChange={(e) => setLogRemarks(e.target.value)} />
-            </div>
-            <button type="button" style={secondaryBtnStyle} onClick={() => setLogFor(null)}>Cancel</button>
-            <button type="button" disabled={busy} style={{ ...primarySmall, padding: '10px 18px', fontSize: 13 }} onClick={submitLog}>Book Time</button>
-          </div>
         </div>
       )}
 
@@ -217,10 +185,10 @@ export default function ShopFloorPage() {
                   const canRequest = q.requires_inspection && (!q.inspection_status || q.inspection_status === 'failed')
                   const hoursPct = q.planned_hours ? Math.min((q.actual_hours / q.planned_hours) * 100, 100) : 0
                   return (
-                    <div key={q.operation_id} style={{ ...cardStyle, borderLeft: `4px solid ${PRIORITY_HEX[q.priority]}` }}>
+                    <div key={q.operation_id} data-tour="production-sf-card" style={{ ...cardStyle, borderLeft: `4px solid ${PRIORITY_HEX[q.priority]}` }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
                         <div style={{ minWidth: 0 }}>
-                          <p onClick={() => router.push(`/dashboard/production/work-orders/${q.work_order_id}`)} style={{ fontSize: 13, fontWeight: 700, color: '#FF6A2A', margin: 0, cursor: 'pointer' }}>{q.wo_number}</p>
+                          <p onClick={() => router.push(recordPath('/dashboard/production/work-orders', q, 'work_order_id'))} style={{ fontSize: 13, fontWeight: 700, color: '#FF6A2A', margin: 0, cursor: 'pointer' }}>{q.wo_number}</p>
                           <p style={{ fontSize: 14, fontWeight: 600, color: TEXT.heading, margin: '2px 0 0' }}>{q.sequence} · {q.operation_name}</p>
                           <p style={{ fontSize: 12, color: TEXT.secondary, margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {q.product_name} × {q.quantity_planned}{q.project_label ? ` · ${q.project_label}` : ''}
@@ -250,22 +218,22 @@ export default function ShopFloorPage() {
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: 6, marginTop: 12, flexWrap: 'wrap' }}>
-                        {q.status === 'pending' && (
-                          <button type="button" disabled={busy} style={smallBtn} onClick={() => act(() => productionApi.startOperation(q.work_order_id, q.operation_id), 'Failed to start operation.', `${q.operation_name} started.`)}>Start</button>
+                        {canRun && q.status === 'pending' && (
+                          <button data-tour="production-sf-start-btn" type="button" disabled={busy} style={smallBtn} onClick={() => act(() => productionApi.startOperation(q.work_order_id, q.operation_id), 'Failed to start operation.', `${q.operation_name} started.`)}>Start</button>
                         )}
-                        <button type="button" disabled={busy} style={primarySmall} onClick={() => openLog(q)}>Log Time</button>
-                        {canRequest && (
-                          <button type="button" disabled={busy} style={smallBtn}
+                        {canRun && <button data-tour="production-sf-log-btn" type="button" disabled={busy} style={primarySmall} onClick={() => openLog(q)}>Log Time</button>}
+                        {canRun && canRequest && (
+                          <button data-tour="production-sf-inspect-btn" type="button" disabled={busy} style={smallBtn}
                             onClick={() => act(() => productionApi.requestInspection(q.work_order_id, q.operation_id), 'Failed to request inspection.', 'Inspection requested — Quality has been notified.')}>
                             {q.inspection_status === 'failed' ? 'Re-inspect' : 'Request Inspection'}
                           </button>
                         )}
-                        <button type="button" disabled={busy || (q.requires_inspection && !passed)}
+                        {canRun && <button data-tour="production-sf-complete-btn" type="button" disabled={busy || (q.requires_inspection && !passed)}
                           style={{ ...smallBtn, opacity: q.requires_inspection && !passed ? 0.5 : 1 }}
                           title={q.requires_inspection && !passed ? 'Needs a passed Quality inspection first' : ''}
                           onClick={() => act(() => productionApi.completeOperation(q.work_order_id, q.operation_id), 'Failed to complete operation.', `${q.operation_name} completed.`)}>
                           Complete
-                        </button>
+                        </button>}
                       </div>
                     </div>
                   )
@@ -274,6 +242,54 @@ export default function ShopFloorPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {logFor && (
+        <FormSheet tour="production-sf-log-form" width={580} icon="clock" title="Log Time"
+          subtitle={`${logFor.wo_number} · ${logFor.sequence} ${logFor.operation_name}`} onClose={() => setLogFor(null)} busy={busy}
+          footer={<>
+            <button type="button" style={sheetBtn('secondary', SHEET.INK, busy)} disabled={busy} onClick={() => setLogFor(null)}>Cancel</button>
+            <button data-tour="production-sf-log-book-btn" type="button" disabled={busy} style={sheetBtn('primary', SHEET.BLUE, busy)} onClick={submitLog}>
+              <SheetIcon name="clock" size={16} />{busy ? 'Saving…' : 'Book Time'}
+            </button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {error && (
+              <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                {Array.isArray(error) ? error.join(' ') : error}
+              </div>
+            )}
+            <SheetSection icon="clock" title="Time & Output">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                <div style={{ flex: '0 1 170px', minWidth: 160 }}>
+                  <label style={sheetLabel}>Date</label>
+                  <DateField value={logDate} onChange={setLogDate} />
+                </div>
+                <div data-tour="production-sf-log-hours" style={{ flex: '0 1 100px', minWidth: 90 }}>
+                  <label style={sheetLabel}>Hours <Req /></label>
+                  <input style={sheetInput} type="number" min={0} max={24} step="0.25" value={logHours} onChange={(e) => setLogHours(e.target.value)} autoFocus />
+                </div>
+                <div data-tour="production-sf-log-good" style={{ flex: '0 1 100px', minWidth: 90 }}>
+                  <label style={sheetLabel}>Good Qty</label>
+                  <input style={sheetInput} type="number" min={0} step="any" value={logGood} onChange={(e) => setLogGood(e.target.value)} />
+                </div>
+                <div data-tour="production-sf-log-scrap" style={{ flex: '0 1 100px', minWidth: 90 }}>
+                  <label style={sheetLabel}>Scrap Qty</label>
+                  <input style={sheetInput} type="number" min={0} step="any" value={logScrap} onChange={(e) => setLogScrap(e.target.value)} />
+                </div>
+              </div>
+              <p style={sheetHint}>{logFor.actual_hours} of {logFor.planned_hours} planned hours booked so far.</p>
+            </SheetSection>
+            <SheetSection icon="user" title="Operator">
+              <div data-tour="production-sf-log-operator">
+                <SearchableSelect value={logOperator} onChange={setLogOperator} options={[{ value: '', label: '— Me —' }, ...users.filter((u) => allowOperator(u.id)).map((u) => ({ value: String(u.id), label: u.label }))]} />
+              </div>
+            </SheetSection>
+            <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+              <input style={sheetInput} value={logRemarks} onChange={(e) => setLogRemarks(e.target.value)} />
+            </SheetSection>
+          </div>
+        </FormSheet>
       )}
     </div>
   )

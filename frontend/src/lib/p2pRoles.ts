@@ -1,7 +1,9 @@
 // Manager-role approval matrix for P2P — mirror of PR_APPROVAL_ROLE_SETS /
 // PO_APPROVAL_ROLE_SETS in backend/app/modules/p2p/models/p2p_request.py.
-// Which roles sign a PR (all of them) and a PO (any ONE of them) depends on
-// whether the requisition is for an existing project or a new project.
+// Which roles sign a PR and a PO depends on whether the requisition is for an
+// existing project or a new project. Both need ALL their roles: every picked
+// person signs their own slot, and the Director slot is cleared by any ONE
+// Director (see approve_po / pending_po_approval_roles in the backend).
 
 import { User } from '@/types'
 
@@ -30,7 +32,7 @@ export const P2P_ROLE_FLAGS: Record<string, string> = {
   director: 'is_director',
   // Legacy roles still carried by PRs raised before the matrix.
   purchase_head: 'is_purchase_head',
-  md: 'is_md',
+  partner: 'is_partner',
 }
 
 export const P2P_ROLE_LABELS: Record<string, string> = {
@@ -45,7 +47,7 @@ export const P2P_ROLE_LABELS: Record<string, string> = {
   project_head: 'Project Head',
   plant_head: 'Plant Head',
   purchase_head: 'Purchase Head',
-  md: 'MD',
+  partner: 'Partner',
 }
 
 export const p2pRoleLabel = (role?: string | null): string => (role ? P2P_ROLE_LABELS[role] || role : '')
@@ -59,7 +61,7 @@ export const PO_PICKED_ROLE_SETS: Record<P2PProjectType, string[]> = {
 
 /** Which of this PR's PO-approval roles the user holds: matrix PRs use the
  * people picked on the PR plus every Director (po_approval_panel); legacy
- * PRs (no project_type) fall back to the Purchase Head / Director / MD flags. */
+ * PRs (no project_type) fall back to the Purchase Head / Director / Partner flags. */
 export function userPoRoles(
   user: User | null | undefined,
   pr: { project_type?: P2PProjectType | null; po_approval_panel?: { role: string; people: { id: number }[] }[] },
@@ -69,5 +71,5 @@ export function userPoRoles(
     return (pr.po_approval_panel || []).filter((row) => row.people.some((p) => p.id === user.id)).map((row) => row.role)
   }
   const flags = user as unknown as Record<string, boolean>
-  return ['purchase_head', 'director', 'md'].filter((role) => !!flags[P2P_ROLE_FLAGS[role]])
+  return ['purchase_head', 'director', 'partner'].filter((role) => !!flags[P2P_ROLE_FLAGS[role]])
 }

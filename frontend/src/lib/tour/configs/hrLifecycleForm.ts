@@ -1,0 +1,182 @@
+import { TourConfig } from '../types'
+
+// New Lifecycle Event form. The fields shown depend on the chosen event type
+// (joining / confirmation / transfer / promotion / exit) — steps whose field
+// isn't on screen for the current type are skipped automatically.
+const config: TourConfig = {
+  id: 'hr-lifecycle-form',
+  pageTitle: 'New Lifecycle Event',
+  steps: [
+    {
+      target: 'hr-lcn-type',
+      title: 'Event type',
+      purpose: 'What is happening to the employee. The type decides which fields appear below and which checklist template is copied in.',
+      required: true,
+      options: [
+        { value: 'Joining', meaning: 'A new hire or a rehire. Runs the onboarding checklist (email ID, ID card, PPE, induction…). On completion it creates or updates the employee profile.' },
+        { value: 'Confirmation', meaning: 'Probation is over. On completion the employee moves from Probation to Active.' },
+        { value: 'Transfer', meaning: 'A change of department, plant or reporting manager.' },
+        { value: 'Promotion', meaning: 'A new designation or grade.' },
+        { value: 'Exit', meaning: 'The employee is leaving (resignation, termination, retirement…). Runs the offboarding checklist. On completion it reassigns their work and deactivates the portal login.' },
+      ],
+      why: 'Recording each career change as a dated event, instead of editing the profile directly, gives an audit trail of every change and makes sure the side tasks (IT, Admin, Store, Finance) actually happen.',
+    },
+    {
+      target: 'hr-lcn-subject-mode',
+      title: 'Is the joiner already in the portal?',
+      purpose: 'For a Joining only. Choose whether the new person already has a portal login.',
+      options: [
+        { value: 'Not in the portal yet', meaning: 'The usual case for a new hire. Enter their name now and link the portal user later, after IT creates the Microsoft account and they sign in once.' },
+        { value: 'Already has a portal account', meaning: 'A rehire, or someone whose Microsoft account already exists. Pick them from the list.' },
+      ],
+    },
+    {
+      target: 'hr-lcn-candidate-name',
+      title: 'Full name',
+      purpose: 'The new joiner\'s name, used until the portal user is linked.',
+      whatToEnter: 'The full name exactly as on the offer letter.',
+      required: true,
+      validExample: 'Rakesh Kumar Yadav',
+      invalidExample: 'Rakesh (new welder)',
+    },
+    {
+      target: 'hr-lcn-candidate-email',
+      title: 'Work email',
+      purpose: 'The company email IT will create for the joiner.',
+      whatToEnter: 'The planned @premnathrail.com address. Leave it blank if it is not decided yet.',
+      validExample: 'rakesh.yadav@premnathrail.com',
+      invalidExample: 'rakesh@gmail (not a complete or company address)',
+      why: 'Later, "Find by email" on the event uses this address to link the joiner\'s portal account automatically.',
+    },
+    {
+      target: 'hr-lcn-employee',
+      title: 'Employee',
+      purpose: 'The person this event is for. Required for every type except a Joining of someone not yet in the portal.',
+      whatToEnter: 'Type part of the name or email and pick from the list. Their current designation and department are shown beside it.',
+      required: true,
+      after: 'For Transfer, Promotion and Exit, the "from" values (current department, designation, manager) are taken from this person\'s profile.',
+    },
+    {
+      target: 'hr-lce-effective-date',
+      title: 'Effective date',
+      purpose: 'The date the change takes effect. It is the date of joining for a Joining, the confirmation date for a Confirmation, and the "effective from" date for a Transfer or Promotion.',
+      whatToEnter: 'Pick the date from the calendar.',
+      validExample: '01-11-2026',
+      why: 'Leave entitlement, probation period and seniority are all counted from this date, so it must match the appointment, confirmation or transfer letter.',
+    },
+    {
+      target: 'hr-lce-department',
+      title: 'Department',
+      purpose: 'For a Joining, the department the person joins. For a Transfer or Promotion, the new department. Leave it on "No change" if it stays the same.',
+      whatToEnter: 'Pick from the list. The list comes from Organization > Departments.',
+    },
+    {
+      target: 'hr-lce-plant',
+      title: 'Plant',
+      purpose: 'The plant or branch the person is posted at, or the new one for a transfer.',
+      whatToEnter: 'Pick from the list, or leave it on "No change".',
+      why: 'The plant decides the holiday calendar and attendance location that apply to the employee.',
+    },
+    {
+      target: 'hr-lce-designation',
+      title: 'Designation',
+      purpose: 'The job title. For a Promotion this is usually the main change.',
+      whatToEnter: 'Pick from the list. Designations are maintained in HR > Masters > Designations.',
+    },
+    {
+      target: 'hr-lce-grade',
+      title: 'Grade',
+      purpose: 'The pay or seniority band, such as W2 for a worker or M1 for a manager.',
+      whatToEnter: 'Pick from the list (HR > Masters > Grades), or leave it on "No change".',
+      why: 'Grades usually drive eligibility for things like travel class and claim limits, so a promotion often changes the grade as well.',
+    },
+    {
+      target: 'hr-lce-manager',
+      title: 'Reporting manager',
+      purpose: 'Who this person reports to, or the new manager after a transfer.',
+      whatToEnter: 'Pick a person, or leave it on "No change".',
+      why: 'The reporting manager approves this person\'s leave, attendance corrections and travel or expense claims. A wrong manager sends approvals to the wrong person.',
+    },
+    {
+      target: 'hr-lce-successor',
+      title: 'Successor (optional)',
+      purpose: 'For a Transfer or Promotion only. The person who takes over this employee\'s old responsibilities.',
+      whatToEnter: 'Pick someone only if the old department-head slot or pending P2P approvals should move to another person when the event is completed. Otherwise leave it on "None".',
+    },
+    {
+      target: 'hr-lce-exit-type',
+      title: 'Exit type',
+      purpose: 'Why the employment is ending.',
+      options: [
+        { value: 'Resignation', meaning: 'The employee chose to leave and is serving notice.' },
+        { value: 'Termination', meaning: 'The company ended the employment.' },
+        { value: 'Retirement', meaning: 'Reached retirement age.' },
+        { value: 'Absconding', meaning: 'Stopped reporting without notice.' },
+        { value: 'Contract end', meaning: 'A fixed-term contract has finished.' },
+        { value: 'Death', meaning: 'The employee passed away. Final settlement goes to the nominee.' },
+      ],
+      why: 'Attrition reports split exits by type. Many resignations points to a retention problem, while absconding cases usually come with unreturned assets.',
+    },
+    {
+      target: 'hr-lce-resignation-date',
+      title: 'Resignation date',
+      purpose: 'The date the resignation letter was submitted. Leave it blank for a termination or retirement.',
+      whatToEnter: 'Pick the date from the calendar.',
+    },
+    {
+      target: 'hr-lce-last-working-day',
+      title: 'Last working day',
+      purpose: 'The final day the employee works.',
+      required: true,
+      whatToEnter: 'Pick the date from the calendar. It is usually the resignation date plus the notice period.',
+      validExample: 'Resigned 01-10-2026, 30 days\' notice → 31-10-2026',
+      after: 'The exit is listed against this date, and IT and Admin know when to cut access and collect assets.',
+    },
+    {
+      target: 'hr-lce-notice-days',
+      title: 'Notice (days)',
+      purpose: 'The notice period the employee serves, in days.',
+      whatToEnter: 'Whole number of days.',
+      validExample: '30',
+      invalidExample: '1 month (enter days, not words)',
+    },
+    {
+      target: 'hr-lce-handover',
+      title: 'Handover to (successor)',
+      purpose: 'The person who takes over the leaver\'s work: their approvals, reportees and department-head slots.',
+      whatToEnter: 'Pick the successor or the leaver\'s manager. You can choose "Decide later" now; it is asked for again when completing the exit.',
+    },
+    {
+      target: 'hr-lce-exit-reason',
+      title: 'Exit reason',
+      purpose: 'The detailed reason for leaving. Only HR can see it.',
+      whatToEnter: 'A short, factual note.',
+      validExample: 'Better offer, relocating to Pune for family',
+    },
+    {
+      target: 'hr-lce-remarks',
+      title: 'Remarks',
+      purpose: 'Anything else HR should know about this event. Only HR can see it.',
+      validExample: 'Joining delayed one week for medical test',
+    },
+    {
+      target: 'hr-lcn-draft-btn',
+      title: 'Save as draft',
+      purpose: 'Saves the event without starting it.',
+      after: 'The checklist is created but nobody is notified yet. Use "Start checklist" on the event when it is ready, for example once the offer is accepted.',
+    },
+    {
+      target: 'hr-lcn-start-btn',
+      title: 'Create & start checklist',
+      purpose: 'Creates the event and starts it straight away.',
+      after: 'The checklist is copied from HR > Masters > Checklist Templates and every task owner (HR, IT, Admin, Store, Finance, Manager) is notified. You are taken to the event page to track it. If this person already has an open event of the same type, you get an error asking you to finish or cancel that one first.',
+    },
+    {
+      target: 'hr-lcn-back',
+      title: '← Back',
+      purpose: 'Returns to the lifecycle list without saving — same as Cancel.',
+    },
+  ],
+}
+
+export default config

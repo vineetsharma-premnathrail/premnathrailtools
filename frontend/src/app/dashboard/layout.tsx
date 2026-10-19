@@ -3,13 +3,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { useFitPageTable } from '@/hooks/useFitPageTable'
 import Sidebar from '@/components/Sidebar'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import GlobalActivity from '@/components/shared/GlobalActivity'
+import AppLock from '@/components/shared/AppLock'
 import ScrollRevealObserver from '@/components/ScrollRevealObserver'
 import { TourProvider } from '@/components/tour/TourContext'
 import TourOverlay from '@/components/tour/TourOverlay'
 import { GLASS } from '@/lib/theme'
+import { List } from '@phosphor-icons/react'
 
 export default function DashboardLayout({
   children,
@@ -23,6 +26,9 @@ export default function DashboardLayout({
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => { setSidebarOpen(false) }, [pathname])
+
+  // No whole-page scrollbar: long tables scroll inside themselves instead.
+  useFitPageTable(mainRef, !isLoading && !!user)
 
   if (isLoading) {
     return <LoadingSpinner />
@@ -72,9 +78,7 @@ export default function DashboardLayout({
           aria-label="Open menu"
           style={{ width: 38, height: 38, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 10, border: `1px solid ${GLASS.border}`, background: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3a2416" strokeWidth="2" strokeLinecap="round">
-            <line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" />
-          </svg>
+          <List size={20} color="#3a2416" />
         </button>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="Premnathrail" style={{ width: 130, height: 26, borderRadius: 6, objectFit: 'contain' }} />
@@ -92,6 +96,7 @@ export default function DashboardLayout({
       <ScrollRevealObserver containerRef={mainRef} />
       <TourOverlay />
       <GlobalActivity />
+      <AppLock />
     </div>
     </TourProvider>
   )

@@ -8,13 +8,17 @@ import { StoreStockAdjustment } from '@/types'
 import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
 import { primaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
+import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected' }
 const STATUS_HEX: Record<string, string> = { pending_approval: '#f59e0b', approved: '#22c55e', rejected: '#dc2626' }
 
 export default function StoreStockAdjustmentsPage() {
   const { isAuthorized, isLoading } = useRequireApp('store')
+  const { can } = useCan()
   const router = useRouter()
   const [adjustments, setAdjustments] = useState<StoreStockAdjustment[]>([])
   const [loading, setLoading] = useState(true)
@@ -23,7 +27,7 @@ export default function StoreStockAdjustmentsPage() {
   useEffect(() => {
     if (!isAuthorized) return
     setLoading(true)
-    storeApi.listStockAdjustments().then(setAdjustments).catch(() => setError('Failed to load stock adjustments.')).finally(() => setLoading(false))
+    storeApi.listStockAdjustments().then(setAdjustments).catch((err) => setError(extractErrorMessages(err, 'Could not load stock adjustments — check your connection and reload; if it persists your account may lack access to this module.').join(' '))).finally(() => setLoading(false))
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
@@ -39,9 +43,11 @@ export default function StoreStockAdjustmentsPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 8px' }}>Stock Adjustments</h1>
         </div>
-        <button data-tour="adjustments-add-btn" onClick={() => router.push('/dashboard/store/adjustments/new')} style={primaryBtnStyle}>
-          <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> New Adjustment
-        </button>
+        {can('store', 'adjustments', 'create') && (
+          <button data-tour="adjustments-add-btn" onClick={() => router.push('/dashboard/store/adjustments/new')} style={primaryBtnStyle}>
+            <span style={{ fontSize: 17, lineHeight: 1, marginRight: 6 }}>+</span> New Adjustment
+          </button>
+        )}
       </div>
 
       <MessageDialog open={!!error} variant="error" title="Failed to Load Stock Adjustments" message={error} onClose={() => setError('')} actionLabel="Reload" onAction={() => window.location.reload()} />
@@ -61,7 +67,7 @@ export default function StoreStockAdjustmentsPage() {
               <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: TEXT.muted, fontSize: 13 }}>No stock adjustments yet.</td></tr>
             )}
             {adjustments.map((a) => (
-              <tr key={a.id} onClick={() => router.push(`/dashboard/store/adjustments/${a.id}`)} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
+              <tr key={a.id} onClick={() => router.push(recordPath('/dashboard/store/adjustments', a))} style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}>
                 <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: TEXT.body }}>{a.adjustment_number}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.location_name}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.adjustment_date}</td>
@@ -73,7 +79,7 @@ export default function StoreStockAdjustmentsPage() {
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.approved_by_name || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 13, color: TEXT.secondary }}>{a.items.length}</td>
                 <td onClick={(e) => e.stopPropagation()}>
-                  <span onClick={() => router.push(`/dashboard/store/adjustments/${a.id}`)} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</span>
+                  <span onClick={() => router.push(recordPath('/dashboard/store/adjustments', a))} style={{ padding: '0 16px', color: BRAND.primaryActive, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>View</span>
                 </td>
               </tr>
             ))}

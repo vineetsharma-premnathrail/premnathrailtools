@@ -1,20 +1,28 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useRequireAdmin } from '@/hooks/useAuth'
+import { CheckCircle, Shield, Users, XCircle } from '@phosphor-icons/react'
+import { useRouter, usePathname } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
+import TourButton from '@/components/tour/TourButton'
+import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
 import { usersApi, modulesApi } from '@/lib/api'
 import { User, ModuleMeta } from '@/types'
 import { TEXT, BRAND, BORDER } from '@/lib/theme'
 import FeedbackBell from '@/components/FeedbackBell'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 
 const STATUS_TABS = ['All Users', 'Active Users', 'Inactive Users'] as const
 
 export default function UsersRolesPage() {
-  const { isAuthorized, isLoading } = useRequireAdmin()
+  const { isAuthorized, isLoading } = useRequireOrgTab('users')
+  const { can } = useCan()
   const router = useRouter()
+  // Standalone /dashboard/users has no OrganizationNav (whose TourButton
+  // covers the embedded Role & Permissions tab), so show one here only then.
+  const pathname = usePathname()
   const [users, setUsers] = useState<User[]>([])
   // Assignable-apps checklist — driven by the modules registry (data change,
   // not a frontend code change, to add a new department). See
@@ -35,9 +43,9 @@ export default function UsersRolesPage() {
     try {
       const data = await usersApi.list()
       setUsers(data)
-    } catch {
+    } catch (err) {
       setErrorTitle('Failed to Load Users')
-      setError('Failed to load users.')
+      setError(extractErrorMessages(err, 'Could not load users — check your connection and reload; if it persists your account may lack access to this module.').join(' '))
     } finally {
       setLoading(false)
     }
@@ -99,7 +107,10 @@ export default function UsersRolesPage() {
             Manage portal users, roles, and module access
           </p>
         </div>
-        <FeedbackBell />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {pathname === '/dashboard/users' && <TourButton variant="icon" />}
+          <FeedbackBell />
+        </div>
       </div>
 
       <MessageDialog
@@ -152,7 +163,7 @@ export default function UsersRolesPage() {
             outline: 'none',
           }}
         />
-        <button
+        {can('organization', 'users', 'create') && <button
           onClick={handleSyncAzure}
           disabled={syncing}
           data-tour="org-roles-sync-btn"
@@ -169,7 +180,7 @@ export default function UsersRolesPage() {
           }}
         >
           {syncing ? 'Syncing…' : 'Sync from Azure AD'}
-        </button>
+        </button>}
       </div>
 
       {/* Table */}
@@ -221,7 +232,7 @@ export default function UsersRolesPage() {
               return (
                 <tr
                   key={u.id}
-                  onClick={() => router.push(`/dashboard/users/${u.id}`)}
+                  onClick={() => router.push(recordPath('/dashboard/users', u))}
                   style={{ borderTop: '1px solid rgba(0,0,0,0.05)', cursor: 'pointer' }}
                 >
                   <td style={{ padding: '12px 16px' }}>
@@ -252,7 +263,7 @@ export default function UsersRolesPage() {
                     {u.department || '—'}
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>{u.office_location || '—'}</td>
-                  <td style={{ padding: '12px 16px' }}>
+                  <td style={{ padding: '12px 16px' }} data-tour={idx === 0 ? 'org-roles-role-badge' : undefined}>
                     <span
                       style={{
                         fontSize: 12,
@@ -268,7 +279,7 @@ export default function UsersRolesPage() {
                       {u.role.replace('_', ' ')}
                     </span>
                   </td>
-                  <td style={{ padding: '12px 16px' }}>
+                  <td style={{ padding: '12px 16px' }} data-tour={idx === 0 ? 'org-roles-apps-cell' : undefined}>
                     {isAdminRole ? (
                       <span style={{ fontSize: 12, color: '#a8a29e' }}>All</span>
                     ) : u.apps.length === 0 ? (
@@ -294,7 +305,7 @@ export default function UsersRolesPage() {
                       </div>
                     )}
                   </td>
-                  <td style={{ padding: '12px 16px' }}>
+                  <td style={{ padding: '12px 16px' }} data-tour={idx === 0 ? 'org-roles-status-badge' : undefined}>
                     <span
                       style={{
                         fontSize: 11.5,
@@ -302,8 +313,8 @@ export default function UsersRolesPage() {
                         padding: '4px 10px',
                         borderRadius: 9999,
                         whiteSpace: 'nowrap',
-                        color: u.is_active ? '#047857' : '#b91c1c',
-                        background: u.is_active ? 'rgba(16,185,129,0.12)' : 'rgba(220,38,38,0.1)',
+                        color: u.is_active ? '#047857' : '#64748B',
+                        background: u.is_active ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
                       }}
                     >
                       {u.is_active ? 'Active' : 'Inactive'}
@@ -311,7 +322,7 @@ export default function UsersRolesPage() {
                   </td>
                   <td style={{ padding: '12px 16px' }}>
                     <button
-                      onClick={() => router.push(`/dashboard/users/${u.id}`)}
+                      onClick={() => router.push(recordPath('/dashboard/users', u))}
                       data-tour={idx === 0 ? 'org-roles-edit-btn' : undefined}
                       style={{
                         fontSize: 12.5,
@@ -325,7 +336,7 @@ export default function UsersRolesPage() {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      Edit
+                      {can('organization', 'users', 'edit') ? 'Edit' : 'View'}
                     </button>
                   </td>
                 </tr>
@@ -355,36 +366,14 @@ function StatCard({ label, value, color, icon }: { label: string; value: number;
 }
 
 function UsersIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 00-3-3.87" />
-      <path d="M16 3.13a4 4 0 010 7.75" />
-    </svg>
-  )
+  return <Users size={18} />
 }
 function CheckIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="8 12 11 15 16 9" />
-    </svg>
-  )
+  return <CheckCircle size={18} />
 }
 function XIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <line x1="15" y1="9" x2="9" y2="15" />
-      <line x1="9" y1="9" x2="15" y2="15" />
-    </svg>
-  )
+  return <XCircle size={18} />
 }
 function ShieldIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    </svg>
-  )
+  return <Shield size={18} />
 }

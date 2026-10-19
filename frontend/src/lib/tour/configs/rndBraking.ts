@@ -1,0 +1,227 @@
+import { TourConfig } from '../types'
+
+const config: TourConfig = {
+  id: 'rnd-braking',
+  pageTitle: 'Braking Performance Calculator',
+  steps: [
+    {
+      target: 'rnd-toolnav-braking',
+      title: 'Engineering Tools row',
+      purpose: 'This second row of pills appears only inside Engineering Tools — click any pill to jump straight to another calculator (Hydraulic, Qmax, Load, Tractive, Vehicle, Spline).',
+    },
+    {
+      target: 'rnd-brk-stats',
+      title: 'Summary cards',
+      purpose: 'Shown after a calculation: GBR (Gross Braking Ratio — braking force as a % of vehicle weight), Max Braking Force in kN, and the vehicle mass and reaction time used.',
+      why: 'GBR is the single number reviewers look at first — it tells you how strong the brakes are relative to the vehicle.',
+    },
+    {
+      target: 'rnd-brk-doc-no',
+      title: 'Doc No.',
+      purpose: 'Document number printed on the PDF report and used as the PDF file name.',
+      whatToEnter: 'Your calculation document number. Defaults to BRK-001.',
+      validExample: 'BRK-2026-014',
+    },
+    {
+      target: 'rnd-brk-made-by',
+      title: 'Made By',
+      purpose: 'Name of the engineer who prepared the calculation — printed in the report signature block.',
+      whatToEnter: 'Engineer name (optional, but fill it for any report that goes to a customer or file).',
+    },
+    {
+      target: 'rnd-brk-checked-by',
+      title: 'Checked By',
+      purpose: 'Name of the reviewer who checked the numbers — printed on the report.',
+      why: 'Made / Checked / Approved is the standard engineering sign-off chain; a calculation with only one name on it is not considered verified.',
+    },
+    {
+      target: 'rnd-brk-approved-by',
+      title: 'Approved By',
+      purpose: 'Name of the person approving the calculation for use — printed on the report.',
+    },
+    {
+      target: 'rnd-brk-vehicle-csv',
+      title: 'Import vehicle CSV',
+      purpose: 'Fills the Vehicle Data fields from a two-column CSV (parameter,value) instead of typing.',
+      whatToEnter: 'A .csv with rows like mass_kg,11280 · max_speed,50 · driving_wheels,4 · reaction_time,1 · wheel_dia,730. Unknown rows are ignored.',
+    },
+    {
+      target: 'rnd-brk-gvw',
+      title: 'GVW (kg)',
+      purpose: 'Gross Vehicle Weight — the fully loaded mass of the vehicle being braked.',
+      whatToEnter: 'Mass in kilograms (not tonnes). Must be greater than 0.',
+      required: true,
+      validExample: '11280',
+      invalidExample: '11.28 (that is tonnes — enter 11280 kg)',
+      why: 'Heavier vehicles need more braking force to stop in the same distance — every result scales with this number.',
+    },
+    {
+      target: 'rnd-brk-speed',
+      title: 'Max Speed (km/h)',
+      purpose: 'The speed(s) to check braking from. Each speed gets its own result rows.',
+      whatToEnter: 'One or more speeds in km/h, separated by commas. At least one value greater than 0.',
+      required: true,
+      validExample: '10,20,50',
+      invalidExample: '50 kmph (no units — numbers only)',
+    },
+    {
+      target: 'rnd-brk-wheels',
+      title: 'Driving Wheels',
+      purpose: 'Number of wheels that are braked. The Braked Wheels box beside it mirrors this value.',
+      whatToEnter: 'Whole number, 1 or more.',
+      required: true,
+      validExample: '4',
+      invalidExample: '0',
+    },
+    {
+      target: 'rnd-brk-reaction',
+      title: 'Reaction Time (s)',
+      purpose: 'Time between the operator seeing the hazard and the brakes actually applying. The vehicle keeps moving at full speed during this time.',
+      whatToEnter: 'Seconds, decimals allowed. Defaults to 1 if left blank.',
+      required: true,
+      validExample: '1.0',
+      why: 'Total stopping distance = reaction distance + braking distance; a longer reaction time adds distance even with perfect brakes.',
+    },
+    {
+      target: 'rnd-brk-wheel-dia',
+      title: 'Wheel Dia (mm)',
+      purpose: 'Wheel diameter, used for the report and wheel-level figures.',
+      whatToEnter: 'Diameter in millimetres (optional).',
+      validExample: '730',
+    },
+    {
+      target: 'rnd-brk-track-csv',
+      title: 'Import track CSV',
+      purpose: 'Fills gradient, curve and gauge from a two-column CSV (gradient / curve / gauge rows).',
+    },
+    {
+      target: 'rnd-brk-track-std',
+      title: 'Track Standard',
+      purpose: 'Loads preset track geometry into the greyed-out fields below.',
+      options: [
+        { value: 'CUST', meaning: 'Custom — keep your own curve / cant / gauge values.' },
+        { value: 'IR', meaning: 'Indian Railways broad gauge — 175 m curve, 165 mm super-elevation and cant, 1676 mm gauge.' },
+        { value: 'HSR', meaning: 'High-speed rail — 4000 m curve, 150 mm super-elevation and cant, 1435 mm standard gauge.' },
+      ],
+    },
+    {
+      target: 'rnd-brk-gradient',
+      title: 'Max Gradient',
+      purpose: 'The slope(s) to check. Each gradient produces Moving Up and Moving Down scenarios in addition to Straight Track.',
+      whatToEnter: 'Pick the unit first, then one or more values separated by commas (each 0 or more).',
+      required: true,
+      options: [
+        { value: '°', meaning: 'Degrees of slope.' },
+        { value: '1:G', meaning: '"1 in G" — 1 m rise per G metres along the track (railway convention). 33 means 1 in 33.' },
+        { value: '%', meaning: 'Percent — metres of rise per 100 m.' },
+      ],
+      validExample: '33 with 1:G selected',
+      invalidExample: '-5 (negative values are rejected)',
+      why: 'Going downhill, gravity pushes the vehicle forward and fights the brakes — the downhill case is usually the one that fails.',
+    },
+    {
+      target: 'rnd-brk-track-geometry',
+      title: 'Curve, cant and gauge',
+      purpose: 'Read-only track geometry (max curve radius in m, super-elevation and cant in mm, gauge in mm) filled from the Track Standard preset or the track CSV. Printed on the report for reference.',
+    },
+    {
+      target: 'rnd-brk-road-params',
+      title: 'Road Parameters',
+      purpose: 'Visible only when Road Mode is ticked — for road-rail vehicles that also run on tyres.',
+      whatToEnter: 'Road speeds in km/h (comma separated, default 30), road gradient in % or ° (default 5), and the tyre-road friction coefficient μ (default 0.7; must be greater than 0 — dry asphalt is about 0.7, wet about 0.4).',
+    },
+    {
+      target: 'rnd-brk-brake-type',
+      title: 'Brake Type',
+      purpose: 'The brake system fitted.',
+      options: [
+        { value: 'Disc Brake', meaning: 'Pads clamp a disc on the axle — consistent friction, common on new vehicles.' },
+        { value: 'Tread Brake', meaning: 'Brake blocks press directly on the wheel tread — traditional railway braking.' },
+      ],
+    },
+    {
+      target: 'rnd-brk-calc-method',
+      title: 'Calculate',
+      purpose: 'What you want the tool to work out.',
+      options: [
+        { value: 'Force', meaning: 'Compare the vehicle’s stopping distance against a limit (EN standard table or your own distance).' },
+        { value: 'Distance', meaning: 'Enter a target stopping distance; the table adds the deceleration and force REQUIRED to stop within it, and passes a row only if the vehicle’s net force is enough.' },
+        { value: 'Detail', meaning: 'Click any result row to expand the full step-by-step working (v, reaction distance, forces, deceleration, distances).' },
+      ],
+    },
+    {
+      target: 'rnd-brk-stop-distance',
+      title: 'Total Stop Distance / Standard',
+      purpose: 'Force mode only. Choose which stopping-distance limit each row is judged against.',
+      options: [
+        { value: 'EN Standard', meaning: 'Use the DIN EN 15746-2 table on the right (interpolated for speeds in between).' },
+        { value: 'Custom', meaning: 'Type your own maximum total stop distance in metres into the box above.' },
+      ],
+    },
+    {
+      target: 'rnd-brk-target-distance',
+      title: 'Target Stopping Distance (m)',
+      purpose: 'Distance mode only — the distance in metres the vehicle must stop within.',
+      validExample: '50',
+    },
+    {
+      target: 'rnd-brk-road-mode',
+      title: 'Road Mode',
+      purpose: 'Tick to also calculate road (tyre) braking; reveals the Road Parameters box. Road rows show N/A for compliance because the EN rail table does not apply.',
+    },
+    {
+      target: 'rnd-brk-scenarios',
+      title: 'Scenario filters',
+      purpose: 'Show or hide result rows by scenario — Straight (level track), Moving Up (braking uphill, gravity helps) and Moving Down (braking downhill, gravity works against you). Only filters the table; does not recalculate.',
+    },
+    {
+      target: 'rnd-brk-show-gbr',
+      title: 'Show GBR %',
+      purpose: 'Adds a Gross Braking Ratio column to the results table.',
+    },
+    {
+      target: 'rnd-brk-calculate-btn',
+      title: 'Calculate',
+      purpose: 'Checks the required fields (red border and message if anything is wrong), then runs the calculation.',
+      after: 'Results fill the table below and the summary cards appear. The run is also saved to History automatically, named "Braking — <mass>kg @ <speed>km/h".',
+    },
+    {
+      target: 'rnd-brk-export-inputs',
+      title: 'Inputs (CSV)',
+      purpose: 'Downloads every input value as braking_inputs.csv — handy to keep with the design file or re-import later.',
+    },
+    {
+      target: 'rnd-brk-export-outputs',
+      title: 'Outputs (CSV)',
+      purpose: 'Downloads the full results table as braking_results.csv for Excel. Needs a calculation first.',
+    },
+    {
+      target: 'rnd-brk-pdf-btn',
+      title: 'PDF report',
+      purpose: 'Generates the formal braking calculation report as a PDF named after the Doc No.',
+    },
+    {
+      target: 'rnd-brk-history-btn',
+      title: 'History',
+      purpose: 'Opens the saved-calculations list, where you can reopen any earlier run in this tool.',
+    },
+    {
+      target: 'rnd-brk-results',
+      title: 'Calculation Results',
+      purpose: 'One row per mode × gradient × scenario × speed: applied, gravitational and net braking force (kN), deceleration (m/s²), braking distance and total distance (m), and the standard limit.',
+      options: [
+        { value: '✓ PASS', meaning: 'Total stopping distance is within the limit (or, in Distance mode, the net force is enough).' },
+        { value: '✗ FAIL', meaning: 'The vehicle stops too late — more braking force, lower speed or a different design is needed.' },
+        { value: 'N/A', meaning: 'Road row — the EN rail limit does not apply.' },
+        { value: '—', meaning: 'No limit available for that speed (outside the EN table and no custom distance).' },
+      ],
+    },
+    {
+      target: 'rnd-brk-en-table',
+      title: 'EN Std. Distances',
+      purpose: 'Reference table of maximum allowed stopping distances by speed from DIN EN 15746-2 (road-rail machines). Speeds in between are interpolated.',
+    },
+  ],
+}
+
+export default config

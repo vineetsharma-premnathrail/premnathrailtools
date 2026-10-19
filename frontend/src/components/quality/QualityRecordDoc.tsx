@@ -14,14 +14,16 @@ import { extractErrorMessages } from '@/lib/validation'
  * the version history / upload. PDF is secondary and renders the Word
  * document of record once it exists.
  */
-export default function QualityRecordDoc({ title, hint, entityType, entityId, pdfKind, canModify, downloadName }: {
+export default function QualityRecordDoc({ title, hint, entityType, entityId, pdfKind, canModify, downloadName, revision = 0 }: {
   title: string
   hint: string
-  entityType: 'quality_inspection_report' | 'quality_test_certificate' | 'quality_deviation_approval'
+  entityType: 'quality_inspection_report' | 'quality_test_certificate' | 'quality_deviation_approval' | 'quality_8d_report'
   entityId: number
-  pdfKind: 'inspection-report' | 'test-certificate' | 'deviation-approval'
+  pdfKind: 'inspection-report' | 'test-certificate' | 'deviation-approval' | '8d-report'
   canModify: boolean
   downloadName: string
+  /** Record revision (8D report: bumps when the CAPA is reopened). */
+  revision?: number
 }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState<'' | 'word' | 'pdf'>('')
@@ -77,7 +79,7 @@ export default function QualityRecordDoc({ title, hint, entityType, entityId, pd
           {error}
         </div>
       )}
-      <ManagedDocumentPanel key={reloadKey} entityType={entityType} entityId={entityId} revision={0} canModify={canModify}
+      <ManagedDocumentPanel key={reloadKey} entityType={entityType} entityId={entityId} revision={revision} canModify={canModify}
         recordLabel={title.toLowerCase()} downloadName={downloadName} />
     </div>
   )

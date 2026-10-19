@@ -27,3 +27,6 @@ class CostCenter(Base, TimestampMixin):
     annual_budget: Mapped[float | None] = mapped_column(Float, nullable=True)
     budget_period: Mapped[str | None] = mapped_column(String(7), nullable=True)  # "YYYY-MM"
     gl_account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("gl_accounts.id"), nullable=True)
+    # KE51: the profit centre this cost centre reports to — journal lines
+    # posted to the cost centre derive their profit centre from it.
+    profit_center_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("profit_centers.id"), nullable=True)

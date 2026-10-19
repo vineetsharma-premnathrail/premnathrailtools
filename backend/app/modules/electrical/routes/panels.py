@@ -4,14 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissions import require_app_access, require_tab_action
+from app.core.permission_registry import can_feature
+from app.core.permissions import require_app_access, require_feature_action
 from app.db.session import get_db
 from app.modules.electrical.models.bom import ElectricalBomItem
 from app.modules.electrical.models.panel import (
     ElectricalPanel, ELECTRICAL_PANEL_TYPES, ELECTRICAL_PANEL_STATUSES, ELECTRICAL_PANEL_ASSEMBLED,
 )
 from app.modules.electrical.schemas.panel import ElectricalPanelCreate, ElectricalPanelUpdate, ElectricalPanelResponse
-from app.modules.electrical.service import ELECTRICAL_APP, get_job_or_404, require_working, user_names
+from app.modules.electrical.service import ELECTRICAL_APP, ensure_job_view, get_job_or_404, require_working, user_names
 from app.modules.main.models.user import User
 
 router = APIRouter(
@@ -19,7 +20,13 @@ router = APIRouter(
     dependencies=[Depends(require_app_access(ELECTRICAL_APP))],
 )
 
-_CAN_EDIT = require_tab_action(ELECTRICAL_APP, "jobs", "edit")
+# Any Electrical user — record-level access is the job's data scope.
+_VIEWER = require_app_access(ELECTRICAL_APP)
+
+# Electrical › RRV Electrical Jobs › Panels (app/core/features/electrical.py).
+_CAN_CREATE = require_feature_action("electrical", "jobs", "panels", "create")
+_CAN_EDIT = require_feature_action("electrical", "jobs", "panels", "edit")
+_CAN_DELETE = require_feature_action("electrical", "jobs", "panels", "delete")
 
 
 def _to_responses(db: Session, panels: list[ElectricalPanel]) -> list[ElectricalPanelResponse]:
@@ -73,8 +80,9 @@ def _stamp_assembly(panel: ElectricalPanel, user: User) -> None:
 
 
 @router.get("", response_model=list[ElectricalPanelResponse])
-async def list_panels(job_id: int, db: Session = Depends(get_db)):
-    get_job_or_404(db, job_id)
+async def list_panels(job_id: int, db: Session = Depends(get_db), user: User = Depends(_VIEWER)):
+    ensure_job_view(user, can_feature(user, "electrical", "jobs", "panels", "view"), "panels")
+    get_job_or_404(db, job_id, user=user)
     panels = db.query(ElectricalPanel).filter(
         ElectricalPanel.job_id == job_id, ElectricalPanel.is_deleted == False  # noqa: E712
     ).order_by(ElectricalPanel.panel_tag).all()
@@ -82,8 +90,8 @@ async def list_panels(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=ElectricalPanelResponse)
-async def create_panel(job_id: int, payload: ElectricalPanelCreate, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    job = get_job_or_404(db, job_id, lock=True)
+async def create_panel(job_id: int, payload: ElectricalPanelCreate, db: Session = Depends(get_db), user: User = Depends(_CAN_CREATE)):
+    job = get_job_or_404(db, job_id, lock=True, user=user)
     require_working(job, "change its panels")
     data = payload.model_dump()
     _validate(db, job_id, data)
@@ -97,7 +105,7 @@ async def create_panel(job_id: int, payload: ElectricalPanelCreate, db: Session 
 
 @router.patch("/{panel_id}", response_model=ElectricalPanelResponse)
 async def update_panel(job_id: int, panel_id: int, payload: ElectricalPanelUpdate, db: Session = Depends(get_db), user: User = Depends(_CAN_EDIT)):
-    job = get_job_or_404(db, job_id, lock=True)
+    job = get_job_or_404(db, job_id, lock=True, user=user)
     require_working(job, "change its panels")
     panel = _get_panel(db, job_id, panel_id)
     updates = payload.model_dump(exclude_unset=True)
@@ -111,8 +119,8 @@ async def update_panel(job_id: int, panel_id: int, payload: ElectricalPanelUpdat
 
 
 @router.delete("/{panel_id}")
-async def delete_panel(job_id: int, panel_id: int, db: Session = Depends(get_db), _perm: User = Depends(_CAN_EDIT)):
-    job = get_job_or_404(db, job_id, lock=True)
+async def delete_panel(job_id: int, panel_id: int, db: Session = Depends(get_db), _perm: User = Depends(_CAN_DELETE)):
+    job = get_job_or_404(db, job_id, lock=True, user=_perm)
     require_working(job, "change its panels")
     panel = _get_panel(db, job_id, panel_id)
     mounted = db.query(ElectricalBomItem).filter(ElectricalBomItem.panel_id == panel.id, ElectricalBomItem.is_deleted == False).count()  # noqa: E712

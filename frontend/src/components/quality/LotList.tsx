@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { recordPath } from '@/lib/recordRef'
 import { qualityApi } from '@/lib/api'
 import { QualityInspectionLot } from '@/types'
 import { TEXT } from '@/lib/theme'
@@ -72,7 +73,7 @@ export default function LotList({ mine = false, initialType = '' }: { mine?: boo
               const open = ['created', 'in_inspection', 'results_recorded'].includes(l.status)
               const late = open && l.age_days > waitingDays
               return (
-                <tr key={l.id} onClick={() => router.push(`/dashboard/quality/lots/${l.id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={l.id} onClick={() => router.push(recordPath('/dashboard/quality/lots', l))} style={{ cursor: 'pointer' }}>
                   <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{l.lot_number}</td>
                   <td style={tdStyle}>{l.item_code ? `${l.item_code} — ` : ''}{l.item_name}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{fmtQty(l.quantity, l.uom)}</td>
@@ -85,7 +86,7 @@ export default function LotList({ mine = false, initialType = '' }: { mine?: boo
                   </td>
                   <td style={tdStyle}>{l.decision ? DECISION_LABELS[l.decision] : '—'}</td>
                   <td onClick={(e) => e.stopPropagation()} style={tdStyle}>
-                    <span onClick={() => router.push(`/dashboard/quality/lots/${l.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                    <span onClick={() => router.push(recordPath('/dashboard/quality/lots', l))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                   </td>
                 </tr>
               )

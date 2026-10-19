@@ -21,7 +21,7 @@ export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'Jun
 export function AttendanceLegend({ counts }: { counts?: HrAttendanceCounts | null }) {
   const keys = ['present', 'half_day', 'absent', 'on_leave', 'on_duty', 'work_from_home', 'holiday', 'weekly_off', 'unmarked'] as const
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+    <div data-tour="hr-att-legend" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
       {keys.map((k) => (
         <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[k]}1a`, color: k === 'unmarked' ? TEXT.muted : STATUS_HEX[k] }}>
           <span style={{ width: 8, height: 8, borderRadius: 9999, background: STATUS_HEX[k] }} />
@@ -60,7 +60,7 @@ export default function AttendanceCalendar({
   })()
 
   return (
-    <div style={{ borderRadius: 16, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 14, overflowX: 'auto' }}>
+    <div data-tour="hr-att-calendar" style={{ borderRadius: 16, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 14, overflowX: 'auto' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(84px, 1fr))', gap: 6, minWidth: 620 }}>
         {WEEKDAYS.map((w) => (
           <div key={w} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, padding: '2px 6px' }}>{w}</div>
@@ -113,7 +113,7 @@ export function MonthPicker({ year, month, onChange }: { year: number; month: nu
   const prev = () => (month === 1 ? onChange(year - 1, 12) : onChange(year, month - 1))
   const next = () => (month === 12 ? onChange(year + 1, 1) : onChange(year, month + 1))
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+    <div data-tour="hr-att-month-picker" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
       <button type="button" style={btn} onClick={prev} aria-label="Previous month">‹</button>
       <span style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, minWidth: 140, textAlign: 'center' }}>{MONTH_NAMES[month - 1]} {year}</span>
       <button type="button" style={btn} onClick={next} aria-label="Next month">›</button>

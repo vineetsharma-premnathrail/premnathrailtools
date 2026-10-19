@@ -5,26 +5,36 @@ detail, so the UI just swaps its state."""
 import mimetypes
 from datetime import datetime, timezone
 from urllib.parse import quote
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.permissions import require_app_access
+from app.core.permissions import ensure_can_delete, ensure_tab_action, require_app_access
 from app.db.session import get_db
 from app.modules.design.models.change_notice import DesignChangeNotice
 from app.modules.design.models.document import (
     DesignDocument, DesignDocumentRevision, DesignRevisionFile, DESIGN_FILE_ROLES,
 )
-from app.modules.design.routes.documents import document_detail, get_document, validate_ecn_link
+from app.modules.design.access import head_ids, is_head, is_team
+from app.modules.design.approvals import DOC_ENTITY, DOC_KEY, mark_checklist_done, pending_request
+from app.modules.design.features import ensure_design_feature
+from app.modules.design.scope import ensure_in_scope
+from app.modules.design.checklists import active_checklist, record_answers
+from app.modules.design.models.submission import DesignCustomerSubmission, DesignSubmissionLine
+from app.modules.design.routes.documents import (
+    CHECKER_RULE, VIEWER_REVISION_STATUSES, document_detail, get_document, validate_ecn_link,
+)
 from app.modules.design.schemas.document import DesignDocumentDetail
 from app.modules.design.schemas.revision import (
-    DesignRevisionDecisionPayload, DesignRevisionRecallPayload, DesignRevisionSubmitPayload, DesignRevisionUpdate,
+    DesignRevisionDecisionPayload, DesignRevisionRecallPayload, DesignRevisionReleasePayload, DesignRevisionSubmitPayload,
+    DesignRevisionUpdate,
 )
 from app.modules.design.service import (
-    add_event, check_approve, check_discard_revision, check_manage_draft, check_recall, check_review, ensure,
-    notify, ref, released_revision, user_name, utcnow, validate_signatories,
+    add_event, check_approve, check_discard_revision, check_manage_draft, check_recall, check_release, check_review,
+    ensure, ensure_assignee_rule, is_admin, notify, ref, released_revision, user_name, utcnow, validate_signatories,
 )
 from app.modules.main.models.user import User
+from app.modules.organization.services import approval_engine as engine
 from app.utils.sharepoint import (
     delete_file_from_sharepoint, download_file_content, sanitize_folder_name, upload_file_to_sharepoint,
 )
@@ -45,7 +55,7 @@ _INLINE_TYPES = {"application/pdf", "image/png", "image/jpeg", "image/gif", "ima
 _NOTIFY_ENTITY = "design_document"
 
 
-def _load(db: Session, revision_id: int, lock: bool = False) -> tuple[DesignDocument, DesignDocumentRevision]:
+def _load(db: Session, revision_id: int, lock: bool = False, user: User | None = None) -> tuple[DesignDocument, DesignDocumentRevision]:
     if lock:
         db.query(DesignDocumentRevision.id).filter(DesignDocumentRevision.id == revision_id).with_for_update().first()
     rev = db.query(DesignDocumentRevision).populate_existing().filter(
@@ -54,6 +64,8 @@ def _load(db: Session, revision_id: int, lock: bool = False) -> tuple[DesignDocu
     if not rev:
         raise HTTPException(status_code=404, detail=f"Revision #{revision_id} not found — it may have been discarded.")
     doc = get_document(db, rev.document_id, lock=lock)
+    if user is not None:
+        ensure_in_scope(db, user, doc)
     rev = next(r for r in doc.revisions if r.id == rev.id)
     return doc, rev
 
@@ -81,12 +93,14 @@ async def update_revision(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("design")),
 ):
-    doc, rev = _load(db, revision_id, lock=True)
+    ensure_design_feature(user, "documents", "revisions", "edit")
+    doc, rev = _load(db, revision_id, lock=True, user=user)
     ensure(check_manage_draft(user, doc, rev))
     changes = payload.model_dump(exclude_unset=True)
     reviewer_id = changes.get("reviewer_id", rev.reviewer_id)
     approver_id = changes.get("approver_id", rev.approver_id)
     validate_signatories(db, rev.created_by_id, reviewer_id, approver_id)
+    ensure_assignee_rule(db, user, CHECKER_RULE, reviewer_id, rev.reviewer_id)
     if "ecn_id" in changes:
         validate_ecn_link(db, doc, changes["ecn_id"])
     if "change_summary" in changes:
@@ -109,7 +123,9 @@ async def discard_revision(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("design")),
 ):
-    doc, rev = _load(db, revision_id, lock=True)
+    doc, rev = _load(db, revision_id, lock=True, user=user)
+    ensure_can_delete(user, rev, "design", "documents", what="document revision")
+    ensure_design_feature(user, "documents", "revisions", "delete")
     ensure(check_discard_revision(user, doc, rev))
     now = datetime.now(timezone.utc)
     paths = []
@@ -138,7 +154,8 @@ async def upload_files(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("design")),
 ):
-    doc, rev = _load(db, revision_id)
+    ensure_design_feature(user, "documents", "files", "create")
+    doc, rev = _load(db, revision_id, user=user)
     ensure(check_manage_draft(user, doc, rev))
     if file_role not in DESIGN_FILE_ROLES:
         raise HTTPException(status_code=400, detail=f"'{file_role}' isn't a valid file role. Choose one of: {', '.join(DESIGN_FILE_ROLES)}.")
@@ -195,7 +212,8 @@ async def remove_file(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("design")),
 ):
-    doc, rev = _load(db, revision_id)
+    ensure_design_feature(user, "documents", "files", "delete")
+    doc, rev = _load(db, revision_id, user=user)
     ensure(check_manage_draft(user, doc, rev))
     target = next((f for f in rev.files if f.id == file_id and not f.is_deleted), None)
     if not target:
@@ -216,15 +234,23 @@ async def get_file_content(
     file_id: int,
     download: bool = Query(False),
     db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("design")),
 ):
     """Streams a revision file through the app-only Graph token — never the
     raw SharePoint URL (same pattern as rnd/quality documents). Superseded
     revisions stay retrievable; the UI labels them as not for use."""
+    ensure_design_feature(user, "documents", "files", "view")
     f = db.query(DesignRevisionFile).filter(DesignRevisionFile.id == file_id, DesignRevisionFile.is_deleted == False).first()  # noqa: E712
     rev = db.query(DesignDocumentRevision).filter(DesignDocumentRevision.id == f.revision_id, DesignDocumentRevision.is_deleted == False).first() if f else None  # noqa: E712
     doc = db.query(DesignDocument).filter(DesignDocument.id == rev.document_id, DesignDocument.is_deleted == False).first() if rev else None  # noqa: E712
     if not (f and rev and doc):
         raise HTTPException(status_code=404, detail=f"File #{file_id} not found — it may have been removed from its revision.")
+    ensure_in_scope(db, user, doc)
+    if rev.status not in VIEWER_REVISION_STATUSES and not is_team(db, user):
+        raise HTTPException(
+            status_code=403,
+            detail=f"{ref(doc, rev)} isn't released, so its files are only open to the Design team. Use the released revision instead.",
+        )
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail=_STORAGE_NOT_CONFIGURED)
     content, _claimed = await download_file_content(settings.SHAREPOINT_SITE_ID, f.sharepoint_path or "")
@@ -245,12 +271,16 @@ async def get_file_content(
 async def submit_revision(
     revision_id: int,
     payload: DesignRevisionSubmitPayload,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("design")),
 ):
-    doc, rev = _load(db, revision_id, lock=True)
+    doc, rev = _load(db, revision_id, lock=True, user=user)
+    ensure_tab_action(user, "design", "documents", "submit")
+    ensure_design_feature(user, "documents", "check_release", "submit")
     ensure(check_manage_draft(user, doc, rev))
     if payload.reviewer_id:
+        ensure_assignee_rule(db, user, CHECKER_RULE, payload.reviewer_id, rev.reviewer_id)
         rev.reviewer_id = payload.reviewer_id
     if payload.approver_id:
         rev.approver_id = payload.approver_id
@@ -275,10 +305,23 @@ async def submit_revision(
     rev.reviewed_by_id = rev.reviewed_at = rev.review_comment = None
     rev.approved_by_id = rev.approved_at = rev.approval_comment = None
     add_event(db, "submitted", user, document_id=doc.id, revision_id=rev.id, comment=payload.comment)
-    notify(
-        db, rev.reviewer_id, user, f"Design check needed: {ref(doc, rev)}",
-        f"{user_name(user)} submitted {ref(doc, rev)} ({doc.title}) for your check.",
-        "design_review_requested", _NOTIFY_ENTITY, doc.id,
+    # Checker -> approver routing, four-eyes and the notifications now come
+    # from the central approval engine (Organization › Approval Workflows).
+    engine.submit(
+        db, DOC_KEY, entity_id=doc.id, requester=user, title=f"{ref(doc, rev)} — {doc.title}", reference=ref(doc, rev),
+        context={
+            "checker_id": rev.reviewer_id, "approver_id": rev.approver_id, "revision_id": rev.id,
+            "document_type": doc.document_type, "discipline": doc.discipline,
+            "customer_approval_required": bool(doc.customer_approval_required), "revision_index": rev.revision_index,
+        },
+    )
+    # Role-based notice (core/events/design.py); the named checker / approver hear from the engine.
+    from app.modules.design.events import notify_design_event
+    notify_design_event(
+        db, background_tasks, "drawing_submitted", doc, entity_type=_NOTIFY_ENTITY, actor=user, team_only=True,
+        title=f"Sent for check: {ref(doc, rev)}",
+        message=f"{user_name(user)} submitted {ref(doc, rev)} ({doc.title}) for check and release.",
+        skip={rev.reviewer_id, rev.approver_id, rev.created_by_id},
     )
     db.commit()
     return document_detail(db, doc, user)
@@ -291,8 +334,15 @@ async def recall_revision(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("design")),
 ):
-    doc, rev = _load(db, revision_id, lock=True)
+    ensure_design_feature(user, "documents", "check_release", "cancel")
+    doc, rev = _load(db, revision_id, lock=True, user=user)
     ensure(check_recall(user, doc, rev))
+    req = pending_request(db, DOC_ENTITY, doc.id)
+    if req is not None:
+        # Withdraws the approval request; on_decided puts the revision back to draft.
+        engine.cancel(db, req.id, user, (payload.comment or "").strip() or None)
+        db.commit()
+        return document_detail(db, doc, user)
     waiting_on = rev.reviewer_id if rev.status == "in_review" else rev.approver_id
     rev.status = "draft"
     add_event(db, "recalled", user, document_id=doc.id, revision_id=rev.id, comment=payload.comment)
@@ -312,9 +362,19 @@ async def review_revision(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("design")),
 ):
-    doc, rev = _load(db, revision_id, lock=True)
+    ensure_design_feature(user, "documents", "check_release", "approve")
+    doc, rev = _load(db, revision_id, lock=True, user=user)
+    req = pending_request(db, DOC_ENTITY, doc.id)
+    if req is not None:
+        return _engine_decide(db, req, doc, rev, user, payload, stage="in_review")
     ensure(check_review(user, doc, rev, _person(db, rev.reviewer_id)))
     comment = (payload.comment or "").strip() or None
+    if payload.decision == "return" and not comment:
+        raise HTTPException(status_code=400, detail=f"Say what needs fixing when returning {ref(doc, rev)} — the author sees your comment.")
+    record_answers(
+        db, active_checklist(db, doc.document_type, doc.discipline), payload.checklist, decision=payload.decision,
+        reviewer=user, cycle=rev.returned_count, ref=ref(doc, rev), revision_id=rev.id,
+    )
     rev.reviewed_by_id = user.id
     rev.reviewed_at = utcnow()
     rev.review_comment = comment
@@ -335,7 +395,7 @@ async def review_revision(
         notify(
             db, rev.approver_id, user, f"Design approval needed: {ref(doc, rev)}",
             f"{user_name(user)} checked {ref(doc, rev)} ({doc.title}) — it's now waiting for your approval.",
-            "design_approval_requested", _NOTIFY_ENTITY, doc.id,
+            "design_approval_requested", _NOTIFY_ENTITY, doc.id, teams=True,
         )
     db.commit()
     return document_detail(db, doc, user)
@@ -348,7 +408,11 @@ async def approve_revision(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("design")),
 ):
-    doc, rev = _load(db, revision_id, lock=True)
+    ensure_design_feature(user, "documents", "check_release", "approve")
+    doc, rev = _load(db, revision_id, lock=True, user=user)
+    req = pending_request(db, DOC_ENTITY, doc.id)
+    if req is not None:
+        return _engine_decide(db, req, doc, rev, user, payload, stage="in_approval")
     ensure(check_approve(user, doc, rev, _person(db, rev.approver_id)))
     comment = (payload.comment or "").strip() or None
     now = utcnow()
@@ -368,25 +432,116 @@ async def approve_revision(
         db.commit()
         return document_detail(db, doc, user)
 
+    rev.approved_by_id = user.id
+    rev.approved_at = now
+    rev.approval_comment = comment
+    if doc.customer_approval_required:
+        # Internal sign-off done; the customer must approve before release.
+        rev.status = "approved"
+        add_event(db, "approved_for_customer", user, document_id=doc.id, revision_id=rev.id, comment=comment)
+        for recipient in {rev.created_by_id, doc.owner_id, *head_ids(db)}:
+            notify(
+                db, recipient, user, f"Ready for customer approval: {ref(doc, rev)}",
+                f"{user_name(user)} approved {ref(doc, rev)} ({doc.title}) internally. It needs the customer's approval — "
+                "add it to a customer submission in Design › Reviews & Approvals.",
+                "design_revision_approved", _NOTIFY_ENTITY, doc.id,
+            )
+        db.commit()
+        return document_detail(db, doc, user)
+
+    release_revision(db, doc, rev, user, comment)
+    db.commit()
+    return document_detail(db, doc, user)
+
+
+def _engine_decide(db: Session, req, doc: DesignDocument, rev: DesignDocumentRevision, user: User,
+                   payload: DesignRevisionDecisionPayload, stage: str) -> DesignDocumentDetail:
+    """Check / approval of a revision submitted through the approval engine:
+    the checker's checklist answers are recorded here; the decision itself
+    (who may act, four-eyes, permission, delegation) is the engine's."""
+    if rev.status != stage:  # Design's own 409 wording ("…not awaiting approval")
+        ensure(check_review(user, doc, rev, None) if stage == "in_review" else check_approve(user, doc, rev, None))
+    comment = (payload.comment or "").strip() or None
+    if payload.decision == "return" and not comment:
+        raise HTTPException(status_code=400, detail=f"Say what needs fixing when returning {ref(doc, rev)} — the author sees your comment.")
+    if not engine.can_act_on_entity(db, user, DOC_ENTITY, doc.id) and not is_admin(user):
+        # Not an approver / delegate of the current stage: say why in Design's
+        # own words (author, the other signatory…), else the engine's reason.
+        if stage == "in_review":
+            ensure(check_review(user, doc, rev, _person(db, rev.reviewer_id)))
+        else:
+            ensure(check_approve(user, doc, rev, _person(db, rev.approver_id)))
+    if stage == "in_review":
+        record_answers(
+            db, active_checklist(db, doc.document_type, doc.discipline), payload.checklist, decision=payload.decision,
+            reviewer=user, cycle=rev.returned_count, ref=ref(doc, rev), revision_id=rev.id,
+        )
+        if payload.decision == "pass":
+            mark_checklist_done(db, rev.id)
+    engine.decide(db, req.id, user, "approve" if payload.decision == "pass" else "return", comment)
+    db.commit()
+    return document_detail(db, doc, user)
+
+
+def release_revision(db: Session, doc: DesignDocument, rev: DesignDocumentRevision, user: User, comment: str | None) -> None:
+    """Makes `rev` the controlled revision: the previous released one is
+    superseded, the ECN (if any) and the people involved hear about it."""
+    now = utcnow()
     previous = released_revision(doc)
-    if previous:
+    if previous and previous.id != rev.id:
         previous.status = "superseded"
         previous.superseded_at = now
         add_event(db, "superseded", user, document_id=doc.id, revision_id=previous.id, comment=f"Superseded by {rev.revision_label}")
     rev.status = "released"
-    rev.approved_by_id = user.id
-    rev.approved_at = now
-    rev.approval_comment = comment
     rev.released_at = now
+    if rev.approved_by_id != user.id:
+        rev.released_by_id = user.id
     add_event(db, "approved_released", user, document_id=doc.id, revision_id=rev.id, comment=comment)
     if rev.ecn_id:
         add_event(db, "document_released", user, ecn_id=rev.ecn_id, document_id=doc.id, revision_id=rev.id, comment=ref(doc, rev))
     for recipient in {rev.created_by_id, rev.reviewed_by_id, doc.owner_id}:
         notify(
             db, recipient, user, f"Released: {ref(doc, rev)}",
-            f"{user_name(user)} approved {ref(doc, rev)} ({doc.title}). It is now the controlled revision"
-            + (f"; {previous.revision_label} is superseded." if previous else "."),
+            f"{user_name(user)} released {ref(doc, rev)} ({doc.title}). It is now the controlled revision"
+            + (f"; {previous.revision_label} is superseded." if previous and previous.id != rev.id else "."),
             "design_revision_released", _NOTIFY_ENTITY, doc.id,
         )
+    from app.modules.design.events import notify_design_event
+    notify_design_event(
+        db, None, "drawing_released", doc, entity_type=_NOTIFY_ENTITY, actor=user,
+        title=f"Released: {ref(doc, rev)}",
+        message=f"{ref(doc, rev)} ({doc.title}) is released and is now the controlled revision"
+        + (f"; {previous.revision_label} is superseded." if previous and previous.id != rev.id else "."),
+        skip={rev.created_by_id, rev.reviewed_by_id, doc.owner_id},
+    )
+
+
+@router.post("/{revision_id}/release", response_model=DesignDocumentDetail)
+async def release_customer_approved(
+    revision_id: int,
+    payload: DesignRevisionReleasePayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("design")),
+):
+    """Releases a revision that waited at `approved` for the customer. Needs
+    a customer submission that recorded Approved / Approved with comments
+    for exactly this revision (plan rule 6)."""
+    ensure_design_feature(user, "documents", "check_release", "approve")
+    doc, rev = _load(db, revision_id, lock=True, user=user)
+    ensure(check_release(user, doc, rev, is_head(db, user) or is_admin(user) or user.id == rev.approver_id))
+    approval = db.query(DesignSubmissionLine).join(
+        DesignCustomerSubmission, DesignCustomerSubmission.id == DesignSubmissionLine.submission_id
+    ).filter(
+        DesignSubmissionLine.revision_id == rev.id,
+        DesignSubmissionLine.response.in_(("approved", "approved_with_comments")),
+        DesignCustomerSubmission.is_deleted == False,  # noqa: E712
+    ).first()
+    if not approval:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{ref(doc, rev)} needs the customer's approval before release, and no customer submission has recorded it yet. "
+                   "Send it on a submission (Reviews & Approvals) and record the customer's response first.",
+        )
+    release_revision(db, doc, rev, user, (payload.comment or "").strip() or None)
     db.commit()
     return document_detail(db, doc, user)

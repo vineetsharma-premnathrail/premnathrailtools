@@ -4,6 +4,10 @@ from pydantic import BaseModel
 
 class QualityInspectionCallCreate(BaseModel):
     erp_project_id: int | None = None
+    # Sales › Order Projects: the vehicle / lot this call is for. The agency
+    # then comes from its Sales Order (a different one is refused).
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
     order_reference: str | None = None
     customer_name: str | None = None
     item_id: int
@@ -50,6 +54,7 @@ class QualityDispatchCheckPayload(BaseModel):
     quantity: float
     batch_number: str | None = None
     erp_project_id: int | None = None
+    order_project_element_id: int | None = None
 
 
 class QualityInspectionCallResponse(BaseModel):
@@ -59,6 +64,8 @@ class QualityInspectionCallResponse(BaseModel):
     call_number: str
     status: str
     erp_project_id: int | None = None
+    order_project_id: int | None = None
+    order_project_element_id: int | None = None
     order_reference: str | None = None
     customer_name: str | None = None
     item_id: int
@@ -86,6 +93,14 @@ class QualityInspectionCallResponse(BaseModel):
     created_at: datetime | None = None
 
     project_label: str | None = None
+    # Order Project link display + the SO's requirement (read-only on the call).
+    op_number: str | None = None
+    element_no: str | None = None
+    element_label: str | None = None
+    so_id: int | None = None
+    so_number: str | None = None
+    so_inspection_agency: str | None = None
+    so_third_party_inspection_required: bool = False
     agency_label: str | None = None
     lot_number: str | None = None
     ncr_number: str | None = None

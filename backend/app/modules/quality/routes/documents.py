@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.core.permissions import require_app_access
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permissions import ensure_can_delete, require_app_access
 from app.modules.main.models.user import User
 from app.modules.quality.models.quality_document import QualityDocument, QUALITY_DOCUMENT_TYPES
 from app.modules.quality.schemas.quality_document import QualityDocumentResponse
@@ -24,8 +25,9 @@ async def list_documents(
     doc_type: str | None = None,
     linked_standard_id: int | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("quality")),
 ):
-    query = db.query(QualityDocument).filter(QualityDocument.is_deleted == False)  # noqa: E712
+    query = apply_scope(db.query(QualityDocument).filter(QualityDocument.is_deleted == False), user, QualityDocument)  # noqa: E712
     if doc_type:
         query = query.filter(QualityDocument.doc_type == doc_type)
     if linked_standard_id:
@@ -87,6 +89,7 @@ async def upload_documents(
 async def get_document_content(
     document_id: int,
     db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("quality")),
 ):
     """Raw bytes for in-app viewing (img/pdf tags, or a same-origin
     download), fetched via the app-only Graph token — never the raw
@@ -95,7 +98,8 @@ async def get_document_content(
         QualityDocument.id == document_id, QualityDocument.is_deleted == False  # noqa: E712
     ).first()
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail=f"Quality document #{document_id} not found — it may have been deleted. Reload the list.")
+    ensure_in_scope(db, user, doc)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 
@@ -117,9 +121,9 @@ async def delete_document(
         QualityDocument.id == document_id, QualityDocument.is_deleted == False  # noqa: E712
     ).first()
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
-    if not (user.role == "admin" or doc.uploaded_by_id == user.id):
-        raise HTTPException(status_code=403, detail="Only the uploader or an admin can delete this document.")
+        raise HTTPException(status_code=404, detail=f"Quality document #{document_id} not found — it may have been deleted already. Reload the list.")
+    ensure_in_scope(db, user, doc)
+    ensure_can_delete(user, doc, "quality", "documents", what="document")
 
     if settings.SHAREPOINT_SITE_ID and doc.sharepoint_path:
         try:

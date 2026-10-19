@@ -2,151 +2,36 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { ReactNode, useRef, useState } from 'react'
+import { Fragment, ReactNode, useEffect, useRef, useState } from 'react'
 import { User } from '@/types'
+import { requestAppLock } from '@/components/shared/AppLock'
 import { useAuthStore } from '@/store/authStore'
 import { BRAND, TEXT, GLASS, SHADOWS, GRADIENTS } from '@/lib/theme'
 import UpdatesButton from '@/components/UpdatesButton'
 import FeedbackButton from '@/components/FeedbackButton'
+import { House, Briefcase, Flask, Users, FileText, User as UserIcon, Storefront, Tray, Buildings, ShieldCheck, Factory, Package, ShoppingCart, Wrench, PenNib, Lightning, Drop, Kanban, IdentificationCard, CurrencyInr, CaretLeft, CaretUp, Envelope, SignOut } from '@phosphor-icons/react'
 
 const icons: Record<string, ReactNode> = {
-  dashboard: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-      <path d="M9 22V12h6v10" />
-    </svg>
-  ),
-  erp: (
-    <svg width="15" height="15" viewBox="0 0 512 512">
-      <path fill="#8C8C8C" d="M332.8,85.333V153.6h-17.067v-42.667c0-4.693-3.84-8.533-8.533-8.533H204.8c-4.779,0-8.533,3.84-8.533,8.533V153.6H179.2V85.333H332.8z"  stroke="#1A1A1A" strokeWidth="4" />
-      <path fill="#4D4D4D" d="M494.933,170.667v51.2h-76.8V204.8c0-4.693-3.84-8.533-8.533-8.533h-68.267c-4.779,0-8.533,3.84-8.533,8.533v17.067H179.2V204.8c0-4.693-3.84-8.533-8.533-8.533H102.4c-4.779,0-8.533,3.84-8.533,8.533v17.067h-76.8v-51.2H494.933z"  stroke="#1A1A1A" strokeWidth="4" />
-      <rect x="110.933" y="213.333" fill="#8C8C8C" width="51.2" height="34.133"  stroke="#1A1A1A" strokeWidth="4" />
-      <rect x="349.867" y="213.333" fill="#8C8C8C" width="51.2" height="34.133"  stroke="#1A1A1A" strokeWidth="4" />
-      <path fill="#4D4D4D" d="M443.733,238.933v187.733H68.267V238.933h25.6V256c0,4.693,3.755,8.533,8.533,8.533h68.267c4.693,0,8.533-3.84,8.533-8.533v-17.067h153.6V256c0,4.693,3.755,8.533,8.533,8.533H409.6c4.693,0,8.533-3.84,8.533-8.533v-17.067H443.733z"  stroke="#1A1A1A" strokeWidth="4" />
-      <path d="M503.467,153.6h-153.6V76.8c0-4.693-3.84-8.533-8.533-8.533H170.667c-4.779,0-8.533,3.84-8.533,8.533v76.8H8.533C3.755,153.6,0,157.44,0,162.133V230.4c0,4.693,3.755,8.533,8.533,8.533H51.2V435.2c0,4.693,3.755,8.533,8.533,8.533h392.533c4.693,0,8.533-3.84,8.533-8.533V238.933h42.667c4.693,0,8.533-3.84,8.533-8.533v-68.267C512,157.44,508.16,153.6,503.467,153.6z M179.2,85.333h153.6V153.6h-17.067v-42.667c0-4.693-3.84-8.533-8.533-8.533H204.8c-4.779,0-8.533,3.84-8.533,8.533V153.6H179.2V85.333z M298.667,119.467V153.6h-85.333v-34.133H298.667z M443.733,426.667H68.267V238.933h25.6V256c0,4.693,3.755,8.533,8.533,8.533h68.267c4.693,0,8.533-3.84,8.533-8.533v-17.067h153.6V256c0,4.693,3.755,8.533,8.533,8.533H409.6c4.693,0,8.533-3.84,8.533-8.533v-17.067h25.6V426.667z M110.933,247.467v-34.133h51.2v34.133H110.933z M349.867,247.467v-34.133h51.2v34.133H349.867z M494.933,221.867h-76.8V204.8c0-4.693-3.84-8.533-8.533-8.533h-68.267c-4.779,0-8.533,3.84-8.533,8.533v17.067H179.2V204.8c0-4.693-3.84-8.533-8.533-8.533H102.4c-4.779,0-8.533,3.84-8.533,8.533v17.067h-76.8v-51.2h477.867V221.867z"  stroke="#1A1A1A" strokeWidth="4" />
-      <polygon fill="#1A1A1A" points="426.667,238.933 426.667,409.6 68.267,409.6 68.267,426.667 443.733,426.667 443.733,238.933"  stroke="#1A1A1A" strokeWidth="4" />
-      <polygon fill="#666666" points="153.6,213.333 153.6,238.933 110.933,238.933 110.933,247.467 162.133,247.467 162.133,213.333"  stroke="#1A1A1A" strokeWidth="4" />
-      <polygon fill="#666666" points="392.533,213.333 392.533,238.933 349.867,238.933 349.867,247.467 401.067,247.467 401.067,213.333"  stroke="#1A1A1A" strokeWidth="4" />
-      <rect x="17.067" y="204.8" fill="#1A1A1A" width="76.8" height="17.067"  stroke="#1A1A1A" strokeWidth="4" />
-      <polygon fill="#1A1A1A" points="477.867,170.667 477.867,204.8 418.133,204.8 418.133,221.867 494.933,221.867 494.933,170.667"  stroke="#1A1A1A" strokeWidth="4" />
-      <rect x="179.2" y="204.8" fill="#1A1A1A" width="153.6" height="17.067"  stroke="#1A1A1A" strokeWidth="4" />
-      <rect x="179.2" y="145.067" fill="#666666" width="17.067" height="8.533"  stroke="#1A1A1A" strokeWidth="4" />
-      <rect x="315.733" y="145.067" fill="#666666" width="17.067" height="8.533"  stroke="#1A1A1A" strokeWidth="4" />
-    </svg>
-  ),
-  rnd: (
-    <svg width="15" height="15" viewBox="0 0 32 32">
-      <path fill="#333333" d="M29,0H3C1.35,0,0,1.35,0,3v11h32V3C32,1.35,30.65,0,29,0z M28,12H4V4h24V12z"  stroke="#1A1A1A" strokeWidth="0.6" />
-      <path fill="#808080" d="M0,29c0,1.65,1.35,3,3,3h26c1.65,0,3-1.35,3-3V14H0V29z"  stroke="#1A1A1A" strokeWidth="0.6" />
-      <path fill="#E6E6E6" d="M4,4h24v8H4V4z M7,22c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3s-3,1.35-3,3C4,20.65,5.35,22,7,22z
-        M15,22c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3s-3,1.35-3,3C12,20.65,13.35,22,15,22z M7,30c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3
-        s-3,1.35-3,3C4,28.65,5.35,30,7,30z M15,30c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3s-3,1.35-3,3C12,28.65,13.35,30,15,30z M25,30
-        c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3s-3,1.35-3,3C22,28.65,23.35,30,25,30z"  stroke="#1A1A1A" strokeWidth="0.6" />
-      <path fill="#4D4D4D" d="M25,22c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3s-3,1.35-3,3C22,20.65,23.35,22,25,22z"  stroke="#1A1A1A" strokeWidth="0.6" />
-    </svg>
-  ),
-  crm: (
-    <svg width="15" height="15" viewBox="0 0 512 512">
-      <circle fill="#1A1A1A" cx="256" cy="256" r="256"  stroke="#1A1A1A" strokeWidth="4" />
-      <rect x="113.424" y="376" fill="#E6E5E5" width="285.144" height="8"  stroke="#1A1A1A" strokeWidth="4" />
-      <rect x="157.296" y="400" fill="#E6E5E5" width="197.408" height="8"  stroke="#1A1A1A" strokeWidth="4" />
-      <circle fill="#FFFFFF" cx="170.576" cy="179.488" r="37.384"  stroke="#1A1A1A" strokeWidth="4" />
-      <path fill="#666666" d="M235.064,299.744c0,0,0,1.744,0-33.088s-38.016-35.472-38.016-35.472H144.12
-        c0,0-38.016,0.424-38.016,35.472c0,34.832,0,33.088,0,33.088H235.064z"  stroke="#1A1A1A" strokeWidth="4" />
-      <circle fill="#FFFFFF" cx="341.416" cy="179.488" r="37.384"  stroke="#1A1A1A" strokeWidth="4" />
-      <path fill="#666666" d="M405.904,299.744c0,0,0,1.744,0-33.088s-38.016-35.472-38.016-35.472H314.96
-        c0,0-38.016,0.424-38.016,35.472c0,34.832,0,33.088,0,33.088H405.904z"  stroke="#1A1A1A" strokeWidth="4" />
-    </svg>
-  ),
-  p2p: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" y1="13" x2="8" y2="13" />
-      <line x1="16" y1="17" x2="8" y2="17" />
-    </svg>
-  ),
-  users: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
-    </svg>
-  ),
-  store: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 9l1-5h16l1 5" />
-      <path d="M4 9v10a1 1 0 001 1h14a1 1 0 001-1V9" />
-      <path d="M9 21V13h6v8" />
-    </svg>
-  ),
-  organization: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="4" y="2" width="16" height="20" />
-      <line x1="9" y1="7" x2="9" y2="7.01" />
-      <line x1="15" y1="7" x2="15" y2="7.01" />
-      <line x1="9" y1="12" x2="9" y2="12.01" />
-      <line x1="15" y1="12" x2="15" y2="12.01" />
-      <line x1="9" y1="17" x2="15" y2="17" />
-    </svg>
-  ),
-  quality: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2l7 3v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V5z" />
-      <polyline points="9 12 11 14 15 10" />
-    </svg>
-  ),
-  production: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M2 20V9l6 4V9l6 4V5h4l2 15z" />
-      <line x1="2" y1="20" x2="22" y2="20" />
-    </svg>
-  ),
-  maintenance: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
-    </svg>
-  ),
-  design: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 19l7-7 3 3-7 7-3-3z" />
-      <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-      <path d="M2 2l7.586 7.586" />
-      <circle cx="11" cy="11" r="2" />
-    </svg>
-  ),
-  electrical: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-    </svg>
-  ),
-  hydraulic: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2.7l5.66 5.66a8 8 0 11-11.32 0z" />
-      <path d="M9 14a3 3 0 003 3" />
-    </svg>
-  ),
-  projects: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <line x1="9" y1="3" x2="9" y2="21" />
-      <path d="M13 8l3 3-3 3" />
-    </svg>
-  ),
-  hr: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="5" width="20" height="14" rx="2" />
-      <circle cx="8" cy="11" r="2" />
-      <path d="M5 16c.6-1.5 1.7-2.2 3-2.2s2.4.7 3 2.2" />
-      <line x1="14" y1="10" x2="19" y2="10" />
-      <line x1="14" y1="14" x2="17" y2="14" />
-    </svg>
-  ),
-  finance: (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="1" x2="12" y2="23" />
-      <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
-    </svg>
-  ),
+  dashboard: <House size={15} />,
+  erp: <Briefcase size={15} />,
+  rnd: <Flask size={15} />,
+  crm: <Users size={15} />,
+  p2p: <FileText size={15} />,
+  users: <UserIcon size={15} />,
+  store: <Storefront size={15} />,
+  approvals: <Tray size={15} />,
+  organization: <Buildings size={15} />,
+  quality: <ShieldCheck size={15} />,
+  production: <Factory size={15} />,
+  products: <Package size={15} />,
+  sales: <ShoppingCart size={15} />,
+  maintenance: <Wrench size={15} />,
+  design: <PenNib size={15} />,
+  electrical: <Lightning size={15} />,
+  hydraulic: <Drop size={15} />,
+  projects: <Kanban size={15} />,
+  hr: <IdentificationCard size={15} />,
+  finance: <CurrencyInr size={15} />,
 }
 
 export default function Sidebar({ user, onNavigate }: { user: User | null; onNavigate?: () => void }) {
@@ -156,22 +41,20 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const menuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Collapse is manual (toggle button), remembered per browser.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('sidebar-collapsed') === '1') setCollapsed(true)
+    } catch {}
+  }, [])
 
-  const scheduleCollapse = () => {
-    if (collapseTimer.current) clearTimeout(collapseTimer.current)
-    collapseTimer.current = setTimeout(() => {
-      setCollapsed(true)
-      setMenuOpen(false)
-    }, 600)
-  }
-
-  const cancelCollapse = () => {
-    if (collapseTimer.current) {
-      clearTimeout(collapseTimer.current)
-      collapseTimer.current = null
-    }
-    setCollapsed(false)
+  const toggleCollapsed = () => {
+    setCollapsed((v) => {
+      const next = !v
+      try { localStorage.setItem('sidebar-collapsed', next ? '1' : '0') } catch {}
+      return next
+    })
+    setMenuOpen(false)
   }
 
   const cancelMenuClose = () => {
@@ -195,29 +78,43 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
 
   const links = [
     { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', visible: true },
+    // My Approvals and My Tasks are cards on the Dashboard home (2026-10-19), not menu entries.
     { href: '/dashboard/erp', label: 'Service Module', icon: 'erp', visible: !!user?.apps?.includes('erp') },
     { href: '/dashboard/rnd', label: 'R&D', icon: 'rnd', visible: !!user?.apps?.includes('rnd') },
     { href: '/dashboard/crm', label: 'CRM Module', icon: 'crm', visible: !!user?.apps?.includes('crm') },
+    // Product Management lives inside Sales (a Products tab in SalesNav); a
+    // products-only user lands straight on the product master.
+    {
+      href: user?.apps?.includes('sales') ? '/dashboard/sales' : '/dashboard/products',
+      label: 'Sales', icon: 'sales',
+      visible: !!user?.apps?.includes('sales') || !!user?.apps?.includes('products'),
+    },
     { href: '/dashboard/p2p', label: 'Procurement', icon: 'p2p', visible: !!user?.apps?.includes('p2p') },
     { href: '/dashboard/store', label: 'Store & Inventory', icon: 'store', visible: !!user?.apps?.includes('store') },
-    { href: '/dashboard/quality', label: 'Quality', icon: 'quality', visible: !!user?.apps?.includes('quality') },
-    { href: '/dashboard/production', label: 'Production', icon: 'production', visible: !!user?.apps?.includes('production') },
+    { href: '/dashboard/projects', label: 'Project Management', icon: 'projects', visible: !!user?.apps?.includes('projects') },
+    { href: '/dashboard/finance', label: 'Finance & Accounting', icon: 'finance', visible: !!user?.apps?.includes('accounts') },
+    // Organization isn't an "app": shown to anyone who can view at least one of
+    // its tabs (organization:<tab>:view), admins always.
+    {
+      href: '/dashboard/organization', label: 'Organization', icon: 'organization',
+      visible: isAdmin || !!user?.permissions?.some((p) => p.startsWith('organization:') && p.endsWith(':view')),
+    },
+    // Upcoming modules (planned roll-out) — listed last under their own heading (2026-10-19).
+    { href: '/dashboard/production', label: 'Production', icon: 'production', upcoming: true, visible: !!user?.apps?.includes('production') },
     // Production supervisors raise breakdowns without holding the maintenance
     // app — they land straight on their own requests list.
     {
       href: user?.apps?.includes('maintenance') ? '/dashboard/maintenance' : '/dashboard/maintenance/requests',
-      label: 'Maintenance', icon: 'maintenance',
+      label: 'Maintenance', icon: 'maintenance', upcoming: true,
       visible: !!user?.apps?.includes('maintenance') || !!user?.apps?.includes('production'),
     },
-    { href: '/dashboard/design', label: 'Design', icon: 'design', visible: !!user?.apps?.includes('design') },
-    { href: '/dashboard/electrical', label: 'Electrical', icon: 'electrical', visible: !!user?.apps?.includes('electrical') },
-    { href: '/dashboard/hydraulic', label: 'Hydraulic & Pneumatic', icon: 'hydraulic', visible: !!user?.apps?.includes('hydraulic') },
-    { href: '/dashboard/projects', label: 'Project Management', icon: 'projects', visible: !!user?.apps?.includes('projects') },
-    { href: '/dashboard/finance', label: 'Finance & Accounting', icon: 'finance', visible: !!user?.apps?.includes('accounts') },
+    { href: '/dashboard/electrical', label: 'Electrical', icon: 'electrical', upcoming: true, visible: !!user?.apps?.includes('electrical') },
+    { href: '/dashboard/hydraulic', label: 'Hydraulic & Pneumatic', icon: 'hydraulic', upcoming: true, visible: !!user?.apps?.includes('hydraulic') },
     // Visible to every logged-in user: My HR (leave, attendance, travel,
     // claims, assets) is self-service; HR-only tabs are gated inside HrNav.
-    { href: '/dashboard/hr', label: 'HR & Admin', icon: 'hr', visible: !!user?.apps?.includes('hr') },
-    { href: '/dashboard/organization', label: 'Organization', icon: 'organization', visible: isAdmin },
+    { href: '/dashboard/hr', label: 'HR & Admin', icon: 'hr', upcoming: true, visible: !!user?.apps?.includes('hr') },
+    { href: '/dashboard/quality', label: 'Quality', icon: 'quality', upcoming: true, visible: !!user?.apps?.includes('quality') },
+    { href: '/dashboard/design', label: 'Design', icon: 'design', upcoming: true, visible: !!user?.apps?.includes('design') },
   ].filter((link) => link.visible)
 
   return (
@@ -245,8 +142,6 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
       }}
     >
     <aside
-      onMouseEnter={cancelCollapse}
-      onMouseLeave={scheduleCollapse}
       style={{
         width: '100%',
         height: '100%',
@@ -265,7 +160,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
       {/* Glass edge highlight — a faint top sheen so the panel reads as
           "glass" even when the blurred backdrop alone isn't obvious. */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 1, background: `linear-gradient(90deg,transparent,${GLASS.highlight},transparent)`, pointerEvents: 'none' }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 10, padding: '0 6px', marginBottom: 22, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: collapsed ? 'column' : 'row', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: collapsed ? 8 : 10, padding: '0 6px', marginBottom: 22, overflow: 'hidden' }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo.png"
@@ -280,6 +175,29 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
             transition: 'width .28s cubic-bezier(.4,0,.2,1)',
           }}
         />
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          style={{
+            marginLeft: collapsed ? 0 : 'auto',
+            width: 26,
+            height: 26,
+            flex: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 8,
+            border: '1px solid rgba(15,23,42,0.12)',
+            background: GLASS.surface,
+            color: TEXT.muted,
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        >
+          <CaretLeft size={14} style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
+        </button>
       </div>
 
       <div
@@ -323,14 +241,25 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
         }}
         className="sidebar-nav-list"
       >
-        {links.map((link) => {
-          const isActive =
-            link.href === '/dashboard'
-              ? pathname === '/dashboard'
-              : pathname === link.href || pathname.startsWith(`${link.href}/`)
+        {links.map((link, i) => {
+          // "Upcoming" heading before the first planned module (a divider when collapsed).
+          const upcomingHeading = link.upcoming && !links[i - 1]?.upcoming ? (
+            <div key="upcoming-heading" style={{ flexShrink: 0, margin: '10px 0 4px', padding: collapsed ? 0 : '0 11px' }}>
+              {collapsed
+                ? <div style={{ height: 1, background: 'rgba(15,23,42,0.12)', margin: '0 8px' }} />
+                : <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', color: TEXT.muted, whiteSpace: 'nowrap' }}>UPCOMING</span>}
+            </div>
+          ) : null
+          const matches = (href: string) => (href === '/dashboard'
+            ? pathname === '/dashboard'
+            : pathname === href || pathname.startsWith(`${href}/`))
+          // The most specific link wins (My Tasks sits inside /dashboard/projects).
+          const isActive = matches(link.href)
+            && !links.some((o) => o.visible && o.href.length > link.href.length && o.href.startsWith(`${link.href}/`) && matches(o.href))
           return (
+            <Fragment key={link.href}>
+            {upcomingHeading}
             <Link
-              key={link.href}
               href={link.href}
               onClick={onNavigate}
               title={collapsed ? link.label : undefined}
@@ -374,6 +303,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                 {link.label}
               </span>
             </Link>
+            </Fragment>
           )
         })}
       </nav>
@@ -470,36 +400,37 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                   label="Email"
                   value={user.email}
                   icon={
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="4" width="20" height="16" rx="2" />
-                      <path d="M22 6l-10 7L2 6" />
-                    </svg>
+                    <Envelope size={15} />
                   }
                 />
                 <InfoRow
                   label="Designation"
                   value={user.designation || '—'}
                   icon={
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="7" width="20" height="14" rx="2" />
-                      <path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16" />
-                    </svg>
+                    <Briefcase size={15} />
                   }
                 />
                 <InfoRow
                   label="Department"
                   value={user.department || '—'}
                   icon={
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 21h18" />
-                      <path d="M5 21V7l7-4 7 4v14" />
-                      <path d="M9 9h.01M15 9h.01M9 13h.01M15 13h.01" />
-                    </svg>
+                    <Buildings size={15} />
                   }
                 />
               </div>
 
               <div style={{ padding: '10px 14px 14px' }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  {[['lock', 'Lock now'], ['change', 'Change app password']].map(([action, text]) => (
+                    <button
+                      key={action}
+                      onClick={() => { setMenuOpen(false); requestAppLock(action as 'lock' | 'change') }}
+                      style={{ flex: 1, padding: '9px 8px', borderRadius: 12, border: `1px solid ${GLASS.border}`, background: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: '#57534e' }}
+                    >
+                      {text}
+                    </button>
+                  ))}
+                </div>
                 <button
                   onClick={handleLogout}
                   style={{
@@ -518,11 +449,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                     color: '#dc2626',
                   }}
                 >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-                    <polyline points="16 17 21 12 16 7" />
-                    <line x1="21" y1="12" x2="9" y2="12" />
-                  </svg>
+                  <SignOut size={15} />
                   Sign out
                 </button>
               </div>
@@ -586,19 +513,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                   </p>
                   <p style={{ fontSize: 10, color: TEXT.muted, margin: 0, textTransform: 'capitalize' }}>{user.role}</p>
                 </div>
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke={TEXT.muted}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{ transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flex: 'none' }}
-                >
-                  <polyline points="18 15 12 9 6 15" />
-                </svg>
+                <CaretUp size={12} color={TEXT.muted} style={{ transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flex: 'none' }} />
               </>
             )}
           </button>

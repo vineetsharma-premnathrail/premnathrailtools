@@ -45,16 +45,31 @@ async def error_handler(request: Request, exc: Exception):
         exc_info=True
     )
 
+    # Stale save on an optimistically-locked document (SM12) -> 409, not 500.
+    from app.core.optimistic_lock import conflict_response
+    conflict = conflict_response(exc)
+    if conflict is not None:
+        return conflict
+
+    # SM21 / ST22: persist the error under a unique reference (uuid, not the
+    # memory address id(exc)) — the same one the user sees, so support can
+    # open the stack trace in Organization › System Monitor › System errors.
+    from app.modules.main.services.basis_log import new_error_ref, record_error
+    error_ref = new_error_ref()
+    user_id = (request.scope.get("audit_state") or {}).get("user_id")
+    from starlette.concurrency import run_in_threadpool
+    await run_in_threadpool(record_error, error_ref, request, exc, user_id)
+
     # Return generic error response (don't leak internal details)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "detail": (
                 "Something went wrong on the server while handling this request, so nothing "
-                "was saved. Please try again — if it keeps happening, report this reference "
-                f"to support: {type(exc).__name__} #{id(exc)}."
+                "was saved. Please try again — if it keeps happening, report this error reference "
+                f"to support: {error_ref}."
             ),
-            "error_id": id(exc)  # For user to report
+            "error_id": error_ref,  # For user to report — matches system_error_logs.error_ref
         }
     )
 
@@ -169,9 +184,16 @@ def setup_error_handlers(app):
     async def http_exception_handler(request: Request, exc: HTTPException):
         # HTTPExceptions are intentional (raised by our code)
         logger.info(f"HTTP error: {exc.detail} ({exc.status_code})")
+        if exc.status_code == 403:
+            # SU53: keep a trace of every refused request (rate-limited).
+            from app.core.audit_context import get_current_user_id
+            from app.modules.main.services.basis_log import record_denial
+            from starlette.concurrency import run_in_threadpool
+            await run_in_threadpool(record_denial, request.method, request.url.path, exc.detail, get_current_user_id())
         return JSONResponse(
             status_code=exc.status_code,
-            content={"detail": exc.detail}
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None),
         )
 
     @app.exception_handler(RequestValidationError)

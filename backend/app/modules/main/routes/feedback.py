@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,7 @@ from app.modules.main.schemas.feedback import FeedbackCreate, FeedbackResponse
 from app.utils.notifications import notify_user
 
 router = APIRouter(prefix="/feedback", tags=["Feedback"])
+logger = logging.getLogger(__name__)
 
 
 def _to_response(feedback: Feedback, author: User | None) -> FeedbackResponse:
@@ -36,17 +38,23 @@ async def submit_feedback(
     db.commit()
     db.refresh(feedback)
 
-    admins = db.query(User).filter(User.role == "admin").all()
-    for admin in admins:
-        notify_user(
-            db, admin.id,
-            title="New feedback received",
-            message=f"{user.name}: {payload.message[:150]}",
-            notification_type="feedback",
-            entity_type="feedback",
-            entity_id=feedback.id,
-        )
-    db.commit()
+    # Notifications are a best-effort side effect. Keep them in a separate
+    # transaction so a notification/schema problem cannot roll back feedback.
+    try:
+        admins = db.query(User).filter(User.role == "admin").all()
+        for admin in admins:
+            notify_user(
+                db, admin.id,
+                title="New feedback received",
+                message=f"{user.name}: {payload.message[:150]}",
+                notification_type="feedback",
+                entity_type="feedback",
+                entity_id=feedback.id,
+            )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to notify admins about feedback %s", feedback.id)
 
     return _to_response(feedback, user)
 

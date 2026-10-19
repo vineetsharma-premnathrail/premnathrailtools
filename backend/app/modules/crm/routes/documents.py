@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.core.permissions import require_app_access
+from app.core.permissions import ensure_can_delete, require_app_access
+from app.modules.crm.access import INQ, can_child_view, ensure_child_action, ensure_own, ensure_parent_in_scope, tab_for
 from app.modules.main.routes.auth import get_current_user
 from app.modules.main.models.user import User
 from app.auth.jwt_handler import verify_document_share_token, create_upload_token, verify_upload_token
@@ -22,8 +23,26 @@ from app.utils.sharepoint import (
 router = APIRouter(prefix="/crm/documents", tags=["CRM - Documents"])
 
 
-def _can_modify(record, user: User) -> bool:
-    return user.role == "admin" or record.created_by_id == user.id
+def _ensure_can_open(db: Session, user: User, doc: CrmDocument) -> None:
+    """View on the document's CRM tab and its Organization / Inquiry / Tender
+    in the user's data scope — or any logged-in user for a document shared
+    through a Technical Offer Request (see get_document_content)."""
+    if user.role == "admin":
+        return
+    if doc.shared_via_tor:
+        # The TOR exception is for R&D, who may not have CRM — not for every signed-in user
+        # (ids are sequential, so anyone could otherwise walk every TOR document).
+        apps = set(user.get_apps())
+        if not apps & {"crm", "rnd"}:
+            raise HTTPException(status_code=403, detail=(
+                "This document was shared with R&D through a Technical Offer Request — opening it needs the CRM or R&D app. "
+                "Ask an admin to grant one of them, or ask the sender to share it with you."))
+        return
+    # Inquiry / tender documents: Inquiries & Tenders › Documents › View;
+    # organization documents: Organizations › View.
+    if not can_child_view(user, doc.related_module, "documents"):
+        ensure_child_action(user, doc.related_module, "documents", "view", "view")
+    ensure_parent_in_scope(db, user, doc.related_module, doc.related_id)
 
 
 @router.get("", response_model=list[CrmDocumentResponse])
@@ -35,6 +54,8 @@ async def list_documents(
     db: Session = Depends(get_db),
     _user: User = Depends(require_app_access("crm")),
 ):
+    ensure_child_action(_user, related_module, "documents", "view", "view")
+    ensure_parent_in_scope(db, _user, related_module, related_id)
     query = db.query(CrmDocument).filter(
         CrmDocument.related_module == related_module,
         CrmDocument.related_id == related_id,
@@ -62,6 +83,9 @@ async def upload_documents(
     db: Session = Depends(get_db),
     user: User = Depends(require_app_access("crm")),
 ):
+    # Attaching files is editing the Organization / Inquiry / Tender they belong to.
+    ensure_child_action(user, related_module, "documents", "create", "edit")
+    ensure_parent_in_scope(db, user, related_module, related_id)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 
@@ -131,6 +155,8 @@ async def start_direct_upload(
     """Large files (up to 100 GB) go straight from the browser to SharePoint
     in chunks, never through the portal. This opens the upload session in the
     document's folder and signs what it was opened for."""
+    ensure_child_action(user, payload.related_module, "documents", "create", "edit")
+    ensure_parent_in_scope(db, user, payload.related_module, payload.related_id)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
     file_name = validate_upload_metadata(payload.file_name, payload.file_size, payload.content_type)
@@ -160,6 +186,8 @@ async def complete_direct_upload(
         raise HTTPException(status_code=400, detail="This upload link has expired or is invalid. Start the upload again.")
     if claims.get("user_id") != user.id:
         raise HTTPException(status_code=403, detail="This upload was started by a different user.")
+    ensure_child_action(user, claims.get("related_module"), "documents", "create", "edit")
+    ensure_parent_in_scope(db, user, claims.get("related_module"), claims.get("related_id"))
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
     result = await verify_direct_upload(
@@ -202,8 +230,7 @@ async def get_document_download_url(
     doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    if not doc.shared_via_tor and user.role != "admin" and "crm" not in user.get_apps():
-        raise HTTPException(status_code=403, detail="Access to 'crm' module required")
+    _ensure_can_open(db, user, doc)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
     return {"url": await get_download_url(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path or ""), "file_name": doc.file_name}
@@ -233,7 +260,12 @@ async def get_shared_document_content(
     return Response(
         content=content,
         media_type=doc.mime_type or content_type,
-        headers={"Content-Disposition": f'inline; filename="{doc.file_name}"'},
+        headers={
+            "Content-Disposition": f'inline; filename="{doc.file_name}"',
+            # The token sits in this URL: never forward it in a Referer, never index it.
+            "Referrer-Policy": "no-referrer",
+            "X-Robots-Tag": "noindex, nofollow",
+        },
     )
 
 
@@ -262,8 +294,7 @@ async def get_document_content(
     doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    if not doc.shared_via_tor and user.role != "admin" and "crm" not in user.get_apps():
-        raise HTTPException(status_code=403, detail="Access to 'crm' module required")
+    _ensure_can_open(db, user, doc)
     if not settings.SHAREPOINT_SITE_ID:
         raise HTTPException(status_code=503, detail="SharePoint site is not configured")
 
@@ -284,10 +315,20 @@ async def delete_document(
     doc = db.query(CrmDocument).filter(CrmDocument.id == document_id, CrmDocument.is_deleted == False).first()  # noqa: E712
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    if not _can_modify(doc, user):
-        raise HTTPException(status_code=403, detail="Only the uploader or an admin can delete this document.")
+    ensure_parent_in_scope(db, user, doc.related_module, doc.related_id)
+    if tab_for(doc.related_module) == INQ:
+        ensure_child_action(user, doc.related_module, "documents", "delete", "delete")
+        ensure_own(user, doc, "document")
+    else:
+        ensure_can_delete(user, doc, "crm", tab_for(doc.related_module), what="document")
 
-    if settings.SHAREPOINT_SITE_ID and doc.sharepoint_path:
+    # A document shared into a requirement discussion is a second row pointing
+    # at the same file — keep the file while any other row still uses it.
+    still_used = doc.sharepoint_path and db.query(CrmDocument.id).filter(
+        CrmDocument.sharepoint_path == doc.sharepoint_path, CrmDocument.id != doc.id,
+        CrmDocument.is_deleted == False,  # noqa: E712
+    ).first()
+    if settings.SHAREPOINT_SITE_ID and doc.sharepoint_path and not still_used:
         try:
             await delete_file_from_sharepoint(settings.SHAREPOINT_SITE_ID, doc.sharepoint_path)
         except Exception:

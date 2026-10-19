@@ -1,14 +1,21 @@
 from datetime import date, datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.permissions import require_app_access
+from app.core.data_scope import apply_scope, ensure_in_scope
+from app.core.permissions import ensure_tab_action, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
+from app.modules.organization.models.approval import ApprovalRequest, ApprovalRequestStep
 from app.modules.organization.models.department import Department
+from app.modules.organization.services import approval_engine as engine
+from app.modules.store.services.approvals import (
+    RETURN_ENTITY, RETURN_KEY, ensure_return_workflow, return_context_fields, return_default_stages,
+)
+from app.modules.store.services.plant_access import ensure_location_allowed
 from app.modules.store.models.doc_type import StoreDocType
 from app.modules.store.models.item import StoreItem
 from app.modules.store.models.location import StoreLocation
@@ -23,6 +30,8 @@ from app.modules.store.schemas.material_return import StoreMaterialReturnCreate,
 from app.modules.store.service import generate_material_return_number
 from app.modules.store.services.stock_ledger import post_stock_transaction
 from app.utils.notifications import notify_user
+from app.core.notification_events import notify_event
+from app.modules.store.services.store_events import location_opener, pending_approvers
 
 router = APIRouter(prefix="/store/material-returns", tags=["Store"])
 
@@ -35,6 +44,10 @@ RULE_LABELS = {
 
 class RejectPayload(BaseModel):
     reason: str
+
+
+class ApprovePayload(BaseModel):
+    comment: str | None = None
 
 
 def _load(db: Session, return_id: int, lock: bool = False) -> StoreMaterialReturn | None:
@@ -70,7 +83,7 @@ def _to_response(db: Session, ret: StoreMaterialReturn, viewer: User | None = No
     for a, a_resp in zip(ret.approvals, resp.approvals):
         a_resp.approver_names = [n for n in (name(u) for u in a.approver_user_ids or []) if n]
         a_resp.acted_by_name = name(a.acted_by_id)
-    if viewer:
+    if viewer and ret.approvals:  # returns raised before the central approval engine (old approval steps)
         resp.can_act = ret.status == "pending_approval" and viewer.id != ret.returned_by_id and any(
             a.status == "pending" and (viewer.id in (a.approver_user_ids or []) or viewer.role == "admin") for a in ret.approvals
         )
@@ -82,34 +95,87 @@ def _department_heads(dept: Department) -> list[int]:
     return list(dict.fromkeys(i for i in ids if i))
 
 
-def _resolve_approvers(
-    db: Session, t: StoreDocType, *, location: StoreLocation, department: Department | None, creator: User,
-) -> list[int]:
-    """User ids allowed to approve for one source/condition type, minus the
-    creator (maker-checker). Raises a 422 that says exactly what to set up
-    when nobody is left to approve."""
-    if t.approver_rule == "warehouse_manager":
-        ids = [location.manager_user_id] if location.manager_user_id else []
-        missing = f"Store '{location.name}' has no manager set — set one under Store → Settings → Stores."
-    elif t.approver_rule == "department_head":
-        if not department:
-            raise HTTPException(status_code=422, detail=f"'{t.label}' needs the department head's approval — pick the Department the material was issued to.")
-        ids = _department_heads(department)
-        missing = f"Department '{department.name}' has no head set — set one under Organization → Departments."
-    else:  # specific_users
-        # Return Sources / Conditions are no longer editable in Settings, so
-        # a type with no designated approvers falls back to the store manager.
-        ids = list(t.approver_user_ids or []) or ([location.manager_user_id] if location.manager_user_id else [])
-        missing = f"'{t.label}' needs the store manager's approval, but Store '{location.name}' has no manager set — set one under Store → Settings → Stores."
-    if not ids:
-        raise HTTPException(status_code=422, detail=missing)
-    others = [i for i in ids if i != creator.id]
-    if not others:
-        raise HTTPException(
-            status_code=422,
-            detail=f"You are the only approver for '{t.label}', and you can't approve your own return. Ask an admin to set another approver (store manager under Store → Settings → Stores, or department head under Organization → Departments), or have someone else raise this return.",
+# ── Central approval engine ─────────────────────────────────────────────────
+# A return is submitted to the engine (workflow "store.material_return",
+# Organization › Approval Workflows); the engine calls _return_decided when it
+# finishes. Returns raised before the move keep their
+# StoreMaterialReturnApproval steps and finish on the old path below
+# (engine.latest_request(...) is None for them).
+
+def _last_comment(req: ApprovalRequest) -> str | None:
+    decided = [s for s in req.steps if s.decided_at and s.comment]
+    return decided[-1].comment if decided else None
+
+
+def _return_decided(db: Session, req: ApprovalRequest, outcome: str, actor: User) -> None:
+    ret = db.query(StoreMaterialReturn).filter(StoreMaterialReturn.id == req.entity_id).first()
+    if ret is None:
+        return
+    now = datetime.now(timezone.utc)
+    if outcome == "approved":
+        try:
+            _post_return(db, ret, actor)
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=f"Return {ret.return_number} can't be posted to stock: {e} "
+                                                        "Fix the stock problem first, then approve it again.")
+        ret.status, ret.decided_at = "approved", now
+    elif outcome in ("rejected", "returned"):
+        comment = _last_comment(req)
+        prefix = "Returned for changes" if outcome == "returned" else None
+        ret.status, ret.decided_at = "rejected", now
+        ret.rejected_reason = ": ".join(x for x in (prefix, comment) if x) or None
+    elif outcome == "cancelled":
+        ret.status, ret.decided_at = "cancelled", now
+    if outcome in ("approved", "rejected", "returned"):
+        # Role event; the person who raised it already hears from the approval engine.
+        loc = db.get(StoreLocation, ret.location_id)
+        verb = {"approved": "approved and posted to stock", "rejected": "rejected", "returned": "returned for changes"}[outcome]
+        notify_event(
+            db, None, "store", "return_decided",
+            title=f"Material return {ret.return_number} {outcome}",
+            message=f"Material return {ret.return_number} at {loc.name if loc else 'the store'} was {verb} by {actor.name or actor.email}."
+                    + (f" Reason: {ret.rejected_reason}" if outcome != "approved" and ret.rejected_reason else ""),
+            entity_type="material_return", entity_id=ret.id, actor=actor,
+            can_open=location_opener(db, ret.location_id), skip_user_ids={req.requester_id} - {None},
         )
-    return others
+
+
+def _engine_party(db: Session, user: User, return_id: int) -> bool:
+    """Approver (or decider) on any of this return's engine requests, or able to act on it now (delegate)."""
+    hit = db.query(ApprovalRequestStep.id).join(ApprovalRequest, ApprovalRequest.id == ApprovalRequestStep.request_id).filter(
+        ApprovalRequest.entity_type == RETURN_ENTITY, ApprovalRequest.entity_id == return_id,
+        (ApprovalRequestStep.approver_id == user.id) | (ApprovalRequestStep.decided_by_id == user.id),
+    ).first()
+    return hit is not None or engine.can_act_on_entity(db, user, RETURN_ENTITY, return_id)
+
+
+def _return_context(source: StoreDocType, conditions: dict[str, StoreDocType], location: StoreLocation,
+                    department: Department | None) -> dict:
+    ctx = {
+        "source_type": source.value,
+        "warehouse_manager_id": location.manager_user_id,
+        "department_head_ids": _department_heads(department) if department else [],
+    }
+    for field in return_context_fields():
+        if field.startswith("condition_"):
+            ctx[field] = field[len("condition_"):] in conditions
+    return ctx
+
+
+def _missing_approver_hints(ctx: dict, location: StoreLocation, department: Department | None, user: User) -> list[str]:
+    """Why the engine found nobody to approve — added to its 422."""
+    hints = []
+    if not ctx["warehouse_manager_id"]:
+        hints.append(f"Store '{location.name}' has no manager set — set one under Store › Settings › Stores.")
+    elif ctx["warehouse_manager_id"] == user.id:
+        hints.append(f"You are the manager of '{location.name}' and can't approve your own return — have someone else raise it, "
+                     "or ask an admin to change the stage in Organization › Approval Workflows › Material return.")
+    if ctx.get("condition_damaged"):
+        if not department:
+            hints.append("Pick the Department the material was issued to — its head approves damaged material.")
+        elif not ctx["department_head_ids"]:
+            hints.append(f"Department '{department.name}' has no head set — set one under Organization › Departments.")
+    return hints
 
 
 def _post_return(db: Session, ret: StoreMaterialReturn, user: User) -> None:
@@ -122,6 +188,10 @@ def _post_return(db: Session, ret: StoreMaterialReturn, user: User) -> None:
     from app.modules.quality.services.lots import needs_job_work_inspection, create_lot_for_job_work_receipt, LotError
     source_issue = db.query(StoreMaterialIssue).filter(StoreMaterialIssue.id == ret.source_issue_id).first() if ret.source_issue_id else None
     job_work_vendor = source_issue.vendor_name if source_issue and source_issue.vendor_name else None
+    # Store job work: the challan put the material in With-vendor stock, so it
+    # comes back out of it (value-neutral) instead of being received afresh.
+    from app.modules.store.services.job_work import posted_to_vendor
+    from_vendor = posted_to_vendor(db, source_issue)
     for line in ret.items:
         if job_work_vendor and effects.get(line.condition) != "quarantine":
             item = db.query(StoreItem).filter(StoreItem.id == line.item_id).first()
@@ -129,16 +199,34 @@ def _post_return(db: Session, ret: StoreMaterialReturn, user: User) -> None:
                 try:
                     create_lot_for_job_work_receipt(
                         db, material_return=ret, line=line, item=item, vendor_name=job_work_vendor,
-                        issue_number=source_issue.issue_number, user_id=user.id)
+                        issue_number=source_issue.issue_number, user_id=user.id, from_vendor_stock=from_vendor)
                 except LotError as e:
                     raise ValueError(str(e))
                 continue
+        quarantine = effects.get(line.condition) == "quarantine"
+        if line.serial_numbers:
+            from app.modules.store.services.serials import return_units
+            return_units(db, line.item_id, line.serial_numbers, location_id=ret.location_id, bin_id=line.bin_id,
+                         blocked=quarantine, reference_number=ret.return_number, user_id=user.id, event_date=ret.return_date)
         post_stock_transaction(
-            db, item_id=line.item_id, location_id=ret.location_id,
-            transaction_type="quarantine_in" if effects.get(line.condition) == "quarantine" else "return_in",
+            db, item_id=line.item_id, location_id=ret.location_id, bin_id=line.bin_id,
+            transaction_type=("jobwork_to_blocked" if quarantine else "jobwork_in") if from_vendor
+            else ("quarantine_in" if quarantine else "return_in"),
             quantity=line.quantity, batch_number=line.batch_number, reference_type="material_return",
             reference_number=ret.return_number, transaction_date=ret.return_date, created_by_id=user.id,
         )
+
+
+engine.register_transaction(engine.TransactionType(
+    key=RETURN_KEY, module_key="store", subtab_key="returns", label="Material return",
+    entity_type=RETURN_ENTITY, url="/dashboard/store/returns/{id}",
+    description="Unused / damaged / rejected material coming back into a store. Posts to stock only when approved.",
+    context_fields=return_context_fields(),
+    default_stages=return_default_stages(),
+    # Department heads approve without holding any Store grant (as before).
+    require_permission=False, allow_self_approval=False,
+    on_decided=_return_decided,
+))
 
 
 @router.get("", response_model=list[StoreMaterialReturnResponse])
@@ -146,9 +234,10 @@ async def list_material_returns(
     location_id: int | None = Query(None),
     status: str | None = Query(None),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_access("store", "returns")),
 ):
     query = db.query(StoreMaterialReturn).options(selectinload(StoreMaterialReturn.items), selectinload(StoreMaterialReturn.approvals))
+    query = apply_scope(query, user, StoreMaterialReturn)
     if location_id is not None:
         query = query.filter(StoreMaterialReturn.location_id == location_id)
     if status:
@@ -163,29 +252,35 @@ async def get_material_return(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Store users, plus anyone named as an approver on this return (a
-    department head often has no Store access but must review it)."""
+    """Store users within their data scope, plus anyone who is (or was) an
+    approver of this return (a department head often has no Store access but
+    must review it)."""
     ret = _load(db, return_id)
     if not ret:
         raise HTTPException(status_code=404, detail="Material return not found")
-    is_approver = any(user.id in (a.approver_user_ids or []) for a in ret.approvals)
-    if "store" not in user.get_apps() and not is_approver:
-        raise HTTPException(status_code=403, detail="You need Store access, or to be an approver on this return, to view it.")
+    is_approver = any(user.id in (a.approver_user_ids or []) for a in ret.approvals) or _engine_party(db, user, ret.id)
+    if not is_approver:
+        ensure_tab_action(user, "store", "returns", "view")
+        ensure_in_scope(db, user, ret)
     return _to_response(db, ret, user)
 
 
 @router.post("", response_model=StoreMaterialReturnResponse)
 async def create_material_return(
     payload: StoreMaterialReturnCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("store")),
+    user: User = Depends(require_tab_action("store", "returns", "create")),
 ):
     if not payload.items:
         raise HTTPException(status_code=422, detail="Add at least one item to return.")
+    if payload.return_date and payload.return_date > date.today():
+        raise HTTPException(status_code=422, detail=f"Return date {payload.return_date.isoformat()} is in the future — stock can only be posted for today or earlier.")
     source = get_doc_type(db, "return_source", payload.source_type, field="return source")
     location = db.query(StoreLocation).filter(StoreLocation.id == payload.location_id).first()
     if not location:
         raise HTTPException(status_code=404, detail="Store not found")
+    ensure_location_allowed(db, user, location.id)
     if source.requires_issue and not payload.source_issue_id:
         raise HTTPException(status_code=422, detail=f"'{source.label}' needs the Material Issue the material came from — pick it in the Material Issue field.")
     source_issue = None
@@ -201,6 +296,8 @@ async def create_material_return(
                 status_code=422,
                 detail=f"Issue {source_issue.issue_number} was issued from '{issued_from.name if issued_from else 'another store'}', not '{location.name}' — return it to the store it came from, or pick an issue from this store.",
             )
+        if payload.return_date and source_issue.issue_date and payload.return_date < source_issue.issue_date:
+            raise HTTPException(status_code=422, detail=f"Return date {payload.return_date.isoformat()} is before issue {source_issue.issue_number} was made ({source_issue.issue_date.isoformat()}) — material can't come back before it went out. Check the date.")
 
     department_id = payload.department_id or (source_issue.department_id if source_issue else None)
     department = db.query(Department).filter(Department.id == department_id).first() if department_id else None
@@ -228,10 +325,19 @@ async def create_material_return(
         already_returned_by_item: dict[int, float] = dict(
             db.query(StoreMaterialReturnItem.item_id, func.sum(StoreMaterialReturnItem.quantity))
             .join(StoreMaterialReturn, StoreMaterialReturnItem.return_id == StoreMaterialReturn.id)
-            .filter(StoreMaterialReturn.source_issue_id == payload.source_issue_id, StoreMaterialReturn.status != "rejected")
+            .filter(StoreMaterialReturn.source_issue_id == payload.source_issue_id,
+                    StoreMaterialReturn.status.notin_(("rejected", "cancelled")))
             .group_by(StoreMaterialReturnItem.item_id)
             .all()
         )
+        # Job work: material the vendor used up (Job Work Receipt) can't come back either.
+        from app.modules.store.models.job_work import StoreJobWorkReceiptComponent
+        for item_id, used in (db.query(StoreJobWorkReceiptComponent.item_id, func.sum(StoreJobWorkReceiptComponent.consumed_quantity
+                                                                                      + StoreJobWorkReceiptComponent.scrap_quantity))
+                              .join(StoreMaterialIssueItem, StoreJobWorkReceiptComponent.issue_item_id == StoreMaterialIssueItem.id)
+                              .filter(StoreMaterialIssueItem.issue_id == payload.source_issue_id)
+                              .group_by(StoreJobWorkReceiptComponent.item_id).all()):
+            already_returned_by_item[item_id] = already_returned_by_item.get(item_id, 0.0) + float(used or 0)
         requested: dict[int, float] = {}
         for p in payload.items:
             requested[p.item_id] = requested.get(p.item_id, 0.0) + p.quantity
@@ -250,16 +356,6 @@ async def create_material_return(
                     ),
                 )
 
-    # One approval step per distinct approver group; types that resolve to
-    # the same people share a step, labelled with every reason it's needed.
-    steps: dict[tuple[str, tuple[int, ...]], dict] = {}
-    for t in [source, *conditions.values()]:
-        if t.approver_rule == "none":
-            continue
-        ids = _resolve_approvers(db, t, location=location, department=department, creator=user)
-        step = steps.setdefault((t.approver_rule, tuple(sorted(ids))), {"rule": t.approver_rule, "ids": ids, "reasons": []})
-        step["reasons"].append(t.label)
-
     ret = StoreMaterialReturn(
         return_number=generate_material_return_number(db),
         location_id=payload.location_id,
@@ -271,40 +367,80 @@ async def create_material_return(
         return_date=payload.return_date or date.today(),
         returned_by_id=user.id,
         remarks=payload.remarks,
-        status="pending_approval" if steps else "approved",
+        status="pending_approval",
     )
     db.add(ret)
     db.flush()
-    for p in payload.items:
+    # WM bin + serial numbers (IQ01): the bin must be of this store; the
+    # serials must be units that are out on issue (from this issue, if named).
+    from app.modules.store.services.bins import BinError, validate_bin
+    from app.modules.store.services.serials import SerialError, check_return
+    line_serials = []
+    try:
+        for p in payload.items:
+            validate_bin(db, p.bin_id, payload.location_id, what=f"'{items_by_id[p.item_id].item_name}'")
+            line_serials.append(check_return(db, items_by_id[p.item_id], p.quantity, p.serials, payload.source_issue_id))
+    except (BinError, SerialError) as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e))
+    for p, serials in zip(payload.items, line_serials):
         ret.items.append(StoreMaterialReturnItem(
             item_id=p.item_id, quantity=p.quantity, condition=p.condition, batch_number=p.batch_number, remarks=p.remarks,
-        ))
-    for step in steps.values():
-        ret.approvals.append(StoreMaterialReturnApproval(
-            rule=step["rule"], label=f"{RULE_LABELS[step['rule']]} — {', '.join(step['reasons'])}",
-            approver_user_ids=step["ids"], status="pending",
+            bin_id=p.bin_id, serial_numbers=serials or None,
         ))
     db.flush()
 
-    if steps:
-        for uid in {u for s in steps.values() for u in s["ids"]}:
-            notify_user(
-                db, user_id=uid,
-                title="Material Return Awaiting Approval",
-                message=f"Material return {ret.return_number} was raised by {user.name or user.email} and awaits your approval before it changes stock.",
-                notification_type="material_return_pending", entity_type="material_return", entity_id=ret.id,
-                teams=True,
-            )
-    else:
-        ret.decided_at = datetime.now(timezone.utc)
-        try:
-            _post_return(db, ret, user)
-        except ValueError as e:
-            db.rollback()
-            raise HTTPException(status_code=409, detail=str(e))
-
+    # Routed by the central approval engine. A return whose source and
+    # conditions need nobody's approval matches no stage and is approved (and
+    # posted, via _return_decided) at once.
+    ensure_return_workflow(db)
+    ctx = _return_context(source, conditions, location, department)
+    try:
+        req = engine.submit(
+            db, RETURN_KEY, entity_id=ret.id, requester=user, title=f"Material return {ret.return_number} — {location.name}",
+            reference=ret.return_number, context=ctx, branch_id=location.branch_id,
+        )
+    except HTTPException as e:
+        db.rollback()
+        if e.status_code == 422:
+            hints = _missing_approver_hints(ctx, location, department, user)
+            raise HTTPException(status_code=422, detail=" ".join([str(e.detail), *hints]))
+        raise
+    if req.status == "pending":
+        notify_event(
+            db, background_tasks, "store", "return_submitted",
+            title=f"Material return {ret.return_number} waiting for approval",
+            message=f"{user.name or user.email} raised material return {ret.return_number} at {location.name} ({len(payload.items)} line(s)). "
+                    "It posts to stock once approved — open it in Store › Returns.",
+            entity_type="material_return", entity_id=ret.id, actor=user,
+            can_open=location_opener(db, location.id), skip_user_ids=pending_approvers(req),
+        )
     db.commit()
     return _to_response(db, _load(db, ret.id), user)
+
+
+# Approve / reject: returns on the central engine are decided there (the
+# ApprovalPanel calls /approvals/requests/{id}/decide; these endpoints just
+# forward to it). Returns raised before the move finish on their old
+# StoreMaterialReturnApproval steps, decided by the approvers named on each
+# step (store in-charge, department head, designated users).
+def _engine_decide(db: Session, return_id: int, user: User, decision: str, comment: str | None):
+    req = engine.latest_request(db, RETURN_ENTITY, return_id)
+    if req is None:
+        return None
+    if req.status != "pending":
+        raise HTTPException(status_code=409, detail=f"This return's approval is already {req.status} — nothing left to decide. Reload the page.")
+    # Maker-checker (C-09) holds for admins too: the engine lets an admin
+    # stand in for an approver, but never on their own document.
+    if decision == "approve" and req.requester_id == user.id and not engine.ensure_workflow(db, RETURN_KEY).allow_self_approval:
+        raise HTTPException(status_code=403, detail=f"You raised {req.reference or 'this return'}, so you can't approve it — someone else has to (four-eyes rule).")
+    try:
+        engine.decide(db, req.id, user, decision, comment)
+    except HTTPException:
+        db.rollback()
+        raise
+    db.commit()
+    return _to_response(db, _load(db, return_id), user)
 
 
 def _pending_step_for(db: Session, return_id: int, user: User, verb: str) -> tuple[StoreMaterialReturn, StoreMaterialReturnApproval]:
@@ -327,11 +463,15 @@ def _pending_step_for(db: Session, return_id: int, user: User, verb: str) -> tup
 @router.post("/{return_id}/approve", response_model=StoreMaterialReturnResponse)
 async def approve_material_return(
     return_id: int,
+    payload: ApprovePayload | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """Approves the caller's pending step. When it was the last one, the
     return posts to stock (usable → on-hand, quarantine → quarantine bucket)."""
+    out = _engine_decide(db, return_id, user, "approve", payload.comment if payload else None)
+    if out is not None:
+        return out
     ret, step = _pending_step_for(db, return_id, user, "approve")
     step.status, step.acted_by_id, step.acted_at = "approved", user.id, datetime.now(timezone.utc)
     if all(a.status == "approved" for a in ret.approvals):
@@ -362,6 +502,9 @@ async def reject_material_return(
     reason = payload.reason.strip()
     if not reason:
         raise HTTPException(status_code=400, detail="Give a reason for rejecting the return, so the store keeper knows what to fix.")
+    out = _engine_decide(db, return_id, user, "reject", reason)
+    if out is not None:
+        return out
     ret, step = _pending_step_for(db, return_id, user, "reject")
     now = datetime.now(timezone.utc)
     step.status, step.acted_by_id, step.acted_at, step.comment = "rejected", user.id, now, reason

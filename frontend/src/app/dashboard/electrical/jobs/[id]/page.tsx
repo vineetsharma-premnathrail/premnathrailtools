@@ -23,9 +23,13 @@ import DocumentsTab from '@/components/electrical/DocumentsTab'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
 import {
-  sectionStyle, sectionTitle, primaryBtn, dangerBtn, ErrorBanner, NoticeBanner, pill,
+  sectionStyle, sectionTitle, primaryBtn, dangerBtn, ErrorBanner, useLookupErrors, NoticeBanner, pill, useJobFeatures,
   JOB_STATUS_LABELS, JOB_STATUS_HEX, PRIORITY_LABELS, PRIORITY_HEX, PHASE_LABELS, PHASE_HEX,
 } from '@/components/electrical/shared'
+import { useCan } from '@/lib/permissions'
+import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import { recordPath, useRecordId } from '@/lib/recordRef'
+import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
 
 const WORKING = ['draft', 'in_progress', 'handed_over']
 const PHASES = ['design', 'procurement', 'build', 'test_qc', 'handover'] as const
@@ -43,10 +47,14 @@ export default function ElectricalJobDetailPage() {
 
 function JobDetailView() {
   const { isAuthorized, isLoading } = useRequireApp('electrical')
+  const { can, canDelete } = useCan()
+  const { jf, sees } = useJobFeatures()
   const router = useRouter()
   const params = useParams()
   const searchParams = useSearchParams()
-  const jobId = Number(params.id)
+  const ref = params.id as string
+  const { id: resolvedJobId, error: linkError } = useRecordId(ref)
+  const jobId = resolvedJobId ?? 0
   const initialTab = searchParams.get('tab') as Tab | null
 
   const [job, setJob] = useState<ElectricalJobDetail | null>(null)
@@ -54,6 +62,7 @@ function JobDetailView() {
   const [users, setUsers] = useState<ElectricalLookupOption[]>([])
   const [tab, setTab] = useState<Tab>(initialTab && TAB_KEYS.includes(initialTab) ? initialTab : 'stages')
   const [error, setError] = useState<string | string[]>('')
+  const [lookupErrors, addLookupError] = useLookupErrors()
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -69,14 +78,31 @@ function JobDetailView() {
     electricalApi.getJob(jobId)
       .then((j: ElectricalJobDetail) => { setJob(j); setError('') })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load the electrical job.')))
-    electricalApi.getMeta().then(setMeta).catch((err) => setError(extractErrorMessages(err, 'Failed to load electrical stage and category lists.')))
-    electricalApi.lookupUsers().then(setUsers).catch(() => setUsers([]))
+    electricalApi.getMeta().then(setMeta).catch((err) => addLookupError(extractErrorMessages(err, "Couldn't load the electrical stage and category lists — stage and category names may show blank; refresh the page to try again.")))
+    electricalApi.lookupUsers().then(setUsers).catch((err) => addLookupError(extractErrorMessages(err,
+      "Couldn't load users for the stage owner pickers — the job is still usable, refresh to try again.")))
   }, [isAuthorized, jobId])
 
+  // Sub-tabs the user's role sees (Electrical › RRV Electrical Jobs features).
+  // Drawings / Tests / Troubleshooting / BOM also open through their own
+  // Electrical tabs (Drawings, Testing, Troubleshooting, Purchase), as on the backend.
+  const tabVisible = (t: Tab): boolean => {
+    switch (t) {
+      case 'details': return true
+      case 'bom': return sees('bom') || can('electrical', 'purchase', 'view')
+      case 'drawings': return sees('drawings') || can('electrical', 'drawings', 'view')
+      case 'tests': return sees('tests') || can('electrical', 'testing', 'view')
+      case 'issues': return sees('issues') || can('electrical', 'troubleshooting', 'view')
+      default: return sees(t)
+    }
+  }
+  const visibleTabs = TAB_KEYS.filter(tabVisible)
+  const activeTab: Tab = tabVisible(tab) ? tab : (visibleTabs[0] ?? 'details')
+
   const goToTab = (t: string) => {
-    if (!TAB_KEYS.includes(t as Tab)) return
+    if (!TAB_KEYS.includes(t as Tab) || !tabVisible(t as Tab)) return
     setTab(t as Tab)
-    router.replace(`/dashboard/electrical/jobs/${jobId}?tab=${t}`, { scroll: false })
+    router.replace(`/dashboard/electrical/jobs/${ref}?tab=${t}`, { scroll: false })
   }
 
   const act = async (fn: () => Promise<ElectricalJobDetail>, fallback: string, success: string) => {
@@ -111,8 +137,21 @@ function JobDetailView() {
   }
 
   if (isLoading || !isAuthorized) return null
+  if (linkError) return (<div><ElectricalNav /><InvalidRecordLink message={linkError} listHref="/dashboard/electrical/jobs" listLabel="Back to jobs" /></div>)
+  if (!resolvedJobId) return <div><ElectricalNav /></div>
 
-  const canEdit = !!job && WORKING.includes(job.status)
+  // Every job / tab mutation needs Jobs › Edit on the backend; Tests and
+  // Troubleshooting also accept their own tab's create / edit actions, so
+  // those two tabs get the open-job flag and gate their buttons themselves.
+  const jobsEdit = can('electrical', 'jobs', 'edit')
+  const isWorking = !!job && WORKING.includes(job.status)
+  const canEdit = isWorking && jobsEdit
+  // Per sub-tab: the job is open and the role holds that feature's edit (or,
+  // for Documents, upload / delete — DocumentsTab refines it).
+  const editFor = (feature: string) => isWorking && jf(feature, 'edit')
+  const canHoldClose = jf('job_status', 'edit')
+  const canCancelJob = jf('job_status', 'cancel')
+  const seeRequirement = sees('requirement')
   const s = job?.summary
   const tabLabels: Record<Tab, string> = {
     stages: `Stages${job ? ` (${job.done_stages}/${job.total_stages})` : ''}`,
@@ -127,6 +166,9 @@ function JobDetailView() {
     documents: `Documents${s ? ` (${s.document_count})` : ''}`,
   }
   const tabProps = job && meta ? { job, meta, canEdit, onChanged: load } : null
+  const propsFor = (feature: string) => (tabProps ? { ...tabProps, canEdit: editFor(feature) } : null)
+  const docProps = tabProps ? { ...tabProps, canEdit: isWorking && (jf('documents', 'create') || jf('documents', 'delete')) } : null
+  const testIssueProps = tabProps ? { ...tabProps, canEdit: isWorking } : null
 
   return (
     <div>
@@ -137,7 +179,7 @@ function JobDetailView() {
           <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
             Electrical Module · RRV Electrical Job
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 4px', flexWrap: 'wrap' }}>
+          <div data-tour="elec-job-header-badges" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 4px', flexWrap: 'wrap' }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{job?.job_number || 'Electrical Job'}</h1>
             {job && <span style={pill(JOB_STATUS_HEX[job.status])}>{JOB_STATUS_LABELS[job.status] || job.status}</span>}
             {job && <span style={pill(PRIORITY_HEX[job.priority])}>{PRIORITY_LABELS[job.priority]}</span>}
@@ -150,10 +192,11 @@ function JobDetailView() {
             </p>
           )}
         </div>
-        <button onClick={() => router.push('/dashboard/electrical/jobs')} type="button" style={secondaryBtnStyle}>← Back</button>
+        <button data-tour="elec-job-back-btn" onClick={() => router.push('/dashboard/electrical/jobs')} type="button" style={secondaryBtnStyle}>← Back</button>
       </div>
 
       <ErrorBanner error={error} />
+      <ErrorBanner error={lookupErrors} />
       <NoticeBanner notice={notice} />
 
       {job && (
@@ -170,15 +213,15 @@ function JobDetailView() {
           )}
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-            {job.status === 'handed_over' && <button type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('close')}>Close Job</button>}
-            {job.status === 'on_hold' && <button type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('resume')}>Resume Job</button>}
-            {['draft', 'in_progress'].includes(job.status) && <button type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => setReasonFor('hold')}>Put On Hold</button>}
-            {['draft', 'in_progress', 'on_hold'].includes(job.status) && <button type="button" disabled={busy} style={dangerBtn} onClick={() => setReasonFor('cancel')}>Cancel Job</button>}
-            {job.status === 'draft' && job.done_stages === 0 && <button type="button" disabled={busy} style={dangerBtn} onClick={() => setConfirm('delete')}>Delete Draft</button>}
+            {canHoldClose && job.status === 'handed_over' && <button data-tour="elec-job-close-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('close')}>Close Job</button>}
+            {canHoldClose && job.status === 'on_hold' && <button data-tour="elec-job-resume-btn" type="button" disabled={busy} style={primaryBtn} onClick={() => setConfirm('resume')}>Resume Job</button>}
+            {canHoldClose && ['draft', 'in_progress'].includes(job.status) && <button data-tour="elec-job-hold-btn" type="button" disabled={busy} style={secondaryBtnStyle} onClick={() => setReasonFor('hold')}>Put On Hold</button>}
+            {canCancelJob && ['draft', 'in_progress', 'on_hold'].includes(job.status) && <button data-tour="elec-job-cancel-btn" type="button" disabled={busy} style={dangerBtn} onClick={() => setReasonFor('cancel')}>Cancel Job</button>}
+            {job.status === 'draft' && job.done_stages === 0 && canDelete('electrical', 'jobs', job.created_by_id ?? null) && <button data-tour="elec-job-delete-btn" type="button" disabled={busy} style={dangerBtn} onClick={() => setConfirm('delete')}>Delete Draft</button>}
           </div>
 
           {/* Phase tracker */}
-          <div style={{ ...sectionStyle, padding: 16 }}>
+          <div data-tour="elec-job-phase-tracker" style={{ ...sectionStyle, padding: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading }}>
                 {job.progress_percent}% complete · {job.done_stages} of {job.total_stages} stages
@@ -210,23 +253,25 @@ function JobDetailView() {
 
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 2, borderBottom: `1px solid ${BORDER.light}`, marginBottom: 18, overflowX: 'auto' }}>
-            {TAB_KEYS.map((t) => (
-              <button key={t} type="button" onClick={() => goToTab(t)} style={{
+            {visibleTabs.map((t) => (
+              <button key={t} data-tour={`elec-job-tab-${t}`} type="button" onClick={() => goToTab(t)} style={{
                 padding: '10px 14px', marginBottom: -1, background: 'none', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
-                fontSize: 13, fontWeight: 600, color: tab === t ? '#FF6A2A' : TEXT.muted,
-                borderBottom: tab === t ? '2px solid #FF6A2A' : '2px solid transparent',
+                fontSize: 13, fontWeight: 600, color: activeTab === t ? '#FF6A2A' : TEXT.muted,
+                borderBottom: activeTab === t ? '2px solid #FF6A2A' : '2px solid transparent',
               }}>
                 {tabLabels[t]}
               </button>
             ))}
           </div>
 
-          {tab === 'stages' && <StagesTab job={job} canEdit={canEdit} users={users} onJob={setJob} onGoToTab={goToTab} />}
+          {activeTab === 'stages' && <StagesTab job={job} canEdit={editFor('stages')} users={users} onJob={setJob} onGoToTab={goToTab} />}
 
-          {tab === 'details' && (
+          {activeTab === 'details' && (
             editing ? (
               <JobForm
                 initial={job}
+                title={`Edit ${job.job_number}`}
+                subtitle="Identity, planning and the Electrical Requirement — nothing is saved until you press Save Changes."
                 submitLabel="Save Changes"
                 onCancel={() => setEditing(false)}
                 onSubmit={async (payload) => {
@@ -238,8 +283,15 @@ function JobDetailView() {
             ) : (
               <>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
-                  <div style={{ ...sectionStyle, flex: '1 1 360px', marginBottom: 0 }}>
+                  <div data-tour="elec-job-details-rrv" style={{ ...sectionStyle, flex: '1 1 360px', marginBottom: 0 }}>
                     <p style={sectionTitle}>RRV & Job</p>
+                    {job.order_project_number && (
+                      <div style={{ marginBottom: 10 }}>
+                        <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order project</p>
+                        <OrderProjectChip opNumber={job.order_project_number} elementNo={job.order_project_element_no} label={job.order_project_element_label}
+                          onClick={() => router.push(recordPath('/dashboard/sales/order-projects', job, 'order_project_id'))} />
+                      </div>
+                    )}
                     <InfoRow label="RRV / Machine (ERP)" value={job.project_label || '—'} />
                     <InfoRow label="RRV Model" value={job.rrv_model || '—'} />
                     <InfoRow label="Vehicle / Serial No." value={job.vehicle_number || '—'} />
@@ -251,7 +303,7 @@ function JobDetailView() {
                     <InfoRow label="Started" value={job.started_at ? formatDateTime(job.started_at) : '—'} />
                     <InfoRow label="Created by" value={`${job.created_by_name || '—'}${job.created_at ? ` · ${formatDateTime(job.created_at)}` : ''}`} />
                   </div>
-                  <div style={{ ...sectionStyle, flex: '1 1 360px', marginBottom: 0 }}>
+                  {seeRequirement && <div data-tour="elec-job-details-requirement" style={{ ...sectionStyle, flex: '1 1 360px', marginBottom: 0 }}>
                     <p style={sectionTitle}>Electrical Requirement</p>
                     <InfoRow label="System Voltage" value={job.system_voltage || '—'} />
                     <InfoRow label="Battery" value={job.battery_spec || '—'} />
@@ -266,25 +318,25 @@ function JobDetailView() {
                         <p style={{ fontSize: 13, color: TEXT.body, margin: 0, whiteSpace: 'pre-wrap' }}>{job.remarks}</p>
                       </>
                     )}
-                  </div>
+                  </div>}
                 </div>
-                {!['closed', 'cancelled'].includes(job.status) && (
+                {jobsEdit && !['closed', 'cancelled'].includes(job.status) && (
                   <div style={{ marginTop: 16 }}>
-                    <button type="button" style={secondaryBtnStyle} onClick={() => setEditing(true)}>Edit Details & Requirement</button>
+                    <button data-tour="elec-job-edit-btn" type="button" style={secondaryBtnStyle} onClick={() => setEditing(true)}>Edit Details & Requirement</button>
                   </div>
                 )}
               </>
             )
           )}
 
-          {tabProps && tab === 'bom' && <BomTab {...tabProps} />}
-          {tabProps && tab === 'panels' && <PanelsTab {...tabProps} />}
-          {tabProps && tab === 'cables' && <CablesTab {...tabProps} />}
-          {tabProps && tab === 'drawings' && <DrawingsTab {...tabProps} />}
-          {tabProps && tab === 'tests' && <TestsTab {...tabProps} />}
-          {tabProps && tab === 'issues' && <IssuesTab {...tabProps} />}
-          {tab === 'handover' && <HandoverTab key={job.updated_at} job={job} canEdit={canEdit} onJob={setJob} />}
-          {tabProps && tab === 'documents' && <DocumentsTab {...tabProps} />}
+          {activeTab === 'bom' && propsFor('bom') && <BomTab {...propsFor('bom')!} />}
+          {activeTab === 'panels' && propsFor('panels') && <PanelsTab {...propsFor('panels')!} />}
+          {activeTab === 'cables' && propsFor('cables') && <CablesTab {...propsFor('cables')!} />}
+          {activeTab === 'drawings' && propsFor('drawings') && <DrawingsTab {...propsFor('drawings')!} />}
+          {testIssueProps && activeTab === 'tests' && <TestsTab {...testIssueProps} />}
+          {testIssueProps && activeTab === 'issues' && <IssuesTab {...testIssueProps} />}
+          {activeTab === 'handover' && <HandoverTab key={job.updated_at} job={job} canEdit={isWorking} onJob={setJob} />}
+          {docProps && activeTab === 'documents' && <DocumentsTab {...docProps} />}
         </>
       )}
 

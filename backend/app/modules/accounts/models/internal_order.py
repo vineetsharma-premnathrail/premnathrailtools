@@ -1,9 +1,10 @@
 from __future__ import annotations
 from datetime import date
-from sqlalchemy import String, Integer, Float, Date, Text, ForeignKey
+from sqlalchemy import String, Integer, Date, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
+from app.modules.accounts.models._types import Money
 
 INTERNAL_ORDER_TYPES = ("capital", "maintenance", "it", "training")
 INTERNAL_ORDER_STATUSES = ("open", "in_progress", "completed", "closed")
@@ -24,7 +25,7 @@ class InternalOrder(Base, TimestampMixin):
     order_type: Mapped[str] = mapped_column(String(20), nullable=False)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    budgeted_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    budgeted_amount: Mapped[float | None] = mapped_column(Money, nullable=True)
     gl_account_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("gl_accounts.id"), nullable=True)
     cost_center_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("cost_centers.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")

@@ -28,7 +28,7 @@ export const RRV_BUILD_STATUS_LABELS: Record<string, string> = {
   planned: 'Planned', in_progress: 'In Progress', on_hold: 'On Hold', completed: 'Completed', handed_over: 'Handed Over', cancelled: 'Cancelled',
 }
 export const RRV_BUILD_STATUS_HEX: Record<string, string> = {
-  planned: '#78716c', in_progress: '#2563EB', on_hold: '#F59E0B', completed: '#7C3AED', handed_over: '#16A34A', cancelled: '#DC2626',
+  planned: '#78716c', in_progress: '#2563EB', on_hold: '#F59E0B', completed: '#7C3AED', handed_over: '#16A34A', cancelled: '#78716c',
 }
 
 export function toOptions(rows: { id: number; label: string }[], none?: string): { value: string; label: string }[] {

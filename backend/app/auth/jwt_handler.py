@@ -19,10 +19,11 @@ def hash_refresh_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def create_access_token(data: dict) -> str:
-    """Create a JWT access token."""
+def create_access_token(data: dict, minutes: int | None = None) -> str:
+    """Create a JWT access token (lifetime: `minutes`, else the config default —
+    auth routes pass Organization › Security's setting)."""
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.utcnow() + timedelta(minutes=minutes or settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
     return encoded_jwt

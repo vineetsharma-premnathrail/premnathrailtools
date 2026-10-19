@@ -28,6 +28,12 @@ class InternalOrderUpdate(BaseModel):
     status: str | None = None
 
 
+class InternalOrderStatusPayload(BaseModel):
+    # in_progress | completed | closed (reopen = in_progress from closed)
+    status: str
+    reason: str | None = None
+
+
 class InternalOrderResponse(BaseModel):
     model_config = {"from_attributes": True}
 

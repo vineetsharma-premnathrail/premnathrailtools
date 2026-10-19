@@ -7,11 +7,13 @@ import { maintenanceApi } from '@/lib/api'
 import { MaintenanceWorkOrder } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
+import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 import { formatDate } from '@/lib/format'
 import { PRIORITY_LABELS, WO_STATUS_LABELS, WO_TYPE_LABELS, formatINR, formatMinutes } from '@/components/maintenance/labels'
 
-const STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#DC2626' }
+const STATUS_HEX: Record<string, string> = { draft: '#78716c', assigned: '#2563EB', in_progress: '#F59E0B', on_hold: '#9333EA', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
 const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
 
 const inputStyle: React.CSSProperties = {
@@ -22,6 +24,7 @@ const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, col
 
 export default function MaintenanceWorkOrdersPage() {
   const { isAuthorized, isLoading } = useRequireApp('maintenance')
+  const { can } = useCan()
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -42,10 +45,15 @@ export default function MaintenanceWorkOrdersPage() {
     if (typeFilter) params.wo_type = typeFilter
     if (mine) params.mine = true
     if (search.trim()) params.search = search.trim()
-    maintenanceApi.listWorkOrders(params)
-      .then((data) => { setOrders(Array.isArray(data) ? data : []); setError('') })
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load work orders.')))
-      .finally(() => setLoading(false))
+    // Debounce typing and drop late responses so an older search can't overwrite a newer one.
+    let ignore = false
+    const t = setTimeout(() => {
+      maintenanceApi.listWorkOrders(params)
+        .then((data) => { if (ignore) return; setOrders(Array.isArray(data) ? data : []); setError('') })
+        .catch((err) => { if (!ignore) setError(extractErrorMessages(err, 'Failed to load work orders.')) })
+        .finally(() => { if (!ignore) setLoading(false) })
+    }, 250)
+    return () => { ignore = true; clearTimeout(t) }
   }, [isAuthorized, statusFilter, typeFilter, mine, openOnly, search])
 
   if (isLoading || !isAuthorized) return null
@@ -61,7 +69,8 @@ export default function MaintenanceWorkOrdersPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Work Orders</h1>
         </div>
-        <button
+        {can('maintenance', 'work_orders', 'create') && <button
+          data-tour="maint-wo-new-btn"
           onClick={() => router.push('/dashboard/maintenance/work-orders/new')}
           style={{
             padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
@@ -70,7 +79,7 @@ export default function MaintenanceWorkOrdersPage() {
           }}
         >
           + New Work Order
-        </button>
+        </button>}
       </div>
 
       {error && (
@@ -80,26 +89,26 @@ export default function MaintenanceWorkOrdersPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by number, title or asset…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+        <input data-tour="maint-wo-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search by number, title or asset…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="maint-wo-type-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All types</option>
           {Object.entries(WO_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select data-tour="maint-wo-status-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">{openOnly ? 'Open + completed' : 'All statuses'}</option>
           {Object.entries(WO_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         {!statusFilter && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
+          <label data-tour="maint-wo-hide-closed" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
             <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} /> Hide closed
           </label>
         )}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
+        <label data-tour="maint-wo-mine" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
           <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> My jobs
         </label>
       </div>
 
-      <div style={{
+      <div data-tour="maint-wo-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
@@ -124,7 +133,7 @@ export default function MaintenanceWorkOrdersPage() {
               orders.map((w) => {
                 const downtime = w.downtime_minutes ?? w.live_downtime_minutes
                 return (
-                  <tr key={w.id} onClick={() => router.push(`/dashboard/maintenance/work-orders/${w.id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={w.id} onClick={() => router.push(recordPath('/dashboard/maintenance/work-orders', w))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{w.wo_number}</td>
                     <td style={cellStyle}><span style={{ fontWeight: 600 }}>{w.asset_code}</span> <span style={{ color: TEXT.muted }}>{w.asset_name}</span></td>
                     <td style={{ ...cellStyle, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={w.title}>{w.title}</td>
@@ -147,7 +156,7 @@ export default function MaintenanceWorkOrdersPage() {
                       {w.awaiting_confirmation && <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#F59E0B', marginTop: 4 }}>Awaiting requester</span>}
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                      <span onClick={() => router.push(`/dashboard/maintenance/work-orders/${w.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                      <span onClick={() => router.push(recordPath('/dashboard/maintenance/work-orders', w))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 )

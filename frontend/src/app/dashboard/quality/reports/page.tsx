@@ -1,205 +1,123 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRequireApp } from '@/hooks/useAuth'
 import { qualityApi } from '@/lib/api'
-import { QualityCapa, QualityInspection, QualityNcr, QualitySupplierScorecard } from '@/types'
-import { TEXT, GLASS, SHADOWS, BORDER, BRAND, SUCCESS, DANGER, WARNING, INFO } from '@/lib/theme'
+import { QualityParetoRow } from '@/types'
+import { TEXT } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
+import SearchableSelect from '@/components/erp/SearchableSelect'
+import DateField from '@/components/erp/DateField'
+import { Field, Section, inputStyle } from '@/components/shared/ui'
+import { PageHeader, ErrorBanner, tableWrapStyle, thStyle, tdStyle, fmtMoney, INSPECTION_TYPE_LABELS } from '@/components/quality/QualityBits'
 import { extractErrorMessages } from '@/lib/validation'
 
-const sectionStyle: React.CSSProperties = {
-  borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
-  border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
+interface ItemOpt { id: number; item_code: string; item_name: string }
+
+const NCR_SOURCES: Record<string, string> = {
+  incoming: 'Incoming inspection', job_work: 'Job work', in_process: 'In-process', final: 'Final', customer_inspection: 'Customer / third-party',
+  complaint: 'Customer complaint', audit: 'Audit', internal: 'Internal',
 }
 
-function BarRow({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {
-  const pct = total > 0 ? Math.round((count / total) * 100) : 0
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontSize: 13, color: TEXT.body, fontWeight: 600 }}>{label}</span>
-        <span style={{ fontSize: 12.5, color: TEXT.muted }}>{count} ({pct}%)</span>
-      </div>
-      <div style={{ height: 8, borderRadius: 6, background: 'rgba(15,23,42,0.08)', overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 6, transition: 'width .3s' }} />
-      </div>
-    </div>
-  )
-}
-
-const NCR_SEVERITY_COLORS: Record<string, string> = { minor: WARNING.primary, major: BRAND.primary, critical: DANGER.primary }
-const NCR_STATUS_COLORS: Record<string, string> = {
-  open: WARNING.primary, under_review: INFO.primary, capa_assigned: BRAND.primary,
-  closed: SUCCESS.primary, rejected: DANGER.primary, cancelled: TEXT.muted,
-}
-const CAPA_STATUS_COLORS: Record<string, string> = {
-  open: WARNING.primary, in_progress: INFO.primary, pending_verification: BRAND.primary,
-  closed: SUCCESS.primary, overdue: DANGER.primary,
-}
-
+// Phase 3: defect Pareto. Phase 4 adds the KPI dashboard and the registers.
 export default function QualityReportsPage() {
   const { isAuthorized, isLoading } = useRequireApp('quality')
-
-  const [ncrs, setNcrs] = useState<QualityNcr[]>([])
-  const [inspections, setInspections] = useState<QualityInspection[]>([])
-  const [capas, setCapas] = useState<QualityCapa[]>([])
-  const [scorecards, setScorecards] = useState<QualitySupplierScorecard[]>([])
+  const yearStart = `${new Date().getFullYear()}-01-01`
+  const [f, setF] = useState({ basis: 'ncr', date_from: yearStart, date_to: '', item_id: '', vendor: '', source: '' })
+  const [items, setItems] = useState<ItemOpt[]>([])
+  const [rows, setRows] = useState<QualityParetoRow[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
 
   useEffect(() => {
     if (!isAuthorized) return
-    setLoading(true)
-    Promise.all([
-      qualityApi.listNcrs(),
-      qualityApi.listInspections(),
-      qualityApi.listCapas(),
-      qualityApi.listSupplierScorecards(),
-    ])
-      .then(([n, i, c, s]) => {
-        setNcrs(Array.isArray(n) ? n : [])
-        setInspections(Array.isArray(i) ? i : [])
-        setCapas(Array.isArray(c) ? c : [])
-        setScorecards(Array.isArray(s) ? s : [])
-      })
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load Quality Reports data.')))
-      .finally(() => setLoading(false))
+    qualityApi.lookupItems('').then(setItems).catch(() => setItems([]))
   }, [isAuthorized])
 
-  const ncrBySeverity = useMemo(() => {
-    const m: Record<string, number> = {}
-    ncrs.forEach((n) => { m[n.severity] = (m[n.severity] || 0) + 1 })
-    return m
-  }, [ncrs])
-
-  const ncrByStatus = useMemo(() => {
-    const m: Record<string, number> = {}
-    ncrs.forEach((n) => { m[n.status] = (m[n.status] || 0) + 1 })
-    return m
-  }, [ncrs])
-
-  const inspectionStats = useMemo(() => {
-    const passed = inspections.filter((i) => i.status === 'passed' || i.status === 'conditionally_passed').length
-    const failed = inspections.filter((i) => i.status === 'failed').length
-    const pending = inspections.filter((i) => i.status === 'pending' || i.status === 'in_progress').length
-    const total = inspections.length
-    return { passed, failed, pending, total }
-  }, [inspections])
-
-  const capaByStatus = useMemo(() => {
-    const m: Record<string, number> = {}
-    capas.forEach((c) => { m[c.status] = (m[c.status] || 0) + 1 })
-    return m
-  }, [capas])
-
-  const supplierAverages = useMemo(() => {
-    const withQuality = scorecards.filter((s) => typeof s.quality_score === 'number')
-    const withDelivery = scorecards.filter((s) => typeof s.on_time_delivery_score === 'number')
-    const avgQuality = withQuality.length ? withQuality.reduce((sum, s) => sum + (s.quality_score || 0), 0) / withQuality.length : null
-    const avgDelivery = withDelivery.length ? withDelivery.reduce((sum, s) => sum + (s.on_time_delivery_score || 0), 0) / withDelivery.length : null
-    return { avgQuality, avgDelivery, count: scorecards.length }
-  }, [scorecards])
+  useEffect(() => {
+    if (!isAuthorized) return
+    setLoading(true)
+    setError('')
+    const params: Record<string, unknown> = { basis: f.basis }
+    if (f.date_from) params.date_from = f.date_from
+    if (f.date_to) params.date_to = f.date_to
+    if (f.item_id) params.item_id = Number(f.item_id)
+    if (f.vendor.trim()) params.vendor = f.vendor.trim()
+    if (f.source) params.source = f.source
+    qualityApi.defectPareto(params)
+      .then((d) => { setRows(d.rows || []); setTotal(d.total || 0) })
+      .catch((err) => setError(extractErrorMessages(err, 'Failed to build the defect Pareto.')))
+      .finally(() => setLoading(false))
+  }, [isAuthorized, f])
 
   if (isLoading || !isAuthorized) return null
+  const max = Math.max(1, ...rows.map((r) => r.count))
+  const sources = f.basis === 'ncr' ? NCR_SOURCES : INSPECTION_TYPE_LABELS
 
   return (
     <div>
       <QualityNav />
-
-      <div style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-          Quality Module
+      <PageHeader title="Quality Reports" />
+      <ErrorBanner error={error} />
+      <Section title="Defect Pareto" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ flex: '0 1 220px' }}>
+            <Field label="Count">
+              <select style={inputStyle} value={f.basis} onChange={(e) => setF({ ...f, basis: e.target.value, source: '' })}>
+                <option value="ncr">NCRs</option><option value="lot_results">Failed characteristics on lots</option>
+              </select>
+            </Field>
+          </div>
+          <div style={{ flex: '0 1 160px' }}><Field label="From"><DateField value={f.date_from} onChange={(v) => setF({ ...f, date_from: v })} /></Field></div>
+          <div style={{ flex: '0 1 160px' }}><Field label="To"><DateField value={f.date_to} onChange={(v) => setF({ ...f, date_to: v })} /></Field></div>
+          <div style={{ flex: '1 1 240px', maxWidth: 340 }}>
+            <Field label="Item">
+              <SearchableSelect value={f.item_id} onChange={(v) => setF({ ...f, item_id: v })} placeholder="All items"
+                options={[{ value: '', label: 'All items' }, ...items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))]} />
+            </Field>
+          </div>
+          <div style={{ flex: '1 1 180px', maxWidth: 260 }}><Field label="Vendor"><input style={inputStyle} value={f.vendor} onChange={(e) => setF({ ...f, vendor: e.target.value })} /></Field></div>
+          <div style={{ flex: '0 1 220px' }}>
+            <Field label={f.basis === 'ncr' ? 'NCR source' : 'Inspection type'}>
+              <select style={inputStyle} value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })}>
+                <option value="">All</option>
+                {Object.entries(sources).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </Field>
+          </div>
+        </div>
+        <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>
+          {total} occurrence(s). Highlighted rows are the &quot;vital few&quot; — the defect codes that make up the first 80% — where a CAPA pays off most.
         </p>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Quality Reports</h1>
-        <p style={{ fontSize: 13.5, color: TEXT.muted, margin: '4px 0 0' }}>Summary breakdowns computed from current NCR, inspection, CAPA, and supplier scorecard data.</p>
-      </div>
-
-      {error && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {Array.isArray(error) ? error.join(' ') : error}
+        <div style={tableWrapStyle}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+            <thead><tr>{['Defect code', 'Category', 'Count', '', '%', 'Cumulative %', 'Quantity', f.basis === 'ncr' ? 'Cost' : ''].map((h, i) => <th key={i} style={thStyle}>{h}</th>)}</tr></thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>Loading…</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={8} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No defects in this selection.</td></tr>
+              ) : rows.map((r) => (
+                <tr key={r.defect_code_id ?? 'none'} style={{ background: r.vital_few ? 'rgba(255,106,42,0.06)' : undefined }}>
+                  <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>{r.code} — {r.name}</td>
+                  <td style={tdStyle}>{r.category || '—'}</td>
+                  <td style={tdStyle}>{r.count}</td>
+                  <td style={{ ...tdStyle, width: 220 }}>
+                    <div style={{ height: 10, borderRadius: 6, background: 'rgba(15,23,42,0.06)' }}>
+                      <div style={{ height: '100%', width: `${(r.count / max) * 100}%`, borderRadius: 6, background: r.vital_few ? '#FF6A2A' : '#a8a29e' }} />
+                    </div>
+                  </td>
+                  <td style={tdStyle}>{r.percent}%</td>
+                  <td style={tdStyle}>{r.cumulative_percent}%</td>
+                  <td style={tdStyle}>{r.quantity}</td>
+                  <td style={tdStyle}>{f.basis === 'ncr' ? fmtMoney(r.cost) : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
-
-      {loading ? (
-        <div style={sectionStyle}>
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading report data…</p>
-        </div>
-      ) : (
-        <>
-          <div style={sectionStyle}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>NCR Summary — by Severity</p>
-            {ncrs.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No NCRs recorded.</p>
-            ) : (
-              ['minor', 'major', 'critical'].map((sev) => (
-                <BarRow key={sev} label={sev.charAt(0).toUpperCase() + sev.slice(1)} count={ncrBySeverity[sev] || 0} total={ncrs.length} color={NCR_SEVERITY_COLORS[sev]} />
-              ))
-            )}
-          </div>
-
-          <div style={sectionStyle}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>NCR Summary — by Status</p>
-            {ncrs.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No NCRs recorded.</p>
-            ) : (
-              Object.keys(ncrByStatus).map((status) => (
-                <BarRow key={status} label={status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())} count={ncrByStatus[status]} total={ncrs.length} color={NCR_STATUS_COLORS[status] || TEXT.muted} />
-              ))
-            )}
-          </div>
-
-          <div style={sectionStyle}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Inspection Pass / Fail Rate</p>
-            {inspectionStats.total === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No inspections recorded.</p>
-            ) : (
-              <>
-                <BarRow label="Passed" count={inspectionStats.passed} total={inspectionStats.total} color={SUCCESS.primary} />
-                <BarRow label="Failed" count={inspectionStats.failed} total={inspectionStats.total} color={DANGER.primary} />
-                <BarRow label="Pending / In Progress" count={inspectionStats.pending} total={inspectionStats.total} color={WARNING.primary} />
-              </>
-            )}
-          </div>
-
-          <div style={sectionStyle}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>CAPA Status Breakdown</p>
-            {capas.length === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No CAPAs recorded.</p>
-            ) : (
-              Object.keys(capaByStatus).map((status) => (
-                <BarRow key={status} label={status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())} count={capaByStatus[status]} total={capas.length} color={CAPA_STATUS_COLORS[status] || TEXT.muted} />
-              ))
-            )}
-          </div>
-
-          <div style={sectionStyle}>
-            <p style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Supplier Quality Summary</p>
-            {supplierAverages.count === 0 ? (
-              <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No supplier scorecards recorded.</p>
-            ) : (
-              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 200px', minWidth: 180, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.light}` }}>
-                  <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 8px' }}>Avg Quality Score</p>
-                  <p style={{ fontSize: 26, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
-                    {supplierAverages.avgQuality !== null ? supplierAverages.avgQuality.toFixed(1) : '—'}
-                  </p>
-                </div>
-                <div style={{ flex: '1 1 200px', minWidth: 180, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.light}` }}>
-                  <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 8px' }}>Avg On-Time Delivery Score</p>
-                  <p style={{ fontSize: 26, fontWeight: 700, color: TEXT.heading, margin: 0 }}>
-                    {supplierAverages.avgDelivery !== null ? supplierAverages.avgDelivery.toFixed(1) : '—'}
-                  </p>
-                </div>
-                <div style={{ flex: '1 1 200px', minWidth: 180, padding: 16, borderRadius: 14, background: 'rgba(255,255,255,.5)', border: `1px solid ${BORDER.light}` }}>
-                  <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 8px' }}>Scorecards</p>
-                  <p style={{ fontSize: 26, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{supplierAverages.count}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </>
-      )}
+      </Section>
     </div>
   )
 }

@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { hrApi } from '@/lib/api'
 import { HrGrade } from '@/types'
 import { TEXT } from '@/lib/theme'
-import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { useCan } from '@/lib/permissions'
 import {
-  sectionStyle, tableWrapStyle, thStyle, tdStyle, labelStyle, hintStyle, linkActionStyle, dangerActionStyle, mutedActionStyle,
+  sectionStyle, tableWrapStyle, thStyle, tdStyle, linkActionStyle, dangerActionStyle, mutedActionStyle,
   ErrorBanner, ActiveBadge, Modal, MasterToolbar,
 } from './masterUi'
 
@@ -17,6 +18,7 @@ type Form = { id: number | null; code: string; name: string; level: string; desc
 const EMPTY: Form = { id: null, code: '', name: '', level: '1', description: '', is_active: true }
 
 export default function GradesMaster() {
+  const { can, canDelete } = useCan()
   const [rows, setRows] = useState<HrGrade[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -103,13 +105,13 @@ export default function GradesMaster() {
   }
 
   return (
-    <div style={sectionStyle}>
+    <div data-tour="hr-mst-grade-section" style={sectionStyle}>
       <div style={{ marginBottom: 14 }}>
         <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Grades</h3>
         <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Employee grades / bands. Level orders them — a higher level is more senior.</p>
       </div>
 
-      <MasterToolbar search={search} onSearch={setSearch} showInactive={showInactive} onToggleInactive={setShowInactive} addLabel="Add Grade" onAdd={() => openEdit()} placeholder="Search code or name…" />
+      <MasterToolbar search={search} onSearch={setSearch} showInactive={showInactive} onToggleInactive={setShowInactive} addLabel="Add Grade" onAdd={can('hr', 'masters', 'create') ? () => openEdit() : undefined} placeholder="Search code or name…" />
 
       <ErrorBanner errors={loadError} />
       <MessageDialog open={actionErrors.length > 0} variant="error" title="Action Not Completed" message={actionErrors} onClose={() => setActionErrors([])} />
@@ -134,41 +136,44 @@ export default function GradesMaster() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <Modal open={!!form} title={form?.id ? 'Edit Grade' : 'Add Grade'} onClose={() => setForm(null)} busy={saving} width={440}>
+      <Modal open={!!form} icon={form?.id ? 'edit' : 'plus'} title={form?.id ? 'Edit Grade' : 'Add Grade'}
+        subtitle="Employee grade / band — a higher level is more senior." onClose={() => setForm(null)} busy={saving}
+        footer={<>
+          <button type="button" data-tour="hr-mst-grade-cancel-btn" onClick={() => setForm(null)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+          <button type="button" data-tour="hr-mst-grade-save-btn" onClick={save} disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save Grade'}</button>
+        </>}>
         {form && (
           <>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-              <div style={{ flex: '0 1 110px', minWidth: 100 }}>
-                <label style={labelStyle}>Code *</label>
-                <input style={inputStyle} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="E2" />
-              </div>
-              <div style={{ flex: '1 1 180px', maxWidth: 260 }}>
-                <label style={labelStyle}>Name *</label>
-                <input style={inputStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Executive II" />
-              </div>
-              <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-                <label style={labelStyle}>Level *</label>
-                <input style={inputStyle} inputMode="numeric" value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value.replace(/[^0-9]/g, '') })} />
-              </div>
-            </div>
-            <p style={{ ...hintStyle, margin: '-6px 0 14px' }}>Level is used for sorting and promotion checks (1 = most junior).</p>
-            <div style={{ marginBottom: 14 }}>
-              <label style={labelStyle}>Description</label>
-              <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical', fontFamily: 'inherit' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.secondary, marginBottom: 16, cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active
-            </label>
             <ErrorBanner errors={formErrors} />
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={() => setForm(null)} disabled={saving} style={secondaryBtnStyle}>Cancel</button>
-              <button type="button" onClick={save} disabled={saving} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save Grade'}</button>
-            </div>
+            <SheetSection icon="tag" title="Grade">
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
+                <div data-tour="hr-mst-grade-code" style={{ flex: '0 1 110px', minWidth: 100 }}>
+                  <label style={sheetLabel}>Code <Req /></label>
+                  <input style={sheetInput} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="E2" autoFocus />
+                </div>
+                <div data-tour="hr-mst-grade-name" style={{ flex: '1 1 180px', maxWidth: 260 }}>
+                  <label style={sheetLabel}>Name <Req /></label>
+                  <input style={sheetInput} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Executive II" />
+                </div>
+                <div data-tour="hr-mst-grade-level" style={{ flex: '0 1 90px', minWidth: 80 }}>
+                  <label style={sheetLabel}>Level <Req /></label>
+                  <input style={sheetInput} inputMode="numeric" value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value.replace(/[^0-9]/g, '') })} />
+                </div>
+              </div>
+              <p style={{ ...sheetHint, margin: '0 0 14px' }}>Level is used for sorting and promotion checks (1 = most junior).</p>
+              <div data-tour="hr-mst-grade-description" style={{ marginBottom: 14 }}>
+                <label style={sheetLabel}>Description <Optional /></label>
+                <textarea style={{ ...sheetInput, minHeight: 60, resize: 'vertical' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+              </div>
+              <label data-tour="hr-mst-grade-active" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: SHEET.BODY, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active
+              </label>
+            </SheetSection>
           </>
         )}
       </Modal>
 
-      <div style={tableWrapStyle}>
+      <div data-tour="hr-mst-grade-table" style={tableWrapStyle}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
           <thead>
             <tr>{['Level', 'Code', 'Name', 'Employees', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
@@ -188,10 +193,10 @@ export default function GradesMaster() {
                 <td style={{ ...tdStyle, color: TEXT.secondary }}>{r.employee_count}</td>
                 <td style={tdStyle}><ActiveBadge active={r.is_active} /></td>
                 <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <span style={{ display: 'inline-flex', gap: 14 }}>
-                    <button type="button" style={linkActionStyle} onClick={() => openEdit(r)}>Edit</button>
-                    <button type="button" style={mutedActionStyle} onClick={() => setToggleTarget(r)}>{r.is_active ? 'Deactivate' : 'Activate'}</button>
-                    <button type="button" style={dangerActionStyle} onClick={() => setDeleteTarget(r)}>Delete</button>
+                  <span data-tour="hr-mst-grade-row-actions" style={{ display: 'inline-flex', gap: 14 }}>
+                    {can('hr', 'masters', 'edit') && <button type="button" style={linkActionStyle} onClick={() => openEdit(r)}>Edit</button>}
+                    {can('hr', 'masters', 'edit') && <button type="button" style={mutedActionStyle} onClick={() => setToggleTarget(r)}>{r.is_active ? 'Deactivate' : 'Activate'}</button>}
+                    {canDelete('hr', 'masters', null) && <button type="button" style={dangerActionStyle} onClick={() => setDeleteTarget(r)}>Delete</button>}
                   </span>
                 </td>
               </tr>

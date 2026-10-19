@@ -81,6 +81,13 @@ def parse_working_days(text: str | None) -> frozenset[int]:
     return frozenset(days) if days else _DEFAULT_WORKING
 
 
+def parse_weekly_off(text: str | None) -> frozenset[int]:
+    """Weekday numbers named in a profile's weekly_off ("sun", "sat,sun")."""
+    if not text:
+        return frozenset()
+    return frozenset(i for i in (_day_index(t) for t in re.findall(r"[a-z]{3,9}", text.lower())) if i is not None)
+
+
 @dataclass
 class EmployeeContext:
     user: User
@@ -104,6 +111,8 @@ class CalendarCache:
         self._dept_by_name: dict[str, Department] | None = None
         self._depts: dict[int, Department] | None = None
         self._shifts: dict[int, HrShift] | None = None
+        # Shift roster rows (models/roster.py) per (user_id, year, month).
+        self._roster: dict[tuple[int, int, int], dict[date, object]] = {}
 
     def working_days(self, branch_id: int | None) -> frozenset[int]:
         if branch_id not in self._branch_days:
@@ -150,6 +159,50 @@ class CalendarCache:
             self._shifts = {s.id: s for s in self.db.query(HrShift).all()}
         return self._shifts.get(shift_id)
 
+    def prefetch_roster(self, user_ids, start: date, end: date) -> None:
+        """Load the roster of many employees for start..end in one query."""
+        from app.modules.hr.models.roster import HrShiftRoster
+
+        ids = list(user_ids)
+        if not ids:
+            return
+        months = set()
+        d = date(start.year, start.month, 1)
+        while d <= end:
+            months.add((d.year, d.month))
+            d = date(d.year + (d.month == 12), d.month % 12 + 1, 1)
+        first = date(start.year, start.month, 1)
+        last_y, last_m = end.year, end.month
+        last = date(last_y + (last_m == 12), last_m % 12 + 1, 1) - timedelta(days=1)
+        for uid in ids:
+            for y, m in months:
+                self._roster.setdefault((uid, y, m), {})
+        for r in self.db.query(HrShiftRoster).filter(HrShiftRoster.user_id.in_(ids), HrShiftRoster.roster_date >= first,
+                                                     HrShiftRoster.roster_date <= last).all():
+            self._roster[(r.user_id, r.roster_date.year, r.roster_date.month)][r.roster_date] = r
+
+    def roster_row(self, user_id: int | None, d: date):
+        """The employee's roster row for `d`, or None (no dated plan)."""
+        if not user_id:
+            return None
+        key = (user_id, d.year, d.month)
+        if key not in self._roster:
+            from app.modules.hr.models.roster import HrShiftRoster
+
+            first = date(d.year, d.month, 1)
+            last = date(d.year + (d.month == 12), d.month % 12 + 1, 1) - timedelta(days=1)
+            rows = self.db.query(HrShiftRoster).filter(HrShiftRoster.user_id == user_id, HrShiftRoster.roster_date >= first,
+                                                       HrShiftRoster.roster_date <= last).all()
+            self._roster[key] = {r.roster_date: r for r in rows}
+        return self._roster[key].get(d)
+
+    def shift_on(self, ctx: "EmployeeContext", d: date) -> HrShift | None:
+        """Planned shift on `d`: the roster's shift, else the profile's default."""
+        r = self.roster_row(ctx.user.id, d)
+        if r is not None and r.shift_id:
+            return self.shift(r.shift_id) or ctx.shift
+        return ctx.shift
+
     def context(self, user: User, profile: HrEmployeeProfile | None = None, *, load_profile: bool = True) -> EmployeeContext:
         if profile is None and load_profile:
             profile = self.db.query(HrEmployeeProfile).filter(HrEmployeeProfile.user_id == user.id).first()
@@ -168,7 +221,9 @@ class CalendarCache:
             gender=((profile.gender or "").strip().lower() or None) if profile else None,
             shift=self.shift(profile.shift_id if profile else None),
             employee_code=profile.employee_code if profile else None,
-            working_days=self.working_days(branch_id),
+            # A personal weekly off (staggered offs, Factories Act s.52) replaces the plant's working days.
+            working_days=(frozenset(range(7)) - parse_weekly_off(profile.weekly_off)
+                          if profile is not None and parse_weekly_off(profile.weekly_off) else self.working_days(branch_id)),
         )
 
     def day_kind(self, ctx: EmployeeContext, d: date) -> tuple[str, str | None]:
@@ -176,6 +231,10 @@ class CalendarCache:
         hol = self.holidays(ctx.branch_id, date(d.year, 1, 1), date(d.year, 12, 31)).get(d)
         if hol:
             return "holiday", hol.name
+        # A dated roster overrides the plant's working days (rotating weekly offs).
+        r = self.roster_row(ctx.user.id, d)
+        if r is not None:
+            return ("weekly_off", None) if r.is_weekly_off else ("working", None)
         if d.weekday() not in ctx.working_days:
             return "weekly_off", None
         return "working", None

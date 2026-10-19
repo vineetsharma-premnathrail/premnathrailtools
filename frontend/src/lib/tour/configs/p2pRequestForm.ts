@@ -44,30 +44,29 @@ const config: TourConfig = {
     },
     {
       target: 'pr-new-item-name',
-      title: 'Item Description',
-      purpose: 'What you need — the name/description of the item or material.',
+      title: 'Item (from Item Master)',
+      purpose: 'Pick what you need from the Store Item Master — search by item code, name or part number. The line is tied to that item, so the PO, the GRN and the stock posting all use the same item.',
       required: true,
-      validExample: 'Ball Bearing 6205-2RS',
-      why: 'At least one item with a description is required before this requisition can be submitted.',
+      validExample: 'RM-00012 — Ball Bearing 6205-2RS',
+      why: 'Every purchase line must be an Item Master item — that is how the received goods land in the right stock item at the PO price. A new item is added in Store › Item Master first (link below the table), then picked here.',
     },
     {
       target: 'pr-new-item-make',
       title: 'Make',
-      purpose: 'The preferred brand/manufacturer, if any.',
+      purpose: 'The brand from the Item Master — read-only here. Need a different brand? That is a different item code; pick or add it in Store › Item Master.',
       required: false,
     },
     {
       target: 'pr-new-item-partcode',
       title: 'Part Code',
-      purpose: 'The manufacturer\'s or internal part/SKU code, if known.',
+      purpose: 'Shown from the Item Master (read-only). To change it, edit the item in Store › Item Master.',
       required: false,
     },
     {
       target: 'pr-new-item-unit',
       title: 'UOM',
-      purpose: 'Unit of measure for the quantity — a searchable dropdown of the same fixed unit list the Store item master uses, so PR lines match store stock exactly.',
+      purpose: 'The item\'s stock unit from the Item Master (read-only) — the quantity is in this unit, so the GRN adds exactly this to stock.',
       required: false,
-      validExample: 'NOS, KG, MTR',
     },
     {
       target: 'pr-new-item-qty',
@@ -88,7 +87,7 @@ const config: TourConfig = {
     {
       target: 'pr-new-item-category',
       title: 'Category',
-      purpose: 'A free-text sub-category for this line item, distinct from the requisition-level Category above.',
+      purpose: 'The item\'s category from the Item Master (read-only), distinct from the requisition-level Category above.',
       required: false,
     },
     {
@@ -96,6 +95,12 @@ const config: TourConfig = {
       title: 'Ship To',
       purpose: 'Where this item should be delivered, if different from the default location.',
       required: false,
+    },
+    {
+      target: 'pr-new-item-master-hint',
+      title: 'Item not in the list?',
+      purpose: 'Opens Store › Item Master in a new tab to add the new item; then "refresh items" reloads the list here without losing what you have filled in.',
+      why: 'Items are created once in the Item Master and reused everywhere — never typed fresh on a requisition.',
     },
     {
       target: 'pr-new-item-remove',
@@ -120,13 +125,6 @@ const config: TourConfig = {
       advanceOnEnter: true,
     },
     {
-      target: 'pr-new-approvers',
-      title: 'Approvers',
-      purpose: 'Who must approve this requisition — every slot must sign before it is approved. For an existing project the slots are Design, Production, Project and Store Manager; for a new project R&D, Production and Store Manager. Pick any user for each slot, including yourself. The Store Manager picked here is also the one who issues this requisition\'s items from store stock.',
-      required: true,
-      whatToEnter: 'Search by name or email in each role\'s picker.',
-    },
-    {
       target: 'pr-new-supporting-docs',
       title: 'Supporting Documents',
       purpose: 'Any general supporting files for this requisition — quotes, approvals received offline, photos, etc.',
@@ -139,6 +137,12 @@ const config: TourConfig = {
       required: false,
     },
     {
+      target: 'pr-new-save-draft',
+      title: 'Save as Draft',
+      purpose: 'Saves what you have so far without sending it for approval. Only the category is needed; lines without an item are left out. A draft is visible only to you — open it later, Edit Draft, then Submit.',
+      after: 'You land on the draft\'s page with Submit for Approval, Edit Draft and Discard Draft buttons.',
+    },
+    {
       target: 'pr-new-submit',
       title: 'Submit Purchase Requisition',
       purpose: 'Validates the category and item list, then submits this requisition into the approval chain.',
@@ -148,6 +152,11 @@ const config: TourConfig = {
       target: 'pr-new-cancel',
       title: 'Cancel',
       purpose: 'Discards everything entered on this form and returns to the previous page without saving.',
+    },
+    {
+      target: 'pr-new-back',
+      title: '← Back',
+      purpose: 'Returns to the previous page without saving — same as Cancel.',
     },
   ],
 }

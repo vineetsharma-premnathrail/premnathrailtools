@@ -1,132 +1,29 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
+import { approvalsApi, pmOngoingApi } from '@/lib/api'
 import ModuleCard from '@/components/ModuleCard'
-import { BRAND, TEXT } from '@/lib/theme'
+import { BRAND, TEXT, GLASS, SHADOWS } from '@/lib/theme'
+import { Briefcase, Flask, Users, ShoppingCart, FileText, Storefront, ShieldCheck, Factory, Wrench, PenNib, Lightning, Drop, Kanban, CurrencyInr, Buildings, IdentificationCard } from '@phosphor-icons/react'
 
-const WrenchIcon = (
-  <svg width="20" height="20" viewBox="0 0 512 512">
-    <path fill="#8C8C8C" d="M332.8,85.333V153.6h-17.067v-42.667c0-4.693-3.84-8.533-8.533-8.533H204.8c-4.779,0-8.533,3.84-8.533,8.533V153.6H179.2V85.333H332.8z"  stroke="#1A1A1A" strokeWidth="4" />
-    <path fill="#4D4D4D" d="M494.933,170.667v51.2h-76.8V204.8c0-4.693-3.84-8.533-8.533-8.533h-68.267c-4.779,0-8.533,3.84-8.533,8.533v17.067H179.2V204.8c0-4.693-3.84-8.533-8.533-8.533H102.4c-4.779,0-8.533,3.84-8.533,8.533v17.067h-76.8v-51.2H494.933z"  stroke="#1A1A1A" strokeWidth="4" />
-    <rect x="110.933" y="213.333" fill="#8C8C8C" width="51.2" height="34.133"  stroke="#1A1A1A" strokeWidth="4" />
-    <rect x="349.867" y="213.333" fill="#8C8C8C" width="51.2" height="34.133"  stroke="#1A1A1A" strokeWidth="4" />
-    <path fill="#4D4D4D" d="M443.733,238.933v187.733H68.267V238.933h25.6V256c0,4.693,3.755,8.533,8.533,8.533h68.267c4.693,0,8.533-3.84,8.533-8.533v-17.067h153.6V256c0,4.693,3.755,8.533,8.533,8.533H409.6c4.693,0,8.533-3.84,8.533-8.533v-17.067H443.733z"  stroke="#1A1A1A" strokeWidth="4" />
-    <path d="M503.467,153.6h-153.6V76.8c0-4.693-3.84-8.533-8.533-8.533H170.667c-4.779,0-8.533,3.84-8.533,8.533v76.8H8.533C3.755,153.6,0,157.44,0,162.133V230.4c0,4.693,3.755,8.533,8.533,8.533H51.2V435.2c0,4.693,3.755,8.533,8.533,8.533h392.533c4.693,0,8.533-3.84,8.533-8.533V238.933h42.667c4.693,0,8.533-3.84,8.533-8.533v-68.267C512,157.44,508.16,153.6,503.467,153.6z M179.2,85.333h153.6V153.6h-17.067v-42.667c0-4.693-3.84-8.533-8.533-8.533H204.8c-4.779,0-8.533,3.84-8.533,8.533V153.6H179.2V85.333z M298.667,119.467V153.6h-85.333v-34.133H298.667z M443.733,426.667H68.267V238.933h25.6V256c0,4.693,3.755,8.533,8.533,8.533h68.267c4.693,0,8.533-3.84,8.533-8.533v-17.067h153.6V256c0,4.693,3.755,8.533,8.533,8.533H409.6c4.693,0,8.533-3.84,8.533-8.533v-17.067h25.6V426.667z M110.933,247.467v-34.133h51.2v34.133H110.933z M349.867,247.467v-34.133h51.2v34.133H349.867z M494.933,221.867h-76.8V204.8c0-4.693-3.84-8.533-8.533-8.533h-68.267c-4.779,0-8.533,3.84-8.533,8.533v17.067H179.2V204.8c0-4.693-3.84-8.533-8.533-8.533H102.4c-4.779,0-8.533,3.84-8.533,8.533v17.067h-76.8v-51.2h477.867V221.867z"  stroke="#1A1A1A" strokeWidth="4" />
-    <polygon fill="#1A1A1A" points="426.667,238.933 426.667,409.6 68.267,409.6 68.267,426.667 443.733,426.667 443.733,238.933"  stroke="#1A1A1A" strokeWidth="4" />
-    <polygon fill="#666666" points="153.6,213.333 153.6,238.933 110.933,238.933 110.933,247.467 162.133,247.467 162.133,213.333"  stroke="#1A1A1A" strokeWidth="4" />
-    <polygon fill="#666666" points="392.533,213.333 392.533,238.933 349.867,238.933 349.867,247.467 401.067,247.467 401.067,213.333"  stroke="#1A1A1A" strokeWidth="4" />
-    <rect x="17.067" y="204.8" fill="#1A1A1A" width="76.8" height="17.067"  stroke="#1A1A1A" strokeWidth="4" />
-    <polygon fill="#1A1A1A" points="477.867,170.667 477.867,204.8 418.133,204.8 418.133,221.867 494.933,221.867 494.933,170.667"  stroke="#1A1A1A" strokeWidth="4" />
-    <rect x="179.2" y="204.8" fill="#1A1A1A" width="153.6" height="17.067"  stroke="#1A1A1A" strokeWidth="4" />
-    <rect x="179.2" y="145.067" fill="#666666" width="17.067" height="8.533"  stroke="#1A1A1A" strokeWidth="4" />
-    <rect x="315.733" y="145.067" fill="#666666" width="17.067" height="8.533"  stroke="#1A1A1A" strokeWidth="4" />
-  </svg>
-)
-const CalculatorIcon = (
-  <svg width="20" height="20" viewBox="0 0 32 32">
-    <path fill="#333333" d="M29,0H3C1.35,0,0,1.35,0,3v11h32V3C32,1.35,30.65,0,29,0z M28,12H4V4h24V12z"  stroke="#1A1A1A" strokeWidth="0.6" />
-    <path fill="#808080" d="M0,29c0,1.65,1.35,3,3,3h26c1.65,0,3-1.35,3-3V14H0V29z"  stroke="#1A1A1A" strokeWidth="0.6" />
-    <path fill="#E6E6E6" d="M4,4h24v8H4V4z M7,22c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3s-3,1.35-3,3C4,20.65,5.35,22,7,22z
-      M15,22c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3s-3,1.35-3,3C12,20.65,13.35,22,15,22z M7,30c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3
-      s-3,1.35-3,3C4,28.65,5.35,30,7,30z M15,30c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3s-3,1.35-3,3C12,28.65,13.35,30,15,30z M25,30
-      c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3s-3,1.35-3,3C22,28.65,23.35,30,25,30z"  stroke="#1A1A1A" strokeWidth="0.6" />
-    <path fill="#4D4D4D" d="M25,22c1.65,0,3-1.35,3-3c0-1.65-1.35-3-3-3s-3,1.35-3,3C22,20.65,23.35,22,25,22z"  stroke="#1A1A1A" strokeWidth="0.6" />
-  </svg>
-)
-const UsersIcon = (
-  <svg width="20" height="20" viewBox="0 0 512 512">
-    <circle fill="#1A1A1A" cx="256" cy="256" r="256"  stroke="#1A1A1A" strokeWidth="4" />
-    <rect x="113.424" y="376" fill="#E6E5E5" width="285.144" height="8"  stroke="#1A1A1A" strokeWidth="4" />
-    <rect x="157.296" y="400" fill="#E6E5E5" width="197.408" height="8"  stroke="#1A1A1A" strokeWidth="4" />
-    <circle fill="#FFFFFF" cx="170.576" cy="179.488" r="37.384"  stroke="#1A1A1A" strokeWidth="4" />
-    <path fill="#666666" d="M235.064,299.744c0,0,0,1.744,0-33.088s-38.016-35.472-38.016-35.472H144.12
-      c0,0-38.016,0.424-38.016,35.472c0,34.832,0,33.088,0,33.088H235.064z"  stroke="#1A1A1A" strokeWidth="4" />
-    <circle fill="#FFFFFF" cx="341.416" cy="179.488" r="37.384"  stroke="#1A1A1A" strokeWidth="4" />
-    <path fill="#666666" d="M405.904,299.744c0,0,0,1.744,0-33.088s-38.016-35.472-38.016-35.472H314.96
-      c0,0-38.016,0.424-38.016,35.472c0,34.832,0,33.088,0,33.088H405.904z"  stroke="#1A1A1A" strokeWidth="4" />
-  </svg>
-)
-const CartIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="9" cy="21" r="1" />
-    <circle cx="20" cy="21" r="1" />
-    <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6" />
-  </svg>
-)
-const FileTextIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-    <polyline points="14 2 14 8 20 8" />
-    <line x1="16" y1="13" x2="8" y2="13" />
-    <line x1="16" y1="17" x2="8" y2="17" />
-  </svg>
-)
-const WarehouseIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 9l1-5h16l1 5" />
-    <path d="M4 9v10a1 1 0 001 1h14a1 1 0 001-1V9" />
-    <path d="M9 21V13h6v8" />
-  </svg>
-)
-const QualityIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2l7 3v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V5z" />
-    <polyline points="9 12 11 14 15 10" />
-  </svg>
-)
-const ProductionIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M2 20V9l6 4V9l6 4V5h4l2 15z" />
-    <line x1="2" y1="20" x2="22" y2="20" />
-  </svg>
-)
-const MaintenanceIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
-  </svg>
-)
-const DesignIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 19l7-7 3 3-7 7-3-3z" />
-    <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-    <path d="M2 2l7.586 7.586" />
-    <circle cx="11" cy="11" r="2" />
-  </svg>
-)
-const ElectricalIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-  </svg>
-)
-const HydraulicIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2.7l5.66 5.66a8 8 0 11-11.32 0z" />
-    <path d="M9 14a3 3 0 003 3" />
-  </svg>
-)
-const ProjectsIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2" />
-    <line x1="9" y1="3" x2="9" y2="21" />
-    <path d="M13 8l3 3-3 3" />
-  </svg>
-)
-const FinanceIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="1" x2="12" y2="23" />
-    <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
-  </svg>
-)
-const OrganizationIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="4" y="2" width="16" height="20" />
-    <line x1="9" y1="7" x2="9" y2="7.01" />
-    <line x1="15" y1="7" x2="15" y2="7.01" />
-    <line x1="9" y1="12" x2="9" y2="12.01" />
-    <line x1="15" y1="12" x2="15" y2="12.01" />
-    <line x1="9" y1="17" x2="15" y2="17" />
-  </svg>
-)
+const WrenchIcon = <Briefcase size={20} />
+const CalculatorIcon = <Flask size={20} />
+const UsersIcon = <Users size={20} />
+const CartIcon = <ShoppingCart size={20} />
+const FileTextIcon = <FileText size={20} />
+const WarehouseIcon = <Storefront size={20} />
+const QualityIcon = <ShieldCheck size={20} />
+const ProductionIcon = <Factory size={20} />
+const SalesIcon = <ShoppingCart size={20} />
+const MaintenanceIcon = <Wrench size={20} />
+const DesignIcon = <PenNib size={20} />
+const ElectricalIcon = <Lightning size={20} />
+const HydraulicIcon = <Drop size={20} />
+const ProjectsIcon = <Kanban size={20} />
+const FinanceIcon = <CurrencyInr size={20} />
+const OrganizationIcon = <Buildings size={20} />
 const modules = [
   {
     title: 'Service Module',
@@ -160,7 +57,7 @@ const modules = [
     description: 'Customer relationship management, leads, contacts, deals, and organizations.',
     icon: UsersIcon,
     href: '/dashboard/crm',
-    features: ['Contacts', 'Leads', 'Deals', 'Organizations'],
+    features: ['Contacts', 'Leads', 'Deals', 'Customer Organizations'],
     barColor: 'linear-gradient(90deg,#10b981,#34d399)',
     iconBg: 'rgba(16,185,129,0.12)',
     iconColor: '#059669',
@@ -218,6 +115,19 @@ const modules = [
     iconColor: '#475569',
     tagBg: 'rgba(71,85,105,0.12)',
     tagColor: '#334155',
+  },
+  {
+    title: 'Sales',
+    app: 'sales' as const,
+    description: 'Sales orders from won inquiries and tenders — approval, order acknowledgement, delivery schedule per vehicle, LD and DP extensions.',
+    icon: SalesIcon,
+    href: '/dashboard/sales',
+    features: ['Orders', 'Delivery', 'Products', 'LD'],
+    barColor: 'linear-gradient(90deg,#0f766e,#14b8a6)',
+    iconBg: 'rgba(15,118,110,0.12)',
+    iconColor: '#0f766e',
+    tagBg: 'rgba(15,118,110,0.12)',
+    tagColor: '#115e59',
   },
   {
     title: 'Maintenance',
@@ -299,15 +209,11 @@ const modules = [
   },
 ]
 
-const HrIcon = (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="5" width="20" height="14" rx="2" />
-    <circle cx="8" cy="11" r="2" />
-    <path d="M5 16c.6-1.5 1.7-2.2 3-2.2s2.4.7 3 2.2" />
-    <line x1="14" y1="10" x2="19" y2="10" />
-    <line x1="14" y1="14" x2="17" y2="14" />
-  </svg>
-)
+// Card order + live/upcoming split — keep in step with the sidebar (Sidebar.tsx `upcoming: true`).
+const LIVE_APPS = ['erp', 'rnd', 'crm', 'sales', 'p2p', 'store', 'projects', 'accounts']
+const UPCOMING_APPS = ['production', 'maintenance', 'electrical', 'hydraulic', 'hr', 'quality', 'design']
+
+const HrIcon = <IdentificationCard size={20} />
 
 // Shown to every logged-in user (like the sidebar's "HR & Admin" link):
 // My HR — leave, attendance, travel, claims, assets — is self-service. The
@@ -342,6 +248,18 @@ const adminModule = {
 
 export default function DashboardPage() {
   const { user } = useAuth()
+  // My Approvals / My Tasks — every user's own work, one click from home.
+  // null = still loading (or the count couldn't be read: the card still opens).
+  const [waiting, setWaiting] = useState<number | null>(null)
+  const [openTasks, setOpenTasks] = useState<number | null>(null)
+  useEffect(() => {
+    if (!user) return
+    approvalsApi.inbox().then((rows) => setWaiting(rows.length)).catch(() => setWaiting(null))
+    pmOngoingApi.my(false).then((rows) => setOpenTasks(
+      rows.filter((t) => t.mine && !['done', 'cancelled'].includes(t.status)).length
+      + rows.flatMap((t) => t.subtasks.filter((s) => s.mine && s.status !== 'done')).length,
+    )).catch(() => setOpenTasks(null))
+  }, [user])
 
   const greeting = getGreeting()
   const today = new Date().toLocaleDateString('en-IN', {
@@ -351,19 +269,30 @@ export default function DashboardPage() {
     day: 'numeric',
   })
 
-  const visibleModules = [
-    ...modules.filter((module) => user?.apps?.includes(module.app)),
-    // `hr` drops out of user.apps while HR is locked (backend module_visibility.py).
-    ...(user?.apps?.includes('hr') ? [hrModule] : []),
+  const byApp = (app: string) => modules.find((m) => m.app === app && user?.apps?.includes(app))
+  // Same split and order as the sidebar: live modules first, then the
+  // planned roll-out under its own "Upcoming" heading.
+  const liveModules = [
+    ...LIVE_APPS.map(byApp),
     ...(user?.role === 'admin' ? [adminModule] : []),
-  ]
+  ].filter((m) => !!m)
+  const upcomingModules = UPCOMING_APPS
+    .map((app) => (app === 'hr' ? (user?.apps?.includes('hr') ? hrModule : undefined) : byApp(app)))
+    .filter((m) => !!m)
 
   return (
     <div>
       <h1 style={{ fontSize: 30, fontWeight: 700, color: TEXT.heading, margin: '0 0 6px' }}>
         {greeting}, {user?.name.split(' ')[0]}
       </h1>
-      <p style={{ fontSize: 14, color: TEXT.muted, margin: '0 0 36px' }}>{today}</p>
+      <p style={{ fontSize: 14, color: TEXT.muted, margin: '0 0 28px' }}>{today}</p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, marginBottom: 32, maxWidth: 640 }}>
+        <WorkCard href="/dashboard/organization/approvals" title="My Approvals" count={waiting}
+          sub={waiting === null ? 'Documents waiting for your decision' : waiting ? `${waiting} waiting for your decision` : 'Nothing waiting for you'} accent="#FF6A2A" />
+        <WorkCard href="/dashboard/projects/my-tasks" title="My Tasks" count={openTasks}
+          sub={openTasks === null ? 'Milestones and sub-tasks given to you' : openTasks ? `${openTasks} open milestone(s) / sub-task(s)` : 'No open tasks'} accent="#4f46e5" />
+      </div>
 
       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', color: TEXT.muted, marginBottom: 14 }}>
         YOUR APPLICATIONS
@@ -382,11 +311,42 @@ export default function DashboardPage() {
       </svg>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
-        {visibleModules.map((module, index) => (
+        {liveModules.map((module, index) => (
           <ModuleCard key={module.title} {...module} index={index} />
         ))}
       </div>
+
+      {upcomingModules.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.08em', color: TEXT.muted, margin: '32px 0 14px' }}>
+            UPCOMING
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
+            {upcomingModules.map((module, index) => (
+              <ModuleCard key={module.title} {...module} index={liveModules.length + index} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
+  )
+}
+
+function WorkCard({ href, title, sub, count, accent }: { href: string; title: string; sub: string; count: number | null; accent: string }) {
+  return (
+    <Link href={href} style={{
+      display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 16, textDecoration: 'none',
+      background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(),
+    }}>
+      <span style={{ minWidth: 44, height: 44, padding: '0 8px', borderRadius: 12, background: `${accent}1a`, color: accent, fontSize: 18, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        {count === null ? '…' : count}
+      </span>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 14.5, fontWeight: 700, color: TEXT.heading }}>{title}</span>
+        <span style={{ display: 'block', fontSize: 12.5, color: TEXT.muted, marginTop: 2 }}>{sub}</span>
+      </span>
+      <span aria-hidden style={{ marginLeft: 'auto', color: TEXT.muted }}>→</span>
+    </Link>
   )
 }
 

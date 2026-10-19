@@ -10,6 +10,7 @@ import { secondaryBtnStyle } from '@/components/shared/ui'
 import HrNav from '@/components/hr/HrNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { sectionStyle, searchInputStyle, linkActionStyle, ErrorBanner, Avatar } from '@/components/hr/masters/masterUi'
+import { recordPath } from '@/lib/recordRef'
 
 type Tree = {
   byId: Map<number, HrDirectoryEntry>
@@ -144,7 +145,7 @@ export default function HrOrgChartPage() {
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               {isHr
-                ? <span onClick={() => router.push(`/dashboard/hr/employees/${n.id}`)} style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, cursor: 'pointer' }}>{n.name}</span>
+                ? <span onClick={() => router.push(recordPath('/dashboard/hr/employees', n))} style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading, cursor: 'pointer' }}>{n.name}</span>
                 : <span style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.heading }}>{n.name}</span>}
               {isMe && <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 9999, background: '#2563EB1a', color: '#2563EB' }}>You</span>}
             </div>
@@ -153,7 +154,7 @@ export default function HrOrgChartPage() {
             </div>
           </div>
           {allKids > 0 && (
-            <span title={`${tree.descendants.get(n.id) || 0} people in this team in total`} style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: TEXT.secondary, whiteSpace: 'nowrap', flex: 'none' }}>
+            <span data-tour="hr-org-team-count" title={`${tree.descendants.get(n.id) || 0} people in this team in total`} style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: 'rgba(0,0,0,0.05)', color: TEXT.secondary, whiteSpace: 'nowrap', flex: 'none' }}>
               {allKids} direct{(tree.descendants.get(n.id) || 0) > allKids ? ` · ${tree.descendants.get(n.id)} total` : ''}
             </span>
           )}
@@ -182,32 +183,32 @@ export default function HrOrgChartPage() {
             Who reports to whom, from each person&apos;s reporting manager. {nodes.length ? `${nodes.length} people.` : ''}
           </p>
         </div>
-        {isHr && <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/hr/employees')}>Manage Employees</button>}
+        {isHr && <button type="button" data-tour="hr-org-manage-btn" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/hr/employees')}>Manage Employees</button>}
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-        <input style={searchInputStyle} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a person, designation or department…" />
-        <select style={{ ...searchInputStyle, width: 200 }} value={department} onChange={(e) => setDepartment(e.target.value)}>
+        <input data-tour="hr-org-search" style={searchInputStyle} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Find a person, designation or department…" />
+        <select data-tour="hr-org-dept-filter" style={{ ...searchInputStyle, width: 200 }} value={department} onChange={(e) => setDepartment(e.target.value)}>
           <option value="">All departments</option>
           {departments.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
         {!filtering && (
           <>
-            <button type="button" style={linkActionStyle} onClick={expandAll}>Expand all</button>
-            <button type="button" style={linkActionStyle} onClick={collapseAll}>Collapse all</button>
+            <button type="button" data-tour="hr-org-expand-all" style={linkActionStyle} onClick={expandAll}>Expand all</button>
+            <button type="button" data-tour="hr-org-collapse-all" style={linkActionStyle} onClick={collapseAll}>Collapse all</button>
           </>
         )}
         {filtering && (
           <>
             <span style={{ fontSize: 12.5, color: TEXT.secondary }}>{matches.size} match{matches.size === 1 ? '' : 'es'}</span>
-            <button type="button" style={linkActionStyle} onClick={() => { setSearch(''); setDepartment('') }}>Clear</button>
+            <button type="button" data-tour="hr-org-clear" style={linkActionStyle} onClick={() => { setSearch(''); setDepartment('') }}>Clear</button>
           </>
         )}
       </div>
 
       <ErrorBanner errors={error} />
 
-      <div style={sectionStyle}>
+      <div data-tour="hr-org-tree" style={sectionStyle}>
         {loading && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p>}
         {!loading && !nodes.length && !error.length && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No people to show yet.</p>}
         {!loading && nodes.length > 0 && leaders.length === 0 && standalone.length === 0 && (
@@ -222,7 +223,7 @@ export default function HrOrgChartPage() {
       </div>
 
       {standalone.length > 0 && (
-        <div style={sectionStyle}>
+        <div data-tour="hr-org-standalone" style={sectionStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <h3 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 3px' }}>No reporting line ({standalone.length})</h3>
@@ -230,7 +231,7 @@ export default function HrOrgChartPage() {
                 People with no reporting manager and no direct reports.{isHr ? ' Set their manager on the HR profile so their approvals route correctly.' : ''}
               </p>
             </div>
-            {!filtering && <button type="button" style={linkActionStyle} onClick={() => setShowStandalone(!showStandalone)}>{showStandalone ? 'Hide' : 'Show'}</button>}
+            {!filtering && <button type="button" data-tour="hr-org-standalone-toggle" style={linkActionStyle} onClick={() => setShowStandalone(!showStandalone)}>{showStandalone ? 'Hide' : 'Show'}</button>}
           </div>
           {(showStandalone || filtering) && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8, marginTop: 12 }}>
@@ -238,7 +239,7 @@ export default function HrOrgChartPage() {
                 <div key={n.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 12, background: matches.has(n.id) ? `${BRAND.primary}14` : 'rgba(255,255,255,.6)', border: `1px solid ${BORDER.light}` }}>
                   <Avatar name={n.name} url={n.profile_photo_url} id={n.id} size={30} />
                   <div style={{ minWidth: 0 }}>
-                    <div onClick={isHr ? () => router.push(`/dashboard/hr/employees/${n.id}`) : undefined} style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, cursor: isHr ? 'pointer' : 'default' }}>{n.name}</div>
+                    <div onClick={isHr ? () => router.push(recordPath('/dashboard/hr/employees', n)) : undefined} style={{ fontSize: 13, fontWeight: 600, color: TEXT.heading, cursor: isHr ? 'pointer' : 'default' }}>{n.name}</div>
                     <div style={{ fontSize: 11.5, color: TEXT.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{[n.designation, n.department].filter(Boolean).join(' · ') || '—'}</div>
                   </div>
                 </div>

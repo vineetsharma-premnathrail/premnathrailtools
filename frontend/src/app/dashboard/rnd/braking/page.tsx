@@ -5,8 +5,11 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { rndApi } from '@/lib/api'
+import { getHistoryFromLink } from '@/components/rnd/historyLink'
 import RndNav from '@/components/rnd/RndNav'
 import Checkbox from '@/components/Checkbox'
+import { extractErrorMessages } from '@/lib/validation'
+import { getErrorMessage, downloadBlob } from '@/components/rnd/toolStyles'
 
 interface BrakingRow {
   mode: 'Rail' | 'Road'
@@ -165,7 +168,7 @@ function BrakingCalculatorPageInner() {
     if (!isAuthorized) return
     const loadId = searchParams.get('load')
     if (!loadId) return
-    rndApi.getHistoryDetail(Number(loadId)).then((detail) => {
+    getHistoryFromLink(loadId).then((detail) => {
       const i = detail.inputs as Record<string, any>
       if (i.doc_no != null) setDocNo(String(i.doc_no))
       if (i.made_by != null) setMadeBy(String(i.made_by))
@@ -184,7 +187,7 @@ function BrakingCalculatorPageInner() {
       if (i.road_gradient_type != null) setRoadGradientType(i.road_gradient_type)
       if (i.mu != null) setRoadFriction(String(i.mu))
       calculate(i as ReturnType<typeof payload>)
-    }).catch(() => setError('Could not load the saved calculation.'))
+    }).catch((err) => setError(extractErrorMessages(err, 'Could not load the saved calculation — check your connection and reload; if it persists your account may lack access to this module.').join(' ')))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthorized])
 
@@ -253,8 +256,22 @@ function BrakingCalculatorPageInner() {
           calculation_name: `Braking — ${massKg}kg @ ${maxSpeed}km/h`,
         }).catch(() => {})
       }
-    } catch {
-      setError('Calculation failed. Check your inputs and try again.')
+    } catch (err) {
+      setError(await getErrorMessage(err, 'Calculation failed. Check your inputs and try again.'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Word first (managed-document rule); PDF stays as the secondary export.
+  const downloadDocx = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const blob = await rndApi.downloadBrakingDocx(payload())
+      downloadBlob(blob, `${docNo || 'Braking_Report'}.docx`)
+    } catch (err) {
+      setError(await getErrorMessage(err, 'Word report generation failed — check the inputs, recalculate, then try again.'))
     } finally {
       setBusy(false)
     }
@@ -271,8 +288,8 @@ function BrakingCalculatorPageInner() {
       a.download = `${docNo || 'Braking_Report'}.pdf`
       a.click()
       URL.revokeObjectURL(url)
-    } catch {
-      setError('PDF generation failed.')
+    } catch (err) {
+      setError(await getErrorMessage(err, 'PDF generation failed.'))
     } finally {
       setBusy(false)
     }
@@ -372,7 +389,7 @@ function BrakingCalculatorPageInner() {
 
       {/* Stat cards */}
       {result && (
-        <div className="grid-4" style={{ marginBottom: 12 }}>
+        <div data-tour="rnd-brk-stats" className="grid-4" style={{ marginBottom: 12 }}>
           <StatCard label="GBR" value={result.gbr?.toFixed(2) ?? '—'} unit="%" color="#f97316" bg="#fff7ed" />
           <StatCard label="Max Braking Force" value={result.max_force ? (result.max_force / 1000).toFixed(2) : '—'} unit="kN" color="#3b82f6" bg="#eff6ff" />
           <StatCard label="Vehicle Mass" value={massKg} unit="kg" color="#22c55e" bg="#f0fdf4" />
@@ -386,10 +403,10 @@ function BrakingCalculatorPageInner() {
         <div style={cardStyle}>
           <div style={cardHeaderStyle}><span style={cardTitleStyle}>Document Details</span></div>
           <div style={cardBodyStyle}>
-            <div><label style={labelStyle}>Doc No.</label><input style={inputStyle} value={docNo} onChange={(e) => setDocNo(e.target.value)} /></div>
-            <div><label style={labelStyle}>Made By</label><input style={inputStyle} placeholder="Engineer name" value={madeBy} onChange={(e) => setMadeBy(e.target.value)} /></div>
-            <div><label style={labelStyle}>Checked By</label><input style={inputStyle} placeholder="Reviewer name" value={checkedBy} onChange={(e) => setCheckedBy(e.target.value)} /></div>
-            <div><label style={labelStyle}>Approved By</label><input style={inputStyle} placeholder="Approver name" value={approvedBy} onChange={(e) => setApprovedBy(e.target.value)} /></div>
+            <div data-tour="rnd-brk-doc-no"><label style={labelStyle}>Doc No.</label><input style={inputStyle} value={docNo} onChange={(e) => setDocNo(e.target.value)} /></div>
+            <div data-tour="rnd-brk-made-by"><label style={labelStyle}>Made By</label><input style={inputStyle} placeholder="Engineer name" value={madeBy} onChange={(e) => setMadeBy(e.target.value)} /></div>
+            <div data-tour="rnd-brk-checked-by"><label style={labelStyle}>Checked By</label><input style={inputStyle} placeholder="Reviewer name" value={checkedBy} onChange={(e) => setCheckedBy(e.target.value)} /></div>
+            <div data-tour="rnd-brk-approved-by"><label style={labelStyle}>Approved By</label><input style={inputStyle} placeholder="Approver name" value={approvedBy} onChange={(e) => setApprovedBy(e.target.value)} /></div>
           </div>
         </div>
 
@@ -397,24 +414,24 @@ function BrakingCalculatorPageInner() {
         <div style={cardStyle}>
           <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
             <span style={cardTitleStyle}>Vehicle Data</span>
-            <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+            <label data-tour="rnd-brk-vehicle-csv" style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
               Import CSV
               <input type="file" accept=".csv" onChange={importVehicleCsv} style={{ display: 'none' }} />
             </label>
           </div>
           <div style={cardBodyStyle}>
-            <div>
+            <div data-tour="rnd-brk-gvw">
               <label style={labelStyle}>GVW (kg) *</label>
               <input style={{ ...inputStyle, ...(fieldErrors.massKg ? { borderColor: '#ef4444' } : {}) }} type="number" value={massKg} onChange={(e) => setMassKg(e.target.value)} />
               {fieldErrors.massKg && <p style={{ fontSize: 10.5, color: '#ef4444', margin: '3px 0 0' }}>Mass must be greater than 0</p>}
             </div>
-            <div>
+            <div data-tour="rnd-brk-speed">
               <label style={labelStyle}>Max Speed km/h * (comma separated)</label>
               <input style={{ ...inputStyle, ...(fieldErrors.maxSpeed ? { borderColor: '#ef4444' } : {}) }} value={maxSpeed} onChange={(e) => setMaxSpeed(e.target.value)} placeholder="e.g. 10,20,50" />
               {fieldErrors.maxSpeed && <p style={{ fontSize: 10.5, color: '#ef4444', margin: '3px 0 0' }}>Enter at least one valid speed</p>}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div>
+              <div data-tour="rnd-brk-wheels">
                 <label style={labelStyle}>Driving Wheels *</label>
                 <input style={{ ...inputStyle, ...(fieldErrors.drivingWheels ? { borderColor: '#ef4444' } : {}) }} type="number" value={drivingWheels} onChange={(e) => setDrivingWheels(e.target.value)} />
               </div>
@@ -424,8 +441,8 @@ function BrakingCalculatorPageInner() {
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div><label style={labelStyle}>Reaction Time (s) *</label><input style={inputStyle} type="number" step="0.1" value={reactionTime} onChange={(e) => setReactionTime(e.target.value)} /></div>
-              <div><label style={labelStyle}>Wheel Dia (mm)</label><input style={inputStyle} type="number" value={wheelDia} onChange={(e) => setWheelDia(e.target.value)} /></div>
+              <div data-tour="rnd-brk-reaction"><label style={labelStyle}>Reaction Time (s) *</label><input style={inputStyle} type="number" step="0.1" value={reactionTime} onChange={(e) => setReactionTime(e.target.value)} /></div>
+              <div data-tour="rnd-brk-wheel-dia"><label style={labelStyle}>Wheel Dia (mm)</label><input style={inputStyle} type="number" value={wheelDia} onChange={(e) => setWheelDia(e.target.value)} /></div>
             </div>
           </div>
         </div>
@@ -434,13 +451,13 @@ function BrakingCalculatorPageInner() {
         <div style={cardStyle}>
           <div style={{ ...cardHeaderStyle, justifyContent: 'space-between' }}>
             <span style={cardTitleStyle}>Track Data</span>
-            <label style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+            <label data-tour="rnd-brk-track-csv" style={{ fontSize: 10.5, fontWeight: 600, color: '#c2410c', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
               Import CSV
               <input type="file" accept=".csv" onChange={importTrackCsv} style={{ display: 'none' }} />
             </label>
           </div>
           <div style={cardBodyStyle}>
-            <div>
+            <div data-tour="rnd-brk-track-std">
               <label style={labelStyle}>Track Standard</label>
               <div style={{ display: 'flex', gap: 8 }}>
                 {(['CUSTOM', 'IR', 'HSR'] as const).map((s) => (
@@ -450,7 +467,7 @@ function BrakingCalculatorPageInner() {
                 ))}
               </div>
             </div>
-            <div>
+            <div data-tour="rnd-brk-gradient">
               <label style={{ ...labelStyle, ...(fieldErrors.maxGradient ? { color: '#ef4444' } : {}) }}>Max Gradient * (comma separated)</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', gap: 6 }}>
@@ -461,7 +478,7 @@ function BrakingCalculatorPageInner() {
                 <input style={{ ...inputStyle, width: 70 }} value={maxGradient} onChange={(e) => setMaxGradient(e.target.value)} />
               </div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div data-tour="rnd-brk-track-geometry" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <div><label style={{ ...labelStyle, opacity: 0.5 }}>Max Curve (m)</label><input style={inputStyle} value={maxCurve} disabled /></div>
               <div><label style={{ ...labelStyle, opacity: 0.5 }}>Super-elevation (mm)</label><input style={inputStyle} value={maxSuperelevation} disabled /></div>
             </div>
@@ -471,7 +488,7 @@ function BrakingCalculatorPageInner() {
             </div>
 
             {roadModeEnabled && (
-              <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: 10, display: 'grid', gap: 8 }}>
+              <div data-tour="rnd-brk-road-params" style={{ borderTop: '1px dashed #e2e8f0', paddingTop: 10, display: 'grid', gap: 8 }}>
                 <div style={{ fontSize: 10.5, fontWeight: 600, color: '#2563eb', textTransform: 'uppercase' }}>Road Parameters</div>
                 <div><label style={labelStyle}>Road Speed km/h (comma sep.)</label><input style={inputStyle} value={roadSpeedList} onChange={(e) => setRoadSpeedList(e.target.value)} /></div>
                 <div>
@@ -498,7 +515,7 @@ function BrakingCalculatorPageInner() {
         <div style={cardStyle}>
           <div style={cardHeaderStyle}><span style={cardTitleStyle}>Brake Configuration</span></div>
           <div style={{ ...cardBodyStyle, gridTemplateColumns: '1fr 1fr' }}>
-            <div>
+            <div data-tour="rnd-brk-brake-type">
               <div style={{ ...labelStyle, marginBottom: 6 }}>Brake Type</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {(['Disc Brake', 'Tread Brake'] as const).map((t) => (
@@ -506,7 +523,7 @@ function BrakingCalculatorPageInner() {
                 ))}
               </div>
             </div>
-            <div>
+            <div data-tour="rnd-brk-calc-method">
               <div style={{ ...labelStyle, marginBottom: 6 }}>Calculate</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {(['force', 'distance', 'detail'] as const).map((m) => (
@@ -516,7 +533,7 @@ function BrakingCalculatorPageInner() {
             </div>
 
             {calcMethod === 'force' && (
-              <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 8 }}>
+              <div data-tour="rnd-brk-stop-distance" style={{ gridColumn: '1 / -1', display: 'grid', gap: 8 }}>
                 <div>
                   <label style={labelStyle}>Total Stop Distance (m)</label>
                   <input style={inputStyle} type="number" placeholder="Auto from EN Standard" disabled={distanceSource !== 'Custom'} value={customDistance} onChange={(e) => setCustomDistance(e.target.value)} />
@@ -532,7 +549,7 @@ function BrakingCalculatorPageInner() {
               </div>
             )}
             {calcMethod === 'distance' && (
-              <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 8 }}>
+              <div data-tour="rnd-brk-target-distance" style={{ gridColumn: '1 / -1', display: 'grid', gap: 8 }}>
                 <div>
                   <label style={labelStyle}>Target Stopping Distance (m)</label>
                   <input style={inputStyle} type="number" value={targetDistance} onChange={(e) => setTargetDistance(e.target.value)} />
@@ -555,11 +572,11 @@ function BrakingCalculatorPageInner() {
           <div style={cardHeaderStyle}><span style={cardTitleStyle}>Control &amp; Actions</span></div>
           <div style={{ ...cardBodyStyle, gridTemplateColumns: 'unset' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-              <div>
+              <div data-tour="rnd-brk-road-mode">
                 <div style={{ ...labelStyle, marginBottom: 6 }}>Mode</div>
                 <span style={radioLabelStyle}><Checkbox checked={roadModeEnabled} onChange={(e) => setRoadModeEnabled(e.target.checked)} /> Road Mode</span>
               </div>
-              <div>
+              <div data-tour="rnd-brk-scenarios">
                 <div style={{ ...labelStyle, marginBottom: 6 }}>Scenarios</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={radioLabelStyle}><Checkbox checked={showStraight} onChange={(e) => setShowStraight(e.target.checked)} /> Straight</span>
@@ -567,7 +584,7 @@ function BrakingCalculatorPageInner() {
                   <span style={radioLabelStyle}><Checkbox checked={showMovingDown} onChange={(e) => setShowMovingDown(e.target.checked)} /> Moving Down</span>
                 </div>
               </div>
-              <div>
+              <div data-tour="rnd-brk-show-gbr">
                 <div style={{ ...labelStyle, marginBottom: 6 }}>Options</div>
                 <span style={radioLabelStyle}><Checkbox checked={showGBR} onChange={(e) => setShowGBR(e.target.checked)} /> Show GBR %</span>
               </div>
@@ -577,6 +594,7 @@ function BrakingCalculatorPageInner() {
 
             <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <button
+                data-tour="rnd-brk-calculate-btn"
                 onClick={() => calculate()}
                 disabled={busy}
                 style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#f97316,#ea580c)', color: '#fff', fontWeight: 600, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.03em', cursor: busy ? 'default' : 'pointer', boxShadow: '0 4px 12px rgba(249,115,22,0.3)', opacity: busy ? 0.7 : 1 }}
@@ -584,10 +602,11 @@ function BrakingCalculatorPageInner() {
                 {busy ? 'Calculating…' : 'Calculate'}
               </button>
               <div style={{ flex: 1 }} />
-              <button onClick={exportInputsCsv} style={smBtnStyle('#f8fafc', '#e2e8f0', '#475569')}>Inputs</button>
-              <button onClick={exportOutputsCsv} style={smBtnStyle('#f8fafc', '#e2e8f0', '#475569')}>Outputs</button>
-              <button onClick={downloadPdf} disabled={busy} style={smBtnStyle('#fef2f2', '#fecaca', '#dc2626')}>PDF</button>
-              <Link href="/dashboard/rnd/history" style={{ ...smBtnStyle('#f5f3ff', '#ddd6fe', '#7c3aed'), textDecoration: 'none', display: 'inline-flex' }}>History</Link>
+              <button data-tour="rnd-brk-export-inputs" onClick={exportInputsCsv} style={smBtnStyle('#f8fafc', '#e2e8f0', '#475569')}>Inputs</button>
+              <button data-tour="rnd-brk-export-outputs" onClick={exportOutputsCsv} style={smBtnStyle('#f8fafc', '#e2e8f0', '#475569')}>Outputs</button>
+              <button data-tour="rnd-brk-docx-btn" onClick={downloadDocx} disabled={busy} style={smBtnStyle('#eff6ff', '#bfdbfe', '#1d4ed8')}>Word Report (.docx)</button>
+              <button data-tour="rnd-brk-pdf-btn" onClick={downloadPdf} disabled={busy} style={smBtnStyle('#fef2f2', '#fecaca', '#dc2626')}>PDF</button>
+              <Link data-tour="rnd-brk-history-btn" href="/dashboard/rnd/history" style={{ ...smBtnStyle('#f5f3ff', '#ddd6fe', '#7c3aed'), textDecoration: 'none', display: 'inline-flex' }}>History</Link>
             </div>
             {saveStatus && <span style={{ fontSize: 11.5, color: '#78716c' }}>{saveStatus}</span>}
           </div>
@@ -596,7 +615,7 @@ function BrakingCalculatorPageInner() {
 
       {/* Results + EN Standard reference */}
       <div className="braking-results-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 190px', gap: 12, alignItems: 'start' }}>
-        <div style={{ ...cardStyle, overflow: 'hidden' }}>
+        <div data-tour="rnd-brk-results" style={{ ...cardStyle, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#1e293b' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#f97316', boxShadow: '0 0 6px #f97316' }} />
@@ -718,7 +737,7 @@ function BrakingCalculatorPageInner() {
         </div>
 
         {/* EN Standard Reference */}
-        <div style={{ ...cardStyle, overflow: 'hidden' }}>
+        <div data-tour="rnd-brk-en-table" style={{ ...cardStyle, overflow: 'hidden' }}>
           <div style={{ padding: '10px 14px', background: '#1e293b' }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: '#fff', textTransform: 'uppercase', letterSpacing: '.04em' }}>EN Std. Distances</span>
           </div>

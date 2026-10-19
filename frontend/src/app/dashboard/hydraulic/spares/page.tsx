@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
+import { recordPath } from '@/lib/recordRef'
 import { HydSparePart } from '@/types'
-import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
+import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import RetiredBanner from '@/components/hydraulic/RetiredBanner'
 import { SPARE_CATEGORY_LABELS, CRITICALITY_LABELS, CRITICALITY_HEX } from '@/components/hydraulic/labels'
 import { extractErrorMessages } from '@/lib/validation'
 
@@ -64,17 +66,9 @@ export default function HydSparePartsPage() {
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Spare Parts</h1>
           <p style={{ fontSize: 13, color: TEXT.secondary, margin: '6px 0 0' }}>Stock is read live from the linked Store item.</p>
         </div>
-        <button
-          onClick={() => router.push('/dashboard/hydraulic/spares/new')}
-          style={{
-            padding: '12px 22px', borderRadius: 12, border: 'none', cursor: 'pointer',
-            background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600,
-            boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
-          }}
-        >
-          + New Spare
-        </button>
       </div>
+
+      <RetiredBanner what="Hydraulic spare parts" />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
@@ -83,26 +77,26 @@ export default function HydSparePartsPage() {
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-        <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search part code, name or part no…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={{ ...inputStyle, flex: '0 1 190px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
+        <input data-tour="hyd-spare-search" style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200 }} placeholder="Search part code, name or part no…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select data-tour="hyd-spare-category-filter" style={{ ...inputStyle, flex: '0 1 190px' }} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="">All categories</option>
           {Object.entries(SPARE_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
+        <select data-tour="hyd-spare-medium-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={systemType} onChange={(e) => setSystemType(e.target.value)}>
           <option value="">Hydraulic + Pneumatic</option>
           <option value="hydraulic">Hydraulic</option>
           <option value="pneumatic">Pneumatic</option>
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 150px' }} value={criticality} onChange={(e) => setCriticality(e.target.value)}>
+        <select data-tour="hyd-spare-criticality-filter" style={{ ...inputStyle, flex: '0 1 150px' }} value={criticality} onChange={(e) => setCriticality(e.target.value)}>
           <option value="">All criticality</option>
           {Object.entries(CRITICALITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select style={{ ...inputStyle, flex: '0 1 180px' }} value={stock} onChange={(e) => setStock(e.target.value)}>
+        <select data-tour="hyd-spare-stock-filter" style={{ ...inputStyle, flex: '0 1 180px' }} value={stock} onChange={(e) => setStock(e.target.value)}>
           {STOCK_FILTERS.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
 
-      <div style={{
+      <div data-tour="hyd-spare-table" style={{
         borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
         border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)',
       }}>
@@ -125,7 +119,7 @@ export default function HydSparePartsPage() {
               spares.map((s) => {
                 const stockColor = s.stock_status === 'out' ? '#DC2626' : s.stock_status === 'low' ? '#B45309' : TEXT.body
                 return (
-                  <tr key={s.id} onClick={() => router.push(`/dashboard/hydraulic/spares/${s.id}`)} style={{ cursor: 'pointer' }}>
+                  <tr key={s.id} onClick={() => router.push(recordPath('/dashboard/hydraulic/spares', s))} style={{ cursor: 'pointer' }}>
                     <td style={{ ...cellStyle, fontWeight: 600, color: TEXT.heading, whiteSpace: 'nowrap' }}>{s.part_code}</td>
                     <td style={cellStyle}>
                       {s.name}
@@ -150,7 +144,7 @@ export default function HydSparePartsPage() {
                       </span>
                     </td>
                     <td onClick={(e) => e.stopPropagation()} style={cellStyle}>
-                      <span onClick={() => router.push(`/dashboard/hydraulic/spares/${s.id}`)} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
+                      <span onClick={() => router.push(recordPath('/dashboard/hydraulic/spares', s))} style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer' }}>View</span>
                     </td>
                   </tr>
                 )

@@ -5,9 +5,11 @@ import { hrApi } from '@/lib/api'
 import { HrChecklistTemplate, HrLifecycleEventType, HrLifecycleMeta } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
-import { Field, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { primaryBtnStyle } from '@/components/shared/ui'
+import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint, SheetError } from '@/components/shared/FormSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
+import { useCan } from '@/lib/permissions'
 
 const TYPES: { value: HrLifecycleEventType; label: string; hex: string }[] = [
   { value: 'joining', label: 'Joining', hex: '#16A34A' },
@@ -23,10 +25,6 @@ const sectionStyle: React.CSSProperties = {
   borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur,
   border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), padding: 20, marginBottom: 20,
 }
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
-  background: 'rgba(255,255,255,.7)', fontSize: 13.5, outline: 'none', color: TEXT.body, boxSizing: 'border-box',
-}
 const th: React.CSSProperties = { textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: TEXT.muted, position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1 }
 const td: React.CSSProperties = { padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}`, verticalAlign: 'top' }
 
@@ -34,6 +32,7 @@ interface FormState { id: number | null; category: string; title: string; descri
 const EMPTY: FormState = { id: null, category: 'hr', title: '', description: '', default_owner_user_id: '', sort_order: '', is_active: true }
 
 export default function ChecklistTemplatesMaster() {
+  const { can, canDelete } = useCan()
   const [type, setType] = useState<HrLifecycleEventType>('joining')
   const [rows, setRows] = useState<HrChecklistTemplate[]>([])
   const [meta, setMeta] = useState<HrLifecycleMeta | null>(null)
@@ -95,7 +94,7 @@ export default function ChecklistTemplatesMaster() {
   const activeType = TYPES.find((t) => t.value === type)!
 
   return (
-    <div style={sectionStyle}>
+    <div data-tour="hr-mst-cl-section" style={sectionStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
         <div>
           <h3 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Checklist Templates</h3>
@@ -104,10 +103,10 @@ export default function ChecklistTemplatesMaster() {
             Manager items with no fixed owner go to the employee&apos;s (new) manager.
           </p>
         </div>
-        {!form && <button type="button" onClick={() => setForm({ ...EMPTY })} style={primaryBtnStyle}>+ Add item</button>}
+        {!form && can('hr', 'masters', 'create') && <button type="button" data-tour="hr-mst-cl-add-btn" onClick={() => setForm({ ...EMPTY })} style={primaryBtnStyle}>+ Add item</button>}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div data-tour="hr-mst-cl-types" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {TYPES.map((t) => {
           const active = t.value === type
           return (
@@ -127,57 +126,56 @@ export default function ChecklistTemplatesMaster() {
         })}
       </div>
 
-      {error.length > 0 && (
-        <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-          {error.join(' ')}
-        </div>
-      )}
+      {!form && error.length > 0 && <SheetError error={error} />}
 
       {form && (
-        <div style={{ padding: 16, borderRadius: 14, border: `1px solid ${activeType.hex}40`, background: `${activeType.hex}06`, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: TEXT.heading, marginBottom: 12 }}>{form.id ? 'Edit' : 'New'} {activeType.label.toLowerCase()} checklist item</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            <div style={{ flex: '0 1 140px', minWidth: 120 }}>
-              <Field label="Category">
-                <select style={inputStyle} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                  {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </Field>
-            </div>
-            <div style={{ flex: '1 1 280px', maxWidth: 440 }}>
-              <Field label="Title *">
-                <input style={inputStyle} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Return ID / access card" />
-              </Field>
-            </div>
-            <div style={{ flex: '1 1 240px', maxWidth: 320 }}>
-              <Field label="Default owner">
+        <FormSheet width={580} tour="hr-mst-cl-form" icon={form.id ? 'edit' : 'plus'} iconColor={activeType.hex}
+          title={`${form.id ? 'Edit' : 'New'} ${activeType.label.toLowerCase()} checklist item`}
+          subtitle="Copied onto every new lifecycle event of this type — events already raised keep their copy."
+          onClose={() => setForm(null)} busy={saving}
+          footer={<>
+            <button type="button" data-tour="hr-mst-cl-cancel-btn" onClick={() => setForm(null)} disabled={saving} style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
+            <button type="button" data-tour="hr-mst-cl-save-btn" disabled={saving} onClick={save} style={sheetBtn('primary', SHEET.BLUE, saving)}><SheetIcon name="check" size={16} />{saving ? 'Saving…' : 'Save'}</button>
+          </>}>
+          <div style={{ padding: '20px 24px' }}>
+            {error.length > 0 && <SheetError error={error} />}
+            <SheetSection icon="list" title="Checklist Item">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                <div data-tour="hr-mst-cl-category" style={{ flex: '0 1 140px', minWidth: 120 }}>
+                  <label style={sheetLabel}>Category</label>
+                  <select style={sheetInput} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                    {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div data-tour="hr-mst-cl-order" style={{ flex: '0 1 90px', minWidth: 80 }}>
+                  <label style={sheetLabel}>Order</label>
+                  <input style={sheetInput} inputMode="numeric" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value.replace(/[^0-9]/g, '') })} placeholder="auto" />
+                </div>
+              </div>
+              <div data-tour="hr-mst-cl-title" style={{ marginTop: 14 }}>
+                <label style={sheetLabel}>Title <Req /></label>
+                <input style={sheetInput} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Return ID / access card" autoFocus />
+              </div>
+              <div data-tour="hr-mst-cl-description" style={{ marginTop: 14 }}>
+                <label style={sheetLabel}>Description <Optional /></label>
+                <textarea style={{ ...sheetInput, minHeight: 56, resize: 'vertical' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="What exactly has to be checked" />
+              </div>
+            </SheetSection>
+            <SheetSection icon="user" title="Ownership">
+              <div data-tour="hr-mst-cl-owner">
+                <label style={sheetLabel}>Default owner</label>
                 <SearchableSelect value={form.default_owner_user_id} onChange={(v) => setForm({ ...form, default_owner_user_id: v })} options={userOptions} placeholder="— No fixed owner —" />
-              </Field>
-            </div>
-            <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-              <Field label="Order">
-                <input style={inputStyle} inputMode="numeric" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value.replace(/[^0-9]/g, '') })} placeholder="auto" />
-              </Field>
-            </div>
+                <p style={sheetHint}>Manager items with no fixed owner go to the employee&apos;s (new) manager.</p>
+              </div>
+              <label data-tour="hr-mst-cl-active" style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: SHEET.BODY, cursor: 'pointer', marginTop: 14 }}>
+                <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active (copied onto new events)
+              </label>
+            </SheetSection>
           </div>
-          <div style={{ marginTop: 12 }}>
-            <Field label="Description">
-              <textarea style={{ ...inputStyle, minHeight: 56, resize: 'vertical' }} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional — what exactly has to be checked" />
-            </Field>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active (copied onto new events)
-            </label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={() => setForm(null)} style={secondaryBtnStyle}>Cancel</button>
-              <button type="button" disabled={saving} onClick={save} style={{ ...primaryBtnStyle, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</button>
-            </div>
-          </div>
-        </div>
+        </FormSheet>
       )}
 
-      <div style={{ borderRadius: 14, border: `1px solid ${BORDER.light}`, overflow: 'auto', maxHeight: 'calc(100vh - 380px)' }}>
+      <div data-tour="hr-mst-cl-table" style={{ borderRadius: 14, border: `1px solid ${BORDER.light}`, overflow: 'auto', maxHeight: 'calc(100vh - 380px)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead>
             <tr>{['#', 'Category', 'Item', 'Default owner', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr>
@@ -205,18 +203,18 @@ export default function ChecklistTemplatesMaster() {
                     {t.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </td>
-                <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>
-                  <span
+                <td data-tour="hr-mst-cl-row-actions" style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                  {can('hr', 'masters', 'edit') && <span
                     onClick={() => setForm({
                       id: t.id, category: t.category, title: t.title, description: t.description || '',
                       default_owner_user_id: t.default_owner_user_id ? String(t.default_owner_user_id) : '', sort_order: String(t.sort_order), is_active: t.is_active,
                     })}
                     style={{ fontSize: 12, fontWeight: 600, color: '#FF6A2A', cursor: 'pointer', marginRight: 12 }}
-                  >Edit</span>
-                  <span onClick={() => toggleActive(t)} style={{ fontSize: 12, fontWeight: 600, color: '#57534e', cursor: 'pointer', marginRight: 12 }}>
+                  >Edit</span>}
+                  {can('hr', 'masters', 'edit') && <span onClick={() => toggleActive(t)} style={{ fontSize: 12, fontWeight: 600, color: '#57534e', cursor: 'pointer', marginRight: 12 }}>
                     {t.is_active ? 'Deactivate' : 'Activate'}
-                  </span>
-                  <span onClick={() => setToDelete(t)} style={{ fontSize: 12, fontWeight: 600, color: '#DC2626', cursor: 'pointer' }}>Delete</span>
+                  </span>}
+                  {canDelete('hr', 'masters', null) && <span onClick={() => setToDelete(t)} style={{ fontSize: 12, fontWeight: 600, color: '#DC2626', cursor: 'pointer' }}>Delete</span>}
                 </td>
               </tr>
             ))}

@@ -4,9 +4,8 @@ import { Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { hydraulicApi } from '@/lib/api'
-import { TEXT } from '@/lib/theme'
-import { secondaryBtnStyle } from '@/components/shared/ui'
 import HydraulicNav from '@/components/hydraulic/HydraulicNav'
+import { recordPath } from '@/lib/recordRef'
 import SystemForm from '@/components/hydraulic/SystemForm'
 
 function NewHydSystemInner() {
@@ -17,29 +16,21 @@ function NewHydSystemInner() {
 
   if (isLoading || !isAuthorized) return null
 
+  const back = () => router.push('/dashboard/hydraulic/systems')
   return (
-    <div>
-      <HydraulicNav />
-
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Hydraulic &amp; Pneumatic
-          </p>
-          <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>New System</h1>
-        </div>
-        <button onClick={() => router.push('/dashboard/hydraulic/systems')} type="button" style={secondaryBtnStyle}>← Back</button>
-      </div>
-
-      <SystemForm
-        defaultSystemType={defaultType}
-        submitLabel="Create System"
-        onSubmit={async (payload) => {
-          const system = await hydraulicApi.createSystem(payload)
-          router.push(`/dashboard/hydraulic/systems/${system.id}`)
-        }}
-      />
-    </div>
+    <SystemForm
+      nav={<HydraulicNav />}
+      title="New System"
+      subtitle="A hydraulic power pack or pneumatic unit — its circuits, BOMs and tests hang off it."
+      onBack={back}
+      onCancel={back}
+      defaultSystemType={defaultType}
+      submitLabel="Create System"
+      onSubmit={async (payload) => {
+        const system = await hydraulicApi.createSystem(payload)
+        router.push(recordPath('/dashboard/hydraulic/systems', system))
+      }}
+    />
   )
 }
 

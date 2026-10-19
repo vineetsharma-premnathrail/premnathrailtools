@@ -5,6 +5,36 @@ const config: TourConfig = {
   pageTitle: 'Organization Info',
   steps: [
     {
+      target: 'org-nav-building',
+      title: 'Organization menu — Info',
+      purpose: 'The company master: legal name, addresses, GST/PAN, partners, financial year, branding. Set this up first — every module and every printed document reads from it.',
+    },
+    {
+      target: 'org-nav-map',
+      title: 'Branches',
+      purpose: 'Physical locations (units, workshops, offices) with their stores, cost centers, and assigned users.',
+    },
+    {
+      target: 'org-nav-grid',
+      title: 'Department',
+      purpose: 'Departments, their heads, and members — used for approvals, HR, and reporting.',
+    },
+    {
+      target: 'org-nav-users',
+      title: 'Users',
+      purpose: 'Read-only list of who has access to which modules.',
+    },
+    {
+      target: 'org-nav-shield',
+      title: 'Role & Permissions',
+      purpose: 'Where module access and approval roles are actually granted, user by user.',
+    },
+    {
+      target: 'org-nav-clock',
+      title: 'Audit Logs',
+      purpose: 'Who changed what, and when — across all modules.',
+    },
+    {
       target: 'org-info-edit-btn',
       title: 'Edit',
       purpose: 'Opens the editable version of this company record — everything on this page is read-only.',
@@ -46,12 +76,30 @@ const config: TourConfig = {
     {
       target: 'org-info-tab-tax',
       title: 'Tax Configuration',
-      purpose: 'GST registration type and whether TDS/TCS are applicable — determines how tax is calculated on this company\'s transactions.',
+      purpose: 'GST registration type, home tax region, and TDS/TCS applicability flags. The GST state decides CGST+SGST vs IGST; TDS/TCS flags are reference only.',
       autoActivate: true,
     },
     {
       target: 'org-info-tax-panel',
       title: 'Tax Configuration',
+    },
+    {
+      target: 'org-info-tab-partners',
+      title: 'Partners',
+      purpose: 'The company’s top approval level, picked from the users synced from Azure. Partners give the final approval on legacy purchase orders, get escalations for overdue project WBS elements, can see P2P MIS, and are the default signatory on letters and certificates. Replaces the old MD flag.',
+      autoActivate: true,
+    },
+    {
+      target: 'org-info-partners-panel',
+      title: 'Partners',
+      purpose: 'Manage partners adds or removes them — every change is recorded in the audit log. A deactivated (exited) user cannot be a partner.',
+    },
+    {
+      target: 'org-info-partners-manage',
+      title: 'Manage partners / + Add partners',
+      purpose: 'Opens a picker of Azure-synced users. Select the partners, then Save partners (or Cancel to leave unchanged).',
+      why: 'Leaving the list empty means nobody can give the final approval on legacy purchase orders still waiting for a Partner.',
+      after: 'Saved immediately — no need to press Edit on the page.',
     },
     {
       target: 'org-info-tab-contacts',

@@ -3,10 +3,24 @@
 // Style tokens, status labels and small helpers shared by the Electrical
 // job-page tabs and register pages, so the ten tab components don't each
 // re-declare the same maps. Built from lib/theme like every other module.
+import { useCallback, useState } from 'react'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER, DANGER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import { ElectricalLookupOption } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
+import { FormSheet, SheetIcon, SheetIconName, SHEET, sheetBtn, sheetLabel, Req, Optional } from '@/components/shared/FormSheet'
+import { useCan, PermissionAction } from '@/lib/permissions'
+
+/** Electrical › RRV Electrical Jobs features (backend app/core/features/electrical.py).
+ * `jf` = may do `action` on a job feature. `sees` = may see a job feature —
+ * someone without Jobs › View (opening a job from Testing etc.) keeps the
+ * read-only view they had before features, as the backend does. */
+export function useJobFeatures() {
+  const { can, canFeature } = useCan()
+  const outside = !can('electrical', 'jobs', 'view')
+  const jf = (feature: string, action: PermissionAction) => canFeature('electrical', 'jobs', feature, action)
+  return { jf, sees: (feature: string) => outside || jf(feature, 'view'), can }
+}
 
 export const inputStyle: React.CSSProperties = {
   width: '100%', padding: '9px 11px', borderRadius: 10, border: `1px solid ${BORDER.normal}`,
@@ -47,6 +61,19 @@ export function ErrorBanner({ error }: { error: string | string[] }) {
   )
 }
 
+/** Failures of picker / filter lookups, kept apart from a page's main error
+ * so a later list reload (which clears that error) can't hide them, and
+ * collected rather than overwritten when several lookups fail. */
+export function useLookupErrors() {
+  const [errors, setErrors] = useState<string[]>([])
+  const add = useCallback((msg: string | string[]) => setErrors((prev) => {
+    const next = [...prev]
+    for (const m of Array.isArray(msg) ? msg : [msg]) if (m && !next.includes(m)) next.push(m)
+    return next
+  }), [])
+  return [errors, add] as const
+}
+
 export function NoticeBanner({ notice }: { notice: string }) {
   if (!notice) return null
   return (
@@ -57,7 +84,7 @@ export function NoticeBanner({ notice }: { notice: string }) {
 }
 
 export const JOB_STATUS_LABELS: Record<string, string> = { draft: 'Draft', in_progress: 'In Progress', on_hold: 'On Hold', handed_over: 'Handed Over', closed: 'Closed', cancelled: 'Cancelled' }
-export const JOB_STATUS_HEX: Record<string, string> = { draft: '#78716c', in_progress: '#F59E0B', on_hold: '#9333EA', handed_over: '#2563EB', closed: '#16A34A', cancelled: '#DC2626' }
+export const JOB_STATUS_HEX: Record<string, string> = { draft: '#78716c', in_progress: '#F59E0B', on_hold: '#9333EA', handed_over: '#2563EB', closed: '#16A34A', cancelled: '#a8a29e' }
 export const PRIORITY_LABELS: Record<string, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' }
 export const PRIORITY_HEX: Record<string, string> = { low: '#78716c', normal: '#2563EB', high: '#F59E0B', urgent: '#DC2626' }
 export const STAGE_STATUS_LABELS: Record<string, string> = { not_started: 'Not Started', in_progress: 'In Progress', completed: 'Completed', not_applicable: 'N/A' }
@@ -110,27 +137,43 @@ export async function openBlob(fetcher: () => Promise<Blob>, onError: (msg: stri
   }
 }
 
-/** A small modal shell for the tabs' add/edit forms. */
-export function Modal({ open, title, onClose, children, width = 640 }: { open: boolean; title: string; onClose: () => void; children: React.ReactNode; width?: number }) {
+/** The popup for the tabs' add/edit forms and action dialogs — the app-wide
+ * FormSheet look (icon header, title, subtitle, close, body, footer), rendered
+ * through a portal. `footer` holds the Cancel + primary buttons; without one a
+ * single Close button is shown. `flush` drops the body padding so the
+ * children can lay out their own SheetColumns. */
+export function Modal({ open, title, onClose, children, width = 640, icon = 'edit', iconColor, subtitle = '', footer, busy = false, tour, flush = false }: {
+  open: boolean; title: string; onClose: () => void; children: React.ReactNode; width?: number
+  icon?: SheetIconName; iconColor?: string; subtitle?: string; footer?: React.ReactNode; busy?: boolean; tour?: string; flush?: boolean
+}) {
   if (!open) return null
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 150, padding: '6vh 16px', overflowY: 'auto' }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: width, background: '#fff', borderRadius: 18, boxShadow: '0 20px 50px rgba(0,0,0,.18)', padding: 22 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{title}</h3>
-          <button type="button" onClick={onClose} aria-label="Close" style={{ background: 'none', border: 'none', fontSize: 20, lineHeight: 1, cursor: 'pointer', color: TEXT.muted }}>×</button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <FormSheet icon={icon} iconColor={iconColor} title={title} subtitle={subtitle} onClose={onClose} busy={busy} tour={tour} width={width}
+      footer={footer ?? <button type="button" onClick={onClose} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Close</button>}>
+      {flush ? children : <div style={{ padding: '20px 24px' }}>{children}</div>}
+    </FormSheet>
+  )
+}
+
+/** Footer pair for a Modal: Cancel (secondary) + the primary action with its icon, "Saving…" while busy. */
+export function ModalFooter({ onCancel, onSubmit, busy, label, busyLabel = 'Saving…', icon = 'check', color = SHEET.BLUE, disabled = false, cancelTour, submitTour, cancelLabel = 'Cancel' }: {
+  onCancel: () => void; onSubmit: () => void; busy: boolean; label: string; busyLabel?: string; icon?: SheetIconName; color?: string
+  disabled?: boolean; cancelTour?: string; submitTour?: string; cancelLabel?: string
+}) {
+  const off = busy || disabled
+  return (
+    <>
+      <button data-tour={cancelTour} type="button" onClick={onCancel} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>{cancelLabel}</button>
+      <button data-tour={submitTour} type="button" onClick={onSubmit} disabled={off} style={sheetBtn('primary', color, off)}><SheetIcon name={icon} size={16} />{busy ? busyLabel : label}</button>
+    </>
   )
 }
 
 /** Field wrapper sized by flex basis — see the ui-behavior sizing rules. */
-export function F({ label, basis = 160, grow = false, max, children }: { label: string; basis?: number; grow?: boolean; max?: number; children: React.ReactNode }) {
+export function F({ label, basis = 160, grow = false, max, tour, req = false, optional = false, children }: { label: string; basis?: number; grow?: boolean; max?: number; tour?: string; req?: boolean; optional?: boolean; children: React.ReactNode }) {
   return (
-    <div style={{ flex: grow ? `1 1 ${basis}px` : `0 1 ${basis}px`, minWidth: Math.min(basis, 140), maxWidth: max }}>
-      <label style={labelStyle}>{label}</label>
+    <div data-tour={tour} style={{ flex: grow ? `1 1 ${basis}px` : `0 1 ${basis}px`, minWidth: Math.min(basis, 140), maxWidth: max }}>
+      <label style={sheetLabel}>{label}{req && <> <Req /></>}{optional && <> <Optional /></>}</label>
       {children}
     </div>
   )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import date, datetime
-from sqlalchemy import String, Integer, Float, Date, DateTime, Text, ForeignKey
+from sqlalchemy import String, Integer, Float, Boolean, Date, DateTime, Text, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin, SoftDeleteMixin
@@ -61,3 +61,36 @@ class MaintenanceAsset(Base, TimestampMixin, SoftDeleteMixin):
     decommissioned_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+
+
+class MaintenanceAssetSpare(Base, TimestampMixin):
+    """Bill of spares — which Store items this asset consumes. `is_critical`
+    spares should never run out: the Spares page and the below-minimum alert
+    watch them against the Store item's minimum_stock / reorder_level."""
+
+    __tablename__ = "maintenance_asset_spares"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    asset_id: Mapped[int] = mapped_column(Integer, ForeignKey("maintenance_assets.id", ondelete="CASCADE"), index=True, nullable=False)
+    store_item_id: Mapped[int] = mapped_column(Integer, ForeignKey("store_items.id"), index=True, nullable=False)
+    qty_per_replacement: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    is_critical: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    remarks: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+# Data-scope helpers (core/data_scope.py, see maintenance/access.py): the
+# asset's department as a name, so the "Department" data scope can match it
+# against User.department. Deferred — computed only when a scope filter uses it.
+def _asset_scope_columns() -> None:
+    from sqlalchemy import select
+    from sqlalchemy.orm import column_property
+    from app.modules.organization.models.department import Department
+
+    MaintenanceAsset.scope_department = column_property(
+        select(Department.name).where(Department.id == MaintenanceAsset.department_id)
+        .correlate_except(Department).scalar_subquery(),
+        deferred=True,
+    )
+
+
+_asset_scope_columns()

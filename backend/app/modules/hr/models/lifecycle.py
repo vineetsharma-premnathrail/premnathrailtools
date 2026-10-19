@@ -6,7 +6,9 @@ from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
 LIFECYCLE_EVENT_TYPES = ("joining", "confirmation", "transfer", "promotion", "exit")
-LIFECYCLE_STATUSES = ("draft", "in_progress", "completed", "cancelled")
+# scheduled = completed by HR with a future effective date; the daily job
+# (app/tasks/hr_lifecycle_apply.py) applies it on that date (PA40).
+LIFECYCLE_STATUSES = ("draft", "in_progress", "scheduled", "completed", "cancelled")
 EXIT_TYPES = ("resignation", "termination", "retirement", "absconding", "contract_end", "death")
 CHECKLIST_CATEGORIES = ("hr", "it", "admin", "finance", "manager", "store")
 CHECKLIST_ITEM_STATUSES = ("pending", "done", "not_applicable")

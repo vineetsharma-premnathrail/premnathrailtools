@@ -5,9 +5,9 @@ import { useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { organizationApi, storeApi } from '@/lib/api'
 import { Department, StoreDocType, StoreItem, StoreLocation, StoreMaterialIssue } from '@/types'
-import { TEXT } from '@/lib/theme'
-import { Field, Section, Row, inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { FormPage, SheetColumns, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
+import { recordPath } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import { extractErrorMessages } from '@/lib/validation'
@@ -42,18 +42,24 @@ export default function NewMaterialReturnPage() {
 
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
+  const [loadErrors, setLoadErrors] = useState<string[]>([])
+
+  // Load failures go to the error dialog with the server's reason, so an
+  // empty dropdown never hides why (e.g. a Store data-access 403).
+  const loadFailed = (what: string) => (err: unknown) =>
+    setLoadErrors((prev) => [...prev, ...extractErrorMessages(err, 'The server did not respond — check your connection and reload the page.').map((m) => `Couldn't load ${what}: ${m}`)])
 
   useEffect(() => {
     if (!isAuthorized) return
-    storeApi.listItems().then(setItems).catch(() => setItems([]))
-    storeApi.listLocations().then(setLocations).catch(() => setLocations([]))
-    storeApi.listMaterialIssues().then(setIssues).catch(() => setIssues([]))
-    organizationApi.listDepartments().then(setDepartments).catch(() => setDepartments([]))
-    storeApi.listDocTypes('return_source').then((s) => { setSources(s); setSourceType((v) => v || s[0]?.value || '') }).catch(() => setSources([]))
+    storeApi.listItems().then(setItems).catch(loadFailed('items'))
+    storeApi.listLocations().then(setLocations).catch(loadFailed('stores'))
+    storeApi.listMaterialIssues().then(setIssues).catch(loadFailed('material issues'))
+    organizationApi.listDepartments().then(setDepartments).catch(loadFailed('departments'))
+    storeApi.listDocTypes('return_source').then((s) => { setSources(s); setSourceType((v) => v || s[0]?.value || '') }).catch(loadFailed('return sources'))
     storeApi.listDocTypes('return_condition').then((c) => {
       setConditions(c)
       setLines((prev) => prev.map((l) => (l.condition ? l : { ...l, condition: c[0]?.value || '' })))
-    }).catch(() => setConditions([]))
+    }).catch(loadFailed('return conditions'))
   }, [isAuthorized])
 
   const source = sources.find((s) => s.value === sourceType)
@@ -70,7 +76,8 @@ export default function NewMaterialReturnPage() {
     if (issue?.department_id) setDepartmentId(String(issue.department_id))
   }
 
-  // Live preview of who will have to approve — mirrors the server's rules.
+  // Live preview of who approves by default. The actual approvers come from
+  // Organization › Approval Workflows › Material return (the server routes it).
   const usedTypes = [source, ...Array.from(new Set(lines.filter((l) => l.itemId).map((l) => l.condition))).map((c) => conditions.find((x) => x.value === c))]
     .filter((t): t is StoreDocType => !!t && t.approver_rule !== 'none')
   const approvalSteps = Object.values(usedTypes.reduce<Record<string, { rule: string; reasons: string[] }>>((acc, t) => {
@@ -115,7 +122,7 @@ export default function NewMaterialReturnPage() {
           batch_number: l.batchNumber.trim() || undefined,
         })),
       })
-      router.push(`/dashboard/store/returns/${ret.id}`)
+      router.push(recordPath('/dashboard/store/returns', ret))
     } catch (err) {
       setErrors(extractErrorMessages(err, 'Failed to create material return.'))
     } finally {
@@ -126,109 +133,112 @@ export default function NewMaterialReturnPage() {
   if (isLoading || !isAuthorized) return null
 
   return (
-    <div>
-      <StoreNav />
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-        <div>
-          <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-            Store &amp; Inventory
-          </p>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>New Material Return</h1>
-        </div>
-        <button type="button" data-tour="return-back-btn" onClick={() => router.push('/dashboard/store/returns')} style={secondaryBtnStyle}>← Back</button>
-      </div>
-
+    <FormPage nav={<StoreNav />} icon="undo" title="New Material Return" subtitle="Material coming back into a store — from an issue, a site or a vendor challan."
+      onBack={() => router.push('/dashboard/store/returns')} backTour="return-back-btn"
+      footer={<>
+        <button data-tour="return-cancel-btn" type="button" disabled={busy} onClick={() => router.push('/dashboard/store/returns')} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button data-tour="return-save-btn" type="button" disabled={busy} onClick={save} style={sheetBtn('primary', SHEET.BLUE, busy)}><SheetIcon name={approvalSteps.length ? 'send' : 'check'} size={16} />{busy ? 'Saving…' : approvalSteps.length ? 'Submit for Approval' : 'Record Return'}</button>
+      </>}>
       <MessageDialog open={errors.length > 0} variant="error" title="Cannot Save Material Return" message={errors} onClose={() => setErrors([])} />
+      <MessageDialog open={loadErrors.length > 0} variant="error" title="Couldn't Load Form Data" message={loadErrors} onClose={() => setLoadErrors([])} />
 
-      <Section title="Return Details" style={{ marginBottom: 20 }}>
-        <Row>
-          <Field label="Store *">
-            <select data-tour="return-location" style={inputStyle} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-              <option value="">— Select —</option>
-              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Source *">
-            <select data-tour="return-source-type" style={inputStyle} value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
-              {sources.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </Field>
-          {source?.requires_issue ? (
-            <Field label="Material Issue *">
-              <select data-tour="return-source-issue" style={inputStyle} value={sourceIssueId} onChange={(e) => pickIssue(e.target.value)}>
-                <option value="">— Select —</option>
-                {issues.map((i) => <option key={i.id} value={i.id}>{i.issue_number}{i.department_name ? ` — ${i.department_name}` : ''}</option>)}
-              </select>
-            </Field>
-          ) : (
-            <Field label="Source Description">
-              <input style={inputStyle} value={sourceDescription} onChange={(e) => setSourceDescription(e.target.value)} placeholder="e.g. Site surplus return" />
-            </Field>
-          )}
-          <Field label={needsDepartment ? 'Department *' : 'Department'}>
-            <select data-tour="return-department" style={inputStyle} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
-              <option value="">— Select —</option>
-              {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          </Field>
-        </Row>
-        <Row>
-          <Field label="Reason">
-            <input style={inputStyle} value={reason} onChange={(e) => setReason(e.target.value)} />
-          </Field>
-        </Row>
-        <Field label="Remarks">
-          <textarea style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-        </Field>
-      </Section>
-
-      <Section title="Items" style={{ marginBottom: 20 }}>
-        {lines.map((line, idx) => (
-          <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 4, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 220px' }}>
-              <label style={{ fontSize: 11, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Item</label>
-              <div {...(idx === 0 ? { 'data-tour': 'return-item' } : {})}>
-                <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search item code or name…"
-                  options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+      <SheetColumns
+        left={
+          <SheetSection icon="list" title="Return Details">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ flex: '1 1 200px' }}>
+                <label style={sheetLabel}>Store <Req /></label>
+                <select data-tour="return-location" style={sheetInput} value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: '1 1 200px' }}>
+                <label style={sheetLabel}>Source <Req /></label>
+                <select data-tour="return-source-type" style={sheetInput} value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
+                  {sources.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
               </div>
             </div>
-            <div style={{ flex: '0 0 110px' }}>
-              <label style={{ fontSize: 11, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Quantity</label>
-              <input {...(idx === 0 ? { 'data-tour': 'return-quantity' } : {})} type="number" style={inputStyle} value={line.quantity} onChange={(e) => updateLine(idx, { quantity: e.target.value })} />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>
+              {source?.requires_issue ? (
+                <div style={{ flex: '1 1 200px' }}>
+                  <label style={sheetLabel}>Material Issue <Req /></label>
+                  <select data-tour="return-source-issue" style={sheetInput} value={sourceIssueId} onChange={(e) => pickIssue(e.target.value)}>
+                    <option value="">— Select —</option>
+                    {issues.map((i) => <option key={i.id} value={i.id}>{i.issue_number}{i.department_name ? ` — ${i.department_name}` : ''}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div style={{ flex: '1 1 200px' }}>
+                  <label style={sheetLabel}>Source Description</label>
+                  <input data-tour="return-source-description" style={sheetInput} value={sourceDescription} onChange={(e) => setSourceDescription(e.target.value)} placeholder="e.g. Site surplus return" />
+                </div>
+              )}
+              <div style={{ flex: '1 1 200px' }}>
+                <label style={sheetLabel}>Department {needsDepartment ? <Req /> : <Optional />}</label>
+                <select data-tour="return-department" style={sheetInput} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </div>
             </div>
-            <div style={{ flex: '0 0 240px' }}>
-              <label style={{ fontSize: 11, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Condition</label>
-              <select {...(idx === 0 ? { 'data-tour': 'return-condition' } : {})} style={inputStyle} value={line.condition} onChange={(e) => updateLine(idx, { condition: e.target.value })}>
-                {conditions.map((c) => <option key={c.value} value={c.value}>{c.label} — {c.stock_effect === 'quarantine' ? 'to quarantine' : 'to usable stock'}</option>)}
-              </select>
+            <label style={{ ...sheetLabel, marginTop: 14 }}>Reason <Optional /></label>
+            <input data-tour="return-reason" style={sheetInput} value={reason} onChange={(e) => setReason(e.target.value)} />
+          </SheetSection>
+        }
+        right={<>
+          <SheetSection icon="shield" title="Approval">
+            <div data-tour="return-approval-preview" style={{ padding: '12px 14px', borderRadius: 12, background: approvalSteps.length ? 'rgba(217,119,6,0.08)' : 'rgba(22,163,74,0.08)', border: `1px solid ${approvalSteps.length ? 'rgba(217,119,6,0.25)' : 'rgba(22,163,74,0.25)'}`, fontSize: 13, color: SHEET.BODY }}>
+              {approvalSteps.length ? (
+                <>
+                  <b>Needs approval before stock changes</b> (default routing — an admin can change it in Organization › Approval Workflows):
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                    {approvalSteps.map((s, i) => <li key={i}>{RULE_LABELS[s.rule]} — for {s.reasons.join(', ')}</li>)}
+                  </ul>
+                </>
+              ) : <b>No approval needed — stock updates as soon as you record this return.</b>}
+              {quarantineLines > 0 && <div style={{ marginTop: 6, color: '#92400e' }}>{quarantineLines} line(s) go to quarantine, not usable stock — clear them later from the Stock page.</div>}
             </div>
-            <div style={{ flex: '0 0 130px' }}>
-              <label style={{ fontSize: 11, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }}>Batch #</label>
-              <input style={inputStyle} value={line.batchNumber} onChange={(e) => updateLine(idx, { batchNumber: e.target.value })} />
-            </div>
-            <button type="button" onClick={() => removeLine(idx)} disabled={lines.length === 1} style={{ ...secondaryBtnStyle, padding: '10px 14px', opacity: lines.length === 1 ? 0.4 : 1 }}>×</button>
-          </div>
-        ))}
-        <button type="button" data-tour="return-add-item-btn" onClick={addLine} style={{ ...secondaryBtnStyle, padding: '7px 14px', fontSize: 12.5, marginTop: 8 }}>+ Add Item</button>
-      </Section>
+          </SheetSection>
+          <SheetSection icon="chat" title="Remarks" extra={<Optional />}>
+            <textarea data-tour="return-remarks" style={{ ...sheetInput, minHeight: 72, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+          </SheetSection>
+        </>}
+      />
 
-      <div data-tour="return-approval-preview" style={{ padding: '12px 16px', marginBottom: 20, borderRadius: 12, background: approvalSteps.length ? 'rgba(217,119,6,0.08)' : 'rgba(22,163,74,0.08)', border: `1px solid ${approvalSteps.length ? 'rgba(217,119,6,0.25)' : 'rgba(22,163,74,0.25)'}`, fontSize: 13, color: TEXT.body }}>
-        {approvalSteps.length ? (
-          <>
-            <b>Needs approval before stock changes:</b>
-            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-              {approvalSteps.map((s, i) => <li key={i}>{RULE_LABELS[s.rule]} — for {s.reasons.join(', ')}</li>)}
-            </ul>
-          </>
-        ) : <b>No approval needed — stock updates as soon as you record this return.</b>}
-        {quarantineLines > 0 && <div style={{ marginTop: 6, color: '#92400e' }}>{quarantineLines} line(s) go to quarantine, not usable stock — clear them later from the Stock page.</div>}
+      <div style={{ padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }}>
+        <SheetSection icon="box" title="Items">
+          {lines.map((line, idx) => (
+            <div key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 10, flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 260px' }}>
+                {idx === 0 && <label style={sheetLabel}>Item <Req /></label>}
+                <div {...(idx === 0 ? { 'data-tour': 'return-item' } : {})}>
+                  <SearchableSelect value={line.itemId} onChange={(v) => updateLine(idx, { itemId: v })} placeholder="Search item code or name…"
+                    options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
+                </div>
+              </div>
+              <div style={{ flex: '0 0 120px' }}>
+                {idx === 0 && <label style={sheetLabel}>Quantity <Req /></label>}
+                <input {...(idx === 0 ? { 'data-tour': 'return-quantity' } : {})} type="number" style={sheetInput} value={line.quantity} onChange={(e) => updateLine(idx, { quantity: e.target.value })} />
+              </div>
+              <div style={{ flex: '0 0 250px' }}>
+                {idx === 0 && <label style={sheetLabel}>Condition</label>}
+                <select {...(idx === 0 ? { 'data-tour': 'return-condition' } : {})} style={sheetInput} value={line.condition} onChange={(e) => updateLine(idx, { condition: e.target.value })}>
+                  {conditions.map((c) => <option key={c.value} value={c.value}>{c.label} — {c.stock_effect === 'quarantine' ? 'to quarantine' : 'to usable stock'}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: '0 0 140px' }}>
+                {idx === 0 && <label style={sheetLabel}>Batch #</label>}
+                <input {...(idx === 0 ? { 'data-tour': 'return-batch' } : {})} style={sheetInput} value={line.batchNumber} onChange={(e) => updateLine(idx, { batchNumber: e.target.value })} />
+              </div>
+              <button type="button" aria-label="Remove line" {...(idx === 0 ? { 'data-tour': 'return-remove-line-btn' } : {})} onClick={() => removeLine(idx)} disabled={lines.length === 1}
+                style={{ ...sheetBtn('secondary', SHEET.INK, lines.length === 1), padding: '9px 11px' }}><SheetIcon name="trash" size={15} /></button>
+            </div>
+          ))}
+          <button type="button" data-tour="return-add-item-btn" onClick={addLine} style={sheetBtn('ghost', SHEET.BLUE)}><SheetIcon name="plus" size={15} />Add Item</button>
+        </SheetSection>
       </div>
-
-      <div style={{ display: 'flex', gap: 10 }}>
-        <button data-tour="return-save-btn" disabled={busy} onClick={save} style={{ ...primaryBtnStyle, opacity: busy ? 0.7 : 1 }}>{busy ? 'Saving…' : approvalSteps.length ? 'Submit for Approval' : 'Record Return'}</button>
-        <button disabled={busy} onClick={() => router.push('/dashboard/store/returns')} style={{ ...secondaryBtnStyle, opacity: busy ? 0.6 : 1 }}>Cancel</button>
-      </div>
-    </div>
+    </FormPage>
   )
 }
