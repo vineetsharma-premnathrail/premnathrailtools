@@ -17,7 +17,7 @@ def _user(db, email, level=None, role="user"):
     db.add(u)
     db.commit()
     if level:
-        r = Role(name=f"Products – {level} ({email})", permissions=["products:*:*"], data_scopes={"products": level})
+        r = Role(name=f"Products – {level} ({email})", permissions=["products:*:*"], data_scopes={"sales": level})
         db.add(r)
         db.commit()
         u.roles = [r]

@@ -871,7 +871,7 @@ def _check_line_refs(db: Session, items: list[dict]) -> None:
                 raise SalesError(422, f"{label}: product #{fpid} isn't in the product master — pick the product again.")
             if not ln.get("id") and fp.status in ("development", "discontinued"):
                 raise SalesError(422, f"{label}: {fp.code} is {fp.status.replace('_', ' ')} — only active (or phased-out, for spares / "
-                                      "service) products can be sold. Change its status in Product Management first.")
+                                      "service) products can be sold. Change its status in Sales › Products first.")
         iid = ln.get("product_item_id")
         if iid and not db.query(StoreItem.id).filter(StoreItem.id == iid).first():
             raise SalesError(422, f"{label}: stock item #{iid} doesn't exist in the Item Master — pick the item again.")

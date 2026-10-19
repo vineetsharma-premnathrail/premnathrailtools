@@ -33,8 +33,8 @@ export default function ProductApplicationsPage() {
 
   if (isLoading || !isAuthorized) return null
 
-  const canCreate = can('products', 'applications', 'create')
-  const canEdit = can('products', 'applications', 'edit')
+  const canCreate = can('sales', 'applications', 'create')
+  const canEdit = can('sales', 'applications', 'edit')
 
   const run = async (fn: () => Promise<unknown>, fallback: string) => {
     setError('')

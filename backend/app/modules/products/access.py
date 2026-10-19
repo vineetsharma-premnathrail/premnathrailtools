@@ -11,4 +11,4 @@ picker on every product), so they are not scoped.
 from app.core.data_scope import register_scoped
 from app.modules.products.models.product import FinishedProduct
 
-register_scoped(FinishedProduct, "products", owner=("created_by_id",), label="product")
+register_scoped(FinishedProduct, "sales", owner=("created_by_id",), label="product")

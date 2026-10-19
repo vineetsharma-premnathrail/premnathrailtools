@@ -578,9 +578,9 @@ register_audited(AccountsCollectionNote, entity_type="collection_note", module_k
 register_audited(AccountsDunningLetter, entity_type="dunning_letter", module_key="accounts", label="Reminder letter", ref=lambda o: o.letter_number)
 register_audited(AccountsDispute, entity_type="dispute", module_key="accounts", label="Dispute", ref=lambda o: o.dispute_number)
 
-register_audited(FinishedProduct, entity_type="product", module_key="products", label="Product", ref=lambda o: f"{o.code} — {o.name}")
+register_audited(FinishedProduct, entity_type="product", module_key="sales", label="Product", ref=lambda o: f"{o.code} — {o.name}")
 register_audited(
-    ProductSpecification, entity_type="product_specification", module_key="products", label="Specification",
+    ProductSpecification, entity_type="product_specification", module_key="sales", label="Specification",
     ref=lambda o: f"'{o.parameter}'", parent_attr="product_id", parent_entity_type="product", child_action="specification",
 )
-register_audited(ProductApplication, entity_type="product_application", module_key="products", label="Application", ref=lambda o: f"{o.code} — {o.name}")
+register_audited(ProductApplication, entity_type="product_application", module_key="sales", label="Application", ref=lambda o: f"{o.code} — {o.name}")

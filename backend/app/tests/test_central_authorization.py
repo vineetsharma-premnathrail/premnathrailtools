@@ -154,7 +154,7 @@ def test_central_endpoints(client, db, team):
     assert [s["name"] for s in pv["stages"]] == ["Department head", "Partner"]
 
 
-register_scoped(FinishedProduct, "products", owner=("created_by_id",), label="product")
+register_scoped(FinishedProduct, "sales", owner=("created_by_id",), label="product")
 
 
 def test_data_scope(db):
@@ -163,24 +163,24 @@ def test_data_scope(db):
     other = _user(db, "ds.other@premnathrail.com", department="Stores")
     for i, u in enumerate((owner, peer, other)):
         db.add(FinishedProduct(code=f"DS-{i}", name=f"P{i}", product_type="machine", created_by_id=u.id))
-    role = Role(name="Products – own", permissions=["products:*:*"], data_scopes={"products": "own"})
+    role = Role(name="Products – own", permissions=["products:*:*"], data_scopes={"sales": "own"})
     db.add(role)
     db.commit()
     owner.roles = [role]
     db.commit()
 
-    assert user_scope(owner, "products") == "own"
+    assert user_scope(owner, "sales") == "own"
     seen = apply_scope(db.query(FinishedProduct), owner, FinishedProduct).all()
     assert [p.code for p in seen] == ["DS-0"]
     with pytest.raises(HTTPException) as e:
         ensure_in_scope(db, owner, db.query(FinishedProduct).filter_by(code="DS-2").one())
     assert e.value.status_code == 403 and "Own records" in e.value.detail
 
-    role.data_scopes = {"products": "department"}
+    role.data_scopes = {"sales": "department"}
     db.commit()
     assert sorted(p.code for p in apply_scope(db.query(FinishedProduct), owner, FinishedProduct).all()) == ["DS-0", "DS-1"]
 
-    owner.data_access_scopes = {"products": "organization"}  # personal override wins
+    owner.data_access_scopes = {"sales": "organization"}  # personal override wins
     db.commit()
     assert len(apply_scope(db.query(FinishedProduct), owner, FinishedProduct).all()) == 3
 

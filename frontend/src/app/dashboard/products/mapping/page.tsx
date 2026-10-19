@@ -46,7 +46,7 @@ export default function ProductMappingPage() {
   }, [isAuthorized, load])
 
   if (isLoading || !isAuthorized) return null
-  const canEdit = can('products', 'product_mapping', 'edit')
+  const canEdit = can('sales', 'product_mapping', 'edit')
 
   const assign = async (source: string, g: MappingGroup, productId: string) => {
     if (!productId) return

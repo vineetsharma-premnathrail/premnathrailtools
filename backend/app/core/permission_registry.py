@@ -100,11 +100,11 @@ MODULES: dict[str, dict] = {
         ("rfq", "R.F.Q", WORKFLOW),
         ("purchase_orders", "Purchase Orders", _with(WORKFLOW, "submit", "cancel")),
         ("mis", "M.I.S Report", REPORT),
+        # The buyer desk: works every PR (RFQs, POs, vendors). Granting it
+        # gives the user the internal "purchase" app (User.get_apps) — there
+        # is no separate Purchase Team module. Never granted by a wildcard.
+        ("purchase_desk", "Purchase Desk (buyer — handles RFQs, POs and vendors for every PR)", V),
         ("settings", "Settings", SETTINGS),
-    ),
-    "purchase": _module(
-        "Purchase Team",
-        ("desk", "Purchase desk (handles RFQs, POs and vendors for every PR)", V),
     ),
     "rnd": _module(
         "R&D",
@@ -141,12 +141,6 @@ MODULES: dict[str, dict] = {
         ("library", "Library", CRUD),
         ("reports", "Reports", REPORT),
         ("settings", "Settings", SETTINGS),
-    ),
-    "products": _module(
-        "Product Management",
-        ("products", "Products", CRUD),
-        ("applications", "Applications", _with(V, "create", "edit")),
-        ("product_mapping", "Product Mapping", VE),  # legacy crm_products / free-text product → product master
     ),
     "electrical": _module(
         "Electrical",
@@ -260,6 +254,12 @@ MODULES: dict[str, dict] = {
         ("orders", "Sales Orders", _with(WORKFLOW, "submit", "cancel")),  # submit/cancel: approval engine (orders + amendments)
         ("delivery", "Delivery", ["view", "create", "edit", "approve", "print"]),  # no delete endpoint
         ("order_projects", "Order Projects", VE),  # OP-YYYY-NNN execution projects; edit = project manager / hold / dates
+        # Product Management (finished-product master) lives inside Sales; its
+        # tabs give the internal "products" app (User.get_apps). The retired
+        # "products" module's grants (products:*) alias to these.
+        ("products", "Products", CRUD, "Products"),
+        ("applications", "Applications", _with(V, "create", "edit"), "Products"),
+        ("product_mapping", "Product Mapping", VE, "Products"),  # legacy crm_products / free-text product → product master
         ("pricing", "Pricing", CRUD),  # VK11 price / discount / freight conditions (products/pricing.py)
         ("reports", "Sales Reports", REPORT),
         ("settings", "Settings", SETTINGS),
@@ -400,6 +400,17 @@ def register_features(module_key: str, tab_key: str, *features: tuple) -> None:
 # Modules that are portal apps (User.get_apps); organization is the admin area.
 NON_APP_MODULES = {"organization"}
 
+# Procurement › Purchase Desk is the buyer authority (it gives the internal
+# "purchase" app); the old "Purchase Team" module's grants (purchase:*) alias
+# to it. A module wildcard (p2p:*:*) never grants it — only an explicit tick.
+PURCHASE_DESK_GRANT = "p2p:purchase_desk:view"
+EXPLICIT_ONLY_TABS = {("p2p", "purchase_desk")}
+
+# Sales › Products / Applications / Product Mapping: Product Management sits
+# inside Sales. Viewing one of them gives the internal "products" app; only
+# the other Sales tabs give the "sales" app (User.get_apps).
+PRODUCT_TABS = {"products", "applications", "product_mapping"}
+
 # Grants that, before roles existed, needed an explicit grant even when the
 # opt-in matrix left a user unrestricted (approver / head / settings-editor
 # authority). The access-preserving migration leaves these out of the
@@ -473,6 +484,25 @@ def is_valid_grant(grant: str) -> bool:
     return a in module["actions"].get(tk, [])
 
 
+def legacy_grant_aliases(grant: str) -> list[str]:
+    """Current ids for a grant of a retired module: Purchase Team (purchase:*)
+    → Procurement › Purchase Desk; Product Management (products:*) → the
+    Sales › Products tabs (a products wildcard covers only those tabs, never
+    the rest of Sales). Any other grant is returned unchanged."""
+    if grant.startswith("purchase:"):
+        return [PURCHASE_DESK_GRANT]
+    if grant.startswith("products:"):
+        parts = grant.split(":")
+        if len(parts) != 3:
+            return []
+        _, tk, a = parts
+        if tk != "*":
+            return [f"sales:{tk}:{a}"]
+        acts = MODULES["sales"]["actions"]
+        return [f"sales:{t}:{x}" for t in sorted(PRODUCT_TABS) for x in acts.get(t, []) if a in ("*", x)]
+    return [grant]
+
+
 def expand_grants(grants) -> set[str]:
     """Concrete ids for ONE grant list (a role's, or a user's extra grants),
     wildcards expanded against the current registry; unknown ids (a retired
@@ -485,7 +515,7 @@ def expand_grants(grants) -> set[str]:
     role's customisation would switch off another role's inheritance."""
     out: set[str] = set()
     customised: set[tuple[str, str]] = set()
-    for g in grants or []:
+    for g in [n for g in grants or [] for n in legacy_grant_aliases(g)]:
         parts = g.split(":")
         if len(parts) != 3:
             continue
@@ -495,6 +525,8 @@ def expand_grants(grants) -> set[str]:
             continue
         if tk == "*":
             for tab, acts in module["actions"].items():
+                if (mk, tab) in EXPLICIT_ONLY_TABS:
+                    continue
                 out.update(permission_id(mk, tab, x) for x in acts if a == "*" or x == a)
             for tab, feats in module.get("features", {}).items():
                 for fk, f in feats.items():
@@ -665,7 +697,7 @@ def legacy_access(apps, erp_permissions, grants) -> tuple[list[str], list[str]]:
         # (GRN now sits under Store › GRN & Inspection).
         if "p2p" not in apps:
             standard.append("p2p")
-        keep |= {"store:grn:view", "store:grn:create", "store:grn:approve"}
+        keep |= {PURCHASE_DESK_GRANT, "store:grn:view", "store:grn:create", "store:grn:approve"}
     return sorted(keep), standard
 
 

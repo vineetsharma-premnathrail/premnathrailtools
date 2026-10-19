@@ -145,7 +145,7 @@ def validate(db: Session, data: dict, *, exclude_id: int | None = None) -> dict:
             data[col] = None
     if kind == "product":
         if not data.get("product_id") or not db.get(FinishedProduct, data["product_id"]):
-            raise HTTPException(status_code=422, detail="Pick the product this condition is for (Product Management master).")
+            raise HTTPException(status_code=422, detail="Pick the product this condition is for (Sales › Products).")
     elif kind == "spare":
         if not data.get("store_item_id") or not db.get(StoreItem, data["store_item_id"]):
             raise HTTPException(status_code=422, detail="Pick the spare from the Item Master — spares are priced by item, never by name.")

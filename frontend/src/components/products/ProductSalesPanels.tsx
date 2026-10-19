@@ -30,9 +30,9 @@ export default function ProductSalesPanels({ productId }: { productId: number })
   // Product › Products features (core/features/products.py): the sections, and the
   // Prices & sales values switch (the server blanks order-book / quotation prices too).
   const { canFeature } = useCan()
-  const seePrices = canFeature('products', 'products', 'prices', 'view')
-  const seeOrderBook = apps.includes('sales') && canFeature('products', 'products', 'order_book', 'view')
-  const seeQuotes = apps.includes('crm') && canFeature('products', 'products', 'quotation_history', 'view')
+  const seePrices = canFeature('sales', 'products', 'prices', 'view')
+  const seeOrderBook = apps.includes('sales') && canFeature('sales', 'products', 'order_book', 'view')
+  const seeQuotes = apps.includes('crm') && canFeature('sales', 'products', 'quotation_history', 'view')
 
   useEffect(() => {
     if (!productId) return

@@ -18,8 +18,8 @@ from app.modules.products.models.product import FinishedProduct
 
 router = APIRouter(prefix="/products", tags=["Products - Mapping"], dependencies=[Depends(require_app_access("products"))])
 
-_VIEW = require_tab_access("products", "product_mapping")
-_EDIT = require_tab_action("products", "product_mapping", "edit")
+_VIEW = require_tab_access("sales", "product_mapping")
+_EDIT = require_tab_action("sales", "product_mapping", "edit")
 
 SOURCES = {
     "crm_products": "CRM product catalogue (legacy)",
@@ -173,12 +173,12 @@ def _product(db: Session, product_id: int) -> FinishedProduct:
 
 def _sees_prices(user: User) -> bool:
     """Products › Products › Prices & sales values (sensitive switch)."""
-    return can_feature(user, "products", "products", "prices", "view")
+    return can_feature(user, "sales", "products", "prices", "view")
 
 
 @router.get("/{product_id}/order-book")
 async def order_book(product_id: int, open_only: bool = False, db: Session = Depends(get_db),
-                     user: User = Depends(require_feature_action("products", "products", "order_book", "view"))):
+                     user: User = Depends(require_feature_action("sales", "products", "order_book", "view"))):
     """Sales order lines of this product (VA05 by material). Values are
     Sales data, so the user also needs the Sales module."""
     if not can_access_module(user, "sales"):
@@ -217,7 +217,7 @@ async def order_book(product_id: int, open_only: bool = False, db: Session = Dep
 
 @router.get("/{product_id}/quotation-history")
 async def quotation_history(product_id: int, db: Session = Depends(get_db),
-                            user: User = Depends(require_feature_action("products", "products", "quotation_history", "view"))):
+                            user: User = Depends(require_feature_action("sales", "products", "quotation_history", "view"))):
     """Quoted prices of this product over time (and the inquiries that asked
     for it). Quotations are CRM data, so the user also needs CRM."""
     if not can_access_module(user, "crm"):

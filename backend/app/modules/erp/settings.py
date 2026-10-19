@@ -32,7 +32,7 @@ _SPECS = [
                      "sends it back. Off: the engineer closes the SR directly. Who approves is set in "
                      "Organization › Approval Workflows › Service request closure."),
     SettingSpec("default_warranty_months", "warranty_billing", "Default warranty (months)", "int", 12, min=0, max=120,
-                help="Used when a machine has no warranty end date and its product (Product Management) has no warranty "
+                help="Used when a machine has no warranty end date and its product (Sales › Products) has no warranty "
                      "months: warranty end = warranty start (or commissioning / handover date) + these months."),
     SettingSpec("service_sac_code", "warranty_billing", "SAC code for service charges", "text", "998717",
                 help="GST SAC printed on the labour / visit / transport lines of a service invoice "

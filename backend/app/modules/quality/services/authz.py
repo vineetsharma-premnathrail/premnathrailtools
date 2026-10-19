@@ -252,7 +252,7 @@ def ncr_default_stages(scrap_limit: float) -> list[StageDef]:
                  conditions=[{"field": "disposition_type", "op": "in", "value": t["quality_head"]}]),
         StageDef("Design", "permission", {"permission": "design:reviews:approve"},
                  conditions=[{"field": "disposition_type", "op": "in", "value": t["design"]}]),
-        StageDef("Purchase", "user_flag", {"flag": "is_purchase_head", "plus_permission": "purchase:desk:view"},
+        StageDef("Purchase", "user_flag", {"flag": "is_purchase_head", "plus_permission": "p2p:purchase_desk:view"},
                  conditions=[{"field": "disposition_type", "op": "in", "value": t["purchase"]}]),
         StageDef("Partner", "partner",
                  conditions=[{"field": "disposition_type", "op": "eq", "value": "scrap"},

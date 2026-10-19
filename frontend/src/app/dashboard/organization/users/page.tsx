@@ -122,9 +122,9 @@ export default function OrganizationUsersPage() {
                       <span style={{ fontSize: 12, color: TEXT.muted }}>None</span>
                     ) : (
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                        {u.apps.map((a) => (
+                        {u.apps.filter((a) => a !== 'purchase').map((a) => (
                           <span key={a} style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(59,130,246,0.1)', color: '#2563eb', textTransform: 'uppercase' }}>
-                            {a === 'p2p' ? 'Procurement' : a === 'purchase' ? 'Purchase Team' : apps.find((app) => app.id === a)?.label || a}
+                            {a === 'p2p' ? 'Procurement' : apps.find((app) => app.id === a)?.label || a}
                           </span>
                         ))}
                       </div>

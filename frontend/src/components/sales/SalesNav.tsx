@@ -48,7 +48,7 @@ export default function SalesNav() {
     .filter((t) => t.subtabKey !== 'settings')
   // Product Management (the 'products' app) is shown inside Sales as one tab;
   // its own Products / Applications / Mapping tabs sit in ProductsNav below.
-  if (user?.apps?.includes('products') && ['products', 'applications', 'product_mapping'].some((k) => canViewTab('products', k, user))) {
+  if (user?.apps?.includes('products') && ['products', 'applications', 'product_mapping'].some((k) => canViewTab('sales', k, user))) {
     const at = visibleTabs.findIndex((t) => t.href === '/dashboard/sales/pricing')
     visibleTabs.splice(at < 0 ? visibleTabs.length : at, 0, { href: '/dashboard/products', label: 'Products', icon: 'box' })
   }

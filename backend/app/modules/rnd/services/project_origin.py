@@ -128,7 +128,7 @@ def _product(db: Session, product_id: int):
     p = db.query(FinishedProduct).filter(FinishedProduct.id == product_id).first()
     if not p:
         raise HTTPException(status_code=404, detail=(
-            f"Product #{product_id} no longer exists in Product Management — pick the product being improved again."))
+            f"Product #{product_id} no longer exists in Sales › Products — pick the product being improved again."))
     return p
 
 
@@ -169,7 +169,7 @@ def resolve(db: Session, user: User, data: dict, *, creating: bool, attachment_c
             out["product_id"] = _product(db, product_id).id
     elif origin == "product_improvement":
         if not product_id:
-            raise _bad("Pick the existing product being improved (Product Management's product list).")
+            raise _bad("Pick the existing product being improved (the Sales › Products list).")
         out["product_id"] = _product(db, product_id).id
         if not reason:
             raise _bad("Pick the reason for the improvement: customer complaint, NCR, service report, cost reduction or production difficulty.")

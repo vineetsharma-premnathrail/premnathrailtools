@@ -74,4 +74,4 @@ def test_permissions(client, db):
     assert client.get(API, headers=viewer).status_code == 200
     assert client.get(API, headers=outsider).status_code == 403
     r = _product(client, viewer)
-    assert r.status_code == 403 and "products:products:create" in r.json()["detail"]
+    assert r.status_code == 403 and "sales:products:create" in r.json()["detail"]

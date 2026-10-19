@@ -51,7 +51,7 @@ export default function ProductsPage() {
     <div>
       <ProductsNav />
       <PageHeader title="Products">
-        {can('products', 'products', 'create') && (
+        {can('sales', 'products', 'create') && (
           <button type="button" style={primaryBtnStyle} onClick={() => router.push('/dashboard/products/new')}>+ New Product</button>
         )}
       </PageHeader>

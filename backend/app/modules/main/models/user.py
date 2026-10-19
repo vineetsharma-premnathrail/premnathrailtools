@@ -182,5 +182,16 @@ class User(Base, TimestampMixin):
         one tab of (through a role or an extra grant)."""
         if self.role == "admin" or self.is_azure_admin:
             return sorted(AVAILABLE_APPS)
-        modules = {g.split(":", 1)[0] for g in self.effective_permissions if g.endswith(":view")}
+        from app.core.permission_registry import PRODUCT_TABS, PURCHASE_DESK_GRANT
+        perms = self.effective_permissions
+        modules = set()
+        for g in perms:
+            if not g.endswith(":view"):
+                continue
+            mk, tab = g.split(":", 2)[:2]
+            # Sales › Products tabs are the "products" app (Product Management
+            # inside Sales), not the "sales" app.
+            modules.add("products" if mk == "sales" and tab.split(".", 1)[0] in PRODUCT_TABS else mk)
+        if PURCHASE_DESK_GRANT in perms:
+            modules.add("purchase")  # buyer desk lives under Procurement
         return sorted(modules & AVAILABLE_APPS)

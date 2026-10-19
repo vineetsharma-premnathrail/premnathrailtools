@@ -20,8 +20,8 @@ from app.modules.products import access  # noqa: F401 — registers the product 
 
 router = APIRouter(prefix="/products", tags=["Products"], dependencies=[Depends(require_app_access("products"))])
 
-_CAN_CREATE = require_tab_action("products", "products", "create")
-_CAN_EDIT = require_tab_action("products", "products", "edit")
+_CAN_CREATE = require_tab_action("sales", "products", "create")
+_CAN_EDIT = require_tab_action("sales", "products", "edit")
 
 
 def _norm_code(code: str) -> str:
@@ -208,7 +208,7 @@ async def update_product(product_id: int, payload: ProductUpdate, db: Session = 
 @router.delete("/{product_id}")
 async def delete_product(product_id: int, db: Session = Depends(get_db), user: User = Depends(require_app_access("products"))):
     p = _get(db, product_id, user)
-    ensure_can_delete(user, p, "products", "products", "product")
+    ensure_can_delete(user, p, "sales", "products", "product")
     if p.status != "development":
         raise HTTPException(
             status_code=409,

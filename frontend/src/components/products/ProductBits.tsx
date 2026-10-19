@@ -26,7 +26,7 @@ export function PageHeader({ title, subtitle, children }: { title: string; subti
     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
       <div>
         <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
-          {subtitle || 'Product Management'}
+          {subtitle || 'Sales › Products'}
         </p>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{title}</h1>
       </div>

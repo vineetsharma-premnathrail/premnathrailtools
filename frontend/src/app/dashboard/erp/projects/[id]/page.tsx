@@ -240,7 +240,7 @@ function OverviewTab({ project, showContacts, showWarranty }: { project: Project
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       <Card title="Machine Identity">
-        <InfoRow label="Product" value={project.product_name || 'Not linked to Product Management'} />
+        <InfoRow label="Product" value={project.product_name || 'Not linked to a product (Sales › Products)'} />
         <InfoRow label="Machine Type" value={project.machine_type || 'Not provided'} />
         <InfoRow label="Application Type" value={project.application_type || 'Not provided'} />
         <InfoRow label="Engine Number" value={project.engine_number || 'Not provided'} />

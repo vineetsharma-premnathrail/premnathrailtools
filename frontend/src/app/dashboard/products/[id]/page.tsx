@@ -50,10 +50,10 @@ export default function ProductDetailPage() {
     <div>
       <ProductsNav />
       <PageHeader title={p ? `${p.code} — ${p.name}` : 'Product'}>
-        {p && can('products', 'products', 'edit') && (
+        {p && can('sales', 'products', 'edit') && (
           <button type="button" style={primaryBtnStyle} onClick={() => router.push(`/dashboard/products/${ref}/edit`)}>Edit</button>
         )}
-        {p && p.status === 'development' && canDelete('products', 'products', p.created_by_id) && (
+        {p && p.status === 'development' && canDelete('sales', 'products', p.created_by_id) && (
           <button type="button" style={dangerBtnStyle} onClick={() => setConfirmDelete(true)}>Delete</button>
         )}
         <button type="button" style={secondaryBtnStyle} onClick={() => router.push('/dashboard/products')}>← Back</button>
@@ -87,7 +87,7 @@ export default function ProductDetailPage() {
             )}
           </Section>
 
-          {canFeature('products', 'products', 'specifications', 'view') && <Section title="Technical specifications" style={{ marginBottom: 16 }}>
+          {canFeature('sales', 'products', 'specifications', 'view') && <Section title="Technical specifications" style={{ marginBottom: 16 }}>
             {p.specifications.length === 0 ? (
               <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No specifications recorded yet.</p>
             ) : (

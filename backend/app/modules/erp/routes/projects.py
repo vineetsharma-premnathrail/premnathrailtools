@@ -142,7 +142,7 @@ def _apply_installed_base_links(db: Session, values: dict, project: Project | No
             if not (current or "").strip() and src:
                 values[field] = src
     if values.get("product_id") is not None and db.get(FinishedProduct, values["product_id"]) is None:
-        raise HTTPException(status_code=422, detail=f"Product #{values['product_id']} wasn't found in Product Management — pick the product again.")
+        raise HTTPException(status_code=422, detail=f"Product #{values['product_id']} wasn't found in Sales › Products — pick the product again.")
 
 
 def _live_rrv_builds(db: Session, project_id: int) -> list:

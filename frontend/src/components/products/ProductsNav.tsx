@@ -29,7 +29,7 @@ function TabIcon({ name }: { name: string }) {
 export default function ProductsNav() {
   const pathname = usePathname()
   const { user } = useAuth()
-  const visibleTabs = filterTabsByAccess('products', TABS, user)
+  const visibleTabs = filterTabsByAccess('sales', TABS, user)
 
   // Product Management lives inside Sales: the Sales nav on top (its Products
   // tab active), then the product sub-tabs as a pill row.
