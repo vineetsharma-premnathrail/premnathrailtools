@@ -84,8 +84,8 @@ def _quotable_offer(db: Session, inquiry: Inquiry, offer_id: int) -> RndTechnica
     offer = db.query(RndTechnicalOffer).filter(RndTechnicalOffer.id == offer_id).first()
     if not offer or offer.source != "inquiry" or offer.record_id != inquiry.id:
         raise HTTPException(status_code=422, detail="That Technical Offer doesn't belong to this inquiry — reopen the quotation form and pick one from the list.")
-    if offer.status == "draft":
-        raise HTTPException(status_code=422, detail=f"Technical Offer {offer.offer_number} is still a draft. Ask the R&D head to release it (R&D › Requirements › Technical Offers), then pick it again.")
+    if offer.status not in ("released", "superseded"):
+        raise HTTPException(status_code=422, detail=f"Technical Offer {offer.offer_number} isn't approved yet ({'waiting for the R&D head' if offer.status == 'submitted' else 'still a draft'}). Ask the R&D head to approve it (R&D › Requirements), then pick it again.")
     return offer
 
 
@@ -96,7 +96,7 @@ async def list_inquiry_technical_offers(inquiry_id: int, db: Session = Depends(g
     _load_live_inquiry(db, inquiry_id, _user)
     offers = db.query(RndTechnicalOffer).filter(
         RndTechnicalOffer.source == "inquiry", RndTechnicalOffer.record_id == inquiry_id,
-        RndTechnicalOffer.status != "draft",
+        RndTechnicalOffer.status.in_(("released", "superseded")),
     ).order_by(RndTechnicalOffer.id.desc()).all()
     return [_offer_dict(o) for o in offers]
 

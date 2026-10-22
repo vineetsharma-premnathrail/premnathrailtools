@@ -117,3 +117,51 @@ def test_only_ticked_members_create_offers_from_the_tor(client, db, sp):
     assert seen.status_code == 200 and [o["offer_number"] for o in seen.json()] == ["TO-INQ-2026-0042"]
     assert client.get(f"{RND}/inquiry/{inq.id}/technical-offers", headers=auth(other)).status_code == 403
     assert client.patch(f"{RND}/technical-offers/{offer.json()['id']}", json={"title": "x"}, headers=auth(viewer)).status_code == 403
+
+
+def test_send_to_head_lock_and_revision_request(client, db, sp):
+    """Maker-checker: the creator sends the draft to the R&D head (frozen), the
+    head returns or approves it; after release the creator asks for a revision
+    and the head approves (new draft for the requester) or declines."""
+    bd = make_user(db, "to4.bd@premnathrail.com")
+    head = make_user(db, "to4.head@premnathrail.com", apps=("rnd",))
+    writer = make_user(db, "to4.writer@premnathrail.com", apps=("rnd",))
+    inq = _sent_inquiry(db, bd)
+    make_rnd_head(db, head)
+    client.put("/api/v1/rnd/settings", json={"creator_ids": [writer.id], "viewer_ids": []}, headers=auth(head))
+    offer = client.post(f"{RND}/inquiry/{inq.id}/technical-offers", headers=auth(writer)).json()
+    oid = offer["id"]
+    _word(client, oid, writer)
+
+    sent = client.post(f"{RND}/technical-offers/{oid}/submit", headers=auth(writer))
+    assert sent.status_code == 200 and sent.json()["status"] == "submitted", sent.text
+    assert db.query(Notification).filter(Notification.user_id == head.id).count() >= 1
+    # Locked: no edits, no Word changes, and CRM can't quote it yet.
+    assert client.patch(f"{RND}/technical-offers/{oid}", json={"title": "x"}, headers=auth(writer)).status_code == 409
+    assert client.post(f"/api/v1/managed-documents/rnd_technical_offer/{oid}?regenerate=true", headers=auth(writer)).status_code == 409
+    assert client.get(f"{CRM}/inquiries/{inq.id}/technical-offers", headers=auth(bd)).json() == []
+    # Only the head returns / approves.
+    assert client.post(f"{RND}/technical-offers/{oid}/return", json={"reason": "x"}, headers=auth(writer)).status_code == 403
+    back = client.post(f"{RND}/technical-offers/{oid}/return", json={"reason": "Add the axle-load deviation"}, headers=auth(head))
+    assert back.status_code == 200 and back.json()["status"] == "draft" and back.json()["returned_reason"] == "Add the axle-load deviation"
+    assert client.patch(f"{RND}/technical-offers/{oid}", json={"title": "RRV 1676"}, headers=auth(writer)).status_code == 200
+    client.post(f"{RND}/technical-offers/{oid}/submit", headers=auth(writer))
+    ok = client.post(f"{RND}/technical-offers/{oid}/release", headers=auth(head))
+    assert ok.status_code == 200 and ok.json()["status"] == "released"
+
+    # After release a creator can't revise directly — they ask; the head decides.
+    assert client.post(f"{RND}/technical-offers/{oid}/revise", json={"reason": "x"}, headers=auth(writer)).status_code == 403
+    asked = client.post(f"{RND}/technical-offers/{oid}/request-revision", json={"reason": "Customer wants MG"}, headers=auth(writer))
+    assert asked.status_code == 200 and asked.json()["revision_request"]["reason"] == "Customer wants MG"
+    assert client.post(f"{RND}/technical-offers/{oid}/request-revision", json={"reason": "again"}, headers=auth(writer)).status_code == 409
+    no_note = client.post(f"{RND}/technical-offers/{oid}/revision-request/decide", json={"approve": False}, headers=auth(head))
+    assert no_note.status_code == 422
+    declined = client.post(f"{RND}/technical-offers/{oid}/revision-request/decide", json={"approve": False, "note": "Not needed"}, headers=auth(head))
+    assert declined.status_code == 200 and declined.json()["revision_request"] is None
+    client.post(f"{RND}/technical-offers/{oid}/request-revision", json={"reason": "Customer wants MG"}, headers=auth(writer))
+    approved = client.post(f"{RND}/technical-offers/{oid}/revision-request/decide", json={"approve": True}, headers=auth(head))
+    assert approved.status_code == 200, approved.text
+    r1 = approved.json()
+    assert r1["offer_number"] == "TO-INQ-2026-0042-R1" and r1["status"] == "draft" and r1["created_by"] and r1["revision_reason"] == "Customer wants MG"
+    # The requester edits the new revision.
+    assert client.patch(f"{RND}/technical-offers/{r1['id']}", json={"title": "RRV MG"}, headers=auth(writer)).status_code == 200

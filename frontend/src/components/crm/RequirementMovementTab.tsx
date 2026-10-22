@@ -24,7 +24,8 @@ export interface RequirementSendAction { label: string; disabled: boolean; title
 
 // `responder` (R&D side) lets the assigned engineer — or an admin — answer the open request inline.
 // `latestOnly` shows just the newest send as a card (Info / Requirement tab) and nothing when never sent.
-export default function RequirementMovementTab({ module, recordId, sentAt, movements, sendAction, responder, onChanged, latestOnly }: {
+// `latestExtra` (R&D side) goes inside that card under the request — the Technical Offer that answers it.
+export default function RequirementMovementTab({ module, recordId, sentAt, movements, sendAction, responder, onChanged, latestOnly, latestExtra }: {
   module: 'inquiry' | 'tender'
   recordId: number
   sentAt?: string | null
@@ -34,6 +35,7 @@ export default function RequirementMovementTab({ module, recordId, sentAt, movem
   responder?: { userId: number; isAdmin: boolean; canRespond?: boolean }
   onChanged?: () => void
   latestOnly?: boolean
+  latestExtra?: React.ReactNode
 }) {
   const [moves, setMoves] = useState<RequirementMovement[] | null>(movements ? [...movements].reverse() : null)
   const [error, setError] = useState<string | string[]>('')
@@ -140,6 +142,8 @@ export default function RequirementMovementTab({ module, recordId, sentAt, movem
                 onResponded={handleResponded}
               />
             )}
+
+            {latestOnly && latestExtra}
 
             {(m.tor_document || m.reference_documents.length > 0) && (
               <div style={{ marginTop: 10 }}>

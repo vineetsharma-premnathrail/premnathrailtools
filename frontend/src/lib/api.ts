@@ -3252,6 +3252,11 @@ export const rndApi = {
   deleteTechnicalOffer: async (offerId: number) => { const { data } = await apiClient.delete(`/rnd/requirement-work/technical-offers/${offerId}`); return data },
   releaseTechnicalOffer: async (offerId: number): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/release`); return data },
   reviseTechnicalOffer: async (offerId: number, reason: string): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/revise`, { reason }); return data },
+  /** Creator → R&D head for approval (frozen until approved or returned). */
+  submitTechnicalOffer: async (offerId: number): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/submit`); return data },
+  returnTechnicalOffer: async (offerId: number, reason: string): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/return`, { reason }); return data },
+  requestTechnicalOfferRevision: async (offerId: number, reason: string): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/request-revision`, { reason }); return data },
+  decideTechnicalOfferRevision: async (offerId: number, approve: boolean, note?: string): Promise<import('@/types').RndTechnicalOffer> => { const { data } = await apiClient.post(`/rnd/requirement-work/technical-offers/${offerId}/revision-request/decide`, { approve, note }); return data },
   // Shared with Design / Electrical / Hydraulic & Pneumatic for a feasibility reply.
   listShares: async (source: string, id: number): Promise<import('@/types').RndRequirementShare[]> => { const { data } = await apiClient.get(`/rnd/requirement-work/${source}/${id}/shares`); return data },
   shareRequirement: async (source: string, id: number, p: { departments: string[]; note: string; due_date: string | null }): Promise<import('@/types').RndRequirementShare[]> => { const { data } = await apiClient.post(`/rnd/requirement-work/${source}/${id}/shares`, p); return data },

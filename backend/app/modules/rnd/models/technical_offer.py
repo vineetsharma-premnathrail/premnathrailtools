@@ -5,7 +5,11 @@ and exclusions — as a Word document of record on the letterhead.
 One series per requirement, numbered from the requirement's id
 (INQ-2026-0042 → TO-2026-0042), revised like a quotation (…-R1, -R2):
 
-    draft → released (R&D head) → superseded (when a later revision is released)
+    draft → submitted (creator sent it; frozen) → released (R&D head approved)
+          → superseded (when a later revision is released)
+    submitted → draft again when the head returns it (returned_reason).
+    After release a creator asks for a revision (revision_request_*); the head
+    approves it (a new draft revision opens) or declines it.
 
 Only a released offer (or a superseded one, for older quotations) can be
 quoted against — CRM picks it in the quotation's "Technical Offer" field, so
@@ -21,7 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
 
-TECHNICAL_OFFER_STATUSES = ("draft", "released", "superseded")
+TECHNICAL_OFFER_STATUSES = ("draft", "submitted", "released", "superseded")
 
 
 class RndTechnicalOffer(Base, TimestampMixin):
@@ -45,3 +49,9 @@ class RndTechnicalOffer(Base, TimestampMixin):
     created_by_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     released_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    submitted_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    returned_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revision_request_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revision_requested_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    revision_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

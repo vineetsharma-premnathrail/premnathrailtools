@@ -242,7 +242,9 @@ def _load(db: Session, offer_id: int, user: User, modify: bool) -> managed_docum
     if modify:
         ensure_can_prepare(db, user, offer.source, offer.record_id)
         if offer.status != "draft":
-            raise HTTPException(status_code=409, detail=f"Technical Offer {offer.offer_number} is {'already sent to the BD team' if offer.status == 'released' else offer.status} — its document is frozen. Click 'Revise' to make a new revision and edit that.")
+            if offer.status == "submitted":
+                raise HTTPException(status_code=409, detail=f"Technical Offer {offer.offer_number} was sent to the R&D head for approval — its document is frozen. Ask the R&D head to return it for changes if something must be corrected.")
+            raise HTTPException(status_code=409, detail=f"Technical Offer {offer.offer_number} is {'already sent to the BD team' if offer.status == 'released' else offer.status} — its document is frozen. Use 'Ask for revision'; once the R&D head approves, a new revision opens for editing.")
     else:
         ra.ensure(db, user, offer.source, offer.record_id, "view")
     return managed_documents.DocumentTarget(

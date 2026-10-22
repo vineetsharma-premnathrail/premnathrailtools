@@ -927,11 +927,18 @@ export interface RndTechnicalOffer {
   deviations: string | null
   exclusions: string | null
   revision_reason: string | null
-  status: 'draft' | 'released' | 'superseded'
+  /** draft → submitted (creator sent it; frozen) → released (R&D head approved) → superseded */
+  status: 'draft' | 'submitted' | 'released' | 'superseded'
   created_by: string
   created_at: string | null
   released_by: string | null
   released_at: string | null
+  submitted_by?: string | null
+  submitted_at?: string | null
+  /** The R&D head's reason when a submitted offer was sent back to draft. */
+  returned_reason?: string | null
+  /** A creator's pending "Ask for revision" on a released offer. */
+  revision_request?: { reason: string | null; requested_by: string | null; requested_by_id: number | null; requested_at: string | null } | null
   /** Quotation numbers that quote against this offer. */
   quoted_in: string[]
   /** Create only: why the Word template couldn't be made (null = made). */

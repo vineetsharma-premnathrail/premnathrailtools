@@ -248,7 +248,21 @@ def _mask_sections(out: dict, user: User, source: str) -> None:
     if not can_feature(user, "rnd", "requirements", "crm_request", "view"):
         hidden.append("crm_request")
         out["movements"] = []
+    # "View requirement as sent" / "Changed since previous send" repeat the
+    # same fields — drop the ones from hidden sections there too.
+    dropped = set()
+    if "customer" in hidden:
+        dropped |= _CUSTOMER_SNAPSHOT_FIELDS
+    if "product_requirement" in hidden:
+        dropped |= set(requirement_movement.SNAPSHOT_FIELDS) - _CUSTOMER_SNAPSHOT_FIELDS
+    if dropped:
+        for m in out["movements"]:
+            m["snapshot"] = [f for f in m.get("snapshot") or [] if f.get("field") not in dropped]
+            m["changes"] = [c for c in m.get("changes") or [] if c.get("field") not in dropped]
     out["hidden_sections"] = hidden
+
+
+_CUSTOMER_SNAPSHOT_FIELDS = {"org_name", "contact_name"}
 
 
 @router.post("/requests/{request_id}/respond")

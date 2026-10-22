@@ -198,6 +198,9 @@ export default function RndRequirementDetailPage() {
                 responder={user ? { userId: user.id, isAdmin: user.role === 'admin', canRespond } : undefined}
                 onChanged={() => load()}
                 latestOnly
+                latestExtra={see('technical_offers')
+                  ? <RequirementTechnicalOffersTab source={data.source} recordId={data.record_id} access={data.my_access} embedded />
+                  : undefined}
               />
             </div>
           )}
