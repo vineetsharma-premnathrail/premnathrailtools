@@ -24,6 +24,7 @@ import {
 } from '@/components/finance/financeUi'
 import { recordHref } from '@/lib/recordRef'
 import { useDocCurrency } from '@/components/finance/DocCurrencyFields'
+import FinanceAttachments, { ProofPicker, PickedProof, uploadPickedProof, useProofCounts, ProofClip, useProofRules } from '@/components/finance/FinanceAttachments'
 
 type Errors = string | string[]
 
@@ -202,6 +203,8 @@ function InvoicesTab(ctx: Ctx) {
   const [varianceId, setVarianceId] = useState<number | null>(null)
   const [cancelId, setCancelId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const proofRules = useProofRules()
+  const proofCounts = useProofCounts('vendor_invoice', rows.map((r) => r.id), 'purchase_invoices')
 
   const load = useCallback(() => {
     accountsApi.listVendorInvoices({
@@ -296,6 +299,7 @@ function InvoicesTab(ctx: Ctx) {
                 <tr>
                   <td style={tdStyle}>
                     <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={() => toggle(inv.id)}>{expanded === inv.id ? '▾' : '▸'} {inv.invoice_number}</button>
+                    <ProofClip count={proofCounts[inv.id]} />
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(inv.invoice_date)}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(inv.due_date)}</td>
@@ -365,6 +369,11 @@ function InvoicesTab(ctx: Ctx) {
                           </div>
                         )}
                       </div>
+                      <div style={{ marginTop: 14 }}>
+                        <FinanceAttachments label={<div style={{ ...labelStyle, marginBottom: 6 }}>Supporting documents</div>} entityType="vendor_invoice" entityId={inv.id} tabKey="purchase_invoices"
+                          locked={inv.status !== 'pending'} closed={inv.status === 'cancelled'}
+                          required={proofRules.purchaseInvoice && inv.invoice_type !== 'opening' && inv.status === 'pending'} />
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -398,6 +407,8 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
   const [previewState, setPreviewState] = useState<{ key: string; preview: MatchPreview | null; error: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<Errors>('')
+  const proofRules = useProofRules()
+  const [proof, setProof] = useState<PickedProof[]>([])
 
   // Inward supply is delivered to us, so place of supply defaults to the company's state.
   const placeOfSupply = posChoice || companyState
@@ -467,6 +478,7 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
     if (mode === 'direct' && !vendorId) { setError('Pick the vendor who issued this bill.'); return }
     if (!invoiceNumber.trim()) { setError("Enter the vendor's bill number exactly as printed on their invoice."); return }
     if (Math.abs(ro) >= 1) { setError('Round-off only absorbs paise — it must be less than ₹1 either way.'); return }
+    if (proofRules.purchaseInvoice && proof.length === 0) { setError("Attach the vendor's bill under Supporting documents — the invoice can't go for approval without it."); return }
     setSaving(true)
     try {
       const created: VendorInvoice = await accountsApi.createVendorInvoice({
@@ -475,6 +487,10 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
         place_of_supply_state_code: placeOfSupply || null, is_reverse_charge: rcm, round_off: ro,
         narration: narration.trim() || null, lines: toLinePayload(lines), ...docCur.payload(),
       })
+      // Upload the picked files first — the invoice can't go for approval without them.
+      const proofError = proof.length ? await uploadPickedProof('vendor_invoice', created.id, proof, `Invoice ${created.invoice_number}`) : ''
+      setProof([])
+      if (proofError) { onSaved(`${proofError} It stays pending until then — submit it for approval after.`); return }
       // Recording a bill sends it straight to its approvers (Organization › Approval Workflows).
       onSaved(can('accounts', 'purchase_invoices', 'submit')
         ? await submitAfterSave(() => accountsApi.submitVendorInvoice(created.id), `Invoice ${created.invoice_number}`) : '')
@@ -572,6 +588,10 @@ function PurchaseInvoiceForm({ setup, ledgers, rates, vendors, pos, onSaved, onC
             <SField label="Narration" optional tour="fin-pinv-narration">
               <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={narration} onChange={(e) => setNarration(e.target.value)} placeholder="What this bill is for" />
             </SField>
+          </SheetSection>
+          <SheetSection icon="doc" title="Supporting documents">
+            <ProofPicker entityType="vendor_invoice" value={proof} onChange={setProof} required={proofRules.purchaseInvoice}
+              hint="Attach the vendor's bill (PDF or photo) — it is needed before the invoice can go for approval, and it backs the GST input credit." />
           </SheetSection>
           <SheetSection icon="rupee" title="Totals">
             <SField label="Round-off (₹)" style={{ ...sw(130), marginBottom: 12 }} tour="fin-pinv-round-off">
@@ -689,6 +709,7 @@ function DebitNotesTab(ctx: Ctx) {
   const [showForm, setShowForm] = useState(false)
   const [cancelId, setCancelId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const proofCounts = useProofCounts('party_note', rows.map((r) => r.id), 'debit_notes')
 
   const load = useCallback(() => {
     accountsApi.listNotes({ note_type: 'debit_note' }).then(setRows)
@@ -742,6 +763,7 @@ function DebitNotesTab(ctx: Ctx) {
                     <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={() => setExpanded(expanded === n.id ? null : n.id)}>
                       {expanded === n.id ? '▾' : '▸'} {isDraftNumber(n.note_number) ? 'Draft' : n.note_number}
                     </button>
+                    <ProofClip count={proofCounts[n.id]} />
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(n.note_date)}</td>
                   <td style={tdStyle}>{n.party_name || '—'}</td>
@@ -781,6 +803,10 @@ function DebitNotesTab(ctx: Ctx) {
                         {n.narration && <div>Narration: {n.narration}</div>}
                         <div>Raised by {n.created_by_name || '—'}</div>
                       </div>
+                      <div style={{ marginTop: 14 }}>
+                        <FinanceAttachments label={<div style={{ ...labelStyle, marginBottom: 6 }}>Supporting documents</div>} entityType="party_note" entityId={n.id} tabKey="debit_notes"
+                          locked={n.status !== 'pending'} closed={n.status === 'cancelled'} />
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -807,6 +833,7 @@ function DebitNoteForm({ setup, ledgers, rates, vendors, onSaved, onCancel }: Ct
   const [lines, setLines] = useState<EditableTaxLine[]>([newTaxLine()])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<Errors>('')
+  const [proof, setProof] = useState<PickedProof[]>([])
 
   useEffect(() => {
     accountsApi.listVendorInvoices({ status: 'posted' }).then(setPostedBills)
@@ -835,6 +862,9 @@ function DebitNoteForm({ setup, ledgers, rates, vendors, onSaved, onCancel }: Ct
         vendor_invoice_id: invoiceId ? Number(invoiceId) : null, vendor_id: invoiceId ? null : Number(vendorId),
         round_off: ro, narration: narration.trim() || null, lines: toLinePayload(lines),
       })
+      const proofError = proof.length ? await uploadPickedProof('party_note', created.id, proof, 'The debit note') : ''
+      setProof([])
+      if (proofError) { onSaved(`${proofError} It stays pending — submit it for approval after.`); return }
       onSaved(can('accounts', 'debit_notes', 'submit')
         ? await submitAfterSave(() => accountsApi.submitNote(created.id), 'The debit note') : '')
     } catch (err: unknown) {
@@ -894,6 +924,10 @@ function DebitNoteForm({ setup, ledgers, rates, vendors, onSaved, onCancel }: Ct
             <SField label="Narration" optional tour="fin-dn-narration">
               <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={narration} onChange={(e) => setNarration(e.target.value)} placeholder="e.g. 12 pcs returned vide our challan no. …" />
             </SField>
+          </SheetSection>
+          <SheetSection icon="doc" title="Supporting documents">
+            <ProofPicker entityType="party_note" value={proof} onChange={setProof}
+              hint="Optional — e.g. the return challan, the vendor's credit note or the email agreeing the rate difference." />
           </SheetSection>
           <SheetSection icon="rupee" title="Totals">
             <SField label="Round-off (₹)" style={sw(130)} tour="fin-dn-round-off">

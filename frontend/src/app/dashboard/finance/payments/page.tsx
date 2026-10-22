@@ -17,6 +17,7 @@ import { TEXT, BORDER } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import FinanceNav from '@/components/finance/FinanceNav'
 import { useDocCurrency } from '@/components/finance/DocCurrencyFields'
+import FinanceAttachments, { ProofPicker, ProofClip, stagePickedProof, useProofCounts, useProofRules, paymentProofRequired, type PickedProof } from '@/components/finance/FinanceAttachments'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import { SField } from '@/components/finance/financeSheet'
@@ -146,6 +147,8 @@ function PaymentsPage() {
   const [chequeDate, setChequeDate] = useState('')
   const [referenceNo, setReferenceNo] = useState('')
   const [narration, setNarration] = useState('')
+  const [proof, setProof] = useState<PickedProof[]>([])
+  const proofRules = useProofRules()
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string[] | null>(null)
   // Payment differences (F-28) and down payments (F-29 / F-48).
@@ -213,6 +216,8 @@ function PaymentsPage() {
   const isParty = ptype === 'vendor' || ptype === 'customer'
   const isSplit = ptype === 'expense' || ptype === 'other_receipt'
   const amountNum = r2(Number(amount || 0))
+  const proofRequired = paymentProofRequired(proofRules, ptype, amountNum)
+  const proofCounts = useProofCounts('payment', useMemo(() => payments.map((p) => p.id), [payments]), 'payments')
   const allocated = r2(Object.values(settle).reduce((s, v) => s + Number(v || 0), 0))
   const onAccount = r2(amountNum - allocated)
   const deductionTotal = r2(deductions.reduce((s, d) => s + Number(d.amount || 0), 0))
@@ -290,6 +295,7 @@ function PaymentsPage() {
     setChequeDate('')
     setReferenceNo('')
     setNarration('')
+    setProof([])
   }
 
   function payInFull(d: OpenDocument) {
@@ -346,6 +352,7 @@ function PaymentsPage() {
       else if (counterBankId === bankId) errs.push('A contra moves money between two different accounts — pick a different receiving account.')
     }
     if (mode === 'cheque' && !chequeNo.trim()) errs.push('Enter the cheque number for a cheque payment.')
+    if (proofRequired && proof.length === 0) errs.push(`Attach a supporting document (bill, bank advice or UTR screenshot) — Finance › Settings makes it compulsory ${proofRules.paymentAbove > 0 ? `for vouchers above ${inr(proofRules.paymentAbove)}` : 'for every voucher'}.`)
     if (errs.length) { setFormError(errs); return }
 
     const payload: Record<string, unknown> = {
@@ -382,6 +389,15 @@ function PaymentsPage() {
     if (ptype === 'contra') payload.counter_bank_account_id = Number(counterBankId)
 
     setSaving(true)
+    if (ptype !== 'contra' && proof.length) {
+      try {
+        payload.attachment_ids = await stagePickedProof(proof)
+      } catch (err: unknown) {
+        setFormError(extractErrorMessages(err, 'Could not upload the supporting documents, so the voucher was not saved.'))
+        setSaving(false)
+        return
+      }
+    }
     try {
       const created: PaymentTransaction = await accountsApi.createVoucher(payload)
       const adv = created.unallocated_amount > 0.005
@@ -441,7 +457,7 @@ function PaymentsPage() {
 
   // Recording a voucher replaces the list with the voucher form ("← Back" returns to the list).
   if (showForm) {
-    const closeForm = () => { setShowForm(false); setFormError(null) }
+    const closeForm = () => { setShowForm(false); setFormError(null); setProof([]) }
     const tcell: React.CSSProperties = { padding: '6px', borderTop: `1px solid ${BORDER.normal}`, verticalAlign: 'top' }
     return (
       <div>
@@ -581,6 +597,11 @@ function PaymentsPage() {
                   <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={narration} onChange={(e) => setNarration(e.target.value)} placeholder="What this money is for" />
                 </SField>
               </SheetSection>
+              {ptype !== 'contra' && (
+                <SheetSection icon="doc" title="Supporting documents" extra={proofRequired ? undefined : <Optional />}>
+                  <ProofPicker entityType="payment" value={proof} onChange={setProof} required={proofRequired} hint="Bill, bank advice or UTR screenshot." />
+                </SheetSection>
+              )}
               <SheetSection icon="rupee" title="Summary">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', rowGap: 6, fontSize: 13, color: SHEET.BODY, fontVariantNumeric: 'tabular-nums' }}>
                   <span>Voucher amount</span><b style={{ textAlign: 'right' }}>{inr(amountNum)}</b>
@@ -829,7 +850,7 @@ function PaymentsPage() {
                 <Fragment key={p.id}>
                   <tr style={{ cursor: 'pointer' }} onClick={() => setExpanded(isOpen ? null : p.id)}>
                     <td style={{ ...tdStyle, width: 24, color: TEXT.muted }}>{isOpen ? '▾' : '▸'}</td>
-                    <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>{p.payment_number}</td>
+                    <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>{p.payment_number}<ProofClip count={proofCounts[p.id]} /></td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(p.payment_date)}</td>
                     <td style={tdStyle}><StatusPill status={p.payment_type} labels={TYPE_LABELS} colors={TYPE_HEX} /></td>
                     <td style={{ ...tdStyle, maxWidth: 260 }}>{partyCell(p)}</td>
@@ -999,6 +1020,10 @@ function VoucherDetail({ p, onRemoveAllocation }: { p: PaymentTransaction; onRem
           )}
         </div>
       )}
+      <div>
+        <FinanceAttachments label={<div style={sub}>Supporting documents</div>} entityType="payment" entityId={p.id} tabKey="payments"
+          locked={p.status !== 'pending_approval'} closed={p.status === 'cancelled' || p.status === 'rejected'} />
+      </div>
     </div>
   )
 }

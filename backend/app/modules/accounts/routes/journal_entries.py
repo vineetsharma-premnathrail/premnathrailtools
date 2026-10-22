@@ -19,6 +19,7 @@ from app.modules.accounts.service import (
     create_draft_journal, discard_draft_journal, reverse_journal_entry,
 )
 from app.modules.accounts.routes._common import write_audit, who, service_errors, require_finance_manager
+from app.modules.accounts.services.proof import ensure_journal_proof
 from app.modules.accounts import access
 
 router = APIRouter(prefix="/accounts/journal-entries", tags=["Accounts"])
@@ -292,6 +293,7 @@ async def submit_journal_entry_route(
     entry = _load_in_scope(db, user, journal_entry_id)
     if entry.status != "draft":
         raise HTTPException(status_code=400, detail=f"Only a draft journal can be submitted for approval (current status: '{entry.status}').")
+    ensure_journal_proof(db, entry)
     access.submit_document(db, access.KEY_JOURNAL, requester=user, background_tasks=background_tasks, **_approval_args(entry))
     write_audit(db, "journal_entry", entry.id, "submitted", user, f"{who(user)} submitted a draft journal of {entry.total_debit:,.2f} for approval.")
     db.commit()

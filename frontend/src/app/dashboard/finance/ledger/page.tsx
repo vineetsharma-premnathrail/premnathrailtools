@@ -29,6 +29,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { STATUS_LABELS, STATUS_HEX, VOUCHER_LABELS, POSTING_LABELS, VOUCHER_PATH } from '@/components/finance/voucherLabels'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import FinanceAttachments, { ProofClip, ProofPicker, PickedProof, uploadPickedProof, useProofCounts, useProofRules } from '@/components/finance/FinanceAttachments'
 
 const TABS = ['Journal Vouchers', 'Day Book', 'Ledger Statement', 'Period Close'] as const
 type Tab = (typeof TABS)[number]
@@ -137,6 +138,8 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
   const router = useRouter()
   const [lookupNo, setLookupNo] = useState('')
   const [lookingUp, setLookingUp] = useState(false)
+  const rules = useProofRules()
+  const proofCounts = useProofCounts('journal', entries.map((e) => e.id), 'journal_vouchers')
 
   // FB03: open one voucher by its number.
   const openByNumber = async () => {
@@ -260,6 +263,7 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
                   <td style={{ ...tdStyle, fontWeight: 700, whiteSpace: 'nowrap' }}>
                     <span style={{ color: TEXT.muted, marginRight: 6 }}>{expanded === e.id ? '▾' : '▸'}</span>
                     {e.status === 'draft' ? 'Draft' : e.entry_number}
+                    <ProofClip count={proofCounts[e.id]} />
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(e.posting_date)}</td>
                   <td style={tdStyle}>{VOUCHER_LABELS[e.voucher_type] || e.voucher_type}</td>
@@ -345,6 +349,11 @@ function JournalVouchers({ masters, userId, canReverse }: { masters: Masters; us
                           </tr>
                         </tbody>
                       </table>
+                      <div style={{ marginTop: 12 }}>
+                        <FinanceAttachments label={<div style={{ fontSize: 12, fontWeight: 700, color: TEXT.muted, textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>Supporting documents</div>} entityType="journal" entityId={e.id} tabKey="journal_vouchers"
+                          locked={e.status !== 'draft'} closed={e.status === 'cancelled' || e.status === 'reversed'}
+                          required={rules.journal && e.status === 'draft'} />
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -430,6 +439,9 @@ function JournalForm({ masters, onCancel, onCreated }: { masters: Masters; onCan
   const [lines, setLines] = useState<LineRow[]>([emptyLine(), emptyLine()])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string[] | null>(null)
+  // Files picked here upload once the draft is saved (cleared with the form on close).
+  const [proof, setProof] = useState<PickedProof[]>([])
+  const rules = useProofRules()
 
   const ledgerOpts = ledgerOptions(ledgers)
   const ccOpts = [{ value: '', label: '— None —' }, ...costCenters.filter((c) => c.status === 'active').map((c) => ({ value: String(c.id), label: `${c.code} — ${c.name}` }))]
@@ -476,6 +488,10 @@ function JournalForm({ masters, onCancel, onCreated }: { masters: Masters; onCan
       setError([`${a.code} — ${a.name} is an overhead ledger: pick the cost centre that bears this cost, or the internal order it is spent on.`])
       return
     }
+    if (rules.journal && proof.length === 0) {
+      setError(["Attach the working or approval under Supporting documents — a manual journal can't go for approval without it."])
+      return
+    }
     setSaving(true)
     try {
       const created: JournalEntry = await accountsApi.createJournalEntry({
@@ -494,6 +510,9 @@ function JournalForm({ masters, onCancel, onCreated }: { masters: Masters; onCan
           remarks: l.remarks.trim() || null,
         })),
       })
+      // Upload the picked proof before submitting — a failed upload leaves the journal as a draft.
+      const proofError = proof.length ? await uploadPickedProof('journal', created.id, proof, 'The journal') : ''
+      if (proofError) { onCreated(proofError); return }
       // The draft goes straight to its approvers (Organization › Approval Workflows › Manual journal voucher).
       onCreated(can('accounts', 'journal_vouchers', 'submit')
         ? await submitAfterSave(() => accountsApi.submitJournalEntry(created.id), 'The journal') : '')
@@ -608,6 +627,11 @@ function JournalForm({ masters, onCancel, onCreated }: { masters: Masters; onCan
           </div>
           <button type="button" data-tour="fin-jv-add-line" style={{ ...sheetBtn('secondary'), marginTop: 10 }} onClick={() => setLines((ls) => [...ls, emptyLine()])}><SheetIcon name="plus" size={14} />Add line</button>
         </SheetSection>
+
+        <SheetSection icon="clip" title="Supporting documents">
+          <ProofPicker entityType="journal" value={proof} onChange={setProof} required={rules.journal}
+            hint="The working, calculation or approval mail behind this entry — auditors ask for it on every manual journal." />
+        </SheetSection>
       </div>
 
       <div style={{ borderTop: `1px solid ${SHEET.LINE}` }}>
@@ -668,6 +692,8 @@ function DayBookTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { const t = setTimeout(load, 0); return () => clearTimeout(t) }, [])
 
+  const proofCounts = useProofCounts('journal', data?.entries.map((e) => e.journal_entry_id) ?? [], 'journal_vouchers')
+
   const totalDr = data?.entries.reduce((s, e) => s + e.lines.reduce((x, l) => x + l.debit_amount, 0), 0) ?? 0
   const totalCr = data?.entries.reduce((s, e) => s + e.lines.reduce((x, l) => x + l.credit_amount, 0), 0) ?? 0
 
@@ -707,6 +733,7 @@ function DayBookTab() {
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 700 }}>{dmy(e.posting_date)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 700 }}>
                   <Link href={recordHref(VOUCHER_PATH, e, 'journal_entry_id', undefined, 'entry')} style={{ color: 'inherit' }}>{e.entry_number}</Link>
+                  <ProofClip count={proofCounts[e.journal_entry_id]} />
                 </td>
                 <td style={tdStyle}>
                   {VOUCHER_LABELS[e.voucher_type] || e.voucher_type}

@@ -23,6 +23,7 @@ import {
   ErrorBanner, InfoBanner, StatusPill, PageHeader, TableWrap, EmptyRow,
 } from '@/components/finance/financeUi'
 import { STATUS_LABELS, STATUS_HEX, VOUCHER_LABELS, POSTING_LABELS, SOURCE_DOCUMENTS, VOUCHER_PATH } from '@/components/finance/voucherLabels'
+import FinanceAttachments, { useProofRules } from '@/components/finance/FinanceAttachments'
 import { FormSheet, SheetSection, SheetIcon, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 const ACTION_LABELS: Record<string, string> = {
@@ -65,6 +66,7 @@ function Voucher({ entryRef }: { entryRef: string | null }) {
   const [draftDesc, setDraftDesc] = useState('')
   const [draftRemarks, setDraftRemarks] = useState<Record<number, string>>({})
   const [saving, setSaving] = useState(false)
+  const rules = useProofRules()
 
   const load = (entryId: number) => {
     Promise.all([accountsApi.getJournalEntry(entryId), seeHistory ? accountsApi.getJournalEntryHistory(entryId) : Promise.resolve([])])
@@ -249,6 +251,16 @@ function Voucher({ entryRef }: { entryRef: string | null }) {
           </tr>
         </tbody>
       </TableWrap>
+
+      {/* Files belong to this journal itself — also on journals posted by an invoice or payment. */}
+      {canFeature('accounts', 'journal_vouchers', 'proof', 'view') && <>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '22px 0 10px' }}>Supporting documents</h2>
+        <div style={sectionStyle} data-tour="fin-voucher-proof">
+          <FinanceAttachments entityType="journal" entityId={entry.id} tabKey="journal_vouchers"
+            locked={entry.status !== 'draft'} closed={entry.status === 'cancelled' || entry.status === 'reversed'}
+            required={rules.journal && entry.status === 'draft'} />
+        </div>
+      </>}
 
       {seeHistory && <>
       <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '22px 0 10px' }}>History</h2>

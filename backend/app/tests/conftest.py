@@ -55,6 +55,22 @@ def _reset_rate_store():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _finance_proof_rules_off(request, monkeypatch):
+    """Finance › Settings › Supporting documents makes a vendor bill / journal
+    working compulsory by default. Tests written before that rule post bills
+    and journals with no file, so the rules are off unless a test is marked
+    `finance_proof` (test_accounts_attachments.py covers them)."""
+    if request.node.get_closest_marker("finance_proof"):
+        yield
+        return
+    from app.modules.accounts.services import proof
+    real = proof.get_setting
+    off = {"proof_required_purchase_invoice", "proof_required_journal", "proof_required_payment"}
+    monkeypatch.setattr(proof, "get_setting", lambda db, key: False if key in off else real(db, key))
+    yield
+
+
 # Postgres-only JSONB columns (e.g. departments.additional_head_user_ids)
 # otherwise make create_all() fail on SQLite before any test runs.
 @compiles(JSONB, "sqlite")

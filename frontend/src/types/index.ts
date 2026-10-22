@@ -6740,6 +6740,20 @@ export interface MaintenancePmCalendarEntry {
   assigned_to_name?: string | null
 }
 
+/** A supporting document (voucher proof) on a Finance document; entity_id is null while staged for an unsaved payment voucher. */
+export interface FinanceAttachment {
+  id: number
+  entity_type: 'vendor_invoice' | 'party_note' | 'ar_transaction' | 'journal' | 'payment'
+  entity_id: number | null
+  doc_type: string
+  filename: string
+  content_type?: string | null
+  size?: number | null
+  created_by_id?: number | null
+  created_by_name?: string | null
+  created_at?: string | null
+}
+
 export interface MaintenanceAttachment {
   id: number
   entity_type: 'asset' | 'request' | 'work_order'

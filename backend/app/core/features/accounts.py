@@ -11,6 +11,14 @@ approval engine, and data scope. Period close / year-end close have no
 features: closing is the tab's approve and reopening is admin-only."""
 from app.core.permission_registry import _feature, register_features
 
+
+def _proof(what: str) -> tuple:
+    """Supporting documents (voucher proof) on one Finance document type."""
+    return _feature("proof", "Supporting documents", "section", {
+        "view": "view", "create": "create", "delete": "delete",
+    }, f"Files behind {what}: see / open them, upload, and delete your own while the document is still unposted.")
+
+
 # ── Journals ─────────────────────────────────────────────────────────────
 
 register_features(
@@ -21,6 +29,7 @@ register_features(
     _feature("change_history", "Change history", "section", {
         "view": "view",
     }, "The change log of a posted voucher (narration / remark edits, posting and reversal events) on the voucher page."),
+    _proof("a manual journal (working, approval mail)"),
 )
 
 
@@ -34,7 +43,10 @@ register_features(
     _feature("settlements", "Payments against the invoice", "section", {
         "view": "view",
     }, "The payments, advances and debit notes settled against a purchase invoice."),
+    _proof("a purchase invoice (the vendor's bill)"),
 )
+
+register_features("accounts", "debit_notes", _proof("a debit note (vendor's note, rejection report)"))
 
 # ── Sales ────────────────────────────────────────────────────────────────
 
@@ -49,7 +61,10 @@ register_features(
     _feature("settlements", "Receipts against the invoice", "section", {
         "view": "view",
     }, "The receipts, advances and credit notes settled against a sales invoice."),
+    _proof("a sales invoice (customer PO, signed delivery copy)"),
 )
+
+register_features("accounts", "credit_notes", _proof("a credit note (customer's debit note, return proof)"))
 
 # ── Payments ─────────────────────────────────────────────────────────────
 
@@ -67,6 +82,7 @@ register_features(
     _feature("payment_block", "Block invoices for payment", "action", {
         "view": "view", "edit": "edit",
     }, "Put a vendor invoice on payment block (or release it) so payment runs skip it."),
+    _proof("a payment or receipt voucher (bill, bank advice / UTR)"),
 )
 
 register_features(

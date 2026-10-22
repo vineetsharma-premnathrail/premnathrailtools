@@ -2305,7 +2305,39 @@ export const costCentersApi = {
   },
 }
 
+export type FinanceAttachmentEntity = 'vendor_invoice' | 'party_note' | 'ar_transaction' | 'journal' | 'payment'
+
 export const accountsApi = {
+  // ── Supporting documents (voucher proof) on Finance documents ──
+  listAttachments: async (entityType: FinanceAttachmentEntity, entityId: number): Promise<import('@/types').FinanceAttachment[]> => {
+    const { data } = await apiClient.get('/accounts/attachments', { params: { entity_type: entityType, entity_id: entityId } })
+    return data
+  },
+  attachmentCounts: async (entityType: FinanceAttachmentEntity, ids: number[]): Promise<Record<string, number>> => {
+    if (!ids.length) return {}
+    const { data } = await apiClient.get('/accounts/attachments/counts', { params: { entity_type: entityType, ids: ids.slice(0, 500).join(',') } })
+    return data
+  },
+  uploadAttachments: async (entityType: FinanceAttachmentEntity, entityId: number, files: File[], docType = 'other'): Promise<import('@/types').FinanceAttachment[]> => {
+    const formData = new FormData()
+    formData.append('entity_type', entityType)
+    formData.append('entity_id', String(entityId))
+    formData.append('doc_type', docType)
+    files.forEach((f) => formData.append('files', f))
+    const { data } = await apiClient.post('/accounts/attachments', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data
+  },
+  /** Proof for a payment voucher that isn't saved yet — pass the ids as attachment_ids on createVoucher. */
+  stageAttachments: async (files: File[], docType = 'other'): Promise<import('@/types').FinanceAttachment[]> => {
+    const formData = new FormData()
+    formData.append('doc_type', docType)
+    files.forEach((f) => formData.append('files', f))
+    const { data } = await apiClient.post('/accounts/attachments/staged', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data
+  },
+  getAttachmentContent: async (id: number): Promise<Blob> => { const { data } = await apiClient.get(`/accounts/attachments/${id}/content`, { responseType: 'blob' }); return data },
+  deleteAttachment: async (id: number) => { const { data } = await apiClient.delete(`/accounts/attachments/${id}`); return data },
+
   // ── Setup: company / FY, groups, ledger settings, GST rates, opening ──
   getSetup: async () => {
     const { data } = await apiClient.get('/accounts/setup')

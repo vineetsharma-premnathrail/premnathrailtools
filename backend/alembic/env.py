@@ -184,6 +184,7 @@ from app.modules.accounts.models.gl_account import GLAccount
 from app.modules.accounts.models.bank_account import BankAccount
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.accounts.models.vendor_document import VendorDocument
+from app.modules.accounts.models.attachment import FinanceAttachment
 from app.modules.accounts.models.vendor_catalog_item import VendorCatalogItem
 from app.modules.accounts.models.internal_order import InternalOrder
 from app.modules.accounts.models.journal_entry import JournalEntry, JournalEntryLine

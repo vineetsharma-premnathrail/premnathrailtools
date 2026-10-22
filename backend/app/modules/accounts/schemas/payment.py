@@ -80,6 +80,8 @@ class VoucherCreate(BaseModel):
     currency: str | None = None
     exchange_rate: float | None = None
     amount_fc: float | None = None
+    # Supporting documents uploaded beforehand (POST /accounts/attachments/staged).
+    attachment_ids: list[int] = Field(default_factory=list)
 
 
 class WriteOffCreate(BaseModel):

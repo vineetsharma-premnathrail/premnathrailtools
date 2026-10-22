@@ -15,6 +15,7 @@ from app.modules.accounts.service import (
     check_three_way_match, create_vendor_invoice, cancel_vendor_invoice,
 )
 from app.modules.accounts.services.outstanding import allocation_history
+from app.modules.accounts.services.proof import ensure_vendor_invoice_proof
 from app.modules.accounts.routes._common import write_audit, who, service_errors, user_names, gl_labels, tax_lines_response
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 from app.modules.accounts import access
@@ -183,6 +184,7 @@ async def submit_vendor_invoice_route(
     tolerance, then the posting approver. It posts on the last approval."""
     invoice = _load_in_scope(db, user, vendor_invoice_id)
     _ensure_pending(invoice)
+    ensure_vendor_invoice_proof(db, invoice)
     access.submit_document(db, access.KEY_VENDOR_INVOICE, requester=user, background_tasks=background_tasks, **_approval_args(invoice))
     write_audit(db, "vendor_invoice", invoice.id, "submitted", user, f"{who(user)} submitted vendor invoice '{invoice.invoice_number}' for approval.")
     db.commit()

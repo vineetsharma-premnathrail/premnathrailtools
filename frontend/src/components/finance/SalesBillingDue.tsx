@@ -19,6 +19,7 @@ import {
   inputStyle, linkBtnStyle, thStyle, tdStyle, numTd, numTh,
   inr, dmy, todayIso, ErrorBanner, TableWrap, EmptyRow,
 } from '@/components/finance/financeUi'
+import { ProofPicker, PickedProof, uploadPickedProof } from '@/components/finance/FinanceAttachments'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -29,7 +30,7 @@ const STATUS_HEX: Record<string, string> = {
 }
 const SHOW_OPTIONS = [['due', 'Billable now'], ['overdue', 'Overdue'], ['requested', 'Requested by Sales'], ['all', 'All milestones']] as const
 
-type Raise = { m: SalesBillingDue; date: string; rows: number[]; eway: string; vehicle: string; narration: string }
+type Raise = { m: SalesBillingDue; date: string; rows: number[]; eway: string; vehicle: string; narration: string; proof: PickedProof[] }
 
 export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
   const { can } = useCan()
@@ -59,8 +60,10 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
         so_id: r.m.so_id, billing_plan_line_id: r.m.billing_line_id, schedule_ids: r.m.row_linked ? r.rows : [],
         invoice_date: r.date, narration: r.narration.trim() || null, eway_bill_no: r.eway.trim() || null, vehicle_no: r.vehicle.trim() || null,
       })
+      const proofWarning = r.proof.length ? await uploadPickedProof('ar_transaction', inv.id, r.proof, 'The draft sales invoice') : ''
       setRaise(null)
       setNotice(`Draft sales invoice for ${inr(inv.total_amount)} created from ${r.m.so_display} — submit it for approval on the Sales Invoices tab.`)
+      if (proofWarning) setError(proofWarning)
       load()
     } catch (err) { setError(extractErrorMessages(err, 'Could not create the invoice from the sales order.')) } finally { setBusy(false) }
   }
@@ -104,7 +107,7 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
               <td style={{ ...numTd, fontWeight: 700 }}>{inr(m.due_amount)}</td>
               <td style={tdStyle}>
                 {canCreate && m.due_amount > 0.5 && (
-                  <button type="button" style={linkBtnStyle} disabled={busy} onClick={() => setRaise({ m, date: todayIso(), rows: m.rows.filter((r) => r.billable_units > 0).map((r) => r.schedule_id), eway: '', vehicle: '', narration: '' })}>Create invoice</button>
+                  <button type="button" style={linkBtnStyle} disabled={busy} onClick={() => setRaise({ m, date: todayIso(), rows: m.rows.filter((r) => r.billable_units > 0).map((r) => r.schedule_id), eway: '', vehicle: '', narration: '', proof: [] })}>Create invoice</button>
                 )}
               </td>
             </tr>
@@ -153,6 +156,9 @@ export default function SalesBillingDueTab({ soId }: { soId?: number | null }) {
                 <label style={sheetLabel}>Narration <Optional /></label>
                 <input style={sheetInput} value={raise.narration} onChange={(e) => setRaise({ ...raise, narration: e.target.value })} />
                 <p style={sheetHint}>Defaults to the SO, PO and milestone.</p>
+              </SheetSection>
+              <SheetSection icon="clip" title="Supporting documents" extra={<Optional />}>
+                <ProofPicker entityType="ar_transaction" value={raise.proof} onChange={(v) => setRaise({ ...raise, proof: v })} hint="Customer PO, signed delivery challan / LR copy." />
               </SheetSection>
             </div>
           </FormSheet>

@@ -23,6 +23,7 @@ from app.modules.accounts.services.vouchers import (
 from app.modules.accounts.services.outstanding import open_documents, open_credits, open_advances
 from app.modules.accounts.routes._common import write_audit, who, service_errors, user_names, gl_labels, require_any_accounts_tab
 from app.modules.accounts.settings import get_setting as get_accounts_setting
+from app.modules.accounts.services.proof import payment_proof_required, staged_payment_files
 from app.modules.accounts import access  # registers PaymentTransaction's data scope + payment approval
 
 router = APIRouter(prefix="/accounts/payments", tags=["Accounts"])
@@ -296,6 +297,13 @@ async def create_voucher_route(payload: VoucherCreate, db: Session = Depends(get
     if payload.payment_type == "vendor":
         _check_not_invoice_maker(db, user, [(a.target_type, a.target_id) for a in payload.allocations]
                                  + [(d.target_type or "vendor_invoice", d.target_id) for d in payload.deductions])
+    proof_files = staged_payment_files(db, payload.attachment_ids, user.id)
+    if not proof_files and payment_proof_required(db, payload.payment_type, payload.amount):
+        above = float(get_accounts_setting(db, "proof_required_payment_above") or 0)
+        raise HTTPException(status_code=400, detail=(
+            "Attach a supporting document (bill, bank advice or UTR screenshot) before saving this voucher — "
+            + (f"vouchers above {above:,.2f} need one" if above > 0 else "every voucher needs one")
+            + " (Finance › Settings › Supporting documents)."))
     with service_errors(db):
         payment = create_voucher(
             db, payment_type=payload.payment_type, bank_account_id=payload.bank_account_id, amount=payload.amount,
@@ -310,6 +318,8 @@ async def create_voucher_route(payload: VoucherCreate, db: Session = Depends(get
             currency=payload.currency, exchange_rate=payload.exchange_rate, amount_fc=payload.amount_fc,
             hold_for_approval=True,
         )
+        for f in proof_files:
+            f.entity_id = payment.id
         why = _needs_approval(db, payment)
         if why:
             _submit_for_approval(db, payment, user)

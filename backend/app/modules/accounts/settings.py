@@ -11,6 +11,7 @@ ACCOUNTS_SETTING_GROUPS = {
     "approval": "Payment approval",
     "credit": "Credit management",
     "dunning": "Collections & dunning",
+    "proof": "Supporting documents",
 }
 
 _SPECS = [
@@ -40,6 +41,17 @@ _SPECS = [
                      "amounts are left out."),
     SettingSpec("dunning_min_amount", "dunning", "Minimum overdue to remind (₹)", "decimal", 1000, min=0,
                 help="Customers whose undisputed overdue total is below this get no reminder letter."),
+    SettingSpec("proof_required_purchase_invoice", "proof", "Vendor bill compulsory on purchase invoices", "bool", True,
+                help="A purchase invoice can't be submitted or approved until the vendor's bill (PDF / photo) is attached. "
+                     "The bill copy is what defends the GST input credit in an audit. Opening-balance bills are exempt."),
+    SettingSpec("proof_required_journal", "proof", "Working compulsory on manual journals", "bool", True,
+                help="A manual journal can't be submitted or approved until its working or approval note is attached — "
+                     "manual journals are where errors and fraud enter the books."),
+    SettingSpec("proof_required_payment", "proof", "Proof compulsory on payments & receipts", "bool", False,
+                help="Vendor payments, customer receipts, expense payments and other receipts above the amount below "
+                     "can't be saved without a supporting file (bill, bank advice / UTR). Contra transfers are exempt."),
+    SettingSpec("proof_required_payment_above", "proof", "Payment proof needed above (₹)", "decimal", 0, min=0,
+                help="Used only when the switch above is on: vouchers above this amount need a file. 0 = every voucher."),
 ]
 
 register_module_settings(ModuleSettingsDef(

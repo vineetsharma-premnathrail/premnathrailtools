@@ -353,6 +353,8 @@ def _journal_decided(db: Session, req: ApprovalRequest, outcome: str, actor: Use
     if je is None or je.status != "draft":
         return
     if outcome == "approved":
+        from app.modules.accounts.services.proof import ensure_journal_proof
+        ensure_journal_proof(db, je)
         with _as_http():
             post_draft_journal(db, journal_entry_id=je.id, posted_by_id=actor.id)
         _audit(db, "journal_entry", je.id, "posted", actor, f"{_who(actor)} approved and posted journal entry {je.entry_number}.")
@@ -369,6 +371,8 @@ def _vendor_invoice_decided(db: Session, req: ApprovalRequest, outcome: str, act
     if inv is None or inv.status != "pending":
         return
     if outcome == "approved":
+        from app.modules.accounts.services.proof import ensure_vendor_invoice_proof
+        ensure_vendor_invoice_proof(db, inv)
         sync_variance_approval(db, inv, req)
         with _as_http():
             post_vendor_invoice(db, vendor_invoice_id=inv.id, created_by_id=actor.id)

@@ -186,6 +186,7 @@ from app.modules.accounts.models.gl_account import GLAccount
 from app.modules.accounts.models.bank_account import BankAccount
 from app.modules.accounts.models.vendor import Vendor
 from app.modules.accounts.models.vendor_document import VendorDocument
+from app.modules.accounts.models.attachment import FinanceAttachment
 from app.modules.accounts.models.vendor_catalog_item import VendorCatalogItem
 from app.modules.accounts.models.internal_order import InternalOrder
 from app.modules.accounts.models.journal_entry import JournalEntry, JournalEntryLine
@@ -267,6 +268,7 @@ from app.modules.accounts.routes import internal_orders as accounts_internal_ord
 from app.modules.accounts.routes import journal_entries as accounts_journal_entries_routes
 from app.modules.accounts.routes import vendor_invoices as accounts_vendor_invoices_routes
 from app.modules.accounts.routes import payments as accounts_payments_routes
+from app.modules.accounts.routes import attachments as accounts_attachments_routes
 from app.modules.accounts.routes import ar_transactions as accounts_ar_transactions_routes
 from app.modules.accounts.routes import period_close as accounts_period_close_routes
 from app.modules.accounts.routes import bank_reconciliations as accounts_bank_reconciliations_routes
@@ -775,6 +777,7 @@ app.include_router(accounts_internal_orders_routes.router, prefix="/api/v1")
 app.include_router(accounts_journal_entries_routes.router, prefix="/api/v1")
 app.include_router(accounts_vendor_invoices_routes.router, prefix="/api/v1")
 app.include_router(accounts_payments_routes.router, prefix="/api/v1")
+app.include_router(accounts_attachments_routes.router, prefix="/api/v1")
 app.include_router(accounts_ar_transactions_routes.router, prefix="/api/v1")
 app.include_router(accounts_period_close_routes.router, prefix="/api/v1")
 app.include_router(accounts_bank_reconciliations_routes.router, prefix="/api/v1")

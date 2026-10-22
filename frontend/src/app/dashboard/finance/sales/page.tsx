@@ -18,6 +18,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import SalesBillingDueTab from '@/components/finance/SalesBillingDue'
+import FinanceAttachments, { ProofPicker, PickedProof, uploadPickedProof, useProofCounts, ProofClip } from '@/components/finance/FinanceAttachments'
 import {
   inputStyle, labelStyle, primaryBtnStyle, linkBtnStyle, dangerLinkStyle,
   thStyle, tdStyle, numTd, numTh, inr, dmy, todayIso, Field, ErrorBanner, InfoBanner, StatusPill, SubTabs, useFinanceSubTabs, PageHeader,
@@ -227,6 +228,7 @@ function InvoicesTab(ctx: Ctx) {
     try { await fn(); load() } catch (err: unknown) { setError(extractErrorMessages(err, context)) } finally { setBusy(false) }
   }
 
+  const proofCounts = useProofCounts('ar_transaction', rows.map((t) => t.id), 'sales_invoices')
   const customerOptions = [{ value: '', label: 'All customers' }, ...customers.map((c) => ({ value: String(c.id), label: c.name }))]
   const COLS = 14
 
@@ -291,6 +293,7 @@ function InvoicesTab(ctx: Ctx) {
                     <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={() => toggle(t.id)}>
                       {expanded === t.id ? '▾' : '▸'} {isDraftNumber(t.invoice_number) ? 'Draft' : t.invoice_number}
                     </button>
+                    <ProofClip count={proofCounts[t.id]} />
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(t.invoice_date)}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(t.due_date)}</td>
@@ -369,6 +372,10 @@ function InvoicesTab(ctx: Ctx) {
                             <SettlementList rows={settlements[t.id]} />
                           </div>
                         )}
+                      </div>
+                      <div style={{ marginTop: 14 }}>
+                        <FinanceAttachments label={<div style={{ ...labelStyle, marginBottom: 4 }}>Supporting documents</div>} entityType="ar_transaction" entityId={t.id} tabKey="sales_invoices"
+                          locked={t.status !== 'pending'} closed={t.status === 'cancelled'} />
                       </div>
                     </td>
                   </tr>
@@ -489,6 +496,7 @@ function SalesInvoiceForm({ setup, ledgers, rates, customers, onSaved, onCancel 
   const [ewb, setEwb] = useState('')
   const [ewbDate, setEwbDate] = useState('')
   const [vehicle, setVehicle] = useState('')
+  const [proof, setProof] = useState<PickedProof[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<Errors>('')
 
@@ -524,9 +532,13 @@ function SalesInvoiceForm({ setup, ledgers, rates, customers, onSaved, onCancel 
         eway_bill_no: ewb.trim() || null, eway_bill_date: ewbDate || null, vehicle_no: vehicle.trim().toUpperCase() || null,
         lines: toLinePayload(lines),
       })
+      // Supporting documents go up before the draft reaches its approvers.
+      const proofWarning = proof.length ? await uploadPickedProof('ar_transaction', created.id, proof, 'The sales invoice') : ''
       // A drafted invoice goes straight to its approvers (Organization › Approval Workflows).
-      onSaved(can('accounts', 'sales_invoices', 'submit')
-        ? await submitAfterSave(() => accountsApi.submitARTransaction(created.id), 'The sales invoice') : '')
+      const submitWarning = can('accounts', 'sales_invoices', 'submit')
+        ? await submitAfterSave(() => accountsApi.submitARTransaction(created.id), 'The sales invoice') : ''
+      setProof([])
+      onSaved([proofWarning, submitWarning].filter(Boolean).join(' '))
     } catch (err: unknown) {
       setError(extractErrorMessages(err, 'Could not save the sales invoice.'))
     } finally { setSaving(false) }
@@ -600,6 +612,9 @@ function SalesInvoiceForm({ setup, ledgers, rates, customers, onSaved, onCancel 
               <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={narration} onChange={(e) => setNarration(e.target.value)} />
             </SField>
           </SheetSection>
+          <SheetSection icon="clip" title="Supporting documents" extra={<Optional />}>
+            <ProofPicker entityType="ar_transaction" value={proof} onChange={setProof} hint="Customer PO, signed delivery challan / LR copy." />
+          </SheetSection>
           <SheetSection icon="rupee" title="Totals">
             <SRow>
               {docCur.fields}
@@ -661,6 +676,7 @@ function CreditNotesTab(ctx: Ctx) {
     setBusy(true); setError('')
     try { await fn(); load() } catch (err: unknown) { setError(extractErrorMessages(err, context)) } finally { setBusy(false) }
   }
+  const proofCounts = useProofCounts('party_note', rows.map((n) => n.id), 'credit_notes')
   const COLS = 11
 
   // Issuing a note replaces the list with the note form ("← Back" returns to the list).
@@ -702,6 +718,7 @@ function CreditNotesTab(ctx: Ctx) {
                     <button type="button" style={{ ...linkBtnStyle, fontSize: 12.5 }} onClick={() => setExpanded(expanded === n.id ? null : n.id)}>
                       {expanded === n.id ? '▾' : '▸'} {isDraftNumber(n.note_number) ? 'Draft' : n.note_number}
                     </button>
+                    <ProofClip count={proofCounts[n.id]} />
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{dmy(n.note_date)}</td>
                   <td style={tdStyle}>{n.party_name || '—'}</td>
@@ -741,6 +758,10 @@ function CreditNotesTab(ctx: Ctx) {
                         {n.narration && <div>Narration: {n.narration}</div>}
                         <div>Raised by {n.created_by_name || '—'}</div>
                       </div>
+                      <div style={{ marginTop: 14 }}>
+                        <FinanceAttachments label={<div style={{ ...labelStyle, marginBottom: 4 }}>Supporting documents</div>} entityType="party_note" entityId={n.id} tabKey="credit_notes"
+                          locked={n.status !== 'pending'} closed={n.status === 'cancelled'} />
+                      </div>
                     </td>
                   </tr>
                 )}
@@ -762,6 +783,7 @@ function CreditNoteForm({ ledgers, rates, onSaved, onCancel }: Ctx & { onSaved: 
   const [roundOff, setRoundOff] = useState('0')
   const [narration, setNarration] = useState('')
   const [lines, setLines] = useState<EditableTaxLine[]>([newTaxLine()])
+  const [proof, setProof] = useState<PickedProof[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<Errors>('')
 
@@ -788,8 +810,11 @@ function CreditNoteForm({ ledgers, rates, onSaved, onCancel }: Ctx & { onSaved: 
         note_type: 'credit_note', note_date: noteDate, reason, ar_transaction_id: Number(invoiceId),
         round_off: ro, narration: narration.trim() || null, lines: toLinePayload(lines),
       })
-      onSaved(can('accounts', 'credit_notes', 'submit')
-        ? await submitAfterSave(() => accountsApi.submitNote(created.id), 'The credit note') : '')
+      const proofWarning = proof.length ? await uploadPickedProof('party_note', created.id, proof, 'The credit note') : ''
+      const submitWarning = can('accounts', 'credit_notes', 'submit')
+        ? await submitAfterSave(() => accountsApi.submitNote(created.id), 'The credit note') : ''
+      setProof([])
+      onSaved([proofWarning, submitWarning].filter(Boolean).join(' '))
     } catch (err: unknown) {
       setError(extractErrorMessages(err, 'Could not issue the credit note.'))
     } finally { setSaving(false) }
@@ -843,6 +868,9 @@ function CreditNoteForm({ ledgers, rates, onSaved, onCancel }: Ctx & { onSaved: 
             <SField label="Narration" optional tour="fin-cn-narration">
               <textarea style={{ ...sheetInput, minHeight: 64, resize: 'vertical' }} value={narration} onChange={(e) => setNarration(e.target.value)} placeholder="e.g. 5 pcs returned vide customer's challan no. …" />
             </SField>
+          </SheetSection>
+          <SheetSection icon="clip" title="Supporting documents" extra={<Optional />}>
+            <ProofPicker entityType="party_note" value={proof} onChange={setProof} hint="Customer's debit note or return / rejection proof." />
           </SheetSection>
           <SheetSection icon="rupee" title="Totals">
             <SField label="Round-off (₹)" style={sw(130)} tour="fin-cn-round-off">
