@@ -589,3 +589,79 @@ def test_test_email_is_admin_only(client, db):
     user = make_user(db, "testmail_user@premnathrail.com", erp_permissions=["sr_create"])
     r = client.post("/api/v1/erp/service-requests/test-email", headers=auth_header(user))
     assert r.status_code == 403
+
+
+def _stock(db, item, qty):
+    from app.modules.store.models.location import StoreLocation
+    from app.modules.store.models.stock_balance import StoreStockBalance
+    loc = db.query(StoreLocation).filter(StoreLocation.code == "MR-MS").first()
+    if loc is None:
+        loc = StoreLocation(name="Main Store", code="MR-MS")
+        db.add(loc)
+        db.flush()
+    db.add(StoreStockBalance(item_id=item.id, location_id=loc.id, on_hand_qty=qty, reserved_qty=0))
+    db.commit()
+
+
+def test_material_request_splits_store_stock_and_purchase(client, db):
+    """Material Request: the user only gives item + qty. In-store qty becomes a
+    spare for Store to issue; the shortfall an approved Service PR (Project line)."""
+    from app.modules.p2p.models.p2p_request import P2PRequest
+
+    user = make_user(db, "srmr1@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    sr = _make_sr(client, user, make_project(db, "SN-SR-MR1"))
+    in_stock = master_item(db, "Filter element", uom="NOS")
+    partial = master_item(db, "Hydraulic hose", uom="NOS")
+    none = master_item(db, "Pump seal kit", uom="NOS")
+    _stock(db, in_stock, 10)
+    _stock(db, partial, 3)
+
+    stock = client.get(f"/api/v1/erp/service-requests/{sr['id']}/material-request/stock",
+                       params={"item_ids": f"{in_stock.id},{partial.id},{none.id}"}, headers=auth_header(user)).json()
+    assert stock == {str(in_stock.id): 10, str(partial.id): 3, str(none.id): 0}
+
+    r = client.post(f"/api/v1/erp/service-requests/{sr['id']}/material-request", json={
+        "priority": "high", "remarks": "Breakdown at site",
+        "items": [{"store_item_id": in_stock.id, "quantity": 4}, {"store_item_id": partial.id, "quantity": 5},
+                  {"store_item_id": none.id, "quantity": 2}],
+    }, headers=auth_header(user))
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert sorted((x["item_name"], x["quantity"]) for x in body["from_store"]) == [("Filter element", 4), ("Hydraulic hose", 3)]
+    assert sorted((x["item_name"], x["quantity"]) for x in body["to_buy"]) == [("Hydraulic hose", 2), ("Pump seal kit", 2)]
+
+    pr = db.query(P2PRequest).one()
+    assert body["pr_number"] == pr.p2p_number
+    assert (pr.status, pr.requirement_type, pr.priority) == ("approved", "Service", "high")
+    assert sorted((i.item_name, i.quantity, i.project_inhouse) for i in pr.items) == [
+        ("Hydraulic hose", 2, "Project"), ("Pump seal kit", 2, "Project")]
+
+    mats = client.get(f"/api/v1/erp/service-requests/{sr['id']}/materials", headers=auth_header(user)).json()
+    store_mats = sorted((m["material_name"], m["quantity"]) for m in mats if not m["pr_id"])
+    assert store_mats == [("Filter element", 4), ("Hydraulic hose", 3)]
+    assert len([m for m in mats if m["pr_id"] == pr.id]) == 2
+
+
+def test_material_request_all_in_store_raises_no_pr(client, db):
+    from app.modules.p2p.models.p2p_request import P2PRequest
+
+    user = make_user(db, "srmr2@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    sr = _make_sr(client, user, make_project(db, "SN-SR-MR2"))
+    item = master_item(db, "V-belt", uom="NOS")
+    _stock(db, item, 5)
+    # The same item on two lines is one requirement: 3 + 2 = 5, all in store.
+    r = client.post(f"/api/v1/erp/service-requests/{sr['id']}/material-request", json={
+        "items": [{"store_item_id": item.id, "quantity": 3}, {"store_item_id": item.id, "quantity": 2}],
+    }, headers=auth_header(user))
+    assert r.status_code == 201, r.text
+    assert r.json()["pr_number"] is None and r.json()["from_store"] == [{"item_name": "V-belt", "quantity": 5, "unit": "NOS"}]
+    assert db.query(P2PRequest).count() == 0
+
+
+def test_material_request_rejects_bad_qty(client, db):
+    user = make_user(db, "srmr3@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    sr = _make_sr(client, user, make_project(db, "SN-SR-MR3"))
+    r = client.post(f"/api/v1/erp/service-requests/{sr['id']}/material-request", json={
+        "items": [{"store_item_id": master_item(db, "Nut").id, "quantity": 0}],
+    }, headers=auth_header(user))
+    assert r.status_code == 400 and "quantity must be more than 0" in r.json()["detail"]

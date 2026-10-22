@@ -2,68 +2,16 @@
 
 import { useEffect, useState } from 'react'
 import { erpApi } from '@/lib/api'
-import { ServiceMaterial, StoreItem } from '@/types'
-import { inputStyle, Field } from '@/components/shared/ui'
-import SearchableSelect from './SearchableSelect'
+import { ServiceMaterial } from '@/types'
 import { extractErrorMessages } from '@/lib/validation'
 import { FormSheet, SHEET, SheetIcon, SheetSection, Optional, Req, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
-// Spare consumption on a service request: add a spare from the Item Master,
+// Spare consumption on a service request (added via the SR's Material Request):
 // issue it from Store to site (Material Issue type Service, on a challan),
 // and return unused quantity. Every movement posts through the Store ledger
 // on the server (erp/spares.py).
 
-const btn: React.CSSProperties = { padding: '8px 14px', borderRadius: 10, border: 'none', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
-const primary: React.CSSProperties = { ...btn, background: '#FF7A45', color: '#fff' }
 const errorBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 12, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }
-
-// showPrice = the user holds Service Requests › Charges, costs & billing amounts;
-// without it the price box is hidden and no price is sent (the server refuses one).
-export function AddSpareRow({ srId, items, onAdded, showPrice = true }: { srId: number; items: StoreItem[]; onAdded: () => void; showPrice?: boolean }) {
-  const [itemId, setItemId] = useState('')
-  const [qty, setQty] = useState('1')
-  const [price, setPrice] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const add = async () => {
-    setError('')
-    const q = Number(qty)
-    if (!itemId) { setError('Pick the spare from the Item Master.'); return }
-    if (!(q > 0)) { setError('Quantity must be more than 0.'); return }
-    const p = !showPrice || price.trim() === '' ? null : Number(price)
-    if (p !== null && (Number.isNaN(p) || p < 0)) { setError('Unit price must be a number of 0 or more.'); return }
-    setBusy(true)
-    try {
-      await erpApi.addMaterial(srId, { store_item_id: Number(itemId), quantity: q, unit_price: p })
-      setItemId(''); setQty('1'); setPrice('')
-      onAdded()
-    } catch (e) {
-      setError(extractErrorMessages(e, 'Could not add the spare.').join(' '))
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div style={{ flex: '1 1 280px', maxWidth: 420 }}>
-          <Field label="Spare (Item Master)">
-            <SearchableSelect value={itemId} onChange={setItemId} placeholder="Search item code / name"
-              options={items.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}` }))} />
-          </Field>
-        </div>
-        <div style={{ flex: '0 1 90px', minWidth: 80 }}>
-          <Field label="Qty"><input type="number" min={0} step="0.01" value={qty} onChange={(e) => setQty(e.target.value)} style={inputStyle} /></Field>
-        </div>
-        {showPrice && <div style={{ flex: '0 1 140px', minWidth: 120 }}>
-          <Field label="Unit price (₹)"><input type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="If chargeable" style={inputStyle} /></Field>
-        </div>}
-        <button type="button" onClick={add} disabled={busy} style={{ ...primary, marginBottom: 14, opacity: busy ? 0.6 : 1 }}>{busy ? 'Adding…' : 'Add spare'}</button>
-      </div>
-      {error && <div style={errorBox}>{error}</div>}
-    </div>
-  )
-}
 
 export function IssueSpareDialog({ srId, material, onClose, onDone }: { srId: number; material: ServiceMaterial; onClose: () => void; onDone: () => void }) {
   const [locations, setLocations] = useState<{ id: number; label: string }[]>([])

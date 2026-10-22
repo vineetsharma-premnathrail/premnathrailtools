@@ -8,7 +8,7 @@ import { PermissionAction, useCan } from '@/lib/permissions'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { erpApi, storeApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
-import { AuditEntry, Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment, PRCategoryMeta, P2PRequestLineItemInput, StoreItem } from '@/types'
+import { AuditEntry, Project, ServiceRequest, ServiceMaterial, ServiceMaterialAttachment, StoreItem } from '@/types'
 import DateField from '@/components/erp/DateField'
 import ErpNav from '@/components/erp/ErpNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -25,7 +25,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { SERVICE_TYPES } from '@/components/erp/serviceTypes'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
-import { AddSpareRow, IssueSpareDialog, ReturnSpareDialog } from '@/components/erp/SrSpareDialogs'
+import { IssueSpareDialog, ReturnSpareDialog } from '@/components/erp/SrSpareDialogs'
 import { SlaBadge } from '@/components/erp/ServiceVisitsTab'
 import ContractChip from '@/components/erp/ContractChip'
 import { SERVICE_BILLING_ENABLED } from '@/lib/features'
@@ -223,7 +223,7 @@ export default function ServiceRequestDetailPage() {
       {tab === 'Materials' && <MaterialsTab srId={sr.id} canEdit={canEdit && !sr.is_locked && feat('materials', 'edit')}
         canAdd={canEdit && !sr.is_locked && feat('materials', 'create')} canDelete={canEdit && !sr.is_locked && feat('materials', 'delete')}
         canRaisePr={canEdit && !sr.is_locked && feat('purchase_requisition', 'create')}
-        canIssueSpares={feat('spare_issue', 'create')} canReturnSpares={feat('spare_issue', 'edit')} showPrices={showCharges} />}
+        canIssueSpares={feat('spare_issue', 'create')} canReturnSpares={feat('spare_issue', 'edit')} />}
       {tab === 'Attachments' && <AttachmentsTab sr={sr} canEdit={canEdit && feat('attachments', 'create')} canDelete={canEdit && feat('attachments', 'delete')} onRefresh={load} />}
       {tab === 'Audit Trail' && <AuditTab srId={sr.id} />}
 
@@ -824,39 +824,26 @@ const PR_STATUS_BADGE: Record<string, { bg: string; fg: string; label: string }>
   cancelled: { bg: '#94a3b81a', fg: '#94a3b8', label: 'Cancelled' },
 }
 
-// PR lines are Item Master items (store_item_id); part code / UOM / category
-// are shown from the master. A new part is added in Store › Item Master first.
-function emptyPrItem(): P2PRequestLineItemInput {
-  return { store_item_id: null, item_name: '', make: '', part_code: '', unit: '', quantity: 1, project_inhouse: 'Project', category: '', ship_to: '' }
-}
-const prReadCell: React.CSSProperties = { padding: '6px 8px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }
 
-function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSpares, canReturnSpares, showPrices }: {
+function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSpares, canReturnSpares }: {
   srId: number; canEdit: boolean; canAdd: boolean; canDelete: boolean; canRaisePr: boolean
-  canIssueSpares: boolean; canReturnSpares: boolean; showPrices: boolean
+  canIssueSpares: boolean; canReturnSpares: boolean
 }) {
   const [materials, setMaterials] = useState<ServiceRequest['materials']>([])
   const [loading, setLoading] = useState(true)
-  // Same fields as the P2P New PR form, minus Project (fixed to this SR's
-  // project) and Approval (service PRs need none).
-  const [prMeta, setPrMeta] = useState<{ categories: PRCategoryMeta[]; requirement_types: string[]; uoms: { value: string; label: string }[] }>({ categories: [], requirement_types: [], uoms: [] })
-  const [categoryCode, setCategoryCode] = useState('')
+  // Material Request: the engineer only picks items + qty. The server checks
+  // store stock and splits each line — what's in store becomes a spare that
+  // Store issues on a challan, the shortfall an approved PR to Purchase
+  // (Project line, requirement type Service — nothing for the user to choose).
   const [requiredDate, setRequiredDate] = useState('')
-  // Service-module PRs default to the 'Service' requirement type.
-  const [requirementType, setRequirementType] = useState('Service')
   const [priority, setPriority] = useState('medium')
   const [remarks, setRemarks] = useState('')
-  const [items, setItems] = useState<P2PRequestLineItemInput[]>([emptyPrItem()])
-  const [supportingFiles, setSupportingFiles] = useState<File[]>([])
-  const [specFiles, setSpecFiles] = useState<File[]>([])
-  const [fileInputKey, setFileInputKey] = useState(0)
-  const [raisingPR, setRaisingPR] = useState(false)
+  const [lines, setLines] = useState<{ itemId: string; qty: string }[]>([{ itemId: '', qty: '1' }])
+  const [stock, setStock] = useState<Record<string, number>>({})
+  const [submitting, setSubmitting] = useState(false)
   const [prMessage, setPrMessage] = useState('')
   const [prError, setPrError] = useState('')
-  // One "Material Request" popup for both sources: buy it (PR to Purchase) or
-  // take it from store stock (Store issues it on a challan). Closed by default.
   const [requestOpen, setRequestOpen] = useState(false)
-  const [source, setSource] = useState<'purchase' | 'store'>(canRaisePr ? 'purchase' : 'store')
   const [receiveInputs, setReceiveInputs] = useState<Record<number, string>>({})
   const [savingReceive, setSavingReceive] = useState<number | null>(null)
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -900,16 +887,31 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
 
   useEffect(() => {
     if (!canRaisePr && !canAdd) return
-    if (canRaisePr) erpApi.getPrFormMeta().then(setPrMeta).catch((err) => {
-      setPrError(extractErrorMessages(err, 'Could not load the requisition form options (categories, units).').join(' '))
-    })
     loadMasterItems()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canRaisePr, canAdd])
 
-  const updateItem = (idx: number, field: keyof P2PRequestLineItemInput, value: string | number | null) => {
-    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)))
-  }
+  // Live store stock for the picked items (refreshed whenever the picks change).
+  const pickedKey = Array.from(new Set(lines.map((l) => l.itemId).filter(Boolean))).join(',')
+  useEffect(() => {
+    if (!requestOpen || !pickedKey) return
+    erpApi.materialRequestStock(srId, pickedKey.split(',').map(Number))
+      .then((s) => setStock((prev) => ({ ...prev, ...s })))
+      .catch(() => {})
+  }, [requestOpen, pickedKey, srId])
+
+  // Preview of how each line will be filled — the same item on two lines shares one stock.
+  const usedStock: Record<string, number> = {}
+  const linePlan = lines.map((l) => {
+    const avail = l.itemId ? stock[l.itemId] : undefined
+    const q = Math.max(Number(l.qty) || 0, 0)
+    const left = Math.max((avail ?? 0) - (usedStock[l.itemId] || 0), 0)
+    const fromStore = avail === undefined ? 0 : Math.min(q, left)
+    if (l.itemId) usedStock[l.itemId] = (usedStock[l.itemId] || 0) + fromStore
+    return { avail, fromStore, buy: q - fromStore }
+  })
+  const setLine = (idx: number, patch: Partial<{ itemId: string; qty: string }>) =>
+    setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)))
 
   const [pendingRemove, setPendingRemove] = useState<{ id: number; name: string } | null>(null)
 
@@ -923,58 +925,38 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
     }
   }
 
-  // Service PRs need no PR approval — raised straight to Purchase as approved.
-  const raisePR = async () => {
+  const submitRequest = async () => {
     setPrError('')
     setPrMessage('')
-    if (!categoryCode) { setPrError('Please select a Purchase Requisition category.'); return }
-    for (let i = 0; i < items.length; i++) {
-      const m = items[i].store_item_id ? masterById.get(items[i].store_item_id!) : undefined
-      if (!m) {
-        setPrError(`Line ${i + 1}: pick the item from the Item Master. If it's a new part, add it first in Store › Item Master, then click "refresh items".`)
-        return
-      }
-      if (!['Project', 'Inhouse'].includes(items[i].project_inhouse || '')) {
-        setPrError(`Line ${i + 1} (${m.item_code} ${m.item_name}): choose Project or Inhouse.`)
-        return
-      }
-      if (!(Number(items[i].quantity) > 0)) {
-        setPrError(`Line ${i + 1} (${m.item_code} ${m.item_name}): quantity must be more than 0.`)
+    const picked = lines.filter((l) => l.itemId)
+    if (!picked.length) { setPrError('Pick at least one item from the Item Master. If it\'s a new part, add it first in Store › Item Master, then click "refresh items".'); return }
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].itemId) continue
+      if (!(Number(lines[i].qty) > 0)) {
+        const m = masterById.get(Number(lines[i].itemId))
+        setPrError(`Line ${i + 1} (${m ? `${m.item_code} ${m.item_name}` : 'item'}): quantity must be more than 0.`)
         return
       }
     }
-    setRaisingPR(true)
+    setSubmitting(true)
     try {
-      const pr = await erpApi.raisePurchaseRequisition(srId, {
-        priority,
-        category_code: categoryCode,
+      const r = await erpApi.materialRequest(srId, {
+        items: picked.map((l) => ({ store_item_id: Number(l.itemId), quantity: Number(l.qty) })),
         required_by_date: requiredDate || undefined,
-        requirement_type: requirementType || undefined,
-        reason: remarks || undefined,
-        items: items.map((it) => ({
-          store_item_id: it.store_item_id, make: it.make || undefined, quantity: Number(it.quantity),
-          project_inhouse: it.project_inhouse, ship_to: it.ship_to || undefined,
-        })),
+        priority,
+        remarks: remarks.trim() || undefined,
       })
-      const uploadFailures: string[] = []
-      for (const [files, doc] of [[supportingFiles, 'supporting'], [specFiles, 'specification']] as const) {
-        if (!files.length) continue
-        try { await erpApi.uploadPrAttachments(srId, pr.id, files, doc) } catch (err) {
-          uploadFailures.push(`${doc} documents: ${extractErrorMessages(err, 'upload failed').join(' ')}`)
-        }
-      }
-      setCategoryCode(''); setRequiredDate(''); setRequirementType('Service'); setPriority('medium'); setRemarks('')
-      setItems([emptyPrItem()]); setSupportingFiles([]); setSpecFiles([]); setFileInputKey((k) => k + 1)
-      setPrMessage(`Purchase requisition ${pr.p2p_number} raised — the Purchase department has been notified.`)
-      if (uploadFailures.length) setPrError(`PR was raised, but some files did not upload — ${uploadFailures.join('; ')}. Ask Purchase to attach them on the PR.`)
-      else setRequestOpen(false)
+      const parts: string[] = []
+      if (r.from_store.length) parts.push(`${r.from_store.length} item(s) booked from store stock — Store issues them to site`)
+      if (r.pr_number) parts.push(`purchase requisition ${r.pr_number} raised for what isn't in store — Purchase has been notified`)
+      setPrMessage(`Material requested: ${parts.join('; ')}.`)
+      setLines([{ itemId: '', qty: '1' }]); setRequiredDate(''); setPriority('medium'); setRemarks('')
+      setRequestOpen(false)
     } catch (err) {
-      // The request can fail on the client (network drop, dev-server reload,
-      // timeout) even after the server already committed the PR — re-fetch
-      // regardless of outcome so the page never shows a stale materials list.
-      setPrError(extractErrorMessages(err, 'Failed to raise purchase requisition — refreshing to confirm current status…').join(' '))
+      // The server may have committed even if the response was lost — the list is reloaded below either way.
+      setPrError(extractErrorMessages(err, 'Could not submit the material request — check your connection; the materials list below has been refreshed.').join(' '))
     } finally {
-      setRaisingPR(false)
+      setSubmitting(false)
       load()
     }
   }
@@ -1004,110 +986,71 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
       {(canRaisePr || canAdd) && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12.5, color: prMessage ? '#047857' : '#78716c', fontWeight: prMessage ? 600 : 400 }}>
-            {prMessage || 'Need a part for this job? Raise a material request — buy it, or take it from store stock.'}
+            {prMessage || 'Need a part for this job? Raise a material request — store stock is checked for you.'}
           </span>
           <button type="button" data-tour="erp-srd-material-request-btn" style={sheetBtn('primary', SHEET.BLUE)}
-            onClick={() => { setPrError(''); setPrMessage(''); setSource(canRaisePr ? 'purchase' : 'store'); setRequestOpen(true) }}>
+            onClick={() => { setPrError(''); setPrMessage(''); setRequestOpen(true) }}>
             <SheetIcon name="plus" size={16} />Material Request
           </button>
         </div>
       )}
 
       {requestOpen && (
-        <FormSheet icon="cart" title="Material Request" tour="erp-srd-pr-form" busy={raisingPR} onClose={() => setRequestOpen(false)}
-          subtitle={source === 'purchase' ? 'Buy it — a purchase requisition goes straight to Purchase (no approval needed). Project is taken from this service request.'
-            : 'Take it from store stock — Store issues it to site on a challan (stock and cost are posted); unused quantity is returned.'}
-          footer={source === 'purchase' ? (<>
+        <FormSheet icon="cart" title="Material Request" tour="erp-srd-pr-form" busy={submitting} onClose={() => setRequestOpen(false)}
+          subtitle="Pick the parts and how many. Store stock is checked automatically — what's in store is issued by Store, the rest goes to Purchase."
+          footer={<>
             {prError && <span style={{ fontSize: 12.5, color: '#b91c1c', fontWeight: 600, marginRight: 'auto' }}>{prError}</span>}
-            <button type="button" style={sheetBtn('secondary')} disabled={raisingPR} onClick={() => setRequestOpen(false)}>Cancel</button>
-            <button type="button" data-tour="erp-srd-pr-submit-btn" onClick={raisePR} disabled={raisingPR} style={sheetBtn('primary', SHEET.BLUE, raisingPR)}>
-              <SheetIcon name="send" size={16} />{raisingPR ? 'Submitting…' : 'Submit Purchase Requisition'}
+            <button type="button" style={sheetBtn('secondary')} disabled={submitting} onClick={() => setRequestOpen(false)}>Cancel</button>
+            <button type="button" data-tour="erp-srd-pr-submit-btn" onClick={submitRequest} disabled={submitting} style={sheetBtn('primary', SHEET.BLUE, submitting)}>
+              <SheetIcon name="send" size={16} />{submitting ? 'Submitting…' : 'Request Material'}
             </button>
-          </>) : undefined}>
+          </>}>
           <div style={{ padding: '20px 24px' }}>
-          {canRaisePr && canAdd && (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-              {([['purchase', 'Purchase (raise PR)', 'Not in stock — buy it'], ['store', 'From store stock', 'Already in store — issue it']] as const).map(([k, label, sub]) => (
-                <button key={k} type="button" onClick={() => setSource(k)}
-                  style={{ flex: '1 1 220px', textAlign: 'left', padding: '10px 14px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
-                    border: source === k ? `2px solid ${SHEET.BLUE}` : `1px solid ${SHEET.LINE}`, background: source === k ? 'rgba(37,99,235,0.05)' : '#fff' }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700, color: SHEET.INK }}>{label}</div>
-                  <div style={{ fontSize: 12, color: SHEET.MUTED, marginTop: 2 }}>{sub}</div>
-                </button>
-              ))}
-            </div>
-          )}
-          {source === 'store' && (
-            <AddSpareRow srId={srId} items={masterItems} onAdded={() => { load(); setRequestOpen(false); setPrMessage('Spare added — Store issues it to site from the Materials list below.') }} showPrice={showPrices} />
-          )}
-          {source === 'purchase' && (<>
-          <SheetSection icon="cart" title="Requisition">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-            <div style={{ flex: '1 1 200px', minWidth: 180 }}>
-              <label style={sheetLabel}>Purchase Requisition Category <Req /></label>
-              <select style={sheetInput} value={categoryCode} onChange={(e) => setCategoryCode(e.target.value)} data-tour="erp-srd-pr-category">
-                <option value="">Select category…</option>
-                {prMeta.categories.map((c) => <option key={c.code} value={c.code}>{c.label} ({c.code})</option>)}
-              </select>
-            </div>
-            <div style={{ flex: '0 1 170px', minWidth: 150 }}>
-              <label style={sheetLabel}>Required Date</label>
-              <div data-tour="erp-srd-pr-required-date"><DateField value={requiredDate} onChange={setRequiredDate} /></div>
-            </div>
-            <div style={{ flex: '1 1 180px', minWidth: 160 }}>
-              <label style={sheetLabel}>Requirement Type</label>
-              <select style={sheetInput} value={requirementType} onChange={(e) => setRequirementType(e.target.value)} data-tour="erp-srd-pr-req-type">
-                <option value="">Select type…</option>
-                {prMeta.requirement_types.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-          </div>
-          </SheetSection>
-
-          <SheetSection icon="box" title="Item Details"
-            extra={<button type="button" data-tour="erp-srd-pr-add-item-btn" onClick={() => setItems((prev) => [...prev, emptyPrItem()])} style={{ ...sheetBtn('ghost'), marginLeft: 'auto' }}><SheetIcon name="plus" size={14} />Add Item</button>}>
+          <SheetSection icon="box" title="Items"
+            extra={<button type="button" data-tour="erp-srd-pr-add-item-btn" onClick={() => setLines((prev) => [...prev, { itemId: '', qty: '1' }])} style={{ ...sheetBtn('ghost'), marginLeft: 'auto' }}><SheetIcon name="plus" size={14} />Add Item</button>}>
             <div style={{ overflowX: 'auto' }}>
-              <table data-tour="erp-srd-pr-items" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
+              <table data-tour="erp-srd-pr-items" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                 <thead>
                   <tr>
-                    {['SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'Qty *', 'Project/Inhouse *', 'Category', 'Ship To', ''].map((h) => (
+                    {['SL', 'Item (from Item Master) *', 'Qty *', 'In store', 'Will be', ''].map((h) => (
                       <th key={h} style={{ textAlign: 'left', padding: '0 8px 8px', fontSize: 11, fontWeight: 600, letterSpacing: '.03em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item, idx) => {
-                    const m = item.store_item_id ? masterById.get(item.store_item_id) : undefined
+                  {lines.map((line, idx) => {
+                    const m = line.itemId ? masterById.get(Number(line.itemId)) : undefined
+                    const plan = linePlan[idx]
+                    const uom = m?.uom || ''
                     return (
                     <tr key={idx}>
                       <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 600, color: '#a8a29e' }}>{idx + 1}</td>
                       <td style={{ padding: '6px 8px', minWidth: 300 }}>
                         <SearchableSelect
-                          value={item.store_item_id ? String(item.store_item_id) : ''}
-                          onChange={(v) => {
-                            const picked = masterById.get(Number(v))
-                            setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, store_item_id: picked ? picked.id : null, make: it.make || picked?.make || '' } : it)))
-                          }}
+                          value={line.itemId}
+                          onChange={(v) => setLine(idx, { itemId: v })}
                           options={masterItems.map((i) => ({ value: String(i.id), label: `${i.item_code} — ${i.item_name}${i.part_number ? ` · ${i.part_number}` : ''}` }))}
                           placeholder={loadingMaster ? 'Loading items…' : 'Search item code, name or part no…'}
                         />
                       </td>
-                      <td style={{ padding: '6px 8px', minWidth: 110 }}><input style={inputStyle} value={item.make} onChange={(e) => updateItem(idx, 'make', e.target.value)} placeholder={m?.make || ''} /></td>
-                      <td style={prReadCell}>{m?.part_number || m?.manufacturer_part_number || '—'}</td>
-                      <td style={prReadCell}>{m?.uom || '—'}</td>
-                      <td style={{ padding: '6px 8px', minWidth: 70 }}><input type="number" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} /></td>
-                      <td style={{ padding: '6px 8px', minWidth: 130 }}>
-                        <select style={inputStyle} value={item.project_inhouse} onChange={(e) => updateItem(idx, 'project_inhouse', e.target.value)}>
-                          <option value="">Select…</option>
-                          <option value="Project">Project</option>
-                          <option value="Inhouse">Inhouse</option>
-                        </select>
+                      <td style={{ padding: '6px 8px', width: 130 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input type="number" min={0} step="0.01" style={inputStyle} value={line.qty} onChange={(e) => setLine(idx, { qty: e.target.value })} />
+                          {uom && <span style={{ fontSize: 12, color: '#78716c' }}>{uom}</span>}
+                        </div>
                       </td>
-                      <td style={prReadCell}>{m?.category || '—'}</td>
-                      <td style={{ padding: '6px 8px', minWidth: 140 }}><input style={inputStyle} value={item.ship_to} onChange={(e) => updateItem(idx, 'ship_to', e.target.value)} /></td>
+                      <td style={{ padding: '6px 8px', fontSize: 13, color: '#57534e', whiteSpace: 'nowrap' }}>
+                        {!line.itemId ? '—' : plan.avail === undefined ? 'Checking…' : `${plan.avail} ${uom}`}
+                      </td>
+                      <td style={{ padding: '6px 8px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        {!line.itemId || plan.avail === undefined ? <span style={{ color: '#a8a29e' }}>—</span>
+                          : plan.buy <= 0 ? <span style={{ color: '#047857' }}>From store</span>
+                          : plan.fromStore <= 0 ? <span style={{ color: '#b45309' }}>Buy — goes to Purchase</span>
+                          : <span style={{ color: '#b45309' }}>{plan.fromStore} from store + {plan.buy} to buy</span>}
+                      </td>
                       <td style={{ padding: '6px 8px' }}>
-                        {items.length > 1 && (
-                          <span onClick={() => setItems((prev) => prev.filter((_, i) => i !== idx))} style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</span>
+                        {lines.length > 1 && (
+                          <span onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx))} style={{ fontSize: 11.5, fontWeight: 600, color: '#dc2626', cursor: 'pointer', whiteSpace: 'nowrap' }}>Remove</span>
                         )}
                       </td>
                     </tr>
@@ -1126,34 +1069,24 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
             </p>
           </SheetSection>
 
-          <SheetSection icon="flag" title="Priority & Remarks">
+          <SheetSection icon="flag" title="Details">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-            <div style={{ flex: '0 1 180px', minWidth: 160 }}>
+            <div style={{ flex: '0 1 170px', minWidth: 150 }}>
+              <label style={sheetLabel}>Required Date</label>
+              <div data-tour="erp-srd-pr-required-date"><DateField value={requiredDate} onChange={setRequiredDate} /></div>
+            </div>
+            <div style={{ flex: '0 1 160px', minWidth: 140 }}>
               <label style={sheetLabel}>Priority</label>
               <select style={sheetInput} value={priority} onChange={(e) => setPriority(e.target.value)} data-tour="erp-srd-pr-priority">
                 {['low', 'medium', 'high'].map((p) => <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>)}
               </select>
             </div>
-            <div style={{ flex: '1 1 320px' }}>
+            <div style={{ flex: '1 1 300px' }}>
               <label style={sheetLabel}>Remarks <Optional /></label>
               <textarea data-tour="erp-srd-pr-remarks" style={{ ...sheetInput, minHeight: 42 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
             </div>
           </div>
           </SheetSection>
-
-          <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
-            <div style={{ flex: '0 1 280px', minWidth: 240 }}>
-              <label style={sheetLabel}>Supporting Documents</label>
-              <input key={`sup-${fileInputKey}`} data-tour="erp-srd-pr-supporting" type="file" multiple onChange={(e) => setSupportingFiles(Array.from(e.target.files || []))} style={sheetInput} />
-            </div>
-            <div style={{ flex: '0 1 280px', minWidth: 240 }}>
-              <label style={sheetLabel}>Specification / Reference File</label>
-              <input key={`spec-${fileInputKey}`} data-tour="erp-srd-pr-spec" type="file" multiple onChange={(e) => setSpecFiles(Array.from(e.target.files || []))} style={sheetInput} />
-            </div>
-          </div>
-          </SheetSection>
-          </>)}
           </div>
         </FormSheet>
       )}

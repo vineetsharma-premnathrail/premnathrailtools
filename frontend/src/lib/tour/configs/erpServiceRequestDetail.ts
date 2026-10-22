@@ -97,7 +97,7 @@ const config: TourConfig = {
     {
       target: 'erp-srd-material-request-btn',
       title: 'Material Request',
-      purpose: 'Opens one form for any part this job needs. Pick the source: "Purchase (raise PR)" when it is not in stock — the PR goes straight to Purchase with this SR’s project, no approval needed; or "From store stock" when it is already in store — Store then issues it to site on a challan and unused quantity is returned.',
+      purpose: 'Opens one form for any part this job needs — just pick the item and quantity. Store stock is checked automatically: the "In store" and "Will be" columns show what Store can issue and what has to be bought. On submit, the in-store quantity is booked for Store to issue to site on a challan, and the rest becomes a Purchase Requisition that goes straight to Purchase with this SR’s project, no approval needed.',
       why: 'One request either way, so parts already in stock are used instead of being bought again, and every part’s cost lands on this job.',
       after: 'The part appears in the materials list below — with its PR number and status if bought, or Issue / Return buttons for Store if taken from stock.',
     },

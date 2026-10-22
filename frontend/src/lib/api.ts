@@ -1003,6 +1003,21 @@ export const erpApi = {
     const { data } = await apiClient.post(`/erp/service-requests/${srId}/raise-pr`, payload)
     return data
   },
+  /** Free store stock per Item Master id (all stores, net of reservations). */
+  materialRequestStock: async (srId: number, itemIds: number[]): Promise<Record<string, number>> => {
+    const { data } = await apiClient.get(`/erp/service-requests/${srId}/material-request/stock`, { params: { item_ids: itemIds.join(',') } })
+    return data
+  },
+  /** The SR's Material Request: in-store qty becomes a spare for Store to issue, the shortfall an approved PR. */
+  materialRequest: async (srId: number, payload: {
+    items: { store_item_id: number; quantity: number }[]
+    required_by_date?: string
+    priority: string
+    remarks?: string
+  }): Promise<{ from_store: { item_name: string; quantity: number; unit?: string | null }[]; to_buy: { item_name: string; quantity: number; unit?: string | null }[]; pr_number: string | null }> => {
+    const { data } = await apiClient.post(`/erp/service-requests/${srId}/material-request`, payload)
+    return data
+  },
   getPrFormMeta: async (): Promise<{ categories: PRCategoryMeta[]; requirement_types: string[]; uoms: { value: string; label: string }[] }> => {
     const { data } = await apiClient.get('/erp/service-requests/pr-form-meta')
     return data

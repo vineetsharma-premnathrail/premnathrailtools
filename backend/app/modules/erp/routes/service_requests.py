@@ -1645,6 +1645,29 @@ async def raise_purchase_requisition(
         if not it.quantity or it.quantity <= 0:
             raise HTTPException(status_code=400, detail=f"Line {i} ({master.item_code} {master.item_name}): quantity must be more than 0.")
         line_extras.append((it, master))
+    pr = _raise_sr_pr(db, background_tasks, sr, user, payload, line_extras)
+    db.commit()
+    db.refresh(pr)
+    background_tasks.add_task(_send_purchase_requisition_email_background, pr.id, sr.id)
+
+    resp = P2PRequestResponse.model_validate(pr)
+    if pr.category_code:
+        resp.category_label = P2P_CATEGORIES.get(pr.category_code, pr.category_code)
+    resp.requested_by_name = user.name or user.email
+    return resp
+
+
+def _raise_sr_pr(
+    db: Session,
+    background_tasks: BackgroundTasks,
+    sr: ServiceRequest,
+    user: User,
+    payload: RaisePurchaseRequestPayload,
+    line_extras: list[tuple[RaisePurchaseRequestItem, StoreItem]],
+) -> P2PRequest:
+    """One SR material per line, the approved PR for them, audit + notices.
+    Caller validates the lines, commits, and queues the Purchase email."""
+    sr_id = sr.id
     materials = []
     for it, master in line_extras:
         mat = ServiceMaterial(
@@ -1687,16 +1710,123 @@ async def raise_purchase_requisition(
         entity_id=pr.id,
         app_name="p2p",
     )
+    return pr
+
+
+class MaterialRequestLine(BaseModel):
+    store_item_id: int
+    quantity: float
+
+
+class MaterialRequestPayload(BaseModel):
+    """The SR's one "Material Request": the engineer only says what and how
+    much. Store stock is checked here — what's in store is booked as a spare
+    for Store to issue on a challan, the shortfall becomes an approved PR
+    (Project line, requirement type Service) that goes straight to Purchase."""
+    items: list[MaterialRequestLine]
+    required_by_date: date | None = None
+    priority: str = "medium"
+    remarks: str | None = None
+
+
+def _available_in_store(db: Session, item_id: int) -> float:
+    from app.modules.p2p.routes.p2p_requests import _stock_balance_info
+    return max(_stock_balance_info(db, item_id).available_qty, 0.0)
+
+
+@router.get("/{sr_id}/material-request/stock")
+async def material_request_stock(
+    sr_id: int,
+    item_ids: str = Query("", description="Comma-separated Item Master ids"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("erp")),
+):
+    """Free store stock (on hand − reserved, all stores) per item, shown live
+    on the Material Request form."""
+    _get_live_sr(db, sr_id, user=user)
+    ids = [int(x) for x in item_ids.split(",") if x.strip().isdigit()][:100]
+    return {str(i): _available_in_store(db, i) for i in ids}
+
+
+@router.post("/{sr_id}/material-request", status_code=201)
+async def material_request(
+    sr_id: int,
+    payload: MaterialRequestPayload,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_app_access("erp")),
+):
+    if payload.priority not in P2P_REQUEST_PRIORITIES:
+        raise HTTPException(status_code=400, detail=f"Invalid priority '{payload.priority}' — must be one of {', '.join(P2P_REQUEST_PRIORITIES)}.")
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="Add at least one item — pick it from the Item Master.")
+    sr = _get_live_sr(db, sr_id, user=user)
+    if not _can_edit(sr, user):
+        raise HTTPException(status_code=403, detail="Only the creator (with edit permission) or an admin can request material for this service request.")
+    _ensure_unlocked(sr)
+    _ensure_open_for_materials(sr)
+
+    # The same item on two lines is one requirement — merge before the stock check.
+    wanted: dict[int, float] = {}
+    for i, ln in enumerate(payload.items, 1):
+        if not ln.quantity or ln.quantity <= 0:
+            raise HTTPException(status_code=400, detail=f"Line {i}: quantity must be more than 0.")
+        wanted[ln.store_item_id] = wanted.get(ln.store_item_id, 0.0) + ln.quantity
+
+    store_lines: list[tuple[StoreItem, float]] = []
+    buy_lines: list[tuple[StoreItem, float, float]] = []  # item, shortfall, available
+    for item_id, qty in wanted.items():
+        item = db.query(StoreItem).filter(StoreItem.id == item_id).first()
+        if item is None:
+            raise HTTPException(status_code=422, detail=f"Item Master item #{item_id} wasn't found — pick the item again from the list.")
+        available = _available_in_store(db, item_id)
+        from_store = min(qty, available)
+        if from_store > 0:
+            store_lines.append((item, from_store))
+        if qty - from_store > 1e-9:
+            buy_lines.append((item, qty - from_store, available))
+
+    if store_lines:
+        ensure_feature_action(user, "erp", "service_requests", "materials", "create")
+    if buy_lines:
+        try:
+            ensure_feature_action(user, "erp", "service_requests", "purchase_requisition", "create")
+        except HTTPException:
+            short = "; ".join(f"{it.item_code} {it.item_name}: need {q + a:g}, {a:g} in store" for it, q, a in buy_lines)
+            raise HTTPException(status_code=403, detail=(
+                f"Not enough in store ({short}). Buying the shortfall needs the Service Requests › Purchase Requisition "
+                "permission — ask your admin to grant it, or reduce the quantity to what is in store."))
+        _ensure_open_for_purchase(sr)
+
+    covered = sr.is_chargeable is False
+    for item, qty in store_lines:
+        db.add(ServiceMaterial(
+            service_request_id=sr_id, store_item_id=item.id, material_name=item.item_name,
+            part_number=item.item_code, unit=item.uom or "pcs", quantity=qty, status="pending",
+            description=payload.remarks or None, is_warranty_covered=covered, qty_issued=0, qty_returned=0,
+        ))
+    if store_lines:
+        db.flush()
+        _recompute_billing(db, sr)
+        _write_audit(db, sr_id, "material_added", user, summary="Material requested from store: "
+                     + ", ".join(f"{it.item_name} ({q:g} {it.uom or 'pcs'})" for it, q in store_lines) + ".")
+
+    pr = None
+    if buy_lines:
+        line_extras = [(RaisePurchaseRequestItem(store_item_id=it.id, quantity=q, project_inhouse="Project"),
+                        purchasable_item(db, it.id, f"{it.item_code} {it.item_name}")) for it, q, _a in buy_lines]
+        pr_payload = RaisePurchaseRequestPayload(priority=payload.priority, required_by_date=payload.required_by_date,
+                                                 reason=payload.remarks, requirement_type="Service")
+        pr = _raise_sr_pr(db, background_tasks, sr, user, pr_payload, line_extras)
 
     db.commit()
-    db.refresh(pr)
-    background_tasks.add_task(_send_purchase_requisition_email_background, pr.id, sr.id)
-
-    resp = P2PRequestResponse.model_validate(pr)
-    if pr.category_code:
-        resp.category_label = P2P_CATEGORIES.get(pr.category_code, pr.category_code)
-    resp.requested_by_name = user.name or user.email
-    return resp
+    if pr is not None:
+        background_tasks.add_task(_send_purchase_requisition_email_background, pr.id, sr.id)
+    return {
+        "from_store": [{"item_name": it.item_name, "quantity": q, "unit": it.uom} for it, q in store_lines],
+        "to_buy": [{"item_name": it.item_name, "quantity": q, "unit": it.uom} for it, q, _a in buy_lines],
+        "pr_number": pr.p2p_number if pr else None,
+    }
 
 
 @router.post("/{sr_id}/materials/{mat_id}/receive", response_model=ServiceMaterialResponse)
