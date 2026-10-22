@@ -1,16 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { managedDocumentsApi as api } from '@/lib/api'
-import { formatDate, formatDateTime } from '@/lib/format'
+import { formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { ManagedDocumentChanges, ManagedDocumentState } from '@/types'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { secondaryBtnStyle } from '@/components/crm/ui'
 
 const smallBtn: React.CSSProperties = { ...secondaryBtnStyle, padding: '5px 11px', fontSize: 11.5 }
-const chip = (bg: string, fg: string): React.CSSProperties => ({ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 9999, background: bg, color: fg, whiteSpace: 'nowrap' })
 
 type Busy = '' | 'create' | 'edit' | 'docx'
 
@@ -27,7 +26,7 @@ type Busy = '' | 'create' | 'edit' | 'docx'
  * onDocumentChange reports the loaded document (null = not created) so a
  * parent can require it, e.g. "create the document before sending".
  */
-export default function ManagedDocumentPanel({ entityType, entityId, revision, canModify, recordLabel, downloadName, onDocumentChange }: {
+export default function ManagedDocumentPanel({ entityType, entityId, revision, canModify, recordLabel, downloadName, onDocumentChange, beforeEdit, extraItems }: {
   entityType: string
   entityId: number
   revision: number
@@ -35,6 +34,10 @@ export default function ManagedDocumentPanel({ entityType, entityId, revision, c
   recordLabel: string
   downloadName: string
   onDocumentChange?: (doc: ManagedDocumentState | null) => void
+  /** Runs before Word opens, e.g. save the page's unsaved draft so the document is built from it. */
+  beforeEdit?: () => Promise<unknown>
+  /** Extra menu entries from the record, e.g. "Download PDF". */
+  extraItems?: { label: string; onClick: () => void }[]
 }) {
   const [doc, setDoc] = useState<ManagedDocumentState | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -94,21 +97,20 @@ export default function ManagedDocumentPanel({ entityType, entityId, revision, c
     }
   }
 
-  const create = () => run('create', () => api.create(entityType, entityId), 'Could not create the Word document.')
-
+  // One click: build the letterhead draft if it's missing (or made from an older
+  // revision), then open it in Word Online.
   const editInWord = async () => {
     // Open the tab synchronously (inside the click) so popup blockers allow it, then point it at Word Online.
     const tab = window.open('', '_blank')
-    setBusy('edit')
+    setBusy(doc ? 'edit' : 'create')
     setError('')
     try {
-      const { url } = await api.openForEdit(entityType, entityId)
-      if (tab) tab.location.href = url
-      else window.location.href = url
+      if (beforeEdit) await beforeEdit()
+      await openRecordInWord(entityType, entityId, tab)
       setTimeout(load, 1500)
     } catch (err) {
       tab?.close()
-      setError(extractErrorMessages(err, 'Could not open the document in Word.'))
+      setError(extractErrorMessages(err, `Could not open the ${recordLabel} in Word.`))
     } finally {
       setBusy('')
     }
@@ -125,55 +127,37 @@ export default function ManagedDocumentPanel({ entityType, entityId, revision, c
   }, 'Could not download the Word file.')
 
   if (!loaded) return null
+  // Nothing to show to someone who can't create it.
+  if (!doc && !canModify && !loadError && !extraItems?.length) return null
 
   const latest = doc?.versions[0]
+  const amountsChanged = !!changes?.changed && (changes.amounts_removed?.length || 0) + (changes.amounts_added?.length || 0) > 0
+
+  // The one button: first click creates the letterhead draft and opens it in Word;
+  // after that it opens a menu (edit / download / changes / history).
+  const items: { label: string; hint: string; onClick: () => void }[] = []
+  if (doc && canModify) items.push(doc.is_stale
+    ? { label: 'Rebuild from current revision & edit', hint: `The ${recordLabel} was changed after this draft was made. Builds a fresh draft from its current details and opens it.`, onClick: editInWord }
+    : { label: 'Edit in Word', hint: 'Saves automatically — every save is recorded under your name.', onClick: editInWord })
+  if (doc) items.push({ label: 'Download .docx', hint: 'The latest Word file, with all edits.', onClick: downloadDocx })
+  for (const x of extraItems || []) items.push({ label: x.label, hint: '', onClick: x.onClick })
+  if (doc && !doc.is_stale && changes?.changed) items.push({ label: showChanges ? 'Hide changes' : 'What was edited in Word', hint: '', onClick: () => setShowChanges((v) => !v) })
+  if (doc && doc.versions.length > 0) items.push({ label: showHistory ? 'Hide history' : `History (${doc.versions.length} versions)`, hint: '', onClick: () => setShowHistory((v) => !v) })
 
   return (
-    <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(0,0,0,0.06)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: '#57534e' }}>Word document</span>
-          {!doc && statusKnown && <span style={chip('rgba(0,0,0,0.05)', '#78716c')}>Not created</span>}
-          {doc && <span style={chip('rgba(245,158,11,0.14)', '#b45309')}>Draft{latest ? ` · v${latest.version}` : ''}</span>}
-          {latest && (
-            <span style={{ fontSize: 11.5, color: '#a8a29e' }}>
-              last change by {latest.modified_by}{latest.modified_at ? `, ${formatDateTime(latest.modified_at)}` : ''}
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {canModify && statusKnown && (!doc || doc.is_stale) && (
-            <Hint text={doc ? `The ${recordLabel} was changed. Make a new Word draft from its current details.` : `Make an editable Word copy of this ${recordLabel} on the company letterhead.`}>
-              <button type="button" onClick={create} disabled={!!busy} style={{ ...smallBtn, color: '#FF7A45', border: '1px solid rgba(255,122,69,0.4)' }}>
-                {busy === 'create' ? 'Creating…' : doc ? 'Create Word for current revision' : 'Create Word'}
-              </button>
-            </Hint>
-          )}
-          {doc && !doc.is_stale && canModify && (
-            <>
-              <Hint text="Open in Word Online and edit. Saves automatically — every save is recorded under your name.">
-                <button type="button" onClick={editInWord} disabled={!!busy} style={{ ...smallBtn, color: '#2563eb', border: '1px solid rgba(37,99,235,0.35)' }}>
-                  {busy === 'edit' ? 'Opening…' : 'Edit in Word'}
-                </button>
-              </Hint>
-            </>
-          )}
-          {doc && (
-            <Hint text="Download the latest Word file (with all edits). Make changes with Edit in Word, so every change is recorded.">
-              <button type="button" onClick={downloadDocx} disabled={!!busy} style={smallBtn}>
-                {busy === 'docx' ? 'Downloading…' : 'Download .docx'}
-              </button>
-            </Hint>
-          )}
-          {doc && doc.versions.length > 0 && (
-            <Hint text="See every version — who changed it and when.">
-              <button type="button" onClick={() => setShowHistory((v) => !v)} style={smallBtn}>
-                {showHistory ? 'Hide history' : `History (${doc.versions.length})`}
-              </button>
-            </Hint>
-          )}
-        </div>
-      </div>
+    <div style={{ marginTop: 10 }}>
+      {!doc && statusKnown && canModify ? (
+        <button type="button" onClick={editInWord} disabled={!!busy} style={wordBtn(!!busy)}>
+          <WordIcon />{busy ? 'Opening Word…' : 'Create in Word'}
+        </button>
+      ) : (doc || extraItems?.length) ? (
+        <MenuButton
+          label={busy === 'edit' || busy === 'create' ? 'Opening Word…' : busy === 'docx' ? 'Downloading…' : `Word document${latest ? ` · v${latest.version}` : ''}`}
+          title={latest ? `Last change by ${latest.modified_by}${latest.modified_at ? `, ${formatDateTime(latest.modified_at)}` : ''}` : undefined}
+          disabled={!!busy}
+          items={items}
+        />
+      ) : null}
 
       {loadError && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -183,13 +167,10 @@ export default function ManagedDocumentPanel({ entityType, entityId, revision, c
       )}
       {doc?.is_stale && (
         <p style={{ fontSize: 12, color: '#b45309', margin: '8px 0 0' }}>
-          This Word draft was made from an older version of the {recordLabel}, so it may not match. {canModify ? 'Create a Word document for the current revision.' : ''}
+          This Word draft was made from an older version of the {recordLabel}, so it may not match.{canModify ? ' Use “Rebuild from current revision & edit” in the menu.' : ''}
         </p>
       )}
-      {doc && !doc.is_stale && changes && !changes.changed && (
-        <p style={{ fontSize: 12, color: '#57534e', margin: '8px 0 0' }}>No edits yet — the Word document matches the {recordLabel} data.</p>
-      )}
-      {doc && !doc.is_stale && changes?.changed && (
+      {doc && !doc.is_stale && changes?.changed && (showChanges || amountsChanged) && (
         <ChangesBox changes={changes} recordLabel={recordLabel} open={showChanges} onToggle={() => setShowChanges((v) => !v)} />
       )}
       {changesError && <p style={{ fontSize: 12, color: '#b91c1c', margin: '8px 0 0' }}>{changesError}</p>}
@@ -233,46 +214,52 @@ export async function openRecordInWord(entityType: string, entityId: number, tab
   }
 }
 
-// Hover/focus hint bubble above a button, so each action explains itself.
-// Rendered in a portal with fixed positioning: inside a scrolling dialog an
-// absolutely positioned bubble gets clipped, so it is placed against the
-// viewport instead and kept within its edges.
-function Hint({ text, children }: { text: string; children: React.ReactNode }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  const [pos, setPos] = useState<{ top: number; left: number; arrow: number } | null>(null)
-  const show = () => {
-    const r = ref.current?.getBoundingClientRect()
-    if (!r) return
-    const center = r.left + r.width / 2
-    const half = 130 // half of maxWidth 240 + margin
-    const left = Math.min(Math.max(center, half), window.innerWidth - half)
-    setPos({ top: r.top - 8, left, arrow: center - left })
+const wordBtn = (disabled: boolean): React.CSSProperties => ({
+  display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 10, border: 'none',
+  background: '#2563eb', color: '#fff', fontSize: 13, fontWeight: 700, cursor: disabled ? 'default' : 'pointer',
+  opacity: disabled ? 0.7 : 1, boxShadow: '0 4px 12px rgba(37,99,235,0.25)', whiteSpace: 'nowrap',
+})
+
+function WordIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M8 13l1.5 5 2.5-4 2.5 4L16 13" />
+    </svg>
+  )
+}
+
+// A button that opens a small action menu. The menu is portalled to <body> with
+// fixed positioning so glass cards (backdrop-filter) and scrolling dialogs don't clip it.
+function MenuButton({ label, title, disabled, items }: { label: string; title?: string; disabled: boolean; items: { label: string; hint: string; onClick: () => void }[] }) {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const toggle = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (pos) { setPos(null); return }
+    const r = e.currentTarget.getBoundingClientRect()
+    setPos({ top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 270) })
   }
   return (
-    <span
-      ref={ref}
-      style={{ display: 'inline-flex' }}
-      onMouseEnter={show}
-      onMouseLeave={() => setPos(null)}
-      onFocus={show}
-      onBlur={() => setPos(null)}
-    >
-      {children}
+    <>
+      <button type="button" onClick={toggle} disabled={disabled} title={title} style={wordBtn(disabled)}>
+        <WordIcon />{label}<span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
+      </button>
       {pos && typeof document !== 'undefined' && createPortal(
-        <span
-          role="tooltip"
-          style={{
-            position: 'fixed', top: pos.top, left: pos.left, transform: 'translate(-50%, -100%)', zIndex: 1000,
-            width: 'max-content', maxWidth: 240, padding: '7px 10px', borderRadius: 8, background: '#1f1108', color: '#fff',
-            fontSize: 11.5, fontWeight: 500, lineHeight: 1.4, textAlign: 'center', boxShadow: '0 6px 16px rgba(0,0,0,0.18)', pointerEvents: 'none',
-          }}
-        >
-          {text}
-          <span style={{ position: 'absolute', top: '100%', left: `calc(50% + ${pos.arrow}px)`, transform: 'translateX(-50%)', borderWidth: 5, borderStyle: 'solid', borderColor: '#1f1108 transparent transparent transparent' }} />
-        </span>,
+        <>
+          <div onClick={() => setPos(null)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+          <div role="menu" style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999, width: 260, padding: 6, borderRadius: 12, background: '#fff', border: '1px solid rgba(0,0,0,0.08)', boxShadow: '0 12px 32px rgba(0,0,0,0.16)' }}>
+            {items.map((it) => (
+              <button key={it.label} type="button" role="menuitem" onClick={() => { setPos(null); it.onClick() }}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', borderRadius: 8, background: 'transparent', cursor: 'pointer' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.05)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#1f1108' }}>{it.label}</span>
+                {it.hint && <span style={{ display: 'block', fontSize: 11.5, color: '#78716c', marginTop: 2 }}>{it.hint}</span>}
+              </button>
+            ))}
+          </div>
+        </>,
         document.body,
       )}
-    </span>
+    </>
   )
 }
 

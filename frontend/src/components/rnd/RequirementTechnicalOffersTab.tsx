@@ -11,7 +11,8 @@
 // `embedded` renders it inside the "Latest Technical Offer Request" card.
 
 import { useEffect, useState } from 'react'
-import { rndApi } from '@/lib/api'
+import { createPortal } from 'react-dom'
+import { rndApi, managedDocumentsApi } from '@/lib/api'
 import { RndMyAccess, RndTechnicalOffer } from '@/types'
 import { TEXT, BORDER, GLASS, SHADOWS } from '@/lib/theme'
 import { formatDate, formatDateTime } from '@/lib/format'
@@ -51,6 +52,7 @@ export default function RequirementTechnicalOffersTab({ source, recordId, access
   const [busy, setBusy] = useState<number | null>(null)
   const [expanded, setExpanded] = useState<number | null>(null)
   const [docKey, setDocKey] = useState(0)
+  const [menu, setMenu] = useState<{ top: number; right: number } | null>(null)
   const [confirm, setConfirm] = useState<{ kind: 'release' | 'submit' | 'delete' | 'approve_revision'; offer: RndTechnicalOffer } | null>(null)
   const [reasonFor, setReasonFor] = useState<{ kind: ReasonKind; offer: RndTechnicalOffer } | null>(null)
   const [reason, setReason] = useState('')
@@ -150,10 +152,150 @@ export default function RequirementTechnicalOffersTab({ source, recordId, access
   }
   const askReason = (kind: ReasonKind, offer: RndTechnicalOffer) => { setReason(''); setReasonError(''); setReasonFor({ kind, offer }) }
 
+  const downloadDocx = (offer: RndTechnicalOffer) => run(offer.id, async () => {
+    const blob = await managedDocumentsApi.downloadDocx(ENTITY, offer.id)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${offer.offer_number}.docx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, `Could not download ${offer.offer_number}. Make sure it was opened in Word at least once, then try again.`)
+
   const all = offers || []
   const latest = all[0]
   // Embedded in the TOR card: the current offer only (history stays one click away).
   const shown = embedded ? all.slice(0, 1) : all
+
+  const dialogs = (
+    <>
+      <ConfirmDialog
+        open={!!confirm}
+        title={!confirm ? '' : confirm.kind === 'release' ? `Approve ${confirm.offer.offer_number} and send it to the BD team?`
+          : confirm.kind === 'submit' ? `Send ${confirm.offer.offer_number} to the R&D head?`
+          : confirm.kind === 'approve_revision' ? `Approve the revision of ${confirm.offer.offer_number}?`
+          : `Delete ${confirm.offer.offer_number}?`}
+        message={!confirm ? '' : confirm.kind === 'release'
+          ? `The BD team is notified and can quote against it. It is locked from now on.${all.some((x) => x.status === 'released') ? ' The offer sent earlier becomes Superseded.' : ''}`
+          : confirm.kind === 'submit' ? 'It is locked while the R&D head reviews it. The head approves it to the BD team or returns it to you for changes.'
+          : confirm.kind === 'approve_revision' ? `A new draft revision opens for ${confirm.offer.revision_request?.requested_by || 'the requester'} to edit. ${confirm.offer.offer_number} stays with BD until the new revision is approved.`
+          : 'The draft and its details are removed. This cannot be undone.'}
+        confirmLabel={!confirm ? '' : confirm.kind === 'release' ? 'Approve & Send' : confirm.kind === 'submit' ? 'Send to R&D Head' : confirm.kind === 'approve_revision' ? 'Approve revision' : 'Delete'}
+        danger={confirm?.kind === 'delete'}
+        onCancel={() => setConfirm(null)}
+        onConfirm={() => {
+          const c = confirm
+          setConfirm(null)
+          if (!c) return
+          if (c.kind === 'release') run(c.offer.id, () => rndApi.releaseTechnicalOffer(c.offer.id), `${c.offer.offer_number} was not sent to the BD team.`)
+          else if (c.kind === 'submit') run(c.offer.id, () => rndApi.submitTechnicalOffer(c.offer.id), `${c.offer.offer_number} was not sent to the R&D head.`)
+          else if (c.kind === 'approve_revision') run(c.offer.id, async () => { const r = await rndApi.decideTechnicalOfferRevision(c.offer.id, true); setExpanded(r.id) }, `The revision of ${c.offer.offer_number} was not approved.`)
+          else run(c.offer.id, () => rndApi.deleteTechnicalOffer(c.offer.id), `${c.offer.offer_number} was not deleted.`)
+        }}
+      />
+      {reasonFor && (() => {
+        const cfg = REASON_SHEET[reasonFor.kind]
+        const title = reasonFor.kind === 'return' ? `${cfg.title} — ${reasonFor.offer.offer_number}` : `${cfg.title} ${reasonFor.offer.offer_number}`
+        return (
+          <FormSheet tour="rnd-req-to-reason" width={580} icon="history" title={title} subtitle={cfg.subtitle}
+            onClose={() => setReasonFor(null)} busy={reasonBusy}
+            footer={<>
+              <button type="button" onClick={() => setReasonFor(null)} disabled={reasonBusy} style={sheetBtn('secondary', SHEET.INK, reasonBusy)}>Cancel</button>
+              <button type="button" disabled={reasonBusy || !reason.trim()} onClick={submitReason} style={sheetBtn('primary', SHEET.BLUE, reasonBusy || !reason.trim())}>
+                <SheetIcon name="history" size={16} />{reasonBusy ? 'Saving…' : cfg.button}
+              </button>
+            </>}>
+            <div style={{ padding: '20px 24px' }}>
+              {reasonError && (
+                <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
+                  {Array.isArray(reasonError) ? reasonError.join(' ') : reasonError}
+                </div>
+              )}
+              <SheetSection icon="edit" title="Reason">
+                <label style={sheetLabel}>{cfg.label} <Req /></label>
+                <textarea style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus placeholder={cfg.placeholder} />
+                <p style={sheetHint}>{cfg.hint}</p>
+              </SheetSection>
+            </div>
+          </FormSheet>
+        )
+      })()}
+    </>
+  )
+
+  // Embedded in the TOR card: just one button. Before an offer exists it creates one and
+  // opens the letterhead template in Word; after that it opens a menu (edit / download / send …).
+  if (embedded) {
+    if (offers === null) return null
+    const o = latest
+    if (!o && !canCreate) return null
+    const items: { label: string; onClick: () => void; danger?: boolean; tour?: string }[] = []
+    if (o) {
+      const isDraft = o.status === 'draft'
+      const isLatestReleased = o.status === 'released'
+      const rr = o.revision_request
+      if (isDraft && canEdit) items.push({ label: 'Edit in Word', onClick: () => openWord(o) })
+      items.push({ label: 'Download .docx', onClick: () => downloadDocx(o) })
+      if (isDraft && canApprove) items.push({ label: 'Approve & Send to BD', tour: 'rnd-req-to-release', onClick: () => setConfirm({ kind: 'release', offer: o }) })
+      if (isDraft && !isHead && canEdit) items.push({ label: 'Send to R&D Head', tour: 'rnd-req-to-submit', onClick: () => setConfirm({ kind: 'submit', offer: o }) })
+      if (o.status === 'submitted' && canApprove) {
+        items.push({ label: 'Approve & Send to BD', onClick: () => setConfirm({ kind: 'release', offer: o }) })
+        items.push({ label: 'Return for changes', onClick: () => askReason('return', o) })
+      }
+      if (isLatestReleased && rr && canApprove) {
+        items.push({ label: 'Approve revision', onClick: () => setConfirm({ kind: 'approve_revision', offer: o }) })
+        items.push({ label: 'Decline revision', onClick: () => askReason('decline', o) })
+      }
+      if (isLatestReleased && !rr && isHead && canCreate) items.push({ label: 'Revise', onClick: () => askReason('revise', o) })
+      if (isLatestReleased && !rr && !isHead && canCreate) items.push({ label: 'Ask for revision', tour: 'rnd-req-to-ask-revision', onClick: () => askReason('request', o) })
+      if (isDraft && canDeleteDraft) items.push({ label: 'Delete draft', danger: true, onClick: () => setConfirm({ kind: 'delete', offer: o }) })
+    }
+    const hex = o ? STATUS_HEX[o.status] : SHEET.BLUE
+    return (
+      <div data-tour="rnd-req-technical-offers" style={{ marginTop: 12, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+        {o ? (
+          <button type="button" disabled={busy === o.id}
+            onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMenu(menu ? null : { top: r.bottom + 6, right: window.innerWidth - r.right }) }}
+            style={sheetBtn('primary', SHEET.BLUE, busy === o.id)}>
+            <SheetIcon name="doc" size={15} />
+            {busy === o.id ? 'Working…' : <>Technical Offer {o.offer_number}</>}
+            <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 9999, background: '#fff', color: hex, marginLeft: 4 }}>{STATUS_LABELS[o.status] || o.status}</span>
+            <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
+          </button>
+        ) : (
+          <button data-tour="rnd-req-to-new" type="button" disabled={creating} onClick={create} style={sheetBtn('primary', SHEET.BLUE, creating)}>
+            <SheetIcon name="doc" size={15} />{creating ? 'Opening Word…' : 'Create Technical Offer'}
+          </button>
+        )}
+        {o?.status === 'draft' && o.returned_reason && <p style={{ ...note('#D97706'), margin: 0 }}><strong>Returned by the R&amp;D head:</strong> {o.returned_reason}</p>}
+        {o?.revision_request && o.status === 'released' && (
+          <p style={{ ...note('#7C3AED'), margin: 0 }}><strong>Revision asked by {o.revision_request.requested_by}:</strong> {o.revision_request.reason}</p>
+        )}
+        {error && (
+          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13, alignSelf: 'stretch' }}>
+            {Array.isArray(error) ? error.join(' ') : error}
+          </div>
+        )}
+        {menu && o && createPortal(
+          <>
+            <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 9998 }} />
+            <div style={{ position: 'fixed', top: menu.top, right: menu.right, zIndex: 9999, minWidth: 220, padding: 6, borderRadius: 12, background: '#fff', border: `1px solid ${BORDER.light}`, boxShadow: '0 12px 32px rgba(0,0,0,0.16)' }}>
+              {items.map((it) => (
+                <button key={it.label} data-tour={it.tour} type="button" onClick={() => { setMenu(null); it.onClick() }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', border: 'none', borderRadius: 8, background: 'transparent', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: it.danger ? '#b91c1c' : TEXT.heading }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.05)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}>
+                  {it.label}
+                </button>
+              ))}
+            </div>
+          </>,
+          document.body,
+        )}
+        {dialogs}
+      </div>
+    )
+  }
 
   return (
     <div data-tour="rnd-req-technical-offers" style={embedded ? embeddedStyle : sectionStyle}>
@@ -264,57 +406,7 @@ export default function RequirementTechnicalOffersTab({ source, recordId, access
         </div>
       )}
 
-      <ConfirmDialog
-        open={!!confirm}
-        title={!confirm ? '' : confirm.kind === 'release' ? `Approve ${confirm.offer.offer_number} and send it to the BD team?`
-          : confirm.kind === 'submit' ? `Send ${confirm.offer.offer_number} to the R&D head?`
-          : confirm.kind === 'approve_revision' ? `Approve the revision of ${confirm.offer.offer_number}?`
-          : `Delete ${confirm.offer.offer_number}?`}
-        message={!confirm ? '' : confirm.kind === 'release'
-          ? `The BD team is notified and can quote against it. It is locked from now on.${all.some((x) => x.status === 'released') ? ' The offer sent earlier becomes Superseded.' : ''}`
-          : confirm.kind === 'submit' ? 'It is locked while the R&D head reviews it. The head approves it to the BD team or returns it to you for changes.'
-          : confirm.kind === 'approve_revision' ? `A new draft revision opens for ${confirm.offer.revision_request?.requested_by || 'the requester'} to edit. ${confirm.offer.offer_number} stays with BD until the new revision is approved.`
-          : 'The draft and its details are removed. This cannot be undone.'}
-        confirmLabel={!confirm ? '' : confirm.kind === 'release' ? 'Approve & Send' : confirm.kind === 'submit' ? 'Send to R&D Head' : confirm.kind === 'approve_revision' ? 'Approve revision' : 'Delete'}
-        danger={confirm?.kind === 'delete'}
-        onCancel={() => setConfirm(null)}
-        onConfirm={() => {
-          const c = confirm
-          setConfirm(null)
-          if (!c) return
-          if (c.kind === 'release') run(c.offer.id, () => rndApi.releaseTechnicalOffer(c.offer.id), `${c.offer.offer_number} was not sent to the BD team.`)
-          else if (c.kind === 'submit') run(c.offer.id, () => rndApi.submitTechnicalOffer(c.offer.id), `${c.offer.offer_number} was not sent to the R&D head.`)
-          else if (c.kind === 'approve_revision') run(c.offer.id, async () => { const r = await rndApi.decideTechnicalOfferRevision(c.offer.id, true); setExpanded(r.id) }, `The revision of ${c.offer.offer_number} was not approved.`)
-          else run(c.offer.id, () => rndApi.deleteTechnicalOffer(c.offer.id), `${c.offer.offer_number} was not deleted.`)
-        }}
-      />
-      {reasonFor && (() => {
-        const cfg = REASON_SHEET[reasonFor.kind]
-        const title = reasonFor.kind === 'return' ? `${cfg.title} — ${reasonFor.offer.offer_number}` : `${cfg.title} ${reasonFor.offer.offer_number}`
-        return (
-          <FormSheet tour="rnd-req-to-reason" width={580} icon="history" title={title} subtitle={cfg.subtitle}
-            onClose={() => setReasonFor(null)} busy={reasonBusy}
-            footer={<>
-              <button type="button" onClick={() => setReasonFor(null)} disabled={reasonBusy} style={sheetBtn('secondary', SHEET.INK, reasonBusy)}>Cancel</button>
-              <button type="button" disabled={reasonBusy || !reason.trim()} onClick={submitReason} style={sheetBtn('primary', SHEET.BLUE, reasonBusy || !reason.trim())}>
-                <SheetIcon name="history" size={16} />{reasonBusy ? 'Saving…' : cfg.button}
-              </button>
-            </>}>
-            <div style={{ padding: '20px 24px' }}>
-              {reasonError && (
-                <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
-                  {Array.isArray(reasonError) ? reasonError.join(' ') : reasonError}
-                </div>
-              )}
-              <SheetSection icon="edit" title="Reason">
-                <label style={sheetLabel}>{cfg.label} <Req /></label>
-                <textarea style={{ ...sheetInput, minHeight: 80, resize: 'vertical' }} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus placeholder={cfg.placeholder} />
-                <p style={sheetHint}>{cfg.hint}</p>
-              </SheetSection>
-            </div>
-          </FormSheet>
-        )
-      })()}
+      {dialogs}
     </div>
   )
 }

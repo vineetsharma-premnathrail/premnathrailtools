@@ -17,12 +17,12 @@ import { P2PPurchaseOrder, P2PRequest, RFQ } from '@/types'
 import { mmQuotationsApi } from '@/lib/mmPurchasingApi'
 import POAmendmentPanel from '@/components/p2p/POAmendmentPanel'
 import { TEXT } from '@/lib/theme'
-import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
+import { secondaryBtnStyle } from '@/components/shared/ui'
 import { FormPage, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import P2PNav from '@/components/p2p/P2PNav'
 import DateField from '@/components/erp/DateField'
 import CreatePODialog from '@/components/p2p/CreatePODialog'
-import ManagedDocumentPanel, { openRecordInWord } from '@/components/shared/ManagedDocumentPanel'
+import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath, useRecordId } from '@/lib/recordRef'
@@ -62,7 +62,6 @@ export default function CreatePurchaseOrderPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
-  const [docKey, setDocKey] = useState(0)
 
   const load = useCallback(async () => {
     if (!rfqId && rfqRef) return // the RFQ link is still resolving (or was invalid — shown below)
@@ -283,25 +282,9 @@ export default function CreatePurchaseOrderPage() {
             <div style={block}>
               <SheetSection icon="doc" title="3. PO document">
                 <span style={label}>Purchase Order document (Word, on the company letterhead)</span>
-                <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '0 0 8px' }}>
-                  Built from this page — company &amp; supplier details, items, totals, terms and signatures. Save &amp; Edit in Word to change the wording;
-                  every save is kept as a version. Terms &amp; conditions come from Procurement › Settings and the vendor. After changing prices here, use Regenerate to rebuild it.
-                </p>
-                {editable && canFeature('p2p', 'purchase_orders', 'po_document', 'create') && (
-                  <button type="button" data-tour="po-edit-word" disabled={busy} style={{ ...primaryBtnStyle, marginBottom: 10, opacity: busy ? 0.7 : 1 }}
-                    onClick={() => {
-                      const tab = window.open('', '_blank')
-                      run(async () => {
-                        if (rfq && po) await rfqApi.updatePoDraft(rfq.id, po.id, draftPayload())
-                        if (po) await openRecordInWord('p2p_purchase_order', po.id, tab)
-                        setDocKey((k) => k + 1)
-                      }, 'Saved, but the Word document could not be opened — use Create Word / Edit in Word below to retry.')
-                    }}>
-                    Save &amp; Edit in Word
-                  </button>
-                )}
-                <ManagedDocumentPanel key={docKey} entityType="p2p_purchase_order" entityId={po.id} revision={po.revision ?? 0} canModify={editable && canFeature('p2p', 'purchase_orders', 'po_document', 'create')}
-                  recordLabel="purchase order" downloadName={`PO-${po.po_number}`.replace(/[^A-Za-z0-9._-]+/g, '-')} />
+                <ManagedDocumentPanel entityType="p2p_purchase_order" entityId={po.id} revision={po.revision ?? 0} canModify={editable && canFeature('p2p', 'purchase_orders', 'po_document', 'create')}
+                  recordLabel="purchase order" downloadName={`PO-${po.po_number}`.replace(/[^A-Za-z0-9._-]+/g, '-')}
+                  beforeEdit={async () => { if (rfq) await rfqApi.updatePoDraft(rfq.id, po.id, draftPayload()) }} />
                 {/* POs are generated in the app — no attaching. A file attached under the old
                     manual flow is still listed so it isn't lost. */}
                 {po.document_filename && (

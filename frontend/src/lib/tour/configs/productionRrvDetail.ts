@@ -306,7 +306,7 @@ const config: TourConfig = {
     {
       target: 'production-rrv-handover-doc',
       title: 'Handover certificate document',
-      purpose: 'Click "Create Word" to turn the certificate into a Word document, then "Edit in Word" to add wording, photos or customer-specific notes (or download / upload a revised .docx). The "Handover Certificate (PDF)" button then prints that edited version.',
+      purpose: 'Click "Create in Word" to turn the certificate into a Word document and open it — add wording, photos or customer-specific notes. Later, the "Word document ▾" menu has Edit in Word, Download .docx and history. The "Handover Certificate (PDF)" button then prints that edited version.',
     },
     {
       target: 'production-rrv-tab-timeline',

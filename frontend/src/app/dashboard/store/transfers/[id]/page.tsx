@@ -15,7 +15,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
 import { FormSheet, SheetSection, SheetIcon, Optional, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
-import ManagedDocumentPanel, { openRecordInWord } from '@/components/shared/ManagedDocumentPanel'
+import ManagedDocumentPanel from '@/components/shared/ManagedDocumentPanel'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 
@@ -48,11 +48,11 @@ export default function StoreStockTransferDetailPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState<string | string[]>('')
-  const [busy, setBusy] = useState<'' | 'dispatch' | 'receive' | 'cancel' | 'word' | 'pdf'>('')
+  const [docKey, setDocKey] = useState(0)
+  const [busy, setBusy] = useState<'' | 'dispatch' | 'receive' | 'cancel' | 'pdf'>('')
   const [dispatchOpen, setDispatchOpen] = useState(false)
   const [receiveOpen, setReceiveOpen] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
-  const [docKey, setDocKey] = useState(0)
   const [vehicle, setVehicle] = useState({ vehicle_number: '', transporter_name: '', driver_name: '', driver_phone: '', eway_bill_number: '' })
   const [receiptRemarks, setReceiptRemarks] = useState('')
 
@@ -78,17 +78,6 @@ export default function StoreStockTransferDetailPage() {
     } finally {
       setBusy('')
     }
-  }
-
-  const openWord = () => {
-    if (!transfer) return
-    setBusy('word')
-    setActionError('')
-    const tab = window.open('', '_blank')
-    openRecordInWord('store_stock_transfer_note', transfer.id, tab)
-      .then(() => setTimeout(() => setDocKey((k) => k + 1), 1500))
-      .catch((err) => setActionError(`Could not open the Stock Transfer Note in Word: ${extractErrorMessages(err, 'unknown error').join(' ')}`))
-      .finally(() => setBusy(''))
   }
 
   const openPdf = async () => {
@@ -255,16 +244,11 @@ export default function StoreStockTransferDetailPage() {
                     : 'Available once the transfer is approved.'}
                 </p>
               </div>
-              {noteReady && (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {canEditDoc && <button type="button" disabled={!!busy} onClick={openWord} style={primaryBtnStyle}>{busy === 'word' ? 'Opening…' : 'Save & Edit in Word'}</button>}
-                  <button type="button" disabled={!!busy} onClick={openPdf} style={secondaryBtnStyle}>{busy === 'pdf' ? 'Building…' : 'Print / Download PDF'}</button>
-                </div>
-              )}
             </div>
             {noteReady && (
               <ManagedDocumentPanel key={docKey} entityType="store_stock_transfer_note" entityId={transfer.id} revision={NOTE_REVISION[status] || 0}
-                canModify={canEditDoc} recordLabel="stock transfer note" downloadName={`Stock-Transfer-Note-${transfer.transfer_number}`} />
+                canModify={canEditDoc} recordLabel="stock transfer note" downloadName={`Stock-Transfer-Note-${transfer.transfer_number}`}
+                extraItems={[{ label: busy === 'pdf' ? 'Building PDF…' : 'Print / Download PDF', onClick: openPdf }]} />
             )}
           </div>
         </>

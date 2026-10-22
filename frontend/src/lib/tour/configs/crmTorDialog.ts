@@ -38,9 +38,9 @@ const config: TourConfig = {
       target: 'tor-word-doc',
       title: 'Technical Offer document (step 1: create)',
       required: true,
-      purpose: 'Create Word builds the Technical Offer from this record. Edit in Word opens it in Word Online so you can change wording, add tables or notes before R&D sees it.',
+      purpose: '"Create in Word" builds the document from this record and opens it in Word Online so you can change wording, add tables or notes before R&D sees it. After that the "Word document ▾" button opens a menu: Edit in Word, Download .docx, history.',
       why: 'R&D receives exactly the document you reviewed, not just the raw form fields. Send stays disabled until the document exists.',
-      after: 'On Send, the PDF of this Word file is emailed to R&D, stored on SharePoint and listed under Documents › Internal Documents. Each re-send needs a new document for that send ("Create Word for current revision").',
+      after: 'On Send, the PDF of this Word file is emailed to R&D, stored on SharePoint and listed under Documents › Internal Documents. Each re-send needs a new document for that send ("Rebuild from current revision & edit" in the Word document menu).',
     },
     {
       target: 'tor-cancel-btn',
