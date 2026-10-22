@@ -25,8 +25,8 @@ from app.modules.crm.reports.quotation_pdf import (
     _draw_letterhead, _p, FONT_NAME, FONT_NAME_BOLD, MARGIN, USABLE_WIDTH, HEADER_HEIGHT, FOOTER_HEIGHT,
 )
 from app.modules.crm.reports.technical_offer_docx import (
-    Document, _cropped_content_bytes, _add_full_width_banner, _image_aspect,
-    HEADER_LOGO_PATH, FOOTER_LOGO_PATH, PAGE_WIDTH_EMU,
+    Document, _cropped_content_bytes, _add_full_width_banner, _image_aspect, add_footer_banner,
+    HEADER_LOGO_PATH, FOOTER_LOGO_PATH,
 )
 
 LETTER_SIZE = 10.5
@@ -62,7 +62,7 @@ def letterhead_docx():
     """New A4 python-docx Document with the letterhead banners and Calibri body."""
     if Document is None:
         raise Exception("python-docx library is not installed. Please run: pip install python-docx")
-    from docx.shared import Pt, Inches, Emu
+    from docx.shared import Pt, Inches
 
     doc = Document()
     section = doc.sections[0]
@@ -79,11 +79,7 @@ def letterhead_docx():
     if header_bytes:
         _add_full_width_banner(section.header.paragraphs[0], header_bytes, offset_y_emu=0)
     if footer_bytes:
-        footer_height_emu = int(int(PAGE_WIDTH_EMU) * _image_aspect(footer_bytes))
-        _add_full_width_banner(
-            section.footer.paragraphs[0], footer_bytes,
-            offset_y_emu=int(Emu(Inches(11.69))) - footer_height_emu,
-        )
+        add_footer_banner(section, footer_bytes)
 
     style = doc.styles["Normal"]
     style.font.name = "Calibri"

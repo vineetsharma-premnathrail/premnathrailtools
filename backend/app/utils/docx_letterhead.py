@@ -12,11 +12,11 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt, Inches, Emu, RGBColor
+from docx.shared import Pt, Inches, RGBColor
 
 from app.modules.crm.reports.technical_offer_docx import (
-    _cropped_content_bytes, _add_full_width_banner, _image_aspect,
-    HEADER_LOGO_PATH, FOOTER_LOGO_PATH, PAGE_WIDTH_EMU,
+    _cropped_content_bytes, _add_full_width_banner, _image_aspect, add_footer_banner,
+    HEADER_LOGO_PATH, FOOTER_LOGO_PATH,
 )
 
 FONT = "Aptos"
@@ -121,8 +121,7 @@ def new_letterhead_document(margin_in: float = MARGIN_IN) -> Any:
     if header_bytes:
         _add_full_width_banner(section.header.paragraphs[0], header_bytes, offset_y_emu=0)
     if footer_bytes:
-        footer_height_emu = int(int(PAGE_WIDTH_EMU) * _image_aspect(footer_bytes))
-        _add_full_width_banner(section.footer.paragraphs[0], footer_bytes, offset_y_emu=int(Emu(Inches(PAGE_H_IN))) - footer_height_emu)
+        add_footer_banner(section, footer_bytes)
 
     normal = doc.styles["Normal"]
     normal.font.name = FONT

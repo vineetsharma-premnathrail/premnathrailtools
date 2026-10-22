@@ -130,6 +130,23 @@ def _add_full_width_banner(paragraph: Any, image_bytes: bytes, offset_y_emu: int
     drawing.append(anchor)
 
 
+def add_footer_banner(section: Any, image_bytes: bytes) -> None:
+    """The footer banner as an INLINE picture, full page width, sitting on the
+    page's bottom edge. A floating picture anchored near the bottom of the page
+    (like the header) is dropped by Word for the web, which only shows floating
+    footer content inside the footer area — inline shows everywhere."""
+    section.footer_distance = Emu(0)
+    paragraph = section.footer.paragraphs[0]
+    fmt = paragraph.paragraph_format
+    fmt.left_indent = -section.left_margin
+    fmt.right_indent = -section.right_margin
+    fmt.space_before = fmt.space_after = Pt(0)
+    fmt.line_spacing = 1.0
+    width_emu = int(section.page_width or PAGE_WIDTH_EMU)
+    paragraph.add_run().add_picture(io.BytesIO(image_bytes), width=Emu(width_emu),
+                                    height=Emu(int(width_emu * _image_aspect(image_bytes))))
+
+
 def _heading(doc: Any, number: int, text: str) -> None:
     p = doc.add_paragraph()
     p.paragraph_format.space_before = Pt(16)
@@ -213,11 +230,7 @@ def build_technical_offer_docx(ctx: Mapping[str, Any]) -> io.BytesIO:
         header_para = section.header.paragraphs[0]
         _add_full_width_banner(header_para, header_bytes, offset_y_emu=0)
     if footer_bytes:
-        footer_para = section.footer.paragraphs[0]
-        aspect = _image_aspect(footer_bytes)
-        footer_height_emu = int(int(PAGE_WIDTH_EMU) * aspect)
-        page_height_emu = int(Emu(Inches(11.69)))
-        _add_full_width_banner(footer_para, footer_bytes, offset_y_emu=page_height_emu - footer_height_emu)
+        add_footer_banner(section, footer_bytes)
 
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
