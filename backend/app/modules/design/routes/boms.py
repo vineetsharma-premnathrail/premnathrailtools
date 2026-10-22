@@ -8,7 +8,7 @@ or purchase document (PM/Store stay unlinked for now)."""
 import csv
 import io
 from datetime import datetime, timezone
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
@@ -398,6 +398,99 @@ async def list_boms(
         boms = [b for b in boms if bom_display_status(b) in wanted]
     labels = _Labels(db, boms)
     return [_bom_response(b, labels) for b in boms]
+
+
+BOM_IMPORT_COLUMNS = ["position", "item_code", "new_item_name", "new_item_spec", "quantity", "uom", "drawing_no", "make_buy", "remarks"]
+
+
+@router.get("/import-lines/template")
+async def bom_lines_template(db: Session = Depends(get_db), user: User = Depends(require_app_access("design"))):
+    """Excel template for loading BOM lines into the New BOM / draft revision form."""
+    from app.modules.erp.importing import xlsx_response
+    require_team(db, user, "import BOM lines")
+    return xlsx_response("BOM lines", BOM_IMPORT_COLUMNS, [
+        [10, "MT-ELE-0017", "", "", 2, "NOS", "", "buy", "Example — an Item Master item (replace with your lines)"],
+        [20, "", "Side frame weldment", "IS 2062 E250, 12 mm", 1, "NOS", "", "make", "A new item: no code yet — Store creates it"],
+    ], "bom_lines_template.xlsx", widths=[10, 18, 26, 30, 10, 8, 16, 10, 44])
+
+
+@router.post("/import-lines")
+async def import_bom_lines(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(require_app_access("design"))):
+    """Reads BOM lines from Excel / CSV into the form — nothing is saved; the
+    user reviews the lines and saves the BOM as usual. item_code matches the
+    Item Master (active items); a row without a code but with new_item_name is
+    a new-item request. drawing_no matches a Design document number. Bad rows
+    come back per row so the file can be fixed."""
+    from app.modules.erp.importing import check_rows, norm_key, parse_number, read_rows, text
+    require_team(db, user, "import BOM lines")
+    rows = [r for r in read_rows(file.filename, await file.read()) if any(str(v).strip() for v in r.values())]
+    check_rows(rows, ["quantity"])
+    if "item_code" not in rows[0] and "new_item_name" not in rows[0]:
+        raise HTTPException(status_code=422, detail="Missing the item_code column (or new_item_name for new items) — download the template and keep its header row.")
+    if len(rows) > 1000:
+        raise HTTPException(status_code=422, detail=f"The file has {len(rows)} lines — one BOM level holds at most 1000; split it into sub-assembly BOMs.")
+    codes = {norm_key(text(r, "item_code")) for r in rows} - {""}
+    items = {norm_key(i.item_code): i for i in db.query(StoreItem).filter(StoreItem.item_code.isnot(None)).all()
+             if norm_key(i.item_code) in codes}
+    drawings_wanted = {norm_key(text(r, "drawing_no")) for r in rows} - {""}
+    drawings = {norm_key(d.doc_number): d for d in db.query(DesignDocument).filter(DesignDocument.is_deleted == False).all()  # noqa: E712
+                if norm_key(d.doc_number) in drawings_wanted} if drawings_wanted else {}
+    lines, errors, used = [], [], set()
+    for idx, r in enumerate(rows, start=2):
+        code = text(r, "item_code") or ""
+        new_name = text(r, "new_item_name") or ""
+        try:
+            item = None
+            if code:
+                item = items.get(norm_key(code))
+                if item is None:
+                    raise ValueError(f"'{code}' isn't in the Item Master — check the code, or leave it blank and fill new_item_name to request a new item.")
+                if item.status != "active":
+                    raise ValueError(f"{item.item_code} {item.item_name} is {item.status} in the Item Master — a BOM can't be released with it. Pick an active item.")
+            elif len(new_name) < 2:
+                raise ValueError("Give an item_code, or a new_item_name (at least 2 characters) for a part that has no code yet.")
+            qty = parse_number(r, "quantity", "Quantity", minimum=0)
+            if not qty:
+                raise ValueError("Quantity must be greater than 0.")
+            pos_raw = text(r, "position")
+            pos = None
+            if pos_raw:
+                pos = parse_number(r, "position", "Position", minimum=1)
+                if pos is None or not float(pos).is_integer():
+                    raise ValueError(f"Position '{pos_raw}' must be a whole number (e.g. 10, 20, 30).")
+                pos = int(pos)
+                if pos in used:
+                    raise ValueError(f"Position {pos} is used twice — every line needs its own position.")
+            mb = (text(r, "make_buy") or "buy").lower()
+            if mb not in DESIGN_MAKE_BUY:
+                raise ValueError(f"make_buy '{mb}' isn't valid — write make or buy.")
+            dwg_no = text(r, "drawing_no")
+            dwg = drawings.get(norm_key(dwg_no)) if dwg_no else None
+            if dwg_no and dwg is None:
+                raise ValueError(f"Drawing '{dwg_no}' isn't a Design document number — check it, or leave drawing_no blank.")
+        except ValueError as exc:
+            errors.append({"row": idx, "item_code": code or new_name, "reason": str(exc)})
+            continue
+        if pos is not None:
+            used.add(pos)
+        lines.append({
+            "position": pos, "store_item_id": item.id if item else None,
+            "item_code": item.item_code if item else None, "item_name": item.item_name if item else None,
+            "new_item_name": None if item else new_name, "new_item_spec": None if item else text(r, "new_item_spec"),
+            "quantity": qty, "uom": (text(r, "uom") or (item.uom if item else None) or "NOS").upper(),
+            "document_id": dwg.id if dwg else None, "document_label": f"{dwg.doc_number} — {dwg.title}" if dwg else None,
+            "make_buy": mb, "remarks": text(r, "remarks"),
+        })
+    # Rows without a position follow the numbered ones in steps of 10.
+    nxt = (max(used) if used else 0) + 10
+    for ln in lines:
+        if ln["position"] is None:
+            while nxt in used:
+                nxt += 10
+            ln["position"] = nxt
+            used.add(nxt)
+            nxt += 10
+    return {"lines": lines, "errors": errors}
 
 
 @router.get("/new-item-requests", response_model=list[DesignNewItemRequest])

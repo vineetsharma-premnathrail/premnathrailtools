@@ -19,7 +19,7 @@ import { BOM_STATUS_LABELS, saveBlob, toOptions } from '@/components/design/desi
 import { useDesignFeature } from '@/components/design/useDesignFeature'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate, formatDateTime } from '@/lib/format'
-import BomLinesEditor, { BomLineDraft, bomDraftsToPayload, bomLinesToDrafts, itemsFromBomLines } from '../BomLinesEditor'
+import BomLinesEditor, { BomImportButton, BomLineDraft, bomDraftsToPayload, bomLinesToDrafts, itemsFromBomLines } from '../BomLinesEditor'
 import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
 import OrderProjectPicker, { OrderProjectChip, OrderProjectValue } from '@/components/sales/OrderProjectPicker'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -518,7 +518,13 @@ export default function DesignBomDetailPage() {
                             </div>
                           </div>
                         </SheetSection>
-                        <SheetSection icon="list" title="Lines">
+                        <SheetSection icon="list" title="Lines"
+                          extra={<div style={{ marginLeft: 'auto' }}><BomImportButton disabled={busy} hasLines={revRows.length > 0}
+                            onLines={(imported, itemOpts, docOpts) => {
+                              setItems((prev) => mergeOptions(prev, itemOpts))
+                              setDocuments((prev) => mergeOptions(prev, docOpts))
+                              setRevRows(imported)
+                            }} /></div>}>
                           <BomLinesEditor
                             rows={revRows}
                             onChange={setRevRows}

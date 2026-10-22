@@ -12,7 +12,7 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, SHEET, Req, Optional, 
 import { toOptions } from '@/components/design/designMeta'
 import { useDesignMe } from '@/components/design/useDesignMe'
 import { extractErrorMessages } from '@/lib/validation'
-import BomLinesEditor, { BomLineDraft, bomDraftsToPayload, bomLinesToDrafts, emptyBomLine, itemsFromBomLines } from '../BomLinesEditor'
+import BomLinesEditor, { BomImportButton, BomLineDraft, bomDraftsToPayload, bomLinesToDrafts, emptyBomLine, itemsFromBomLines } from '../BomLinesEditor'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import OrderProjectPicker, { OrderProjectValue } from '@/components/sales/OrderProjectPicker'
@@ -263,9 +263,23 @@ export default function NewDesignBomPage() {
 
       <div style={{ padding: '20px 24px 4px', borderTop: `1px solid ${SHEET.LINE}` }}>
         <SheetSection icon="list" title="Lines">
-          <div data-tour="design-bomnew-copy" style={{ maxWidth: 380, marginBottom: 12 }}>
-            <label style={sheetLabel}>Copy lines from another BOM <Optional /></label>
-            <SearchableSelect value={copyFromId} onChange={copyLines} options={toOptions(boms, 'Don\'t copy')} placeholder="Start from an existing BOM…" />
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+            <div data-tour="design-bomnew-copy" style={{ flex: '0 1 380px', minWidth: 240 }}>
+              <label style={sheetLabel}>Copy lines from another BOM <Optional /></label>
+              <SearchableSelect value={copyFromId} onChange={copyLines} options={toOptions(boms, 'Don\'t copy')} placeholder="Start from an existing BOM…" />
+            </div>
+            <span style={{ fontSize: 12, color: SHEET.MUTED, paddingBottom: 10 }}>or</span>
+            <BomImportButton
+              disabled={saving}
+              hasLines={rows.some((r) => r.store_item_id || r.new_item_name.trim())}
+              onLines={(imported, itemOpts, docOpts) => {
+                setItems((prev) => mergeOptions(prev, itemOpts))
+                setDocuments((prev) => mergeOptions(prev, docOpts))
+                setRows(imported)
+                setCopyFromId('')
+                setCopyMsg(`${imported.length} line${imported.length === 1 ? '' : 's'} imported from Excel — review them below, then create the BOM.`)
+              }}
+            />
           </div>
           {copyMsg && <p style={{ ...sheetHint, margin: '0 0 10px' }}>{copyMsg}</p>}
           <BomLinesEditor

@@ -4434,6 +4434,14 @@ export const designApi = {
   listBoms: async (params: Record<string, unknown> = {}): Promise<import('@/types').DesignBom[]> => { const { data } = await apiClient.get('/design/boms', { params }); return data },
   getBom: async (id: number): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.get(`/design/boms/${id}`); return data },
   createBom: async (payload: Record<string, unknown>): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post('/design/boms', payload); return data },
+  /** Reads BOM lines from Excel/CSV into the form — nothing is saved. */
+  importBomLines: async (file: File): Promise<{ lines: import('@/types').DesignBomImportLine[]; errors: { row: number; item_code: string; reason: string }[] }> => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await apiClient.post('/design/boms/import-lines', fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data
+  },
+  bomLinesTemplate: async (): Promise<Blob> => { const { data } = await apiClient.get('/design/boms/import-lines/template', { responseType: 'blob' }); return data },
   updateBom: async (id: number, payload: Record<string, unknown>): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.patch(`/design/boms/${id}`, payload); return data },
   deleteBom: async (id: number) => { const { data } = await apiClient.delete(`/design/boms/${id}`); return data },
   obsoleteBom: async (id: number, reason: string): Promise<import('@/types').DesignBomDetail> => { const { data } = await apiClient.post(`/design/boms/${id}/obsolete`, { reason }); return data },

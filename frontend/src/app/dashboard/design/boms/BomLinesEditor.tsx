@@ -7,6 +7,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { SHEET, SheetIcon, sheetBtn } from '@/components/shared/FormSheet'
 import { toOptions } from '@/components/design/designMeta'
 import { extractErrorMessages } from '@/lib/validation'
+import ImportDialog from '@/components/shared/ImportDialog'
 
 // Editable rows of a BOM revision — used by "New BOM" and by the draft
 // revision editor on the BOM detail page. A line is either an Item Master
@@ -50,6 +51,61 @@ export function itemsFromBomLines(lines: DesignBomLine[]): DesignLookupOption[] 
   return lines.filter((l) => l.store_item_id).map((l) => ({
     id: l.store_item_id as number, label: `${l.item_code || '#' + l.store_item_id} — ${l.item_name || ''}`, code: l.item_code,
   }))
+}
+
+/**
+ * "Import from Excel" for BOM lines: the server reads the file (Item Master by
+ * item_code, drawings by number) and nothing is saved — the lines replace the
+ * form's rows, the user reviews them and saves the BOM / revision as usual.
+ */
+export function BomImportButton({ disabled, hasLines, onLines }: {
+  disabled?: boolean
+  /** The form already has filled-in lines — the import replaces them. */
+  hasLines: boolean
+  onLines: (rows: BomLineDraft[], items: DesignLookupOption[], documents: DesignLookupOption[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button type="button" data-tour="design-bom-import" disabled={disabled} onClick={() => setOpen(true)} style={sheetBtn('secondary', SHEET.INK, disabled)}>
+        <SheetIcon name="upload" size={15} />Import from Excel
+      </button>
+      {open && (
+        <ImportDialog
+          title="Import BOM lines"
+          intro={<>
+            One row per line: <b>item_code</b> from the Item Master and <b>quantity</b>. For a part with no code yet leave item_code blank and fill
+            <b> new_item_name</b> (+ new_item_spec) — Store gets an item-code request. Optional: position, uom, drawing_no (Design document number), make_buy (make / buy), remarks.
+            {hasLines && <><br /><b>The imported lines replace the lines in the form.</b></>} Nothing is saved until you save the BOM.
+          </>}
+          templateName="bom_lines_template.xlsx"
+          getTemplate={designApi.bomLinesTemplate}
+          upload={async (file) => {
+            const r = await designApi.importBomLines(file)
+            if (r.lines.length) {
+              onLines(
+                [...r.lines].sort((a, b) => a.position - b.position).map((l) => ({
+                  key: nextKey(), position: String(l.position), is_new: !l.store_item_id,
+                  store_item_id: l.store_item_id ? String(l.store_item_id) : '', new_item_name: l.new_item_name || '',
+                  new_item_spec: l.new_item_spec || '', quantity: String(l.quantity), uom: l.uom || '',
+                  document_id: l.document_id ? String(l.document_id) : '', make_buy: l.make_buy, remarks: l.remarks || '',
+                })),
+                r.lines.filter((l) => l.store_item_id).map((l) => ({ id: l.store_item_id as number, label: `${l.item_code} — ${l.item_name || ''}`, code: l.item_code })),
+                r.lines.filter((l) => l.document_id).map((l) => ({ id: l.document_id as number, label: l.document_label || `#${l.document_id}` })),
+              )
+            }
+            return {
+              summary: r.lines.length
+                ? [`${r.lines.length} line${r.lines.length === 1 ? '' : 's'} loaded into the form — review them, then save.`]
+                : ['No line could be loaded — fix the rows below and import again.'],
+              errors: r.errors.map((e) => ({ where: `Row ${e.row}${e.item_code ? ` (${e.item_code})` : ''}`, reason: e.reason })),
+            }
+          }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
 }
 
 /** Checks the rows and builds the API payload. Returns an error message instead when a row is incomplete. */

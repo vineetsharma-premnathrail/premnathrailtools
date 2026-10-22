@@ -8327,6 +8327,14 @@ export interface DesignBomLine {
   release_blocker?: string | null
 }
 
+/** A line read from an Excel/CSV file by "Import from Excel" (not saved yet). */
+export interface DesignBomImportLine extends DesignBomLineInput {
+  position: number
+  item_code: string | null
+  item_name: string | null
+  document_label: string | null
+}
+
 export interface DesignBomLineInput {
   position?: number | null
   store_item_id?: number | null
