@@ -394,25 +394,40 @@ async def submit_rfq(
     single-quotation and commercial-terms rules before locking."""
     rfq = _get_rfq_or_404(db, rfq_id, user)
     _assert_editable(rfq, user)
+    from app.modules.p2p.models.rfq_invite import RFQVendorInvite
+    invites = db.query(RFQVendorInvite).filter(RFQVendorInvite.rfq_id == rfq.id).all()
 
-    tiers_present = {a.vendor_tier for a in rfq.attachments}
-    if not tiers_present:
-        raise HTTPException(status_code=400, detail="At least one vendor quotation (L1) attachment is required")
-    if "L1" not in tiers_present:
-        raise HTTPException(status_code=400, detail="An L1 quotation attachment is required")
+    if invites:
+        # Emailed RFQ: vendors quote later by email; terms come with each quote.
+        min_vendors = int(get_p2p_setting(db, "rfq_min_vendors") or 1)
+        is_single = len(invites) < min_vendors
+        if is_single and not (rfq.single_quotation_reason or "").strip():
+            raise HTTPException(status_code=400, detail=f"Only {len(invites)} vendor(s) picked — Procurement › Settings asks for at least {min_vendors}. "
+                                                        "Add more vendors, or write the reason for a limited quotation.")
+        if not rfq.quote_due_date:
+            raise HTTPException(status_code=400, detail="Set the quote-by date — the date vendors must reply by.")
+        if rfq.quote_due_date < date.today():
+            raise HTTPException(status_code=400, detail="The quote-by date is in the past — pick today or a later date.")
+    else:
+        tiers_present = {a.vendor_tier for a in rfq.attachments}
+        if not tiers_present:
+            raise HTTPException(status_code=400, detail="Pick the vendors to email the RFQ to (or attach the L1 quotation you already have).")
+        if "L1" not in tiers_present:
+            raise HTTPException(status_code=400, detail="An L1 quotation attachment is required")
 
-    is_single = tiers_present == {"L1"}
-    if is_single:
-        if not rfq.single_quotation_reason:
-            raise HTTPException(status_code=400, detail="Reason for single quotation is required when only L1 is attached")
-        if not rfq.comments:
-            raise HTTPException(status_code=400, detail="Comments are required when only L1 is attached")
+        is_single = tiers_present == {"L1"}
+        if is_single:
+            if not rfq.single_quotation_reason:
+                raise HTTPException(status_code=400, detail="Reason for single quotation is required when only L1 is attached")
+            if not rfq.comments:
+                raise HTTPException(status_code=400, detail="Comments are required when only L1 is attached")
 
-    if not rfq.payment_terms:
-        raise HTTPException(status_code=400, detail="Payment terms are required")
-    if not rfq.delivery_lead_time:
-        raise HTTPException(status_code=400, detail="Delivery lead time is required")
-    # Late delivery is covered by the company terms (Procurement → Settings), not entered per RFQ.
+        if not rfq.payment_terms:
+            raise HTTPException(status_code=400, detail="Payment terms are required")
+        if not rfq.delivery_lead_time:
+            raise HTTPException(status_code=400, detail="Delivery lead time is required")
+    if not (rfq.late_delivery_clause or "").strip():
+        raise HTTPException(status_code=400, detail="Late delivery clause is required — write the penalty agreed with the L1 vendor for late supply (it prints on the PO).")
 
     pr = db.query(P2PRequest).filter(P2PRequest.id == rfq.p2p_request_id).first()
     if not pr:
@@ -432,6 +447,10 @@ async def submit_rfq(
                  old_status="approved", new_status="vendor_quotations")
 
     db.commit()
+    if invites:
+        # Email every invited vendor now; failures stay on the invite row (Resend).
+        from app.modules.p2p.routes.rfq_invites import send_invites
+        await send_invites(db, rfq, invites, user)
     db.refresh(rfq)
     return _to_response(db, rfq)
 
@@ -1025,12 +1044,14 @@ async def submit_po_draft(
 
 def _po_terms(db: Session, rfq: RFQ, vendor_id: int | None) -> str | None:
     """Terms printed on the PO: the company's standard terms (Procurement → Settings,
-    not editable per RFQ), then the vendor's own terms. Older RFQs that carried a
-    per-RFQ copy keep it."""
+    not editable per RFQ), the late delivery clause agreed on this RFQ, then the
+    vendor's own terms. Older RFQs that carried a per-RFQ copy keep it."""
     parts = []
     company = rfq.terms_conditions or get_p2p_setting(db, "company_terms")
     if company:
         parts.append(f"Company terms:\n{company.strip()}")
+    if (rfq.late_delivery_clause or "").strip():
+        parts.append(f"Late delivery clause:\n{rfq.late_delivery_clause.strip()}")
     vendor = db.get(Vendor, vendor_id) if vendor_id else None
     if vendor and vendor.terms_conditions:
         parts.append(f"Vendor terms ({vendor.name}):\n{vendor.terms_conditions.strip()}")

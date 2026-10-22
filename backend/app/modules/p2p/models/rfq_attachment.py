@@ -31,5 +31,9 @@ class RFQAttachment(Base, TimestampMixin):
     sharepoint_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     sharepoint_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # A vendor's quotation PDF recorded against their line quotation (emailed
+    # RFQs) — vendor_tier is "Q" then, not L1-L4.
+    vendor_quotation_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("p2p_vendor_quotations.id", ondelete="SET NULL"), nullable=True, index=True)
 
     rfq: Mapped["RFQ"] = relationship("RFQ", back_populates="attachments")

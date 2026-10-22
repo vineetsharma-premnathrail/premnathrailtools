@@ -23,6 +23,12 @@ const config: TourConfig = {
       required: false,
     },
     {
+      target: 'rfq-edit-late-delivery-clause',
+      title: 'Late Delivery Clause',
+      purpose: 'Corrects the late delivery clause text (printed on the PO).',
+      required: false,
+    },
+    {
       target: 'rfq-edit-single-reason',
       title: 'Reason for Single Quotation',
       purpose: 'Only shown when this RFQ was raised with a single vendor quotation — corrects the justification recorded for it.',

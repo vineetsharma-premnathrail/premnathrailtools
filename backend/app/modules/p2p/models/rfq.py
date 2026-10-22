@@ -1,7 +1,7 @@
 from __future__ import annotations
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Integer, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy import String, Integer, Boolean, Text, Date, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.mixins import TimestampMixin
@@ -48,6 +48,10 @@ class RFQ(Base, TimestampMixin):
     late_delivery_clause: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Company standard terms (Procurement → Settings) copied in when the RFQ is created; editable per RFQ.
     terms_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Emailed RFQ (2026-10-22): vendors invited by email (RFQVendorInvite) must
+    # reply by this date; invite_message is the buyer's note in that email.
+    quote_due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    invite_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     locked_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)

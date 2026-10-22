@@ -271,6 +271,59 @@ export interface ItemOverview {
   }
 }
 
+/** A vendor invited to quote on an emailed RFQ (backend p2p/routes/rfq_invites.py). */
+export interface RfqInvite {
+  id: number
+  vendor_id: number
+  vendor_name: string
+  email: string | null
+  email_status: 'pending' | 'sent' | 'failed'
+  sent_at: string | null
+  send_error: string | null
+  reminder_sent_at: string | null
+  /** quoted = a line quotation is recorded for this vendor; not_sent = the email didn't go (see send_error). */
+  quote_status: 'quoted' | 'waiting' | 'overdue' | 'not_sent'
+  vendor_quotation_id: number | null
+  quoted_price: number | null
+}
+
+export interface RfqInvites {
+  quote_due_date: string | null
+  invite_message: string | null
+  invites: RfqInvite[]
+}
+
+export interface RfqQuoteFile {
+  id: number
+  filename: string
+  content_type?: string | null
+  size?: number | null
+  vendor_name?: string | null
+  created_at?: string | null
+}
+
+/** Emailed RFQs: who gets the RFQ, send / resend / remind. */
+export const rfqInvitesApi = {
+  list: async (rfqId: number): Promise<RfqInvites> => { const { data } = await apiClient.get(`/p2p/rfqs/${rfqId}/invites`); return data },
+  /** Draft only: replaces the vendor list, quote-by date and note. */
+  set: async (rfqId: number, payload: { vendor_ids: number[]; quote_due_date: string | null; invite_message?: string | null }): Promise<RfqInvites> => {
+    const { data } = await apiClient.put(`/p2p/rfqs/${rfqId}/invites`, payload); return data
+  },
+  /** After sending: invite more vendors (emailed at once). */
+  add: async (rfqId: number, vendorIds: number[]): Promise<RfqInvites> => { const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/invites/add`, { vendor_ids: vendorIds }); return data },
+  sendPending: async (rfqId: number): Promise<RfqInvites> => { const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/invites/send`); return data },
+  resend: async (rfqId: number, inviteId: number): Promise<RfqInvites> => { const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/invites/${inviteId}/resend`); return data },
+  remind: async (rfqId: number): Promise<RfqInvites> => { const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/invites/remind`); return data },
+  /** The vendor's quotation PDF(s) on a recorded quote. Open with rfqApi.getAttachmentBlob(rfqId, file.id). */
+  quoteFiles: async (rfqId: number, vqId: number): Promise<RfqQuoteFile[]> => { const { data } = await apiClient.get(`/p2p/rfqs/${rfqId}/line-quotations/${vqId}/files`); return data },
+  uploadQuoteFiles: async (rfqId: number, vqId: number, files: File[]): Promise<RfqQuoteFile[]> => {
+    const form = new FormData()
+    files.forEach((f) => form.append('files', f))
+    const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/line-quotations/${vqId}/files`, form, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 })
+    return data
+  },
+}
+
 export const mmQuotationsApi = {
   list: async (rfqId: number): Promise<LineQuotation[]> => { const { data } = await apiClient.get(`/p2p/rfqs/${rfqId}/line-quotations`); return data },
   add: async (rfqId: number, payload: Record<string, unknown>): Promise<LineQuotation> => { const { data } = await apiClient.post(`/p2p/rfqs/${rfqId}/line-quotations`, payload); return data },

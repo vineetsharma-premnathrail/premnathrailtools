@@ -25,6 +25,7 @@ JOB_INFO: dict[str, dict] = {
     "approval_escalations": {"label": "Approval escalations", "idempotent": True},
     "activity_followup_reminders": {"label": "CRM follow-up reminders", "idempotent": True},
     "po_overdue_reminders": {"label": "PO overdue reminders", "idempotent": True},
+    "rfq_reminders": {"label": "RFQ quote reminders", "idempotent": True},
     "hr_reminders": {"label": "HR reminders", "idempotent": True},
     "pm_reminders": {"label": "Project task reminders", "idempotent": True},
     "design_reminders": {"label": "Design reminders", "idempotent": True},

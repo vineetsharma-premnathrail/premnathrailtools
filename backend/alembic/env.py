@@ -56,6 +56,7 @@ from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover 
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
+from app.modules.p2p.models.rfq_invite import RFQVendorInvite
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.p2p.models.vendor_return import P2PVendorReturn, P2PVendorReturnItem  # noqa: F401

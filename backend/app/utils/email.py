@@ -48,6 +48,7 @@ async def _send_graph_mail(
     sender_email: str, subject: str, html_body: str, to_email: str, to_name: str,
     extra_attachments: list[dict] | None = None,
     sender_name: str = "Premnathrail Service Team",
+    reply_to: list[tuple[str, str]] | None = None,
 ) -> tuple[bool, str]:
     """extra_attachments: list of {"name": str, "content_type": str, "content_bytes": bytes} —
     sent as regular (non-inline) downloadable file attachments, e.g. a generated report."""
@@ -62,6 +63,9 @@ async def _send_graph_mail(
         "body": {"contentType": "HTML", "content": html_body},
         "toRecipients": [{"emailAddress": {"name": to_name, "address": to_email}}],
     }
+    if reply_to:
+        # Replies go to these people (e.g. the buyer), not the shared sender mailbox.
+        message["replyTo"] = [{"emailAddress": {"name": n, "address": a}} for a, n in reply_to if a]
     attachments: list[dict] = []
     logo_b64 = _logo_base64()
     if logo_b64:

@@ -1646,6 +1646,9 @@ export interface RFQ {
   delivery_lead_time?: string
   late_delivery_clause?: string
   terms_conditions?: string | null
+  /** Emailed RFQs: vendors must quote by this date (ISO); the note sent to them. */
+  quote_due_date?: string | null
+  invite_message?: string | null
 
   created_by_id?: number
   created_by_name?: string

@@ -5,9 +5,11 @@ import { useParams, useRouter } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
-import { rfqApi, purchaseOrdersApi } from '@/lib/api'
+import { rfqApi, purchaseOrdersApi, vendorsApi } from '@/lib/api'
+import { rfqInvitesApi, RfqInvite, RfqInvites } from '@/lib/mmPurchasingApi'
+import SearchableSelect from '@/components/erp/SearchableSelect'
 import { formatDateTime } from '@/lib/format'
-import { RFQ, P2PPurchaseOrder } from '@/types'
+import { RFQ, P2PPurchaseOrder, ProcurementVendor } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
 import P2PNav from '@/components/p2p/P2PNav'
@@ -58,6 +60,34 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   )
 }
 
+// Emailed RFQs — per-page status maps (repo convention).
+const EMAIL_STATUS_HEX: Record<RfqInvite['email_status'], string> = { sent: '#16a34a', failed: '#dc2626', pending: '#64748b' }
+const QUOTE_STATUS_HEX: Record<RfqInvite['quote_status'], string> = { quoted: '#16a34a', waiting: '#d97706', overdue: '#dc2626', not_sent: '#64748b' }
+const QUOTE_STATUS_LABELS: Record<RfqInvite['quote_status'], string> = { quoted: 'Quoted', waiting: 'Waiting', overdue: 'Overdue', not_sent: 'Not sent' }
+const pad2 = (n: number) => String(n).padStart(2, '0')
+/** DD-MM-YYYY from an ISO date (date-only strings are not shifted by the timezone). */
+function fmtDay(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? '—' : `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`
+}
+/** DD-MM HH:mm for a send / reminder timestamp. */
+function fmtStamp(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return isNaN(d.getTime()) ? '—' : `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+function todayIso(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+const pill = (hex: string): React.CSSProperties => ({ fontSize: 11.5, fontWeight: 600, padding: '3px 9px', borderRadius: 9999, background: `${hex}1a`, color: hex, whiteSpace: 'nowrap' })
+const invTh: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: TEXT.muted, whiteSpace: 'nowrap', borderBottom: `1px solid ${BORDER.normal}` }
+const invTd: React.CSSProperties = { padding: '8px 10px', fontSize: 12.5, color: TEXT.body, borderBottom: `1px solid ${BORDER.normal}`, verticalAlign: 'top' }
+const linkBtn: React.CSSProperties = { background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#2563eb', fontSize: 12.5, fontWeight: 600 }
+
 export default function RfqDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('p2p')
   const params = useParams()
@@ -83,6 +113,7 @@ export default function RfqDetailPage() {
 
   const [paymentTerms, setPaymentTerms] = useState('')
   const [deliveryLeadTime, setDeliveryLeadTime] = useState('')
+  const [lateDeliveryClause, setLateDeliveryClause] = useState('')
   const [singleQuotationReason, setSingleQuotationReason] = useState('')
   const [comments, setComments] = useState('')
 
@@ -93,14 +124,27 @@ export default function RfqDetailPage() {
   const [poDraft, setPoDraft] = useState<P2PPurchaseOrder | null>(null)
   const [poDraftLoading, setPoDraftLoading] = useState(false)
 
+  // --- Emailed RFQs: invited vendors, send / resend / remind / invite more.
+  const [invites, setInvites] = useState<RfqInvites | null>(null)
+  const [inviteBusy, setInviteBusy] = useState('')
+  const [inviteNotice, setInviteNotice] = useState('')
+  const [inviteMoreOpen, setInviteMoreOpen] = useState(false)
+
   const load = async () => {
     setLoading(true)
     setError('')
     try {
       const data = await rfqApi.get(rfqId!)
       setRfq(data)
+      try {
+        setInvites(await rfqInvitesApi.list(rfqId!))
+      } catch (err) {
+        setInvites(null)
+        setError(extractErrorMessages(err, 'Could not load the vendors this RFQ was emailed to.').join(' '))
+      }
       setPaymentTerms(data.payment_terms || '')
       setDeliveryLeadTime(data.delivery_lead_time || '')
+      setLateDeliveryClause(data.late_delivery_clause || '')
       setSingleQuotationReason(data.single_quotation_reason || '')
       setComments(data.comments || '')
       // The PO always goes to the L1 vendor.
@@ -146,6 +190,7 @@ export default function RfqDetailPage() {
   const openAdminEdit = () => {
     setPaymentTerms(rfq.payment_terms || '')
     setDeliveryLeadTime(rfq.delivery_lead_time || '')
+    setLateDeliveryClause(rfq.late_delivery_clause || '')
     setSingleQuotationReason(rfq.single_quotation_reason || '')
     setComments(rfq.comments || '')
     setEditError('')
@@ -159,6 +204,7 @@ export default function RfqDetailPage() {
       await rfqApi.update(rfq.id, {
         payment_terms: paymentTerms.trim() || undefined,
         delivery_lead_time: deliveryLeadTime.trim() || undefined,
+        late_delivery_clause: lateDeliveryClause.trim() || undefined,
         single_quotation_reason: singleQuotationReason.trim() || undefined,
         comments: comments.trim() || undefined,
       })
@@ -172,6 +218,25 @@ export default function RfqDetailPage() {
   }
 
   const statusColor = RFQ_STATUS_HEX[rfq.status] || '#64748b'
+  // Emailed RFQ = has invited vendors. Old RFQs (L1–L4 attachment slots) keep the old layout.
+  const inviteList = invites?.invites || []
+  const hasInvites = inviteList.length > 0
+  const canEditRfq = can('p2p', 'rfq', 'edit')
+  const comparisonHref = `${recordPath('/dashboard/p2p/rfq', rfq)}/comparison`
+
+  const runInviteAction = async (key: string, fn: () => Promise<RfqInvites>, done: (r: RfqInvites) => string, fallback: string) => {
+    setInviteBusy(key)
+    setInviteNotice('')
+    try {
+      const r = await fn()
+      setInvites(r)
+      setInviteNotice(done(r))
+    } catch (err) {
+      setError(extractErrorMessages(err, fallback).join(' '))
+    } finally {
+      setInviteBusy('')
+    }
+  }
 
   return (
     <div>
@@ -199,7 +264,50 @@ export default function RfqDetailPage() {
 
       <MessageDialog open={!!error} variant="error" title="Cannot Update RFQ" message={error} onClose={() => setError('')} />
 
-      {seeVendorQuotes && (
+      {hasInvites && invites && (
+        <InvitedVendorsSection
+          invites={invites}
+          canEdit={canEditRfq}
+          canOpenComparison={isPurchaseDesk && seeComparison}
+          busy={inviteBusy}
+          notice={inviteNotice}
+          onResend={(inv) => runInviteAction(`resend-${inv.id}`, () => rfqInvitesApi.resend(rfq.id, inv.id),
+            (r) => {
+              const now = r.invites.find((x) => x.id === inv.id)
+              return now?.email_status === 'sent'
+                ? `RFQ emailed again to ${inv.vendor_name}.`
+                : `${inv.vendor_name}: the email did not go — ${now?.send_error || 'see the Email column'}.`
+            }, `Could not resend the RFQ to ${inv.vendor_name}.`)}
+          onRemind={() => runInviteAction('remind', () => rfqInvitesApi.remind(rfq.id),
+            () => "Reminder emailed to every vendor who hasn't quoted yet.", 'Could not send the reminders.')}
+          onSendPending={() => runInviteAction('send', () => rfqInvitesApi.sendPending(rfq.id),
+            (r) => {
+              const failed = r.invites.filter((x) => x.email_status === 'failed').length
+              return failed ? `Emails sent; ${failed} failed — see the Email column for the reason.` : 'Pending emails sent.'
+            }, 'Could not send the pending emails.')}
+          onInviteMore={() => setInviteMoreOpen(true)}
+          onRecordQuote={(inv) => router.push(`${comparisonHref}?vendor=${inv.vendor_id}`)}
+          onViewQuote={() => router.push(comparisonHref)}
+        />
+      )}
+
+      {inviteMoreOpen && invites && (
+        <InviteMoreSheet
+          rfq={rfq}
+          invited={inviteList}
+          onClose={() => setInviteMoreOpen(false)}
+          onSaved={(r, added) => {
+            setInvites(r)
+            setInviteMoreOpen(false)
+            const failed = r.invites.filter((x) => added.includes(x.vendor_id) && x.email_status !== 'sent')
+            setInviteNotice(failed.length
+              ? `Invited ${added.length} vendor(s); the email did not go to ${failed.map((f) => f.vendor_name).join(', ')} — see the Email column.`
+              : `Invited ${added.length} vendor(s) — the RFQ was emailed to them.`)
+          }}
+        />
+      )}
+
+      {seeVendorQuotes && !hasInvites && (
       <div data-tour="rfq-detail-vendor-quotations" style={sectionStyle}>
         <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Supplier / Vendor Quotations</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
@@ -243,6 +351,16 @@ export default function RfqDetailPage() {
               built on the letterhead. Nothing is typed in or attached here. */}
           {!['po_drafted', 'po_raised', 'po_approved', 'partially_received', 'received', 'closed'].includes(rfq.p2p_status) && (
             <>
+              {hasInvites ? (
+                <>
+                  <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 14px' }}>
+                    Next: record each vendor&apos;s emailed quote line by line — the comparison ranks L1/L2/L3 — then award the lines and create the PO(s) there.
+                  </p>
+                  {isPurchaseDesk && seeComparison
+                    ? <button type="button" data-tour="rfq-detail-record-quotes-btn" onClick={() => router.push(comparisonHref)} style={primaryBtn}>Record quotes &amp; compare →</button>
+                    : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Recording quotes needs the Purchase desk and R.F.Q › Quotation comparison (view) on your role.</p>}
+                </>
+              ) : (<>
               <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 14px' }}>
                 Next: select the vendor and create the PO. L1 {poVendorName ? `(${poVendorName}) ` : ''}is pre-selected; the PO number and
                 PO document are generated by the system.
@@ -252,6 +370,7 @@ export default function RfqDetailPage() {
                 : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Creating the PO needs Create access on Procurement › Purchase Orders.</p>}
               {/* ME47/ME49: per-line vendor prices, comparison, line-level award, and one PO per vendor. */}
               {isPurchaseDesk && seeComparison && <button type="button" onClick={() => router.push(`${recordPath('/dashboard/p2p/rfq', rfq)}/comparison`)} style={{ ...ghostBtn, marginLeft: 10 }}>Line quotes &amp; comparison (split by vendor) →</button>}
+              </>)}
             </>
           )}
 
@@ -305,7 +424,8 @@ export default function RfqDetailPage() {
           </>}>
           <div style={{ padding: '20px 24px' }}>
             {editError && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{editError}</div>}
-            <SheetSection icon="rupee" title="L1 Vendor Commercial Terms">
+            <SheetSection icon="rupee" title={hasInvites ? 'Commercial Terms' : 'L1 Vendor Commercial Terms'}>
+              {!hasInvites && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
                 <div style={{ flex: '1 1 220px' }}>
                   <label style={sheetLabel}>Payment Terms</label>
@@ -316,6 +436,9 @@ export default function RfqDetailPage() {
                   <input data-tour="rfq-edit-delivery-lead-time" style={sheetInput} value={deliveryLeadTime} onChange={(e) => setDeliveryLeadTime(e.target.value)} />
                 </div>
               </div>
+              )}
+              <label style={{ ...sheetLabel, marginTop: hasInvites ? 0 : 14 }}>Late Delivery Clause</label>
+              <textarea data-tour="rfq-edit-late-delivery-clause" style={textArea} value={lateDeliveryClause} onChange={(e) => setLateDeliveryClause(e.target.value)} />
             </SheetSection>
             {rfq.is_single_quotation && (
               <SheetSection icon="alert" title="Single Quotation" color="#d97706">
@@ -340,16 +463,14 @@ export default function RfqDetailPage() {
           )}
 
           <div data-tour="rfq-detail-commercial-terms" style={sectionStyle}>
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>L1 Vendor Commercial Terms</h2>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>{hasInvites ? 'Commercial Terms' : 'L1 Vendor Commercial Terms'}</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
-              <InfoRow label="Payment Terms" value={rfq.payment_terms || '—'} />
-              <InfoRow label="Delivery Lead Time" value={rfq.delivery_lead_time || '—'} />
-              {/* Older RFQs entered a clause by hand — still shown; new ones use the company terms. */}
-              {rfq.late_delivery_clause && (
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <InfoRow label="Late Delivery Clause" value={rfq.late_delivery_clause} />
-                </div>
-              )}
+              {/* Emailed RFQs: payment terms and delivery come with each vendor's quote. */}
+              {!hasInvites && <InfoRow label="Payment Terms" value={rfq.payment_terms || '—'} />}
+              {!hasInvites && <InfoRow label="Delivery Lead Time" value={rfq.delivery_lead_time || '—'} />}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <InfoRow label="Late Delivery Clause" value={rfq.late_delivery_clause || '—'} />
+              </div>
             </div>
           </div>
       </>
@@ -364,5 +485,212 @@ export default function RfqDetailPage() {
       </div>
 
     </div>
+  )
+}
+
+/** Emailed RFQ: who it went to, did the email go, have they quoted. */
+function InvitedVendorsSection({ invites, canEdit, canOpenComparison, busy, notice, onResend, onRemind, onSendPending, onInviteMore, onRecordQuote, onViewQuote }: {
+  invites: RfqInvites
+  canEdit: boolean
+  canOpenComparison: boolean
+  busy: string
+  notice: string
+  onResend: (inv: RfqInvite) => void
+  onRemind: () => void
+  onSendPending: () => void
+  onInviteMore: () => void
+  onRecordQuote: (inv: RfqInvite) => void
+  onViewQuote: (inv: RfqInvite) => void
+}) {
+  const list = invites.invites
+  const quoted = list.filter((i) => i.quote_status === 'quoted').length
+  const due = invites.quote_due_date
+  const duePassed = !!due && due.slice(0, 10) < todayIso()
+  const anyUnsent = list.some((i) => i.email_status !== 'sent')
+  const anyToRemind = list.some((i) => i.email_status === 'sent' && i.quote_status !== 'quoted')
+  const off = !!busy
+
+  return (
+    <div data-tour="rfq-detail-invites" style={sectionStyle}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div>
+          <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 4px' }}>Invited vendors</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5, color: TEXT.secondary }}>
+            <span>Quote by <b style={{ color: TEXT.heading }}>{fmtDay(due)}</b></span>
+            {duePassed && <span style={pill('#dc2626')}>passed</span>}
+            <span>·</span>
+            <span><b style={{ color: TEXT.heading }}>{quoted} of {list.length}</b> quoted</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {canEdit && anyUnsent && (
+            <button type="button" data-tour="rfq-detail-send-pending" disabled={off} onClick={onSendPending} style={{ ...ghostBtn, padding: '8px 14px', opacity: off ? 0.6 : 1 }}>
+              {busy === 'send' ? 'Sending…' : 'Send pending emails'}
+            </button>
+          )}
+          {canEdit && anyToRemind && (
+            <button type="button" data-tour="rfq-detail-remind-all" disabled={off} onClick={onRemind} style={{ ...ghostBtn, padding: '8px 14px', opacity: off ? 0.6 : 1 }}>
+              {busy === 'remind' ? 'Sending…' : 'Remind all who haven’t quoted'}
+            </button>
+          )}
+          {canEdit && (
+            <button type="button" data-tour="rfq-detail-invite-more" disabled={off} onClick={onInviteMore} style={{ ...ghostBtn, padding: '8px 14px', opacity: off ? 0.6 : 1 }}>
+              + Invite more vendors
+            </button>
+          )}
+        </div>
+      </div>
+
+      {invites.invite_message && (
+        <div style={{ padding: '8px 12px', borderRadius: 10, background: 'rgba(100,116,139,0.07)', fontSize: 12.5, color: TEXT.body, marginBottom: 12, whiteSpace: 'pre-wrap' }}>
+          <span style={{ fontWeight: 600, color: TEXT.muted }}>Note to vendors: </span>{invites.invite_message}
+        </div>
+      )}
+      {notice && <p style={{ fontSize: 12.5, color: '#15803d', margin: '0 0 10px' }}>{notice}</p>}
+
+      <div data-tour="rfq-detail-invites-table" style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+          <thead>
+            <tr>{['Vendor', 'Email', 'Email status', 'Reminder', 'Quote', ''].map((h, i) => <th key={i} style={invTh}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {list.map((inv) => {
+              const emailHex = EMAIL_STATUS_HEX[inv.email_status] || '#64748b'
+              const qHex = QUOTE_STATUS_HEX[inv.quote_status] || '#64748b'
+              const isQuoted = inv.quote_status === 'quoted'
+              const needsResend = inv.email_status !== 'sent'
+              return (
+                <tr key={inv.id}>
+                  <td style={{ ...invTd, fontWeight: 600, color: TEXT.heading }}>{inv.vendor_name}</td>
+                  <td style={invTd}>{inv.email || <span style={{ color: '#b91c1c' }}>no email in vendor master</span>}</td>
+                  <td style={invTd}>
+                    {inv.email_status === 'sent' && <span style={{ color: emailHex }}>Sent {fmtStamp(inv.sent_at)}</span>}
+                    {inv.email_status === 'failed' && <span style={{ color: emailHex }}>Failed — {inv.send_error || 'no reason given'}</span>}
+                    {inv.email_status === 'pending' && <span style={{ color: emailHex }}>Not sent</span>}
+                  </td>
+                  <td style={{ ...invTd, whiteSpace: 'nowrap' }}>{inv.reminder_sent_at ? fmtStamp(inv.reminder_sent_at) : '—'}</td>
+                  <td style={invTd}>
+                    <span style={pill(qHex)}>
+                      {isQuoted && inv.quoted_price != null
+                        ? `Quoted ₹${inv.quoted_price.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+                        : QUOTE_STATUS_LABELS[inv.quote_status] || inv.quote_status}
+                    </span>
+                  </td>
+                  <td style={{ ...invTd, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                    <div style={{ display: 'inline-flex', gap: 12, alignItems: 'center' }}>
+                      {canEdit && (
+                        <button type="button" disabled={off} onClick={() => onResend(inv)}
+                          style={needsResend ? { ...linkBtn, opacity: off ? 0.6 : 1 } : { ...linkBtn, fontWeight: 500, fontSize: 11.5, color: TEXT.muted, opacity: off ? 0.6 : 1 }}
+                          title="Re-reads the vendor's email from the vendor master and sends the RFQ again">
+                          {busy === `resend-${inv.id}` ? 'Sending…' : 'Resend'}
+                        </button>
+                      )}
+                      {canOpenComparison && (isQuoted
+                        ? <button type="button" onClick={() => onViewQuote(inv)} style={linkBtn}>View</button>
+                        : canEdit && <button type="button" onClick={() => onRecordQuote(inv)} style={linkBtn}>Record quote</button>)}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/** After sending: email the RFQ to more vendors from the vendor master. */
+function InviteMoreSheet({ rfq, invited, onClose, onSaved }: {
+  rfq: RFQ
+  invited: RfqInvite[]
+  onClose: () => void
+  onSaved: (r: RfqInvites, addedVendorIds: number[]) => void
+}) {
+  const [vendors, setVendors] = useState<ProcurementVendor[] | null>(null)
+  const [picked, setPicked] = useState<number[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [hint, setHint] = useState('')
+
+  useEffect(() => {
+    vendorsApi.list({ status: 'active' })
+      .then(setVendors)
+      .catch((err) => { setVendors([]); setError(extractErrorMessages(err, 'Could not load the vendor master.').join(' ')) })
+  }, [])
+
+  const invitedIds = new Set(invited.map((i) => i.vendor_id))
+  const available = (vendors || []).filter((v) => !invitedIds.has(v.id) && !picked.includes(v.id))
+  const options = available.map((v) => ({
+    value: String(v.id),
+    label: `${v.name} (${v.code})${v.contact_email ? ` — ${v.contact_email}` : ' — no email, can’t be invited'}`,
+  }))
+  const noEmailCount = available.filter((v) => !v.contact_email).length
+
+  const pick = (val: string) => {
+    const v = (vendors || []).find((x) => String(x.id) === val)
+    if (!v) return
+    if (!v.contact_email) {
+      setHint(`${v.name} has no email in the vendor master — add it in Procurement › Vendors, then invite them.`)
+      return
+    }
+    setHint('')
+    setPicked((s) => [...s, v.id])
+  }
+
+  const save = async () => {
+    if (!picked.length) { setError('Pick at least one vendor to invite.'); return }
+    setBusy(true); setError('')
+    try {
+      const r = await rfqInvitesApi.add(rfq.id, picked)
+      onSaved(r, picked)
+    } catch (err) {
+      setError(extractErrorMessages(err, 'Could not invite the vendors.').join(' '))
+      setBusy(false)
+    }
+  }
+
+  const close = () => { if (!busy) onClose() }
+
+  return (
+    <FormSheet width={560} icon="send" title={`Invite more vendors — ${rfq.rfq_number}`} subtitle="The RFQ is emailed to each vendor as soon as you save, with the same quote-by date and note."
+      onClose={close} busy={busy}
+      footer={<>
+        <button type="button" onClick={close} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
+        <button type="button" data-tour="rfq-invite-more-save" onClick={save} disabled={busy || !picked.length} style={sheetBtn('primary', SHEET.BLUE, busy || !picked.length)}>
+          <SheetIcon name="send" size={16} />{busy ? 'Sending…' : `Invite & email${picked.length ? ` (${picked.length})` : ''}`}
+        </button>
+      </>}>
+      <div style={{ padding: '20px 24px' }}>
+        {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
+        <SheetSection icon="building" title="Vendors">
+          <label style={sheetLabel}>Add a vendor</label>
+          <div data-tour="rfq-invite-more-vendor">
+            <SearchableSelect value="" onChange={pick} options={options}
+              placeholder={vendors === null ? 'Loading vendors…' : options.length ? 'Search the vendor master…' : 'Every active vendor is already invited'} disabled={vendors === null} />
+          </div>
+          {hint && <p style={{ fontSize: 12, color: '#b45309', margin: '6px 0 0' }}>{hint}</p>}
+          {noEmailCount > 0 && <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '6px 0 0' }}>{noEmailCount} vendor(s) have no email in the vendor master and can&apos;t be invited until one is added (Procurement › Vendors).</p>}
+          {picked.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+              {picked.map((id) => {
+                const v = (vendors || []).find((x) => x.id === id)
+                if (!v) return null
+                return (
+                  <div key={id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', borderRadius: 10, border: `1px solid ${SHEET.LINE}` }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: SHEET.INK }}>{v.name} <span style={{ fontWeight: 400, color: SHEET.MUTED }}>({v.code})</span></div>
+                      <div style={{ fontSize: 12, color: SHEET.MUTED }}>{v.contact_email}</div>
+                    </div>
+                    <button type="button" onClick={() => setPicked((s) => s.filter((x) => x !== id))} disabled={busy} style={{ ...linkBtn, color: '#b91c1c' }}>Remove</button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {invited.length > 0 && <p style={{ fontSize: 12, color: SHEET.MUTED, margin: '12px 0 0' }}>Already invited: {invited.map((i) => i.vendor_name).join(', ')}</p>}
+        </SheetSection>
+      </div>
+    </FormSheet>
   )
 }

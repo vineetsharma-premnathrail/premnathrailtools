@@ -9,6 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.core.config import settings
 from app.tasks.followup_reminders import send_activity_followup_reminders
 from app.tasks.po_overdue_reminders import send_po_overdue_reminders
+from app.tasks.rfq_reminders import send_rfq_reminders
 from app.tasks.hr_reminders import send_hr_reminders
 from app.tasks.pm_reminders import send_pm_reminders
 from app.tasks.design_reminders import send_design_reminders
@@ -61,6 +62,7 @@ from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover 
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder, P2PPurchaseOrderItem
 from app.modules.p2p.models.rfq import RFQ
 from app.modules.p2p.models.rfq_attachment import RFQAttachment
+from app.modules.p2p.models.rfq_invite import RFQVendorInvite
 from app.modules.p2p.models.vendor_quotation import VendorQuotation
 from app.modules.p2p.models.goods_receipt import P2PGoodsReceipt, P2PGoodsReceiptItem
 from app.modules.p2p.models.vendor_return import P2PVendorReturn, P2PVendorReturnItem  # noqa: F401
@@ -310,6 +312,7 @@ from app.modules.p2p.routes import service_entries as p2p_service_entries_routes
 from app.modules.p2p.routes import landed_cost as p2p_landed_cost_routes
 from app.modules.p2p.routes import account_assignment as p2p_account_assignment_routes
 from app.modules.p2p.routes import mm_quotations as p2p_mm_quotations_routes
+from app.modules.p2p.routes import rfq_invites as p2p_rfq_invites_routes
 from app.modules.p2p.routes import po_amendments as p2p_po_amendments_routes
 from app.modules.p2p.routes import info_records as p2p_info_records_routes
 from app.modules.store.routes import item_plants as store_item_plants_routes
@@ -611,6 +614,7 @@ app.include_router(p2p_service_entries_routes.router, prefix="/api/v1")
 app.include_router(p2p_landed_cost_routes.router, prefix="/api/v1")
 app.include_router(p2p_account_assignment_routes.router, prefix="/api/v1")
 app.include_router(p2p_mm_quotations_routes.router, prefix="/api/v1")
+app.include_router(p2p_rfq_invites_routes.router, prefix="/api/v1")
 app.include_router(p2p_po_amendments_routes.router, prefix="/api/v1")
 app.include_router(p2p_info_records_routes.router, prefix="/api/v1")
 app.include_router(store_item_plants_routes.router, prefix="/api/v1")
@@ -897,6 +901,12 @@ async def startup():
         send_po_overdue_reminders,
         CronTrigger(hour=8, minute=30),
         id="po_overdue_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        send_rfq_reminders,
+        CronTrigger(hour=9, minute=0),
+        id="rfq_reminders",
         replace_existing=True,
     )
     # PA40: effective-dated transfers / promotions / org changes (00:30 IST).

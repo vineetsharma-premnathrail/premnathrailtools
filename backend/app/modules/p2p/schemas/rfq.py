@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 
@@ -115,6 +115,8 @@ class RFQResponse(BaseModel):
     payment_terms: str | None = None
     delivery_lead_time: str | None = None
     late_delivery_clause: str | None = None
+    quote_due_date: date | None = None
+    invite_message: str | None = None
 
     created_by_id: int | None = None
     locked_by_id: int | None = None

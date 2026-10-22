@@ -27,6 +27,7 @@ NOTIFY_EVENTS: dict[str, tuple[str, str]] = {
 P2P_SETTING_GROUPS = {
     "terms": "Company terms & conditions",
     "invoice_match": "Invoice match tolerances (3-way match per PO line)",
+    "rfq": "RFQ by email",
     **notification_groups(NOTIFY_EVENTS),
 }
 
@@ -55,6 +56,14 @@ _SPECS = [
     SettingSpec("invoice_price_tolerance_abs", "invoice_match", "Price tolerance cap (₹ per line)", "decimal", 500.0, min=0, max=10000000,
                 help="Even inside the % tolerance, a line whose price difference (rate difference x quantity) is more "
                      "than this amount is held as a variance. 0 = no cap."),
+    SettingSpec("rfq_quote_days", "rfq", "Days vendors get to quote", "int", 3, min=1, max=60,
+                help="The default quote-by date on a new RFQ: today + this many days (the buyer can change it per RFQ). "
+                     "Shown in the RFQ email."),
+    SettingSpec("rfq_min_vendors", "rfq", "Minimum vendors per RFQ", "int", 3, min=1, max=10,
+                help="An RFQ emailed to fewer vendors than this needs a written reason (single / limited quotation)."),
+    SettingSpec("rfq_auto_reminder", "rfq", "Remind vendors a day before the quote-by date", "bool", True,
+                help="Every morning the portal re-sends the RFQ to vendors who haven't quoted and whose quote-by date is "
+                     "tomorrow. When the date passes, the buyer is told how many quotes came in."),
     *notification_specs(NOTIFY_EVENTS, user_apps={e: _ANY_MODULE for e in NOTIFY_EVENTS}),
 ]
 

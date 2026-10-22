@@ -6,12 +6,13 @@
 // 3. Award each line to a vendor (reason when not L1).
 // 4. Create one draft PO per awarded vendor (plant / ship-to), then price-check and send each for approval.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { organizationApi, p2pApi, rfqApi, storeApi, vendorsApi } from '@/lib/api'
-import { Comparison, LineQuotation, SplitProposal, mmQuotationsApi } from '@/lib/mmPurchasingApi'
+import { Comparison, LineQuotation, RfqInvites, RfqQuoteFile, SplitProposal, mmQuotationsApi, rfqInvitesApi } from '@/lib/mmPurchasingApi'
+import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { P2PRequest, RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
@@ -37,6 +38,18 @@ const errBox: React.CSSProperties = { padding: '10px 14px', marginBottom: 16, bo
 const money = (v: number | null | undefined) => (v == null ? '—' : v.toLocaleString('en-IN', { maximumFractionDigits: 2 }))
 
 type Opt = { value: string; label: string }
+const QUOTE_FILE_ACCEPT = '.pdf,image/*,.doc,.docx,.xls,.xlsx'
+// Emailed RFQs — invite quote status, per-page map (repo convention).
+const WAIT_STATUS: Record<string, { label: string; hex: string }> = {
+  waiting: { label: 'waiting', hex: '#d97706' }, overdue: { label: 'overdue', hex: '#dc2626' }, not_sent: { label: 'email not sent', hex: '#64748b' },
+}
+/** DD-MM-YYYY from an ISO date. */
+function fmtDay(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : iso
+}
+const fileLink: React.CSSProperties = { fontSize: 12, color: '#2563eb', cursor: 'pointer', background: 'none', border: 'none', padding: 0, textAlign: 'left', wordBreak: 'break-all' }
 
 export default function QuotationComparisonPage() {
   const { isAuthorized, isLoading } = useRequireApp('purchase')
@@ -56,6 +69,14 @@ export default function QuotationComparisonPage() {
   const [picks, setPicks] = useState<Record<number, string>>({})
   const [reasons, setReasons] = useState<Record<number, string>>({})
   const [showSplit, setShowSplit] = useState(false)
+  // Emailed RFQs: who was invited, the vendor's quotation files per recorded quote.
+  const [invites, setInvites] = useState<RfqInvites | null>(null)
+  const [quoteFiles, setQuoteFiles] = useState<Record<number, RfqQuoteFile[]>>({})
+  const [attachingFor, setAttachingFor] = useState<number | null>(null)
+  const [presetVendorId, setPresetVendorId] = useState('')
+  const searchParams = useSearchParams()
+  const vendorParam = searchParams?.get('vendor') || ''
+  const vendorParamHandled = useRef(false)
 
   const load = useCallback(async () => {
     if (!rfqId) return
@@ -67,14 +88,32 @@ export default function QuotationComparisonPage() {
       const r: RFQ = await rfqApi.get(rfqId)
       const [p, q, c] = await Promise.all([p2pApi.get(r.p2p_request_id), mmQuotationsApi.list(rfqId), mmQuotationsApi.comparison(rfqId)])
       setRfq(r); setPr(p); setQuotes(q); setCmp(c)
+      const problems: string[] = []
+      try { setInvites(await rfqInvitesApi.list(rfqId)) } catch (err) {
+        setInvites(null)
+        problems.push(extractErrorMessages(err, 'Could not load the vendors this RFQ was emailed to.').join(' '))
+      }
+      const fileLists = await Promise.all(q.map((vq) => rfqInvitesApi.quoteFiles(rfqId, vq.id).then(
+        (fs) => [vq.id, fs] as const,
+        (err) => { problems.push(`${vq.vendor_name}: ${extractErrorMessages(err, 'could not load the quotation files.').join(' ')}`); return [vq.id, [] as RfqQuoteFile[]] as const },
+      )))
+      setQuoteFiles(Object.fromEntries(fileLists))
       setPicks(Object.fromEntries(c.lines.map((l) => {
         const awarded = l.quotes.find((x) => x?.is_awarded)
         return [l.pr_item_id, String(awarded?.vendor_quotation_item_id ?? l.l1_vendor_quotation_item_id ?? '')]
       })))
-      setError('')
+      setError(problems.join(' '))
     } catch (err) { setError(extractErrorMessages(err, 'Could not load the quotations of this RFQ — go back to the RFQ and open it again.').join(' ')) }
   }, [rfqId, allowCmp])
   useEffect(() => { if (isAuthorized) Promise.resolve().then(load) }, [isAuthorized, load])
+
+  // From the RFQ's "Record quote" (?vendor=<id>): open the dialog for that vendor once, unless they've already quoted.
+  useEffect(() => {
+    if (vendorParamHandled.current || !vendorParam || !rfq || !pr || !cmp) return
+    vendorParamHandled.current = true
+    if (quotes.some((q) => String(q.vendor_id) === vendorParam)) return
+    Promise.resolve().then(() => { setPresetVendorId(vendorParam); setEditing('new') })
+  }, [vendorParam, rfq, pr, cmp, quotes])
 
   if (linkError) return (<div><P2PNav /><InvalidRecordLink message={linkError} listHref="/dashboard/p2p/rfq" listLabel="Back to RFQs" /></div>)
   if (isLoading || !isAuthorized) return null
@@ -85,6 +124,29 @@ export default function QuotationComparisonPage() {
   const canExport = can('p2p', 'rfq', 'export') && canFeature('p2p', 'rfq', 'comparison', 'export')
     && (canEdit || canFeature('p2p', 'rfq', 'prices', 'view'))
   const canCreatePo = can('p2p', 'purchase_orders', 'create')
+  const canAttachQuoteFile = canEdit && (canFeature('p2p', 'rfq', 'vendor_quotes', 'edit') || canFeature('p2p', 'rfq', 'vendor_quotes', 'create'))
+  const inviteList = invites?.invites || []
+  const invitedQuoted = inviteList.filter((i) => i.quote_status === 'quoted').length
+  const stillWaiting = inviteList.filter((i) => i.quote_status !== 'quoted')
+
+  const openQuoteFile = (f: RfqQuoteFile) => {
+    if (!rfqId) return
+    openAttachmentBlob(() => rfqApi.getAttachmentBlob(rfqId, f.id), f.filename)
+      .catch((err) => setError(extractErrorMessages(err, `Could not open ${f.filename}.`).join(' ')))
+  }
+
+  const attachQuoteFiles = async (q: LineQuotation, files: File[]) => {
+    if (!rfqId || !files.length) return
+    setAttachingFor(q.id)
+    try {
+      await rfqInvitesApi.uploadQuoteFiles(rfqId, q.id, files)
+      const fs = await rfqInvitesApi.quoteFiles(rfqId, q.id)
+      setQuoteFiles((s) => ({ ...s, [q.id]: fs }))
+      setError('')
+    } catch (err) {
+      setError(`${q.vendor_name}: the quotation file didn't upload — ${extractErrorMessages(err, 'upload failed.').join(' ')}`)
+    } finally { setAttachingFor(null) }
+  }
 
   const saveAwards = async () => {
     if (!cmp || !rfqId) return
@@ -127,15 +189,49 @@ export default function QuotationComparisonPage() {
           <div style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
               <h2 style={{ ...h2, margin: 0 }}>1. Vendor quotes</h2>
-              {canRecordQuote && <button type="button" style={primaryBtnStyle} onClick={() => setEditing('new')}>+ Record a quote</button>}
+              {canRecordQuote && <button type="button" data-tour="rfq-cmp-record-quote" style={primaryBtnStyle} onClick={() => { setPresetVendorId(''); setEditing('new') }}>+ Record a quote</button>}
             </div>
+            {inviteList.length > 0 && (
+              <div data-tour="rfq-cmp-invite-summary" style={{ fontSize: 12.5, color: TEXT.secondary, margin: '0 0 10px' }}>
+                Quotes recorded: <b style={{ color: TEXT.heading }}>{invitedQuoted} of {inviteList.length}</b> invited vendors · quote by <b style={{ color: TEXT.heading }}>{fmtDay(invites?.quote_due_date)}</b>
+                {stillWaiting.length > 0 && (
+                  <div style={{ marginTop: 4 }}>
+                    Still waiting:{' '}
+                    {stillWaiting.map((w, i) => {
+                      const st = WAIT_STATUS[w.quote_status] || { label: w.quote_status, hex: '#64748b' }
+                      return (
+                        <span key={w.id}>
+                          {i > 0 && ', '}
+                          {canRecordQuote
+                            ? <span style={{ color: '#2563eb', cursor: 'pointer' }} onClick={() => { setPresetVendorId(String(w.vendor_id)); setEditing('new') }}>{w.vendor_name}</span>
+                            : w.vendor_name}
+                          {' '}<span style={{ color: st.hex, fontSize: 11.5 }}>({st.label})</span>
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             {quotes.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No line-level quotes yet. Record each vendor&apos;s quote — the vendor is picked from the vendor master.</p> : (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                 {quotes.map((q) => (
                   <div key={q.id} style={{ border: `1px solid ${BORDER.normal}`, borderRadius: 12, padding: '10px 12px', minWidth: 220 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700 }}>{q.vendor_name}</div>
                     <div style={{ fontSize: 12, color: TEXT.muted }}>{q.quote_ref || 'no ref'} · {q.items.length} line(s) · {money(q.quoted_price)} excl. GST{q.valid_until ? ` · valid till ${q.valid_until}` : ''}</div>
-                    {canEdit && canFeature('p2p', 'rfq', 'vendor_quotes', 'edit') && <span style={{ fontSize: 12, color: '#2563eb', cursor: 'pointer' }} onClick={() => setEditing(q)}>Edit</span>}
+                    {(quoteFiles[q.id] || []).map((f) => (
+                      <div key={f.id}><button type="button" style={fileLink} onClick={() => openQuoteFile(f)} title="Open the vendor's quotation">📎 {f.filename}</button></div>
+                    ))}
+                    <div style={{ display: 'flex', gap: 12, marginTop: 2 }}>
+                      {canEdit && canFeature('p2p', 'rfq', 'vendor_quotes', 'edit') && <span style={{ fontSize: 12, color: '#2563eb', cursor: 'pointer' }} onClick={() => setEditing(q)}>Edit</span>}
+                      {canAttachQuoteFile && (
+                        <label data-tour="rfq-cmp-attach-pdf" style={{ fontSize: 12, color: '#2563eb', cursor: attachingFor === q.id ? 'wait' : 'pointer' }}>
+                          {attachingFor === q.id ? 'Uploading…' : (quoteFiles[q.id] || []).length ? 'Attach another file' : 'Attach PDF'}
+                          <input type="file" multiple accept={QUOTE_FILE_ACCEPT} disabled={attachingFor !== null} style={{ display: 'none' }}
+                            onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ''; attachQuoteFiles(q, fs) }} />
+                        </label>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -212,7 +308,9 @@ export default function QuotationComparisonPage() {
         </>
       )}
 
-      {editing && rfq && pr && <QuoteDialog rfq={rfq} pr={pr} quote={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
+      {editing && rfq && pr && <QuoteDialog rfq={rfq} pr={pr} quote={editing === 'new' ? null : editing} presetVendorId={editing === 'new' ? presetVendorId : ''}
+        onClose={() => setEditing(null)}
+        onSaved={(warning) => { setEditing(null); load().then(() => { if (warning) setError(warning) }) }} />}
       {showSplit && rfq && <SplitDialog rfq={rfq} onClose={() => setShowSplit(false)} onDone={(poRow) => {
         setShowSplit(false)
         router.push(recordHref('/dashboard/p2p/purchase-orders/new', rfq, 'id', { po: poRow ? (poRow as { id_ref?: string }).id_ref : undefined }, 'rfq'))
@@ -223,10 +321,15 @@ export default function QuotationComparisonPage() {
 
 type QLine = { unit_price: string; discount_pct: string; gst_rate: string; delivery_days: string; make_offered: string }
 
-function QuoteDialog({ rfq, pr, quote, onClose, onSaved }: { rfq: RFQ; pr: P2PRequest; quote: LineQuotation | null; onClose: () => void; onSaved: () => void }) {
+function QuoteDialog({ rfq, pr, quote, presetVendorId, onClose, onSaved }: {
+  rfq: RFQ; pr: P2PRequest; quote: LineQuotation | null; presetVendorId?: string; onClose: () => void
+  /** warning = the quote saved but the vendor's file didn't upload. */
+  onSaved: (warning?: string) => void
+}) {
   const buyLines = (pr.items || []).filter((i) => i.fulfillment_status !== 'stock_issued')
   const [vendors, setVendors] = useState<Opt[]>([])
-  const [vendorId, setVendorId] = useState(quote?.vendor_id ? String(quote.vendor_id) : '')
+  const [vendorId, setVendorId] = useState(quote?.vendor_id ? String(quote.vendor_id) : (presetVendorId || ''))
+  const [files, setFiles] = useState<File[]>([])
   const [ref, setRef] = useState(quote?.quote_ref || '')
   const [validUntil, setValidUntil] = useState(quote?.valid_until || '')
   const [freight, setFreight] = useState(quote?.freight_total != null ? String(quote.freight_total) : '')
@@ -241,7 +344,11 @@ function QuoteDialog({ rfq, pr, quote, onClose, onSaved }: { rfq: RFQ; pr: P2PRe
   const [error, setError] = useState('')
   const close = () => { if (!busy) onClose() }
   useEscapeKey(true, close)
-  useEffect(() => { vendorsApi.list({ status: 'active' }).then((vs) => setVendors(vs.map((v) => ({ value: String(v.id), label: `${v.name}${v.code ? ` (${v.code})` : ''}` })))).catch(() => setVendors([])) }, [])
+  useEffect(() => {
+    vendorsApi.list({ status: 'active' })
+      .then((vs) => setVendors(vs.map((v) => ({ value: String(v.id), label: `${v.name}${v.code ? ` (${v.code})` : ''}` }))))
+      .catch((err) => { setVendors([]); setError(extractErrorMessages(err, 'Could not load the vendor master.').join(' ')) })
+  }, [])
 
   const save = async () => {
     if (!vendorId) { setError('Pick the vendor from the vendor master.'); return }
@@ -256,10 +363,18 @@ function QuoteDialog({ rfq, pr, quote, onClose, onSaved }: { rfq: RFQ; pr: P2PRe
     const payload = { vendor_id: Number(vendorId), quote_ref: ref.trim() || null, valid_until: validUntil || null,
       freight_total: freight === '' ? null : Number(freight), packing_total: packing === '' ? null : Number(packing), payment_terms: payTerms.trim() || null, items }
     setBusy(true); setError('')
+    let vq: LineQuotation
     try {
-      if (quote) await mmQuotationsApi.replace(rfq.id, quote.id, payload); else await mmQuotationsApi.add(rfq.id, payload)
-      onSaved()
-    } catch (err) { setError(extractErrorMessages(err, 'Could not save the quote.').join(' ')); setBusy(false) }
+      vq = quote ? await mmQuotationsApi.replace(rfq.id, quote.id, payload) : await mmQuotationsApi.add(rfq.id, payload)
+    } catch (err) { setError(extractErrorMessages(err, 'Could not save the quote.').join(' ')); setBusy(false); return }
+    // The quote is saved — a failed upload must not lose it.
+    if (files.length) {
+      try { await rfqInvitesApi.uploadQuoteFiles(rfq.id, vq.id, files) } catch (err) {
+        onSaved(`Quote saved, but the PDF didn't upload: ${extractErrorMessages(err, 'upload failed.').join(' ')} Attach it again from the quote.`)
+        return
+      }
+    }
+    onSaved()
   }
 
   const set = (id: number, patch: Partial<QLine>) => setLines((s) => ({ ...s, [id]: { ...s[id], ...patch } }))
@@ -304,6 +419,12 @@ function QuoteDialog({ rfq, pr, quote, onClose, onSaved }: { rfq: RFQ; pr: P2PRe
             </table>
           </div>
           <p style={sheetHint}>Prices excl. GST. Landed cost on the comparison adds freight and packing, spread over the quoted lines.</p>
+        </SheetSection>
+        <SheetSection icon="clip" title="Vendor's quotation (PDF)">
+          <input data-tour="rfq-cmp-quote-file" type="file" multiple accept={QUOTE_FILE_ACCEPT} disabled={busy}
+            onChange={(e) => setFiles(Array.from(e.target.files || []))} style={{ fontSize: 13 }} />
+          {files.length > 0 && <p style={{ ...sheetHint, color: SHEET.INK }}>{files.map((f) => f.name).join(', ')}</p>}
+          <p style={sheetHint}>Attach the quotation the vendor emailed back{quote ? ' (added to the files already on this quote)' : ''} — it is kept with the quote as proof of the rates.</p>
         </SheetSection>
       </div>
     </FormSheet>
