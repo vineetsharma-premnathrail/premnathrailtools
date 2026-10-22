@@ -112,8 +112,8 @@ def set_op_label(resp, row, maps) -> None:
 def _product(db: Session, product_id: int | None):
     if not product_id:
         return None
-    from app.modules.products.models.product import Product
-    return db.get(Product, product_id)
+    from app.modules.products.models.product import FinishedProduct
+    return db.get(FinishedProduct, product_id)
 
 
 def line_item_id(db: Session, line: SalesOrderLine) -> int | None:
