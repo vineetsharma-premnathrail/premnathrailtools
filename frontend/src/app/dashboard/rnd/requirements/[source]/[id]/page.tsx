@@ -10,7 +10,6 @@ import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
-import RequirementMovementTab from '@/components/crm/RequirementMovementTab'
 import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
 import RequirementTasksTab from '@/components/rnd/RequirementTasksTab'
 import RequirementDocumentsTab from '@/components/rnd/RequirementDocumentsTab'
@@ -189,19 +188,10 @@ export default function RndRequirementDetailPage() {
       {shownTab === 'Requirement' && (
         <>
           {see('projects') && <RequirementProjectsCard source={data.source} recordId={data.record_id} isHead={data.my_access.is_head} />}
-          {see('crm_request') && (
+          {/* Only the Technical Offer button: first click opens the Word template, then a menu (edit / download / send). */}
+          {see('technical_offers') && (
             <div style={{ marginBottom: 16 }}>
-              <RequirementMovementTab
-                module={data.source}
-                recordId={data.record_id}
-                movements={data.movements}
-                responder={user ? { userId: user.id, isAdmin: user.role === 'admin', canRespond } : undefined}
-                onChanged={() => load()}
-                latestOnly
-                latestExtra={see('technical_offers')
-                  ? <RequirementTechnicalOffersTab source={data.source} recordId={data.record_id} access={data.my_access} embedded />
-                  : undefined}
-              />
+              <RequirementTechnicalOffersTab source={data.source} recordId={data.record_id} access={data.my_access} embedded />
             </div>
           )}
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'stretch' }}>

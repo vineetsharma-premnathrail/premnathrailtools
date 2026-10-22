@@ -98,7 +98,7 @@ const config: TourConfig = {
       target: 'rnd-req-technical-offers',
       title: 'Technical Offers',
       purpose: 'R&D\'s formal technical offer to the customer (TO-<inquiry no.>): subject, scope of supply, technical specification, deviations and exclusions, written in a Word template on the letterhead.',
-      whatToEnter: 'One button in the Technical Offer Request card: "Create Technical Offer" opens the Word template straight away — write the offer in Word. After that the same button opens a menu: Edit in Word, Download .docx, Send to R&D Head (the R&D head: Approve & Send to BD). R&D heads and members picked under "Can create Technical Offers" in R&D › Settings create it.',
+      whatToEnter: 'One button on the Requirement tab: "Create Technical Offer" opens the Word template straight away — write the offer in Word. After that the same button opens a menu: Edit in Word, Download .docx, Send to R&D Head (the R&D head: Approve & Send to BD). R&D heads and members picked under "Can create Technical Offers" in R&D › Settings create it.',
       why: 'BD can quote only against an offer R&D sent them, so every quotation cites a technical offer R&D signed off. Once sent it is frozen — "Revise" makes the next revision (…-R1), which supersedes it once sent.',
       after: 'When it is sent, the inquiry owner is notified and the offer appears in the quotation\'s "Technical Offer (R&D)" picker.',
     },
