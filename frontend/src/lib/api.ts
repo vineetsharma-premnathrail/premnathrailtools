@@ -1014,7 +1014,7 @@ export const erpApi = {
     required_by_date?: string
     priority: string
     remarks?: string
-  }): Promise<{ from_store: { item_name: string; quantity: number; unit?: string | null }[]; to_buy: { item_name: string; quantity: number; unit?: string | null }[]; pr_number: string | null }> => {
+  }): Promise<{ from_store: { item_name: string; quantity: number; unit?: string | null }[]; to_buy: { item_name: string; quantity: number; unit?: string | null }[]; pr_id: number | null; pr_number: string | null }> => {
     const { data } = await apiClient.post(`/erp/service-requests/${srId}/material-request`, payload)
     return data
   },

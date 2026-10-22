@@ -1825,6 +1825,7 @@ async def material_request(
     return {
         "from_store": [{"item_name": it.item_name, "quantity": q, "unit": it.uom} for it, q in store_lines],
         "to_buy": [{"item_name": it.item_name, "quantity": q, "unit": it.uom} for it, q, _a in buy_lines],
+        "pr_id": pr.id if pr else None,
         "pr_number": pr.p2p_number if pr else None,
     }
 

@@ -840,6 +840,10 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
   const [remarks, setRemarks] = useState('')
   const [lines, setLines] = useState<{ itemId: string; qty: string }[]>([{ itemId: '', qty: '1' }])
   const [stock, setStock] = useState<Record<string, number>>({})
+  // Go on the PR when one is raised; if everything comes from store, onto this SR's Attachments.
+  const [supportingFiles, setSupportingFiles] = useState<File[]>([])
+  const [specFiles, setSpecFiles] = useState<File[]>([])
+  const [fileInputKey, setFileInputKey] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [prMessage, setPrMessage] = useState('')
   const [prError, setPrError] = useState('')
@@ -949,9 +953,23 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
       const parts: string[] = []
       if (r.from_store.length) parts.push(`${r.from_store.length} item(s) booked from store stock — Store issues them to site`)
       if (r.pr_number) parts.push(`purchase requisition ${r.pr_number} raised for what isn't in store — Purchase has been notified`)
+      const uploadFailures: string[] = []
+      for (const [files, doc] of [[supportingFiles, 'supporting'], [specFiles, 'specification']] as const) {
+        if (!files.length) continue
+        try {
+          if (r.pr_id) await erpApi.uploadPrAttachments(srId, r.pr_id, files, doc)
+          else await erpApi.uploadAttachments(srId, files)
+        } catch (err) {
+          uploadFailures.push(`${doc} documents: ${extractErrorMessages(err, 'upload failed').join(' ')}`)
+        }
+      }
+      if (!r.pr_id && (supportingFiles.length || specFiles.length) && !uploadFailures.length) parts.push('documents saved in this SR\'s Attachments tab')
       setPrMessage(`Material requested: ${parts.join('; ')}.`)
       setLines([{ itemId: '', qty: '1' }]); setRequiredDate(''); setPriority('medium'); setRemarks('')
-      setRequestOpen(false)
+      setSupportingFiles([]); setSpecFiles([]); setFileInputKey((k) => k + 1)
+      if (uploadFailures.length) {
+        setPrError(`Material was requested, but some files did not upload — ${uploadFailures.join('; ')}. ${r.pr_id ? `Ask Purchase to attach them on ${r.pr_number}.` : 'Upload them in this SR\'s Attachments tab.'}`)
+      } else setRequestOpen(false)
     } catch (err) {
       // The server may have committed even if the response was lost — the list is reloaded below either way.
       setPrError(extractErrorMessages(err, 'Could not submit the material request — check your connection; the materials list below has been refreshed.').join(' '))
@@ -1086,6 +1104,20 @@ function MaterialsTab({ srId, canEdit, canAdd, canDelete, canRaisePr, canIssueSp
               <textarea data-tour="erp-srd-pr-remarks" style={{ ...sheetInput, minHeight: 42 }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
             </div>
           </div>
+          </SheetSection>
+
+          <SheetSection icon="clip" title="Attachments" extra={<Optional />}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+            <div style={{ flex: '0 1 280px', minWidth: 240 }}>
+              <label style={sheetLabel}>Supporting Documents</label>
+              <input key={`sup-${fileInputKey}`} data-tour="erp-srd-pr-supporting" type="file" multiple onChange={(e) => setSupportingFiles(Array.from(e.target.files || []))} style={sheetInput} />
+            </div>
+            <div style={{ flex: '0 1 280px', minWidth: 240 }}>
+              <label style={sheetLabel}>Specification / Reference File</label>
+              <input key={`spec-${fileInputKey}`} data-tour="erp-srd-pr-spec" type="file" multiple onChange={(e) => setSpecFiles(Array.from(e.target.files || []))} style={sheetInput} />
+            </div>
+          </div>
+          <p style={sheetHint}>Attached to the purchase requisition for Purchase. If everything comes from store, they are saved in this SR&apos;s Attachments tab.</p>
           </SheetSection>
           </div>
         </FormSheet>

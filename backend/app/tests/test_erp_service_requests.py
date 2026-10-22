@@ -665,3 +665,14 @@ def test_material_request_rejects_bad_qty(client, db):
         "items": [{"store_item_id": master_item(db, "Nut").id, "quantity": 0}],
     }, headers=auth_header(user))
     assert r.status_code == 400 and "quantity must be more than 0" in r.json()["detail"]
+
+
+def test_material_request_returns_pr_id_for_attachments(client, db):
+    user = make_user(db, "srmr4@premnathrail.com", erp_permissions=["sr_create", "sr_edit"])
+    sr = _make_sr(client, user, make_project(db, "SN-SR-MR4"))
+    r = client.post(f"/api/v1/erp/service-requests/{sr['id']}/material-request", json={
+        "items": [{"store_item_id": master_item(db, "Gasket").id, "quantity": 1}],
+    }, headers=auth_header(user))
+    assert r.status_code == 201, r.text
+    assert r.json()["pr_id"] and r.json()["pr_number"]
+
