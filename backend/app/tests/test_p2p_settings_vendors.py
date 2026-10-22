@@ -207,7 +207,8 @@ def test_create_po_vendor_choice_and_word_document(client, db):
     db.flush()
     db.add(P2PRequestItem(p2p_request_id=pr.id, item_name="O-ring", quantity=10, unit="Nos", project_inhouse="Project",
                           fulfillment_status="sent_to_procurement"))
-    rfq = RFQ(rfq_number="RFQ-2026-9001", p2p_request_id=pr.id, status="locked", terms_conditions="Prices firm.")
+    # Company terms come from Procurement → Settings (default text here), not from the RFQ.
+    rfq = RFQ(rfq_number="RFQ-2026-9001", p2p_request_id=pr.id, status="locked")
     db.add(rfq)
     db.flush()
     for tier, v in (("L1", v1), ("L2", v2)):
@@ -226,7 +227,7 @@ def test_create_po_vendor_choice_and_word_document(client, db):
     assert r.status_code == 200, r.text
     po = r.json()
     assert po["vendor_name"] == "Fast Seals" and po["vendor_id"] == v2.id
-    assert "Ex-works Pune" in (po["terms_conditions"] or "") and "Prices firm." in (po["terms_conditions"] or "")
+    assert "Ex-works Pune" in (po["terms_conditions"] or "") and "quote the Purchase Order" in (po["terms_conditions"] or "")
 
     r = client.patch(f"{url}/{po['id']}", json={"items": [{"id": po["items"][0]["id"], "unit_price": 50, "tax_rate": 18,
                                                          "specification": "Size: 20 mm\nNBR 70"}]}, headers=_h(buyer))

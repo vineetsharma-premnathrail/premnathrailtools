@@ -59,12 +59,6 @@ const config: TourConfig = {
       validExample: '4 weeks',
     },
     {
-      target: 'rfq-late-delivery-clause',
-      title: 'Late Delivery Clause',
-      purpose: 'The penalty or clause agreed with L1 Vendor in case of a late delivery.',
-      required: true,
-    },
-    {
       target: 'rfq-new-save',
       title: 'Save RFQ',
       purpose: 'Validates every required field, creates the RFQ, uploads all attached quotations, and locks it.',

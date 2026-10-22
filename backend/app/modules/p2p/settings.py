@@ -44,8 +44,8 @@ DEFAULT_COMPANY_TERMS = [
 
 _SPECS = [
     SettingSpec("company_terms", "terms", "Standard terms & conditions", "longtext", "\n".join(DEFAULT_COMPANY_TERMS),
-                help="Write one clause per line. Copied onto every new RFQ and PO next to the vendor's own terms, "
-                     "where it can still be adjusted for that order."),
+                help="Write one clause per line. Printed on every new PO before the vendor's own terms. "
+                     "Not entered on the RFQ."),
     # SAP OMR6 tolerance keys — read by accounts/services/po_match.py.
     SettingSpec("invoice_qty_tolerance_pct", "invoice_match", "Quantity tolerance (%)", "decimal", 2.0, min=0, max=50,
                 help="A bill line may invoice up to this % more than was received (and not yet invoiced) on its PO line "

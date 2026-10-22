@@ -38,7 +38,6 @@ class RFQUpdate(BaseModel):
     delivery_lead_time: str | None = None
     late_delivery_clause: str | None = None
     requires_technical_evaluation: bool | None = None
-    terms_conditions: str | None = None
 
 
 class VendorQuotationCreate(BaseModel):

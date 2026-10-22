@@ -54,14 +54,11 @@ export default function NewRfqPage() {
   })
   const [vendorMaster, setVendorMaster] = useState<ProcurementVendor[]>([])
   const [suggestions, setSuggestions] = useState<{ vendor_id: number; vendor_name: string; items: string[]; total: number | null }[]>([])
-  // Company standard terms (Procurement → Settings), editable for this RFQ.
-  const [termsConditions, setTermsConditions] = useState('')
 
   const [singleQuotationReason, setSingleQuotationReason] = useState('')
   const [comments, setComments] = useState('')
   const [paymentTerms, setPaymentTerms] = useState('')
   const [deliveryLeadTime, setDeliveryLeadTime] = useState('')
-  const [lateDeliveryClause, setLateDeliveryClause] = useState('')
   const [requiresTechnicalEvaluation] = useState(false)
 
   const [busy, setBusy] = useState(false)
@@ -73,7 +70,6 @@ export default function NewRfqPage() {
     if (!isAuthorized) return
     p2pApi.list({ status: 'approved', limit: 500 }).then(setPrs).catch(() => {})
     vendorsApi.list({ status: 'active' }).then(setVendorMaster).catch(() => {})
-    p2pApi.getSettings().then((s) => setTermsConditions(String(s.values.company_terms || ''))).catch(() => {})
   }, [isAuthorized])
 
   // Vendors whose catalog lists this PR's items — cheapest total first — to help pick L1..L4.
@@ -140,7 +136,6 @@ export default function NewRfqPage() {
     }
     if (!paymentTerms.trim()) return 'Payment terms are required.'
     if (!deliveryLeadTime.trim()) return 'Delivery lead time is required.'
-    if (!lateDeliveryClause.trim()) return 'Late delivery clause is required.'
     return null
   }
 
@@ -165,8 +160,6 @@ export default function NewRfqPage() {
         comments: onlyL1 ? comments.trim() : undefined,
         payment_terms: paymentTerms.trim(),
         delivery_lead_time: deliveryLeadTime.trim(),
-        late_delivery_clause: lateDeliveryClause.trim(),
-        terms_conditions: termsConditions.trim() || undefined,
       })
       await rfqApi.submit(rfq.id)
       router.push(recordPath('/dashboard/p2p/rfq', rfq))
@@ -176,8 +169,6 @@ export default function NewRfqPage() {
       setBusy(false)
     }
   }
-
-  const l1Master = vendorMaster.find((m) => m.id === vendors.L1.vendorId)
 
   return (
     <FormPage nav={<P2PNav />} icon="send" title="Raise RFQ" subtitle="Attach the vendor quotations (L1 = lowest) against an approved requisition and set the L1 vendor's commercial terms."
@@ -295,18 +286,7 @@ export default function NewRfqPage() {
             <input data-tour="rfq-payment-terms" style={sheetInput} value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="e.g. 50% advance, 50% on delivery" />
             <label style={{ ...sheetLabel, marginTop: 14 }}>Delivery Lead Time <Req /></label>
             <input data-tour="rfq-delivery-lead-time" style={sheetInput} value={deliveryLeadTime} onChange={(e) => setDeliveryLeadTime(e.target.value)} placeholder="e.g. 4 weeks" />
-            <label style={{ ...sheetLabel, marginTop: 14 }}>Late Delivery Clause <Req /></label>
-            <textarea data-tour="rfq-late-delivery-clause" style={textArea} value={lateDeliveryClause} onChange={(e) => setLateDeliveryClause(e.target.value)} placeholder="Late delivery clause" />
-          </SheetSection>
-          <SheetSection icon="doc" title="Terms & Conditions (company)">
-            <div data-tour="rfq-terms">
-              <textarea style={{ ...sheetInput, minHeight: 90, resize: 'vertical' }} value={termsConditions} onChange={(e) => setTermsConditions(e.target.value)}
-                placeholder="Company standard terms — set the default in Procurement → Settings" />
-              {l1Master?.terms_conditions ? (
-                <p style={{ ...sheetHint, whiteSpace: 'pre-wrap' }}><b>{l1Master.name}&apos;s own terms:</b> {l1Master.terms_conditions}</p>
-              ) : null}
-              <p style={sheetHint}>Both go onto the PO: the company terms first, then the vendor&apos;s.</p>
-            </div>
+            <p style={sheetHint}>Late delivery and other legal clauses come from the company terms (Procurement → Settings) and print on the PO.</p>
           </SheetSection>
         </>}
       />

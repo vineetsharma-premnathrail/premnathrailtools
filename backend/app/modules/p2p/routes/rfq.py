@@ -173,8 +173,6 @@ async def create_rfq(
         status="draft",
         created_by_id=user.id,
         requires_technical_evaluation=payload.requires_technical_evaluation,
-        # Company standard terms from Procurement → Settings; editable on this RFQ.
-        terms_conditions=(get_p2p_setting(db, "company_terms") or None),
     )
     db.add(rfq)
     db.flush()
@@ -414,8 +412,7 @@ async def submit_rfq(
         raise HTTPException(status_code=400, detail="Payment terms are required")
     if not rfq.delivery_lead_time:
         raise HTTPException(status_code=400, detail="Delivery lead time is required")
-    if not rfq.late_delivery_clause:
-        raise HTTPException(status_code=400, detail="Late delivery clause is required")
+    # Late delivery is covered by the company terms (Procurement → Settings), not entered per RFQ.
 
     pr = db.query(P2PRequest).filter(P2PRequest.id == rfq.p2p_request_id).first()
     if not pr:
@@ -1027,10 +1024,13 @@ async def submit_po_draft(
 
 
 def _po_terms(db: Session, rfq: RFQ, vendor_id: int | None) -> str | None:
-    """Terms printed on the PO: the RFQ's company terms, then the vendor's own terms."""
+    """Terms printed on the PO: the company's standard terms (Procurement → Settings,
+    not editable per RFQ), then the vendor's own terms. Older RFQs that carried a
+    per-RFQ copy keep it."""
     parts = []
-    if rfq.terms_conditions:
-        parts.append(f"Company terms:\n{rfq.terms_conditions.strip()}")
+    company = rfq.terms_conditions or get_p2p_setting(db, "company_terms")
+    if company:
+        parts.append(f"Company terms:\n{company.strip()}")
     vendor = db.get(Vendor, vendor_id) if vendor_id else None
     if vendor and vendor.terms_conditions:
         parts.append(f"Vendor terms ({vendor.name}):\n{vendor.terms_conditions.strip()}")

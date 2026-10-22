@@ -25,12 +25,6 @@ const config: TourConfig = {
       why: 'Sales can’t quote the customer until R&D confirms the technical offer — a late R&D answer delays the whole order.',
     },
     {
-      target: 'rnd-req-new-offer',
-      title: 'New Technical Offer',
-      purpose: 'Pick the TOR it answers and the offer opens as a Word template on the letterhead — customer, subject and scope already filled in. Write the rest in Word.',
-      why: 'One Technical Offer per TOR keeps the number traceable from CRM’s request to the quotation. Shown to R&D heads and members the head allowed in R&D › Settings.',
-    },
-    {
       target: 'rnd-req-search',
       title: 'Search',
       purpose: 'Find by TOR number, inquiry / tender ID, product or customer name.',

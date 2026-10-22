@@ -10,10 +10,7 @@ import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
 import { rndRequestBadge } from '@/components/crm/RndRequestBlock'
 import { extractErrorMessages } from '@/lib/validation'
-import { primaryBtnStyle } from '@/components/shared/ui'
-import NewTechnicalOfferDialog from '@/components/rnd/NewTechnicalOfferDialog'
 import { recordPath } from '@/lib/recordRef'
-import { useCan } from '@/lib/permissions'
 
 const PRIORITY_HEX: Record<string, string> = { Urgent: '#DC2626', High: '#EA580C', Medium: '#2563EB', Low: '#78716c' }
 
@@ -26,7 +23,6 @@ const cellStyle: React.CSSProperties = { padding: '10px 14px', fontSize: 13, col
 // Inbox of CRM requirements sent to R&D via "Send Technical Requirement to R&D".
 export default function RndRequirementsPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('rnd')
-  const { canFeature } = useCan()
   const router = useRouter()
 
   const [rows, setRows] = useState<RndRequirement[]>([])
@@ -36,8 +32,6 @@ export default function RndRequirementsPage() {
   const [source, setSource] = useState('')
   const [mine, setMine] = useState(false)
   const [myTasks, setMyTasks] = useState<RndTask[]>([])
-  const [canCreateOffer, setCanCreateOffer] = useState(false)
-  const [newOffer, setNewOffer] = useState(false)
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -54,7 +48,6 @@ export default function RndRequirementsPage() {
   useEffect(() => {
     if (!isAuthorized) return
     rndApi.myTasks().then(setMyTasks).catch(() => setMyTasks([]))
-    rndApi.getSettings().then((st) => setCanCreateOffer(!!st.can_create_technical_offer)).catch(() => setCanCreateOffer(false))
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
@@ -79,11 +72,7 @@ export default function RndRequirementsPage() {
           {pendingResend > 0 && <> <strong style={{ color: '#EA580C' }}>{pendingResend}</strong> edited in CRM since last sent.</>}
         </p>
         </div>
-        {canCreateOffer && canFeature('rnd', 'requirements', 'technical_offers', 'create') && (
-          <button data-tour="rnd-req-new-offer" type="button" onClick={() => setNewOffer(true)} style={primaryBtnStyle}>+ New Technical Offer</button>
-        )}
       </div>
-      <NewTechnicalOfferDialog open={newOffer} onClose={() => setNewOffer(false)} />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>

@@ -92,11 +92,11 @@ class P2PPurchaseOrderItemPricingPayload(BaseModel):
 class P2PPurchaseOrderDraftUpdatePayload(BaseModel):
     """Edits to a still-draft PO from the RFQ screen — delivery details plus
     per-line prices, which must all be filled before the PO can be sent for
-    approval (see rfq.submit_po_draft)."""
+    approval (see rfq.submit_po_draft). Terms & conditions are not editable:
+    they come from Procurement → Settings + the vendor master."""
 
     expected_delivery: date | None = None
     delivery_terms: str | None = None
-    terms_conditions: str | None = None
     items: list[P2PPurchaseOrderItemPricingPayload] | None = None
 
 

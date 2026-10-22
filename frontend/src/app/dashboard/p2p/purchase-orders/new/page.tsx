@@ -58,7 +58,6 @@ export default function CreatePurchaseOrderPage() {
   const [prices, setPrices] = useState<Record<number, { unitPrice: string; taxRate: string }>>({})
   const [expected, setExpected] = useState('')
   const [deliveryTerms, setDeliveryTerms] = useState('')
-  const [terms, setTerms] = useState('') // loaded from the draft and sent back unchanged — not edited here
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -83,7 +82,6 @@ export default function CreatePurchaseOrderPage() {
         setLineDates(Object.fromEntries((draft.items as PoLine[]).map((i) => [i.id, i.delivery_date || ''])))
         setExpected(draft.expected_delivery || '')
         setDeliveryTerms(draft.delivery_terms || '')
-        setTerms(draft.terms_conditions || '')
         // Prices are proposed by the server when the draft is made (awarded quote, else
         // the vendor + Item Master info record) — never matched by item name here.
         setPrices(Object.fromEntries(draft.items.map((i) => [i.id, {
@@ -119,7 +117,6 @@ export default function CreatePurchaseOrderPage() {
   const draftPayload = () => ({
     expected_delivery: expected || null,
     delivery_terms: deliveryTerms.trim() || null,
-    terms_conditions: terms.trim() || null,
     items: (po?.items || []).map((i) => ({
       id: i.id,
       unit_price: prices[i.id]?.unitPrice !== '' ? Number(prices[i.id]?.unitPrice) : null,

@@ -83,7 +83,6 @@ export default function RfqDetailPage() {
 
   const [paymentTerms, setPaymentTerms] = useState('')
   const [deliveryLeadTime, setDeliveryLeadTime] = useState('')
-  const [lateDeliveryClause, setLateDeliveryClause] = useState('')
   const [singleQuotationReason, setSingleQuotationReason] = useState('')
   const [comments, setComments] = useState('')
 
@@ -102,7 +101,6 @@ export default function RfqDetailPage() {
       setRfq(data)
       setPaymentTerms(data.payment_terms || '')
       setDeliveryLeadTime(data.delivery_lead_time || '')
-      setLateDeliveryClause(data.late_delivery_clause || '')
       setSingleQuotationReason(data.single_quotation_reason || '')
       setComments(data.comments || '')
       // The PO always goes to the L1 vendor.
@@ -148,7 +146,6 @@ export default function RfqDetailPage() {
   const openAdminEdit = () => {
     setPaymentTerms(rfq.payment_terms || '')
     setDeliveryLeadTime(rfq.delivery_lead_time || '')
-    setLateDeliveryClause(rfq.late_delivery_clause || '')
     setSingleQuotationReason(rfq.single_quotation_reason || '')
     setComments(rfq.comments || '')
     setEditError('')
@@ -162,7 +159,6 @@ export default function RfqDetailPage() {
       await rfqApi.update(rfq.id, {
         payment_terms: paymentTerms.trim() || undefined,
         delivery_lead_time: deliveryLeadTime.trim() || undefined,
-        late_delivery_clause: lateDeliveryClause.trim() || undefined,
         single_quotation_reason: singleQuotationReason.trim() || undefined,
         comments: comments.trim() || undefined,
       })
@@ -320,8 +316,6 @@ export default function RfqDetailPage() {
                   <input data-tour="rfq-edit-delivery-lead-time" style={sheetInput} value={deliveryLeadTime} onChange={(e) => setDeliveryLeadTime(e.target.value)} />
                 </div>
               </div>
-              <label style={{ ...sheetLabel, marginTop: 14 }}>Late Delivery Clause</label>
-              <textarea data-tour="rfq-edit-late-delivery-clause" style={textArea} value={lateDeliveryClause} onChange={(e) => setLateDeliveryClause(e.target.value)} />
             </SheetSection>
             {rfq.is_single_quotation && (
               <SheetSection icon="alert" title="Single Quotation" color="#d97706">
@@ -350,9 +344,12 @@ export default function RfqDetailPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 14 }}>
               <InfoRow label="Payment Terms" value={rfq.payment_terms || '—'} />
               <InfoRow label="Delivery Lead Time" value={rfq.delivery_lead_time || '—'} />
-              <div style={{ gridColumn: '1 / -1' }}>
-                <InfoRow label="Late Delivery Clause" value={rfq.late_delivery_clause || '—'} />
-              </div>
+              {/* Older RFQs entered a clause by hand — still shown; new ones use the company terms. */}
+              {rfq.late_delivery_clause && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <InfoRow label="Late Delivery Clause" value={rfq.late_delivery_clause} />
+                </div>
+              )}
             </div>
           </div>
       </>
