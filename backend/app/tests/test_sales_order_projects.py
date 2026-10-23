@@ -164,7 +164,7 @@ def test_list_detail_patch_lookup_permissions(client, db):
     assert client.get(f"{BASE}/order-projects", headers=hdr(viewer)).status_code == 403
     assert client.get(f"{BASE}/order-projects/{p.id}", headers=hdr(viewer)).status_code == 403
     # View-only on the tab: can read, can't edit.
-    op_viewer = make_user(db, "opv@premnathrail.com", granular_permissions=["sales:order_projects:view"])
+    op_viewer = make_user(db, "opv@premnathrail.com", granular_permissions=["projects:order_projects:view"])
     assert client.get(f"{BASE}/order-projects", headers=hdr(op_viewer)).status_code == 200
     r = client.patch(f"{BASE}/order-projects/{p.id}", json={"status": "on_hold"}, headers=hdr(op_viewer))
     assert r.status_code == 403

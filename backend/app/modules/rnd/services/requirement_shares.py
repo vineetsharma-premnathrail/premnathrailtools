@@ -47,7 +47,7 @@ def ensure_can_view(user: User, department: str) -> None:
     if not can_view_tab(user, department, TAB):
         raise HTTPException(
             status_code=403,
-            detail=f"You don't have 'view' permission on {label(department)} › Requirements ({department}:{TAB}). "
+            detail=f"You don't have 'View' permission on {label(department)} › Requirements. "
                    "Ask an admin to add it to one of your roles (Organization › Role & Permissions — the Permission Matrix).",
         )
 

@@ -34,7 +34,7 @@ def test_inspection_patch_needs_edit_on_its_tab(client, db):
                                                                          "quality:final_inspection:edit"])
     insp = _inspection(db, viewer.id)
     r = client.patch(f"{Q}/inspections/{insp.id}", json={"remarks": "x"}, headers=hdr(viewer))
-    assert r.status_code == 403 and "quality:final_inspection:edit" in r.json()["detail"]
+    assert r.status_code == 403 and "'Edit' permission on Quality › RRV Final Inspections" in r.json()["detail"]
     r = client.patch(f"{Q}/inspections/{insp.id}", json={"remarks": "ok"}, headers=hdr(editor))
     assert r.status_code == 200, r.text
 
@@ -60,7 +60,7 @@ def test_inspection_create_needs_create_on_its_tab(client, db):
     viewer = make_user(db, "idor.q.viewer2@x.com", granular_permissions=["quality:final_inspection:view"])
     r = client.post(f"{Q}/inspections", json={"inspection_type": "final", "item_name": "RRV",
                                              "inspection_date": str(date.today())}, headers=hdr(viewer))
-    assert r.status_code == 403 and "quality:final_inspection:create" in r.json()["detail"]
+    assert r.status_code == 403 and "'Create' permission on Quality › RRV Final Inspections" in r.json()["detail"]
 
 
 def test_inspection_patch_outside_scope_403(client, db):
@@ -84,10 +84,10 @@ def test_standard_patch_and_create_need_tab_actions(client, db):
     db.add(std)
     db.commit()
     r = client.patch(f"{Q}/standards/{std.id}", json={"title": "Changed"}, headers=hdr(viewer))
-    assert r.status_code == 403 and "quality:standards:edit" in r.json()["detail"]
+    assert r.status_code == 403 and "'Edit' permission on Quality › Standards" in r.json()["detail"]
     r = client.post(f"{Q}/standards", json={"standard_code": "IDOR-STD-2", "title": "New", "status": "active"},
                     headers=hdr(viewer))
-    assert r.status_code == 403 and "quality:standards:create" in r.json()["detail"]
+    assert r.status_code == 403 and "'Create' permission on Quality › Standards" in r.json()["detail"]
     editor = make_user(db, "idor.q.std2@x.com", granular_permissions=["quality:standards:view", "quality:standards:edit"])
     r = client.patch(f"{Q}/standards/{std.id}", json={"title": "Changed"}, headers=hdr(editor))
     assert r.status_code == 200, r.text
@@ -104,7 +104,7 @@ def test_record_pdf_needs_view_on_the_records_tab(client, db):
     ncr_id = r.json()["id"]
     dash_only = make_user(db, "idor.q.dash@x.com", granular_permissions=["quality:dashboard:view"])
     r = client.get(f"{Q}/records/ncr/{ncr_id}/deviation-approval.pdf", headers=hdr(dash_only))
-    assert r.status_code == 403 and "quality:ncr:view" in r.json()["detail"]
+    assert r.status_code == 403 and "'View' permission on Quality › Non-Conformance (NCR)" in r.json()["detail"]
 
 
 # ── Main: user documents bound to the user in the URL ───────────────────

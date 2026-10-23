@@ -204,8 +204,8 @@ export default function SalesOrderDetailPage() {
         <div data-tour="sales-detail-order-project" style={{ marginBottom: 12 }}>
           <OrderProjectChip
             opNumber={`Order Project: ${so.order_project.op_number}`}
-            onClick={can('sales', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/sales/order-projects', so.order_project)) : undefined}
-            title={can('sales', 'order_projects', 'view') ? 'Open the execution project of this order' : 'Execution project of this order'}
+            onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', so.order_project)) : undefined}
+            title={can('projects', 'order_projects', 'view') ? 'Open the execution project of this order' : 'Execution project of this order'}
           />
         </div>
       )}

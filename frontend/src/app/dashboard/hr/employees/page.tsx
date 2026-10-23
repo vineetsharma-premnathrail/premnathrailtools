@@ -16,6 +16,7 @@ import {
   EMPLOYMENT_STATUS_LABELS, EMPLOYMENT_STATUS_HEX, EMPLOYMENT_TYPE_LABELS, WORKER_TYPE_LABELS, RECORD_STATUS_LABELS, RECORD_STATUS_HEX,
 } from '@/components/hr/masters/masterUi'
 import { recordPath } from '@/lib/recordRef'
+import { todayIso } from '@/components/hr/admin/adminUi'
 
 const PAGE_SIZE = 50
 
@@ -116,7 +117,7 @@ export default function HrEmployeesPage() {
   const desigOptions = useMemo(() => [{ value: '', label: 'All designations' }, ...(lookups?.designations || []).map((d) => ({ value: String(d.id), label: d.is_active ? d.name : `${d.name} (inactive)` }))], [lookups])
 
   const items: HrEmployeeListItem[] = data?.items || []
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayIso()
   const total = data?.total || 0
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const from = total ? (page - 1) * PAGE_SIZE + 1 : 0

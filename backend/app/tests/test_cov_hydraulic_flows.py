@@ -178,7 +178,7 @@ def test_admin_submitter_may_approve_and_matrix_gates_approve(client, db, h):
     attach_diagram(db, c2["id"])
     client.post(f"{API}/circuits/{c2['id']}/submit", headers=h)
     r = client.post(f"{API}/circuits/{c2['id']}/approve", json={}, headers=auth(editor))
-    assert r.status_code == 403 and "'approve' permission" in r.json()["detail"]
+    assert r.status_code == 403 and "'Approve' permission" in r.json()["detail"]
 
 
 def test_circuit_revision_letters_skip_deleted_drafts(client, db, h):

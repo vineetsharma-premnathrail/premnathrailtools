@@ -25,9 +25,10 @@ export default function ProductApplicationsPage() {
   const [sheetError, setSheetError] = useState<string | string[]>('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | string[]>('')
+  const [loaded, setLoaded] = useState(false)
 
   const load = useCallback(() => {
-    productsApi.listApplications({ include_inactive: true }).then(setRows).catch((e) => setError(extractErrorMessages(e, 'Failed to load applications.')))
+    productsApi.listApplications({ include_inactive: true }).then(setRows).catch((e) => setError(extractErrorMessages(e, 'Failed to load applications.'))).finally(() => setLoaded(true))
   }, [])
   useEffect(() => { if (isAuthorized) load() }, [isAuthorized, load])
 
@@ -107,7 +108,7 @@ export default function ProductApplicationsPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead><tr>{['Code', 'Name', 'Description', 'Products', 'Status', ''].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>No applications yet.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: TEXT.muted }}>{loaded ? 'No applications yet.' : 'Loading…'}</td></tr>}
             {rows.map((a) => {
               return (
                 <tr key={a.id} style={{ opacity: a.is_active ? 1 : 0.55 }}>

@@ -146,3 +146,36 @@ def test_return_of_rejected_goods_is_recorded_without_stock(client, db):
                                   "items": [{"grn_item_id": grn["items"][0]["id"], "source": "rejected", "quantity": 1}]},
                        headers=auth_header(buyer))
     assert more.status_code == 422
+
+
+def test_store_keeper_of_another_plant_cannot_return_or_inspect(client, db):
+    """GRN inspection and Return to Vendor apply the same Store plant check as
+    opening / creating a GRN (the GRN data scope — receiving store's plant —
+    already refuses this; the explicit check keeps the routes consistent)."""
+    from app.modules.main.models.user import User
+    from app.modules.organization.models.branch import Branch
+
+    item, loc, buyer, po, grn = _received(client, db, "RTVP")
+    p1, p2 = Branch(name="Plant One", code="PL1"), Branch(name="Plant Two", code="PL2")
+    db.add_all([p1, p2])
+    db.flush()
+    loc.branch_id = p1.id
+    keeper = User(email="keeper.pl2@premnathrail.com", name="keeper.pl2", role="user", is_active=True,
+                  assigned_apps=["store"], branch_id=p2.id, data_access_scopes={"store": "plant"})
+    db.add(keeper)
+    db.commit()
+    line = grn["items"][0]
+    body = {"goods_receipt_id": grn["id"], "reason": "damaged",
+            "items": [{"grn_item_id": line["id"], "source": "accepted", "quantity": 1}]}
+    r = client.post(RTV, json=body, headers=auth_header(keeper))
+    assert r.status_code == 403 and "outside your" in r.json()["detail"], r.text
+    assert _on_hand(db, item, loc) == 5
+    assert client.get(RTV, headers=auth_header(keeper)).json() == []
+
+    # The buyer (Purchase desk, cross-plant) returns 2; the replacement GRN can't be inspected by plant 2.
+    assert client.post(RTV, json={**body, "items": [{**body["items"][0], "quantity": 2}]}, headers=auth_header(buyer)).status_code == 201
+    po_now = client.get(f"/api/v1/p2p/purchase-orders/{po['id']}", headers=auth_header(buyer)).json()
+    replacement = _grn(client, buyer, po_now, loc, 2).json()
+    r = _inspect_all(client, keeper, replacement)
+    assert r.status_code == 403 and "outside your" in r.json()["detail"], r.text
+    assert _inspect_all(client, buyer, replacement).status_code == 200

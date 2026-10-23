@@ -61,7 +61,7 @@ def _response(db: Session, project: OrderProject, so: SalesOrder, user: User, *,
     resp.vehicles_total = sum(1 for el in live if el.kind == "vehicle")
     resp.vehicles_delivered = sum(1 for el in live if el.kind == "vehicle" and el.status == "delivered")
     resp.lots_total = sum(1 for el in live if el.kind == "lot")
-    edit = can_perform(user, "sales", "order_projects", "edit")
+    edit = can_perform(user, "projects", "order_projects", "edit")
     resp.can = {"edit": edit, "backfill": is_admin_user(user)}
     if not full:
         return resp
@@ -97,7 +97,7 @@ async def list_order_projects(
     limit: int = Query(500, ge=1, le=2000),
     db: Session = Depends(get_db),
     _app: User = _SALES,
-    user: User = Depends(require_tab_access("sales", "order_projects")),
+    user: User = Depends(require_tab_access("projects", "order_projects")),
 ):
     query = _scoped_query(db, user).options(selectinload(OrderProject.elements))
     if status_filter:
@@ -168,7 +168,7 @@ async def lookup_order_projects(
 async def backfill_order_projects(
     db: Session = Depends(get_db),
     _app: User = _SALES,
-    user: User = Depends(require_tab_action("sales", "order_projects", "edit")),
+    user: User = Depends(require_tab_action("projects", "order_projects", "edit")),
 ):
     if not is_admin_user(user):
         raise HTTPException(status_code=403, detail="Only an admin can create projects for already-confirmed orders — "
@@ -183,7 +183,7 @@ async def get_order_project(
     project_id: int,
     db: Session = Depends(get_db),
     _app: User = _SALES,
-    user: User = Depends(require_tab_access("sales", "order_projects")),
+    user: User = Depends(require_tab_access("projects", "order_projects")),
 ):
     project, so = _load(db, project_id, user)
     ops.sync_elements(db, project, so)
@@ -198,7 +198,7 @@ async def update_order_project(
     payload: OrderProjectUpdate,
     db: Session = Depends(get_db),
     _app: User = _SALES,
-    user: User = Depends(require_tab_action("sales", "order_projects", "edit")),
+    user: User = Depends(require_tab_action("projects", "order_projects", "edit")),
 ):
     project, so = _load(db, project_id, user)
     data = payload.model_dump(exclude_unset=True)

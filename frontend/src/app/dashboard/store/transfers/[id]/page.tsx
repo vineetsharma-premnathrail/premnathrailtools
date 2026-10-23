@@ -6,7 +6,7 @@ import { useRequireApp } from '@/hooks/useAuth'
 import { storeApi } from '@/lib/api'
 import { StoreStockTransfer } from '@/types'
 import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
-import { formatDateTime } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { Row, InfoRow, primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
@@ -164,7 +164,7 @@ export default function StoreStockTransferDetailPage() {
               <Row>
                 <InfoRow label="From Store" value={transfer.from_location_name || '—'} />
                 <InfoRow label="To Store" value={transfer.to_location_name || '—'} />
-                <InfoRow label="Transfer Date" value={transfer.transfer_date} />
+                <InfoRow label="Transfer Date" value={formatDate(transfer.transfer_date)} />
               </Row>
               <Row>
                 <InfoRow label="Reason" value={transfer.reason || '—'} />

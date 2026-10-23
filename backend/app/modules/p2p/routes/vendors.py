@@ -226,9 +226,10 @@ def vendors_for_item(store_item_id: int = Query(...), db: Session = Depends(get_
         VendorCatalogItem.store_item_id == store_item_id,
     ).all()
     rows.sort(key=lambda r: (r[0].unit_price is None, r[0].unit_price or 0))
-    return [{"vendor_id": v.id, "vendor_name": v.name, "item_name": c.item_name, "part_code": c.part_code, "make": c.make,
-             "unit": c.unit, "unit_price": c.unit_price, "currency": c.currency, "lead_time_days": c.lead_time_days,
-             "store_item_id": c.store_item_id, "min_order_qty": c.min_order_qty} for c, v in rows]
+    return mask_for(_user, "vendors", [
+        {"vendor_id": v.id, "vendor_name": v.name, "item_name": c.item_name, "part_code": c.part_code, "make": c.make,
+         "unit": c.unit, "unit_price": c.unit_price, "currency": c.currency, "lead_time_days": c.lead_time_days,
+         "store_item_id": c.store_item_id, "min_order_qty": c.min_order_qty} for c, v in rows])
 
 
 @router.post("", status_code=201)

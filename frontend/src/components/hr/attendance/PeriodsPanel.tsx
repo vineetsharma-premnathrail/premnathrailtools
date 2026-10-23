@@ -25,7 +25,8 @@ export default function PeriodsPanel() {
   const canExport = canFeature('hr', 'attendance', 'periods', 'export')
   const isPartner = (!!(user as { is_partner?: boolean } | null)?.is_partner || user?.role === 'admin') && canFeature('hr', 'attendance', 'periods', 'cancel')
   const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
+  // Default = last month (the one usually locked) — in January that's December of last year.
+  const [year, setYear] = useState(now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() === 0 ? 12 : now.getMonth())
   const [branchId, setBranchId] = useState('')
   const [plants, setPlants] = useState<{ id: number; name: string }[]>([])

@@ -22,8 +22,10 @@ from app.modules.p2p.models.vendor_return import (
     P2P_RETURN_REASONS, P2P_RETURN_SOURCES, P2PVendorReturn, P2PVendorReturnItem,
 )
 from app.modules.p2p.routes.goods_receipts import (
-    _DECIDED_LINE_STATUSES, _get_grn_or_404, _grn_tab, _po_rate, _sync_po_and_pr_status, _write_audit, net_accepted,
+    _DECIDED_LINE_STATUSES, _get_grn_or_404, _grn_store_scope, _grn_tab, _po_rate, _sync_po_and_pr_status, _write_audit,
+    net_accepted,
 )
+from app.modules.store.services.plant_access import ensure_location_allowed
 from app.modules.p2p.schemas.vendor_return import P2PVendorReturnCreate, P2PVendorReturnResponse
 from app.modules.p2p.service import generate_rtv_number
 from app.modules.store.models.item import StoreItem
@@ -111,6 +113,14 @@ def _raise_debit_note(db: Session, rtv: P2PVendorReturn, po: P2PPurchaseOrder, u
     rtv.debit_note_message = f"Debit note {note.note_number} raised against invoice {posted[0].invoice_number} — pending; Finance reviews and posts it."
 
 
+def _ensure_grn_plant(db: Session, user: User, grn: P2PGoodsReceipt) -> None:
+    """Store keepers work only on their own plant's receipts (same rule as
+    opening a GRN) — a return takes the goods out of that store's stock."""
+    scope = _grn_store_scope(db, user)
+    if scope is not None:
+        ensure_location_allowed(db, user, grn.store_location_id, allowed=scope)
+
+
 @router.get("", response_model=list[P2PVendorReturnResponse])
 async def list_vendor_returns(
     goods_receipt_id: int | None = Query(None),
@@ -129,6 +139,7 @@ async def list_vendor_returns(
         grn = db.get(P2PGoodsReceipt, rtv.goods_receipt_id)
         try:
             ensure_in_scope(db, user, grn)
+            _ensure_grn_plant(db, user, grn)
         except HTTPException:
             continue
         rows.append(_to_response(db, rtv))
@@ -140,7 +151,7 @@ async def get_vendor_return(rtv_id: int, db: Session = Depends(get_db), user: Us
     rtv = db.query(P2PVendorReturn).options(selectinload(P2PVendorReturn.items)).filter(P2PVendorReturn.id == rtv_id).first()
     if not rtv:
         raise HTTPException(status_code=404, detail=f"Return to Vendor #{rtv_id} not found.")
-    _get_grn_or_404(db, rtv.goods_receipt_id, user=user)
+    _ensure_grn_plant(db, user, _get_grn_or_404(db, rtv.goods_receipt_id, user=user))
     return _to_response(db, rtv)
 
 
@@ -155,6 +166,7 @@ async def create_vendor_return(payload: P2PVendorReturnCreate, db: Session = Dep
     if not payload.items:
         raise HTTPException(status_code=422, detail="Enter the quantity to return on at least one line.")
     grn = _get_grn_or_404(db, payload.goods_receipt_id, for_update=True, user=user)
+    _ensure_grn_plant(db, user, grn)
     if grn.status == "reversed":
         raise HTTPException(status_code=409, detail=f"GRN {grn.grn_number} was reversed — nothing on it can be returned.")
     po = db.get(P2PPurchaseOrder, grn.purchase_order_id)

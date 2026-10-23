@@ -58,7 +58,7 @@ def _has_side(user: User, side: str) -> bool:
 
 def _record(db: Session, source: str, record_id: int, user: User, side: str):
     if not _has_side(user, side):
-        where = "CRM › Inquiries & Tenders (crm:inquiries_tenders:view)" if side == "crm" else f"{SIDE_NAMES[side]} › Requirements"
+        where = "CRM › Inquiries & Tenders" if side == "crm" else f"{SIDE_NAMES[side]} › Requirements"
         raise HTTPException(status_code=403, detail=f"You don't have access to {where}, so you can't open this discussion — ask an admin.")
     model = Inquiry if source == "inquiry" else Tender
     record = db.query(model).filter(model.id == record_id, model.is_deleted == False).first()  # noqa: E712

@@ -13,6 +13,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.grc import AccessReview, AccessReviewLine, AccessValidity, SodMitigation
 from app.modules.main.models.role import Role
 from app.modules.main.models.user import User
+from app.core.permission_words import words
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ def set_validity(db: Session, target: User, actor: User, kind: str, role_id: int
         permission = None
     else:
         if not permission or permission not in (target.granular_permissions or []):
-            raise HTTPException(status_code=400, detail=f"'{permission}' isn't one of {target.name}'s extra grants — add the grant first, then set its validity dates.")
+            raise HTTPException(status_code=400, detail=f"'{words(permission)}' isn't one of {target.name}'s extra grants — add the grant first, then set its validity dates.")
         role_id = None
     if valid_from and valid_to and valid_to < valid_from:
         raise HTTPException(status_code=400, detail="'Valid to' is before 'Valid from' — pick an end date on or after the start date.")
@@ -118,7 +119,7 @@ def _label(db: Session, kind: str, role_id: int | None, permission: str | None) 
     if kind == "role":
         role = db.get(Role, role_id) if role_id else None
         return f"role '{role.name if role else role_id}'"
-    return f"extra grant '{permission}'"
+    return f"extra grant '{words(permission)}'"
 
 
 def _audit(db: Session, actor: User | None, target: User, action: str, summary: str, old=None, new=None) -> None:
@@ -187,7 +188,7 @@ def expire_access(db: Session) -> int:
 
 def _access_items(db: Session, u: User) -> list[tuple[str, int | None, str | None, str]]:
     items = [("role", r.id, None, f"Role: {r.name}") for r in (u.roles or []) if not r.is_default]
-    items += [("grant", None, g, f"Extra grant: {g}") for g in (u.granular_permissions or [])]
+    items += [("grant", None, g, f"Extra grant: {words(g)}") for g in (u.granular_permissions or [])]
     return items
 
 

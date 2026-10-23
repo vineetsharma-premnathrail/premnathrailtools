@@ -34,7 +34,7 @@ export default function DelegationsPage() {
   const [error, setError] = useState('')
 
   const load = useCallback(() => {
-    approvalsApi.listDelegations().then(setRows).catch((e) => setError(extractErrorMessages(e, 'Could not load delegations.').join(' ')))
+    approvalsApi.listDelegations().then((r) => { setRows(r); setError('') }).catch((e) => setError(extractErrorMessages(e, 'Could not load delegations.').join(' ')))
   }, [])
   useEffect(() => {
     if (!isAuthorized) return

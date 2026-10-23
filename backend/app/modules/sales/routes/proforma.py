@@ -102,8 +102,17 @@ async def lookup_proformas(so_id: int | None = None, customer_id: int | None = N
                            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """For Finance (recording a customer advance against a PI) and Sales: PIs of
     the orders the user can see."""
-    if not (can_perform(user, "sales", "orders", "view") or "accounts" in user.get_apps()):
-        raise HTTPException(status_code=403, detail="You need 'view' on Sales › Orders or access to Finance to list proforma invoices.")
+    # Finance = the Sales Invoices tab (same rule as the billing due list), not
+    # just any Finance tab; Sales also needs the Proforma feature and Prices,
+    # like every other proforma route.
+    finance = can_perform(user, "accounts", "sales_invoices", "view")
+    if not finance:
+        if not can_perform(user, "sales", "orders", "view"):
+            raise HTTPException(status_code=403, detail="Listing proforma invoices needs 'View' on Sales › Sales Orders or on "
+                                                        "Finance › Sales Invoices. "
+                                                        "Ask an admin to add it to one of your roles in Organization › Role & Permissions.")
+        ensure_feature_action(user, "sales", "orders", "proforma", "view")
+        _prices(user)
     q = db.query(SalesProformaInvoice, SalesOrder).join(SalesOrder, SalesOrder.id == SalesProformaInvoice.so_id).filter(
         SalesOrder.is_deleted == False)  # noqa: E712
     if so_id:
@@ -114,7 +123,6 @@ async def lookup_proformas(so_id: int | None = None, customer_id: int | None = N
         if status not in pf.STATUS_LABEL:
             raise HTTPException(status_code=422, detail=f"Unknown status '{status}' — use one of: {', '.join(pf.STATUS_LABEL)}.")
         q = q.filter(SalesProformaInvoice.status == status)
-    finance = "accounts" in user.get_apps()
     out = []
     for pi, so in q.order_by(SalesProformaInvoice.id.desc()).limit(200).all():
         if finance or in_scope(db, user, so):

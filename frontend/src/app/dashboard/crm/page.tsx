@@ -58,7 +58,7 @@ export default function CrmDashboardPage() {
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14, marginBottom: 20 }}>
             <StatCard tourId="dash-stat-organizations" label="Customer Organizations" value={data.total_organizations} color="#3b82f6" href="/dashboard/crm/organizations" />
-            <StatCard tourId="dash-stat-inquiries" label="Inquiries" value={data.total_inquiries} color="#FF7A45" href="/dashboard/crm/inquiries" />
+            <StatCard tourId="dash-stat-inquiries" label="Inquiries" value={data.total_inquiries} color="#FF7A45" href="/dashboard/crm/inquiries?type=inquiry" />
             <StatCard tourId="dash-stat-tenders" label="Tenders" value={data.total_tenders} color="#8b5cf6" href="/dashboard/crm/inquiries?type=tender" />
             <StatCard tourId="dash-stat-open-followups" label="Open Follow-ups" value={data.open_followups} color="#10b981" href="/dashboard/crm/followups?bucket=open" />
             <StatCard tourId="dash-stat-overdue-followups" label="Overdue Follow-ups" value={data.overdue_followups} color="#dc2626" href="/dashboard/crm/followups?bucket=overdue" />
@@ -78,7 +78,7 @@ export default function CrmDashboardPage() {
             <RecentlyViewed
               tourId="dash-recent-inquiries"
               title="Recently Viewed Inquiries"
-              viewAllHref="/dashboard/crm/inquiries"
+              viewAllHref="/dashboard/crm/inquiries?type=inquiry"
               visits={recent.inquiry}
               onOpen={openRecent}
               fallback={data.recent_inquiries.map((i) => ({ id: i.id, title: i.universal_id, sub: i.status, href: recordPath('/dashboard/crm/inquiries', i) }))}

@@ -40,6 +40,19 @@ def graph(monkeypatch):
     return state
 
 
+@pytest.fixture(autouse=True)
+def inquiry7(db):
+    """The inquiry the uploads are attached to — complete-upload refuses a
+    parent that doesn't exist (its data-scope check would be skipped)."""
+    from app.modules.crm.models.inquiry import Inquiry
+    from app.modules.crm.models.organization import Organization
+    org = Organization(name="Upload Org", org_type="Customer")
+    db.add(org)
+    db.flush()
+    db.add(Inquiry(id=7, universal_id="INQ-2026-0007", org_id=org.id, lead_source="Direct"))
+    db.commit()
+
+
 def make_user(db, email):
     user = User(email=email, name=email.split("@")[0], role="user", is_active=True, assigned_apps=["crm"])
     db.add(user)

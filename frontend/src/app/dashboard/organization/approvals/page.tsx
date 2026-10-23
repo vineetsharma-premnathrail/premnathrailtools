@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { approvalsApi, usersApi } from '@/lib/api'
@@ -39,14 +39,23 @@ export default function MyApprovalsPage() {
   const [open, setOpen] = useState<number | null>(null)
   const [showNew, setShowNew] = useState(false)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  // Only the latest request may fill the list — a slow answer for the tab
+  // just left must not land under the tab now shown.
+  const reqId = useRef(0)
 
   const load = useCallback(() => {
+    const id = ++reqId.current
+    const fail = (fallback: string) => (e: unknown) => { if (id === reqId.current) setError(extractErrorMessages(e, fallback).join(' ')) }
+    const done = () => { if (id === reqId.current) setLoading(false) }
     if (tab === 'delegations') {
-      approvalsApi.myDelegations().then(setDelegations).catch((e) => setError(extractErrorMessages(e, 'Could not load delegations.').join(' ')))
+      approvalsApi.myDelegations().then((r) => { if (id === reqId.current) { setDelegations(r); setError('') } })
+        .catch(fail('Could not load your delegations — reload the page; if it keeps failing, the server may be down.')).finally(done)
       return
     }
     const fn = tab === 'inbox' ? approvalsApi.inbox : tab === 'mine' ? approvalsApi.mine : approvalsApi.decided
-    fn().then(setRows).catch((e) => setError(extractErrorMessages(e, 'Could not load approvals.').join(' ')))
+    fn().then((r) => { if (id === reqId.current) { setRows(r); setError('') } })
+      .catch(fail('Could not load approvals — reload the page; if it keeps failing, the server may be down.')).finally(done)
   }, [tab])
 
   useEffect(() => { if (user) load() }, [user, load])
@@ -80,9 +89,9 @@ export default function MyApprovalsPage() {
       <h1 style={{ fontSize: 22, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>My Approvals</h1>
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {TABS.map(([k, l]) => (
-          <button key={k} type="button" onClick={() => { setTab(k); setOpen(null) }}
+          <button key={k} type="button" onClick={() => { if (k !== tab) { setTab(k); setOpen(null); setRows([]); setLoading(true) } }}
             style={{ ...secondaryBtnStyle, ...(tab === k ? { borderColor: '#FF6A2A', color: '#FF6A2A' } : {}) }}>
-            {l}{k === 'inbox' && tab === 'inbox' ? ` (${rows.length})` : ''}
+            {l}{k === 'inbox' && tab === 'inbox' && !loading ? ` (${rows.length})` : ''}
           </button>
         ))}
       </div>
@@ -90,7 +99,7 @@ export default function MyApprovalsPage() {
 
       {tab !== 'delegations' && (
         <div style={cardStyle}>
-          {rows.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{tab === 'inbox' ? 'Nothing is waiting for your approval.' : 'Nothing here yet.'}</p>}
+          {rows.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{loading ? 'Loading…' : error ? 'Could not load this list — see the message above.' : tab === 'inbox' ? 'Nothing is waiting for your approval.' : 'Nothing here yet.'}</p>}
           {rows.map((r) => (
             <div key={r.id} style={{ borderTop: `1px solid ${BORDER.light}`, padding: '10px 0' }}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -138,7 +147,7 @@ export default function MyApprovalsPage() {
             <DelegationForm users={users} types={types} forOthers={false} onSubmit={addDelegation} onClose={() => setShowNew(false)} />
           )}
           <div style={cardStyle}>
-            {delegations.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No delegations.</p>}
+            {delegations.length === 0 && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{loading ? 'Loading…' : 'No delegations.'}</p>}
             {delegations.map((d) => (
               <div key={d.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '8px 0', borderTop: `1px solid ${BORDER.light}`, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 320px', fontSize: 13, color: TEXT.body }}>

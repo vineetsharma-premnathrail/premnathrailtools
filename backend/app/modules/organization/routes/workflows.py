@@ -84,9 +84,16 @@ def _tell_changed(db: Session, background_tasks: BackgroundTasks, key: str, acto
 async def workflow_meta(db: Session = Depends(get_db), _user: User = Depends(_can_view)):
     perms = sorted(f"{mk}:{tk}:{a}" for mk, m in MODULES.items() for tk, acts in m["actions"].items()
                    for a in acts if a in ("approve", "reject"))
+    # The same permissions in words, for the pickers: grouped by module (in
+    # module order), each "Tab — Approve" / "Section › Tab — Reject".
+    options = [
+        {"value": f"{mk}:{tk}:{a}", "module_key": mk, "module": m["label"],
+         "label": f"{(m['groups'].get(tk) + ' › ') if m['groups'].get(tk) else ''}{m['subtabs'][tk]} — {a.capitalize()}"}
+        for mk, m in MODULES.items() for tk, acts in m["actions"].items() for a in acts if a in ("approve", "reject")
+    ]
     return {
         "approver_rules": APPROVER_RULES, "approver_flags": APPROVER_FLAGS, "escalation_rules": ESCALATION_RULES,
-        "condition_ops": CONDITION_OPS, "approval_permissions": perms,
+        "condition_ops": CONDITION_OPS, "approval_permissions": perms, "approval_permission_options": options,
         "roles": [{"id": r.id, "name": r.name} for r in db.query(Role).filter(Role.is_active.is_(True)).order_by(Role.name)],
     }
 

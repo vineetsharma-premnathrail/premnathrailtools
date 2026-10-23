@@ -15,6 +15,7 @@ import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/sha
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import DateField from '@/components/erp/DateField'
 import Checkbox from '@/components/Checkbox'
+import { createPortal } from 'react-dom'
 
 const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
 const linkBtn: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#2563eb', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }
@@ -111,7 +112,10 @@ export default function ExportDialog({
     </label>
   )
 
-  return (
+  if (typeof document === 'undefined') return null
+  // Portal to <body>: a glass card (backdrop-filter) would otherwise trap the
+  // fixed backdrop inside itself instead of covering the screen.
+  return createPortal(
     <div onClick={close} className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} className="dialog-panel" style={{ width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Export {noun} to Excel</h2>
@@ -177,6 +181,7 @@ export default function ExportDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

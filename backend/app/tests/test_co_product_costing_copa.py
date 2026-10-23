@@ -150,7 +150,7 @@ def test_mark_and_release_need_permissions_and_keep_price_history(client, pc):
     assert "mark it first" in client.post(f"{API}/estimates/{est['id']}/release", json={}, headers=_h(controller)).json()["detail"]
     assert client.post(f"{API}/estimates/{est['id']}/mark", headers=_h(planner)).status_code == 200
     denied = client.post(f"{API}/estimates/{est['id']}/release", json={"valid_from": str(D)}, headers=_h(planner))
-    assert denied.status_code == 403 and "product_costing:approve" in denied.json()["detail"]
+    assert denied.status_code == 403 and "'Approve' permission on Finance & Accounting › Product Costing" in denied.json()["detail"]
     ok = client.post(f"{API}/estimates/{est['id']}/release", json={"valid_from": str(D)}, headers=_h(controller))
     assert ok.status_code == 200, ok.text
     assert ok.json()["status"] == "released" and ok.json()["valid_from"] == str(D)

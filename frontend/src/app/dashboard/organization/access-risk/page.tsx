@@ -10,6 +10,7 @@ import { grcApi, SodMitigationRow, SodReport, SodRule } from '@/lib/basisApi'
 import { recordPath } from '@/lib/recordRef'
 import { extractErrorMessages } from '@/lib/validation'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
+import { usePermissionWords } from '@/lib/permissionWords'
 
 // Organization › Access Risk (SAP GRC Access Risk Analysis). The ruleset is
 // coded (backend core/sod_rules.py); this page reports who / which role
@@ -39,6 +40,8 @@ export default function AccessRiskPage() {
   const [mitigations, setMitigations] = useState<SodMitigationRow[]>([])
   const [error, setError] = useState('')
   const [withdraw, setWithdraw] = useState<SodMitigationRow | null>(null)
+  const { permLabel } = usePermissionWords()
+  const words = (ids: string[]) => ids.map(permLabel).join('; ')
 
   const load = useCallback(() => {
     grcApi.sodReport().then(setReport).catch((e) => setError(extractErrorMessages(e, 'Could not run the SoD analysis.').join(' ')))
@@ -95,7 +98,7 @@ export default function AccessRiskPage() {
                   <td style={{ ...td, fontWeight: 600 }}>{i === 0 ? <>{u.name}<div style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}>{u.department || u.email}</div></> : ''}</td>
                   <td style={td}><b>{c.rule_id}</b> {c.title}<div style={{ fontSize: 11, color: TEXT.muted }}>{c.why}</div></td>
                   <td style={td}><Risk risk={c.risk} /></td>
-                  <td style={{ ...td, fontSize: 11.5 }}>{c.side_a_label}: {c.side_a_held.join(', ')}<br />{c.side_b_label}: {c.side_b_held.join(', ')}</td>
+                  <td style={{ ...td, fontSize: 11.5 }}>{c.side_a_label}: {words(c.side_a_held)}<br />{c.side_b_label}: {words(c.side_b_held)}</td>
                   <td style={td}>{c.mitigation ? <>{c.mitigation.reason}<div style={{ fontSize: 11, color: TEXT.muted }}>by {c.mitigation.mitigated_by_name || '—'}{c.mitigation.valid_to ? `, until ${new Date(c.mitigation.valid_to).toLocaleDateString('en-GB')}` : ''}</div></> : <span style={{ color: '#b91c1c', fontWeight: 600 }}>None</span>}</td>
                 </tr>
               )))}
@@ -111,7 +114,7 @@ export default function AccessRiskPage() {
                 <tr key={`${r.role_id}-${c.rule_id}`} style={{ cursor: 'pointer' }} onClick={() => router.push(recordPath('/dashboard/organization/roles', r, 'role_id'))}>
                   <td style={{ ...td, fontWeight: 600 }}>{r.name}{r.is_system && <span style={{ fontSize: 10, color: '#1d4ed8', marginLeft: 6 }}>BUILT-IN</span>}</td>
                   <td style={td}><b>{c.rule_id}</b> {c.title}</td><td style={td}><Risk risk={c.risk} /></td>
-                  <td style={{ ...td, fontSize: 11.5 }}>{[...c.side_a_held, ...c.side_b_held].join(', ')}</td>
+                  <td style={{ ...td, fontSize: 11.5 }}>{words([...c.side_a_held, ...c.side_b_held])}</td>
                 </tr>
               )))}
             </tbody>
@@ -141,8 +144,8 @@ export default function AccessRiskPage() {
                 <tr key={r.rule_id}>
                   <td style={td}><b>{r.rule_id}</b> {r.title}<div style={{ fontSize: 11, color: TEXT.muted }}>{r.why}</div></td>
                   <td style={td}><Risk risk={r.risk} /></td>
-                  <td style={{ ...td, fontSize: 11.5 }}><b>{r.side_a_label}</b><br />{r.side_a.join(', ')}</td>
-                  <td style={{ ...td, fontSize: 11.5 }}><b>{r.side_b_label}</b><br />{r.side_b.join(', ')}</td>
+                  <td style={{ ...td, fontSize: 11.5 }}><b>{r.side_a_label}</b><br />{words(r.side_a)}</td>
+                  <td style={{ ...td, fontSize: 11.5 }}><b>{r.side_b_label}</b><br />{words(r.side_b)}</td>
                 </tr>
               ))}
             </tbody>

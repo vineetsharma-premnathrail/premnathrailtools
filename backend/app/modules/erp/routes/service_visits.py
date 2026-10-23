@@ -102,7 +102,7 @@ def _ensure_can_log(sr: ServiceRequest, user: User, engineer_id: int | None) -> 
     raise HTTPException(
         status_code=403,
         detail="Only the visiting engineer can log their own visit. Logging or changing another engineer's visit needs "
-               "Service & Commissioning › Service Requests › Edit (erp:service_requests:edit).",
+               "Service & Commissioning › Service Requests › Edit.",
     )
 
 

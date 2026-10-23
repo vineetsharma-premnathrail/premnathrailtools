@@ -202,11 +202,12 @@ export default function RfqDetailPage() {
     setEditError('')
     try {
       await rfqApi.update(rfq.id, {
-        payment_terms: paymentTerms.trim() || undefined,
-        delivery_lead_time: deliveryLeadTime.trim() || undefined,
-        late_delivery_clause: lateDeliveryClause.trim() || undefined,
-        single_quotation_reason: singleQuotationReason.trim() || undefined,
-        comments: comments.trim() || undefined,
+        // null (not undefined) so a field the admin cleared is saved as cleared.
+        payment_terms: paymentTerms.trim() || null,
+        delivery_lead_time: deliveryLeadTime.trim() || null,
+        late_delivery_clause: lateDeliveryClause.trim() || null,
+        single_quotation_reason: singleQuotationReason.trim() || null,
+        comments: comments.trim() || null,
       })
       setEditing(false)
       await load()
@@ -385,9 +386,16 @@ export default function RfqDetailPage() {
                     <InfoRow label="Vendor" value={poDraft.vendor_name || '—'} />
                   </div>
                 )}
-                <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>
-                  PO created. Enter the prices and save it on the Purchase Orders page — saving sends it for approval. Open it from Purchase Orders › Create PO.
-                </p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0, flex: '1 1 320px' }}>
+                    PO created. Enter the prices and save it — saving sends it for approval.
+                  </p>
+                  <button data-tour="rfq-detail-po-open-btn" type="button" style={primaryBtn}
+                    onClick={() => router.push(recordHref('/dashboard/p2p/purchase-orders/new', rfq, 'id',
+                      { po: poDraft ? (poDraft as unknown as { id_ref?: string }).id_ref : undefined }, 'rfq'))}>
+                    Open PO →
+                  </button>
+                </div>
               </>
             )
           )}

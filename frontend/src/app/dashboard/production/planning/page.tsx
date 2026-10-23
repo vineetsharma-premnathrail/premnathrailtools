@@ -125,7 +125,7 @@ export default function ProductionPlanningPage() {
                   ) : requirements.map((r) => (
                     <tr key={r.item_id}>
                       <td style={{ ...tdStyle, fontWeight: 600, color: TEXT.heading }}>
-                        <span onClick={() => setMd04Item(r.item_id)} style={{ cursor: 'pointer' }} title="Stock / requirements list (MD04)">{r.item_code} — {r.item_name}</span>
+                        <span onClick={() => setMd04Item(r.item_id)} style={{ cursor: 'pointer' }} title="Stock / requirements list">{r.item_code} — {r.item_name}</span>
                       </td>
                       <td style={tdStyle}>{fmtQty(r.outstanding_qty)} {r.uom || ''}</td>
                       <td style={tdStyle}>{fmtQty(r.reserved_qty)}</td>

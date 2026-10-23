@@ -179,7 +179,7 @@ def _milestone_reminders(db: Session, today: date) -> int:
             # Role subscribers (core/events/projects.py), on the same every-few-days rhythm;
             # bell / Teams only — a job has no background task for email.
             pm_event(db, None, "milestone_overdue", p, title=title, message=text,
-                     entity_type="pm_task", entity_id=t.id, skip=to)
+                     entity_type="pm_project", entity_id=p.id, skip=to)
 
     open_goals = {t.id: t for t in goals}
     subs = db.query(PmTaskSubtask).filter(

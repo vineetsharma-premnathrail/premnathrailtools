@@ -497,7 +497,9 @@ register_transaction(TransactionType(
     key=KEY_JOURNAL, subtab_key="journal_vouchers", label="Manual journal voucher", entity_type=ET_JOURNAL,
     url="/dashboard/finance/ledger", description="A draft manual journal is posted to the books once approved (maker-checker).",
     context_fields={"posting_type": {"label": "Journal type", "type": "choice",
-                                     "choices": ["adjustment", "accrual", "correction", "depreciation"]}},
+                                     "choices": ["adjustment", "accrual", "correction", "depreciation"],
+                                     "choice_labels": {"adjustment": "Adjustment", "accrual": "Accrual",
+                                                       "correction": "Correction", "depreciation": "Depreciation"}}},
     default_stages=[_approve_holders("journal_vouchers", "Journal approver")],
     on_decided=_journal_decided, **_DOC,
 ))
@@ -507,7 +509,9 @@ register_transaction(TransactionType(
     description="A recorded vendor bill is posted to the books once approved. Bills outside 3-way-match tolerance "
                 "first need a Finance Manager's variance approval.",
     context_fields={"has_variance": {"label": "Outside 3-way-match tolerance", "type": "bool"},
-                    "invoice_type": {"label": "Invoice type", "type": "choice", "choices": ["po", "direct", "opening"]}},
+                    "invoice_type": {"label": "Invoice type", "type": "choice", "choices": ["po", "direct", "opening"],
+                                     "choice_labels": {"po": "Against a PO", "direct": "Direct (no PO)",
+                                                       "opening": "Opening balance"}}},
     default_stages=[
         StageDef("3-way-match variance (Finance Manager)", "user_flag", {"flag": "is_finance_manager"},
                  conditions=[{"field": "has_variance", "op": "true"}]),
@@ -605,7 +609,9 @@ register_transaction(TransactionType(
                 "limit) are posted only after a Finance approver and then a Partner approve them. The person who "
                 "recorded the payment can't approve it (maker-checker).",
     context_fields={"payment_type": {"label": "Voucher type", "type": "choice",
-                                     "choices": ["vendor", "customer", "expense"]},
+                                     "choices": ["vendor", "customer", "expense"],
+                                     "choice_labels": {"vendor": "Vendor payment", "customer": "Customer receipt",
+                                                       "expense": "Expense payment"}},
                     "writeoff_amount": {"label": "Write-offs on the receipt (₹)", "type": "number"},
                     "is_advance": {"label": "Advance (down payment)", "type": "bool"}},
     default_stages=[_approve_holders("payments", "Finance approver"),

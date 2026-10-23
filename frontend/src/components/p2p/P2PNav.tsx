@@ -62,7 +62,9 @@ export default function P2PNav() {
   // Settings sits as a gear next to the bell, not in the tab row (same as R&D).
   const visibleTabs = allowedTabs.filter((t) => t.icon !== 'gear')
   const settingsTab = allowedTabs.find((t) => t.icon === 'gear')
-  const isTabActive = (href: string) => (href === '/dashboard/p2p' ? pathname === href : pathname.startsWith(href))
+  // The requisition pages (/dashboard/p2p, /new, /<ref>) keep the Purchase Requisitions tab lit.
+  const otherTabMatches = TABS.some((t) => t.href !== '/dashboard/p2p' && pathname.startsWith(t.href))
+  const isTabActive = (href: string) => (href === '/dashboard/p2p' ? pathname.startsWith(href) && !otherTabMatches : pathname.startsWith(href))
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, borderBottom: '1px solid rgba(0,0,0,0.08)' }}>

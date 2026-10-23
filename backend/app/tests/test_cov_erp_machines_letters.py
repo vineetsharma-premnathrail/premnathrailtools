@@ -3,6 +3,7 @@ Production RRV build at completion/handover) and machine letters.
 Complements test_erp_projects.py and test_rrv_builds.py (which runs the full
 build → handover flow end to end) — here the registry hand-off is exercised
 directly through production.service so its rules can be pinned one by one."""
+from app.core.permission_words import place
 from datetime import date
 
 import pytest
@@ -152,7 +153,7 @@ def test_letter_delete_is_soft_and_needs_delete_permission(client, db):
     assert letter.status_code == 201
     lid = letter.json()["id"]
     r = client.delete(f"{base}/{lid}", headers=auth(editor))
-    assert r.status_code == 403 and "erp:projects:delete" in r.json()["detail"]
+    assert r.status_code == 403 and place("erp:projects:delete").split(" › ")[-1] in r.json()["detail"]
     assert client.delete(f"{base}/{lid}", headers=auth(admin)).status_code == 200
     assert client.get(base, headers=auth(admin)).json() == []
     assert client.get(f"{base}/{lid}/file", headers=auth(admin)).status_code == 404

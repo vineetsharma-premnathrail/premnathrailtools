@@ -5,6 +5,7 @@ import { PermissionRegistry } from '@/types'
 import Checkbox from '@/components/Checkbox'
 import { SHEET, SheetIcon, sheetInput } from '@/components/shared/FormSheet'
 import { expandGrants } from '@/components/organization/PermissionMatrixEditor'
+import { permissionWords } from '@/lib/permissionWords'
 
 /**
  * A role's notification subscriptions (Organization › Roles › Notifications):
@@ -62,15 +63,7 @@ export default function RoleNotificationsEditor({ catalog, registry, permissions
     const cur = value[key] || []
     setEvent(key, cur.includes(channel) ? cur.filter((c) => c !== channel) : [...cur, channel])
   }
-  const permLabel = (id: string) => {
-    const [mk, tk, a] = id.split(':')
-    const mod = registry.modules[mk]
-    if (!mod) return id
-    const [tab, fk] = tk.split('.')
-    const tabLabel = mod.subtabs[tab] || tab
-    const featLabel = fk ? mod.features?.[tab]?.[fk]?.label : undefined
-    return `${mod.label} › ${tabLabel}${featLabel ? ` › ${featLabel}` : ''} › ${registry.action_labels?.[a] || a}`
-  }
+  const permLabel = (id: string) => permissionWords(registry, id)
 
   const q = query.trim().toLowerCase()
   const modules = Object.entries(catalog.modules).filter(([, m]) =>

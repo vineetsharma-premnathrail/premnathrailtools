@@ -12,7 +12,7 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import { AssetFormDialog, ASSET_CATEGORY_LABELS, ASSET_CONDITION_LABELS } from '@/components/hr/admin/AssetDialogs'
 import {
   PageHeader, ErrorBanner, SuccessBanner, Pill, EmptyRow, StatCard, primaryActionStyle, filterInputStyle,
-  tableWrapStyle, thStyle, tdStyle, linkActionStyle, fmtDate,
+  tableWrapStyle, thStyle, tdStyle, linkActionStyle, fmtDate, todayIso,
 } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
 import { recordPath } from '@/lib/recordRef'
@@ -167,7 +167,7 @@ export default function HrAssetsPage() {
                         <div>{a.current_holder_name}</div>
                         <div style={{ fontSize: 12, color: TEXT.muted }}>
                           since {fmtDate(a.issued_on)}
-                          {a.expected_return_on && a.expected_return_on < new Date().toISOString().slice(0, 10) && (
+                          {a.expected_return_on && a.expected_return_on < todayIso() && (
                             <span style={{ color: '#DC2626', fontWeight: 600 }}> · return overdue</span>
                           )}
                         </div>

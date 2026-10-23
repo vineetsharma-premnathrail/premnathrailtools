@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { storeApi } from '@/lib/api'
 import { StoreStockEntry } from '@/types'
 import { TEXT } from '@/lib/theme'
-import { formatDateTime } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn } from '@/components/shared/FormSheet'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
@@ -66,7 +66,7 @@ export default function StockEntryDialog({ entryNumber, entry: initial, canAttac
 
   return (
     <FormSheet width={760} icon="doc" title={entry ? entry.entry_number : entryNumber || 'Stock Entry'}
-      subtitle={entry ? `${entry.entry_type_label || entry.entry_type} · ${entry.location_name} · ${entry.entry_date} · by ${entry.created_by_name || '—'}` : 'Loading…'}
+      subtitle={entry ? `${entry.entry_type_label || entry.entry_type} · ${entry.location_name} · ${formatDate(entry.entry_date)} · by ${entry.created_by_name || '—'}` : 'Loading…'}
       onClose={onClose} busy={busy}
       footer={<>
         {entry && canAttach && (

@@ -101,7 +101,8 @@ export default function LeaveApplyForm({
     }
   }
 
-  const skipped = preview?.breakdown.filter((d) => d.kind !== 'working') || []
+  // Offs/holidays charged by the sandwich rule (portion > 0) are counted, so not listed here.
+  const skipped = preview?.breakdown.filter((d) => d.kind !== 'working' && !Number(d.portion)) || []
   const canSubmit = !!preview && preview.errors.length === 0 && !submitting && !previewing && !!reason.trim()
 
   const close = onCancel ?? (() => {})

@@ -845,7 +845,8 @@ hr_approvals.register_hr_type(
     hr_approvals.REGULARIZATION_KEY, "attendance", "Attendance regularization", REG_ENTITY, "/dashboard/hr/approvals",
     _on_reg_decided,
     description="An employee's correction of a past day's attendance (My HR › Attendance). Approving updates the register.",
-    context_fields={"requested_status": {"label": "Requested status", "type": "choice", "choices": list(STATUS_LABELS)}},
+    context_fields={"requested_status": {"label": "Requested status", "type": "choice", "choices": list(STATUS_LABELS),
+                                         "choice_labels": dict(STATUS_LABELS)}},
 )
 
 

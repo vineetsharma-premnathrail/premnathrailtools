@@ -340,3 +340,17 @@ def test_form18_document_spec_and_docx(client, db, ehs):
     assert spec["title"].startswith("FORM 18") and "s.88A" in facts["Reportable because"]
     from app.modules.quality.reports.render import render_docx
     assert render_docx(spec)[:2] == b"PK"
+
+
+def test_form18_word_document_needs_the_statutory_feature(client, db, ehs):
+    """Security fix: the Form 18 Word document (shared managed-document
+    routes) only checked 'party to the incident' — the PDF needs
+    Safety › Statutory 'print'. The reporter can't open or create it now."""
+    w = ehs
+    inc_id = _report(client, w["welder"], w["plant"], incident_type="dangerous_occurrence", severity="high",
+                     title="Hydraulic hose burst").json()["id"]
+    url = f"/api/v1/managed-documents/{safety_svc.FORM18_ENTITY}/{inc_id}"
+    r = client.get(url, headers=hdr(w["welder"]))
+    assert r.status_code == 403 and "'Print' permission on HR & Administration › Safety (EHS incidents) › Statutory reporting (Form 18)" in r.json()["detail"]
+    assert client.post(url, headers=hdr(w["welder"])).status_code == 403
+    assert client.get(url, headers=hdr(w["officer"])).status_code == 200

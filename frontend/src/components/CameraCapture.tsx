@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 // Live in-browser camera capture (getUserMedia), for platforms where the
 // `capture` attribute on a file input has no effect — every desktop browser
@@ -67,7 +68,10 @@ export default function CameraCapture({
     }, 'image/jpeg', 0.92)
   }
 
-  return (
+  if (typeof document === 'undefined') return null
+  // Portal to <body>: a glass card (backdrop-filter) would otherwise trap the
+  // fixed backdrop inside itself instead of covering the screen.
+  return createPortal(
     <div
       onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}
@@ -103,6 +107,7 @@ export default function CameraCapture({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

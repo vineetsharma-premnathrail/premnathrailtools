@@ -33,6 +33,7 @@ from app.modules.erp.importing import (
 from app.modules.erp.models.project import Project
 from app.modules.erp.models.service_request import SR_PRIORITIES, SR_SERVICE_TYPES, ServiceRequest
 from app.modules.erp.routes.service_requests import _generate_sr_number, _recompute_billing, _write_audit
+from app.modules.erp.sensitive import SR_MONEY, sees_charges
 from app.modules.erp.schemas.service_request import SR_PAYMENT_STATUSES, SR_STATUSES, ServiceRequestCreate
 from app.modules.main.models.user import User
 from app.utils.notifications import notify_user
@@ -332,7 +333,7 @@ async def export_service_requests(
         results = query.filter(ServiceRequest.id.in_(selected)).order_by(ServiceRequest.created_at.desc()).all()
         if not results:
             raise HTTPException(status_code=404, detail="None of the selected service requests exist any more — they may have been deleted. Refresh the list.")
-        return _srs_xlsx(results)
+        return _srs_xlsx(results, sees_charges(_user))
     if search:
         like = f"%{search}%"
         query = query.filter(
@@ -352,14 +353,16 @@ async def export_service_requests(
     if date_from or date_to:
         pick = _reported_on if date_field == "reported" else (lambda sr: ist_date(sr.closed_at))
         results = [(sr, p) for sr, p in results if in_range(pick(sr), date_from, date_to)]
-    return _srs_xlsx(results)
+    return _srs_xlsx(results, sees_charges(_user))
 
 
 # Which SR date a From–To export filters on.
 EXPORT_DATE_FIELDS = {"reported": "Reported date", "closed": "Closed date"}
 
 
-def _srs_xlsx(results: list):
+def _srs_xlsx(results: list, sees: bool = True):
+    """`sees` = the Charges, costs & billing amounts switch: without it the money
+    columns go out blank, like the SR screens (erp/sensitive.py)."""
     def closed_on(sr: ServiceRequest):
         if not sr.closed_at:
             return ""
@@ -379,7 +382,11 @@ def _srs_xlsx(results: list):
         out = [sr.request_number]
         for k, _ in COLUMNS:
             v = values[k] if k in values else getattr(sr, k, None)
+            if not sees and k in SR_MONEY:
+                v = None
             out.append("" if v is None else v)
+        if not sees:
+            return out + ["", "", ""]
         return out + [sr.total_material_cost or 0, sr.tax_amount or 0, sr.total_bill or 0]
 
     headers = ["SR Number"] + [t for _, t in COLUMNS] + ["Material Cost", "Tax Amount", "Total Bill"]

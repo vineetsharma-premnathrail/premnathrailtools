@@ -131,7 +131,9 @@ async def send_client_sr_email(db: Session, sr, project, actor_id: int, actor_na
     if not client_email or not sender_email:
         return False
 
-    client_name = sr.reported_by_name or (project.client_company if project else None) or "Valued Customer"
+    # Typed by portal users and sent to the customer from the company mailbox —
+    # escape it so it can't inject markup or links into that email.
+    client_name = escape(sr.reported_by_name or (project.client_company if project else None) or "Valued Customer")
 
     if event_type == "created":
         subject = f"Service Request Registered — {sr.request_number}"
@@ -266,8 +268,8 @@ async def send_purchase_requisition_email(db: Session, pr, sr, project, material
     site_name = project.site_name if project else "—"
 
     materials_html = "".join(
-        f'<p style="margin:0 0 8px;font-size:13.5px;color:#1e293b">{m.material_name}'
-        f'<span style="color:#64748b"> — Qty: {m.quantity} {m.unit}</span></p>'
+        f'<p style="margin:0 0 8px;font-size:13.5px;color:#1e293b">{escape(str(m.material_name or ""))}'
+        f'<span style="color:#64748b"> — Qty: {escape(str(m.quantity))} {escape(str(m.unit or ""))}</span></p>'
         for m in materials
     ) if materials else '<p style="margin:0;font-size:13.5px;color:#94a3b8">No materials listed.</p>'
 
@@ -538,7 +540,7 @@ async def send_technical_offer_request_email(
     ref_docs_html = ""
     if reference_documents:
         items = "".join(
-            f'<li style="margin:0 0 6px"><a href="{d["url"]}" style="color:#2563eb">{d["name"]}</a></li>'
+            f'<li style="margin:0 0 6px"><a href="{escape(str(d["url"]))}" style="color:#2563eb">{escape(str(d.get("name") or ""))}</a></li>'
             for d in reference_documents if d.get("url")
         )
         if items:

@@ -103,9 +103,10 @@ export default function StoreItemDetailPage() {
       const updated = await storeApi.updateItem(itemId, {
         item_name: form.item_name.trim(),
         item_type: form.item_type,
-        category: form.category || undefined,
-        subcategory: form.subcategory || undefined,
-        description: form.description?.trim() || undefined,
+        // null (not undefined) so a cleared field is saved as cleared — the PATCH skips missing keys.
+        category: form.category || null,
+        subcategory: form.subcategory || null,
+        description: form.description?.trim() || null,
         part_number: form.part_number?.trim() || null,
         uom: form.uom || undefined,
         ...erpPayload(form),

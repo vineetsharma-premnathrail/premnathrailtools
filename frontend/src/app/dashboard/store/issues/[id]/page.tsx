@@ -89,7 +89,7 @@ export default function StoreMaterialIssueDetailPage() {
                 <div data-tour="issue-detail-order-project">
                   <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order Project</p>
                   <OrderProjectChip opNumber={issue.op_number} elementNo={issue.element_no} label={issue.element_label}
-                    onClick={can('sales', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/sales/order-projects', issue, 'order_project_id')) : undefined} />
+                    onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', issue, 'order_project_id')) : undefined} />
                 </div>
               )}
               {issue.project_stock_override_reason && (

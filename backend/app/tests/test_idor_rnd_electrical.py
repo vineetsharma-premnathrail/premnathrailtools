@@ -75,7 +75,7 @@ def test_document_upload_checks_permission_and_project_scope(client, db):
     data = {"project_id": str(project["id"]), "title": "Spec"}
 
     r = client.post(f"{RND}/documents", data=data, files=files, headers=auth(viewer))
-    assert r.status_code == 403 and "rnd:documents:create" in r.json()["detail"]
+    assert r.status_code == 403 and "'Create' on R&D › Documents" in r.json()["detail"]
     r = client.post(f"{RND}/documents", data=data, files=files, headers=auth(outsider))
     assert r.status_code == 403 and "outside your data access" in r.json()["detail"]
 

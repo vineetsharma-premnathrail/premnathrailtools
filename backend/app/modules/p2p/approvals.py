@@ -89,11 +89,22 @@ def _fire(db: Session, event: str, title: str, message: str, pr: P2PRequest, act
 # ── Context the admin's stage conditions can test ────────────────────────
 
 _PR_CONTEXT_FIELDS = {
-    "project_type": {"label": "Project type", "type": "choice", "choices": list(P2P_PROJECT_TYPES)},
-    "purpose": {"label": "Purpose", "type": "choice", "choices": list(P2P_PURPOSES)},
-    "category_code": {"label": "Category", "type": "choice", "choices": list(P2P_CATEGORIES)},
-    "priority": {"label": "Priority", "type": "choice", "choices": list(P2P_REQUEST_PRIORITIES)},
-    "requirement_type": {"label": "Requirement type", "type": "choice", "choices": list(P2P_REQUIREMENT_TYPES)},
+    "project_type": {"label": "Project type", "type": "choice", "choices": list(P2P_PROJECT_TYPES),
+                     "choice_labels": {"existing": "Existing project", "new": "New project"}},
+    "purpose": {"label": "Purpose", "type": "choice", "choices": list(P2P_PURPOSES), "choice_labels": dict(P2P_PURPOSES)},
+    "category_code": {"label": "Category", "type": "choice", "choices": list(P2P_CATEGORIES),
+                      "choice_labels": {k: f"{v} ({k})" for k, v in P2P_CATEGORIES.items()}},
+    # The project manager of the Order Project a production requisition is
+    # for (picked on the project) — a "Person named on the record" stage with
+    # an "Applies when: Purpose = Production" condition.
+    "project_manager_id": {"label": "Project manager (of the order project)", "type": "user",
+                           "missing": "Order project {ref} has no project manager — pick one on the project "
+                                      "(Projects › Order Projects), then submit again.",
+                           "missing_ref": "order_project_ref"},
+    "priority": {"label": "Priority", "type": "choice", "choices": list(P2P_REQUEST_PRIORITIES),
+                 "choice_labels": {"low": "Low", "medium": "Medium", "high": "High"}},
+    "requirement_type": {"label": "Requirement type", "type": "choice", "choices": list(P2P_REQUIREMENT_TYPES),
+                         "choice_labels": {t: t for t in P2P_REQUIREMENT_TYPES}},
     "department": {"label": "Requester's department", "type": "text"},
 }
 _PO_CONTEXT_FIELDS = {
@@ -103,10 +114,19 @@ _PO_CONTEXT_FIELDS = {
 
 
 def _pr_context(pr: P2PRequest) -> dict:
-    return {
+    ctx = {
         "project_type": pr.project_type, "purpose": pr.purpose, "category_code": pr.category_code, "priority": pr.priority,
-        "requirement_type": pr.requirement_type, "department": pr.department,
+        "requirement_type": pr.requirement_type, "department": pr.department, "project_manager_id": None,
     }
+    if pr.order_project_id:
+        from sqlalchemy.orm import object_session
+
+        from app.modules.sales.models.order_project import OrderProject
+        op = object_session(pr).get(OrderProject, pr.order_project_id)
+        if op is not None:
+            ctx["project_manager_id"] = op.project_manager_id
+            ctx["order_project_ref"] = op.op_number
+    return ctx
 
 
 # ── Decision handlers ────────────────────────────────────────────────────

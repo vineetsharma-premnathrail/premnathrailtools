@@ -2,6 +2,7 @@
 
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { Check, Warning, WarningCircle } from '@phosphor-icons/react'
+import { createPortal } from 'react-dom'
 
 const VARIANT_COLOR: Record<'success' | 'error' | 'warning', string> = {
   success: '#16a34a',
@@ -35,7 +36,10 @@ export default function MessageDialog({
   const color = VARIANT_COLOR[variant]
   const messages = Array.isArray(message) ? message : [message]
 
-  return (
+  if (typeof document === 'undefined') return null
+  // Portal to <body>: a glass card (backdrop-filter) would otherwise trap the
+  // fixed backdrop inside itself instead of covering the screen.
+  return createPortal(
     <div
       onClick={onClose}
       className="dialog-backdrop"
@@ -125,6 +129,7 @@ export default function MessageDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

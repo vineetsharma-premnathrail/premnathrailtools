@@ -25,6 +25,7 @@ export default function ProformaPanel({ order }: { order: SalesOrder }) {
   // Tab action + the Proforma invoices feature (raise / cancel = create / cancel).
   const canEdit = can('sales', 'orders', 'edit') && canFeature('sales', 'orders', 'proforma', 'create')
   const canPrint = can('sales', 'orders', 'print') && canFeature('sales', 'orders', 'proforma', 'print')
+  const canCancel = can('sales', 'orders', 'edit') && canFeature('sales', 'orders', 'proforma', 'cancel')
   const [rows, setRows] = useState<SalesProforma[]>([])
   const [error, setError] = useState<string | string[]>('')
   const [busy, setBusy] = useState(false)
@@ -96,7 +97,7 @@ export default function ProformaPanel({ order }: { order: SalesOrder }) {
                   <td style={tdStyle}><Pill label={pi.status_label} hex={STATUS_HEX[pi.status] || '#64748B'} />{pi.cancel_reason && <div style={{ fontSize: 11, color: '#78716c' }}>{pi.cancel_reason}</div>}</td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                     {canPrint && <button type="button" onClick={() => openPdf(pi)} style={{ ...secondaryBtnStyle, padding: '5px 11px', fontSize: 11.5, marginRight: 6 }}>PDF</button>}
-                    {canEdit && pi.status === 'issued' && <button type="button" disabled={busy} onClick={() => setCancelId(pi.id)} style={{ ...dangerBtnStyle, padding: '5px 11px', fontSize: 11.5 }}>Cancel</button>}
+                    {canCancel && pi.status === 'issued' && <button type="button" disabled={busy} onClick={() => setCancelId(pi.id)} style={{ ...dangerBtnStyle, padding: '5px 11px', fontSize: 11.5 }}>Cancel</button>}
                   </td>
                 </tr>
               ))}

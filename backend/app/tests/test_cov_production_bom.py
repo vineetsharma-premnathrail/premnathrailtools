@@ -317,7 +317,7 @@ def test_bom_tab_and_action_matrix(client, db, ctx):
     hv = auth(viewer)
     assert client.get(f"{API}/boms", headers=hv).status_code == 200
     create = _create(client, {**ctx, "h": hv})
-    assert create.status_code == 403 and "'create' permission on Production › BOM & Routing" in create.json()["detail"]
+    assert create.status_code == 403 and "'Create' permission on Production › BOM & Routing" in create.json()["detail"]
     assert client.patch(f"{API}/boms/{bom['id']}", json={"remarks": "x"}, headers=hv).status_code == 403
     assert client.delete(f"{API}/boms/{bom['id']}", headers=hv).status_code == 403
 

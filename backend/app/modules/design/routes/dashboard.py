@@ -116,15 +116,21 @@ def _extend_my_tasks(db: Session, user: User, tasks: DesignMyTasks) -> None:
         DesignSubmissionLine, DesignSubmissionLine.revision_id == DesignDocumentRevision.id
     ).filter(
         DesignDocumentRevision.status == "approved", DesignDocumentRevision.is_deleted == False,  # noqa: E712
+        DesignDocument.is_deleted == False,  # noqa: E712
         DesignSubmissionLine.response.in_(("approved", "approved_with_comments")),
     ).all()
+    seen: set[int] = set()  # a revision sent on several submissions is one release task
     for rev, doc in approved:
-        if head or rev.approver_id == user.id:
+        if rev.id not in seen and (head or rev.approver_id == user.id):
+            seen.add(rev.id)
             tasks.to_release.append(_task("release", rev, doc, {}, "Customer approved — release it"))
 
     for c, sub in db.query(DesignSubmissionComment, DesignCustomerSubmission).join(
         DesignCustomerSubmission, DesignCustomerSubmission.id == DesignSubmissionComment.submission_id
-    ).filter(DesignSubmissionComment.status == "open", DesignSubmissionComment.assigned_to_id == user.id).all():
+    ).filter(
+        DesignSubmissionComment.status == "open", DesignSubmissionComment.assigned_to_id == user.id,
+        DesignCustomerSubmission.is_deleted == False,  # noqa: E712
+    ).all():
         tasks.customer_comments.append(DesignTaskItem(
             kind="customer_comment", submission_id=sub.id, title=c.comment[:140], status="open",
             comment=f"{sub.submission_number} — {sub.customer_name}", since=c.created_at, days_waiting=days_since(c.created_at),

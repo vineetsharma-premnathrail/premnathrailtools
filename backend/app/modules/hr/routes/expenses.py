@@ -25,6 +25,7 @@ from app.modules.hr.models.expense import (
     HrExpenseClaim, HrExpenseClaimItem, EXPENSE_CLAIM_STATUSES, EXPENSE_CATEGORIES,
 )
 from app.modules.hr.models.travel import HrTravelRequest
+from app.modules.hr.services.calendar import today_ist
 from app.modules.hr.schemas.expense import (
     HrExpenseClaimItemPayload, HrExpenseClaimItemUpdate, HrExpenseClaimItemResponse,
     HrExpenseClaimCreate, HrExpenseClaimUpdate, HrExpenseClaimDecisionPayload,
@@ -171,7 +172,7 @@ def _validate_trip(db: Session, user: User, travel_request_id: int | None) -> No
 def _validate_item(data: dict, claim: HrExpenseClaim) -> None:
     require_choice(data.get("category"), EXPENSE_CATEGORIES, "expense category")
     d = data.get("expense_date")
-    if d and d > date.today():
+    if d and d > today_ist():
         raise HTTPException(
             status_code=400,
             detail=f"Expense date {d:%d-%m-%Y} is in the future. Claims can only include expenses already incurred.",
@@ -260,7 +261,7 @@ async def create_claim(
     claim = HrExpenseClaim(
         claim_no=next_sequential_id(db, prefix=f"EXP-{date.today().year}-", column=HrExpenseClaim.claim_no),
         user_id=user.id, travel_request_id=payload.travel_request_id, title=payload.title.strip(),
-        claim_date=payload.claim_date or date.today(), status="draft",
+        claim_date=payload.claim_date or today_ist(), status="draft",
     )
     for it in payload.items:
         data = it.model_dump()
@@ -695,7 +696,7 @@ async def mark_claim_paid(
             detail=(f"{claim.claim_no} is posted to Finance (employee payable), so its payment must be a payment voucher "
                     "that clears the payable. Record it under Finance › HR claims to pay (or the Pay action on the claim)."),
         )
-    paid_on = payload.paid_on or date.today()
+    paid_on = payload.paid_on or today_ist()
     if claim.submitted_at and paid_on < claim.submitted_at.date():
         raise HTTPException(
             status_code=400,

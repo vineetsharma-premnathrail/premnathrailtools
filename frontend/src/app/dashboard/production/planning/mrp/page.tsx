@@ -232,7 +232,7 @@ export default function MrpPage() {
       {notice && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>{notice}</div>}
 
       <div style={sectionStyle}>
-        <p style={sectionTitle}>MRP Run (MD01N)</p>
+        <p style={sectionTitle}>MRP Run</p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 220px', maxWidth: 320 }}>
             <label style={labelStyle}>Plant</label>
@@ -264,8 +264,8 @@ export default function MrpPage() {
       <div style={sectionStyle}>
         <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${BORDER.light}`, marginBottom: 14, flexWrap: 'wrap' }}>
           {tabBtn('orders', `Planned Orders (${orders.filter((o) => o.status === 'open').length})`)}
-          {tabBtn('list', 'MRP List (MD05)')}
-          {tabBtn('exceptions', `Exceptions (MD06)${runDetail ? ` · ${runDetail.exceptions_count}` : ''}`)}
+          {tabBtn('list', 'MRP List')}
+          {tabBtn('exceptions', `Exceptions${runDetail ? ` · ${runDetail.exceptions_count}` : ''}`)}
           {tabBtn('log', 'Run Log')}
         </div>
 
@@ -304,7 +304,7 @@ export default function MrpPage() {
                           {o.source === 'manual' && <span style={{ ...pill('#78716c'), marginLeft: 6 }}>Manual</span>}
                         </td>
                         <td style={tdStyle}>
-                          <span onClick={() => setMd04Item(o.item_id)} style={{ cursor: 'pointer', color: '#2563EB' }} title="Stock / requirements list (MD04)">{o.item_code} — {o.item_name}</span>
+                          <span onClick={() => setMd04Item(o.item_id)} style={{ cursor: 'pointer', color: '#2563EB' }} title="Stock / requirements list">{o.item_code} — {o.item_name}</span>
                           {o.parent_order_number && <div style={{ fontSize: 11, color: TEXT.muted }}>component of {o.parent_order_number}</div>}
                         </td>
                         <td style={tdStyle}><span style={pill(PROC_HEX[o.procurement])}>{o.procurement === 'make' ? 'Make' : 'Buy'}</span></td>
@@ -503,7 +503,7 @@ export default function MrpPage() {
       )}
 
       {newOpen && (
-        <FormSheet width={580} icon="plus" title="New planned order (MD11)" subtitle="A manual, firmed planned order for one item." onClose={() => setNewOpen(false)} busy={busy}
+        <FormSheet width={580} icon="plus" title="New planned order" subtitle="A manual, firmed planned order for one item." onClose={() => setNewOpen(false)} busy={busy}
           footer={<>
             <button type="button" style={sheetBtn('secondary', SHEET.INK, busy)} disabled={busy} onClick={() => setNewOpen(false)}>Cancel</button>
             <button type="button" style={sheetBtn('primary', SHEET.BLUE, busy || !newForm.item_id || !newForm.quantity || !newForm.finish_date)} disabled={busy || !newForm.item_id || !newForm.quantity || !newForm.finish_date} onClick={createOrder}>

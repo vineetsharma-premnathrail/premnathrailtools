@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.permission_registry import can_perform
+from app.core.permission_words import action_word
 from app.core.permissions import require_app_access
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -92,7 +93,7 @@ def _target_loader(kind: str):
         spec, number = _spec(db, kind, entity_id)
         action = "edit" if modify else "view"
         if not can_perform(user, "quality", tab, action):
-            raise HTTPException(status_code=403, detail=f"You don't have '{action}' permission on Quality › "
+            raise HTTPException(status_code=403, detail=f"You don't have '{action_word(action)}' permission on Quality › "
                                 f"{_TAB_LABELS[tab]}. Ask an admin to grant it in Users › Permission Matrix.")
         return managed_documents.DocumentTarget(
             entity_id=entity_id, revision=_revision(db, kind, entity_id), title=f"{label} {spec['number']}",

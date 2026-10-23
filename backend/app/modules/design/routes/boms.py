@@ -548,7 +548,7 @@ async def create_bom(
 
     rows = payload.lines
     if payload.copy_from_bom_id:
-        source = get_bom(db, payload.copy_from_bom_id)
+        source = get_bom(db, payload.copy_from_bom_id, user=user)  # only a BOM you could open yourself
         src_rev = released_bom_revision(source) or open_bom_revision(source)
         if not src_rev:
             raise HTTPException(status_code=400, detail=f"{source.bom_number} has no revision to copy lines from.")

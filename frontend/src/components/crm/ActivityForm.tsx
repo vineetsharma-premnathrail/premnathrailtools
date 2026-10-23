@@ -36,7 +36,7 @@ function toFormState(initial?: Partial<CrmActivity>, defaultAssignedTo?: string)
       ? initial.activity_type
       : ACTIVITY_TYPES[0],
     subject: initial?.subject || '',
-    activity_date: initial?.activity_date || new Date().toISOString().slice(0, 10),
+    activity_date: initial?.activity_date || new Date().toLocaleDateString('en-CA'), // local date, not UTC
     next_followup: initial?.next_followup || '',
     assigned_to: initial?.assigned_to || defaultAssignedTo || '',
     status: initial?.status || FOLLOW_UP_STATUSES[0],

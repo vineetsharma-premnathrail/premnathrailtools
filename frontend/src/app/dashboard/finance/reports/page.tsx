@@ -5,6 +5,7 @@
  *  close pack and the year-end close. Every figure comes straight from posted
  *  journal lines for the dates asked (backend: accounts/reports.py). */
 import React, { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
@@ -35,7 +36,9 @@ const TAB_KEYS: Record<Tab, string> = {
   'Trial Balance': 'financial_reports', 'Profit & Loss': 'financial_reports', 'Balance Sheet': 'financial_reports', 'Cash Flow': 'financial_reports',
   Aging: 'financial_reports', 'Budget Variance': 'financial_reports', 'Cost Centres': 'financial_reports', 'Internal Orders': 'financial_reports', 'Monthly Pack': 'financial_reports', 'Year-end Close': 'year_end_close',
 }
-const RANGE_TABS: Tab[] = ['Trial Balance', 'Profit & Loss', 'Balance Sheet', 'Cash Flow', 'Budget Variance', 'Cost Centres']
+const RANGE_TABS: Tab[] = ['Trial Balance', 'Profit & Loss', 'Balance Sheet', 'Cash Flow', 'Budget Variance', 'Cost Centres', 'Internal Orders']
+/** Position-on-a-date tabs: only the "to" date applies. */
+const AS_AT_TABS: Tab[] = ['Balance Sheet', 'Internal Orders']
 
 const GREEN = '#16a34a'
 const RED = '#dc2626'
@@ -729,7 +732,7 @@ export default function FinanceReportsPage() {
         <SubTabs tabs={visibleTabs} value={tab} onChange={setTab} />
         {RANGE_TABS.includes(tab) && (
           <div data-tour="fin-rep-range" style={{ ...sectionStyle, padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            {tab !== 'Balance Sheet' && (
+            {!AS_AT_TABS.includes(tab) && (
               <div data-tour="fin-rep-from" style={{ flex: '0 1 160px' }}>
                 <label style={labelStyle}>From</label>
                 <DateField value={fromDate} onChange={setFromDate} />
@@ -751,6 +754,7 @@ export default function FinanceReportsPage() {
               })}
             </div>
             {tab === 'Balance Sheet' && <span style={{ fontSize: 12, color: TEXT.muted, paddingBottom: 8 }}>A balance sheet is a position on one date — only the &quot;to&quot; date applies.</span>}
+            {tab === 'Internal Orders' && <span style={{ fontSize: 12, color: TEXT.muted, paddingBottom: 8 }}>Internal orders are shown life to date — only the &quot;to&quot; date applies.</span>}
           </div>
         )}
       </div>
@@ -769,7 +773,7 @@ export default function FinanceReportsPage() {
       {tab === 'Year-end Close' && renderYearEnd()}
 
       {/* Ledger statement drawer (Trial Balance drill-down) */}
-      {ledgerRow && (
+      {ledgerRow && createPortal(
         <div className="fin-no-print" onClick={() => setLedgerRow(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.3)', zIndex: 150, display: 'flex', justifyContent: 'flex-end' }}>
           <div data-tour="fin-rep-ledger-drawer" onClick={(e) => e.stopPropagation()} style={{ width: 'min(860px, 100vw)', height: '100%', background: '#fff', boxShadow: '-12px 0 40px rgba(0,0,0,.18)', padding: 20, overflowY: 'auto', boxSizing: 'border-box' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
@@ -828,7 +832,8 @@ export default function FinanceReportsPage() {
               </>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       <ConfirmDialog

@@ -56,7 +56,7 @@ def test_testing_grants_allow_test_records_without_jobs_edit(client, db, h, job)
     r = client.delete(f"{API}/tests/{tid}", headers=tester)
     assert r.status_code == 403
     detail = r.json()["detail"]
-    assert "'edit' on Electrical › RRV Electrical Jobs" in detail and "'delete' on Electrical › Testing" in detail
+    assert "'Edit' on Electrical › RRV Electrical Jobs" in detail and "'Delete' on Electrical › Testing" in detail
     # Testing grants don't open up issues.
     assert client.post(f"{API}/jobs/{job['id']}/issues", json={"title": "x"}, headers=tester).status_code == 403
 
@@ -70,7 +70,7 @@ def test_troubleshooting_grants_allow_issue_work(client, db, h, job):
     iid = r.json()["id"]
     assert client.patch(f"{API}/issues/{iid}", json={"symptom": "No sound"}, headers=tech).status_code == 200
     r = client.delete(f"{API}/issues/{iid}", headers=tech)
-    assert r.status_code == 403 and "'delete' on Electrical › Troubleshooting" in r.json()["detail"]
+    assert r.status_code == 403 and "'Delete' on Electrical › Troubleshooting" in r.json()["detail"]
     assert client.post(f"{API}/jobs/{job['id']}/tests", json={
         "test_type": "insulation_resistance", "result": "pass", "test_date": TODAY,
     }, headers=tech).status_code == 403

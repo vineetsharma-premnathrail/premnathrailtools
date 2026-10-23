@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.permission_registry import can_perform
+from app.core.permission_words import action_word
 from app.modules.main.models.user import User
 from app.modules.main.services import managed_documents
 from app.modules.sales import service as svc
@@ -105,7 +106,7 @@ def oa_document_target(db: Session, so_id: int, user: User, modify: bool) -> man
         raise HTTPException(status_code=409, detail=f"{so.display_number} isn't confirmed yet — the acknowledgement needs the SO number.")
     action = "edit" if modify else "print"
     if not can_perform(user, "sales", "orders", action):
-        raise HTTPException(status_code=403, detail=f"You don't have '{action}' permission on Sales › Orders. Ask an admin to grant it in Users › Permission Matrix.")
+        raise HTTPException(status_code=403, detail=f"You don't have '{action_word(action)}' permission on Sales › Orders. Ask an admin to grant it in Users › Permission Matrix.")
     stem = f"OA-{so.so_number}" + (f"-A{so.amendment_no}" if so.amendment_no else "")
     return managed_documents.DocumentTarget(
         entity_id=so.id, revision=so.amendment_no or 0,

@@ -17,7 +17,7 @@ from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.user import User
 from app.modules.organization.models.approval import ApprovalRequest
 from app.modules.organization.services.approval_engine import StageDef, TransactionType, register_transaction
-from app.modules.accounts.models.collections import AccountsCreditRelease
+from app.modules.accounts.models.collections import CREDIT_CHECKPOINTS, AccountsCreditRelease
 
 MODULE = "accounts"
 ET_CREDIT_RELEASE = "accounts_credit_release"
@@ -67,7 +67,8 @@ register_transaction(TransactionType(
     description="A sales order confirmation or a dispatch stopped by the credit check (over the credit limit, or "
                 "invoices overdue beyond the customer's credit days) goes ahead only once a Finance approver releases "
                 "it — and a Partner as well when the excess is large. The requester can't approve their own request.",
-    context_fields={"checkpoint": {"label": "Checkpoint", "type": "choice", "choices": ["so_confirmation", "dispatch"]},
+    context_fields={"checkpoint": {"label": "Checkpoint", "type": "choice", "choices": list(CREDIT_CHECKPOINTS),
+                                   "choice_labels": dict(CREDIT_CHECKPOINTS)},
                     "excess_amount": {"label": "Excess over limit / overdue (₹)", "type": "number"},
                     "max_days_overdue": {"label": "Oldest overdue (days)", "type": "number"}},
     default_stages=[

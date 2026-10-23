@@ -13,7 +13,7 @@ import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import { extractErrorMessages } from '@/lib/validation'
 import ElectricalNav from '@/components/electrical/ElectricalNav'
 import {
-  inputStyle, thStyle, tdStyle, smallBtn, pill, Pill, ErrorBanner, REVISION_STATUS_LABELS, REVISION_STATUS_HEX,
+  inputStyle, thStyle, tdStyle, smallBtn, pill, Pill, ErrorBanner, useLookupErrors, REVISION_STATUS_LABELS, REVISION_STATUS_HEX,
 } from '@/components/electrical/shared'
 
 const COLUMNS = ['Drawing No.', 'Title', 'Job', 'Type', 'Latest Rev', 'Approved Rev', 'As-built', '']
@@ -26,6 +26,8 @@ export default function ElectricalDrawingRegisterPage() {
   const [drawingTypes, setDrawingTypes] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
+  const [lookupErrors, addLookupError] = useLookupErrors()
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -35,18 +37,25 @@ export default function ElectricalDrawingRegisterPage() {
     if (!isAuthorized) return
     electricalApi.getMeta()
       .then((m: ElectricalMeta) => setDrawingTypes(m?.drawing_types || {}))
-      .catch((err) => setError(extractErrorMessages(err, 'Could not load the electrical drawing types.')))
-  }, [isAuthorized])
+      .catch((err) => addLookupError(extractErrorMessages(err,
+        "Couldn't load the drawing type list for the Type filter — the register below still works unfiltered; refresh to try again.")))
+  }, [isAuthorized, addLookupError])
+
+  // Debounce the free-text search so each keystroke isn't a request.
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300)
+    return () => clearTimeout(t)
+  }, [searchInput])
 
   useEffect(() => {
     if (!isAuthorized) return
     const params: Record<string, unknown> = {}
-    if (search.trim()) params.search = search.trim()
+    if (search) params.search = search
     if (typeFilter) params.drawing_type = typeFilter
     if (statusFilter) params.revision_status = statusFilter
     if (asBuiltFilter) params.as_built = asBuiltFilter === 'yes'
     electricalApi.listDrawings(params)
-      .then((data) => setDrawings(Array.isArray(data) ? data : []))
+      .then((data) => { setDrawings(Array.isArray(data) ? data : []); setError('') })
       .catch((err) => setError(extractErrorMessages(err, 'Could not load the drawing register.')))
       .finally(() => setLoading(false))
   }, [isAuthorized, search, typeFilter, statusFilter, asBuiltFilter])
@@ -54,7 +63,7 @@ export default function ElectricalDrawingRegisterPage() {
   const open = (d: ElectricalDrawing) => router.push(`${recordPath('/dashboard/electrical/jobs', d, 'job_id')}?tab=drawings`)
   const typeLabel = (t: string) => drawingTypes[t] || t.replace(/_/g, ' ')
   const awaitingOnly = statusFilter === 'submitted'
-  const filtered = !!(search.trim() || typeFilter || statusFilter || asBuiltFilter)
+  const filtered = !!(search || typeFilter || statusFilter || asBuiltFilter)
 
   if (isLoading || !isAuthorized) return null
 
@@ -82,14 +91,15 @@ export default function ElectricalDrawingRegisterPage() {
       </div>
 
       <ErrorBanner error={error} />
+      <ErrorBanner error={lookupErrors} />
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <input
           data-tour="elec-dreg-search"
           style={{ ...inputStyle, width: 'auto', flex: '1 1 240px', minWidth: 200, maxWidth: 420 }}
           placeholder="Search drawing number, title or job number…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
         />
         <select data-tour="elec-dreg-type-filter" style={{ ...inputStyle, width: 'auto', flex: '0 1 200px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
           <option value="">All drawing types</option>

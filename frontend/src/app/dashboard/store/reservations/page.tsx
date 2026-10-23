@@ -269,7 +269,7 @@ export default function StoreStockReservationsPage() {
                   {r.op_number ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
                       <OrderProjectChip opNumber={r.op_number} elementNo={r.element_no} label={r.element_label}
-                        onClick={can('sales', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/sales/order-projects', r, 'order_project_id')) : undefined} />
+                        onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', r, 'order_project_id')) : undefined} />
                       {r.source_reference && <span style={{ fontSize: 11.5, color: TEXT.muted }}>Held from {r.source_reference}</span>}
                     </div>
                   ) : ([r.project, r.production_order].filter(Boolean).join(' / ') || '—')}

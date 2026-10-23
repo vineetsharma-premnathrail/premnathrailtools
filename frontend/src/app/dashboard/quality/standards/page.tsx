@@ -10,6 +10,7 @@ import { QualityStandard } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import { extractErrorMessages } from '@/lib/validation'
+import { formatDate } from '@/lib/format'
 
 const STATUS_LABELS: Record<string, string> = { active: 'Active', draft: 'Draft', obsolete: 'Obsolete' }
 const STATUS_HEX: Record<string, string> = { active: '#16A34A', draft: '#F59E0B', obsolete: '#78716c' }
@@ -116,7 +117,7 @@ export default function QualityStandardsPage() {
                   <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: TEXT.heading, borderTop: `1px solid ${BORDER.light}` }}>{s.standard_code}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{s.title}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{s.category || '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{s.effective_date || '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{formatDate(s.effective_date)}</td>
                   <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[s.status]}1a`, color: STATUS_HEX[s.status], whiteSpace: 'nowrap' }}>
                       {STATUS_LABELS[s.status] || s.status}

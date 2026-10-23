@@ -30,15 +30,20 @@ export default function InspectionPlansPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
-    setLoading(true)
     const params: Record<string, unknown> = {}
     if (status) params.status = status
     if (type) params.inspection_type = type
     if (search.trim()) params.search = search.trim()
-    qualityApi.listInspectionPlans(params)
-      .then((d) => setPlans(Array.isArray(d) ? d : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load inspection plans.')))
-      .finally(() => setLoading(false))
+    // Debounce typing and drop late responses so an older search can't overwrite a newer one.
+    let ignore = false
+    const t = setTimeout(() => {
+      setLoading(true)
+      qualityApi.listInspectionPlans(params)
+        .then((d) => { if (ignore) return; setPlans(Array.isArray(d) ? d : []); setError('') })
+        .catch((err) => { if (!ignore) setError(extractErrorMessages(err, 'Failed to load inspection plans.')) })
+        .finally(() => { if (!ignore) setLoading(false) })
+    }, 250)
+    return () => { ignore = true; clearTimeout(t) }
   }, [isAuthorized, status, type, search])
 
   if (isLoading || !isAuthorized) return null

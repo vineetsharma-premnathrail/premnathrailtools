@@ -233,7 +233,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
   const projectId = project?.id
   const load = useCallback(() => {
     (projectId ? projectsApi.projectTasks(projectId) : pmOngoingApi.my(includeClosed))
-      .then((d: PmDeptTask[]) => setRows(Array.isArray(d) ? d : []))
+      .then((d: PmDeptTask[]) => { setRows(Array.isArray(d) ? d : []); setError('') })
       .catch((err) => setError(extractErrorMessages(err, mineMode ? 'Could not load your tasks — reload the page.' : 'Could not load the milestones — reload the page.')))
       .finally(() => setLoaded(true))
   }, [projectId, includeClosed, mineMode])
@@ -443,8 +443,9 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
         </div>
       )}
       <ErrorBanner error={error} />
+      {!loaded && <p style={{ fontSize: 13.5, color: MUTED, margin: 0 }}>{mineMode ? 'Loading your milestones and tasks…' : 'Loading the milestones…'}</p>}
 
-      {loaded && ms.length === 0 && mineMode && (
+      {loaded && !error && ms.length === 0 && mineMode && (
         <div style={{ ...card, padding: '40px 20px', textAlign: 'center' }}>
           <span style={{ display: 'inline-flex', width: 56, height: 56, borderRadius: 16, background: '#eff6ff', alignItems: 'center', justifyContent: 'center' }}><Icon name="flag" size={28} color={BLUE} /></span>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: INK, margin: '12px 0 4px' }}>Nothing here right now</h3>
@@ -452,7 +453,7 @@ export default function ProjectPlan({ project }: { project?: PmProject }) {
         </div>
       )}
 
-      {loaded && ms.length === 0 && !mineMode && (
+      {loaded && !error && ms.length === 0 && !mineMode && (
         <div style={{ ...card, padding: '48px 20px', textAlign: 'center' }}>
           <span style={{ display: 'inline-flex', width: 56, height: 56, borderRadius: 16, background: '#eff6ff', alignItems: 'center', justifyContent: 'center' }}><Icon name="flag" size={28} color={BLUE} /></span>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: INK, margin: '12px 0 4px' }}>No milestones yet</h3>

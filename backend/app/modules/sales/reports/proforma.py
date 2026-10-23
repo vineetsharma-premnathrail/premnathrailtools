@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.permission_registry import can_perform
+from app.core.permission_words import action_word
 from app.modules.main.models.user import User
 from app.modules.main.services import managed_documents
 from app.modules.sales import service as svc
@@ -82,7 +83,7 @@ def pi_document_target(db: Session, pi_id: int, user: User, modify: bool) -> man
     ensure_order(db, user, so)
     action = "edit" if modify else "print"
     if not can_perform(user, "sales", "orders", action):
-        raise HTTPException(status_code=403, detail=f"You don't have '{action}' permission on Sales › Orders. Ask an admin to grant it in Users › Permission Matrix.")
+        raise HTTPException(status_code=403, detail=f"You don't have '{action_word(action)}' permission on Sales › Orders. Ask an admin to grant it in Users › Permission Matrix.")
     if modify and pi.status == "cancelled":
         raise HTTPException(status_code=409, detail=f"Proforma invoice {pi.pi_number} is cancelled — its document can't be changed.")
     return managed_documents.DocumentTarget(

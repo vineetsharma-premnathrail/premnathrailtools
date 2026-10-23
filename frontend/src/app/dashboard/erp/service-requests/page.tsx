@@ -150,7 +150,8 @@ export default function ServiceRequestsPage() {
   const filteredSrs = useMemo(
     () =>
       overdueOnly
-        ? srs.filter((sr) => sr.expected_completion_date && new Date(sr.expected_completion_date) < new Date() && !['closed', 'cancelled'].includes(sr.status))
+        // Date-only compare in local time: an SR due today is not overdue yet.
+        ? srs.filter((sr) => sr.expected_completion_date && sr.expected_completion_date.slice(0, 10) < new Date().toLocaleDateString('en-CA') && !['closed', 'cancelled'].includes(sr.status))
         : srs,
     [srs, overdueOnly]
   )
@@ -166,7 +167,7 @@ export default function ServiceRequestsPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: '0 0 4px' }}>Service Request Registry</h1>
-          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{srs.length} Service Requests Found</p>
+          <p style={{ fontSize: 13, color: '#78716c', margin: 0 }}>{filteredSrs.length} Service Requests Found</p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         {canExport && (
@@ -274,10 +275,10 @@ export default function ServiceRequestsPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>
+              <tr><td colSpan={13} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>Loading…</td></tr>
             )}
             {!loading && pagedSrs.length === 0 && (
-              <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests found.</td></tr>
+              <tr><td colSpan={13} style={{ padding: 24, textAlign: 'center', color: '#a8a29e', fontSize: 13 }}>No service requests found.</td></tr>
             )}
             {pagedSrs.map((sr) => {
               const statusStyle = STATUS_COLORS[sr.status] || STATUS_COLORS.open
@@ -336,7 +337,7 @@ export default function ServiceRequestsPage() {
                   </td>
                   <td style={{ padding: '12px 16px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>
                   <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                    <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', marginRight: 10 }}>View</span>
+                    <Link href={recordPath('/dashboard/erp/service-requests', sr)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', marginRight: 10, textDecoration: 'none' }}>View</Link>
                     {canEditSr(sr) && (
                       <Link href={`${recordPath('/dashboard/erp/service-requests', sr)}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
                     )}

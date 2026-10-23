@@ -14,7 +14,8 @@ import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { extractErrorMessages } from '@/lib/validation'
-import { recordHref } from '@/lib/recordRef'
+import { recordHref, recordPath } from '@/lib/recordRef'
+import SplitPoDialog from '@/components/p2p/SplitPoDialog'
 
 const READY = new Set(['vendor_quotations', 'technical_evaluation', 'commercial_evaluation', 'vendor_selected'])
 
@@ -29,6 +30,7 @@ export default function CreatePODialog({ onClose, initialRfqId, onCreated }: { o
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [splitFor, setSplitFor] = useState<RFQ | null>(null)
   const close = () => { if (!busy) onClose() }
   useEscapeKey(true, close)
 
@@ -59,10 +61,16 @@ export default function CreatePODialog({ onClose, initialRfqId, onCreated }: { o
     return [...seen.values()].sort((x, y) => x.tier.localeCompare(y.tier))
   }, [rfq])
 
+  // Emailed RFQ: quotes came back by email (no L1/L2 files) — the lines are
+  // awarded on the quote comparison and become one PO per awarded vendor.
+  const emailed = !!rfq && ((rfq.invite_count || 0) > 0 || (rfq.awarded_line_count || 0) > 0)
+  const canCreate = !!rfq && !emailed && quotes.length > 0
+
   const pickRfq = (v: string) => { setRfqId(v); setTier('L1'); setReason(''); setPr(null) }
 
   const create = async () => {
     if (!rfq) { setError('Pick the requisition first.'); return }
+    if (!canCreate) return
     if (tier !== 'L1' && !reason.trim()) { setError(`You picked the ${tier} vendor instead of L1 (lowest) — write the reason.`); return }
     setBusy(true)
     setError('')
@@ -89,7 +97,7 @@ export default function CreatePODialog({ onClose, initialRfqId, onCreated }: { o
       onClose={close} busy={busy}
       footer={<>
         <button type="button" onClick={close} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-        <button type="button" onClick={create} disabled={busy || !rfq} style={sheetBtn('primary', SHEET.BLUE, busy || !rfq)}><SheetIcon name="plus" size={16} />{busy ? 'Creating…' : 'Create PO'}</button>
+        <button type="button" onClick={create} disabled={busy || !canCreate} style={sheetBtn('primary', SHEET.BLUE, busy || !canCreate)}><SheetIcon name="plus" size={16} />{busy ? 'Creating…' : 'Create PO'}</button>
       </>}>
       <SheetColumns
         left={<>
@@ -106,7 +114,34 @@ export default function CreatePODialog({ onClose, initialRfqId, onCreated }: { o
             )}
           </SheetSection>
 
-          {rfq && (
+          {rfq && emailed && (
+            <SheetSection icon="building" title="2. Vendor (from the RFQ quotes)">
+              <p style={{ fontSize: 13, color: SHEET.BODY, margin: '0 0 10px' }}>
+                The vendors on {rfq.rfq_number} quoted by email, so the PO isn&apos;t made from an L1 quote here. Award each line to a vendor on the
+                quote comparison; the awarded lines then become one PO per vendor.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => router.push(`${recordPath('/dashboard/p2p/rfq', rfq)}/comparison`)} style={sheetBtn('secondary', SHEET.INK)}>
+                  Open quote comparison
+                </button>
+                {(rfq.awarded_line_count || 0) > 0 && (
+                  <button type="button" onClick={() => setSplitFor(rfq)} style={sheetBtn('primary', SHEET.BLUE)}>
+                    <SheetIcon name="plus" size={16} />Create PO(s) from the award
+                  </button>
+                )}
+              </div>
+              {(rfq.awarded_line_count || 0) === 0 && <p style={sheetHint}>No line is awarded yet — award the lines on the comparison first.</p>}
+            </SheetSection>
+          )}
+          {rfq && !emailed && quotes.length === 0 && (
+            <SheetSection icon="building" title="2. Vendor (from the RFQ quotes)">
+              <p style={{ fontSize: 13, color: SHEET.BODY, margin: 0 }}>
+                {rfq.rfq_number} has no vendor quote yet. Add the quotes on the RFQ page, then create the PO.
+              </p>
+              <button type="button" onClick={() => router.push(recordPath('/dashboard/p2p/rfq', rfq))} style={{ ...sheetBtn('secondary', SHEET.INK), marginTop: 10 }}>Open the RFQ</button>
+            </SheetSection>
+          )}
+          {rfq && !emailed && quotes.length > 0 && (
             <SheetSection icon="building" title="2. Vendor (from the RFQ quotes)">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {quotes.map((q) => (
@@ -154,6 +189,12 @@ export default function CreatePODialog({ onClose, initialRfqId, onCreated }: { o
           )}
         </>}
       />
+      {splitFor && <SplitPoDialog rfq={splitFor} onClose={() => setSplitFor(null)} onDone={(poRow) => {
+        const r = splitFor
+        setSplitFor(null)
+        if (onCreated) onCreated()
+        else router.push(recordHref('/dashboard/p2p/purchase-orders/new', r, 'id', { po: poRow ? (poRow as { id_ref?: string }).id_ref : undefined }, 'rfq'))
+      }} />}
     </FormSheet>
   )
 }

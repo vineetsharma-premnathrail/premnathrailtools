@@ -72,8 +72,8 @@ def _guard_statutory(user: User, changes: dict, company: Company | None) -> None
         raise HTTPException(
             status_code=403,
             detail=f"You can't change the legal / registration / tax details ({', '.join(changed[:5])}"
-                   f"{'…' if len(changed) > 5 else ''}) — your role lacks Organization › Company Info › Legal, registration & tax › Edit "
-                   "(organization:info.statutory:edit). Leave those fields as they are, or ask an admin to add it to one of "
+                   f"{'…' if len(changed) > 5 else ''}) — your role lacks Organization › Company Info › Legal, registration & tax › Edit. "
+                   "Leave those fields as they are, or ask an admin to add it to one of "
                    "your roles in Organization › Role & Permissions.",
         )
 

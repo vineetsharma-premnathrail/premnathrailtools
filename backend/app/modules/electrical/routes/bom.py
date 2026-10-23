@@ -132,8 +132,8 @@ def _require_approver(user: User) -> None:
     if not can_feature(user, "electrical", "jobs", "bom", "approve"):
         raise HTTPException(
             status_code=403,
-            detail="Only someone with 'approve' permission on Electrical › RRV Electrical Jobs › BOM "
-                   "(electrical:jobs.bom:approve) can approve a component selection — leave the line as 'Selected' and use "
+            detail="Only someone with 'Approve' permission on Electrical › RRV Electrical Jobs › BOM "
+                   "can approve a component selection — leave the line as 'Selected' and use "
                    "'Submit for approval', or ask an admin to grant the permission in Organization › Role & Permissions.",
         )
 

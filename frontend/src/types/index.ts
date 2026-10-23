@@ -10102,6 +10102,8 @@ export interface ApprovalContextField {
   label: string
   type: 'number' | 'text' | 'bool' | 'choice' | 'user'
   choices?: string[]
+  /** Display name per choice (e.g. purpose 'customer_order' → 'Production (customer order)'). */
+  choice_labels?: Record<string, string>
 }
 
 export interface ApprovalTransactionType {
@@ -10145,6 +10147,8 @@ export interface ApprovalWorkflowMeta {
   escalation_rules: Record<string, string>
   condition_ops: Record<string, string>
   approval_permissions: string[]
+  /** The same permissions in words, grouped by module: "Purchase Requisitions — Approve". */
+  approval_permission_options?: { value: string; module_key: string; module: string; label: string }[]
   roles: { id: number; name: string }[]
 }
 

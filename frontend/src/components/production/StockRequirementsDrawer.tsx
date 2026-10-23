@@ -48,7 +48,7 @@ export default function StockRequirementsDrawer({ itemId, branchId, onClose }: {
       <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(980px, 100vw)', height: '100%', background: '#fff', boxShadow: '-12px 0 40px rgba(0,0,0,0.2)', padding: 22, overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
           <div>
-            <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Stock / Requirements List (MD04)</p>
+            <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Stock / Requirements List</p>
             <h2 style={{ fontSize: 19, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{data ? `${data.item_code} — ${data.item_name}` : 'Loading…'}</h2>
           </div>
           <button type="button" style={secondaryBtnStyle} onClick={onClose}>Close</button>

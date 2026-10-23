@@ -6,7 +6,8 @@ import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, she
 import DateField from '@/components/erp/DateField'
 import UserChipsPicker from '@/components/organization/UserChipsPicker'
 
-const today = () => new Date().toISOString().slice(0, 10)
+// Local date — toISOString() is UTC and gives yesterday before 05:30 IST.
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 /**
  * New delegation popup: who approves for whom, when, and for which module /

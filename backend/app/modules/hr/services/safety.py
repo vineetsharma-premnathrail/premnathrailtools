@@ -143,8 +143,9 @@ engine.register_transaction(engine.TransactionType(
     url="/dashboard/hr/safety", description="Closing an accident / near-miss after its investigation and CAPA "
     "(HR › Safety). Default: the plant head (or an HR › Safety approver), then a Partner for high or fatal incidents.",
     context_fields={
-        "severity": {"label": "Severity", "type": "choice", "choices": list(SEVERITIES)},
-        "incident_type": {"label": "Incident type", "type": "choice", "choices": list(INCIDENT_TYPES)},
+        "severity": {"label": "Severity", "type": "choice", "choices": list(SEVERITIES), "choice_labels": dict(SEVERITIES)},
+        "incident_type": {"label": "Incident type", "type": "choice", "choices": list(INCIDENT_TYPES),
+                          "choice_labels": dict(INCIDENT_TYPES)},
         "lost_days": {"label": "Lost days", "type": "number"},
         "reportable": {"label": "Reportable (Form 18)", "type": "bool"},
     },

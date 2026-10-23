@@ -41,10 +41,15 @@ export default function WorkstationsList({ openNew = false }: { openNew?: boolea
     if (statusFilter) params.status = statusFilter
     if (typeFilter) params.workstation_type = typeFilter
     if (search.trim()) params.search = search.trim()
-    productionApi.listWorkstations(params)
-      .then((data) => setWorkstations(Array.isArray(data) ? data : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load workstations.')))
-      .finally(() => setLoading(false))
+    // Debounce typing and drop late responses so an older search can't overwrite a newer one.
+    let ignore = false
+    const t = setTimeout(() => {
+      productionApi.listWorkstations(params)
+        .then((data) => { if (ignore) return; setWorkstations(Array.isArray(data) ? data : []); setError('') })
+        .catch((err) => { if (!ignore) setError(extractErrorMessages(err, 'Failed to load workstations.')) })
+        .finally(() => { if (!ignore) setLoading(false) })
+    }, 250)
+    return () => { ignore = true; clearTimeout(t) }
   }, [isAuthorized, statusFilter, typeFilter, search])
 
   if (isLoading || !isAuthorized) return null

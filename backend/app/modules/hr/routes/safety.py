@@ -96,7 +96,7 @@ def _ensure_manage(db: Session, user: User, inc: HrSafetyIncident, *, allow_lead
     if not _can(user, "edit"):
         lead = " or be its investigation lead" if allow_lead else ""
         raise HTTPException(status_code=403, detail=(
-            f"You need 'Edit' on HR & Administration › Safety (hr:safety:edit){lead} to do this on {inc.incident_no}. "
+            f"You need 'Edit' on HR & Administration › Safety{lead} to do this on {inc.incident_no}. "
             "Ask an admin to add it to your role in Organization › Role & Permissions."))
     ensure_in_scope(db, user, inc)
 
@@ -112,7 +112,7 @@ def _ensure_capa(user: User, inc: HrSafetyIncident, action: str) -> None:
 def _ensure_reporter(user: User) -> None:
     if not (_can(user, "create") or can_perform(user, "hr", "me", "create")):
         raise HTTPException(status_code=403, detail=(
-            "Reporting an incident needs My HR (hr:me:create) or 'Create' on HR & Administration › Safety. "
+            "Reporting an incident needs 'Create' on My HR or 'Create' on HR & Administration › Safety. "
             "Ask an admin to add My HR to your role in Organization › Role & Permissions."))
 
 
@@ -920,6 +920,9 @@ def _form18_target(db: Session, entity_id: int, user: User, modify: bool):
 
     inc = _load(db, entity_id)
     _ensure_view(db, user, inc)
+    # Same gate as the Form 18 PDF (print) and the statutory details (edit) —
+    # being a party to the incident isn't enough to open or edit the form.
+    ensure_feature_action(user, "hr", "safety", "statutory", "edit" if modify else "print")
     if modify:
         _ensure_manage(db, user, inc, allow_lead=True)
     spec = svc.form18_spec(db, inc)

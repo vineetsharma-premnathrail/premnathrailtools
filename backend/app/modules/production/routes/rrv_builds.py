@@ -736,7 +736,8 @@ engine.register_transaction(engine.TransactionType(
     entity_type=RRV_ENTITY, url="/dashboard/production/rrv-builds/{id}",
     description="Completing an RRV sign-off stage (RRV Completion, Handover).",
     context_fields={
-        "stage_key": {"label": "Sign-off stage", "type": "choice", "choices": list(PRODUCTION_RRV_SIGNOFF_STAGES)},
+        "stage_key": {"label": "Sign-off stage", "type": "choice", "choices": list(PRODUCTION_RRV_SIGNOFF_STAGES),
+                      "choice_labels": {"rrv_completion": "RRV completion", "handover": "Handover"}},
         "build_manager_id": {"label": "Build manager", "type": "user"},
         "signer_ids": {"label": "Build manager or a production manager", "type": "user"},
     },

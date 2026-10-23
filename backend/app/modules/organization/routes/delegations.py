@@ -45,16 +45,18 @@ def _out(d: ApprovalDelegation) -> dict:
 
 def _check(db: Session, payload: DelegationPayload, delegator_id: int) -> None:
     if payload.end_date < payload.start_date:
-        raise HTTPException(status_code=422, detail="End date is before the start date.")
+        raise HTTPException(status_code=422, detail=f"The end date ({payload.end_date:%d-%m-%Y}) is before the start date ({payload.start_date:%d-%m-%Y}). "
+                                                    "Pick an end date on or after the start date.")
     if payload.delegate_id == delegator_id:
         raise HTTPException(status_code=422, detail="Pick someone else — you can't delegate to yourself.")
     delegate = db.get(User, payload.delegate_id)
     if not delegate or not delegate.is_active:
-        raise HTTPException(status_code=422, detail="The delegate must be an active user.")
+        raise HTTPException(status_code=422, detail="The person picked to approve in your place is not an active user. "
+                                                    "Pick an active colleague as the delegate.")
     if payload.module_key and payload.module_key not in MODULES:
-        raise HTTPException(status_code=422, detail=f"Unknown module '{payload.module_key}'.")
+        raise HTTPException(status_code=422, detail=f"Unknown module '{payload.module_key}'. Pick a module from the list, or leave it empty for all modules.")
     if payload.workflow_key and payload.workflow_key not in transaction_types():
-        raise HTTPException(status_code=422, detail=f"Unknown approval type '{payload.workflow_key}'.")
+        raise HTTPException(status_code=422, detail=f"Unknown approval type '{payload.workflow_key}'. Pick a document type from the list, or leave it empty for all types.")
     back = (
         db.query(ApprovalDelegation)
         .filter(ApprovalDelegation.delegator_id == payload.delegate_id, ApprovalDelegation.delegate_id == delegator_id,

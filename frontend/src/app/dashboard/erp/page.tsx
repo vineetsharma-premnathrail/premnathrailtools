@@ -190,7 +190,7 @@ export default function ErpDashboardPage() {
                     <td style={{ padding: '10px 14px' }}>
                       <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: PRIORITY_COLORS[sr.priority] || '#64748b' }}>{sr.priority}</span>
                     </td>
-                    <td style={{ padding: '10px 14px', fontSize: 12, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{sr.status.replace('_', ' ')}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 12, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{sr.status.replace(/_/g, ' ')}</td>
                     <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{age !== null ? `${age}d` : '—'}</td>
                     <td style={{ padding: '10px 14px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(project)}</td>
                     <td style={{ padding: '10px 14px' }}>
@@ -241,7 +241,7 @@ export default function ErpDashboardPage() {
                   <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.delivery_date || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 12, color: '#78716c', whiteSpace: 'nowrap' }}>{p.commissioning_date || '—'}</td>
                   <td style={{ padding: '10px 14px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: STATUS_COLORS[p.status] || '#64748b' }}>{p.status.replace('_', ' ')}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'capitalize', color: STATUS_COLORS[p.status] || '#64748b' }}>{p.status.replace(/_/g, ' ')}</span>
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#57534e' }}>{srCountByProject.get(p.id) || 0}</td>
                   <td style={{ padding: '10px 14px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(p)}</td>

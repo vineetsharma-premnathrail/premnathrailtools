@@ -68,3 +68,32 @@ def test_sr_export_selected_and_ranges(client, db):
     rows = _first_col(client.get(f"{API}/service-requests/export", params={"date_field": "closed", "date_from": "2026-04-10", "date_to": "2026-04-10"}, headers=h))
     assert rows == ["SR-EXP-2"]
     assert client.get(f"{API}/service-requests/export", params={"date_field": "bogus"}, headers=h).status_code == 422
+
+
+def _user(db, email, grants):
+    u = User(email=email, name=email.split("@")[0], role="user", is_active=True, granular_permissions=grants)
+    db.add(u)
+    db.commit()
+    return {"Authorization": f"Bearer {create_access_token({'sub': str(u.id), 'email': u.email, 'role': u.role})}"}
+
+
+def test_sr_export_blanks_money_without_charges_switch(client, db):
+    """Security fix: the export used to send every cost / bill amount even to
+    roles without Service Requests › Charges, costs & billing amounts."""
+    a, _b, _c = _seed(db)
+    sr = db.query(ServiceRequest).filter_by(request_number="SR-EXP-1").one()
+    sr.service_cost, sr.total_bill = 1234.0, 5678.0
+    db.commit()
+
+    def sheet(h):
+        resp = client.get(f"{API}/service-requests/export", params={"ids": str(sr.id)}, headers=h)
+        assert resp.status_code == 200, resp.text
+        rows = list(load_workbook(io.BytesIO(resp.content)).active.iter_rows(values_only=True))
+        return dict(zip(rows[0], rows[1]))
+
+    # Customised role: View + Export but the Charges feature not picked.
+    blind = sheet(_user(db, "sr.blind@premnathrail.com", ["erp:service_requests:view", "erp:service_requests:export",
+                                                            "erp:service_requests.visits:view"]))
+    assert blind["Total Bill"] in (None, "") and 1234 not in blind.values() and 5678 not in blind.values()
+    sees = sheet(_user(db, "sr.sees@premnathrail.com", ["erp:service_requests:view", "erp:service_requests:export"]))
+    assert sees["Total Bill"] == 5678

@@ -63,7 +63,7 @@ async def shop_floor_queue(
     ws_ids = {op.workstation_id for op, _ in rows if op.workstation_id}
     ws_names = {w.id: f"{w.code} — {w.name}" for w in db.query(ProductionWorkstation).filter(ProductionWorkstation.id.in_(ws_ids)).all()} if ws_ids else {}
     insp_ids = {op.quality_inspection_id for op, _ in rows if op.quality_inspection_id}
-    inspections = {i.id: i for i in db.query(QualityInspection).filter(QualityInspection.id.in_(insp_ids), QualityInspection.is_deleted == False).all()}  # noqa: E712 if insp_ids else {}
+    inspections = {i.id: i for i in db.query(QualityInspection).filter(QualityInspection.id.in_(insp_ids), QualityInspection.is_deleted == False).all()} if insp_ids else {}  # noqa: E712
     from app.modules.quality.models.inspection_lot import QualityInspectionLot
     from app.modules.quality.services.production_gates import gate_state
     lot_ids = {op.quality_lot_id for op, _ in rows if op.quality_lot_id}

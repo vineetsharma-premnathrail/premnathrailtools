@@ -104,6 +104,7 @@ export default function RrvBuildDetailPage() {
   const [editing, setEditing] = useState(false)
   const [details, setDetails] = useState<Record<string, string>>({})
   const [consumption, setConsumption] = useState<ProductionRrvConsumption | null>(null)
+  const [consumptionError, setConsumptionError] = useState<string | string[]>('')
   const [linkable, setLinkable] = useState<ProductionWorkOrder[]>([])
   const [linkWo, setLinkWo] = useState({ id: '', role: 'sub_assembly' })
   const [testForm, setTestForm] = useState({ test_type: 'road_trial', test_date: new Date().toISOString().slice(0, 10), result: 'pass', expected: '', observed: '', witnessed_by: '', remarks: '', rework_assignee_id: '' })
@@ -122,7 +123,9 @@ export default function RrvBuildDetailPage() {
 
   useEffect(() => {
     if (!isAuthorized || !b || tab !== 'work_orders' || !seeTab.work_orders) return
-    rrvApi.getConsumption(b.id).then(setConsumption).catch(() => setConsumption(null))
+    rrvApi.getConsumption(b.id)
+      .then((c) => { setConsumption(c); setConsumptionError('') })
+      .catch((err) => { setConsumption(null); setConsumptionError(extractErrorMessages(err, 'Failed to load the material consumption.')) })
     productionApi.listWorkOrders({ status: 'draft,released,in_progress,completed' })
       .then((rows: ProductionWorkOrder[]) => setLinkable((Array.isArray(rows) ? rows : []).filter((w) => !w.rrv_build_id && (!b.erp_project_id || !w.erp_project_id || w.erp_project_id === b.erp_project_id))))
       .catch(() => setLinkable([]))
@@ -424,7 +427,7 @@ export default function RrvBuildDetailPage() {
                 <div data-tour="production-rrv-order-project">
                   <p className="info-row-label" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order Project</p>
                   <OrderProjectChip opNumber={b.order_project_number} elementNo={b.order_project_element_no} label={b.order_project_element_label}
-                    onClick={canTab('sales', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/sales/order-projects', b, 'order_project_id')) : undefined} />
+                    onClick={canTab('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', b, 'order_project_id')) : undefined} />
                 </div>
               )}
               <InfoRow label="Customer" value={b.customer_name || '—'} />
@@ -495,7 +498,11 @@ export default function RrvBuildDetailPage() {
 
               <div data-tour="production-rrv-consumption" style={sectionStyle}>
                 <p style={sectionTitle}>Material consumption (all linked work orders)</p>
-                {!consumption ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p> : consumption.rows.length === 0 ? (
+                {!consumption ? (
+                  consumptionError
+                    ? <p style={{ fontSize: 13, color: '#b91c1c', margin: 0 }}>{Array.isArray(consumptionError) ? consumptionError.join(' ') : consumptionError}</p>
+                    : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p>
+                ) : consumption.rows.length === 0 ? (
                   <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No material lines yet — they come from the linked work orders&apos; BOMs.</p>
                 ) : (
                   <>

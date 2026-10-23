@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
+from app.core.permission_words import action_word
 from app.modules.electrical.models.bom import ElectricalBomItem
 from app.modules.electrical.models.cable import ElectricalCable, ELECTRICAL_CABLE_INSTALLED
 from app.modules.electrical.models.document import ElectricalDocument, ELECTRICAL_FINAL_DOC_CATEGORIES
@@ -401,7 +402,7 @@ def require_any_tab_action(*pairs: tuple[str, str]):
         module = MODULES.get(ELECTRICAL_APP, {})
         label = module.get("label", ELECTRICAL_APP)
         tabs = module.get("subtabs", {})
-        options = " or ".join(f"'{action}' on {label} › {tabs.get(subtab, subtab)}" for subtab, action in pairs)
+        options = " or ".join(f"'{action_word(action)}' on {label} › {tabs.get(subtab, subtab)}" for subtab, action in pairs)
         raise HTTPException(
             status_code=403,
             detail=f"You don't have permission for this action — it needs {options}. "
@@ -472,9 +473,9 @@ def require_job_feature(feature: str, action: str, *alt_pairs: tuple[str, str]):
         tabs = module.get("subtabs", {})
         spec = module.get("features", {}).get("jobs", {}).get(feature, {})
         legacy = spec.get("inherit", {}).get(action, action)
-        options = [f"'{legacy}' on {label} › {tabs.get('jobs', 'jobs')} (or its {spec.get('label', feature)} '{action}' "
-                   f"feature, electrical:jobs.{feature}:{action})"]
-        options += [f"'{act}' on {label} › {tabs.get(tab, tab)}" for tab, act in alt_pairs]
+        options = [f"'{action_word(legacy)}' on {label} › {tabs.get('jobs', 'jobs')} (or its {spec.get('label', feature)} "
+                   f"'{action_word(action)}' feature)"]
+        options += [f"'{action_word(act)}' on {label} › {tabs.get(tab, tab)}" for tab, act in alt_pairs]
         raise HTTPException(
             status_code=403,
             detail=f"You don't have permission for this action — it needs {' or '.join(options)}. "

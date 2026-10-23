@@ -83,7 +83,7 @@ def test_project_routes_need_the_projects_app(client, db, w):
                  f"/projects/{p['id']}/milestones", f"/projects/{p['id']}/documents", f"/projects/{p['id']}/audit"):
         r = client.get(f"{API}{path}", headers=auth(w["noapp"]))
         assert r.status_code == 403, path
-        assert r.json()["detail"].startswith("Access to 'projects' module required")
+        assert r.json()["detail"].startswith("You can't open the ")
     # A department head without the app is still gated out of the management side.
     assert client.get(f"{API}/projects/{p['id']}", headers=auth(w["head"])).status_code == 403
     # No token at all → not authenticated.
@@ -486,3 +486,34 @@ def test_list_filters(client, db, w):
     assert [p["project_code"] for p in client.get(f"{API}/projects?search=rvnl", headers=h).json()] == ["PEW-B"]
     assert [p["project_code"] for p in client.get(f"{API}/projects?priority=high", headers=h).json()] == ["PEW-A"]
     assert [p["project_code"] for p in client.get(f"{API}/projects?health=on_track", headers=h).json()] == ["PEW-A"]
+
+
+def test_private_subtask_file_needs_the_subtask_not_just_the_milestone(client, db, w, monkeypatch):
+    """Security fix: someone holding one sub-task on a milestone could download
+    the files of another person's sub-task by id (its activity was already 403)."""
+    from fastapi import Response
+
+    from app.modules.projects.models.document import PmProjectDocument
+    from app.modules.projects.routes import project_tasks as pt
+
+    async def fake_file(doc):
+        return Response(content=b"bytes", media_type="application/pdf")
+
+    monkeypatch.setattr(pt, "file_response", fake_file)
+    p = create(client, w)
+    due = str(TODAY + timedelta(days=10))
+    t = client.post(f"{API}/projects/{p['id']}/project-tasks", headers=auth(w["pm"]), json={
+        "title": "GA drawing", "department_id": w["dept"].id, "assignee_id": w["member"].id, "due_date": due}).json()
+    sub_url = f"{API}/pm-ongoing/tasks/{t['id']}/subtasks"
+    other = make_user(db, "lc.other.sub@x.com")
+    client.post(sub_url, headers=auth(w["member"]), json={"title": "Frame", "assignee_id": w["noapp"].id, "due_date": due})
+    j = client.post(sub_url, headers=auth(w["member"]), json={"title": "Bogie", "assignee_id": other.id, "due_date": due}).json()
+    bogie = next(s for s in j["subtasks"] if s["title"] == "Bogie")
+    doc = PmProjectDocument(project_id=p["id"], task_id=t["id"], subtask_id=bogie["id"], doc_type="other", title="calc",
+                            file_name="calc.pdf", file_path="x/calc.pdf", sharepoint_path="x/calc.pdf", uploaded_by_id=other.id)
+    db.add(doc)
+    db.commit()
+    url = f"{API}/pm-ongoing/files/{doc.id}/content"
+    assert client.get(url, headers=auth(w["noapp"])).status_code == 403  # holds 'Frame', not 'Bogie'
+    assert client.get(url, headers=auth(other)).status_code == 200
+    assert client.get(url, headers=auth(w["member"])).status_code == 200  # created the sub-task

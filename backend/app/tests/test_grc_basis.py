@@ -194,6 +194,9 @@ def test_permission_key_parsing():
     assert basis_log.permission_key_from_detail("You don't have 'edit' permission on X › Y (store:issues:edit). Ask") == "store:issues:edit"
     assert basis_log.permission_key_from_detail("You don't have 'view' permission on X › Y (store:issues). Ask") == "store:issues:view"
     assert basis_log.permission_key_from_detail("Access to 'crm' module required — none") == "crm:*:view"
+    # The core checks now say it in words and pass the id on the exception itself.
+    from app.core.permissions import PermissionDenied
+    assert PermissionDenied("You can't open the CRM module", "crm:*:view").permission_key == "crm:*:view"
 
 
 # ------------------------------------------------------------------ SM21

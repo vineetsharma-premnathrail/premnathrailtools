@@ -158,11 +158,15 @@ register_transaction(TransactionType(
                 "raised from a breakdown request, when the requester confirms the machine is OK.",
     context_fields={
         "wo_type": {"label": "Work order type", "type": "choice",
-                    "choices": ["breakdown", "preventive", "corrective", "calibration", "improvement", "inspection"]},
-        "priority": {"label": "Priority", "type": "choice", "choices": ["low", "normal", "high", "urgent"]},
+                    "choices": ["breakdown", "preventive", "corrective", "calibration", "improvement", "inspection"],
+                    "choice_labels": {"breakdown": "Breakdown", "preventive": "Preventive", "corrective": "Corrective",
+                                      "calibration": "Calibration", "improvement": "Improvement", "inspection": "Inspection"}},
+        "priority": {"label": "Priority", "type": "choice", "choices": ["low", "normal", "high", "urgent"],
+                     "choice_labels": {"low": "Low", "normal": "Normal", "high": "High", "urgent": "Urgent"}},
         "machine_down": {"label": "Machine was down", "type": "bool"},
         "downtime_minutes": {"label": "Downtime (minutes)", "type": "number"},
-        "criticality": {"label": "Asset criticality", "type": "choice", "choices": ["A", "B", "C"]},
+        "criticality": {"label": "Asset criticality", "type": "choice", "choices": ["A", "B", "C"],
+                        "choice_labels": {"A": "A — Line stops", "B": "B — Important", "C": "C — Low impact"}},
     },
     # Today's rule: anyone holding Work Orders › Approve verifies and closes.
     # same_plant: each plant's own planners verify its jobs (as before the engine).

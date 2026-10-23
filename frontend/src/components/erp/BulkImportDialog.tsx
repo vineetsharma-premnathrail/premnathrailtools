@@ -6,6 +6,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { TEXT } from '@/lib/theme'
 import { primaryBtnStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
+import { createPortal } from 'react-dom'
 
 interface ImportResult {
   created: { row: number; id: number; ref: string; name: string; detail: string }[]
@@ -131,7 +132,10 @@ export default function BulkImportDialog({ kind, open, onClose, onImported }: {
 
   const plural = (n: number) => `${n} ${copy.noun}${n === 1 ? '' : 's'}`
 
-  return (
+  if (typeof document === 'undefined') return null
+  // Portal to <body>: a glass card (backdrop-filter) would otherwise trap the
+  // fixed backdrop inside itself instead of covering the screen.
+  return createPortal(
     <div onClick={close} className="dialog-backdrop" style={{ position: 'fixed', inset: 0, background: 'rgba(20,14,8,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} className="dialog-panel" style={{ width: '100%', maxWidth: result ? 820 : 500, maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: 18, padding: 24, boxShadow: '0 24px 60px rgba(0,0,0,0.25)' }}>
         <p style={{ fontSize: 16, fontWeight: 700, color: '#1f1108', margin: '0 0 6px' }}>{copy.title}</p>
@@ -192,6 +196,7 @@ export default function BulkImportDialog({ kind, open, onClose, onImported }: {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

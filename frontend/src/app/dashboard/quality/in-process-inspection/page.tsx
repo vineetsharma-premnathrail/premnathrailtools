@@ -11,6 +11,7 @@ import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import QualityNav from '@/components/quality/QualityNav'
 import LotList from '@/components/quality/LotList'
 import { extractErrorMessages } from '@/lib/validation'
+import { formatDate } from '@/lib/format'
 
 const STATUS_LABELS: Record<string, string> = { pending: 'Pending', in_progress: 'In Progress', passed: 'Passed', failed: 'Failed', conditionally_passed: 'Conditionally Passed' }
 const STATUS_HEX: Record<string, string> = { pending: '#F59E0B', in_progress: '#2563EB', passed: '#16A34A', failed: '#DC2626', conditionally_passed: '#7C3AED' }
@@ -33,14 +34,19 @@ export default function InProcessInspectionListPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
-    setLoading(true)
     const params: Record<string, unknown> = { inspection_type: 'in_process' }
     if (statusFilter) params.status = statusFilter
     if (search.trim()) params.search = search.trim()
-    qualityApi.listInspections(params)
-      .then((data) => setInspections(Array.isArray(data) ? data : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load In-Process Inspections.')))
-      .finally(() => setLoading(false))
+    // Debounce typing and drop late responses so an older search can't overwrite a newer one.
+    let ignore = false
+    const t = setTimeout(() => {
+      setLoading(true)
+      qualityApi.listInspections(params)
+        .then((data) => { if (ignore) return; setInspections(Array.isArray(data) ? data : []); setError('') })
+        .catch((err) => { if (!ignore) setError(extractErrorMessages(err, 'Failed to load In-Process Inspections.')) })
+        .finally(() => { if (!ignore) setLoading(false) })
+    }, 250)
+    return () => { ignore = true; clearTimeout(t) }
   }, [isAuthorized, statusFilter, search])
 
   if (isLoading || !isAuthorized) return null
@@ -128,7 +134,7 @@ export default function InProcessInspectionListPage() {
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{insp.batch_number || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{insp.project_label || '—'}</td>
                   <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{insp.quantity_inspected ?? '—'}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{insp.inspection_date || '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 13, color: TEXT.body, borderTop: `1px solid ${BORDER.light}` }}>{formatDate(insp.inspection_date)}</td>
                   <td style={{ padding: '10px 14px', borderTop: `1px solid ${BORDER.light}` }}>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[insp.status]}1a`, color: STATUS_HEX[insp.status], whiteSpace: 'nowrap' }}>
                       {STATUS_LABELS[insp.status] || insp.status}

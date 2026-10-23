@@ -311,11 +311,11 @@ export default function ProjectsRegistryPage() {
                 <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{p.year_of_manufacture || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{p.delivery_date || '—'}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#78716c', whiteSpace: 'nowrap' }}>{p.commissioning_date || '—'}</td>
-                <td style={{ padding: '12px 16px', fontSize: 12, color: '#57534e', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{p.status.replace('_', ' ')}</td>
+                <td style={{ padding: '12px 16px', fontSize: 12, color: '#57534e', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>{p.status.replace(/_/g, ' ')}</td>
                 <td style={{ padding: '12px 16px', fontSize: 12.5, color: '#57534e' }}>{srCountByProject.get(p.id) || 0}</td>
                 <td style={{ padding: '12px 16px', fontSize: 11.5, color: '#78716c', whiteSpace: 'nowrap' }}>{warrantyLabel(p)}</td>
                 <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                  <span style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', marginRight: 10 }}>View</span>
+                  <Link href={recordPath('/dashboard/erp/projects', p)} style={{ fontSize: 11.5, fontWeight: 600, color: '#2563eb', marginRight: 10, textDecoration: 'none' }}>View</Link>
                   {canEdit && (
                     <Link href={`${recordPath('/dashboard/erp/projects', p)}/edit`} style={{ fontSize: 11.5, fontWeight: 600, color: '#57534e', textDecoration: 'none' }}>Edit</Link>
                   )}

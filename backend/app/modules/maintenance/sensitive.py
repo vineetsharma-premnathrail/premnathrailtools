@@ -18,8 +18,8 @@ WO_MONEY = ("external_cost", "labour_cost", "spares_cost", "total_cost", "procur
 COST_KEYS = ("spares", "labour", "external", "total")
 
 _DENIED = (
-    "You can't see or enter maintenance costs — that needs Maintenance › Work Orders › Maintenance costs "
-    "(maintenance:work_orders.costs:view). Leave the {what} blank, or ask an admin to add it to your role in "
+    "You can't see or enter maintenance costs — that needs Maintenance › Work Orders › Maintenance costs. "
+    "Leave the {what} blank, or ask an admin to add it to your role in "
     "Organization › Role & Permissions."
 )
 

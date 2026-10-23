@@ -190,7 +190,7 @@ export default function LotDetailPage() {
         <Pill text={LOT_STATUS_LABELS[lot.status] || lot.status} hex={LOT_STATUS_HEX[lot.status]} />
         {lot.op_number && (
           <OrderProjectChip opNumber={lot.op_number} elementNo={lot.element_no} label={lot.element_label}
-            onClick={can('sales', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/sales/order-projects', lot, 'order_project_id')) : undefined} />
+            onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', lot, 'order_project_id')) : undefined} />
         )}
         <button type="button" onClick={() => router.push('/dashboard/quality/lots')} style={secondaryBtnStyle}>← Back</button>
       </PageHeader>

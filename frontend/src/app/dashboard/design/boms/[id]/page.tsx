@@ -701,7 +701,7 @@ export default function DesignBomDetailPage() {
                       <div>
                         <p style={smallLabel}>Order project</p>
                         <OrderProjectChip opNumber={bom.order_project_number} elementNo={bom.order_project_element_no} label={bom.order_project_element_label}
-                          onClick={() => router.push(recordPath('/dashboard/sales/order-projects', bom, 'order_project_id'))} />
+                          onClick={() => router.push(recordPath('/dashboard/projects/order-projects', bom, 'order_project_id'))} />
                       </div>
                     )}
                     <InfoRow label="Project" value={bom.pm_project_label || '—'} />

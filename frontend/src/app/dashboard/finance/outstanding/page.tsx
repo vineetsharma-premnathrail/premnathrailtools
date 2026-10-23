@@ -179,7 +179,7 @@ function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType
   const stmtKey = `${fromDate}|${toDate}`
   const stmtLoading = stmtLoadedFor !== stmtKey
   const [error, setError] = useState<string[] | null>(null)
-  const { can } = useCan()
+  const { canFeature } = useCan()
   const [setOff, setSetOff] = useState<OpenCredit | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -269,7 +269,7 @@ function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType
                   <td style={numTd}>{inr(c.amount)}</td>
                   <td style={{ ...numTd, fontWeight: 700, color: '#b45309' }}>{inr(c.available)}</td>
                   <td style={tdStyle}>
-                    {!historical && docs.length > 0 && can('accounts', 'payments', 'edit') && (
+                    {!historical && docs.length > 0 && canFeature('accounts', 'payments', 'allocation', 'edit') && (
                       <button style={{ fontSize: 11.5, fontWeight: 600, color: BRAND.primaryActive, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
                         onClick={() => setSetOff(c)}>Set off</button>
                     )}
@@ -305,7 +305,9 @@ function PartyDetail({ partyType, party, asOf, onClose }: { partyType: PartyType
           </tr>
         </thead>
         <tbody>
-          {stmtLoading || !statement ? <EmptyRow colSpan={7} text="Loading statement…" /> : (
+          {!fromDate || !toDate ? <EmptyRow colSpan={7} text="Pick both a From and a To date to see the statement." />
+            : stmtLoading ? <EmptyRow colSpan={7} text="Loading statement…" />
+            : !statement ? <EmptyRow colSpan={7} text="The statement could not be loaded — see the message above." /> : (
             <>
               <tr>
                 <td style={tdStyle}>{dmy(statement.from_date)}</td>

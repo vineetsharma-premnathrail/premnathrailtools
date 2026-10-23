@@ -29,18 +29,21 @@ export default function MsmeDuesPage() {
   const [alerts, setAlerts] = useState<{ rows: MsmeAlertRow[]; breached_count: number; breached_amount: number; due_soon_count: number } | null>(null)
   const [fy, setFy] = useState(currentFyStart() - 1)
   const [report, setReport] = useState<{ financial_year: string; year_end: string; rows: Msme43bhRow[]; total_disallowed: number; excluded: Msme43bhRow[]; note: string } | null>(null)
-  const [error, setError] = useState<string[] | null>(null)
+  // Separate errors: a successful 43B(h) reload must not wipe an alerts failure.
+  const [alertsError, setAlertsError] = useState<string[] | null>(null)
+  const [reportError, setReportError] = useState<string[] | null>(null)
   const allowed = useCan().canFeature('accounts', 'outstanding', 'msme_dues', 'view')
 
   useEffect(() => {
     if (!isAuthorized || !allowed) return
-    msmeApi.alerts().then(setAlerts).catch((e) => setError(extractErrorMessages(e, 'Could not load MSME dues.')))
+    msmeApi.alerts().then((a) => { setAlerts(a); setAlertsError(null) })
+      .catch((e) => setAlertsError(extractErrorMessages(e, 'Could not load MSME dues.')))
   }, [isAuthorized, allowed])
 
   useEffect(() => {
     if (!isAuthorized || !allowed) return
-    msmeApi.report43bh(fy).then((r) => { setReport(r); setError(null) })
-      .catch((e) => { setReport(null); setError(extractErrorMessages(e, 'Could not load the 43B(h) statement.')) })
+    msmeApi.report43bh(fy).then((r) => { setReport(r); setReportError(null) })
+      .catch((e) => { setReport(null); setReportError(extractErrorMessages(e, 'Could not load the 43B(h) statement.')) })
   }, [isAuthorized, allowed, fy])
 
   if (isLoading || !isAuthorized) return null
@@ -58,14 +61,15 @@ export default function MsmeDuesPage() {
           Ask an admin to grant it in Organization › Role &amp; Permissions.
         </InfoBanner>
       )}
-      <ErrorBanner error={error} />
-      {alerts && (
+      <ErrorBanner error={[...(alertsError || []), ...(reportError || [])]} />
+      {allowed && alerts && (
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
           <StatCard label="Bills past the limit" value={String(alerts.breached_count)} tone="#dc2626" />
           <StatCard label="Amount past the limit" value={inr(alerts.breached_amount)} tone="#dc2626" />
           <StatCard label="Due within 7 days" value={String(alerts.due_soon_count)} tone="#f59e0b" />
         </div>
       )}
+      {allowed && <>
       <div style={sectionStyle}>
         <h3 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 800 }}>Open MSME bills — 45-day limit</h3>
         <TableWrap minWidth={980}>
@@ -76,7 +80,7 @@ export default function MsmeDuesPage() {
             </tr>
           </thead>
           <tbody>
-            {!alerts || alerts.rows.length === 0 ? <EmptyRow colSpan={8} text={alerts ? 'No open bills of MSME suppliers.' : 'Loading…'} /> : alerts.rows.map((r) => (
+            {!alerts || alerts.rows.length === 0 ? <EmptyRow colSpan={8} text={alerts ? 'No open bills of MSME suppliers.' : alertsError ? 'MSME dues could not be loaded — see the message above.' : 'Loading…'} /> : alerts.rows.map((r) => (
               <tr key={r.invoice_id}>
                 <td style={tdStyle}>{r.vendor_name} <span style={{ opacity: 0.6 }}>({r.vendor_code})</span></td>
                 <td style={tdStyle}>{r.msme_category}</td>
@@ -109,7 +113,7 @@ export default function MsmeDuesPage() {
             </tr>
           </thead>
           <tbody>
-            {!report || report.rows.length === 0 ? <EmptyRow colSpan={7} text={report ? 'Nothing disallowed for this year.' : 'Loading…'} /> : report.rows.map((r) => (
+            {!report || report.rows.length === 0 ? <EmptyRow colSpan={7} text={report ? 'Nothing disallowed for this year.' : reportError ? 'The 43B(h) statement could not be loaded — see the message above.' : 'Loading…'} /> : report.rows.map((r) => (
               <tr key={`${r.vendor_code}-${r.invoice_number}`}>
                 <td style={tdStyle}>{r.vendor_name} ({r.msme_category})</td>
                 <td style={tdStyle}>{r.udyam_number || '—'}</td>
@@ -123,6 +127,7 @@ export default function MsmeDuesPage() {
           </tbody>
         </TableWrap>
       </div>
+      </>}
     </div>
   )
 }

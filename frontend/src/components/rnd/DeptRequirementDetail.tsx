@@ -78,8 +78,10 @@ export default function DeptRequirementDetail({ department, departmentLabel, sha
         setError('')
         // What I may do on the requirement itself (tasks, documents, discussion).
         return rndApi.requirementMyAccess(d.share.source, d.share.record_id).then(setAccess)
+          .catch((err) => setError(extractErrorMessages(err,
+            'Could not load your access to the Tasks and Documents tabs — refresh the page to try again.')))
       })
-      .catch((err) => setError(extractErrorMessages(err, 'Could not load this requirement.')))
+      .catch((err) => setError(extractErrorMessages(err, 'Could not load this requirement — it may no longer be shared with your department. Refresh, or go back to the Requirements list.')))
   }, [department, shareId])
 
   const back = <button type="button" onClick={() => router.push(`/dashboard/${department}/requirements`)} style={secondaryBtnStyle}>← Back</button>
@@ -253,7 +255,7 @@ export default function DeptRequirementDetail({ department, departmentLabel, sha
         </>
       )}
 
-      {tab !== 'Requirement' && tab !== 'Reply to R&D' && !access && (
+      {(tab === 'Tasks & Departments' || tab === 'Documents') && !access && !error && (
         <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>
       )}
       {tab === 'Tasks & Departments' && access && user && (

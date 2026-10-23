@@ -271,7 +271,8 @@ export function TaxLinesEditor({ lines, onChange, ledgers, rates, interstate, le
           </thead>
           <tbody>
             {lines.map((l) => {
-              const taxable = Math.round((Number(l.quantity || 0) * Number(l.rate || 0) - Number(l.discount_amount || 0)) * 100) / 100
+              // Gross rounded to the paisa first, as previewTax / the server do.
+              const taxable = Math.round((Math.round(Number(l.quantity || 0) * Number(l.rate || 0) * 100) / 100 - Number(l.discount_amount || 0)) * 100) / 100
               return (
                 <tr key={l.key}>
                   <td style={{ ...cell, minWidth: 200 }}><input style={inputStyle} value={l.description || ''} placeholder="Item / service" onChange={(e) => set(l.key, { description: e.target.value })} /></td>

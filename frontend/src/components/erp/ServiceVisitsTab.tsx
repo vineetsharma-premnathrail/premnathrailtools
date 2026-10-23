@@ -80,7 +80,7 @@ export default function ServiceVisitsTab({ srId, srStatus, assignedId, onChanged
   }, [srId])
 
   const startNew = () => {
-    setF({ ...EMPTY, engineer_id: me ? String(me.id) : '', visit_date: new Date().toISOString().slice(0, 10) })
+    setF({ ...EMPTY, engineer_id: me ? String(me.id) : '', visit_date: toLocal(new Date().toISOString()).slice(0, 10) })
     setDialogError('')
     setEditing('new')
   }

@@ -35,8 +35,8 @@ TAB = "product_costing"
 def require_costing_view(user: User = Depends(get_current_user)) -> User:
     if not (can_view_tab(user, "accounts", TAB) or can_view_tab(user, "production", "bom")):
         raise HTTPException(status_code=403, detail=(
-            "You don't have 'view' permission on Finance & Accounting › Product Costing (accounts:product_costing) "
-            "or Production › BOM & Routing (production:bom). Ask an admin to grant it under Organization › Role & Permissions."))
+            "You don't have 'View' permission on Finance & Accounting › Product Costing "
+            "or Production › BOM & Routing. Ask an admin to grant it under Organization › Role & Permissions."))
     return user
 
 

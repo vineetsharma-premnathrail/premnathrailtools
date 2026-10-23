@@ -119,8 +119,8 @@ export default function ProjectDetailPage() {
 
   if (isLoading || !isAuthorized) return null
   if (linkError) return (<div><ErpNav /><InvalidRecordLink message={linkError} listHref="/dashboard/erp/projects" listLabel="Back to projects" /></div>)
-  if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
-  if (error && !project) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p>
+  if (loading) return <div><ErpNav /><p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p></div>
+  if (error && !project) return <div><ErpNav /><p style={{ fontSize: 13, color: '#b91c1c' }}>{error}</p></div>
   if (!project) return null
 
   return (
@@ -132,7 +132,7 @@ export default function ProjectDetailPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
             <h1 style={{ fontSize: 24, fontWeight: 700, color: '#1f1108', margin: 0 }}>{project.serial_number}</h1>
             <span data-tour="erp-proj-status-badge" style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, textTransform: 'capitalize', background: `${MACHINE_STATUS_HEX[project.status] || '#78716c'}1a`, color: MACHINE_STATUS_HEX[project.status] || '#78716c' }}>
-              {project.status}
+              {project.status.replace(/_/g, ' ')}
             </span>
             <ContractChip projectId={project.id} />
           </div>

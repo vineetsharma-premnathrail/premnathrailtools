@@ -388,7 +388,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                         textTransform: 'capitalize',
                       }}
                     >
-                      {user.role.replace('_', ' ')}
+                      {user.role.replace(/_/g, ' ')}
                     </span>
                   </div>
                 </div>
@@ -511,7 +511,7 @@ export default function Sidebar({ user, onNavigate }: { user: User | null; onNav
                   <p style={{ fontSize: 12, fontWeight: 600, color: TEXT.heading, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {user.name}
                   </p>
-                  <p style={{ fontSize: 10, color: TEXT.muted, margin: 0, textTransform: 'capitalize' }}>{user.role}</p>
+                  <p style={{ fontSize: 10, color: TEXT.muted, margin: 0, textTransform: 'capitalize' }}>{user.role.replace(/_/g, ' ')}</p>
                 </div>
                 <CaretUp size={12} color={TEXT.muted} style={{ transform: menuOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s', flex: 'none' }} />
               </>

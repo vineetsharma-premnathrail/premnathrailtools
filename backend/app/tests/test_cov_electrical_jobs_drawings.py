@@ -371,7 +371,7 @@ def test_approve_requires_matrix_permission(client, db, people, job):
     attach_file(db, r0)
     client.post(f"{API}/revisions/{r0}/submit", headers=eng)
     r = client.post(f"{API}/revisions/{r0}/approve", json={}, headers=auth(limited))
-    assert r.status_code == 403 and "'approve' permission on Electrical › Drawings" in r.json()["detail"]
+    assert r.status_code == 403 and "'Approve' permission on Electrical › Drawings" in r.json()["detail"]
     assert client.post(f"{API}/revisions/{r0}/reject", json={"comment": "no"}, headers=auth(limited)).status_code == 403
     # Granting approve lets the same user through. Approvers are fixed when the
     # revision is submitted (central approval engine), so it is withdrawn and

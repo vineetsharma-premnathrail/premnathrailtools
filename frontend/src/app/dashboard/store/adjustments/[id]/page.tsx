@@ -14,6 +14,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 
@@ -151,7 +152,7 @@ export default function StoreStockAdjustmentDetailPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Row>
                 <InfoRow label="Store" value={adjustment.location_name || '—'} />
-                <InfoRow label="Adjustment Date" value={adjustment.adjustment_date} />
+                <InfoRow label="Adjustment Date" value={formatDate(adjustment.adjustment_date)} />
                 <InfoRow label={adjustment.status === 'pending_approval' ? 'Approver' : adjustment.status === 'rejected' ? 'Rejected By' : 'Approved By'} value={adjustment.approved_by_name || '—'} />
               </Row>
               <Row>

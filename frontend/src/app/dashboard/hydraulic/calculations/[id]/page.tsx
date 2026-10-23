@@ -38,7 +38,10 @@ interface InputRow { key: string; label: string; value: string; unit: string }
 
 export default function HydCalculationDetailPage() {
   const { isAuthorized, isLoading } = useRequireApp('hydraulic')
-  const { canDelete } = useCan()
+  const { can, canDelete } = useCan()
+  // Saving the details needs Calculations › Edit; re-running saves a new one (Create).
+  const canEdit = can('hydraulic', 'calculations', 'edit')
+  const canCreate = can('hydraulic', 'calculations', 'create')
   const router = useRouter()
   const params = useParams()
   const ref = params.id as string
@@ -160,7 +163,7 @@ export default function HydCalculationDetailPage() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {calc && (
             <>
-              <button data-tour="hyd-calcd-rerun-btn" type="button" onClick={rerun} style={secondaryBtnStyle}>Re-run in calculator</button>
+              {canCreate && <button data-tour="hyd-calcd-rerun-btn" type="button" onClick={rerun} style={secondaryBtnStyle}>Re-run in calculator</button>}
               {canDelete('hydraulic', 'calculations', (calc as { created_by_id?: number | null } | null)?.created_by_id ?? null) && <button data-tour="hyd-calcd-delete-btn" type="button" onClick={() => setConfirmDelete(true)} style={{ ...secondaryBtnStyle, color: DANGER.primary, borderColor: DANGER.border }}>Delete</button>}
             </>
           )}
@@ -227,27 +230,29 @@ export default function HydCalculationDetailPage() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '1 1 260px', maxWidth: 400 }}>
                 <label style={labelStyle}>Title *</label>
-                <input data-tour="hyd-calcd-title" style={inputStyle} value={title} maxLength={255} onChange={(e) => setTitle(e.target.value)} />
+                <input data-tour="hyd-calcd-title" style={inputStyle} disabled={!canEdit} value={title} maxLength={255} onChange={(e) => setTitle(e.target.value)} />
               </div>
               <div data-tour="hyd-calcd-system" style={{ flex: '1 1 260px', maxWidth: 380 }}>
                 <label style={labelStyle}>System ({SYSTEM_TYPE_LABELS[calc.system_type]} only)</label>
-                <SearchableSelect value={systemId} onChange={setSystemId} placeholder="Search system…"
+                <SearchableSelect value={systemId} onChange={setSystemId} placeholder="Search system…" disabled={!canEdit}
                   options={[{ value: '', label: '— Not linked to a system —' }, ...systems.map((s) => ({ value: String(s.id), label: s.label }))]} />
               </div>
             </div>
             <div style={{ marginTop: 14 }}>
               <label style={labelStyle}>Remarks</label>
-              <textarea data-tour="hyd-calcd-remarks" style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+              <textarea data-tour="hyd-calcd-remarks" disabled={!canEdit} style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, color: TEXT.muted }}>Inputs can&apos;t be edited — re-run it in the calculator and save a new calculation instead.</span>
-              <button data-tour="hyd-calcd-save-btn" type="submit" disabled={saving} style={{
+              {canEdit ? <button data-tour="hyd-calcd-save-btn" type="submit" disabled={saving} style={{
                 padding: '12px 22px', borderRadius: 12, border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
                 background: GRADIENTS.primary, color: '#fff', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1,
                 boxShadow: `0 8px 20px ${SHADOWS.glowOrange}`,
               }}>
                 {saving ? 'Saving…' : 'Save Changes'}
-              </button>
+              </button> : (
+                <span style={{ fontSize: 12, color: TEXT.muted }}>Changing the title, system or remarks needs the &lsquo;edit&rsquo; right on Calculations.</span>
+              )}
             </div>
           </form>
         </>

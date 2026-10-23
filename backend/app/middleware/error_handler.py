@@ -189,7 +189,8 @@ def setup_error_handlers(app):
             from app.core.audit_context import get_current_user_id
             from app.modules.main.services.basis_log import record_denial
             from starlette.concurrency import run_in_threadpool
-            await run_in_threadpool(record_denial, request.method, request.url.path, exc.detail, get_current_user_id())
+            await run_in_threadpool(record_denial, request.method, request.url.path, exc.detail, get_current_user_id(),
+                                    getattr(exc, "permission_key", None))
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},

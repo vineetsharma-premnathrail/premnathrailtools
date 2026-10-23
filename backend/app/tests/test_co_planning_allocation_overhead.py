@@ -337,4 +337,4 @@ def test_api_routes_and_deny_by_default(client, co):
     db.add(outsider)
     db.commit()
     r = client.get("/api/v1/accounts/co/plan-versions", headers=_headers(outsider))
-    assert r.status_code == 403 and "co_planning" in r.json()["detail"]
+    assert r.status_code == 403 and "Cost Centre Planning" in r.json()["detail"]

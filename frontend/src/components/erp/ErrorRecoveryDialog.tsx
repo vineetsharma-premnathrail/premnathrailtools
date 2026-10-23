@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { WarningCircle } from '@phosphor-icons/react'
+import { createPortal } from 'react-dom'
 
 /**
  * Center-screen error popup for failures that need more than a dismiss button —
@@ -37,7 +38,10 @@ export default function ErrorRecoveryDialog({
     window.location.href = '/dashboard'
   }
 
-  return (
+  if (typeof document === 'undefined') return null
+  // Portal to <body>: a glass card (backdrop-filter) would otherwise trap the
+  // fixed backdrop inside itself instead of covering the screen.
+  return createPortal(
     <div
       className="dialog-backdrop"
       style={{
@@ -104,6 +108,7 @@ export default function ErrorRecoveryDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

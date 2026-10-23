@@ -85,7 +85,8 @@ function Voucher({ entryRef }: { entryRef: string | null }) {
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
-  if (linkError) return <InvalidRecordLink message={linkError} listHref="/dashboard/finance/ledger" listLabel="Back to journals" />
+  // No ?entry= at all would otherwise sit on "Loading…" forever.
+  if (linkError || !entryRef) return <InvalidRecordLink message={linkError || 'This link does not name a voucher. Open the voucher from Journals, the Day Book or a ledger statement.'} listHref="/dashboard/finance/ledger" listLabel="Back to journals" />
 
   const back = (
     <button type="button" style={secondaryBtnStyle} onClick={() => (window.history.length > 1 ? router.back() : router.push('/dashboard/finance/ledger'))}>← Back</button>

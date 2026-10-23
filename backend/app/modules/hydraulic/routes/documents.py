@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.permission_registry import MODULES, can_feature, can_view_tab
+from app.core.permission_words import action_word
 from app.core.data_scope import ensure_in_scope, scoped_models
 from app.core.permissions import require_app_access
 from app.db.session import get_db
@@ -62,8 +63,8 @@ def _ensure_can_view(user: User, entity_type: str) -> None:
     label = MODULES.get("hydraulic", {}).get("subtabs", {}).get(tab, tab)
     raise HTTPException(
         status_code=403,
-        detail=f"You don't have 'view' permission on Hydraulic & Pneumatic › {label} › Documents "
-               f"(hydraulic:{tab}.documents:view), so these files are hidden. Ask an admin to grant it in "
+        detail=f"You don't have 'View' permission on Hydraulic & Pneumatic › {label} › Documents"
+               f", so these files are hidden. Ask an admin to grant it in "
                "Organization › Role & Permissions.",
     )
 
@@ -85,8 +86,8 @@ def _require_edit_right(user: User, entity_type: str, action: str = "create") ->
         verb = "add" if action == "create" else "remove"
         raise HTTPException(
             status_code=403,
-            detail=f"You don't have '{action}' permission on Hydraulic & Pneumatic › {label} › Documents "
-                   f"(hydraulic:{tab}.documents:{action}; by default anyone with 'edit' on {label}), so you can't {verb} "
+            detail=f"You don't have '{action_word(action)}' permission on Hydraulic & Pneumatic › {label} › Documents "
+                   f"(by default anyone with 'Edit' on {label}), so you can't {verb} "
                    "its documents. Ask an admin to grant it in Organization › Role & Permissions (the Permission Matrix).",
         )
 

@@ -1,4 +1,6 @@
 import time
+from typing import Literal
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
@@ -16,15 +18,23 @@ _TTL = 45  # seconds
 
 def _purge(key: str) -> None:
     cutoff = time.time() - _TTL
-    _presence[key] = {
+    live = {
         uid: info
         for uid, info in _presence.get(key, {}).items()
         if info["last_seen"] > cutoff
     }
+    # Drop keys nobody is viewing any more, so the in-memory store can't grow
+    # without bound from heartbeats on arbitrary ids.
+    if live:
+        _presence[key] = live
+    else:
+        _presence.pop(key, None)
 
 
 class HeartbeatPayload(BaseModel):
-    resource_type: str   # "sr" | "project"
+    # Only the record types the viewer badge exists for — any other string
+    # would just be an unbounded key in the in-memory store.
+    resource_type: Literal["sr", "project"]
     resource_id: int
 
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { inputStyle } from '@/components/shared/ui'
+import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { CaretDown, PencilSimple } from '@phosphor-icons/react'
 
 export interface SearchableOption {
@@ -50,6 +51,9 @@ export default function SearchableSelect({
     queryRef.current = ''
     setQuery('')
   }
+
+  // Escape closes just the list, not the form popup it sits in.
+  useEscapeKey(open && !disabled, () => { setOpen(false); resetQuery() })
 
   const selectedLabel = options.find((o) => o.value === value)?.label || ''
 

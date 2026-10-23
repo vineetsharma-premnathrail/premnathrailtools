@@ -23,6 +23,7 @@ import { Card, InfoRow, inputStyle, primaryBtnStyle, secondaryBtnStyle, dangerBt
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { refOf } from '@/lib/recordRef'
+import { formatDateTime } from '@/lib/format'
 
 // ?tab=discussion (from a @mention notification) opens the Discussion tab.
 const tabFromUrl = (): 'Discussion' | 'Info' =>
@@ -109,7 +110,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       setTender(await crmApi.updateTender(tender.id, payload))
       crmApi.getTenderSpecRevisions(tender.id).then(setRevisions).catch(() => {})
     } catch (err) {
-      setError(extractErrorMessages(err, 'Update failed.'))
+      setError(extractErrorMessages(err, 'Could not save the change to this tender — reload the page and try again; if it keeps failing, check your connection.'))
     }
   }
 
@@ -123,7 +124,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       const updated = await crmApi.updateTender(tender.id, payload)
       setTender({ ...updated, updated_at: prevUpdatedAt })
     } catch (err) {
-      setError(extractErrorMessages(err, 'Update failed.'))
+      setError(extractErrorMessages(err, 'Could not save the change to this tender — reload the page and try again; if it keeps failing, check your connection.'))
     }
   }
 
@@ -183,10 +184,10 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
       </div>
 
       <MessageDialog open={!!torError} variant="error" title="Send Technical Requirement Failed" message={torError} onClose={() => setTorError('')} />
-      <MessageDialog open={!!error} variant="error" title="Something Went Wrong" message={error} onClose={() => setError('')} />
+      <MessageDialog open={!!error} variant="error" title="Tender Action Failed" message={error} onClose={() => setError('')} />
 
       {editing && (
-        <StageProgress stage={tender.current_stage} stages={TND_STAGES} canModify={canModify} allowBackward={isAdmin} onRequestChange={setPendingStage} tourId="tender-stage-progress" />
+        <StageProgress stage={tender.current_stage} stages={TND_STAGES} canModify={canModify && canFeature('crm', 'inquiries_tenders', 'stage', 'edit')} allowBackward={isAdmin} onRequestChange={setPendingStage} tourId="tender-stage-progress" />
       )}
       {!editing && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -220,7 +221,7 @@ export default function TenderDetailPanel({ tenderId, onDeleted }: { tenderId: n
             {tender.technical_offer_number && (
               <span style={{ fontSize: 11, color: '#78716c' }}>
                 {torActive ? 'Previously sent as ' : 'Sent as '}<strong>{tender.technical_offer_number}</strong>
-                {tender.technical_offer_sent_at && ` on ${new Date(tender.technical_offer_sent_at).toLocaleString()}`}
+                {tender.technical_offer_sent_at && ` on ${formatDateTime(tender.technical_offer_sent_at)}`}
               </span>
             )}
           </div>
@@ -745,7 +746,7 @@ function TimelineTab({ tenderId }: { tenderId: number }) {
               </span>
               <p style={{ fontSize: 13, fontWeight: 600, color: '#1f1108', margin: 0 }}>{e.title}</p>
             </div>
-            <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.by || 'System'} · {e.date ? new Date(e.date).toLocaleString() : '—'}</p>
+            <p style={{ fontSize: 11.5, color: '#a8a29e', margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>{e.by || 'System'} · {formatDateTime(e.date)}</p>
           </div>
           {e.detail && <RichText html={e.detail} style={{ fontSize: 12, color: '#57534e', margin: '2px 0' }} />}
         </div>

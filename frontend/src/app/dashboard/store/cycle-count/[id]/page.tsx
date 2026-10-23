@@ -14,6 +14,7 @@ import PromptDialog from '@/components/erp/PromptDialog'
 import MessageDialog from '@/components/erp/MessageDialog'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { FormPage, SheetSection, SheetIcon, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
+import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useRecordId, recordPath } from '@/lib/recordRef'
 
@@ -102,7 +103,7 @@ export default function PhysicalCountDetailPage() {
 
   return (
     <FormPage nav={<StoreNav />} icon="list" title={count.count_number}
-      subtitle={`Physical Count · ${count.location_name} · ${count.count_date}`}
+      subtitle={`Physical Count · ${count.location_name} · ${formatDate(count.count_date)}`}
       onBack={() => router.push('/dashboard/store/cycle-count')} backTour="store-count-back-btn"
       footer={counting && (canEditCount || canSubmit || canCancel) ? <>
         {canCancel && <button data-tour="store-count-cancel-btn" type="button" onClick={() => setCancelling(true)} disabled={busy} style={{ ...sheetBtn('secondary', SHEET.INK, busy), color: DANGER.text }}><SheetIcon name="x" size={15} />Cancel count</button>}
@@ -119,7 +120,7 @@ export default function PhysicalCountDetailPage() {
         <SheetSection icon="building" title="Count Details" extra={<span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[count.status]}1a`, color: STATUS_HEX[count.status] }}>{STATUS_LABELS[count.status]}</span>}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, fontSize: 13, color: SHEET.BODY }}>
             <div><span style={{ color: SHEET.MUTED }}>Store: </span><strong>{count.location_name}</strong></div>
-            <div><span style={{ color: SHEET.MUTED }}>Date: </span><strong>{count.count_date}</strong></div>
+            <div><span style={{ color: SHEET.MUTED }}>Date: </span><strong>{formatDate(count.count_date)}</strong></div>
             <div><span style={{ color: SHEET.MUTED }}>Scope: </span><strong>{count.scope || '—'}</strong></div>
             <div><span style={{ color: SHEET.MUTED }}>Counted: </span><strong>{count.lines_counted}/{count.lines_total}</strong></div>
             {count.lines_with_difference != null && <div><span style={{ color: SHEET.MUTED }}>With difference: </span><strong>{count.lines_with_difference}</strong></div>}

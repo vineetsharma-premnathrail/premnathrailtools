@@ -36,8 +36,8 @@ def ensure_view_any(user: User, tabs: tuple[str, ...] = (ORGS, INQ)) -> None:
     if not any(can_view_tab(user, MODULE, t) for t in tabs):
         raise HTTPException(
             status_code=403,
-            detail="You don't have 'View' permission on CRM › Customer Organizations or CRM › Inquiries & Tenders "
-                   f"(crm:organizations:view / crm:inquiries_tenders:view). {GRANT_HINT}",
+            detail="You don't have 'View' permission on CRM › Customer Organizations or CRM › Inquiries & Tenders. "
+                   f"{GRANT_HINT}",
         )
 
 

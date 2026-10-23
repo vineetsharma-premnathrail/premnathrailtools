@@ -45,12 +45,12 @@ export function ErrorBanner({ error }: { error: string | string[] }) {
 }
 
 /** Title block that sits BELOW <SalesNav />; "← Back" pill top-right. */
-export function PageHeader({ title, subtitle, backHref, children }: { title: ReactNode; subtitle?: ReactNode; backHref?: string; children?: ReactNode }) {
+export function PageHeader({ title, subtitle, backHref, children, moduleLabel = 'Sales Module' }: { title: ReactNode; subtitle?: ReactNode; backHref?: string; children?: ReactNode; moduleLabel?: string }) {
   const router = useRouter()
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
       <div>
-        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Sales Module</p>
+        <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>{moduleLabel}</p>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>{title}</h1>
         {subtitle && <div style={{ fontSize: 13, color: TEXT.secondary, marginTop: 4 }}>{subtitle}</div>}
       </div>

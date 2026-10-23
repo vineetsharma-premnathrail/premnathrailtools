@@ -23,11 +23,12 @@ def _target(entity_type: str, entity_id: int, db: Session, user: User, modify: b
     if adapter.app not in user.get_apps():
         raise HTTPException(status_code=403, detail=f"You need access to the '{adapter.app}' module to open this document. Ask an admin to assign it.")
     from app.core.permission_registry import has_grant
+    from app.core.permission_words import words
     for grant, what in ((adapter.view_grant, "open"), (adapter.edit_grant if modify else None, "create or edit")):
         if grant and not has_grant(user, grant):
             raise HTTPException(
                 status_code=403,
-                detail=f"Your roles don't allow you to {what} this Word document (needs {grant}). "
+                detail=f"Your roles don't allow you to {what} this Word document (needs {words(grant)}). "
                        "Ask an admin to add it to one of your roles (Organization › Roles › Permissions).",
             )
     return adapter.load(db, entity_id, user, modify)

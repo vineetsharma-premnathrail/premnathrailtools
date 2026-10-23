@@ -28,6 +28,7 @@ export default function ProductMappingPage() {
   const [error, setError] = useState<string | string[]>('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [loaded, setLoaded] = useState(false)
 
   const load = useCallback(() => {
     productMappingApi.unmapped().then((d) => {
@@ -36,6 +37,7 @@ export default function ProductMappingPage() {
       setData(rest as Record<string, MappingGroup[]>)
       setError('')
     }).catch((e) => setError(extractErrorMessages(e, 'Could not load the unmapped products.')))
+      .finally(() => setLoaded(true))
   }, [])
 
   useEffect(() => {
@@ -77,7 +79,8 @@ export default function ProductMappingPage() {
       </PageHeader>
       <ErrorBanner error={error} />
       {notice && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>{notice}</div>}
-      {total === 0 && !error && <p style={{ fontSize: 13, color: TEXT.muted }}>Everything is linked to the product master.</p>}
+      {!loaded && <p style={{ fontSize: 13, color: TEXT.muted }}>Loading…</p>}
+      {loaded && total === 0 && !error && <p style={{ fontSize: 13, color: TEXT.muted }}>Everything is linked to the product master.</p>}
       {SOURCE_ORDER.filter((k) => (data[k]?.length || 0) > 0).map((k) => (
         <Section key={k} title={`${sources[k] || k} — ${data[k].length} unmapped`} style={{ marginBottom: 16 }}>
           <div style={{ ...tableWrapStyle, maxHeight: 420 }}>

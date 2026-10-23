@@ -23,7 +23,7 @@ register_features(
 
 register_features(
     "store", "stock",
-    _feature("as_of", "Stock on a date (MB5B)", "section", {
+    _feature("as_of", "Stock on a date", "section", {
         "view": "view", "export": "export",
     }, "The 'Stock on a date' report (opening, receipts, issues, closing per item and store for a period): see it and download it to Excel."),
 )

@@ -11,6 +11,7 @@ import { useCan } from '@/lib/permissions'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
 import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { FormSheet, SHEET, sheetBtn } from '@/components/shared/FormSheet'
 
@@ -43,7 +44,7 @@ function POHistoryDialog({ poId, onClose }: { poId: number; onClose: () => void 
   }, [poId])
   return (
     <FormSheet icon="history" title={`PO History${data ? ` — ${data.po_number}` : ''}`}
-      subtitle={data ? `${data.vendor_name || 'No vendor'} · PO date ${data.po_date}${data.expected_delivery ? ` · due ${data.expected_delivery}` : ''}` : 'Receipts, returns, service entries and invoices per line'}
+      subtitle={data ? `${data.vendor_name || 'No vendor'} · PO date ${formatDate(data.po_date)}${data.expected_delivery ? ` · due ${formatDate(data.expected_delivery)}` : ''}` : 'Receipts, returns, service entries and invoices per line'}
       onClose={onClose} busy={false}
       footer={<button type="button" onClick={onClose} style={sheetBtn('secondary', SHEET.INK)}>Close</button>}>
       <div style={{ padding: '20px 24px' }}>
@@ -170,7 +171,7 @@ export default function POOpenItems() {
               {!loading && rows.length === 0 && <tr><td colSpan={14} style={{ ...td, textAlign: 'center', padding: 24 }}>No open PO lines match.</td></tr>}
               {!loading && rows.map((r) => (
                 <tr key={r.po_item_id} onClick={() => { if (seeHistory) setHistoryFor(r.po_id) }} style={{ cursor: seeHistory ? 'pointer' : 'default' }}>
-                  <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{r.po_number}<div style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}>{r.po_date}</div></td>
+                  <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{r.po_number}<div style={{ fontSize: 11, color: TEXT.muted, fontWeight: 400 }}>{formatDate(r.po_date)}</div></td>
                   <td style={td}>{r.vendor_name || '—'}</td>
                   <td style={{ ...td, whiteSpace: 'normal', minWidth: 200 }}>{r.item_code ? `${r.item_code} — ` : ''}{r.item_name}</td>
                   <td style={td}>{r.ordered_qty} {r.unit || ''}</td>

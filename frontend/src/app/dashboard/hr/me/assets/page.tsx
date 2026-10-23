@@ -8,7 +8,7 @@ import type { HrAsset, HrAssetAssignment } from '@/types'
 import HrNav from '@/components/hr/HrNav'
 import MyHrTabs from '@/components/hr/MyHrTabs'
 import { ASSET_CATEGORY_LABELS, ASSET_CONDITION_LABELS } from '@/components/hr/admin/AssetDialogs'
-import { PageHeader, ErrorBanner, EmptyRow, Pill, sectionStyle, tableWrapStyle, thStyle, tdStyle, fmtDate } from '@/components/hr/admin/adminUi'
+import { PageHeader, ErrorBanner, EmptyRow, Pill, sectionStyle, tableWrapStyle, thStyle, tdStyle, fmtDate, todayIso } from '@/components/hr/admin/adminUi'
 import { TEXT } from '@/lib/theme'
 
 export default function MyAssetsPage() {
@@ -30,7 +30,7 @@ export default function MyAssetsPage() {
 
   if (isLoading || !user) return null
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayIso()
 
   return (
     <div>

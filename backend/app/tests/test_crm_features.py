@@ -43,13 +43,13 @@ def test_customised_role_gets_only_its_features(client, db):
 
     assert client.get(f"{API}/inquiries/{inq['id']}/audit", headers=h).status_code == 200  # timeline granted
     r = client.get(f"{API}/inquiries/{inq['id']}/quotations", headers=h)
-    assert r.status_code == 403 and "crm:inquiries_tenders.quotations:view" in r.json()["detail"], r.text
+    assert r.status_code == 403 and "'View' permission on CRM › Inquiries & Tenders › Quotations" in r.json()["detail"], r.text
     r = client.get(f"{API}/activities", params={"related_module": "inquiry", "related_id": inq["id"]}, headers=h)
-    assert r.status_code == 403 and "crm:inquiries_tenders.followups:view" in r.json()["detail"], r.text
+    assert r.status_code == 403 and "'View' permission on CRM › Inquiries & Tenders › Follow-ups" in r.json()["detail"], r.text
     r = client.get(f"{API}/documents", params={"related_module": "inquiry", "related_id": inq["id"]}, headers=h)
-    assert r.status_code == 403 and "crm:inquiries_tenders.documents:view" in r.json()["detail"], r.text
+    assert r.status_code == 403 and "'View' permission on CRM › Inquiries & Tenders › Documents" in r.json()["detail"], r.text
     r = client.post(f"{API}/inquiries/{inq['id']}/technical-offer-request", json={}, headers=h)
-    assert r.status_code == 403 and "crm:inquiries_tenders.send_tor:create" in r.json()["detail"], r.text
+    assert r.status_code == 403 and "'Create' permission on CRM › Inquiries & Tenders › Send Technical Requirement (TOR) to R&D" in r.json()["detail"], r.text
 
 
 def test_hidden_money_is_not_wiped_by_a_save(client, db):
@@ -65,7 +65,7 @@ def test_hidden_money_is_not_wiped_by_a_save(client, db):
     assert client.get(f"{API}/inquiries/{inq['id']}", headers=auth(full)).json()["expected_value"] is None
     # A stage move needs Move pipeline stage › Edit.
     r = client.patch(f"{API}/inquiries/{inq['id']}", json={"current_stage": "Requirement Qualified"}, headers=auth(owner))
-    assert r.status_code == 403 and "crm:inquiries_tenders.stage:edit" in r.json()["detail"], r.text
+    assert r.status_code == 403 and "'Edit' permission on CRM › Inquiries & Tenders › Move pipeline stage" in r.json()["detail"], r.text
 
 
 def test_inquiry_received_role_event(client, db):

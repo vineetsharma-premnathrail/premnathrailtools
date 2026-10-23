@@ -358,9 +358,11 @@ register_transaction(TransactionType(
     url="/dashboard/quality/ncr/{id}",
     description="Approval of the disposition proposed on a non-conformance (use as is, rework, repair, return to vendor, scrap).",
     context_fields={
-        "disposition_type": {"label": "Disposition", "type": "choice", "choices": list(QUALITY_DISPOSITION_TYPES)},
+        "disposition_type": {"label": "Disposition", "type": "choice", "choices": list(QUALITY_DISPOSITION_TYPES),
+                             "choice_labels": dict(QUALITY_DISPOSITION_TYPE_LABELS)},
         "scrap_value": {"label": "Material value (₹)", "type": "number"},
-        "severity": {"label": "Severity", "type": "choice", "choices": ["minor", "major", "critical"]},
+        "severity": {"label": "Severity", "type": "choice", "choices": ["minor", "major", "critical"],
+                     "choice_labels": {"minor": "Minor", "major": "Major", "critical": "Critical"}},
         "source": {"label": "NCR source", "type": "text"},
     },
     default_stages=ncr_default_stages(LEGACY_SCRAP_LIMIT),
@@ -441,7 +443,8 @@ register_transaction(TransactionType(
     key=VENDOR_BLOCK_KEY, module_key="quality", subtab_key="supplier_quality", label="Vendor block / unblock",
     entity_type=AVL_ENTITY, url="/dashboard/quality/supplier-quality/{id}",
     description="Blocking a vendor for an item (or lifting a block) — requested by a Quality head or the monthly rating.",
-    context_fields={"action": {"label": "Action", "type": "choice", "choices": ["block", "unblock"]}},
+    context_fields={"action": {"label": "Action", "type": "choice", "choices": ["block", "unblock"],
+                                   "choice_labels": {"block": "Block the vendor", "unblock": "Lift the block"}}},
     default_stages=[StageDef("Partner", "partner")],
     # Partners decide as Partners (Company Info → Partners), not by a Quality grant.
     require_permission=False, allow_self_approval=True, on_decided=_vendor_block_decided,
@@ -513,7 +516,8 @@ register_transaction(TransactionType(
     key=COMPLAINT_KEY, module_key="quality", subtab_key="complaints", label="Customer complaint close / reject",
     entity_type=COMPLAINT_ENTITY, url="/dashboard/quality/complaints/{id}",
     description="Closing a complaint (customer accepted, CAPA effective) or rejecting it as not valid.",
-    context_fields={"action": {"label": "Action", "type": "choice", "choices": ["close", "reject"]}},
+    context_fields={"action": {"label": "Action", "type": "choice", "choices": ["close", "reject"],
+                                   "choice_labels": {"close": "Close", "reject": "Reject as not valid"}}},
     default_stages=[StageDef("Quality head", "permission", {"permission": "quality:complaints:approve"})],
     require_permission=True, allow_self_approval=True, on_decided=_complaint_decided,
 ))

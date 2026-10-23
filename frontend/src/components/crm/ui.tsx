@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { COLORS, RADII, BORDERS, GLASS, SHADOWS, TEXT, BRAND, SUCCESS } from '@/lib/theme'
 import { CrmActivityAttachment } from '@/types'
 import { crmApi } from '@/lib/api'
+import { formatDateTime } from '@/lib/format'
 import { useAttachmentBlobUrl, openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 
 // A plain "×" character renders as a colored circular emoji glyph on some
@@ -134,7 +135,7 @@ export function RevisionSelector({ revisions, selectedId, onSelect, tourId }: { 
                 style={{ padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: selectedId === r.id ? 'rgba(255,122,69,0.08)' : 'transparent' }}
               >
                 <div style={{ fontSize: 12.5, fontWeight: selectedId === r.id ? 700 : 600, color: selectedId === r.id ? BRAND.primary : COLORS.ink }}>{r.revision_id}</div>
-                <div style={{ fontSize: 10.5, color: COLORS.textFaint2 }}>{r.performed_by}{r.performed_at ? ` · ${new Date(r.performed_at).toLocaleString()}` : ''}</div>
+                <div style={{ fontSize: 10.5, color: COLORS.textFaint2 }}>{r.performed_by}{r.performed_at ? ` · ${formatDateTime(r.performed_at)}` : ''}</div>
               </div>
             ))}
           </div>

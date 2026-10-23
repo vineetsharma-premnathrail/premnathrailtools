@@ -444,7 +444,8 @@ def register() -> None:
         entity_type=CONTRACT_ENTITY, url="/dashboard/erp/service-contracts/{id}",
         description="A customer AMC / CMC / extended-warranty contract. Approved = active: SRs on its machines are covered "
                     "and its billing plan can be invoiced.",
-        context_fields={"contract_type": {"label": "Contract type", "type": "choice", "choices": list(SERVICE_CONTRACT_TYPES)}},
+        context_fields={"contract_type": {"label": "Contract type", "type": "choice", "choices": list(SERVICE_CONTRACT_TYPES),
+                                           "choice_labels": dict(SERVICE_CONTRACT_TYPE_LABELS)}},
         default_stages=[StageDef("Service contract approvers", "permission", {"permission": "erp:service_contracts:approve"}),
                         StageDef("Partner (final approval)", "partner")],
         distinct_approvers=True,

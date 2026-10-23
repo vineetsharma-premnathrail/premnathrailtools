@@ -39,10 +39,15 @@ export default function ProductionBomListPage() {
     const params: Record<string, unknown> = {}
     if (statusFilter) params.status = statusFilter
     if (search.trim()) params.search = search.trim()
-    productionApi.listBoms(params)
-      .then((data) => setBoms(Array.isArray(data) ? data : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load BOMs.')))
-      .finally(() => setLoading(false))
+    // Debounce typing and drop late responses so an older search can't overwrite a newer one.
+    let ignore = false
+    const t = setTimeout(() => {
+      productionApi.listBoms(params)
+        .then((data) => { if (ignore) return; setBoms(Array.isArray(data) ? data : []); setError('') })
+        .catch((err) => { if (!ignore) setError(extractErrorMessages(err, 'Failed to load BOMs.')) })
+        .finally(() => { if (!ignore) setLoading(false) })
+    }, 250)
+    return () => { ignore = true; clearTimeout(t) }
   }, [isAuthorized, statusFilter, search])
 
   if (isLoading || !isAuthorized) return null

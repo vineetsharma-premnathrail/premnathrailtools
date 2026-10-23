@@ -8,16 +8,23 @@ const SAFE_FONT_SIZE = /^\d{1,2}px$/
 
 /** `onStrip` fires when an element is dropped for not being in ALLOWED_TAGS,
  * so callers can tell "nothing changed" from "content was silently removed". */
+/** Parse untrusted HTML into an inert document (DOMParser): unlike innerHTML on
+ * an element of the live page, nothing in it loads or runs — an
+ * `<img src=x onerror=…>` saved through the API would otherwise execute
+ * while it is being sanitized. */
+function inertBody(html: string): HTMLElement {
+  return new DOMParser().parseFromString(html, 'text/html').body
+}
+
 function sanitizeHtml(html: string, onStrip?: () => void): string {
-  const doc = document.createElement('div')
-  doc.innerHTML = html
+  const doc = inertBody(html)
   const walk = (node: Element) => {
     Array.from(node.childNodes).forEach((child) => {
       if (child.nodeType === Node.ELEMENT_NODE) {
         const el = child as Element
         if (!ALLOWED_TAGS.has(el.tagName)) {
           onStrip?.()
-          const text = document.createTextNode(el.textContent || '')
+          const text = doc.ownerDocument.createTextNode(el.textContent || '')
           node.replaceChild(text, el)
           return
         }
@@ -34,9 +41,7 @@ function sanitizeHtml(html: string, onStrip?: () => void): string {
 
 export function stripHtml(html?: string): string {
   if (!html) return ''
-  const doc = document.createElement('div')
-  doc.innerHTML = html
-  return doc.textContent || ''
+  return inertBody(html).textContent || ''
 }
 
 export function RichText({ html, style }: { html?: string; style?: React.CSSProperties }) {

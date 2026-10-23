@@ -33,10 +33,10 @@ def test_holidays_view_only_user_cannot_write(client, db):
     hv = hdr(viewer)
     assert client.get(f"{HR}/holidays?year=2026", headers=hv).status_code == 200
     r = client.post(f"{HR}/holidays", json={"holiday_date": "2026-11-14", "name": "Diwali", "holiday_type": "festival"}, headers=hv)
-    assert r.status_code == 403 and "hr:holidays:create" in r.json()["detail"]
+    assert r.status_code == 403 and "'Create' permission on HR & Administration › Holidays" in r.json()["detail"]
     assert client.patch(f"{HR}/holidays/{h.id}", json={"name": "X-mas"}, headers=hv).status_code == 403
     r = client.delete(f"{HR}/holidays/{h.id}", headers=hv)
-    assert r.status_code == 403 and "hr:holidays:delete" in r.json()["detail"]
+    assert r.status_code == 403 and "'Delete' permission on HR & Administration › Holidays" in r.json()["detail"]
     assert db.get(HrHoliday, h.id) is not None
 
 

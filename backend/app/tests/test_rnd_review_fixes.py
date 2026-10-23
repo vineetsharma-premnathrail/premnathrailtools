@@ -55,14 +55,14 @@ def test_tool_endpoints_unrestricted_for_matrix_untouched_user(client, db):
 def test_project_create_and_delete_need_matrix_actions(client, db):
     viewer = _h(_user(db, "proj-viewer@premnathrail.com", ["rnd:projects:view"]))
     r = client.post(f"{BASE}/projects", json={"title": "X", "objective": "Y"}, headers=viewer)
-    assert r.status_code == 403 and "create" in r.json()["detail"]
+    assert r.status_code == 403 and "'Create'" in r.json()["detail"]
 
     owner = _h(_user(db, "proj-owner@premnathrail.com"))
     pid = _project(client, owner)["id"]
     r = client.delete(f"{BASE}/projects/{pid}", headers=viewer)
-    assert r.status_code == 403 and "delete" in r.json()["detail"]
+    assert r.status_code == 403 and "'Delete'" in r.json()["detail"]
     r = client.patch(f"{BASE}/projects/{pid}", json={"remarks": "x"}, headers=viewer)
-    assert r.status_code == 403 and "edit" in r.json()["detail"]
+    assert r.status_code == 403 and "'Edit'" in r.json()["detail"]
 
 
 def test_feasibility_recommendation_needs_approve(client, db):
@@ -74,7 +74,7 @@ def test_feasibility_recommendation_needs_approve(client, db):
     assert r.status_code == 200, r.text
     # …but the Go/No-Go call is an approval.
     r = client.put(f"{BASE}/projects/{pid}/feasibility", json={"recommendation": "go"}, headers=editor)
-    assert r.status_code == 403 and "approve" in r.json()["detail"]
+    assert r.status_code == 403 and "'Approve'" in r.json()["detail"]
     approver = _h(_user(db, "feas-approver@premnathrail.com", ["rnd:projects:view", "rnd:projects:edit", "rnd:projects:approve"]))
     r = client.put(f"{BASE}/projects/{pid}/feasibility", json={"recommendation": "go"}, headers=approver)
     assert r.status_code == 200, r.text
@@ -85,7 +85,7 @@ def test_stage_move_to_closed_needs_approve(client, db):
     pid = _project(client, owner)["id"]
     editor = _h(_user(db, "stage-editor@premnathrail.com", ["rnd:projects:view", "rnd:projects:edit"]))
     r = client.post(f"{BASE}/projects/{pid}/stage", json={"stage": "closed"}, headers=editor)
-    assert r.status_code == 403 and "approve" in r.json()["detail"]
+    assert r.status_code == 403 and "'Approve'" in r.json()["detail"]
 
 
 def test_experiment_and_prototype_actions_gated(client, db):
@@ -95,7 +95,7 @@ def test_experiment_and_prototype_actions_gated(client, db):
     r = client.post(f"{BASE}/prototypes", json={"name": "P", "project_id": 1}, headers=viewer)
     assert r.status_code == 403
     r = client.post(f"{BASE}/prototypes/1/release-to-production", json={}, headers=viewer)
-    assert r.status_code == 403 and "approve" in r.json()["detail"]
+    assert r.status_code == 403 and "'Approve'" in r.json()["detail"]
 
 
 # --- project PATCH explicit nulls --------------------------------------------

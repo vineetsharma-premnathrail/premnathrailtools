@@ -7,7 +7,7 @@ import { filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 import { useMarkPmOrigin } from '@/components/projects/work/pmOrigin'
-import { ChartBar, CheckSquare, Folders, SquaresFour, User, UsersThree, type Icon } from '@phosphor-icons/react'
+import { ChartBar, CheckSquare, FolderOpen, Folders, SquaresFour, User, UsersThree, type Icon } from '@phosphor-icons/react'
 
 // Dashboard and All Projects need the Project Management app. Department
 // heads, milestone leads and assistants work from the Ongoing Projects tab
@@ -16,6 +16,8 @@ import { ChartBar, CheckSquare, Folders, SquaresFour, User, UsersThree, type Ico
 const TABS = [
   { href: '/dashboard/projects', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard', pmOnly: true },
   { href: '/dashboard/projects/all', label: 'All Projects', icon: 'grid', subtabKey: 'all_projects', pmOnly: true },
+  // OP-YYYY-NNN execution projects — created automatically when a sales order with an RRV line is confirmed.
+  { href: '/dashboard/projects/order-projects', label: 'Order Projects', icon: 'folder', subtabKey: 'order_projects', pmOnly: true },
   // Everyone's own work — no app or tab grant needed (also a card on the Dashboard home).
   { href: '/dashboard/projects/my-tasks', label: 'My Tasks', icon: 'check', pmOnly: false },
 ] as const
@@ -25,6 +27,7 @@ const TABS = [
 const TAB_ICONS: Record<string, Icon> = {
   dashboard: SquaresFour,
   grid: Folders,
+  folder: FolderOpen,
   user: User,
   team: UsersThree,
   check: CheckSquare,

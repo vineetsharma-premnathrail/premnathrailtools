@@ -35,6 +35,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.permission_registry import MODULES, can_feature, can_perform, holds_deliberately, is_admin_user
+from app.core.permission_words import action_word, humanize, words as permission_words
 from app.modules.main.models.audit_log import AuditLog
 from app.modules.main.models.role import user_roles
 from app.modules.main.models.user import User
@@ -107,14 +108,6 @@ def _can_decide(user: User, tt: TransactionType, action: str) -> bool:
     return can_perform(user, tt.module_key, tt.subtab_key, action)
 
 
-def _decide_grant(tt: TransactionType, action: str) -> str:
-    if tt.feature_key:
-        f = MODULES[tt.module_key].get("features", {}).get(tt.subtab_key, {}).get(tt.feature_key)
-        if f and action in f["actions"]:
-            return f"{tt.module_key}:{tt.subtab_key}.{tt.feature_key}:{action}"
-    return f"{tt.module_key}:{tt.subtab_key}:{action}"
-
-
 def register_transaction(tt: TransactionType) -> None:
     if tt.module_key not in MODULES or tt.subtab_key not in MODULES[tt.module_key]["subtabs"]:
         raise RuntimeError(f"Approval type {tt.key}: {tt.module_key}:{tt.subtab_key} is not a registered tab")
@@ -122,6 +115,11 @@ def register_transaction(tt: TransactionType) -> None:
         raise RuntimeError(f"Approval type {tt.key}: feature {tt.module_key}:{tt.subtab_key}.{tt.feature_key} is not declared")
     fields = dict(tt.context_fields)
     fields.setdefault("amount", {"label": "Amount (₹)", "type": "number"})
+    # Admins read choices in words, never codes: a module's own choice_labels,
+    # else each code humanized ('machine_project' -> 'Machine project').
+    for k, f in list(fields.items()):
+        if f.get("choices"):
+            fields[k] = {**f, "choice_labels": {**{str(c): humanize(c) for c in f["choices"]}, **(f.get("choice_labels") or {})}}
     tt.context_fields = fields
     for s in tt.default_stages:
         _validate_stage_def(s.__dict__, tt)
@@ -145,7 +143,7 @@ def _validate_stage_def(s: dict, tt: TransactionType) -> None:
         raise HTTPException(status_code=422, detail="Every stage needs a name, e.g. 'Department head'.")
     rule = s.get("approver_rule")
     if rule not in APPROVER_RULES:
-        raise HTTPException(status_code=422, detail=f"Stage '{name}': approver rule must be one of {', '.join(APPROVER_RULES)}.")
+        raise HTTPException(status_code=422, detail=f"Stage '{name}': pick who approves — one of: {'; '.join(APPROVER_RULES.values())}.")
     cfg = s.get("rule_config") or {}
     if rule == "specific_users" and not cfg.get("user_ids"):
         raise HTTPException(status_code=422, detail=f"Stage '{name}': pick at least one user.")
@@ -158,7 +156,7 @@ def _validate_stage_def(s: dict, tt: TransactionType) -> None:
     if rule == "record_field":
         f = cfg.get("field")
         if f not in tt.context_fields or tt.context_fields[f].get("type") != "user":
-            people = [k for k, v in tt.context_fields.items() if v.get("type") == "user"]
+            people = [v.get("label") or humanize(k) for k, v in tt.context_fields.items() if v.get("type") == "user"]
             raise HTTPException(
                 status_code=422,
                 detail=f"Stage '{name}': '{tt.label}' can name the approver only from: {', '.join(people) or 'no person fields'}.",
@@ -167,9 +165,10 @@ def _validate_stage_def(s: dict, tt: TransactionType) -> None:
         raise HTTPException(status_code=422, detail=f"Stage '{name}': mode must be 'any' (one of them) or 'all' (every one).")
     for c in s.get("conditions") or []:
         if c.get("field") not in tt.context_fields:
-            raise HTTPException(status_code=422, detail=f"Stage '{name}': condition field '{c.get('field')}' doesn't exist on {tt.label}.")
+            raise HTTPException(status_code=422, detail=f"Stage '{name}': a condition uses '{humanize(c.get('field'))}', which {tt.label} "
+                                                        "doesn't have — remove that condition and pick the field again.")
         if c.get("op") not in CONDITION_OPS:
-            raise HTTPException(status_code=422, detail=f"Stage '{name}': condition operator must be one of {', '.join(CONDITION_OPS)}.")
+            raise HTTPException(status_code=422, detail=f"Stage '{name}': pick how a condition compares — one of: {', '.join(CONDITION_OPS.values())}.")
         _validate_condition(name, c, tt.context_fields[c["field"]])
     hours = s.get("escalate_after_hours")
     if hours is not None:
@@ -204,7 +203,9 @@ def _validate_condition(stage: str, c: dict, f: dict) -> None:
         choices = f.get("choices") or []
         bad = [v for v in values if choices and v.lower() not in {str(ch).lower() for ch in choices}]
         if bad:
-            raise HTTPException(status_code=422, detail=f"{where}: '{', '.join(bad)}' isn't a valid value — pick from {', '.join(map(str, choices))}.")
+            names = f.get("choice_labels") or {}
+            raise HTTPException(status_code=422, detail=f"{where}: '{', '.join(bad)}' isn't a valid value — pick from "
+                                                        f"{', '.join(names.get(str(c), humanize(c)) for c in choices)}.")
 
 
 # ── Workflow definitions ─────────────────────────────────────────────────
@@ -372,7 +373,8 @@ def _resolve_rule(db: Session, rule: str, cfg: dict, *, requester: User | None, 
     return []
 
 
-def _no_approver_reason(db: Session, stage: ApprovalWorkflowStage, requester: User | None, branch_id: int | None) -> str:
+def _no_approver_reason(db: Session, stage: ApprovalWorkflowStage, requester: User | None, branch_id: int | None,
+                        context: dict | None = None) -> str:
     rule, cfg = stage.approver_rule, stage.rule_config or {}
     who = requester.name if requester else "the requester"
     if rule == "reporting_manager":
@@ -393,8 +395,17 @@ def _no_approver_reason(db: Session, stage: ApprovalWorkflowStage, requester: Us
     if rule == "role":
         return "Nobody active holds the approver role of this stage — assign it in Organization › Role & Permissions."
     if rule == "permission":
-        return f"Nobody holds '{cfg.get('permission')}' — grant it through a role in Organization › Role & Permissions."
+        return f"Nobody holds '{permission_words(cfg.get('permission'))}' — grant it through a role in Organization › Role & Permissions."
     if rule == "record_field":
+        # The document type may say where that person is set ("missing": {ref} is
+        # filled from the context key named by "missing_ref", e.g. the order project number).
+        tt = _TYPES.get(stage.workflow.key) if getattr(stage, "workflow", None) is not None else None
+        spec = (tt.context_fields.get(cfg.get("field")) or {}) if tt is not None else {}
+        if spec.get("missing"):
+            ref = (context or {}).get(spec.get("missing_ref") or "") or ""
+            return spec["missing"].replace("{ref}", str(ref)).replace("  ", " ")
+        if spec.get("label"):
+            return f"{spec['label']} isn't set on this document — set it, then submit again."
         return "The approver wasn't chosen on the record — pick the approver before submitting."
     return "No approver could be found — check this stage in Organization › Workflows."
 
@@ -468,7 +479,7 @@ def plan_stages(db: Session, wf: ApprovalWorkflow, *, requester: User | None, br
             problem = (f"the only person who matches this stage is {names}, who can't approve their own document "
                        "(four-eyes). Add another approver for this stage, or have someone else submit it.")
         else:
-            problem = _no_approver_reason(db, st, requester, branch_id)
+            problem = _no_approver_reason(db, st, requester, branch_id, context)
         plan.append({"stage": st, "approver_ids": ids, "also_ids": also, "problem": problem})
     return plan
 
@@ -701,10 +712,10 @@ def decide(db: Session, request_id: int, user: User, decision: str, comment: str
                 feat = MODULES[tt.module_key].get("features", {}).get(tt.subtab_key, {}).get(tt.feature_key or "")
                 raise HTTPException(
                     status_code=403,
-                    detail=f"You're the approver, but you don't hold the '{action}' permission on "
+                    detail=f"You're the approver, but you don't hold the '{action_word(action)}' permission on "
                            f"{MODULES[tt.module_key]['label']} › {MODULES[tt.module_key]['subtabs'][tt.subtab_key]}"
-                           f"{f' › ' + feat['label'] if feat else ''} "
-                           f"({_decide_grant(tt, action)}). Ask an admin to add it to your role.",
+                           f"{f' › ' + feat['label'] if feat else ''}. Ask an admin to add it to your role "
+                           "(Organization › Role & Permissions).",
                 )
     if tt is not None and tt.validate_decision is not None and via != "admin":
         tt.validate_decision(db, req, step, user, decision)
@@ -990,7 +1001,7 @@ def check_workflow(db: Session, key: str, payload: dict) -> dict:
             add("warning", f"{label}: up to {max(approver_counts)} people must ALL approve. One absence holds every "
                            "document — use 'Any one of them approves' unless each person checks something different.", idx)
         if st.approval_mode == "all" and st.approver_rule in ("partner", "director") and approver_counts and max(approver_counts) > 1:
-            add("info", f"{label}: every {st.approver_rule} must approve — usually any one is enough.", idx)
+            add("info", f"{label}: every {'Partner' if st.approver_rule == 'partner' else 'Director'} must approve — usually any one is enough.", idx)
         if not st.escalate_after_hours:
             add("info", f"{label} has no escalation — a document can wait on an absent approver indefinitely "
                         "(approvers can also set a delegate in Organization › Delegations).", idx)
@@ -1035,9 +1046,12 @@ def _condition_text(tt: TransactionType, conditions: list) -> str:
         return "Every document"
     parts = []
     for c in conditions:
-        label = (tt.context_fields.get(c.get("field")) or {}).get("label") or c.get("field")
+        spec = tt.context_fields.get(c.get("field")) or {}
+        label = spec.get("label") or c.get("field")
         op, v = c.get("op"), c.get("value")
-        value = "" if op in ("true", "false") else f" {', '.join(map(str, v)) if isinstance(v, list) else v}"
+        names = spec.get("choice_labels") or {}
+        shown = [names.get(str(x), x) for x in (v if isinstance(v, list) else [v])]
+        value = "" if op in ("true", "false") else f" {', '.join(map(str, shown))}"
         parts.append(f"{label} {CONDITION_OPS.get(op, op)}{value}")
     return " and ".join(parts)
 
@@ -1070,7 +1084,7 @@ def approves_in_role(db: Session, role) -> list[dict]:
             if st.approver_rule == "role" and cfg.get("role_id") == role.id:
                 out.append(_approves_row(tt, active, st, "Holders of this role approve", sole=len(active_holders) <= 1))
             elif st.approver_rule == "permission" and cfg.get("permission") in grants:
-                out.append(_approves_row(tt, active, st, f"This role grants {cfg['permission']}, whose holders approve"))
+                out.append(_approves_row(tt, active, st, f"This role grants {permission_words(cfg['permission'])}, whose holders approve"))
             elif any(p in grants for p in plus):
                 out.append(_approves_row(tt, active, st, "This role's holders may also decide (alongside the main approver)", kind="also"))
     return out
@@ -1104,11 +1118,11 @@ def approves_in_user(db: Session, user: User) -> dict:
             elif rule in ("partner", "director", "user_flag"):
                 flag = {"partner": "is_partner", "director": "is_director"}.get(rule) or cfg.get("flag")
                 if flag and getattr(user, flag, False):
-                    how = {"is_partner": "Is a Partner", "is_director": "Is a Director"}.get(flag) or f"Has the '{APPROVER_FLAGS.get(flag, flag)}' flag"
+                    how = {"is_partner": "Is a Partner", "is_director": "Is a Director"}.get(flag) or f"Has the '{APPROVER_FLAGS.get(flag) or humanize(flag.removeprefix('is_'))}' flag"
             elif rule == "specific_users" and user.id in (cfg.get("user_ids") or []):
                 how = "Named on the stage"
             elif rule == "permission" and cfg.get("permission") and user.id in holders(cfg["permission"]):
-                how = f"Holds {cfg['permission']}"
+                how = f"Holds {permission_words(cfg['permission'])}"
             elif rule == "department_head" and heads:
                 how = "Department head of " + ", ".join(sorted({d.name for d in heads})) + " — for documents raised by its people"
             elif rule == "plant_head" and plants:
@@ -1128,7 +1142,7 @@ def approves_in_user(db: Session, user: User) -> dict:
             plus = cfg.get("plus_permission") or []
             plus = [plus] if isinstance(plus, str) else plus
             if any(user.id in holders(p) for p in plus):
-                out.append(_approves_row(tt, active, st, "May also decide (holds " + ", ".join(plus) + ")", kind="also"))
+                out.append(_approves_row(tt, active, st, "May also decide (holds " + ", ".join(map(permission_words, plus)) + ")", kind="also"))
             if st.escalate_after_hours:
                 er, ecfg = st.escalation_rule, st.escalation_config or {}
                 if (er == "specific_users" and user.id in (ecfg.get("user_ids") or [])) \

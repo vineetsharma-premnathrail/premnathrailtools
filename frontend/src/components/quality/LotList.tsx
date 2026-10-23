@@ -29,16 +29,21 @@ export default function LotList({ mine = false, initialType = '' }: { mine?: boo
   }, [])
 
   useEffect(() => {
-    setLoading(true)
     const params: Record<string, unknown> = {}
     if (mine) params.mine = true
     if (status) params.status = status
     if (type) params.inspection_type = type
     if (search.trim()) params.search = search.trim()
-    qualityApi.listLots(params)
-      .then((d) => setLots(Array.isArray(d) ? d : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load inspection lots.')))
-      .finally(() => setLoading(false))
+    // Debounce typing and drop late responses so an older search can't overwrite a newer one.
+    let ignore = false
+    const t = setTimeout(() => {
+      setLoading(true)
+      qualityApi.listLots(params)
+        .then((d) => { if (ignore) return; setLots(Array.isArray(d) ? d : []); setError('') })
+        .catch((err) => { if (!ignore) setError(extractErrorMessages(err, 'Failed to load inspection lots.')) })
+        .finally(() => { if (!ignore) setLoading(false) })
+    }, 250)
+    return () => { ignore = true; clearTimeout(t) }
   }, [mine, status, type, search])
 
   const cols = ['Lot', 'Item', 'Qty', 'Type', 'Source', 'Status', 'Assigned', 'Age', 'Decision', '']

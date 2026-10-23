@@ -216,6 +216,8 @@ async def withdraw_future_change(slice_id: int, db: Session = Depends(get_db), u
     if row is None:
         raise HTTPException(status_code=404, detail=f"Assignment slice #{slice_id} doesn't exist — it may already be withdrawn. Reload the history.")
     target = _target(db, row.user_id, user)
+    if target.id == user.id:
+        raise HTTPException(status_code=403, detail="You can't withdraw a future change to your own org assignment. Ask another HR user to do it.")
     asg.delete_future(db, row)
     record_audit(db, entity_type="hr_employee_assignment", entity_id=slice_id, action="deleted", module_key="hr",
                  summary=f"Withdrew the future org change of {target.name} from {row.valid_from:%d-%m-%Y}", user_id=user.id)

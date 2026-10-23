@@ -5,6 +5,7 @@ tab's View. A change-board voter without the Changes tab keeps voting
 (only the record-level rule "you're on this ECR's board" applies); a voter
 whose role holds the Changes tab but was customised without the vote
 feature gets a real 403."""
+from app.core.permission_words import place
 import re
 from pathlib import Path
 
@@ -59,7 +60,7 @@ def test_customised_role_without_vote_feature_gets_real_403(client, db, board):
     assert r.json()["board_members"] == []
     r = client.post(f"{API}/change-requests/{ecr['id']}/vote", json={"vote": "approve"}, headers=auth(voter))
     assert r.status_code == 403
-    assert "design:change_notices.ecr_vote:submit" in r.json()["detail"]
+    assert place("design:change_notices.ecr_vote:submit").split(" › ")[-1] in r.json()["detail"]
 
 
 def test_cost_impact_hidden_and_kept_without_sensitive_feature(client, db, board):

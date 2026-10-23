@@ -14,6 +14,7 @@ import MessageDialog from '@/components/erp/MessageDialog'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
 import ApprovalPanel from '@/components/shared/ApprovalPanel'
+import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 
 const STATUS_LABELS: Record<string, string> = { pending_approval: 'Pending Approval', approved: 'Approved', rejected: 'Rejected', cancelled: 'Withdrawn' }
@@ -137,7 +138,7 @@ export default function StoreMaterialReturnDetailPage() {
               </Row>
               <Row>
                 <InfoRow label="Department" value={ret.department_name || '—'} />
-                <InfoRow label="Return Date" value={ret.return_date} />
+                <InfoRow label="Return Date" value={formatDate(ret.return_date)} />
                 <InfoRow label="Returned By" value={ret.returned_by_name || '—'} />
               </Row>
               <Row>

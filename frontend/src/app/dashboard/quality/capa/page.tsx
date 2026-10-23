@@ -31,7 +31,6 @@ export default function QualityCapaListPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
-    setLoading(true)
     const params: Record<string, unknown> = {}
     if (statusFilter === 'live') params.open_only = true
     else if (statusFilter) params.status = statusFilter
@@ -39,10 +38,16 @@ export default function QualityCapaListPage() {
     if (search.trim()) params.search = search.trim()
     if (mine) params.mine = true
     if (overdue) params.overdue_only = true
-    qualityApi.listCapas(params)
-      .then((data) => setCapas(Array.isArray(data) ? data : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load CAPAs.')))
-      .finally(() => setLoading(false))
+    // Debounce typing and drop late responses so an older search can't overwrite a newer one.
+    let ignore = false
+    const t = setTimeout(() => {
+      setLoading(true)
+      qualityApi.listCapas(params)
+        .then((data) => { if (ignore) return; setCapas(Array.isArray(data) ? data : []); setError('') })
+        .catch((err) => { if (!ignore) setError(extractErrorMessages(err, 'Failed to load CAPAs.')) })
+        .finally(() => { if (!ignore) setLoading(false) })
+    }, 250)
+    return () => { ignore = true; clearTimeout(t) }
   }, [isAuthorized, statusFilter, trigger, search, mine, overdue])
 
   if (isLoading || !isAuthorized) return null

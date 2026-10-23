@@ -137,6 +137,10 @@ def sanitize_folder_name(value: str) -> str:
     value = value or ""
     value = re.sub(r'[\\/:*?"<>|]+', "-", value)
     value = value.strip()
+    # A segment of only dots ("." / "..") would be read as a relative path step
+    # (current / parent folder) — never let a record or file name do that.
+    if value and set(value) == {"."}:
+        value = value.replace(".", "-")
     return value or "unknown"
 
 
@@ -151,12 +155,16 @@ def _validate_uploaded_file(upload_file: UploadFile) -> int:
     saved as "invoice.pdf" — since the filename and Content-Type header are
     both fully attacker-controlled). Returns the file's byte size."""
     filename = upload_file.filename or "unnamed"
-    content_type = (upload_file.content_type or "").lower()
+    # Compare the base type only: "text/html; charset=utf-8" is still HTML, and
+    # several download routes serve the stored type back inline.
+    content_type = (upload_file.content_type or "").split(";", 1)[0].strip().lower()
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     ext = f".{ext}" if ext else ""
 
     dangerous_ext = {".svg", ".svgz", ".html", ".htm", ".xhtml", ".xml", ".js", ".mjs"}
-    if ext in dangerous_ext or "svg" in content_type or content_type in ("text/html", "application/xhtml+xml"):
+    dangerous_types = {"text/html", "application/xhtml+xml", "text/xml", "application/xml",
+                       "text/javascript", "application/javascript"}
+    if ext in dangerous_ext or "svg" in content_type or content_type in dangerous_types:
         raise HTTPException(status_code=400, detail=f"File type not allowed for {filename}")
 
     if not (

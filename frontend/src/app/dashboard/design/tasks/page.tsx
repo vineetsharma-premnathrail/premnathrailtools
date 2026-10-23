@@ -157,7 +157,7 @@ export default function DesignTasksPage() {
   const open = (t: DesignTaskItem) => router.push(taskHref(t))
   const linkTask = linkFor !== null ? (work || []).find((t) => t.task_id === linkFor) || null : null
   const openLink = (taskId: number) => { setLinkFor(taskId); setLinkForm({ kind: 'document', id: '' }); setLinkError('') }
-  const total = tasks ? ACTION_KEYS.reduce((n, k) => n + tasks[k].length, 0) : 0
+  const total = tasks ? ACTION_KEYS.reduce((n, k) => n + (tasks[k] || []).length, 0) : 0
   const overdueWork = work ? work.filter((t) => t.is_overdue).length : 0
 
   return (
@@ -275,6 +275,7 @@ export default function DesignTasksPage() {
       </div>
 
       <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 10px' }}>Reviews, approvals &amp; changes</p>
+      {!tasks && !error && <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p>}
       {tasks && (
         <div data-tour="design-tasks-queues" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
           {GROUPS.map((g) => {

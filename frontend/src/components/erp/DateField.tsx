@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { inputStyle } from '@/components/shared/ui'
+import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { CalendarBlank } from '@phosphor-icons/react'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -20,6 +21,9 @@ export default function DateField({ value, onChange, style, placeholder = 'DD-MM
   const selected = value ? new Date(value + 'T00:00:00') : null
   const [viewYear, setViewYear] = useState(selected ? selected.getFullYear() : new Date().getFullYear())
   const [viewMonth, setViewMonth] = useState(selected ? selected.getMonth() : new Date().getMonth())
+
+  // Escape closes just the calendar, not the form popup it sits in.
+  useEscapeKey(open, () => setOpen(false))
 
   const reposition = () => {
     const rect = wrapperRef.current?.getBoundingClientRect()
@@ -194,6 +198,7 @@ export default function DateField({ value, onChange, style, placeholder = 'DD-MM
         onChange={handleTextChange}
         onFocus={openCalendar}
         onBlur={handleBlur}
+        onKeyDown={(e) => { if (e.key === 'Tab') setOpen(false) }}
         placeholder={placeholder}
         inputMode="numeric"
         style={{ ...inputStyle, padding: '10px 36px 10px 14px', ...style }}

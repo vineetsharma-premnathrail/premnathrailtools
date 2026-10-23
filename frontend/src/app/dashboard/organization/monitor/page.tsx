@@ -10,6 +10,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { BORDER, GLASS, SHADOWS, TEXT } from '@/lib/theme'
 import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetIconName, sheetBtn } from '@/components/shared/FormSheet'
+import { usePermissionWords } from '@/lib/permissionWords'
 
 // Organization › System Monitor — SAP SM37 (background jobs), SM21/ST22
 // (system errors, looked up by the error reference a user reports) and
@@ -63,6 +64,7 @@ export default function SystemMonitorPage() {
   const [days, setDays] = useState(7)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const { permLabel } = usePermissionWords()
   const fail = (fallback: string) => (e: unknown) => setError(extractErrorMessages(e, fallback).join(' '))
 
   const loadJobs = useCallback(() => { monitorApi.jobs().then(setJobs).catch(fail('Could not load background jobs.')) }, [])
@@ -194,7 +196,7 @@ export default function SystemMonitorPage() {
                 const active = denialKey === s.permission_key
                 return (
                   <button key={s.permission_key || 'none'} type="button" onClick={() => setDenialKey(active ? null : s.permission_key)} style={{ fontSize: 11.5, padding: '6px 10px', borderRadius: 10, cursor: 'pointer', border: `1px solid ${active ? '#FF7A45' : BORDER.normal}`, background: active ? 'rgba(255,122,69,0.1)' : '#fff', textAlign: 'left' }}>
-                    <b>{s.count}×</b> {s.permission_label || 'Record-level rule'} <span style={{ color: TEXT.muted }}>· {s.users} user(s)</span>
+                    <b>{s.count}×</b> {s.permission_key ? permLabel(s.permission_key) : (s.permission_label || 'Record-level rule')} <span style={{ color: TEXT.muted }}>· {s.users} user(s)</span>
                   </button>
                 )
               })}
@@ -209,7 +211,7 @@ export default function SystemMonitorPage() {
                   <tr key={d.id}>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmt(d.occurred_at)}</td>
                     <td style={{ ...td, fontWeight: 600 }}>{d.user_name || 'Not signed in'}</td>
-                    <td style={td}><b>{d.permission_label || 'Record-level rule'}</b><div style={{ fontSize: 11, color: TEXT.muted }}>{d.permission_key ? d.permission_key : (d.detail || '').slice(0, 180)}</div></td>
+                    <td style={td}><b>{d.permission_key ? permLabel(d.permission_key) : (d.permission_label || 'Record-level rule')}</b>{!d.permission_key && d.detail && <div style={{ fontSize: 11, color: TEXT.muted }}>{d.detail.slice(0, 180)}</div>}</td>
                     <td style={{ ...td, fontFamily: 'monospace', fontSize: 11.5 }}>{d.method} {d.path}</td>
                     <td style={td}>{d.repeat_count}</td>
                     <td style={td}>{d.granted_by_roles.length ? d.granted_by_roles.map((r) => r.name).join(', ') : '—'}</td>

@@ -123,7 +123,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       setInquiry(await crmApi.updateInquiry(inquiry.id, payload))
       crmApi.getInquirySpecRevisions(inquiry.id, true).then(setRevisions).catch(() => {})
     } catch (err) {
-      setError(extractErrorMessages(err, 'Update failed.'))
+      setError(extractErrorMessages(err, 'Could not save the change to this inquiry — reload the page and try again; if it keeps failing, check your connection.'))
     }
   }
 
@@ -137,7 +137,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       const updated = await crmApi.updateInquiry(inquiry.id, payload)
       setInquiry({ ...updated, updated_at: prevUpdatedAt })
     } catch (err) {
-      setError(extractErrorMessages(err, 'Update failed.'))
+      setError(extractErrorMessages(err, 'Could not save the change to this inquiry — reload the page and try again; if it keeps failing, check your connection.'))
     }
   }
 
@@ -258,7 +258,7 @@ export default function InquiryDetailPanel({ inquiryId, onDeleted }: { inquiryId
       </div>
 
       <MessageDialog open={!!torError} variant="error" title="Send Technical Requirement Failed" message={torError} onClose={() => setTorError('')} />
-      <MessageDialog open={!!error} variant="error" title="Something Went Wrong" message={error} onClose={() => setError('')} />
+      <MessageDialog open={!!error} variant="error" title="Inquiry Action Failed" message={error} onClose={() => setError('')} />
 
       <StageProgress stage={inquiry.current_stage} stages={INQ_STAGES} canModify={canModify && canMoveStage} allowBackward={isAdmin} onRequestChange={setPendingStage} tourId="inq-stage-progress" />
 
@@ -555,7 +555,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
   const [showForm, setShowForm] = useState(false)
   // Revise opens the same full form, filled with this quotation; saving records a revision.
   const [revisingQuot, setRevisingQuot] = useState<QuotationItem | null>(null)
-  const todayIso = new Date().toISOString().slice(0, 10)
+  const todayIso = new Date().toLocaleDateString('en-CA') // local date, not UTC
   // R&D's released Technical Offers for this inquiry — the quotation quotes against one of them.
   const [technicalOffers, setTechnicalOffers] = useState<CrmTechnicalOfferOption[]>([])
   const currentOffer = technicalOffers.find((o) => o.status === 'released')

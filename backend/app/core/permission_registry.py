@@ -240,6 +240,9 @@ MODULES: dict[str, dict] = {
         "Project Management",
         ("dashboard", "Dashboard", V),
         ("all_projects", "All Projects", _with(CRUD, "export")),
+        # OP-YYYY-NNN execution projects, created automatically when a sales order with an
+        # RRV line is confirmed (sales/order_projects.py); edit = project manager / hold / dates.
+        ("order_projects", "Order Projects", VE),
         ("department_board", "Department Board", V),
         ("department_work", "Department Work", VE),
         ("my_tasks", "My Tasks", VE),
@@ -253,7 +256,6 @@ MODULES: dict[str, dict] = {
         ("dashboard", "Dashboard", V),
         ("orders", "Sales Orders", _with(WORKFLOW, "submit", "cancel")),  # submit/cancel: approval engine (orders + amendments)
         ("delivery", "Delivery", ["view", "create", "edit", "approve", "print"]),  # no delete endpoint
-        ("order_projects", "Order Projects", VE),  # OP-YYYY-NNN execution projects; edit = project manager / hold / dates
         # Product Management (finished-product master) lives inside Sales; its
         # tabs give the internal "products" app (User.get_apps). The retired
         # "products" module's grants (products:*) alias to these.
@@ -500,6 +502,9 @@ def legacy_grant_aliases(grant: str) -> list[str]:
             return [f"sales:{tk}:{a}"]
         acts = MODULES["sales"]["actions"]
         return [f"sales:{t}:{x}" for t in sorted(PRODUCT_TABS) for x in acts.get(t, []) if a in ("*", x)]
+    # Order Projects moved from Sales to Project Management (2026-10-23).
+    if grant.startswith("sales:order_projects"):
+        return ["projects" + grant[len("sales"):]]
     return [grant]
 
 

@@ -21,9 +21,11 @@ export interface ContractFormValue {
 }
 
 export function contractToForm(c?: ServiceContract | null): ContractFormValue {
+  // Local calendar dates — toISOString() is UTC and gives the day before in IST.
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   const t = new Date()
-  const start = t.toISOString().slice(0, 10)
-  const end = new Date(t.getFullYear() + 1, t.getMonth(), t.getDate() - 1).toISOString().slice(0, 10)
+  const start = ymd(t)
+  const end = ymd(new Date(t.getFullYear() + 1, t.getMonth(), t.getDate() - 1))
   return {
     contract_type: c?.contract_type || 'amc', title: c?.title || '', customer_id: c ? String(c.customer_id) : '',
     start_date: c?.start_date || start, end_date: c?.end_date || end, contract_value: c ? String(c.contract_value) : '',

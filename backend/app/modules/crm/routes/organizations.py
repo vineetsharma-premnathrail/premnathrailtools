@@ -420,7 +420,7 @@ async def create_org_contact(
         raise HTTPException(
             status_code=403,
             detail="You can't add contacts — you need 'Create' on CRM › Customer Organizations › Contacts "
-                   "(crm:organizations.contacts:create) or 'Create'/'Edit' on CRM › Inquiries & Tenders. Ask an admin "
+                   "or 'Create'/'Edit' on CRM › Inquiries & Tenders. Ask an admin "
                    "to add it to one of your roles (Organization › Role & Permissions).",
         )
     org = db.query(Organization).filter(Organization.id == org_id, Organization.is_deleted == False).first()  # noqa: E712

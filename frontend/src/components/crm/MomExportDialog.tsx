@@ -58,7 +58,7 @@ export default function MomExportDialog(props: Props) {
 
 function MomExportSheet({ onClose, orgId, orgName, activities, onExportDocx, onExportPdf }: Props) {
   const [subject, setSubject] = useState('')
-  const [meetingDate, setMeetingDate] = useState(new Date().toISOString().slice(0, 10))
+  const [meetingDate, setMeetingDate] = useState(new Date().toLocaleDateString('en-CA')) // local date, not UTC
   const [contacts, setContacts] = useState<OrgContact[]>([])
   const [directory, setDirectory] = useState<DirectoryUser[]>([])
   const [pewMemberIds, setPewMemberIds] = useState<number[]>([])

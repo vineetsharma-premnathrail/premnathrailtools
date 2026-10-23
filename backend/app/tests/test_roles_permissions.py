@@ -89,7 +89,7 @@ def test_delete_only_own_records(db):
     viewer = _user(db, "v@premnathrail.com", grants=["store:issues:view"])
     with pytest.raises(HTTPException) as exc:
         ensure_can_delete(viewer, Rec(viewer.id), "store", "issues")
-    assert "'delete' permission" in exc.value.detail
+    assert "'Delete' permission" in exc.value.detail
 
 
 def test_legacy_erp_ids_map_to_matrix(db):

@@ -345,7 +345,7 @@ function ReceiveDialog({ challan, onClose, onDone }: {
   const [outputItemId, setOutputItemId] = useState(challan.output_item_id ? String(challan.output_item_id) : '')
   const [outputQty, setOutputQty] = useState(challan.output_item_id && open.length === 1
     ? String(+(open[0].quantity_outstanding - open[0].quantity_return_pending).toFixed(4)) : '')
-  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().slice(0, 10))
+  const [receiptDate, setReceiptDate] = useState(new Date().toLocaleDateString('en-CA')) // local date, not UTC
   const [vendorDc, setVendorDc] = useState('')
   const [poLineId, setPoLineId] = useState('')
   const [rate, setRate] = useState('')

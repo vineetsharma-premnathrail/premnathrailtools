@@ -3,6 +3,16 @@ from fastapi import Depends, HTTPException
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
 from app.core.permission_registry import MODULES, can_perform, can_view_tab, is_admin_user
+from app.core.permission_words import action_word
+
+class PermissionDenied(HTTPException):
+    """403 that carries the permission id it was about, so the refused-request
+    trace (basis_log) records it — the message itself stays in plain words."""
+
+    def __init__(self, detail: str, permission_key: str | None = None):
+        super().__init__(status_code=403, detail=detail)
+        self.permission_key = permission_key
+
 
 GRANT_HINT = "Ask an admin to add it to one of your roles (Organization › Role & Permissions — the Permission Matrix)."
 
@@ -22,11 +32,9 @@ def require_app_access(app_name: str):
 
     def _dependency(user: User = Depends(get_current_user)) -> User:
         if app_name not in user.get_apps():
-            raise HTTPException(
-                status_code=403,
-                detail=f"Access to '{app_name}' module required — none of your roles lets you view any tab of "
-                       f"the {_module_label(app_name)} module. {GRANT_HINT}",
-            )
+            raise PermissionDenied(
+                f"You can't open the {_module_label(app_name)} module — none of your roles lets you view any of its tabs. "
+                f"{GRANT_HINT}", f"{app_name}:*:view")
         return user
 
     return _dependency
@@ -54,11 +62,9 @@ def require_tab_access(module_key: str, subtab_key: str):
 
     def _dependency(user: User = Depends(get_current_user)) -> User:
         if not can_view_tab(user, module_key, subtab_key):
-            raise HTTPException(
-                status_code=403,
-                detail=f"You don't have 'view' permission on {_module_label(module_key)} › "
-                       f"{_tab_label(module_key, subtab_key)} ({module_key}:{subtab_key}). {GRANT_HINT}",
-            )
+            raise PermissionDenied(
+                f"You don't have 'View' permission on {_module_label(module_key)} › "
+                f"{_tab_label(module_key, subtab_key)}. {GRANT_HINT}", f"{module_key}:{subtab_key}:view")
         return user
 
     return _dependency
@@ -79,11 +85,9 @@ def ensure_tab_action(user: User, module_key: str, subtab_key: str, action: str)
     """Inline form of require_tab_action, for checks that depend on the
     record (e.g. which tab a document belongs to)."""
     if not can_perform(user, module_key, subtab_key, action):
-        raise HTTPException(
-            status_code=403,
-            detail=f"You don't have '{action}' permission on {_module_label(module_key)} › "
-                   f"{_tab_label(module_key, subtab_key)} ({module_key}:{subtab_key}:{action}). {GRANT_HINT}",
-        )
+        raise PermissionDenied(
+            f"You don't have '{action_word(action)}' permission on {_module_label(module_key)} › "
+            f"{_tab_label(module_key, subtab_key)}. {GRANT_HINT}", f"{module_key}:{subtab_key}:{action}")
 
 
 def _feature_label(module_key: str, tab_key: str, feature_key: str) -> str:
@@ -108,12 +112,10 @@ def ensure_feature_action(user: User, module_key: str, tab_key: str, feature_key
     """Inline form of require_feature_action."""
     from app.core.permission_registry import can_feature
     if not can_feature(user, module_key, tab_key, feature_key, action):
-        raise HTTPException(
-            status_code=403,
-            detail=f"You don't have '{action}' permission on {_module_label(module_key)} › "
-                   f"{_tab_label(module_key, tab_key)} › {_feature_label(module_key, tab_key, feature_key)} "
-                   f"({module_key}:{tab_key}.{feature_key}:{action}). {GRANT_HINT}",
-        )
+        raise PermissionDenied(
+            f"You don't have '{action_word(action)}' permission on {_module_label(module_key)} › "
+            f"{_tab_label(module_key, tab_key)} › {_feature_label(module_key, tab_key, feature_key)}. {GRANT_HINT}",
+            f"{module_key}:{tab_key}.{feature_key}:{action}")
 
 
 _OWNER_FIELDS = (

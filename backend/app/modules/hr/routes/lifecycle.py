@@ -123,6 +123,14 @@ def _get_event(db: Session, event_id: int, user: User | None = None) -> HrLifecy
     return ev
 
 
+def _ensure_not_own(ev: HrLifecycleEvent, user: User, what: str) -> None:
+    """Nobody changes a lifecycle event about themselves (same rule as raising,
+    completing or linking one) — e.g. withdrawing their own exit or editing
+    their own pending promotion."""
+    if ev.user_id and ev.user_id == user.id:
+        raise HTTPException(status_code=403, detail=f"{ev.event_no} is about you, so you can't {what} it. Ask another HR user to do it.")
+
+
 def _ensure_open(ev: HrLifecycleEvent, what: str = "changed") -> None:
     if ev.status not in OPEN_STATUSES:
         raise HTTPException(
@@ -444,6 +452,7 @@ async def get_event(event_id: int, db: Session = Depends(get_db), user: User = D
 @router.patch("/events/{event_id}", response_model=HrLifecycleEventResponse)
 async def update_event(event_id: int, payload: HrLifecycleEventUpdate, db: Session = Depends(get_db), user: User = Depends(require_hr_edit)):
     ev = _get_event(db, event_id, user)
+    _ensure_not_own(ev, user, "edit")
     _ensure_open(ev, "edited")
     updates = payload.model_dump(exclude_unset=True)
     if "status" in updates and updates["status"] not in ("draft", "in_progress"):
@@ -477,6 +486,7 @@ async def update_event(event_id: int, payload: HrLifecycleEventUpdate, db: Sessi
 @router.post("/events/{event_id}/cancel", response_model=HrLifecycleEventResponse)
 async def cancel_event(event_id: int, payload: HrLifecycleEventCancelPayload, db: Session = Depends(get_db), user: User = Depends(require_hr_edit)):
     ev = _get_event(db, event_id, user)
+    _ensure_not_own(ev, user, "cancel")
     if ev.status != "scheduled":  # a scheduled (future-dated) move can be withdrawn before its date
         _ensure_open(ev, "cancelled")
     ev.status = "cancelled"
@@ -599,6 +609,7 @@ async def complete_event(event_id: int, payload: HrLifecycleEventCompletePayload
 @router.post("/events/{event_id}/items", response_model=HrChecklistItemResponse)
 async def add_item(event_id: int, payload: HrChecklistItemCreate, db: Session = Depends(get_db), user: User = Depends(require_checklist_edit)):
     ev = _get_event(db, event_id, user)
+    _ensure_not_own(ev, user, "add checklist items to")
     _ensure_open(ev, "given new checklist items")
     _validate_choice(payload.category, CHECKLIST_CATEGORIES, "category")
     if payload.owner_user_id:
@@ -674,6 +685,7 @@ async def delete_item(item_id: int, db: Session = Depends(get_db), _user: User =
     if not item:
         raise HTTPException(status_code=404, detail=f"Checklist item #{item_id} doesn't exist — it may already have been removed. Reload the event.")
     ensure_in_scope(db, _user, item.event)  # HR data access on the parent event
+    _ensure_not_own(item.event, _user, "remove checklist items from")
     _ensure_open(item.event, "changed")
     if item.status == "done":
         raise HTTPException(status_code=409, detail="This item is already done, so it stays on record. Mark it Not applicable instead if it was a mistake.")

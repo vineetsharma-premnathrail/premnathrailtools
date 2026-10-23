@@ -37,7 +37,8 @@ const MODES = [{ value: 'neft', label: 'NEFT' }, { value: 'rtgs', label: 'RTGS' 
 function plusDays(n: number) {
   const d = new Date()
   d.setDate(d.getDate() + n)
-  return d.toISOString().slice(0, 10)
+  // Local date, not toISOString() — that is UTC and gives yesterday before 05:30 IST.
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 export default function PaymentRunsPage() {
@@ -288,7 +289,7 @@ export default function PaymentRunsPage() {
                                 <td style={numTd}>{inr(l.discount_amount, { blankZero: true })}</td>
                                 <td style={{ ...numTd, width: 140 }}>
                                   {editable && !l.excluded && can('accounts', 'payment_runs', 'edit') ? (
-                                    <input type="number" min={0} step="0.01" defaultValue={l.amount} style={{ ...inputStyle, textAlign: 'right', padding: '5px 8px' }}
+                                    <input key={`${l.id}-${l.amount}`} type="number" min={0} step="0.01" defaultValue={l.amount} style={{ ...inputStyle, textAlign: 'right', padding: '5px 8px' }}
                                       onBlur={(e) => setLineAmount(r, l, e.target.value)} />
                                   ) : inr(l.amount)}
                                 </td>

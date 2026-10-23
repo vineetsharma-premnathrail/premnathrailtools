@@ -144,3 +144,20 @@ def test_remove_allocation_checks_source_voucher_scope(client, db):
     r = client.delete(f"{API}/accounts/payments/allocations/{alloc.id}", headers=hdr(narrow))
     assert r.status_code == 403 and "payment voucher is outside your data access" in r.json()["detail"]
     assert db.get(PaymentAllocation, alloc.id) is not None
+
+
+def test_travel_cost_cannot_change_after_routing(client, db):
+    """Security fix: the approval route (amount-conditioned stages) is worked
+    out at submit; raising the cost afterwards would skip a bigger-amount stage."""
+    mgr = make_user(db, "trav.mgr@premnathrail.com")
+    emp = make_user(db, "trav.route@premnathrail.com", reporting_manager_id=mgr.id)
+    r = client.post(f"{HR}/travel", json={"purpose": "Site visit", "from_city": "Delhi", "to_city": "Agra",
+                                          "depart_date": "2026-11-20", "travel_mode": "train", "estimated_cost": 1000},
+                    headers=hdr(emp))
+    assert r.status_code == 201, r.text
+    tid = r.json()["id"]
+    assert db.query(ApprovalRequest).filter_by(entity_id=tid, status="pending").count() == 1
+    r = client.patch(f"{HR}/travel/{tid}", json={"estimated_cost": 500000}, headers=hdr(emp))
+    assert r.status_code == 409 and "estimated cost" in r.json()["detail"]
+    r = client.patch(f"{HR}/travel/{tid}", json={"purpose": "Site visit + vendor audit", "estimated_cost": 1000}, headers=hdr(emp))
+    assert r.status_code == 200, r.text  # unchanged amount + other fields still editable

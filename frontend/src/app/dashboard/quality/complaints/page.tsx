@@ -43,16 +43,21 @@ export default function QualityComplaintsPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
-    setLoading(true)
     const params: Record<string, unknown> = {}
     if (statusFilter === 'live') params.open_only = true
     else if (statusFilter) params.status = statusFilter
     if (severity) params.severity = severity
     if (search.trim()) params.search = search.trim()
-    qualityApi.listComplaints(params)
-      .then((d) => setRows(Array.isArray(d) ? d : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load complaints.')))
-      .finally(() => setLoading(false))
+    // Debounce typing and drop late responses so an older search can't overwrite a newer one.
+    let ignore = false
+    const t = setTimeout(() => {
+      setLoading(true)
+      qualityApi.listComplaints(params)
+        .then((d) => { if (ignore) return; setRows(Array.isArray(d) ? d : []); setError('') })
+        .catch((err) => { if (!ignore) setError(extractErrorMessages(err, 'Failed to load complaints.')) })
+        .finally(() => { if (!ignore) setLoading(false) })
+    }, 250)
+    return () => { ignore = true; clearTimeout(t) }
   }, [isAuthorized, statusFilter, severity, search])
 
   if (isLoading || !isAuthorized) return null

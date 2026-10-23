@@ -131,8 +131,8 @@ async def upload_documents(
     if not (can_perform(user, "rnd", "documents", "create") or can_perform(user, "rnd", "projects", "edit")):
         raise HTTPException(
             status_code=403,
-            detail="Uploading R&D documents needs 'create' on R&D › Documents (rnd:documents:create) or 'edit' on "
-                   "R&D › Prototype / Research (rnd:projects:edit). Ask an admin to add one to your role in "
+            detail="Uploading R&D documents needs 'Create' on R&D › Documents or 'Edit' on "
+                   "R&D › Prototype / Research. Ask an admin to add one to your role in "
                    "Organization › Role & Permissions.",
         )
     project = _resolve_links(db, project_id, experiment_id, prototype_id)

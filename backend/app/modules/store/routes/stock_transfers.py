@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import apply_scope, ensure_in_scope
 from app.core.permission_registry import can_feature, can_perform
+from app.core.permission_words import action_word
 from app.core.permissions import require_feature_action, require_tab_access, require_tab_action
 from app.modules.store.services.stock_values import sees_stock_values
 from app.db.session import get_db
@@ -559,7 +560,7 @@ def _note_loader(db: Session, entity_id: int, user: User, modify: bool):
     ensure_in_scope(db, user, transfer)
     action = "edit" if modify else "view"
     if not can_perform(user, "store", "transfers", action):
-        raise HTTPException(status_code=403, detail=f"You don't have '{action}' permission on Store › Transfers. Ask an admin to grant it in Organization › Role & Permissions.")
+        raise HTTPException(status_code=403, detail=f"You don't have '{action_word(action)}' permission on Store › Transfers. Ask an admin to grant it in Organization › Role & Permissions.")
     spec = _note_spec(db, transfer)
     from app.modules.quality.reports.render import render_docx
     return managed_documents.DocumentTarget(

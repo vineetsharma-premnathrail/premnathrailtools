@@ -7,7 +7,7 @@ import { canViewTab, filterTabsByAccess } from '@/lib/tabAccess'
 import NotificationBell from '@/components/erp/NotificationBell'
 import TourButton from '@/components/tour/TourButton'
 import NavSettingsGear from '@/components/shared/NavSettingsGear'
-import { ChartBar, FolderOpen, Gear, Package, Receipt, SquaresFour, Tag, Truck, type Icon } from '@phosphor-icons/react'
+import { ChartBar, Gear, Package, Receipt, SquaresFour, Tag, Truck, type Icon } from '@phosphor-icons/react'
 
 // Phase 1 tabs (docs/02-modules/sales/plan.md §9). Billing, Quotations and
 // Pricing join in Phases 2–3; their permission subtabs already exist.
@@ -15,7 +15,6 @@ const TABS = [
   { href: '/dashboard/sales', label: 'Dashboard', icon: 'dashboard', subtabKey: 'dashboard' },
   { href: '/dashboard/sales/orders', label: 'Sales Orders', icon: 'orders', subtabKey: 'orders' },
   { href: '/dashboard/sales/delivery', label: 'Delivery', icon: 'truck', subtabKey: 'delivery' },
-  { href: '/dashboard/sales/order-projects', label: 'Order Projects', icon: 'folder', subtabKey: 'order_projects' },
   { href: '/dashboard/sales/pricing', label: 'Pricing', icon: 'tag', subtabKey: 'pricing' },
   { href: '/dashboard/sales/reports', label: 'Reports', icon: 'bar-chart', subtabKey: 'reports' },
   { href: '/dashboard/sales/settings', label: 'Settings', icon: 'gear', subtabKey: 'settings' },
@@ -27,7 +26,6 @@ const TAB_ICONS: Record<string, Icon> = {
   dashboard: SquaresFour,
   orders: Receipt,
   truck: Truck,
-  folder: FolderOpen,
   tag: Tag,
   'bar-chart': ChartBar,
   box: Package,

@@ -95,8 +95,8 @@ def _assignment_access(action: str):
         raise HTTPException(
             status_code=403,
             detail=f"You need '{action.capitalize()}' on Organization › Branches › Plant › Users "
-                   f"(organization:branches.user_assignments:{action}) or on Organization › Users › User › Assignments "
-                   f"(organization:users.assignments:{action}) to {'see' if action == 'view' else 'change'} plant user assignments. "
+                   f"or on Organization › Users › User › Assignments "
+                   f"to {'see' if action == 'view' else 'change'} plant user assignments. "
                    "Ask an admin to add it to one of your roles in Organization › Role & Permissions.",
         )
 

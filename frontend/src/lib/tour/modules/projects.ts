@@ -30,6 +30,14 @@ export const ENTRIES: TourEntry[] = [
     load: () => import('../configs/projectsAllList'),
   },
   {
+    pattern: /^\/dashboard\/projects\/order-projects$/,
+    load: () => import('../configs/salesOrderProjectsList'),
+  },
+  {
+    pattern: /^\/dashboard\/projects\/order-projects\/[A-Za-z0-9_-]{19}$/,
+    load: () => import('../configs/salesOrderProjectDetail'),
+  },
+  {
     pattern: /^\/dashboard\/projects\/board$/,
     load: () => import('../configs/projectsBoard'),
   },

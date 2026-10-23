@@ -105,7 +105,7 @@ export default function DisputesPage() {
                 <td style={tdStyle}>{d.owner_name || '—'}</td>
                 <td style={tdStyle}><StatusPill status={d.status} labels={STATUS_LABELS} colors={STATUS_HEX} /></td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                  {canEdit && d.status === 'open' && <><button style={linkBtnStyle} onClick={() => markReview(d)}>Under review</button> · </>}
+                  {canEdit && d.status === 'open' && <><button style={linkBtnStyle} onClick={() => markReview(d)}>Under review</button>{canResolve && ' · '}</>}
                   {canResolve && ['open', 'under_review'].includes(d.status) && <button style={linkBtnStyle} onClick={() => setResolving(d)}>Resolve</button>}
                 </td>
               </tr>
@@ -155,7 +155,7 @@ function NewDisputeDialog({ onClose, onDone }: { onClose: () => void; onDone: ()
         <SheetError error={error} />
         <SheetSection icon="doc" title="Invoice" color="#7c3aed">
           <SField label="Sales invoice" req style={{ marginBottom: 14 }}>
-            <SearchableSelect value={invoiceId} onChange={(v) => { setInvoiceId(v); const d = docs.find((x) => String(x.id) === v); if (d) setAmount(String(d.amount_due - (d.disputed ?? 0))) }}
+            <SearchableSelect value={invoiceId} onChange={(v) => { setInvoiceId(v); const d = docs.find((x) => String(x.id) === v); if (d) setAmount(String(Math.round((d.amount_due - (d.disputed ?? 0)) * 100) / 100)) }}
               placeholder="Pick an open invoice"
               options={docs.map((d) => ({ value: String(d.id), label: `${d.doc_number} — due ${inr(d.amount_due)} (${dmy(d.due_date)})` }))} />
           </SField>

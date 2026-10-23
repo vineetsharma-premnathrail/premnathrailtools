@@ -9,12 +9,13 @@
 // Procurement › Settings + the vendor and aren't edited here.
 
 import { useCallback, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
 import { p2pApi, purchaseOrdersApi, rfqApi } from '@/lib/api'
 import { P2PPurchaseOrder, P2PRequest, RFQ } from '@/types'
 import { mmQuotationsApi } from '@/lib/mmPurchasingApi'
+import POReadyList from '@/components/p2p/POReadyList'
 import { accountAssignmentApi } from '@/lib/mmLogisticsApi'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import POAmendmentPanel from '@/components/p2p/POAmendmentPanel'
@@ -45,11 +46,18 @@ export default function CreatePurchaseOrderPage() {
   const router = useRouter()
   const isPurchase = !!user?.apps?.includes('purchase') || user?.role === 'admin'
   const { can, canFeature } = useCan()
-  const [rfqRef] = useState<string | null>(() => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('rfq')))
+  // Read live from the URL: moving between POs on this same page (Continue PO,
+  // split POs) changes ?rfq= without remounting it.
+  const searchParams = useSearchParams()
+  const rfqRef = searchParams.get('rfq')
   const { id: linkedRfqId, error: linkError } = useRecordId(rfqRef)
   const rfqId = linkedRfqId ?? 0
   // ME21N split: a requisition may have several POs — ?po=<ref> picks one.
-  const [poRef, setPoRef] = useState<string | null>(() => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('po')))
+  // ?po= from the URL; a PO picked from the chips below overrides it until the URL changes.
+  const urlPo = searchParams.get('po')
+  const [pickedPo, setPickedPo] = useState<{ url: string | null; ref: string } | null>(null)
+  const poRef = pickedPo && pickedPo.url === urlPo ? pickedPo.ref : urlPo
+  const setPoRef = (ref: string) => setPickedPo({ url: urlPo, ref })
   const { id: pickedPoId } = useRecordId(poRef)
   const [allPos, setAllPos] = useState<P2PPurchaseOrder[]>([])
   const [lineDates, setLineDates] = useState<Record<number, string>>({})
@@ -71,7 +79,7 @@ export default function CreatePurchaseOrderPage() {
 
   const load = useCallback(async () => {
     if (!rfqId && rfqRef) return // the RFQ link is still resolving (or was invalid — shown below)
-    if (!rfqId) { setError('No RFQ chosen — open this page from Purchase Orders → Create PO.'); setLoading(false); return }
+    if (!rfqId) { setLoading(false); return } // no RFQ in the link — the ready-for-PO list is shown instead
     try {
       const r: RFQ = await rfqApi.get(rfqId)
       const [req, pos] = await Promise.all([p2pApi.get(r.p2p_request_id), purchaseOrdersApi.list({ p2p_request_id: r.p2p_request_id })])
@@ -102,7 +110,7 @@ export default function CreatePurchaseOrderPage() {
     } finally {
       setLoading(false)
     }
-  }, [rfqId, rfqRef, pickedPoId])
+  }, [rfqId, rfqRef, pickedPoId, setShowCreate])
 
   useEffect(() => { if (isPurchase) Promise.resolve().then(load) }, [isPurchase, load])
 
@@ -169,6 +177,13 @@ export default function CreatePurchaseOrderPage() {
         <div style={{ padding: '16px 24px 0' }}>
           {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
           {loading && <p style={{ fontSize: 13, color: SHEET.MUTED, margin: '0 0 16px' }}>Loading…</p>}
+        </div>
+      )}
+
+      {/* Opened without a requisition (typed / bookmarked link): pick one here. */}
+      {!loading && !rfqRef && (
+        <div style={{ padding: '20px 24px' }}>
+          <POReadyList />
         </div>
       )}
 

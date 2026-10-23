@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { maintenanceApi } from '@/lib/api'
-import { MaintenanceWorkOrder } from '@/types'
+import { MaintenanceLookups, MaintenanceWorkOrder } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordPath } from '@/lib/recordRef'
@@ -36,6 +36,14 @@ export default function MaintenanceWorkOrdersPage() {
   const [typeFilter, setTypeFilter] = useState('')
   const [mine, setMine] = useState(searchParams.get('mine') === '1')
   const [openOnly, setOpenOnly] = useState(!searchParams.get('status'))
+  // The dashboard's plant filter carries over (?branch_id=) so its counts match this list.
+  const [branchFilter, setBranchFilter] = useState(searchParams.get('branch_id') || '')
+  const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
+
+  useEffect(() => {
+    if (!isAuthorized) return
+    maintenanceApi.getLookups().then(setLookups).catch(() => { /* plant filter is optional */ })
+  }, [isAuthorized])
 
   useEffect(() => {
     if (!isAuthorized) return
@@ -44,6 +52,7 @@ export default function MaintenanceWorkOrdersPage() {
     else if (openOnly) params.open_only = true
     if (typeFilter) params.wo_type = typeFilter
     if (mine) params.mine = true
+    if (branchFilter) params.branch_id = Number(branchFilter)
     if (search.trim()) params.search = search.trim()
     // Debounce typing and drop late responses so an older search can't overwrite a newer one.
     let ignore = false
@@ -54,7 +63,7 @@ export default function MaintenanceWorkOrdersPage() {
         .finally(() => { if (!ignore) setLoading(false) })
     }, 250)
     return () => { ignore = true; clearTimeout(t) }
-  }, [isAuthorized, statusFilter, typeFilter, mine, openOnly, search])
+  }, [isAuthorized, statusFilter, typeFilter, mine, openOnly, branchFilter, search])
 
   if (isLoading || !isAuthorized) return null
 
@@ -98,6 +107,12 @@ export default function MaintenanceWorkOrdersPage() {
           <option value="">{openOnly ? 'Open + completed' : 'All statuses'}</option>
           {Object.entries(WO_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        {lookups && (lookups.branches.length > 1 || branchFilter) && (
+          <select data-tour="maint-wo-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+            <option value="">All plants</option>
+            {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        )}
         {!statusFilter && (
           <label data-tour="maint-wo-hide-closed" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
             <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} /> Hide closed
@@ -127,7 +142,7 @@ export default function MaintenanceWorkOrdersPage() {
               <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : orders.length === 0 ? (
               <tr><td colSpan={11} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
-                {search || statusFilter || typeFilter || mine ? 'No work orders match these filters.' : 'No open work orders. Breakdown requests become work orders once maintenance picks them up.'}
+                {search || statusFilter || typeFilter || mine || branchFilter ? 'No work orders match these filters.' : 'No open work orders. Breakdown requests become work orders once maintenance picks them up.'}
               </td></tr>
             ) : (
               orders.map((w) => {

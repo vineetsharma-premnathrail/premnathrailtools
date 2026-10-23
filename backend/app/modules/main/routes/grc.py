@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.permission_registry import MODULES, expand_grants, is_admin_user
+from app.core.permission_registry import expand_grants, is_admin_user
 from app.core.permissions import require_tab_action
 from app.core.sod_rules import SOD_RULES, conflicts_in, rule_out
 from app.db.session import get_db
@@ -287,14 +287,11 @@ def _granting_roles(db: Session, key: str | None) -> list[dict]:
 
 
 def _key_label(key: str | None) -> str | None:
+    """A permission id in words (features, '*' and actions included)."""
     if not key:
         return None
-    mk, tk, action = (key.split(":") + ["", "", ""])[:3]
-    m = MODULES.get(mk)
-    if not m:
-        return key
-    tab = "any tab" if tk == "*" else m["subtabs"].get(tk, tk)
-    return f"{m['label']} › {tab} — {action}"
+    from app.core.permission_words import words
+    return words(key)
 
 
 @router.get("/denials")

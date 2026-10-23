@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireAnyApp } from '@/hooks/useAuth'
 import { maintenanceApi } from '@/lib/api'
-import { MaintenanceRequest } from '@/types'
+import { MaintenanceLookups, MaintenanceRequest } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import MaintenanceNav from '@/components/maintenance/MaintenanceNav'
 import { recordPath } from '@/lib/recordRef'
@@ -33,12 +33,21 @@ export default function MaintenanceRequestsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '')
   const [mine, setMine] = useState(false)
+  // The dashboard's plant filter carries over (?branch_id=) so its counts match this list.
+  const [branchFilter, setBranchFilter] = useState(searchParams.get('branch_id') || '')
+  const [lookups, setLookups] = useState<MaintenanceLookups | null>(null)
+
+  useEffect(() => {
+    if (!isAuthorized || !isMaintenanceUser) return
+    maintenanceApi.getLookups().then(setLookups).catch(() => { /* plant filter is optional */ })
+  }, [isAuthorized, isMaintenanceUser])
 
   useEffect(() => {
     if (!isAuthorized) return
     const params: Record<string, unknown> = {}
     if (statusFilter) params.status = statusFilter
     if (mine) params.mine = true
+    if (branchFilter) params.branch_id = Number(branchFilter)
     if (search.trim()) params.search = search.trim()
     // Debounce typing and drop late responses so an older search can't overwrite a newer one.
     let ignore = false
@@ -49,7 +58,7 @@ export default function MaintenanceRequestsPage() {
         .finally(() => { if (!ignore) setLoading(false) })
     }, 250)
     return () => { ignore = true; clearTimeout(t) }
-  }, [isAuthorized, statusFilter, mine, search])
+  }, [isAuthorized, statusFilter, mine, branchFilter, search])
 
   if (isLoading || !isAuthorized) return null
 
@@ -89,6 +98,12 @@ export default function MaintenanceRequestsPage() {
           <option value="">All statuses</option>
           {Object.entries(REQUEST_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        {lookups && (lookups.branches.length > 1 || branchFilter) && (
+          <select data-tour="maint-req-plant-filter" style={{ ...inputStyle, flex: '0 1 170px' }} value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+            <option value="">All plants</option>
+            {lookups.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        )}
         {isMaintenanceUser && (
           <label data-tour="maint-req-mine" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: TEXT.body, cursor: 'pointer' }}>
             <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Raised by me
@@ -115,7 +130,7 @@ export default function MaintenanceRequestsPage() {
               <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>Loading…</td></tr>
             ) : requests.length === 0 ? (
               <tr><td colSpan={10} style={{ padding: 20, textAlign: 'center', fontSize: 13, color: TEXT.muted }}>
-                {search || statusFilter || mine ? 'No requests match these filters.' : 'No maintenance requests yet. Use “Report Breakdown” when a machine stops or misbehaves.'}
+                {search || statusFilter || mine || branchFilter ? 'No requests match these filters.' : 'No maintenance requests yet. Use “Report Breakdown” when a machine stops or misbehaves.'}
               </td></tr>
             ) : (
               requests.map((r) => (

@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
+import { useCan } from '@/lib/permissions'
 import { hydraulicApi } from '@/lib/api'
 import { HydCalcComputeResult, HydCalcInputMeta, HydCalcTypeMeta, HydLookupOption } from '@/types'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
@@ -81,6 +82,9 @@ function buildInputs(meta: HydCalcTypeMeta, values: Record<string, string>): Rec
 
 function CalculatorInner() {
   const { isAuthorized, isLoading, user } = useRequireApp('hydraulic')
+  const { can } = useCan()
+  // Anyone in the module may run the calculator; saving needs Calculations › Create.
+  const canSave = can('hydraulic', 'calculations', 'create')
   const router = useRouter()
   const searchParams = useSearchParams()
   // ?system_id= carries a signed record ref (lib/recordRef.ts).
@@ -324,6 +328,14 @@ function CalculatorInner() {
               <CalcResults results={result?.results || []} warnings={result?.warnings || []} error={calcError} computing={computing} />
             </div>
 
+            {!canSave ? (
+              <div style={sectionStyle}>
+                <p style={{ ...sectionTitle, marginBottom: 8 }}>Save this calculation</p>
+                <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>
+                  You can run the calculator, but saving a calculation needs the &lsquo;create&rsquo; right on Hydraulic &amp; Pneumatic › Calculations — ask an admin (Organization › Role &amp; Permissions).
+                </p>
+              </div>
+            ) : (
             <div style={sectionStyle}>
               <p style={{ ...sectionTitle, marginBottom: 14 }}>Save this calculation</p>
               {saveError && <div style={errorBanner}>{Array.isArray(saveError) ? saveError.join(' ') : saveError}</div>}
@@ -354,6 +366,7 @@ function CalculatorInner() {
                 </button>
               </div>
             </div>
+            )}
           </div>
         )}
       </div>

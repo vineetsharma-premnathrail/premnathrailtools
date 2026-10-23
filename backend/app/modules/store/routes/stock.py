@@ -241,7 +241,7 @@ async def export_transactions(
     wb.save(buf)
     buf.seek(0)
     return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                             headers={"Content-Disposition": 'attachment; filename="material_documents_MB51.xlsx"'})
+                             headers={"Content-Disposition": 'attachment; filename="stock_movements.xlsx"'})
 
 
 @router.post("/transactions", status_code=410)

@@ -6,7 +6,7 @@ import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOr
 import { useCan } from '@/lib/permissions'
 import { approvalsApi, usersApi } from '@/lib/api'
 import { ApprovalStageDef, ApprovalTransactionType, ApprovalWorkflowCheck, ApprovalWorkflowDef, ApprovalWorkflowMeta, DirectoryUser } from '@/types'
-import { BORDER, TEXT } from '@/lib/theme'
+import { BORDER, BRAND, TEXT } from '@/lib/theme'
 import { FormPage, SheetSection, SheetIcon, SheetIconName, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import UserChipsPicker from '@/components/organization/UserChipsPicker'
@@ -231,12 +231,32 @@ export default function WorkflowEditorPage() {
     if (!meta) return ''
     if (s.approver_rule === 'role') return `Role: ${meta.roles.find((r) => r.id === s.rule_config.role_id)?.name || '—'}`
     if (s.approver_rule === 'user_flag') return meta.approver_flags[s.rule_config.flag || ''] || 'Approval flag'
-    if (s.approver_rule === 'permission') return `Holders of ${s.rule_config.permission || '—'}`
+    if (s.approver_rule === 'permission') return `Holders of ${permWords(s.rule_config.permission) || '—'}`
     if (s.approver_rule === 'specific_users') return `${(s.rule_config.user_ids || []).length} named user(s)`
     return meta.approver_rules[s.approver_rule] || s.approver_rule
   }
+  // Permission codes in words — "Procurement › Purchase Requisitions — Approve".
+  const permWords = (code?: string) => {
+    const o = meta?.approval_permission_options?.find((x) => x.value === code)
+    return o ? `${o.module} › ${o.label}` : code || ''
+  }
+  // Grouped picker options: this workflow's own module first, then the rest.
+  const permGroups = () => {
+    const opts = meta?.approval_permission_options || []
+    const mods = Array.from(new Set(opts.map((o) => o.module_key)))
+      .sort((a, b) => (a === type?.module_key ? -1 : b === type?.module_key ? 1 : 0))
+    return mods.map((mk) => (
+      <optgroup key={mk} label={opts.find((o) => o.module_key === mk)?.module}>
+        {opts.filter((o) => o.module_key === mk).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </optgroup>
+    ))
+  }
   const condText = (s: ApprovalStageDef) => s.conditions.length === 0 ? 'Always'
-    : s.conditions.map((c) => `${type?.context_fields[c.field]?.label || c.field} ${meta?.condition_ops[c.op] || c.op}${c.op === 'true' || c.op === 'false' ? '' : ` ${Array.isArray(c.value) ? c.value.join(', ') : c.value ?? ''}`}`).join(' and ')
+    : s.conditions.map((c) => {
+      const f = type?.context_fields[c.field]
+      const shown = (Array.isArray(c.value) ? c.value : [c.value ?? '']).map((v) => f?.choice_labels?.[String(v)] || String(v)).join(', ')
+      return `${f?.label || c.field} ${meta?.condition_ops[c.op] || c.op}${c.op === 'true' || c.op === 'false' ? '' : ` ${shown}`}`
+    }).join(' and ')
 
   // The whole workflow as plain sentences — what an auditor or a new admin reads first.
   const userName = (id: number) => users.find((u) => u.id === id)?.name || `user #${id}`
@@ -251,7 +271,7 @@ export default function WorkflowEditorPage() {
       case 'user_flag': return { who: `everyone flagged “${meta?.approver_flags[cfg.flag || ''] || 'an approval flag'}”`, single: false }
       case 'specific_users': return { who: (cfg.user_ids || []).map(userName).join(', ') || 'the named users (none picked yet)', single: (cfg.user_ids || []).length === 1 }
       case 'role': return { who: `holders of the role “${meta?.roles.find((r) => r.id === cfg.role_id)?.name || 'not picked yet'}”`, single: false }
-      case 'permission': return { who: `holders of ${cfg.permission || 'a permission (not picked yet)'}`, single: false }
+      case 'permission': return { who: `holders of ${cfg.permission ? permWords(cfg.permission) : 'a permission (not picked yet)'}`, single: false }
       case 'record_field': return { who: `the person chosen as “${type?.context_fields[cfg.field || '']?.label || 'approver'}” on the document`, single: true }
       default: return { who: meta?.approver_rules[s.approver_rule] || s.approver_rule, single: false }
     }
@@ -272,7 +292,7 @@ export default function WorkflowEditorPage() {
             const lead = i === 0 ? 'it goes to' : 'it then goes to'
             const how = single ? '' : s.approval_mode === 'all' ? ' — every one of them must approve' : ' — any one of them approves'
             const plant = s.rule_config.same_plant ? ' (same plant only)' : ''
-            const extra = s.rule_config.plus_permission ? ` Holders of ${s.rule_config.plus_permission} may also decide.` : ''
+            const extra = s.rule_config.plus_permission ? ` Holders of ${permWords(s.rule_config.plus_permission)} may also decide.` : ''
             const skip = s.skip_if_no_approver ? ' The stage is skipped if nobody matches.' : ''
             return `${i + 1}. ${when}${when ? lead : lead.charAt(0).toUpperCase() + lead.slice(1)} ${who}${plant}${how}.${extra}${escPlain(s)}${skip}`
           }),
@@ -445,7 +465,7 @@ export default function WorkflowEditorPage() {
                   <Field label="Permission">
                     <select style={inputStyle} disabled={readOnly} value={s.rule_config.permission || ''} onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, permission: e.target.value } })}>
                       <option value="">Pick a permission…</option>
-                      {meta.approval_permissions.map((p) => <option key={p} value={p}>{p}</option>)}
+                      {meta.approval_permission_options ? permGroups() : meta.approval_permissions.map((p) => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </Field>
                 )}
@@ -470,7 +490,7 @@ export default function WorkflowEditorPage() {
                     <select style={inputStyle} disabled={readOnly} value={s.rule_config.plus_permission || ''}
                       onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, plus_permission: e.target.value || undefined } })}>
                       <option value="">Nobody else</option>
-                      {meta.approval_permissions.map((p) => <option key={p} value={p}>{p}</option>)}
+                      {meta.approval_permission_options ? permGroups() : meta.approval_permissions.map((p) => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </Field>
                 </div>
@@ -504,8 +524,24 @@ export default function WorkflowEditorPage() {
                           <select style={{ ...inputStyle, width: 180 }} disabled={readOnly} value={String(c.value ?? '')}
                             onChange={(e) => setStage(i, { conditions: s.conditions.map((x, j) => (j === ci ? { ...x, value: e.target.value } : x)) })}>
                             <option value="">Pick…</option>
-                            {f.choices.map((ch) => <option key={ch} value={ch}>{ch}</option>)}
+                            {f.choices.map((ch) => <option key={ch} value={ch}>{f.choice_labels?.[ch] || ch}</option>)}
                           </select>
+                        ) : f?.choices?.length ? (
+                          // "is one of" / "is not one of" on a choice field: tick the values (shown in words).
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 520 }}>
+                            {f.choices.map((ch) => {
+                              const picked = (Array.isArray(c.value) ? c.value : String(c.value ?? '').split(',')).map((v) => String(v).trim()).filter(Boolean)
+                              const on = picked.includes(ch)
+                              return (
+                                <button key={ch} type="button" disabled={readOnly}
+                                  onClick={() => setStage(i, { conditions: s.conditions.map((x, j) => (j === ci ? { ...x, value: on ? picked.filter((v) => v !== ch) : [...picked, ch] } : x)) })}
+                                  style={{ padding: '4px 10px', borderRadius: 999, fontSize: 12, cursor: readOnly ? 'default' : 'pointer',
+                                    border: `1px solid ${on ? BRAND.primary : '#E5E7EB'}`, background: on ? `${BRAND.primary}14` : '#fff', color: on ? BRAND.primary : TEXT.body }}>
+                                  {on ? '✓ ' : ''}{f.choice_labels?.[ch] || ch}
+                                </button>
+                              )
+                            })}
+                          </div>
                         ) : (
                           <input style={{ ...inputStyle, width: 180 }} disabled={readOnly} value={Array.isArray(c.value) ? c.value.join(', ') : String(c.value ?? '')}
                             placeholder={c.op === 'in' || c.op === 'not_in' ? (f?.choices?.length ? f.choices.slice(0, 3).join(', ') : 'a, b, c') : f?.type === 'number' ? '500000' : 'value'}
@@ -611,7 +647,7 @@ export default function WorkflowEditorPage() {
                       </select>
                     ) : f.choices?.length ? (
                       <select style={inputStyle} value={pvCtx[k] || ''} onChange={(e) => setPvCtx({ ...pvCtx, [k]: e.target.value })}>
-                        <option value="">—</option>{f.choices.map((c) => <option key={c} value={c}>{c}</option>)}
+                        <option value="">—</option>{f.choices.map((c) => <option key={c} value={c}>{f.choice_labels?.[c] || c}</option>)}
                       </select>
                     ) : (
                       <input style={inputStyle} type={f.type === 'number' ? 'number' : 'text'} value={pvCtx[k] || ''} onChange={(e) => setPvCtx({ ...pvCtx, [k]: e.target.value })} />

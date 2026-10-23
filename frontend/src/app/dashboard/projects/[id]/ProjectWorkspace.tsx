@@ -146,7 +146,7 @@ export default function ProjectWorkspace({ project, onProjectUpdate, onDeleted }
       {tab === 'Milestones' && <TasksTab project={project} />}
       {tab === 'Documents' && <DocumentsTab project={project} />}
       {tab === 'History' && <ProjectHistoryTab projectId={project.id} />}
-      {!tab && <Notice tone="warn">You can see this project&apos;s header, but none of its tabs (Overview, Tasks, Documents, History). Ask an admin to add &apos;View&apos; on them to one of your roles in Organization › Role &amp; Permissions.</Notice>}
+      {!tab && <Notice tone="warn">You can see this project&apos;s header, but none of its tabs (Overview, Milestones, Documents, History). Ask an admin to add &apos;View&apos; on them to one of your roles in Organization › Role &amp; Permissions.</Notice>}
 
       <ConfirmDialog
         open={!!pending && !pending.prompt}

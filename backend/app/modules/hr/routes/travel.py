@@ -17,6 +17,7 @@ from app.modules.hr.services import approvals as hr_approvals
 from app.core.sequential_id import next_sequential_id
 from app.db.session import get_db
 from app.modules.hr.models.travel import HrTravelRequest, TRAVEL_MODES, TRAVEL_STATUSES
+from app.modules.hr.services.calendar import today_ist
 from app.modules.hr.schemas.travel import (
     HrTravelRequestCreate, HrTravelRequestUpdate, HrTravelRequestDecisionPayload, HrTravelRequestResponse,
 )
@@ -45,7 +46,7 @@ def _route(tr: HrTravelRequest) -> str:
 def _can_cancel(user: User, tr: HrTravelRequest) -> bool:
     if tr.user_id != user.id or not can_hr(user, "me", "edit"):
         return False
-    return tr.status == "pending" or (tr.status == "approved" and tr.depart_date > date.today())
+    return tr.status == "pending" or (tr.status == "approved" and tr.depart_date > today_ist())
 
 
 ENTITY = hr_approvals.TRAVEL_ENTITY
@@ -278,6 +279,17 @@ async def update_travel_request(
             detail=f"{tr.request_no} is already {tr.status}, so it can no longer be edited. Cancel it and raise a new request if the plan changed.",
         )
     data = payload.model_dump(exclude_unset=True)
+    # The approval route (which stages apply) was worked out from the cost,
+    # advance and travel mode at submit — changing them afterwards would skip
+    # stages a bigger amount needs.
+    routed = [k for k in ("estimated_cost", "advance_required", "travel_mode")
+              if k in data and data[k] != getattr(tr, k)]
+    if routed and hr_approvals.open_request(db, ENTITY, tr.id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{tr.request_no} is already with its approvers, so the {', '.join(k.replace('_', ' ') for k in routed)} "
+                   "can't be changed — the approval route depends on them. Cancel it and raise a new request with the new figures.",
+        )
     for required in ("purpose", "from_city", "to_city", "depart_date", "travel_mode"):
         if required in data and data[required] in (None, ""):
             raise HTTPException(status_code=400, detail=f"{required.replace('_', ' ').capitalize()} cannot be blank on a travel request.")
@@ -350,7 +362,9 @@ hr_approvals.register_hr_type(
     description="Business travel (HR › Travel & Claims). Amount = estimated cost.",
     context_fields={
         "advance_required": {"label": "Advance required (₹)", "type": "number"},
-        "travel_mode": {"label": "Travel mode", "type": "choice", "choices": list(TRAVEL_MODES)},
+        "travel_mode": {"label": "Travel mode", "type": "choice", "choices": list(TRAVEL_MODES),
+                        "choice_labels": {"air": "Air", "train": "Train", "bus": "Bus", "car": "Car",
+                                          "company_vehicle": "Company vehicle", "other": "Other"}},
     },
 )
 

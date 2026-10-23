@@ -15,6 +15,7 @@ import { orgTypeHasRailwayFields } from '@/components/crm/constants'
 import { Card, InfoRow, primaryBtnStyle, secondaryBtnStyle, dangerBtnStyle, handleEnterAsTab } from '@/components/crm/ui'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, SheetError } from '@/components/shared/FormSheet'
 import { recordPath, refOf } from '@/lib/recordRef'
+import { formatDateTime } from '@/lib/format'
 import { AddMoreButton, RemoveValueButton, ValueRow, canAddMore } from '@/components/shared/MoreValuesButtons'
 
 const TABS = ['Overview', 'Contacts', 'Inquiries', 'Tenders', 'Audit Trail'] as const
@@ -151,7 +152,7 @@ export default function OrganizationDetailPanel({ orgId, onDeleted, showEditLink
         onConfirm={() => { setShowDeleteConfirm(false); handleDelete() }}
         onCancel={() => setShowDeleteConfirm(false)}
       />
-      <MessageDialog open={!!error} variant="error" title="Something Went Wrong" message={error} onClose={() => setError('')} />
+      <MessageDialog open={!!error} variant="error" title="Customer Organization Action Failed" message={error} onClose={() => setError('')} />
     </div>
   )
 }
@@ -606,7 +607,7 @@ function AuditTab({ orgId }: { orgId: number }) {
         <div key={e.id} data-tour={idx === 0 ? 'orgdetail-audit-list' : undefined} style={{ padding: '12px 16px', borderRadius: 12, background: 'rgba(255,255,255,.16)', backdropFilter: 'blur(28px)', WebkitBackdropFilter: 'blur(28px)', border: '1px solid rgba(255,255,255,.24)', boxShadow: '0 12px 32px rgba(15,23,42,0.16), 0 2px 6px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.35)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
             <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1f1108' }}>{e.performed_by}</span>
-            <span style={{ fontSize: 11.5, color: '#a8a29e' }}>{e.performed_at ? new Date(e.performed_at).toLocaleString() : ''}</span>
+            <span style={{ fontSize: 11.5, color: '#a8a29e' }}>{e.performed_at ? formatDateTime(e.performed_at) : ''}</span>
           </div>
           <p style={{ fontSize: 13, color: '#57534e', margin: 0 }}>{e.summary || e.action}</p>
         </div>

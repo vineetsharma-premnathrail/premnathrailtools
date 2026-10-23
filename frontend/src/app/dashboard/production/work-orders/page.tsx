@@ -54,10 +54,15 @@ export default function ProductionWorkOrdersPage() {
     if (priority) params.priority = priority
     if (overdueOnly) params.overdue = true
     if (search.trim()) params.search = search.trim()
-    productionApi.listWorkOrders(params)
-      .then((data) => setOrders(Array.isArray(data) ? data : []))
-      .catch((err) => setError(extractErrorMessages(err, 'Failed to load work orders.')))
-      .finally(() => setLoading(false))
+    // Debounce typing and drop late responses so an older search can't overwrite a newer one.
+    let ignore = false
+    const t = setTimeout(() => {
+      productionApi.listWorkOrders(params)
+        .then((data) => { if (ignore) return; setOrders(Array.isArray(data) ? data : []); setError('') })
+        .catch((err) => { if (!ignore) setError(extractErrorMessages(err, 'Failed to load work orders.')) })
+        .finally(() => { if (!ignore) setLoading(false) })
+    }, 250)
+    return () => { ignore = true; clearTimeout(t) }
   }, [isAuthorized, statusTab, priority, overdueOnly, search])
 
   if (isLoading || !isAuthorized) return null

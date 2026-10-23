@@ -387,8 +387,16 @@ engine.register_transaction(engine.TransactionType(
                 "and released (or held for the customer's approval when the document needs it).",
     context_fields={
         **_SIGNATORIES,
-        "document_type": {"label": "Document type", "type": "choice", "choices": list(DESIGN_DOCUMENT_TYPES)},
-        "discipline": {"label": "Discipline", "type": "choice", "choices": list(DESIGN_DISCIPLINES)},
+        "document_type": {"label": "Document type", "type": "choice", "choices": list(DESIGN_DOCUMENT_TYPES),
+                          "choice_labels": {
+                              "ga_drawing": "GA drawing", "part_drawing": "Part drawing", "assembly_drawing": "Assembly drawing",
+                              "schematic": "Schematic", "specification": "Specification", "calculation": "Calculation",
+                              "datasheet": "Datasheet", "procedure": "Procedure", "manual": "Manual", "bom": "BOM",
+                              "wiring_diagram": "Wiring diagram", "harness_drawing": "Harness drawing",
+                              "hydraulic_circuit": "Hydraulic circuit", "pneumatic_circuit": "Pneumatic circuit",
+                              "panel_layout": "Panel layout", "other": "Other"}},
+        "discipline": {"label": "Discipline", "type": "choice", "choices": list(DESIGN_DISCIPLINES),
+                       "choice_labels": {d: d.capitalize() for d in DESIGN_DISCIPLINES}},
         "customer_approval_required": {"label": "Customer approval required", "type": "bool"},
         "revision_index": {"label": "Revision number (0 = first issue)", "type": "number"},
     },
@@ -417,7 +425,8 @@ engine.register_transaction(engine.TransactionType(
                 "ECNs created from an approved ECR start approved and don't go through this.",
     context_fields={
         "approver_id": {"label": "Approver (named on the ECN)", "type": "user"},
-        "priority": {"label": "Priority", "type": "choice", "choices": list(DESIGN_ECN_PRIORITIES)},
+        "priority": {"label": "Priority", "type": "choice", "choices": list(DESIGN_ECN_PRIORITIES),
+                     "choice_labels": {p: p.capitalize() for p in DESIGN_ECN_PRIORITIES}},
     },
     default_stages=[engine.StageDef("Approval", "record_field", {"field": "approver_id"})],
     require_permission=True, distinct_approvers=False, allow_self_approval=False,

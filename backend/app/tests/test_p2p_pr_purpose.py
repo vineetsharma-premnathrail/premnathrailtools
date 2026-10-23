@@ -122,3 +122,53 @@ def test_machine_project_needs_the_project_and_bad_purpose_refused(client, db):
     assert meta["capital"]["default_category"] == "CAP" and meta["capital"]["default_requirement_type"] == "Capital Equipment"
     assert meta["department"]["default_category"] == "ADM" and meta["customer_order"]["default_category"] is None
     assert all("OTH" not in p["categories"] for p in meta.values())
+
+
+def test_project_manager_stage_only_for_production_and_names_the_projects_manager(client, db):
+    """PR workflow: department head stand-in -> the order project's own manager
+    (only when Purpose = Production) -> Purchase Head stand-in."""
+    from app.modules.organization.models.approval import ApprovalRequestStep
+    from app.modules.organization.services import approval_engine as engine
+    from app.modules.p2p import approvals as p2p_approvals
+    from app.tests.test_p2p_requests import make_user
+    from app.tests.test_order_project_p2p import _order_project
+
+    _so, project, els = _order_project(client, db, qty=1)
+    head = make_user(db, "purpose.head@premnathrail.com", assigned_apps=("p2p",))
+    pm = make_user(db, "purpose.pm@premnathrail.com", assigned_apps=("p2p",))
+    purchase_head = make_user(db, "purpose.ph@premnathrail.com", assigned_apps=("p2p",))
+    req = _requester(db, "purpose.req6@premnathrail.com")
+    engine.save_workflow(db, p2p_approvals.PR_KEY, {"stages": [
+        {"name": "Department head", "approver_rule": "specific_users", "rule_config": {"user_ids": [head.id]}},
+        {"name": "Project manager", "approver_rule": "record_field", "rule_config": {"field": "project_manager_id"},
+         "conditions": [{"field": "purpose", "op": "eq", "value": "customer_order"}]},
+        {"name": "Purchase Head", "approver_rule": "specific_users", "rule_config": {"user_ids": [purchase_head.id]}},
+    ]}, head)
+    db.commit()
+    item = master_item(db, "Axle box", code="RM-AXL-09")
+    body = _create_payload(project_label=None, project_type=None, category_code="RAW", purpose="customer_order",
+                           account_assignment="order_project", order_project_id=project.id,
+                           items=[{"store_item_id": item.id, "quantity": 1, "project_inhouse": "Project",
+                                   "order_project_element_id": els[0].id}])
+
+    def stages(pr_id):
+        r = p2p_approvals.pr_request(db, pr_id)
+        rows = db.query(ApprovalRequestStep).filter(ApprovalRequestStep.request_id == r.id).order_by(ApprovalRequestStep.sequence).all()
+        return [(s.stage_name, s.approver_id) for s in rows]
+
+    # No manager on the project -> refused, naming the project and where to fix it.
+    r = client.post(BASE, json=body, headers=auth_header(req))
+    assert r.status_code == 422 and project.op_number in r.json()["detail"] and "Order Projects" in r.json()["detail"], r.text
+
+    project.project_manager_id = pm.id
+    db.commit()
+    r = client.post(BASE, json=body, headers=auth_header(req))
+    assert r.status_code == 200, r.text
+    assert stages(r.json()["id"]) == [("Department head", head.id), ("Project manager", pm.id), ("Purchase Head", purchase_head.id)]
+
+    # Office buying: the project manager stage doesn't apply.
+    r = client.post(BASE, json=_create_payload(project_label=None, project_type=None, category_code="ADM", purpose="department",
+                                               items=[{"store_item_id": item.id, "quantity": 1, "project_inhouse": "Inhouse"}]),
+                    headers=auth_header(req))
+    assert r.status_code == 200, r.text
+    assert stages(r.json()["id"]) == [("Department head", head.id), ("Purchase Head", purchase_head.id)]

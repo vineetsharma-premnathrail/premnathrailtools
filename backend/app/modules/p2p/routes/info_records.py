@@ -170,9 +170,11 @@ def link_info_record(record_id: int, payload: InfoRecordLinkPayload, db: Session
 def info_record_default_price(vendor_id: int, store_item_id: int, on: date | None = None,
                               db: Session = Depends(get_db), _user: User = Depends(_lookup)):
     rec = svc.info_record(db, vendor_id, store_item_id, on)
-    return {"vendor_id": vendor_id, "store_item_id": store_item_id, "info_record_id": rec.id if rec else None,
-            "unit_price": svc.default_price(db, vendor_id, store_item_id, on), "lead_time_days": rec.lead_time_days if rec else None,
-            "min_order_qty": rec.min_order_qty if rec else None}
+    # Same "Prices & rates" switch as the item-rate list.
+    return mask_for(_user, "vendors", {
+        "vendor_id": vendor_id, "store_item_id": store_item_id, "info_record_id": rec.id if rec else None,
+        "unit_price": svc.default_price(db, vendor_id, store_item_id, on), "lead_time_days": rec.lead_time_days if rec else None,
+        "min_order_qty": rec.min_order_qty if rec else None})
 
 
 @router.get("/price-history")
@@ -180,9 +182,10 @@ def item_price_history(store_item_id: int, vendor_id: int | None = None, db: Ses
     item = _item(db, store_item_id)
     rows = svc.price_history(db, item.id, vendor_id)
     prices = [r["unit_price"] for r in rows if r["unit_price"]]
-    return {"store_item_id": item.id, "item_code": item.item_code, "item_name": item.item_name, "rows": rows,
-            "last_price": prices[0] if prices else None, "min_price": min(prices) if prices else None,
-            "max_price": max(prices) if prices else None, "avg_price": round(sum(prices) / len(prices), 2) if prices else None}
+    return mask_for(_user, "vendors", {
+        "store_item_id": item.id, "item_code": item.item_code, "item_name": item.item_name, "rows": rows,
+        "last_price": prices[0] if prices else None, "min_price": min(prices) if prices else None,
+        "max_price": max(prices) if prices else None, "avg_price": round(sum(prices) / len(prices), 2) if prices else None})
 
 
 @router.get("/for-item")
@@ -195,8 +198,9 @@ def vendors_for_item(store_item_id: int, db: Session = Depends(get_db), _user: U
     out = [_row(c, v, item) | {"valid_today": c.is_active and (c.valid_from is None or c.valid_from <= today)
                                 and (c.valid_to is None or c.valid_to >= today), "vendor_status": v.status} for c, v in recs]
     out.sort(key=lambda r: (not r["valid_today"], r["unit_price"] is None, r["unit_price"] or 0))
-    return {"store_item_id": item.id, "item_code": item.item_code, "item_name": item.item_name, "info_records": out,
-            "source_list": svc.source_vendors(db, item.id), "last_po": svc.last_po_price(db, item.id)}
+    return mask_for(_user, "vendors", {
+        "store_item_id": item.id, "item_code": item.item_code, "item_name": item.item_name, "info_records": out,
+        "source_list": svc.source_vendors(db, item.id), "last_po": svc.last_po_price(db, item.id)})
 
 
 @router.get("/item-overview")
@@ -205,8 +209,8 @@ def item_overview(store_item_id: int, db: Session = Depends(get_db), _user: User
     last PO rate, last quoted rate, rate contract and approved-source flag —
     built from POs and quotations, nothing to type in first."""
     item = _item(db, store_item_id)
-    return {"store_item_id": item.id, "item_code": item.item_code, "item_name": item.item_name, "uom": item.uom,
-            **svc.item_overview(db, item.id)}
+    return mask_for(_user, "vendors", {"store_item_id": item.id, "item_code": item.item_code, "item_name": item.item_name,
+                                       "uom": item.uom, **svc.item_overview(db, item.id)})
 
 
 @router.get("/source-list")

@@ -233,7 +233,8 @@ register_transaction(TransactionType(
     url="/dashboard/finance/banking?tab=guarantees",
     description="A guarantee, LC or EMD the firm applies for (it blocks bank limits and margin money) is approved by a "
                 "Finance approver and then a Partner before the application goes to the bank.",
-    context_fields={"instrument_type": {"label": "Instrument type", "type": "choice", "choices": list(BG_INSTRUMENT_TYPES)},
+    context_fields={"instrument_type": {"label": "Instrument type", "type": "choice", "choices": list(BG_INSTRUMENT_TYPES),
+                                        "choice_labels": dict(BG_INSTRUMENT_TYPES)},
                     "margin_amount": {"label": "Margin money (₹)", "type": "number"}},
     default_stages=[StageDef("Finance approver", "permission", {"permission": f"{MODULE}:guarantees:approve"}, approval_mode="any"),
                     StageDef("Partner (final approval)", "partner")],

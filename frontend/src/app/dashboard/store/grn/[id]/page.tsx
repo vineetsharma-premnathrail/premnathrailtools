@@ -14,6 +14,7 @@ import StoreNav from '@/components/store/StoreNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { OrderProjectChip } from '@/components/sales/OrderProjectPicker'
@@ -253,7 +254,7 @@ export default function StoreGrnDetailPage() {
         <div style={{ ...sectionStyle, background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.25)' }}>
           <p style={{ fontSize: 13.5, fontWeight: 700, color: DANGER.text, margin: '0 0 4px' }}>This GRN was reversed</p>
           <p style={{ fontSize: 12.5, color: TEXT.body, margin: 0 }}>
-            {grn.reversal_reason}{grn.reversed_by_name ? ` — by ${grn.reversed_by_name}` : ''}{grn.reversed_at ? ` on ${grn.reversed_at.slice(0, 10)}` : ''}. Its stock was taken back out; it no longer counts as received.
+            {grn.reversal_reason}{grn.reversed_by_name ? ` — by ${grn.reversed_by_name}` : ''}{grn.reversed_at ? ` on ${formatDate(grn.reversed_at)}` : ''}. Its stock was taken back out; it no longer counts as received.
           </p>
         </div>
       )}
@@ -279,7 +280,7 @@ export default function StoreGrnDetailPage() {
           <div><span style={{ color: TEXT.muted }}>PO Number: </span><strong style={{ color: TEXT.heading }}>{grn.po_number}</strong></div>
           <div><span style={{ color: TEXT.muted }}>PR Number: </span><strong style={{ color: TEXT.heading }}>{grn.p2p_number || '—'}</strong></div>
           <div><span style={{ color: TEXT.muted }}>Vendor: </span><strong style={{ color: TEXT.heading }}>{grn.vendor_name || '—'}</strong></div>
-          <div><span style={{ color: TEXT.muted }}>Received Date: </span><strong style={{ color: TEXT.heading }}>{grn.received_date}</strong></div>
+          <div><span style={{ color: TEXT.muted }}>Received Date: </span><strong style={{ color: TEXT.heading }}>{formatDate(grn.received_date)}</strong></div>
           <div><span style={{ color: TEXT.muted }}>Store Location: </span><strong style={{ color: TEXT.heading }}>{grn.store_location_name || '—'}</strong></div>
           <div><span style={{ color: TEXT.muted }}>Received By: </span><strong style={{ color: TEXT.heading }}>{grn.received_by_name || '—'}</strong></div>
           {grn.status === 'completed' && (
@@ -289,8 +290,8 @@ export default function StoreGrnDetailPage() {
         {(() => {
           const docs: [string, string | null | undefined][] = [
             ['Gate Entry', [grn.gate_entry_number, grn.gate_entry_at ? grn.gate_entry_at.slice(0, 16).replace('T', ' ') : null].filter(Boolean).join(' · ')],
-            ['Vendor Invoice', grn.vendor_invoice_number ? `${grn.vendor_invoice_number}${grn.vendor_invoice_date ? ` dt. ${grn.vendor_invoice_date}` : ''}` : null],
-            ['Delivery Challan', grn.delivery_challan_number ? `${grn.delivery_challan_number}${grn.delivery_challan_date ? ` dt. ${grn.delivery_challan_date}` : ''}` : null],
+            ['Vendor Invoice', grn.vendor_invoice_number ? `${grn.vendor_invoice_number}${grn.vendor_invoice_date ? ` dt. ${formatDate(grn.vendor_invoice_date)}` : ''}` : null],
+            ['Delivery Challan', grn.delivery_challan_number ? `${grn.delivery_challan_number}${grn.delivery_challan_date ? ` dt. ${formatDate(grn.delivery_challan_date)}` : ''}` : null],
             ['E-way Bill', grn.eway_bill_number], ['Vehicle', grn.vehicle_number], ['Transporter', grn.transporter_name], ['LR No.', grn.lr_number],
           ]
           const shown = docs.filter(([, v]) => v)
@@ -498,7 +499,7 @@ export default function StoreGrnDetailPage() {
               <div key={r.id} style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${BORDER.normal}`, background: 'rgba(255,255,255,.6)' }}>
                 <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 13 }}>
                   <strong style={{ color: TEXT.heading }}>{r.rtv_number}</strong>
-                  <span style={{ color: TEXT.muted }}>{r.return_date}</span>
+                  <span style={{ color: TEXT.muted }}>{formatDate(r.return_date)}</span>
                   <span>{r.reason_label || r.reason}</span>
                   {seeValues && r.total_value != null && <span style={{ color: TEXT.secondary }}>Value ₹{r.total_value.toLocaleString('en-IN')}</span>}
                   {r.vehicle_number && <span style={{ color: TEXT.muted }}>Vehicle {r.vehicle_number}</span>}

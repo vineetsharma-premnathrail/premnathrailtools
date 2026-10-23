@@ -256,8 +256,8 @@ async def cockpit(refresh: bool = False, db: Session = Depends(get_db), user: Us
     if not can_view_cockpit(user):
         raise HTTPException(
             status_code=403,
-            detail="The Management Cockpit is for Partners and holders of Organization › Management Cockpit "
-                   "(organization:cockpit:view). Ask an admin to add it to one of your roles.",
+            detail="The Management Cockpit is for Partners and holders of Organization › Management Cockpit. "
+                   "Ask an admin to add it to one of your roles.",
         )
     if refresh:
         _cache.clear()

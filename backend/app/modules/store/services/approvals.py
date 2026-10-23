@@ -54,8 +54,9 @@ _RULE_STAGE_LABEL = {
 
 def return_context_fields() -> dict:
     sources = [d["value"] for d in STORE_DOC_TYPE_DEFAULTS["return_source"]]
+    source_labels = {d["value"]: d["label"] for d in STORE_DOC_TYPE_DEFAULTS["return_source"]}
     fields = {
-        "source_type": {"label": "Return source", "type": "choice", "choices": sources},
+        "source_type": {"label": "Return source", "type": "choice", "choices": sources, "choice_labels": source_labels},
         "warehouse_manager_id": {"label": "Manager of the return store", "type": "user"},
         "department_head_ids": {"label": "Head(s) of the department the material was issued to", "type": "user"},
     }

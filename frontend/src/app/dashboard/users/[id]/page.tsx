@@ -19,6 +19,7 @@ import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 import { useSodGuard } from '@/components/organization/useSodGuard'
 import AccessGovernancePanel from '@/components/organization/AccessGovernancePanel'
+import { moduleWords } from '@/lib/permissionWords'
 import ApprovesInPanel from '@/components/organization/ApprovesInPanel'
 import { governedUsersApi } from '@/lib/basisApi'
 import DateField from '@/components/erp/DateField'
@@ -627,7 +628,7 @@ function RolesPermissionsTab({ user, registry, onRefresh }: { user: User; regist
         <h2 style={{ fontSize: 14, fontWeight: 700, color: TEXT.heading, margin: '0 0 6px' }}>Effective access</h2>
         <p style={{ fontSize: 12, color: TEXT.muted, margin: '0 0 12px' }}>
           Everything {user.name} can do right now (saved roles + extras). Hover a tick to see which role gives it.
-          Modules: {effective ? (effective.apps.length ? effective.apps.join(', ') : 'none') : '…'}
+          Modules: {effective ? (effective.apps.length ? effective.apps.map((a) => moduleWords(registry, a)).join(', ') : 'none') : '…'}
         </p>
         {effective && <PermissionMatrixEditor registry={registry} value={[]} inherited={effective.grants} readOnly onlyGranted />}
       </div>

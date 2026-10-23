@@ -7,6 +7,7 @@ import { Notification } from '@/types'
 import { useAuth } from '@/hooks/useAuth'
 import { hrNotificationHref } from '@/components/hr/hrNotificationLink'
 import { refOf } from '@/lib/recordRef'
+import { extractErrorMessages } from '@/lib/validation'
 import { Bell } from '@phosphor-icons/react'
 
 // Some notification types need a more specific link than their entity type
@@ -142,6 +143,7 @@ export default function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [savingPref, setSavingPref] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const notificationsEnabled = user?.notifications_enabled !== false
@@ -185,8 +187,11 @@ export default function NotificationBell() {
     setOpen(next)
     if (next) {
       setLoading(true)
+      setLoadError('')
       try {
         setNotifications(await notificationsApi.list())
+      } catch (err) {
+        setLoadError(extractErrorMessages(err, 'Could not load your notifications — check your connection and open the bell again.').join(' '))
       } finally {
         setLoading(false)
       }
@@ -304,6 +309,8 @@ export default function NotificationBell() {
 
           {loading ? (
             <p style={{ fontSize: 12.5, color: '#a8a29e', padding: 16, margin: 0 }}>Loading…</p>
+          ) : loadError ? (
+            <p style={{ fontSize: 12.5, color: '#b91c1c', padding: 16, margin: 0 }}>{loadError}</p>
           ) : notifications.length === 0 ? (
             <p style={{ fontSize: 12.5, color: '#a8a29e', padding: 16, margin: 0 }}>No notifications yet.</p>
           ) : (

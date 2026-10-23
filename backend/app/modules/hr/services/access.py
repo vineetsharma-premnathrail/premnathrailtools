@@ -105,15 +105,14 @@ def require_hr_tab(subtab: str | tuple[str, ...], action: str | None = None):
                 status_code=403,
                 detail=(
                     f"You don't have access to {labels}. "
-                    "Ask an admin to grant 'view' on it in Users › Permission Matrix."
+                    "Ask an admin to grant 'View' on it in Users › Permission Matrix."
                 ),
             )
         if action and not any(can_perform(user, HR_APP, t, action) for t in allowed):
-            ids = " or ".join(f"{HR_APP}:{t}:{action}" for t in tabs)
             raise HTTPException(
                 status_code=403,
                 detail=(
-                    f"You don't have '{action.capitalize()}' permission on {labels} ({ids}). "
+                    f"You don't have '{action.capitalize()}' permission on {labels}. "
                     "Ask an admin to add it to one of your roles in Organization › Role & Permissions."
                 ),
             )

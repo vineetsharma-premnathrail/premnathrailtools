@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.core.data_scope import apply_scope, ensure_in_scope
-from app.core.permissions import ensure_can_delete, require_app_access
+from app.core.permissions import ensure_can_delete, require_app_access, require_tab_action
 from app.modules.main.models.user import User
 from app.modules.quality.models.quality_document import QualityDocument, QUALITY_DOCUMENT_TYPES
 from app.modules.quality.schemas.quality_document import QualityDocumentResponse
@@ -44,7 +44,9 @@ async def upload_documents(
     description: str | None = Form(None),
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_app_access("quality")),
+    # Controlled documents: adding one needs Quality › Documents 'Create' (the
+    # delete route already enforces the tab), not just the Quality app.
+    user: User = Depends(require_tab_action("quality", "documents", "create")),
 ):
     if doc_type not in QUALITY_DOCUMENT_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid doc_type '{doc_type}'")

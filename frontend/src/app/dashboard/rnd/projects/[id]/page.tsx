@@ -151,10 +151,18 @@ export default function RndProjectDetailPage() {
   if (loading) return null
   if (!project) {
     return (
-      <div>
+      <div style={{ width: '100%' }}>
         <RndNav />
-        <ErrorBanner error={error || 'R&D project not found.'} />
-        <button onClick={() => router.push('/dashboard/rnd/projects')} type="button" style={secondaryBtnStyle}>← Back</button>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>
+              R&amp;D Module
+            </p>
+            <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: '0 0 20px' }}>R&amp;D Project</h1>
+          </div>
+          <button onClick={() => router.push('/dashboard/rnd/projects')} type="button" style={secondaryBtnStyle}>← Back</button>
+        </div>
+        <ErrorBanner error={error || 'R&D project not found — it may have been deleted. Go back to the project list.'} />
       </div>
     )
   }

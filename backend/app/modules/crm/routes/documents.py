@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.core.permissions import ensure_can_delete, require_app_access
-from app.modules.crm.access import INQ, can_child_view, ensure_child_action, ensure_own, ensure_parent_in_scope, tab_for
+from app.modules.crm.access import (
+    INQ, PARENT_MODELS, can_child_view, ensure_child_action, ensure_own, ensure_parent_in_scope, parent_record, tab_for,
+)
 from app.modules.main.routes.auth import get_current_user
 from app.modules.main.models.user import User
 from app.auth.jwt_handler import verify_document_share_token, create_upload_token, verify_upload_token
@@ -37,12 +39,51 @@ def _ensure_can_open(db: Session, user: User, doc: CrmDocument) -> None:
             raise HTTPException(status_code=403, detail=(
                 "This document was shared with R&D through a Technical Offer Request — opening it needs the CRM or R&D app. "
                 "Ask an admin to grant one of them, or ask the sender to share it with you."))
-        return
+        # Having the app isn't enough: a CRM user still needs the record in
+        # their data scope, and an R&D user needs access to that requirement
+        # (same rule as R&D's own document opener) — otherwise anyone could
+        # walk the sequential ids and read every customer's TOR files.
+        crm_error: HTTPException | None = None
+        if "crm" in apps:
+            try:
+                if not can_child_view(user, doc.related_module, "documents"):
+                    ensure_child_action(user, doc.related_module, "documents", "view", "view")
+                ensure_parent_in_scope(db, user, doc.related_module, doc.related_id)
+                return
+            except HTTPException as exc:
+                crm_error = exc
+        if "rnd" in apps:
+            from app.modules.rnd.routes.requirement_work import _ensure_can_open as ensure_rnd_can_open
+            ensure_rnd_can_open(db, user, doc)
+            return
+        raise crm_error  # type: ignore[misc]  # set: "crm" is in apps when "rnd" isn't
     # Inquiry / tender documents: Inquiries & Tenders › Documents › View;
     # organization documents: Organizations › View.
     if not can_child_view(user, doc.related_module, "documents"):
         ensure_child_action(user, doc.related_module, "documents", "view", "view")
     ensure_parent_in_scope(db, user, doc.related_module, doc.related_id)
+
+
+# related_sub_module values owned by R&D / the requirement discussion. Their
+# lists match only on (sub_module, sub_id), so a file uploaded here with one of
+# them would show up on another requirement's R&D task or discussion message.
+_RESERVED_SUB_MODULES = {"rnd_task", "rnd_requirement", "discussion", "rnd_request", "rnd_dept_share"}
+
+
+def _ensure_upload_target(db: Session, related_module: str | None, related_id: int | None,
+                          related_sub_module: str | None) -> None:
+    """A CRM upload must hang off a real Organization / Inquiry / Tender (an
+    unknown module or a missing record would skip the data-scope check), and
+    may not pose as an R&D task / discussion attachment."""
+    if related_module not in PARENT_MODELS:
+        raise HTTPException(status_code=422, detail=f"Files can only be attached to an organization, inquiry or tender — "
+                                                    f"'{related_module}' isn't one of them. Reload the page and upload again.")
+    if parent_record(db, related_module, related_id) is None:
+        raise HTTPException(status_code=404, detail=f"The {related_module} #{related_id} these files are for wasn't found — "
+                                                    "it may have been deleted. Reload the page.")
+    if related_sub_module in _RESERVED_SUB_MODULES:
+        raise HTTPException(status_code=422, detail="R&D task, requirement and discussion files are attached from those screens "
+                                                    "(R&D › Requirements or the Discussion tab), not from CRM Documents.")
 
 
 @router.get("", response_model=list[CrmDocumentResponse])
@@ -84,6 +125,7 @@ async def upload_documents(
     user: User = Depends(require_app_access("crm")),
 ):
     # Attaching files is editing the Organization / Inquiry / Tender they belong to.
+    _ensure_upload_target(db, related_module, related_id, related_sub_module)
     ensure_child_action(user, related_module, "documents", "create", "edit")
     ensure_parent_in_scope(db, user, related_module, related_id)
     if not settings.SHAREPOINT_SITE_ID:
@@ -186,6 +228,7 @@ async def complete_direct_upload(
         raise HTTPException(status_code=400, detail="This upload link has expired or is invalid. Start the upload again.")
     if claims.get("user_id") != user.id:
         raise HTTPException(status_code=403, detail="This upload was started by a different user.")
+    _ensure_upload_target(db, claims.get("related_module"), claims.get("related_id"), payload.related_sub_module)
     ensure_child_action(user, claims.get("related_module"), "documents", "create", "edit")
     ensure_parent_in_scope(db, user, claims.get("related_module"), claims.get("related_id"))
     if not settings.SHAREPOINT_SITE_ID:

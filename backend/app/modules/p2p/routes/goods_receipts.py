@@ -639,6 +639,11 @@ async def inspect_goods_receipt(
     # Locked so a double-submitted inspection can't see 'draft' twice and
     # post the same receipt to stock twice.
     grn = _get_grn_or_404(db, grn_id, for_update=True, user=user)
+    # Store keepers inspect only their own plant's receipts (same rule as
+    # opening or creating a GRN) — inspecting posts the stock.
+    scope = _grn_store_scope(db, user)
+    if scope is not None:
+        ensure_location_allowed(db, user, grn.store_location_id, allowed=scope)
     if grn.status == "completed":
         raise HTTPException(status_code=409, detail="This goods receipt has already been completed")
     if grn.status == "reversed":

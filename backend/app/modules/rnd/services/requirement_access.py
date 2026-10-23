@@ -184,7 +184,7 @@ def check_assignee(db: Session, source: str, record_id: int, assignee_id: int, d
         raise HTTPException(status_code=400, detail=f"{name} has no access to the R&D module, so they couldn't see this task. Pick someone with R&D access, or grant it in User Management.")
     if department != RND and not can_see_department(assignee, department):
         raise HTTPException(status_code=400, detail=f"{name} can't open {side_label(department)} › Requirements, so they couldn't see this task. Pick someone from "
-                                                    f"{side_label(department)}, or ask an admin to give them '{department}:{TAB}' view (Organization › Role & Permissions).")
+                                                    f"{side_label(department)}, or ask an admin to give them 'View' on {side_label(department)} › Requirements (Organization › Role & Permissions).")
     return assignee
 
 

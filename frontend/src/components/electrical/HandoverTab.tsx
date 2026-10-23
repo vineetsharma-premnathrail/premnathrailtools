@@ -11,7 +11,7 @@ import { TEXT } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
-import { formatDateTime } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import {
   inputStyle, sectionStyle, sectionTitle, primaryBtn, smallBtn, ErrorBanner, NoticeBanner, F, rowStyle, Pill,
   STAGE_STATUS_LABELS, STAGE_STATUS_HEX, INSPECTION_LABELS, INSPECTION_HEX, strOrNull,
@@ -133,7 +133,9 @@ export default function HandoverTab({ job, canEdit, onJob }: {
             <input style={inputStyle} disabled={!detailsEditable} value={commissioning.commissioning_location} onChange={(e) => setCommissioning((c) => ({ ...c, commissioning_location: e.target.value }))} placeholder="e.g. Customer depot, Kanpur" />
           </F>
           <F tour="elec-handover-comm-date" label="Commissioned On" basis={170}>
-            <DateField value={commissioning.commissioned_on} onChange={(v) => setCommissioning((c) => ({ ...c, commissioned_on: v }))} />
+            {detailsEditable
+              ? <DateField value={commissioning.commissioned_on} onChange={(v) => setCommissioning((c) => ({ ...c, commissioned_on: v }))} />
+              : <input style={inputStyle} disabled value={commissioning.commissioned_on ? formatDate(commissioning.commissioned_on) : ''} />}
           </F>
         </div>
         {detailsEditable && (
@@ -157,7 +159,9 @@ export default function HandoverTab({ job, canEdit, onJob }: {
             <input style={inputStyle} disabled={!detailsEditable} value={handover.handover_to_organization} onChange={(e) => setHandover((h) => ({ ...h, handover_to_organization: e.target.value }))} />
           </F>
           <F tour="elec-handover-date" label="Handover Date" basis={170}>
-            <DateField value={handover.handover_date} onChange={(v) => setHandover((h) => ({ ...h, handover_date: v }))} />
+            {detailsEditable
+              ? <DateField value={handover.handover_date} onChange={(v) => setHandover((h) => ({ ...h, handover_date: v }))} />
+              : <input style={inputStyle} disabled value={handover.handover_date ? formatDate(handover.handover_date) : ''} />}
           </F>
         </div>
         <div style={rowStyle}>

@@ -54,10 +54,11 @@ def reset_rate_limiter() -> None:
         _minute[0], _minute[1] = 0.0, 0
 
 
-def record_denial(method: str, path: str, detail, user_id: int | None) -> None:
+def record_denial(method: str, path: str, detail, user_id: int | None, permission_key: str | None = None) -> None:
     from app.modules.main.models.grc import PermissionDenial
 
-    key = permission_key_from_detail(detail)
+    # The core checks pass the id (PermissionDenied); older messages still name it in brackets.
+    key = permission_key or permission_key_from_detail(detail)
     now = time.monotonic()
     dedup = (user_id, key, path)
     with _lock:

@@ -289,7 +289,7 @@ function JobDetailView() {
                       <div style={{ marginBottom: 10 }}>
                         <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order project</p>
                         <OrderProjectChip opNumber={job.order_project_number} elementNo={job.order_project_element_no} label={job.order_project_element_label}
-                          onClick={() => router.push(recordPath('/dashboard/sales/order-projects', job, 'order_project_id'))} />
+                          onClick={() => router.push(recordPath('/dashboard/projects/order-projects', job, 'order_project_id'))} />
                       </div>
                     )}
                     <InfoRow label="RRV / Machine (ERP)" value={job.project_label || '—'} />

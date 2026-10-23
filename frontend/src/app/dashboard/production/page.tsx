@@ -10,6 +10,7 @@ import ProductionNav from '@/components/production/ProductionNav'
 import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import { recordPath } from '@/lib/recordRef'
+import { useCan } from '@/lib/permissions'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Draft', released: 'Released', in_progress: 'In Progress', completed: 'Completed', closed: 'Closed', cancelled: 'Cancelled' }
 const STATUS_HEX: Record<string, string> = { draft: '#78716c', released: '#2563EB', in_progress: '#F59E0B', completed: '#16A34A', closed: '#0f766e', cancelled: '#78716c' }
@@ -54,6 +55,7 @@ function OrderRows({ rows, empty, onOpen }: { rows: ProductionScheduleEntry[]; e
 export default function ProductionDashboardPage() {
   const { isAuthorized, isLoading } = useRequireApp('production')
   const router = useRouter()
+  const { can } = useCan()
   const [data, setData] = useState<ProductionDashboard | null>(null)
   const [error, setError] = useState<string | string[]>('')
 
@@ -80,7 +82,7 @@ export default function ProductionDashboardPage() {
           </p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Production Dashboard</h1>
         </div>
-        <button
+        {can('production', 'work_orders', 'create') && <button
           data-tour="production-dash-new-wo-btn"
           onClick={() => router.push('/dashboard/production/work-orders/new')}
           style={{
@@ -90,7 +92,7 @@ export default function ProductionDashboardPage() {
           }}
         >
           + New Work Order
-        </button>
+        </button>}
       </div>
 
       {error && (

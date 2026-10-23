@@ -876,7 +876,7 @@ export default function MyP2PRequestDetailPage() {
                     <div style={{ marginTop: 4 }}>
                       <OrderProjectChip opNumber={it.order_project_number} elementNo={it.order_project_element_no} label={it.order_project_element_label}
                         title={it.order_project_display || undefined}
-                        onClick={can('sales', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/sales/order-projects', it, 'order_project_id')) : undefined} />
+                        onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', it, 'order_project_id')) : undefined} />
                     </div>
                   )}
                 </td>

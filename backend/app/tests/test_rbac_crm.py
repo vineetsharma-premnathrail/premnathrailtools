@@ -57,11 +57,11 @@ def test_view_only_user_can_read_but_not_write(client, db):
     assert client.get(f"{API}/dashboard", headers=h).status_code == 200
 
     r = client.post(f"{API}/organizations", json={"org_type": "Customer", "name": "Nope"}, headers=h)
-    assert r.status_code == 403 and "crm:organizations:create" in r.json()["detail"], r.text
+    assert r.status_code == 403 and "'Create' permission on CRM › Customer Organizations" in r.json()["detail"], r.text
     r = client.patch(f"{API}/organizations/{org['id']}", json={"city": "Delhi"}, headers=h)
-    assert r.status_code == 403 and "crm:organizations:edit" in r.json()["detail"], r.text
+    assert r.status_code == 403 and "'Edit' permission on CRM › Customer Organizations" in r.json()["detail"], r.text
     r = client.delete(f"{API}/organizations/{org['id']}", headers=h)
-    assert r.status_code == 403 and "crm:organizations:delete" in r.json()["detail"], r.text
+    assert r.status_code == 403 and "'Delete' permission on CRM › Customer Organizations" in r.json()["detail"], r.text
 
     r = client.post(f"{API}/inquiries", json={"org_id": org["id"], "lead_source": "Direct"}, headers=h)
     assert r.status_code == 403, r.text

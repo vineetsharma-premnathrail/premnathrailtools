@@ -47,6 +47,7 @@ export default function ComplaintDetailPage() {
   const cid = recordId ?? 0
   const [c, setC] = useState<QualityCustomerComplaint | null>(null)
   const [cont, setCont] = useState<QualityComplaintContainment | null>(null)
+  const [contError, setContError] = useState<string | string[]>('')
   const [users, setUsers] = useState<{ id: number; name: string }[]>([])
   // Role assign-to rule (core/features/quality.py) — the server enforces it on save too.
   const allowOwner = useAssigneeFilter('quality:complaints.owner')
@@ -85,7 +86,9 @@ export default function ComplaintDetailPage() {
   useEffect(() => {
     if (!isAuthorized || !cid) return
     qualityApi.getComplaint(cid).then(load).catch((e) => setError(extractErrorMessages(e, 'Failed to load this complaint.')))
-    qualityApi.getComplaintContainment(cid).then(setCont).catch(() => setCont(null))
+    qualityApi.getComplaintContainment(cid)
+      .then((c) => { setCont(c); setContError('') })
+      .catch((e) => { setCont(null); setContError(extractErrorMessages(e, 'Failed to load the traceability / containment check.')) })
     qualityApi.lookupUsers().then(setUsers).catch(() => setUsers([]))
   }, [isAuthorized, cid])
 
@@ -202,7 +205,9 @@ export default function ComplaintDetailPage() {
       )}
 
       <Section title="Traceability & containment" style={{ marginBottom: 20 }}>
-        {!cont ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p> : cont.note ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{cont.note}</p> : (
+        {!cont ? (contError
+          ? <p style={{ fontSize: 13, color: '#b91c1c', margin: 0 }}>{Array.isArray(contError) ? contError.join(' ') : contError}</p>
+          : <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>Loading…</p>) : cont.note ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>{cont.note}</p> : (
           <>
             <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Traced by serial / batch {cont.keys.join(', ')}.</p>
             <div>

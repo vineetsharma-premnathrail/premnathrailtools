@@ -43,7 +43,8 @@ interface FormState {
   remarks: string
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+// Local calendar date (YYYY-MM-DD) — toISOString() is UTC, i.e. yesterday before 05:30 IST.
+const today = () => new Date().toLocaleDateString('en-CA')
 const emptyForm = (): FormState => ({
   condition_type: 'price', item_kind: 'product', product_id: '', store_item_id: '', service_code: '', customer_id: '',
   amount: '', percent: '', freight_basis: 'per_order', min_price: '', uom: '', valid_from: today(), valid_to: '', remarks: '',
@@ -65,6 +66,7 @@ export default function SalesPricingPage() {
   const [items, setItems] = useState<{ value: string; label: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
+  const [metaError, setMetaError] = useState<string | string[]>('')
   const [typeFilter, setTypeFilter] = useState('')
   const [customerFilter, setCustomerFilter] = useState('')
   const [currentOnly, setCurrentOnly] = useState(true)
@@ -87,7 +89,7 @@ export default function SalesPricingPage() {
   useEffect(() => { if (isAuthorized) load() }, [isAuthorized, load])
   useEffect(() => {
     if (!isAuthorized) return
-    pricingApi.meta().then(setMeta).catch(() => setMeta(null))
+    pricingApi.meta().then(setMeta).catch((e) => { setMeta(null); setMetaError(extractErrorMessages(e, 'Could not load the condition types and service rates, so new conditions cannot be added — reload the page.')) })
     salesApi.lookupCustomers().then((cs: { id: number; name: string; gst_number: string | null }[]) =>
       setCustomers(cs.map((c) => ({ value: String(c.id), label: c.gst_number ? `${c.name} (${c.gst_number})` : c.name })))).catch(() => setCustomers([]))
   }, [isAuthorized])
@@ -156,12 +158,13 @@ export default function SalesPricingPage() {
   const canDel = can('sales', 'pricing', 'delete')
 
   return (
-    <div style={{ padding: 24 }}>
+    <div>
       <SalesNav />
       <PageHeader title="Pricing" subtitle="Price lists for spares and service rates, customer prices and discounts, and freight. Vehicles and machines are priced per quotation.">
         {canCreate && <button style={primaryBtnStyle} onClick={() => { setFormError(''); setForm(emptyForm()) }}>+ New condition</button>}
       </PageHeader>
       <ErrorBanner error={error} />
+      <ErrorBanner error={metaError} />
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14, alignItems: 'flex-end' }}>
         <div style={{ flex: '0 1 160px', minWidth: 140 }}>

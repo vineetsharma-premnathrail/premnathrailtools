@@ -297,19 +297,25 @@ def _subtask_overdue(s: PmTaskSubtask) -> bool:
     return s.status != "done" and s.due_date is not None and s.due_date < date.today()
 
 
-def _task_out(db: Session, t: PmProjectTask, project: PmProject, user: User, cache, subs: list[PmTaskSubtask],
-              counts: tuple[int, int] = (0, 0), sub_counts: dict[int, tuple[int, int]] | None = None) -> DeptTaskOut:
-    open_project = project.status in OPEN_PROJECT
-    manage = wf.can_manage(project, user)
-    owners = _owner_ids(db, t)
+def _feature_flags(user: User) -> dict[str, bool]:
+    """The viewer's task / checklist / milestone feature grants — the same for
+    every row, so worked out once per request (see _pm_role)."""
     pm_role = _pm_role(user)
-    f_task_create = not pm_role or can_feature(user, "projects", "overview", "tasks", "create")
-    f_task_edit = not pm_role or can_feature(user, "projects", "overview", "tasks", "edit")
-    f_task_delete = not pm_role or can_feature(user, "projects", "overview", "tasks", "delete")
-    f_item_create = not pm_role or can_feature(user, "projects", "overview", "task_checklist", "create")
-    f_item_edit = not pm_role or can_feature(user, "projects", "overview", "task_checklist", "edit")
-    f_item_delete = not pm_role or can_feature(user, "projects", "overview", "task_checklist", "delete")
-    f_ms_delete = not pm_role or can_feature(user, "projects", "overview", "milestones", "delete")
+    return {f"{feat}.{action}": not pm_role or can_feature(user, "projects", "overview", feat, action)
+            for feat, action in (("tasks", "create"), ("tasks", "edit"), ("tasks", "delete"), ("task_checklist", "create"),
+                                 ("task_checklist", "edit"), ("task_checklist", "delete"), ("milestones", "delete"))}
+
+
+def _task_out(db: Session, t: PmProjectTask, project: PmProject, user: User, cache, subs: list[PmTaskSubtask],
+              counts: tuple[int, int] = (0, 0), sub_counts: dict[int, tuple[int, int]] | None = None,
+              flags: dict[str, bool] | None = None, manage: bool | None = None) -> DeptTaskOut:
+    open_project = project.status in OPEN_PROJECT
+    manage = wf.can_manage(project, user) if manage is None else manage
+    owners = _owner_ids(db, t)
+    flags = flags or _feature_flags(user)
+    f_task_create, f_task_edit, f_task_delete = flags["tasks.create"], flags["tasks.edit"], flags["tasks.delete"]
+    f_item_create, f_item_edit = flags["task_checklist.create"], flags["task_checklist.edit"]
+    f_item_delete, f_ms_delete = flags["task_checklist.delete"], flags["milestones.delete"]
     owner = wf.is_admin(user) or user.id in owners
     task_open = t.status in PM_TASK_OPEN_STATUSES
     sub_holder = any(s.assignee_id == user.id for s in subs)
@@ -387,15 +393,17 @@ def _task_out(db: Session, t: PmProjectTask, project: PmProject, user: User, cac
     )
 
 
-def _tasks_out(db: Session, projects: list[PmProject], user: User) -> dict[int, list[DeptTaskOut]]:
-    """project_id → its department tasks (with sub-tasks), due date first."""
+def _tasks_out(db: Session, projects: list[PmProject], user: User, only: set[int] | None = None) -> dict[int, list[DeptTaskOut]]:
+    """project_id → its department tasks (with sub-tasks), due date first.
+    `only`: just these milestones (My Tasks / one milestone) instead of all."""
     ids = [p.id for p in projects]
     if not ids:
         return {}
     by_id = {p.id: p for p in projects}
-    tasks = (db.query(PmProjectTask)
-             .filter(PmProjectTask.project_id.in_(ids), PmProjectTask.milestone_id.is_(None))
-             .order_by(PmProjectTask.due_date.is_(None), PmProjectTask.due_date, PmProjectTask.id).all())
+    q = db.query(PmProjectTask).filter(PmProjectTask.project_id.in_(ids), PmProjectTask.milestone_id.is_(None))
+    if only is not None:
+        q = q.filter(PmProjectTask.id.in_(list(only) or [-1]))
+    tasks = q.order_by(PmProjectTask.due_date.is_(None), PmProjectTask.due_date, PmProjectTask.id).all()
     subs: dict[int, list[PmTaskSubtask]] = {}
     if tasks:
         for s in db.query(PmTaskSubtask).filter(PmTaskSubtask.task_id.in_([t.id for t in tasks])).order_by(PmTaskSubtask.id).all():
@@ -421,16 +429,19 @@ def _tasks_out(db: Session, projects: list[PmProject], user: User) -> dict[int, 
             else:
                 files[task_id] = n
     cache = views.names(db)
+    flags = _feature_flags(user)
+    manage = {p.id: wf.can_manage(p, user) for p in projects}
     out: dict[int, list[DeptTaskOut]] = {}
     for t in tasks:
         out.setdefault(t.project_id, []).append(_task_out(db, t, by_id[t.project_id], user, cache, subs.get(t.id, []),
-                                                          (remarks.get(t.id, 0), files.get(t.id, 0)), sub_counts))
+                                                          (remarks.get(t.id, 0), files.get(t.id, 0)), sub_counts,
+                                                          flags, manage[t.project_id]))
     return out
 
 
 def _one(db: Session, t: PmProjectTask, user: User) -> DeptTaskOut:
     project = db.get(PmProject, t.project_id)
-    return next(x for x in _tasks_out(db, [project], user).get(project.id, []) if x.id == t.id)
+    return next(x for x in _tasks_out(db, [project], user, only={t.id}).get(project.id, []) if x.id == t.id)
 
 
 def _project(db: Session, project_id: int) -> PmProject:
@@ -691,7 +702,7 @@ async def create_task(project_id: int, payload: DeptTaskCreate, background_tasks
     pm_event(db, background_tasks, "milestone_assigned", project, title=f"Milestone given: {t.title}",
              message=f"{project.project_code} {project.name}: '{t.title}' given to {wf.user_label(person)}, due {t.due_date:%d-%m-%Y}, "
                      f"by {wf.user_label(user)}. Open the project's Milestones tab to follow it.",
-             entity_type="pm_task", entity_id=t.id, actor=user, skip=_owner_ids(db, t))
+             entity_type="pm_project", entity_id=project.id, actor=user, skip=_owner_ids(db, t))
     db.commit()
     return _one(db, t, user)
 
@@ -750,7 +761,7 @@ async def edit_task(project_id: int, task_id: int, payload: DeptTaskEdit, backgr
         pm_event(db, background_tasks, "milestone_assigned", project, title=f"Milestone handed over: {t.title}",
                  message=f"{project.project_code} {project.name}: '{t.title}' (due {t.due_date:%d-%m-%Y}) is now with "
                          f"{', '.join(filter(None, (wf.name_of(db, i) for i in added)))} — changed by {wf.user_label(user)}.",
-                 entity_type="pm_task", entity_id=t.id, actor=user, skip=added)
+                 entity_type="pm_project", entity_id=project.id, actor=user, skip=added)
     db.commit()
     return _one(db, t, user)
 
@@ -799,21 +810,24 @@ async def my_work(include_closed: bool = False, db: Session = Depends(get_db), u
     milestones they gave to someone (to follow up — they get its due-date
     reminders too). Only projects still running."""
     sub_task_ids = {tid for (tid,) in db.query(PmTaskSubtask.task_id).filter(PmTaskSubtask.assignee_id == user.id).all()}
-    sub_task_ids |= {x.task_id for x in db.query(PmTaskSubtask).filter(PmTaskSubtask.collaborator_ids.isnot(None)).all()
-                     if user.id in (x.collaborator_ids or [])}
+    # JSON columns: read just the ids + lists (an empty / JSON-null list isn't SQL NULL, so these scan every row).
+    sub_task_ids |= {tid for tid, ids in db.query(PmTaskSubtask.task_id, PmTaskSubtask.collaborator_ids)
+                     .filter(PmTaskSubtask.collaborator_ids.isnot(None)).all() if user.id in (ids or [])}
     base = db.query(PmProjectTask).filter(PmProjectTask.milestone_id.is_(None))
-    owned = {t.id for t in base.filter(PmProjectTask.assignee_id == user.id).all()}
-    owned |= {t.id for t in base.filter(PmProjectTask.co_owner_ids.isnot(None)).all() if user.id in (t.co_owner_ids or [])}
+    owned = {tid for (tid,) in base.filter(PmProjectTask.assignee_id == user.id).with_entities(PmProjectTask.id).all()}
+    owned |= {tid for tid, ids in base.filter(PmProjectTask.co_owner_ids.isnot(None))
+              .with_entities(PmProjectTask.id, PmProjectTask.co_owner_ids).all() if user.id in (ids or [])}
     owned |= {tid for (tid,) in base.filter(PmProjectTask.created_by_id == user.id).with_entities(PmProjectTask.id).all()}
     # Old milestones without an owner belong to the department head.
-    legacy = {t.id for t in base.filter(PmProjectTask.assignee_id.is_(None)).all()
-              if t.department_id and wf.is_department_head(db, user, t.department_id)}
+    headed = set(wf.headed_department_ids(db, user))
+    legacy = {tid for tid, did in base.filter(PmProjectTask.assignee_id.is_(None))
+              .with_entities(PmProjectTask.id, PmProjectTask.department_id).all() if did and did in headed} if headed else set()
     wanted = owned | legacy | sub_task_ids
     if not wanted:
         return []
     project_ids = {pid for (pid,) in db.query(PmProjectTask.project_id).filter(PmProjectTask.id.in_(wanted)).distinct().all()}
     projects = db.query(PmProject).filter(PmProject.id.in_(project_ids), PmProject.status.in_(OPEN_PROJECT)).all()
-    rows = [t for ts in _tasks_out(db, projects, user).values() for t in ts if t.id in wanted]
+    rows = [t for ts in _tasks_out(db, projects, user, only=wanted).values() for t in ts]
     if not include_closed:
         rows = [t for t in rows if t.status in PM_TASK_OPEN_STATUSES]
     rows.sort(key=lambda t: (t.due_date is None, t.due_date or date.max, t.id))
@@ -905,7 +919,7 @@ async def change_status(task_id: int, payload: TaskStatusPayload, background_tas
         _notify_owner(db, project, t, user, "Milestone reopened", f"{project.project_code}: '{t.title}' was reopened by {wf.user_label(user)}. Reason: {reason}")
         pm_event(db, background_tasks, "milestone_reopened", project, title=f"Milestone reopened: {t.title}",
                  message=f"{project.project_code} {project.name}: '{t.title}' was reopened by {wf.user_label(user)}. Reason: {reason}",
-                 entity_type="pm_task", entity_id=t.id, actor=user, skip=_owner_ids(db, t))
+                 entity_type="pm_project", entity_id=project.id, actor=user, skip=_owner_ids(db, t))
     elif action == "cancel":
         if t.status not in PM_TASK_OPEN_STATUSES:
             raise HTTPException(status_code=409, detail=f"'{t.title}' is {label}; only an open milestone can be cancelled.")
@@ -916,7 +930,7 @@ async def change_status(task_id: int, payload: TaskStatusPayload, background_tas
         _notify_owner(db, project, t, user, "Milestone cancelled", f"{project.project_code}: '{t.title}' was cancelled by {wf.user_label(user)}. Reason: {reason}")
         pm_event(db, background_tasks, "milestone_cancelled", project, title=f"Milestone cancelled: {t.title}",
                  message=f"{project.project_code} {project.name}: '{t.title}' was cancelled by {wf.user_label(user)}. Reason: {reason}",
-                 entity_type="pm_task", entity_id=t.id, actor=user, skip=_owner_ids(db, t))
+                 entity_type="pm_project", entity_id=project.id, actor=user, skip=_owner_ids(db, t))
     else:
         raise HTTPException(status_code=400, detail=f"Unknown action '{action}'. Use one of: start, done, reopen, cancel.")
     db.commit()
@@ -1327,6 +1341,10 @@ async def task_file(document_id: int, db: Session = Depends(get_db), user: User 
     if not doc or doc.is_deleted or not doc.task_id:
         raise HTTPException(status_code=404, detail=f"File #{document_id} not found — it may have been removed.")
     _require_see(db, _task(db, doc.task_id), user)
+    # A sub-task's file follows the sub-task (same rule as its activity):
+    # seeing the milestone isn't enough to open someone else's private sub-task.
+    if doc.subtask_id:
+        _require_sees_task(db, user, _subtask(db, doc.subtask_id))
     if _pm_role(user):
         ensure_feature_action(user, "projects", "overview", "task_files", "export")
     return await file_response(doc)

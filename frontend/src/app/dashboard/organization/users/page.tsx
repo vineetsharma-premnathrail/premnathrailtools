@@ -8,6 +8,7 @@ import { TEXT, GLASS, SHADOWS, BRAND } from '@/lib/theme'
 import OrganizationNav from '@/components/organization/OrganizationNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
+import { moduleWords } from '@/lib/permissionWords'
 
 const APPROVAL_ROLE_FLAGS: { key: keyof User; label: string }[] = [
   { key: 'is_partner', label: 'Partner' },
@@ -124,7 +125,7 @@ export default function OrganizationUsersPage() {
                       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                         {u.apps.filter((a) => a !== 'purchase').map((a) => (
                           <span key={a} style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 8px', borderRadius: 6, background: 'rgba(59,130,246,0.1)', color: '#2563eb', textTransform: 'uppercase' }}>
-                            {a === 'p2p' ? 'Procurement' : apps.find((app) => app.id === a)?.label || a}
+                            {a === 'p2p' ? 'Procurement' : apps.find((app) => app.id === a)?.label || moduleWords(null, a)}
                           </span>
                         ))}
                       </div>

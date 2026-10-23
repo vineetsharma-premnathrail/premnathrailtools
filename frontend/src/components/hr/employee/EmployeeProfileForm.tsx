@@ -18,6 +18,7 @@ import {
   WORKER_TYPE_LABELS, RECORD_STATUS_LABELS, RECORD_STATUS_HEX, ATTENDANCE_POLICY_LABELS, LOGIN_STATUS_LABELS, formatDate,
 } from '@/components/hr/masters/masterUi'
 import { recordPath, useRecordId } from '@/lib/recordRef'
+import { todayIso } from '@/components/hr/admin/adminUi'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import JoiningDocumentsChecklist, { DocumentOwner, StagedDocument, uploadChecklistFile } from '@/components/hr/employee/JoiningDocumentsChecklist'
 
@@ -237,7 +238,7 @@ export default function EmployeeProfileForm({ mode }: { mode: 'user' | 'worker' 
     for (const [k, label] of [['probation_end_date', 'Probation end date'], ['confirmation_date', 'Confirmation date'], ['date_of_exit', 'Last working day']] as const) {
       if (f.date_of_joining && f[k] && f[k] < f.date_of_joining) p.push(`${label} is before the date of joining.`)
     }
-    if (f.date_of_birth && f.date_of_birth >= new Date().toISOString().slice(0, 10)) p.push('Date of birth must be in the past.')
+    if (f.date_of_birth && f.date_of_birth >= todayIso()) p.push('Date of birth must be in the past.')
     return p
   }
 

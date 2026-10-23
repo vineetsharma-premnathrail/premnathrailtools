@@ -8,6 +8,7 @@ import { TEXT, BRAND, GLASS, SHADOWS } from '@/lib/theme'
 import { inputStyle, secondaryBtnStyle } from '@/components/shared/ui'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import StockEntryDialog from '@/components/store/StockEntryDialog'
 import { useCan } from '@/lib/permissions'
@@ -125,7 +126,7 @@ export default function StoreMovementsPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'material_documents_MB51.xlsx'
+      a.download = `stock_movements_${new Date().toISOString().slice(0, 10)}.xlsx`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
@@ -261,7 +262,7 @@ export default function StoreMovementsPage() {
               const sign = INBOUND.has(t.transaction_type) ? '+' : OUTBOUND.has(t.transaction_type) ? '−' : ''
               return (
                 <tr key={t.id} style={{ borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{t.transaction_date}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDate(t.transaction_date)}</td>
                   <td style={{ ...td, fontWeight: 600, color: TEXT.body }}>{t.item_code} — {t.item_name}</td>
                   <td style={td}>{t.location_name}</td>
                   <td style={td}>{t.bin_code || '—'}</td>

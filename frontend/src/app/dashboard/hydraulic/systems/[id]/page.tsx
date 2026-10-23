@@ -233,7 +233,7 @@ export default function HydSystemDetailPage() {
                 <div>
                   <p style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order project</p>
                   <OrderProjectChip opNumber={system.order_project_number} elementNo={system.order_project_element_no} label={system.order_project_element_label}
-                    onClick={() => router.push(recordPath('/dashboard/sales/order-projects', system, 'order_project_id'))} />
+                    onClick={() => router.push(recordPath('/dashboard/projects/order-projects', system, 'order_project_id'))} />
                 </div>
               )}
               <InfoRow label="ERP Project" value={system.project_label || '—'} />

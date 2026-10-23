@@ -96,7 +96,8 @@ export default function StoreStockPage() {
     const it = itemById.get(itemId)
     return Number(it?.moving_average_cost || it?.standard_cost || it?.last_receipt_rate || 0)
   }
-  const totalQty = (b: StoreStockBalance) => Number(b.on_hand_qty || 0) + Number(b.reserved_qty || 0) + Number(b.quality_qty || 0) + Number(b.quarantine_qty || 0)
+  // Reserved stock is part of on_hand_qty (available = on_hand − reserved) — not added again.
+  const totalQty = (b: StoreStockBalance) => Number(b.on_hand_qty || 0) + Number(b.quality_qty || 0) + Number(b.quarantine_qty || 0)
   const isLow = (b: StoreStockBalance) => {
     const lvl = itemById.get(b.item_id)?.reorder_level
     return lvl != null && lvl > 0 && Number(b.available_qty || 0) <= lvl

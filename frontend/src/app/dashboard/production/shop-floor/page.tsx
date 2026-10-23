@@ -64,7 +64,7 @@ export default function ShopFloorPage() {
   const [logRemarks, setLogRemarks] = useState('')
 
   const load = useCallback(() => fetchQueue(wsFilter)
-    .then(setQueue)
+    .then((rows) => { setQueue(rows); setError('') })
     .catch((err) => setError(extractErrorMessages(err, 'Failed to load the shop-floor queue.')))
     .finally(() => setLoading(false)), [wsFilter])
 
@@ -72,7 +72,7 @@ export default function ShopFloorPage() {
     if (!isAuthorized) return
     let cancelled = false
     fetchQueue(wsFilter)
-      .then((rows) => { if (!cancelled) setQueue(rows) })
+      .then((rows) => { if (!cancelled) { setQueue(rows); setError('') } })
       .catch((err) => { if (!cancelled) setError(extractErrorMessages(err, 'Failed to load the shop-floor queue.')) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -118,6 +118,8 @@ export default function ShopFloorPage() {
     setLogScrap('0')
     setLogOperator('')
     setLogRemarks('')
+    // The popup shows `error` — don't carry an earlier page error into it.
+    setError('')
   }
 
   const submitLog = async () => {

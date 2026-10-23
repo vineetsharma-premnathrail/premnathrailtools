@@ -245,3 +245,36 @@ def test_create_po_vendor_choice_and_word_document(client, db):
     assert (ctx["total"], ctx["gst"], ctx["tax_split"]) == (590, 90.0, "unknown")
     assert ctx["amount_in_words"] == "INR Five Hundred Ninety Only"
     assert len(build_po_docx(ctx).getvalue()) > 10000
+
+
+def test_item_rate_lookups_follow_the_vendor_prices_switch(client, db):
+    """Security fix: /vendors/for-item and the info-record lookups returned
+    vendor rates to a Vendors viewer whose role has Prices & rates off."""
+    from app.modules.accounts.models.vendor_catalog_item import VendorCatalogItem
+    v = Vendor(code="V-SEC-1", name="Price Secret Co", gst_registration_type="regular", status="active")
+    db.add(v)
+    db.flush()
+    item = master_item(db, "Secret priced hose", uom="Mtr")
+    db.add(VendorCatalogItem(vendor_id=v.id, store_item_id=item.id, item_name=item.item_name, unit_price=450.0,
+                             currency="INR", is_active=True))
+    db.commit()
+
+    def lookups(user):
+        h = {"Authorization": f"Bearer {create_access_token({'sub': str(user.id), 'email': user.email, 'role': user.role})}"}
+        q = {"store_item_id": item.id}
+        return (client.get("/api/v1/p2p/vendors/for-item", params=q, headers=h).json()[0]["unit_price"],
+                client.get("/api/v1/p2p/info-records/for-item", params=q, headers=h).json()["info_records"][0]["unit_price"],
+                client.get("/api/v1/p2p/info-records/default-price", params={**q, "vendor_id": v.id}, headers=h).json()["unit_price"],
+                client.get("/api/v1/p2p/info-records/price-history", params=q, headers=h).status_code)
+
+    def user(email, grants):
+        u = User(email=email, name=email.split("@")[0], role="user", is_active=True, granular_permissions=grants)
+        db.add(u)
+        db.commit()
+        return u
+
+    # Customised role: Vendors view + item rates, Prices & rates not picked.
+    blind = user("vend.blind@premnathrail.com", ["p2p:vendors:view", "p2p:vendors.info_records:view"])
+    assert lookups(blind)[:3] == (None, None, None)
+    sees = user("vend.sees@premnathrail.com", ["p2p:vendors:view"])  # inherits every Vendors feature
+    assert lookups(sees)[:3] == (450, 450, 450)

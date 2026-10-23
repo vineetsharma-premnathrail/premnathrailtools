@@ -41,7 +41,7 @@ def _billing_viewer(user: User = Depends(get_current_user)) -> User:
     if can_perform(user, "sales", "orders", "view") or can_perform(user, "accounts", "sales_invoices", "view"):
         return user
     raise HTTPException(status_code=403, detail="The billing due list needs 'View' on Sales › Sales Orders or on "
-                                                f"Finance › Sales Invoices (sales:orders:view / accounts:sales_invoices:view). {GRANT_HINT}")
+                                                f"Finance › Sales Invoices. {GRANT_HINT}")
 
 
 def _row(db: Session, sid: int, user: User, lock: bool = True) -> tuple[SalesOrder, SalesOrderSchedule]:

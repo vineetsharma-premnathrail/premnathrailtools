@@ -311,7 +311,7 @@ def test_viewer_limits(client, db, team):
 def test_module_access_required_for_writes(client, db, team):
     outsider = make_user(db, "cov.crm@premnathrail.com", apps=("crm",))
     r = client.post(f"{API}/documents", json={"title": "Sneaky", "document_type": "ga_drawing"}, headers=auth(outsider))
-    assert r.status_code == 403 and "Access to 'design' module required" in r.json()["detail"]
+    assert r.status_code == 403 and "You can't open the Design" in r.json()["detail"]
     assert client.get(f"{API}/boms", headers=auth(outsider)).status_code == 403
     assert client.get(f"{API}/change-notices", headers=auth(outsider)).status_code == 403
 

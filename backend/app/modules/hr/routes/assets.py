@@ -8,8 +8,6 @@ app/modules/hr/services/access.py).
 asset right now" — the exit checklist reads it to find unreturned assets, so
 every issue / return / lost transition here keeps it in step with the open
 HrAssetAssignment row (the one with returned_on IS NULL)."""
-from datetime import date
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Numeric, cast, func, or_, text
 from sqlalchemy.orm import Session, selectinload
@@ -26,6 +24,7 @@ from app.core.data_scope import apply_scope, ensure_in_scope
 from app.modules.hr.services import approvals as _hr_scope  # noqa: F401 — registers HR data-scope tables
 from app.core.permissions import ensure_can_delete
 from app.modules.hr.services.access import require_hr_tab, require_me_view
+from app.modules.hr.services.calendar import today_ist
 from app.modules.hr.services.admin_common import (
     users_by_id, branches_by_id, display_name, require_active_user, require_branch, require_choice,
 )
@@ -373,7 +372,7 @@ async def issue_asset(
         )
     holder = require_active_user(db, payload.user_id, "employee to issue to")
     require_choice(payload.condition_on_issue, ASSET_CONDITIONS, "condition on issue")
-    issued_on = payload.issued_on or date.today()
+    issued_on = payload.issued_on or today_ist()
     if payload.expected_return_on and payload.expected_return_on < issued_on:
         raise HTTPException(
             status_code=400,
@@ -418,7 +417,7 @@ async def return_asset(
             status_code=400,
             detail=f"After a return the asset can go to In Stock, Under Repair or Retired — '{payload.next_status}' is not one of those.",
         )
-    returned_on = payload.returned_on or date.today()
+    returned_on = payload.returned_on or today_ist()
     if returned_on < open_row.issued_on:
         raise HTTPException(
             status_code=400,
@@ -471,14 +470,14 @@ async def change_asset_status(
             ),
         )
     if target == "lost" and open_row:
-        open_row.returned_on = date.today()
+        open_row.returned_on = today_ist()
         open_row.received_by_id = user.id
         note = "Reported lost while issued." + (f" {payload.remarks}" if payload.remarks else "")
         open_row.remarks = f"{open_row.remarks}\n{note}" if open_row.remarks else note
         asset.current_holder_id = None
     asset.status = target
     if payload.remarks:
-        stamp = f"[{date.today():%d-%m-%Y}] {target.replace('_', ' ').title()}: {payload.remarks}"
+        stamp = f"[{today_ist():%d-%m-%Y}] {target.replace('_', ' ').title()}: {payload.remarks}"
         asset.remarks = f"{asset.remarks}\n{stamp}" if asset.remarks else stamp
     db.commit()
     db.expire_all()

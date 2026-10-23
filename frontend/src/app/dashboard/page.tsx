@@ -215,9 +215,8 @@ const UPCOMING_APPS = ['production', 'maintenance', 'electrical', 'hydraulic', '
 
 const HrIcon = <IdentificationCard size={20} />
 
-// Shown to every logged-in user (like the sidebar's "HR & Admin" link):
-// My HR — leave, attendance, travel, claims, assets — is self-service. The
-// HR-management tabs inside are gated on the `hr` app.
+// Shown to users with the `hr` app (like the sidebar's "HR & Admin" link and
+// the HR layout guard). HR-management tabs inside are gated per tab in HrNav.
 const hrModule = {
   title: 'HR & Administration',
   description: 'My HR self-service, approvals, employees, lifecycle, leave, attendance, assets, visitors, travel & claims.',
@@ -231,8 +230,8 @@ const hrModule = {
   tagColor: '#be185d',
 }
 
-// Admin-only — shown regardless of `assigned_apps` (like the sidebar's
-// "Organization" link), not filtered through the modules[] app-access check.
+// Not an app — shown regardless of `assigned_apps` to admins and anyone who
+// can view one of its tabs (same rule as the sidebar's "Organization" link).
 const adminModule = {
   title: 'Organization',
   description: 'Branch and department masters, plus user roles and permissions.',
@@ -269,12 +268,20 @@ export default function DashboardPage() {
     day: 'numeric',
   })
 
-  const byApp = (app: string) => modules.find((m) => m.app === app && user?.apps?.includes(app))
+  const byApp = (app: string) => {
+    // Sales without the sales app but with Products: the card opens the product master (as in the sidebar).
+    if (app === 'sales' && !user?.apps?.includes('sales') && user?.apps?.includes('products')) {
+      const sales = modules.find((m) => m.app === 'sales')
+      return sales && { ...sales, href: '/dashboard/products' }
+    }
+    return modules.find((m) => m.app === app && user?.apps?.includes(app))
+  }
+  const canSeeOrganization = user?.role === 'admin' || !!user?.permissions?.some((p) => p.startsWith('organization:') && p.endsWith(':view'))
   // Same split and order as the sidebar: live modules first, then the
   // planned roll-out under its own "Upcoming" heading.
   const liveModules = [
     ...LIVE_APPS.map(byApp),
-    ...(user?.role === 'admin' ? [adminModule] : []),
+    ...(canSeeOrganization ? [adminModule] : []),
   ].filter((m) => !!m)
   const upcomingModules = UPCOMING_APPS
     .map((app) => (app === 'hr' ? (user?.apps?.includes('hr') ? hrModule : undefined) : byApp(app)))

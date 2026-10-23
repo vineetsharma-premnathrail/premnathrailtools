@@ -115,7 +115,7 @@ export default function InspectionCallDetailPage() {
         <Pill text={STATUS_LABELS[call.status] || call.status} hex={STATUS_HEX[call.status]} />
         {call.op_number && (
           <OrderProjectChip opNumber={call.op_number} elementNo={call.element_no} label={call.element_label}
-            onClick={can('sales', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/sales/order-projects', call, 'order_project_id')) : undefined} />
+            onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', call, 'order_project_id')) : undefined} />
         )}
         {back}
       </PageHeader>

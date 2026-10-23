@@ -707,7 +707,7 @@ def test_code_of_a_deleted_workstation_gets_a_clear_409(client, s):
 def test_every_production_area_needs_the_production_app(client, db, path):
     outsider = make_user(db, f"crm{abs(hash(path)) % 10000}@premnathrail.com", apps=("crm", "store"))
     resp = client.get(f"{API}{path}", headers=auth(outsider))
-    assert resp.status_code == 403 and "'production' module required" in resp.json()["detail"]
+    assert resp.status_code == 403 and "You can't open the Production" in resp.json()["detail"]
 
 
 def test_unauthenticated_requests_are_rejected(client):
@@ -730,7 +730,7 @@ def test_shop_floor_actions_need_shop_floor_edit(client, db, s):
     viewer = make_user(db, "floor.viewer@premnathrail.com", grants=["production:shop_floor:view", "production:work_orders:view"])
     hv = auth(viewer)
     log = client.post(f"{API}/time-logs", json={"work_order_id": wo["id"], "operation_id": wo["operations"][0]["id"], "log_date": TODAY, "hours": 1}, headers=hv)
-    assert log.status_code == 403 and "'edit' permission on Production › Shop Floor" in log.json()["detail"]
+    assert log.status_code == 403 and "'Edit' permission on Production › Shop Floor" in log.json()["detail"]
     start = client.post(f"{API}/work-orders/{wo['id']}/operations/{wo['operations'][0]['id']}/start", headers=hv)
     assert start.status_code == 403
 
@@ -742,7 +742,7 @@ def test_shop_floor_actions_need_shop_floor_edit(client, db, s):
     issue = client.post(f"{API}/work-orders/{wo['id']}/issue-materials", json={"lines": [{"item_id": s["rod"].id, "quantity": 1}]}, headers=ho)
     assert issue.status_code == 403 and "Work Orders" in issue.json()["detail"]
     delete = client.delete(f"{API}/time-logs/{ok.json()['id']}", headers=ho)
-    assert delete.status_code == 403 and "'delete' permission" in delete.json()["detail"]
+    assert delete.status_code == 403 and "'Delete' permission" in delete.json()["detail"]
 
 
 def test_work_order_approve_action_gates_release_cancel_complete(client, db, s):

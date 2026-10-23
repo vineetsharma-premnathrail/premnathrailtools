@@ -399,3 +399,21 @@ def test_checklist_owner_without_hr_app_can_close_own_task(client, db, leaver_wo
     assert tasks.status_code == 200, tasks.text
     r = client.patch(f"{LC}/items/{ev['items'][0]['id']}", json={"status": "done"}, headers=hdr(it_admin))
     assert r.status_code == 200, r.text
+
+
+def test_subject_cannot_edit_cancel_or_trim_own_event(client, db, masters):
+    """Security fix: an HR user can't change a lifecycle event about themselves
+    (withdraw their own exit, edit their own promotion, drop checklist lines)."""
+    m = masters
+    colleague = make_user(db, "hr.colleague@premnathrail.com")
+    make_profile(db, colleague, designation_id=m["d1"].id, grade_id=m["g1"].id)
+    ev = create_event(client, m["hr"], event_type="promotion", user_id=colleague.id,
+                      to_designation_id=m["d2"].id, to_grade_id=m["g2"].id)
+    r = client.patch(f"{LC}/events/{ev['id']}", json={"to_grade_id": m["g2"].id}, headers=hdr(colleague))
+    assert r.status_code == 403 and "about you" in r.json()["detail"]
+    r = client.post(f"{LC}/events/{ev['id']}/cancel", json={"reason": "mine"}, headers=hdr(colleague))
+    assert r.status_code == 403
+    r = client.post(f"{LC}/events/{ev['id']}/items", json={"category": "hr", "title": "x"}, headers=hdr(colleague))
+    assert r.status_code == 403
+    r = client.post(f"{LC}/events/{ev['id']}/cancel", json={"reason": "raised by mistake"}, headers=hdr(m["hr"]))
+    assert r.status_code == 200, r.text

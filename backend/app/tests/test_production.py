@@ -294,7 +294,7 @@ def test_permission_matrix_actions_are_enforced(client, db, setup):
     db.commit()
     assert client.get(f"{API}/work-orders", headers=auth(viewer)).status_code == 200
     denied = client.post(f"{API}/work-orders", json={"bom_id": setup["bom"]["id"], "quantity_planned": 1}, headers=auth(viewer))
-    assert denied.status_code == 403 and "'create' permission on Production › Work Orders" in denied.json()["detail"]
+    assert denied.status_code == 403 and "'Create' permission on Production › Work Orders" in denied.json()["detail"]
     # Users never configured in the matrix keep full access (opt-in).
     assert client.post(f"{API}/work-orders", json={"bom_id": setup["bom"]["id"], "quantity_planned": 1}, headers=setup["h"]).status_code == 200
 

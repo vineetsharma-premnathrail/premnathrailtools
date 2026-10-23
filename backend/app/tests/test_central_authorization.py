@@ -1,5 +1,6 @@
 """Central authorization: approval engine, delegation, escalation, data scope,
 security settings."""
+from app.core.permission_words import place
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -100,7 +101,7 @@ def test_permission_required_and_admin_stand_in(db, team):
     r = engine.submit(db, KEY, entity_id=5, requester=team["req"], title="NCR 5", amount=10)
     with pytest.raises(HTTPException) as e:
         engine.decide(db, r.id, team["head"], "approve")
-    assert "quality:ncr:approve" in e.value.detail
+    assert place("quality:ncr:approve").split(" › ")[-1] in e.value.detail
     admin = _user(db, "ca.admin@premnathrail.com", role="admin")
     with pytest.raises(HTTPException):
         engine.decide(db, r.id, admin, "approve")  # stand-in needs a reason

@@ -15,6 +15,7 @@ import { FormSheet, SheetSection, SheetIcon, SHEET, sheetBtn } from '@/component
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import PromptDialog from '@/components/erp/PromptDialog'
+import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useCan } from '@/lib/permissions'
 
@@ -171,7 +172,7 @@ export default function StoreSerialsPage() {
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {detail.history.map((h: any) => (
                       <tr key={h.id}>
-                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{h.event_date}</td>
+                        <td style={{ ...td, whiteSpace: 'nowrap' }}>{formatDate(h.event_date)}</td>
                         <td style={td}>{String(h.event).replace(/_/g, ' ')}</td>
                         <td style={td}><Badge status={h.to_status} label={h.to_status_label} /></td>
                         <td style={td}>{h.location_name || '—'}{h.bin_code ? ` · ${h.bin_code}` : ''}</td>

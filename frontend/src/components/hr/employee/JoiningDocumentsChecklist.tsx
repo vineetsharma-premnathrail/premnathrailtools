@@ -11,6 +11,7 @@ import PromptDialog from '@/components/erp/PromptDialog'
 import DateField from '@/components/erp/DateField'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { useCan } from '@/lib/permissions'
+import { todayIso } from '@/components/hr/admin/adminUi'
 import { extractErrorMessages } from '@/lib/validation'
 import { ErrorBanner, StatusPill, linkActionStyle, dangerActionStyle, formatDate, VERIFICATION_HEX } from '@/components/hr/masters/masterUi'
 
@@ -231,7 +232,7 @@ export default function JoiningDocumentsChecklist({ rules, ctx, owner, staged, o
                 <tbody>
                   {typed.map((d) => {
                     const st = d.verification_status || 'pending'
-                    const expired = d.expiry_date && d.expiry_date < new Date().toISOString().slice(0, 10)
+                    const expired = d.expiry_date && d.expiry_date < todayIso()
                     return (
                       <tr key={d.id} style={{ borderTop: `1px solid ${BORDER.normal}` }}>
                         <td style={{ padding: '8px 10px', fontWeight: 600, color: TEXT.heading }}>{rules.documents[d.checklist_key || ''] || d.document_type}</td>

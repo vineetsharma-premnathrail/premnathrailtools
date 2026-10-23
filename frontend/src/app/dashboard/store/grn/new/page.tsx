@@ -81,7 +81,7 @@ export default function NewStoreGrnPage() {
   const [poId, setPoId] = useState(initialPoId ? String(initialPoId) : '')
   useEffect(() => { if (initialPoId) setPoId(String(initialPoId)) }, [initialPoId])
   const [storeLocationId, setStoreLocationId] = useState('')
-  const [receivedDate, setReceivedDate] = useState(new Date().toISOString().slice(0, 10))
+  const [receivedDate, setReceivedDate] = useState(new Date().toLocaleDateString('en-CA')) // local date, not UTC
   const [remarks, setRemarks] = useState('')
   const [receivedQty, setReceivedQty] = useState<Record<number, string>>({})
   // Blind receipt: what the bill says, apart from what the store counted.

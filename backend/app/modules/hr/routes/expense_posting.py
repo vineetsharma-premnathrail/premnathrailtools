@@ -19,6 +19,7 @@ from app.core.permissions import require_tab_action
 from app.db.session import get_db
 from app.modules.hr.models.expense import HrExpenseClaim
 from app.modules.hr.services import expense_posting as svc
+from app.modules.hr.services.calendar import today_ist
 from app.modules.main.models.user import User
 from app.utils.notifications import notify_user
 
@@ -94,7 +95,7 @@ async def pay_claim(claim_id: int, payload: HrClaimPayPayload, db: Session = Dep
     c = _get(db, claim_id)
     try:
         pv = svc.pay(db, c, user, bank_account_id=payload.bank_account_id, payment_mode=payload.payment_mode,
-                     paid_on=payload.paid_on or date.today(), reference=payload.payment_reference)
+                     paid_on=payload.paid_on or today_ist(), reference=payload.payment_reference)
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"{c.claim_no} couldn't be paid: {e}")

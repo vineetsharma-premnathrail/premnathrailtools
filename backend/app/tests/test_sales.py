@@ -35,8 +35,9 @@ def hdr(user):
 
 
 def setup_people(db, partner=False):
-    maker = make_user(db, "maker@premnathrail.com")
-    head = make_user(db, "head@premnathrail.com")
+    # Order Projects sit in Project Management (2026-10-23) — maker and Sales Head follow the project there.
+    maker = make_user(db, "maker@premnathrail.com", apps=("sales", "projects"))
+    head = make_user(db, "head@premnathrail.com", apps=("sales", "projects"))
     director = make_user(db, "director@premnathrail.com", is_director=True)
     db.add(ModuleSetting(module_key="sales", key="sales_head_id", value=head.id))
     p = make_user(db, "partner@premnathrail.com", is_partner=True) if partner else None

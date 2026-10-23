@@ -5,7 +5,7 @@ const config: TourConfig = {
   pageTitle: 'Order Projects',
   steps: [
     {
-      target: 'sales-nav-folder',
+      target: 'pm-nav-folder',
       title: 'Order Projects tab',
       purpose: 'Every confirmed RRV order becomes an execution project (OP-YYYY-NNN). Design, Purchase, Store, Production, Quality and Dispatch work against the project and its vehicles, not against the sales order.',
       why: 'The sales order is the commercial contract; the project is the execution.',

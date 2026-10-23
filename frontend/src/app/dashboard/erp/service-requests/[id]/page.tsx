@@ -140,8 +140,8 @@ export default function ServiceRequestDetailPage() {
 
   if (isLoading || !isAuthorized) return null
   if (linkError) return (<div><ErpNav /><InvalidRecordLink message={linkError} listHref="/dashboard/erp/service-requests" listLabel="Back to service requests" /></div>)
-  if (loading) return <p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p>
-  if (error && !sr) return <p style={{ fontSize: 13, color: '#b91c1c' }}>{Array.isArray(error) ? error.join(' ') : error}</p>
+  if (loading) return <div><ErpNav /><p style={{ fontSize: 13, color: '#78716c' }}>Loading…</p></div>
+  if (error && !sr) return <div><ErpNav /><p style={{ fontSize: 13, color: '#b91c1c' }}>{Array.isArray(error) ? error.join(' ') : error}</p></div>
   if (!sr) return null
 
   return (

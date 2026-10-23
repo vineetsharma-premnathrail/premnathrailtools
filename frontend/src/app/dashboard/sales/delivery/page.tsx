@@ -18,6 +18,7 @@ export default function SalesDeliveryPage() {
   const router = useRouter()
   const [rows, setRows] = useState<SalesOrderSchedule[]>([])
   const [exts, setExts] = useState<SalesExtension[]>([])
+  const [extError, setExtError] = useState<string | string[]>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
   const [risk, setRisk] = useState('')
@@ -37,7 +38,9 @@ export default function SalesDeliveryPage() {
 
   useEffect(() => {
     if (!isAuthorized) return
-    salesApi.listAllExtensions({ status: 'requested' }).then(setExts).catch(() => setExts([]))
+    salesApi.listAllExtensions({ status: 'requested' })
+      .then((d) => { setExts(d); setExtError('') })
+      .catch((err) => { setExts([]); setExtError(extractErrorMessages(err, 'Could not load the open DP extension requests — reload the page; if it keeps failing, check your connection.')) })
   }, [isAuthorized])
 
   if (isLoading || !isAuthorized) return null
@@ -96,7 +99,8 @@ export default function SalesDeliveryPage() {
 
       <div data-tour="sales-delivery-extensions" style={sectionStyle}>
         <h2 style={h2Style}>DP extensions waiting for the customer</h2>
-        {exts.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>None open. Request an extension from the order&apos;s Delivery Schedule tab.</p> : (
+        <ErrorBanner error={extError} />
+        {extError ? null : exts.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>None open. Request an extension from the order&apos;s Delivery Schedule tab.</p> : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>{['Order', 'Customer', 'Vehicles', 'Requested date', 'Reason'].map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr></thead>
             <tbody>{exts.map((e) => (

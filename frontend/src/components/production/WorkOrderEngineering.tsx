@@ -85,7 +85,7 @@ export function WorkOrderLinks({ wo }: { wo: ProductionWorkOrder }) {
         <div>
           <p className="info-row-label" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: TEXT.muted, margin: '0 0 4px' }}>Order Project</p>
           <OrderProjectChip opNumber={wo.order_project_number} elementNo={wo.order_project_element_no} label={wo.order_project_element_label}
-            onClick={can('sales', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/sales/order-projects', wo, 'order_project_id')) : undefined} />
+            onClick={can('projects', 'order_projects', 'view') ? () => router.push(recordPath('/dashboard/projects/order-projects', wo, 'order_project_id')) : undefined} />
         </div>
       )}
       {wo.sales_order_label && <InfoRow label="Sales Order" value={wo.sales_order_label} />}

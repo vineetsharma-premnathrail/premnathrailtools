@@ -11,6 +11,7 @@ import { primaryBtnStyle } from '@/components/shared/ui'
 import { FormSheet, SheetSection, SheetIcon, Optional, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 import StoreNav from '@/components/store/StoreNav'
 import MessageDialog from '@/components/erp/MessageDialog'
+import { formatDate } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
 
@@ -150,7 +151,7 @@ export default function PhysicalCountListPage() {
               <tr key={c.id} onClick={() => router.push(recordPath('/dashboard/store/cycle-count', c))} style={{ cursor: 'pointer' }}>
                 <td style={{ padding: '8px 10px', fontSize: 13, fontWeight: 700 }}>{c.count_number}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13 }}>{c.location_name}</td>
-                <td style={{ padding: '8px 10px', fontSize: 13 }}>{c.count_date}</td>
+                <td style={{ padding: '8px 10px', fontSize: 13 }}>{formatDate(c.count_date)}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13 }}>{c.scope || '—'}</td>
                 <td style={{ padding: '8px 10px', fontSize: 13 }}>{c.lines_counted}/{c.lines_total} counted</td>
                 <td style={{ padding: '8px 10px' }}>

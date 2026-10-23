@@ -62,8 +62,8 @@ def ensure_quotation_prices(user: User) -> None:
     someone who may see quotation prices."""
     if not sees_quotation_prices(user):
         raise HTTPException(status_code=403, detail=(
-            "The quotation document shows its prices, and you don't have CRM › Inquiries & Tenders › Prices & margins "
-            "(crm:inquiries_tenders.prices:view). Ask an admin to add it to one of your roles (Organization › Role & Permissions)."))
+            "The quotation document shows its prices, and you don't have CRM › Inquiries & Tenders › Prices & margins. "
+            "Ask an admin to add it to one of your roles (Organization › Role & Permissions)."))
 
 
 def _user_label(db: Session, user_id: int | None) -> str:
