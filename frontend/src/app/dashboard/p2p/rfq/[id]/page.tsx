@@ -341,8 +341,6 @@ export default function RfqDetailPage() {
               <span style={{ fontSize: 11.5, fontWeight: 600, padding: '4px 10px', borderRadius: 9999, background: `${PO_STAGE_HEX(PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || '')}1a`, color: PO_STAGE_HEX(PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || '') }}>
                 {PO_WORKFLOW_STAGE_LABELS[rfq.p2p_status] || rfq.p2p_status}
               </span>
-              {/* PO creation, pricing and approval now live under Purchase Orders. */}
-              {isPurchaseDesk && <button type="button" data-tour="rfq-detail-open-po" onClick={() => router.push(recordHref('/dashboard/p2p/purchase-orders/new', rfq, 'id', undefined, 'rfq'))} style={ghostBtn}>Open in Purchase Orders →</button>}
             </div>
           </div>
 
@@ -354,7 +352,7 @@ export default function RfqDetailPage() {
               {hasInvites ? (
                 <>
                   <p style={{ fontSize: 13, color: TEXT.secondary, margin: '0 0 14px' }}>
-                    Next: record each vendor&apos;s emailed quote line by line — the comparison ranks L1/L2/L3 — then award the lines and create the PO(s) there.
+                    Next: record each vendor&apos;s emailed quote and award the lines on the comparison, then send them to Purchase Orders — the PO(s) are created there.
                   </p>
                   {isPurchaseDesk && seeComparison
                     ? <button type="button" data-tour="rfq-detail-record-quotes-btn" onClick={() => router.push(comparisonHref)} style={primaryBtn}>Record quotes &amp; compare →</button>
@@ -388,7 +386,7 @@ export default function RfqDetailPage() {
                   </div>
                 )}
                 <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>
-                  PO created. Enter the prices and save it on the Purchase Orders page — saving sends it for approval. Use “Open in Purchase Orders →”.
+                  PO created. Enter the prices and save it on the Purchase Orders page — saving sends it for approval. Open it from Purchase Orders › Create PO.
                 </p>
               </>
             )

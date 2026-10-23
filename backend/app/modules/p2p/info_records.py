@@ -97,16 +97,16 @@ def ensure_source_allowed(db: Session, vendor_id: int | None, store_item_ids, on
         label = f"{item.item_code} {item.item_name}" if item else f"item #{item_id}"
         mine = next((e for e in entries if e.vendor_id == vendor_id), None)
         if mine is not None and mine.is_blocked:
-            why = f"{who} is blocked on its source list"
+            why = f"{who} is blocked in its approved-vendor list"
         elif mine is not None:
             why = f"{who}'s source-list entry is not valid on {on.strftime('%d-%m-%Y')}"
         else:
-            why = f"{who} is not on its source list"
+            why = f"{who} is not in its approved-vendor list"
         allowed = [db.get(Vendor, e.vendor_id) for e in entries if not e.is_blocked and _valid_on(e, on)]
         names = ", ".join(v.name for v in allowed if v) or "none valid today"
         raise HTTPException(status_code=409, detail=(
             f"{label} can't be ordered from {who}: {why}. Approved sources: {names}. "
-            "Order from an approved source, or ask Procurement to add the vendor in Procurement › Info Records › Source list."))
+            "Order from an approved source, or ask Procurement to add the vendor in Procurement › Item Rates › Approved vendors."))
 
 
 def released_po_lines_query(db: Session):

@@ -8,12 +8,7 @@ const config: TourConfig = {
       target: 'sales-nav-folder',
       title: 'Order Projects tab',
       purpose: 'Every confirmed RRV order becomes an execution project (OP-YYYY-NNN). Design, Purchase, Store, Production, Quality and Dispatch work against the project and its vehicles, not against the sales order.',
-      why: 'The sales order is the commercial contract; the project is the execution — like a project in SAP PS.',
-    },
-    {
-      target: 'sales-op-backfill',
-      title: 'Create projects for confirmed orders',
-      purpose: 'Admins only: creates projects for orders confirmed before Order Projects existed. Orders that already have one are left alone.',
+      why: 'The sales order is the commercial contract; the project is the execution.',
     },
     {
       target: 'sales-op-filters',

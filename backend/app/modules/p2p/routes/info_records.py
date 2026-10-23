@@ -108,7 +108,7 @@ def create_info_record(payload: InfoRecordPayload, db: Session = Depends(get_db)
     clash = db.query(VendorCatalogItem).filter(VendorCatalogItem.vendor_id == v.id, VendorCatalogItem.store_item_id == item.id,
                                                VendorCatalogItem.is_active.is_(True)).first()
     if clash is not None:
-        raise HTTPException(status_code=409, detail=f"{v.name} already has an info record for {item.item_code} {item.item_name} — edit that one.")
+        raise HTTPException(status_code=409, detail=f"{v.name} already has a saved rate for {item.item_code} {item.item_name} — edit that one.")
     c = VendorCatalogItem(vendor_id=v.id, store_item_id=item.id, item_name=item.item_name,
                           part_code=item.part_number or item.manufacturer_part_number, unit=item.uom, currency="INR", is_active=True)
     for f in ("unit_price", "lead_time_days", "min_order_qty", "valid_from", "valid_to", "make", "remarks"):
@@ -116,7 +116,7 @@ def create_info_record(payload: InfoRecordPayload, db: Session = Depends(get_db)
             setattr(c, f, getattr(payload, f))
     db.add(c)
     db.flush()
-    _audit(db, c.id, "created", user, f"{user.name or user.email} created the info record {v.name} / {item.item_code} at {c.unit_price}.")
+    _audit(db, c.id, "created", user, f"{user.name or user.email} created the item rate {v.name} / {item.item_code} at {c.unit_price}.")
     db.commit()
     return _row(c, v, item)
 
@@ -126,11 +126,11 @@ def update_info_record(record_id: int, payload: InfoRecordPayload, db: Session =
     ensure_feature_action(user, "p2p", "vendors", "info_records", "edit")
     c = db.get(VendorCatalogItem, record_id)
     if c is None:
-        raise HTTPException(status_code=404, detail="Info record not found — refresh the page.")
+        raise HTTPException(status_code=404, detail="That item rate no longer exists — refresh the page.")
     if "store_item_id" in payload.model_fields_set and payload.store_item_id != c.store_item_id:
-        raise HTTPException(status_code=422, detail="An info record's item can't be changed here — use Link for an unlinked line, or create a new record.")
+        raise HTTPException(status_code=422, detail="A saved rate's item can't be changed here — use Link for an unlinked line, or create a new record.")
     if "vendor_id" in payload.model_fields_set and payload.vendor_id != c.vendor_id:
-        raise HTTPException(status_code=422, detail="An info record's vendor can't be changed — create a record for the other vendor instead.")
+        raise HTTPException(status_code=422, detail="A saved rate's vendor can't be changed — create a record for the other vendor instead.")
     changed = []
     for f in ("unit_price", "lead_time_days", "min_order_qty", "valid_from", "valid_to", "make", "remarks", "is_active"):
         if f in payload.model_fields_set and getattr(payload, f) != getattr(c, f):
@@ -138,7 +138,7 @@ def update_info_record(record_id: int, payload: InfoRecordPayload, db: Session =
             setattr(c, f, getattr(payload, f))
     _validity(c.valid_from, c.valid_to)
     if changed:
-        _audit(db, c.id, "updated", user, f"{user.name or user.email} changed info record #{c.id}: " + "; ".join(changed))
+        _audit(db, c.id, "updated", user, f"{user.name or user.email} changed item rate #{c.id}: " + "; ".join(changed))
     db.commit()
     return _row(c, db.get(Vendor, c.vendor_id), db.get(StoreItem, c.store_item_id) if c.store_item_id else None)
 
@@ -158,7 +158,7 @@ def link_info_record(record_id: int, payload: InfoRecordLinkPayload, db: Session
                                                VendorCatalogItem.is_active.is_(True), VendorCatalogItem.id != c.id).first()
     if clash is not None and c.is_active:
         raise HTTPException(status_code=409, detail=(
-            f"This vendor already has an info record for {item.item_code} {item.item_name} (#{clash.id}). "
+            f"This vendor already has a saved rate for {item.item_code} {item.item_name} (#{clash.id}). "
             "Deactivate one of them first, so the PO price comes from exactly one record."))
     c.store_item_id = item.id
     _audit(db, c.id, "linked", user, f"{user.name or user.email} linked catalog line '{c.item_name}' to {item.item_code} {item.item_name}.")
@@ -238,13 +238,13 @@ def add_source(payload: SourceListPayload, db: Session = Depends(get_db), user: 
     v = _vendor(db, payload.vendor_id)
     _validity(payload.valid_from, payload.valid_to)
     if db.query(P2PSourceListEntry).filter(P2PSourceListEntry.store_item_id == item.id, P2PSourceListEntry.vendor_id == v.id).first():
-        raise HTTPException(status_code=409, detail=f"{v.name} is already on the source list of {item.item_code} — edit that entry.")
+        raise HTTPException(status_code=409, detail=f"{v.name} is already an approved vendor for {item.item_code} — edit that entry.")
     e = P2PSourceListEntry(store_item_id=item.id, vendor_id=v.id, valid_from=payload.valid_from, valid_to=payload.valid_to,
                            is_fixed=bool(payload.is_fixed), is_blocked=bool(payload.is_blocked), remarks=payload.remarks, created_by_id=user.id)
     db.add(e)
     db.flush()
     _clear_other_fixed(db, e)
-    _audit(db, e.id, "source_added", user, f"{user.name or user.email} added {v.name} to the source list of {item.item_code} {item.item_name}.")
+    _audit(db, e.id, "source_added", user, f"{user.name or user.email} added {v.name} to the approved vendors of {item.item_code} {item.item_name}.")
     db.commit()
     return svc.source_vendors(db, item.id)
 
@@ -274,7 +274,7 @@ def delete_source(entry_id: int, db: Session = Depends(get_db), user: User = Dep
     ensure_can_delete(user, e, "p2p", "vendors", "source-list entry")
     ensure_feature_action(user, "p2p", "vendors", "info_records", "delete")
     item_id = e.store_item_id
-    _audit(db, e.id, "source_removed", user, f"{user.name or user.email} removed vendor #{e.vendor_id} from the source list of item #{item_id}.")
+    _audit(db, e.id, "source_removed", user, f"{user.name or user.email} removed vendor #{e.vendor_id} from the approved vendors of item #{item_id}.")
     db.delete(e)
     db.commit()
     return svc.source_vendors(db, item_id)

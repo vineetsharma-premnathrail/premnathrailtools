@@ -37,7 +37,7 @@ const th: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontSi
 const block: React.CSSProperties = { padding: '20px 24px', borderTop: `1px solid ${SHEET.LINE}` }
 
 // Where a line's price came from (ME21N): awarded quote, vendor + item info record, or typed.
-const PRICE_SOURCE_LABELS: Record<string, string> = { quotation: 'from awarded quote', info_record: 'from info record', manual: 'typed' }
+const PRICE_SOURCE_LABELS: Record<string, string> = { quotation: 'from awarded quote', info_record: 'from Item Rates', manual: 'typed' }
 type PoLine = P2PPurchaseOrder['items'][number] & { price_source?: string | null; delivery_date?: string | null }
 
 export default function CreatePurchaseOrderPage() {
@@ -294,7 +294,7 @@ export default function CreatePurchaseOrderPage() {
                     </tbody>
                   </table>
                 </div>
-                {editable && <p style={sheetHint}>Unit price <Req /> on every line. Prices are proposed from the awarded quote or the vendor + item info record.</p>}
+                {editable && <p style={sheetHint}>Unit price <Req /> on every line. Prices are proposed from the awarded quote or the vendor&apos;s rate in Item Rates.</p>}
               </SheetSection>
             </div>
           )}

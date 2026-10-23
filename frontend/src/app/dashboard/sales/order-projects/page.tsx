@@ -10,26 +10,19 @@ import { extractErrorMessages } from '@/lib/validation'
 import { formatDate } from '@/lib/format'
 import SalesNav from '@/components/sales/SalesNav'
 import { inputStyle, thStyle, tdStyle, Pill, ErrorBanner, PageHeader } from '@/components/sales/SalesUi'
-import ConfirmDialog from '@/components/erp/ConfirmDialog'
-import { secondaryBtnStyle } from '@/components/shared/ui'
 import { recordPath } from '@/lib/recordRef'
 import { useCan } from '@/lib/permissions'
 import { OP_STATUS_LABELS, OP_STATUS_HEX } from '@/components/sales/OrderProjectTable'
 
 export default function OrderProjectsPage() {
-  const { isAuthorized, isLoading, user } = useRequireApp('sales')
+  const { isAuthorized, isLoading } = useRequireApp('sales')
   const { can } = useCan()
   const router = useRouter()
   const [projects, setProjects] = useState<OrderProject[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | string[]>('')
-  const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
-  const [reload, setReload] = useState(0)
-  const [confirmBackfill, setConfirmBackfill] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const isAdmin = !!user && (user.role === 'admin' || !!(user as { is_azure_admin?: boolean }).is_azure_admin)
   const canView = can('sales', 'order_projects', 'view')
 
   useEffect(() => {
@@ -45,36 +38,16 @@ export default function OrderProjectsPage() {
         .finally(() => { if (!ignore) setLoading(false) })
     }, 250)
     return () => { ignore = true; clearTimeout(t) }
-  }, [isAuthorized, canView, status, search, reload])
-
-  const runBackfill = async () => {
-    setConfirmBackfill(false)
-    setBusy(true)
-    setNotice('')
-    try {
-      const r = await orderProjectsApi.backfill()
-      setNotice(r.created ? `Created ${r.created} project(s): ${r.op_numbers.join(', ')}.` : 'Every confirmed RRV order already has its project — nothing to create.')
-      setReload((n) => n + 1)
-    } catch (err) {
-      setError(extractErrorMessages(err, 'Could not create the projects.'))
-    } finally { setBusy(false) }
-  }
+  }, [isAuthorized, canView, status, search])
 
   if (isLoading || !isAuthorized) return null
 
   return (
     <div>
       <SalesNav />
-      <PageHeader title="Order Projects" subtitle="One execution project per confirmed RRV order — every vehicle and spares lot the departments work against, up to delivery.">
-        {isAdmin && (
-          <button data-tour="sales-op-backfill" style={secondaryBtnStyle} disabled={busy} onClick={() => setConfirmBackfill(true)}>
-            {busy ? 'Creating…' : 'Create projects for confirmed orders'}
-          </button>
-        )}
-      </PageHeader>
+      <PageHeader title="Order Projects" subtitle="One execution project per confirmed RRV order — every vehicle and spares lot the departments work against, up to delivery." />
       {!canView && <ErrorBanner error="You don't have 'view' permission on Sales › Order Projects. Ask an admin to grant it in Organization › Role & Permissions." />}
       <ErrorBanner error={error} />
-      {notice && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#15803d', fontSize: 13 }}>{notice}</div>}
 
       <div data-tour="sales-op-filters" style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input style={{ ...inputStyle, flex: '1 1 240px', minWidth: 200, maxWidth: 380 }} placeholder="Search OP no., SO no., customer, PO no.…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -117,16 +90,6 @@ export default function OrderProjectsPage() {
           </tbody>
         </table>
       </div>
-
-      <ConfirmDialog
-        open={confirmBackfill}
-        title="Create projects for confirmed orders?"
-        message="Every confirmed sales order (not cancelled or closed) that has an RRV line but no order project yet gets one now — with one element per vehicle and one lot per spares line. Orders that already have a project are left as they are."
-        confirmLabel="Create projects"
-        danger={false}
-        onConfirm={runBackfill}
-        onCancel={() => setConfirmBackfill(false)}
-      />
     </div>
   )
 }

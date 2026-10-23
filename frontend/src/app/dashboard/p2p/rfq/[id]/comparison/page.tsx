@@ -4,14 +4,14 @@
 // 1. Record each vendor's quote line by line (price, discount, GST, delivery days, make) plus freight / packing.
 // 2. Comparison grid — landed unit cost per line (excl. GST), L1 per line and overall.
 // 3. Award each line to a vendor (reason when not L1).
-// 4. Create one draft PO per awarded vendor (plant / ship-to), then price-check and send each for approval.
+// 4. Send the awarded lines to Purchase Orders › Create PO — one draft PO per awarded vendor is created there.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useRequireApp } from '@/hooks/useAuth'
 import { useCan } from '@/lib/permissions'
-import { organizationApi, p2pApi, rfqApi, storeApi, vendorsApi } from '@/lib/api'
-import { Comparison, LineQuotation, RfqInvites, RfqQuoteFile, SplitProposal, mmQuotationsApi, rfqInvitesApi } from '@/lib/mmPurchasingApi'
+import { p2pApi, rfqApi, vendorsApi } from '@/lib/api'
+import { Comparison, LineQuotation, RfqInvites, RfqQuoteFile, mmQuotationsApi, rfqInvitesApi } from '@/lib/mmPurchasingApi'
 import { openAttachmentBlob } from '@/hooks/useAttachmentBlobUrl'
 import { P2PRequest, RFQ } from '@/types'
 import { TEXT, GLASS, SHADOWS, BORDER } from '@/lib/theme'
@@ -19,9 +19,8 @@ import { inputStyle, primaryBtnStyle, secondaryBtnStyle } from '@/components/sha
 import P2PNav from '@/components/p2p/P2PNav'
 import SearchableSelect from '@/components/erp/SearchableSelect'
 import DateField from '@/components/erp/DateField'
-import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import { extractErrorMessages } from '@/lib/validation'
-import { recordHref, recordPath, useRecordId } from '@/lib/recordRef'
+import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -68,7 +67,6 @@ export default function QuotationComparisonPage() {
   const [editing, setEditing] = useState<LineQuotation | 'new' | null>(null)
   const [picks, setPicks] = useState<Record<number, string>>({})
   const [reasons, setReasons] = useState<Record<number, string>>({})
-  const [showSplit, setShowSplit] = useState(false)
   // Emailed RFQs: who was invited, the vendor's quotation files per recorded quote.
   const [invites, setInvites] = useState<RfqInvites | null>(null)
   const [quoteFiles, setQuoteFiles] = useState<Record<number, RfqQuoteFile[]>>({})
@@ -126,6 +124,10 @@ export default function QuotationComparisonPage() {
   const canCreatePo = can('p2p', 'purchase_orders', 'create')
   const canAttachQuoteFile = canEdit && (canFeature('p2p', 'rfq', 'vendor_quotes', 'edit') || canFeature('p2p', 'rfq', 'vendor_quotes', 'create'))
   const inviteList = invites?.invites || []
+  // Saved awards (from the server) vs the award picks on screen — the PO request is the saved awards.
+  const savedAward = (l: Comparison['lines'][number]) => String(l.quotes.find((x) => x?.is_awarded)?.vendor_quotation_item_id ?? '')
+  const awardedLines = cmp ? cmp.lines.filter((l) => savedAward(l)).length : 0
+  const awardsUnsaved = !!cmp && cmp.lines.some((l) => (picks[l.pr_item_id] || '') !== savedAward(l))
   const invitedQuoted = inviteList.filter((i) => i.quote_status === 'quoted').length
   const stillWaiting = inviteList.filter((i) => i.quote_status !== 'quoted')
 
@@ -178,7 +180,7 @@ export default function QuotationComparisonPage() {
         <div>
           <p style={{ fontSize: 12, fontWeight: 600, color: '#FF7A45', margin: '0 0 4px' }}>{pr?.p2p_number}{rfq ? ` · ${rfq.rfq_number}` : ''}</p>
           <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Quotations &amp; Comparison</h1>
-          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>Price every line per vendor, compare landed cost, award each line, then create one PO per vendor.</p>
+          <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0' }}>Price every line per vendor, compare landed cost, award each line, then send the awards to Purchase Orders.</p>
         </div>
         <button type="button" style={secondaryBtnStyle} onClick={() => rfq && router.push(recordPath('/dashboard/p2p/rfq', rfq))}>← Back</button>
       </div>
@@ -300,10 +302,21 @@ export default function QuotationComparisonPage() {
           </div>
 
           <div style={card}>
-            <h2 style={h2}>3. Purchase orders by vendor</h2>
-            <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>Awarded lines become one draft PO per vendor, priced from the awarded quote (or the vendor + item info record), with per-line delivery dates.</p>
-            {canCreatePo ? <button type="button" style={primaryBtnStyle} onClick={() => setShowSplit(true)}>Create POs by vendor</button>
-              : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Creating POs needs Create access on Procurement › Purchase Orders.</p>}
+            <h2 style={h2}>3. Send to Purchase Orders</h2>
+            {awardedLines === 0 ? (
+              <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>Award the lines (L1 is pre-selected) and save — then send them to Purchase Orders.</p>
+            ) : (
+              <>
+                <p style={{ fontSize: 12.5, color: TEXT.muted, margin: '0 0 10px' }}>
+                  <b style={{ color: TEXT.heading }}>{awardedLines} line(s) awarded.</b> Awarded lines go to Purchase Orders › Create PO, where the PO for each vendor is created, priced and sent for approval.
+                </p>
+                {awardsUnsaved && <p style={{ fontSize: 12.5, color: '#b45309', margin: '0 0 10px' }}>You have changed the award picks — click Save awards first, so the saved awards are what goes to Purchase Orders.</p>}
+                {canCreatePo
+                  ? <button type="button" data-tour="rfq-cmp-send-to-po" disabled={awardsUnsaved || busy} style={{ ...primaryBtnStyle, opacity: awardsUnsaved || busy ? 0.6 : 1 }}
+                      onClick={() => router.push('/dashboard/p2p/purchase-orders?view=create')}>Send to Purchase Orders →</button>
+                  : <p style={{ fontSize: 12.5, color: TEXT.muted, margin: 0 }}>The purchase team creates the PO(s) in Purchase Orders › Create PO — opening it needs Create access on Procurement › Purchase Orders.</p>}
+              </>
+            )}
           </div>
         </>
       )}
@@ -311,10 +324,6 @@ export default function QuotationComparisonPage() {
       {editing && rfq && pr && <QuoteDialog rfq={rfq} pr={pr} quote={editing === 'new' ? null : editing} presetVendorId={editing === 'new' ? presetVendorId : ''}
         onClose={() => setEditing(null)}
         onSaved={(warning) => { setEditing(null); load().then(() => { if (warning) setError(warning) }) }} />}
-      {showSplit && rfq && <SplitDialog rfq={rfq} onClose={() => setShowSplit(false)} onDone={(poRow) => {
-        setShowSplit(false)
-        router.push(recordHref('/dashboard/p2p/purchase-orders/new', rfq, 'id', { po: poRow ? (poRow as { id_ref?: string }).id_ref : undefined }, 'rfq'))
-      }} />}
     </div>
   )
 }
@@ -427,97 +436,6 @@ function QuoteDialog({ rfq, pr, quote, presetVendorId, onClose, onSaved }: {
           <p style={sheetHint}>Attach the quotation the vendor emailed back{quote ? ' (added to the files already on this quote)' : ''} — it is kept with the quote as proof of the rates.</p>
         </SheetSection>
       </div>
-    </FormSheet>
-  )
-}
-
-function SplitDialog({ rfq, onClose, onDone }: { rfq: RFQ; onClose: () => void; onDone: (firstPo: unknown) => void }) {
-  const [prop, setProp] = useState<SplitProposal | null>(null)
-  const [plants, setPlants] = useState<Opt[]>([])
-  const [locations, setLocations] = useState<Opt[]>([])
-  const [plant, setPlant] = useState('')
-  const [shipTo, setShipTo] = useState('')
-  const [dates, setDates] = useState<Record<string, string>>({})
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [confirm, setConfirm] = useState(false)
-  const close = () => { if (!busy) onClose() }
-  useEscapeKey(true, close)
-
-  useEffect(() => {
-    mmQuotationsApi.splitProposal(rfq.id).then((p) => {
-      setProp(p)
-      setDates(Object.fromEntries(p.groups.flatMap((g) => g.lines.map((l) => [`${g.vendor_id}:${l.pr_item_id}`, l.delivery_date || '']))))
-    }).catch((err) => setError(extractErrorMessages(err, 'Could not build the PO split.').join(' ')))
-    organizationApi.listBranches().then((bs: { id: number; name: string }[]) => setPlants(bs.map((b) => ({ value: String(b.id), label: b.name })))).catch(() => setPlants([]))
-    storeApi.listLocations().then((ls: { id: number; name: string; code: string }[]) => setLocations(ls.map((l) => ({ value: String(l.id), label: `${l.name} (${l.code})` })))).catch(() => setLocations([]))
-  }, [rfq.id])
-
-  const payload = useMemo(() => ({
-    plant_branch_id: plant ? Number(plant) : null, ship_to_location_id: shipTo ? Number(shipTo) : null,
-    pos: (prop?.groups || []).map((g) => ({
-      vendor_id: g.vendor_id, vendor_quotation_id: g.vendor_quotation_id, delivery_terms: g.delivery_terms,
-      lines: g.lines.map((l) => ({ pr_item_id: l.pr_item_id, vendor_quotation_item_id: l.vendor_quotation_item_id, quantity: l.quantity,
-        delivery_date: dates[`${g.vendor_id}:${l.pr_item_id}`] || null })),
-    })),
-  }), [prop, plant, shipTo, dates])
-
-  const create = async () => {
-    setConfirm(false); setBusy(true); setError('')
-    try { const pos = await mmQuotationsApi.createSplitPos(rfq.id, payload); onDone((pos as unknown[])[0]) } catch (err) {
-      setError(extractErrorMessages(err, 'Could not create the POs.').join(' ')); setBusy(false)
-    }
-  }
-
-  return (
-    <FormSheet icon="cart" title="Create POs by vendor" subtitle={`${rfq.rfq_number} · awarded lines become one draft PO per vendor — you then check each and send it for approval.`}
-      onClose={close} busy={busy}
-      footer={<>
-        <button type="button" onClick={close} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
-        <button type="button" onClick={() => setConfirm(true)} disabled={busy || !prop?.groups.length} style={sheetBtn('primary', SHEET.BLUE, busy || !prop?.groups.length)}>
-          <SheetIcon name="plus" size={16} />{busy ? 'Creating…' : `Create ${prop?.groups.length || 0} PO draft(s)`}
-        </button>
-      </>}>
-      <div style={{ padding: '20px 24px' }}>
-        {error && <div style={errBox}>{error}</div>}
-        <SheetSection icon="building" title="Receiving">
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: '1 1 220px', maxWidth: 300 }}><label style={sheetLabel}>Receiving plant</label><SearchableSelect value={plant} onChange={setPlant} options={plants} placeholder="Pick the plant…" /></div>
-            <div style={{ flex: '1 1 220px', maxWidth: 300 }}><label style={sheetLabel}>Ship-to store</label><SearchableSelect value={shipTo} onChange={setShipTo} options={locations} placeholder="Pick the store…" /></div>
-          </div>
-        </SheetSection>
-        <SheetSection icon="truck" title="POs by vendor">
-          {!prop && !error && <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>Loading…</p>}
-          {prop && prop.groups.length === 0 && <p style={{ fontSize: 13, color: SHEET.MUTED, margin: 0 }}>No awarded lines are left to order. Award lines on the comparison first.</p>}
-          {prop?.groups.map((g) => (
-            <div key={g.vendor_id} style={{ border: `1px solid ${SHEET.LINE}`, borderRadius: 12, padding: 12, marginBottom: 10 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: SHEET.INK, marginBottom: 6 }}>{g.vendor_name}</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr>{['Item', 'Qty', 'Rate', 'GST %', 'Delivery date'].map((h) => <th key={h} style={{ ...th, position: 'static' }}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {g.lines.map((l) => (
-                    <tr key={l.pr_item_id}>
-                      <td style={td}>{l.item_name}</td>
-                      <td style={td}>{l.quantity} {l.unit || ''}</td>
-                      <td style={td}>{money(l.unit_price)}</td>
-                      <td style={td}>{l.tax_rate ?? '—'}</td>
-                      <td style={{ ...td, width: 170 }}><DateField value={dates[`${g.vendor_id}:${l.pr_item_id}`] || ''} onChange={(v) => setDates((s) => ({ ...s, [`${g.vendor_id}:${l.pr_item_id}`]: v }))} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-          {prop && prop.unawarded.length > 0 && (
-            <p style={{ fontSize: 12.5, color: '#b45309', margin: '6px 0 0' }}>Not awarded yet (stay open for a later PO): {prop.unawarded.map((u) => `${u.item_name} (${u.quantity})`).join(', ')}</p>
-          )}
-          {prop && prop.existing_pos.length > 0 && (
-            <p style={sheetHint}>Existing POs on {prop.p2p_number}: {prop.existing_pos.map((p) => `${p.po_number} (${p.vendor_name}, ${p.status})`).join(', ')}</p>
-          )}
-        </SheetSection>
-      </div>
-      <ConfirmDialog open={confirm} title="Create the PO drafts?" message={`One draft PO per vendor (${prop?.groups.map((g) => g.vendor_name).join(', ')}). You then check each and send it for approval.`}
-        onConfirm={create} onCancel={() => setConfirm(false)} />
     </FormSheet>
   )
 }

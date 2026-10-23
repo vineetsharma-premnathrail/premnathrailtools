@@ -37,7 +37,7 @@ const steps: TourStep[] = [
     target: 'rfq-detail-record-quotes-btn',
     title: 'Record quotes & compare',
     purpose: 'The next step on an emailed RFQ: record each vendor’s reply line by line (rate, GST, delivery, validity, payment terms, freight) with their PDF attached.',
-    after: 'The comparison ranks L1/L2/L3 automatically; award the lines there and create one PO per vendor.',
+    after: 'The comparison ranks L1/L2/L3 automatically; award the lines there and send them to Purchase Orders › Create PO, where one PO per awarded vendor is created.',
   },
   {
     target: 'rfq-detail-vendor-quotations',
@@ -50,11 +50,6 @@ const steps: TourStep[] = [
     purpose: 'The next step once the quotations are in: opens Purchase Orders with the vendor picker ready. L1 (lowest) is pre-selected; picking another quoted vendor needs a reason.',
     why: 'The PO is created in the application — its number is generated and its document is built on the company letterhead, so nothing is typed in or attached by hand.',
     after: 'The PO opens on the Purchase Orders page to price the lines and edit the Word document; saving it there sends it for approval. Nothing is sent for approval from the RFQ.',
-  },
-  {
-    target: 'rfq-detail-open-po',
-    title: 'Open in Purchase Orders',
-    purpose: 'Opens this requisition\'s PO on the Purchase Orders page, where the PO is priced and its Word document generated — saving the PO there sends it for approval.',
   },
   {
     target: 'rfq-detail-po-view-approval-btn',

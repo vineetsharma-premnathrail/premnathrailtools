@@ -121,6 +121,11 @@ def _to_response(db: Session, rfq: RFQ) -> RFQResponse:
         creator = db.query(User).filter(User.id == rfq.created_by_id).first()
         if creator:
             resp.created_by_name = creator.name or creator.email
+    from app.modules.p2p.models.rfq_invite import RFQVendorInvite
+    resp.invite_count = db.query(RFQVendorInvite).filter(RFQVendorInvite.rfq_id == rfq.id).count()
+    resp.awarded_line_count = sum(1 for vq in rfq.vendor_quotations for i in vq.items if i.is_awarded)
+    resp.awarded_vendors = [vq.vendor_name for vq in rfq.vendor_quotations if any(i.is_awarded for i in vq.items)]
+    resp.other_quoted_vendors = [vq.vendor_name for vq in rfq.vendor_quotations if vq.vendor_name not in resp.awarded_vendors]
     return resp
 
 

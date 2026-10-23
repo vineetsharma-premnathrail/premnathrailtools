@@ -20,7 +20,7 @@ const config: TourConfig = {
       purpose: 'Loads the stock already on the shelves when the ERP starts, or when a new store opens — the only way to put stock in without a document.',
       whatToEnter: 'Download the template, fill item code, store, quantity, rate (book value), the count-sheet reference and a remark per row, then upload.',
       after: 'Every valid row is posted as opening stock; if any row has a problem nothing is posted and each problem is listed with the reason.',
-      why: 'Like SAP movement 561 it is used once at go-live. After that, stock only moves through GRN, Issues, Returns, Transfers, Adjustments and Physical Count — there is no "add / remove stock by hand" screen.',
+      why: 'It is used once, at go-live. After that, stock only moves through GRN, Issues, Returns, Transfers, Adjustments and Physical Count — there is no "add / remove stock by hand" screen.',
     },
     {
       target: 'stock-filters',

@@ -260,7 +260,7 @@ def test_source_list_and_info_record_keyed_by_item(client, db, setup):
     r = client.post(f"{RFQS}/{s['rfq'].id}/split-pos", json={"pos": [
         {"vendor_id": s["v2"].id, "selection_reason": "No quotes recorded", "lines": [{"pr_item_id": s["line_a"]}]}]},
         headers=auth_header(buyer))
-    assert r.status_code == 409 and "source list" in r.json()["detail"]
+    assert r.status_code == 409 and "approved-vendor list" in r.json()["detail"]
     # V1 is allowed, and its price comes from the info record (no quote recorded).
     r = client.post(f"{RFQS}/{s['rfq'].id}/split-pos", json={"pos": [
         {"vendor_id": s["v1"].id, "lines": [{"pr_item_id": s["line_a"], "quantity": 6}]}]}, headers=auth_header(buyer))

@@ -25,7 +25,7 @@ def mails(monkeypatch):
     sent = []
 
     async def fake(sender, subject, html, to_email, to_name, extra_attachments=None, sender_name="", reply_to=None):
-        sent.append({"to": to_email, "subject": subject, "html": html, "reply_to": reply_to})
+        sent.append({"from": sender, "to": to_email, "subject": subject, "html": html, "reply_to": reply_to})
         return (False, "Graph error 550: mailbox unavailable") if to_email == "bounce@vendor.test" else (True, "")
 
     monkeypatch.setattr(settings, "SENDER_EMAIL", "erp@premnathrail.com")
@@ -75,7 +75,8 @@ def test_rfq_is_emailed_to_every_invited_vendor_and_quotes_rank_l1(client, db, r
     assert sorted(m["to"] for m in mails) == ["v1@vendor.test", "v2@vendor.test", "v3@vendor.test"]
     m = mails[0]
     assert "Request for Quotation" in m["subject"] and "Hydraulic hose RFQ" in m["html"] and "0.5% per week" in m["html"]
-    assert "Urgent for site" in m["html"] and m["reply_to"][0][0] == "rfqmail.buyer@premnathrail.com"
+    # Sent from the buyer's own mailbox, not the service mailbox.
+    assert "Urgent for site" in m["html"] and m["from"] == "rfqmail.buyer@premnathrail.com"
     db.refresh(s["pr"])
     assert s["pr"].status == "vendor_quotations"
 
@@ -92,6 +93,16 @@ def test_rfq_is_emailed_to_every_invited_vendor_and_quotes_rank_l1(client, db, r
     cmp = client.get(f"{RFQS}/{s['id']}/comparison", headers=_h(s)).json()
     l1 = next(c for c in cmp["lines"][0]["quotes"] if c["rank"] == "L1")
     assert l1["vendor_quotation_id"] == rows[s["vendors"][1].id]["vendor_quotation_id"]
+
+    got = client.get(f"{RFQS}/{s['id']}", headers=_h(s)).json()
+    assert got["invite_count"] == 3 and got["awarded_line_count"] == 0
+    l1_item = next(i["id"] for q in client.get(f"{RFQS}/{s['id']}/line-quotations", headers=_h(s)).json()
+                   if q["id"] == l1["vendor_quotation_id"] for i in q["items"])
+    r = client.post(f"{RFQS}/{s['id']}/awards", headers=_h(s),
+                    json={"awards": [{"pr_item_id": s["line"], "vendor_quotation_item_id": l1_item}]})
+    assert r.status_code == 200, r.text
+    got = client.get(f"{RFQS}/{s['id']}", headers=_h(s)).json()
+    assert got["awarded_line_count"] == 1 and got["awarded_vendors"] == ["Vendor 2"] and got["other_quoted_vendors"] == ["Vendor 1"]
 
     # Remind reaches only the vendor who hasn't quoted.
     mails.clear()

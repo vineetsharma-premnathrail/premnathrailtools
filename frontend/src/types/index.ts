@@ -1651,6 +1651,12 @@ export interface RFQ {
   /** Emailed RFQs: vendors must quote by this date (ISO); the note sent to them. */
   quote_due_date?: string | null
   invite_message?: string | null
+  /** Emailed RFQs: vendors invited (0 = old RFQ with L1–L4 attachments); PR lines awarded on the comparison. */
+  invite_count?: number
+  awarded_line_count?: number
+  /** Emailed RFQs: vendors holding at least one awarded line; other vendors who quoted. */
+  awarded_vendors?: string[]
+  other_quoted_vendors?: string[]
 
   created_by_id?: number
   created_by_name?: string

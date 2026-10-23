@@ -158,7 +158,7 @@ export default function ItemRatesPage() {
         <h1 style={{ fontSize: 24, fontWeight: 700, color: TEXT.heading, margin: 0 }}>Item Rates</h1>
         <p style={{ fontSize: 13, color: TEXT.muted, margin: '4px 0 0', maxWidth: 720 }}>
           Search an item to see who supplies it, at what rate, and what we last paid. Filled in automatically from approved POs and
-          vendor quotations. (SAP: info records, source list, price history.)
+          vendor quotations.
         </p>
       </div>
       {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}

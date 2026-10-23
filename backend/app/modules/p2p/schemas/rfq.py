@@ -132,3 +132,10 @@ class RFQResponse(BaseModel):
     p2p_number: str | None = None
     p2p_status: str | None = None
     created_by_name: str | None = None
+    # Emailed RFQs: vendors invited, and PR lines awarded on the comparison
+    # (awarded > 0 = ready for Purchase Orders › Create PO).
+    invite_count: int = 0
+    awarded_line_count: int = 0
+    # Vendors holding at least one awarded line, and the other vendors who quoted.
+    awarded_vendors: list[str] = Field(default_factory=list)
+    other_quoted_vendors: list[str] = Field(default_factory=list)

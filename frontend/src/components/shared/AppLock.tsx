@@ -26,7 +26,10 @@ export function requestAppLock(action: 'lock' | 'change') {
   window.dispatchEvent(new CustomEvent(APP_LOCK_EVENT, { detail: action }))
 }
 
-type Mode = 'hidden' | 'first' | 'unlock' | 'reset' | 'change'
+// 'checking' = opaque cover while the lock state isn't known yet (page open,
+// laptop woke up after the idle time) — the page must never show first and
+// lock after, however slow the status call is.
+type Mode = 'hidden' | 'checking' | 'first' | 'unlock' | 'reset' | 'change'
 const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel'] as const
 
 const label: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: TEXT.secondary, marginBottom: 6, display: 'block' }
@@ -52,7 +55,8 @@ export default function AppLock() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const [status, setStatus] = useState<AppLockStatus | null>(null)
-  const [mode, setMode] = useState<Mode>('hidden')
+  const [mode, setMode] = useState<Mode>('checking')
+  const [slow, setSlow] = useState(false)
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const [current, setCurrent] = useState('')
@@ -60,7 +64,7 @@ export default function AppLock() {
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const statusRef = useRef<AppLockStatus | null>(null)
-  const modeRef = useRef<Mode>('hidden')
+  const modeRef = useRef<Mode>('checking')
   // Locked on the very first check (a new sign-in): the page's own data
   // never loaded, so it reloads after unlock. A lock later in the session
   // keeps the page as it is (an unsaved form survives).
@@ -83,8 +87,19 @@ export default function AppLock() {
   }, [])
 
   const refresh = useCallback(async () => {
-    try { apply(await appLockApi.status()) } catch { /* signed out / offline — the 401 handler takes over */ }
+    try { apply(await appLockApi.status()) } catch {
+      // Signed out / offline — the 401 handler takes over. Don't trap the
+      // page behind the cover: the server still answers 423 while locked.
+      if (modeRef.current === 'checking') setMode('hidden')
+    }
   }, [apply])
+
+  // A very slow status answer: say so on the cover instead of a silent wait.
+  useEffect(() => {
+    if (mode !== 'checking') return
+    const t = window.setTimeout(() => setSlow(true), 6000)
+    return () => { window.clearTimeout(t); setSlow(false) }
+  }, [mode])
 
   // First check, then open on any 423 from the API.
   useEffect(() => {
@@ -109,7 +124,14 @@ export default function AppLock() {
       }
     }, 15_000)
     // Unlocked in another tab, or the laptop woke up: re-check when back.
-    const onVisible = () => { if (document.visibilityState === 'visible') refresh() }
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      // Idle past the limit (laptop slept, timers paused): cover the page now,
+      // not when the server answers.
+      const s = statusRef.current
+      if (s?.enabled && s.state === 'unlocked' && modeRef.current === 'hidden' && Date.now() - lastActivityAt() > s.idle_minutes * 60_000) setMode('checking')
+      refresh()
+    }
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, mark))
@@ -181,7 +203,26 @@ export default function AppLock() {
 
   if (mode === 'hidden' || typeof document === 'undefined') return null
 
-  const titles: Record<Exclude<Mode, 'hidden'>, string> = {
+  if (mode === 'checking') {
+    return createPortal(
+      <div style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 16,
+        background: 'linear-gradient(135deg, #fff7ed 0%, #fde7d6 50%, #f5ede6 100%)' }}>
+        <div style={{ width: 42, height: 42, borderRadius: 12, background: '#FF6A2A1a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Lock size={20} color="#FF6A2A" />
+        </div>
+        <div style={{ fontSize: 13.5, fontWeight: 600, color: TEXT.secondary }}>Checking your session…</div>
+        {slow && (
+          <div style={{ fontSize: 12.5, color: TEXT.muted, textAlign: 'center', maxWidth: 360, lineHeight: 1.6 }}>
+            The server is taking long to answer. Wait a moment, or{' '}
+            <button type="button" onClick={() => { setSlow(false); refresh() }} style={linkBtn}>try again</button>.
+          </div>
+        )}
+      </div>,
+      document.body,
+    )
+  }
+
+  const titles: Record<Exclude<Mode, 'hidden' | 'checking'>, string> = {
     first: 'Set your app password',
     unlock: 'Portal locked',
     reset: 'Set a new app password',

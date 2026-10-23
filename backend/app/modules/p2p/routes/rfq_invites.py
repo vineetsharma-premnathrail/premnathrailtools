@@ -98,7 +98,9 @@ async def send_invites(db: Session, rfq: RFQ, invites: list[RFQVendorInvite], us
     """Email each invite (refreshing its address from the vendor master) and
     record the outcome on the row. Commits."""
     pr = db.get(P2PRequest, rfq.p2p_request_id)
-    buyer = db.get(User, rfq.created_by_id) if rfq.created_by_id else user
+    # Sent from the mailbox of whoever sends it now; the daily reminder job
+    # (no user) sends from the buyer who raised the RFQ.
+    buyer = user if user is not None else (db.get(User, rfq.created_by_id) if rfq.created_by_id else None)
     now = datetime.now(timezone.utc)
     for inv in invites:
         vendor = db.get(Vendor, inv.vendor_id)

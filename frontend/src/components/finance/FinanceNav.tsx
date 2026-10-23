@@ -25,7 +25,7 @@ const TABS = [
   { href: '/dashboard/finance/currencies', label: 'Currencies & FX', icon: 'percent', subtabKeys: ['currencies'] },
   { href: '/dashboard/finance/reports', label: 'Reports', icon: 'chart', subtabKeys: ['financial_reports', 'year_end_close'] },
   { href: '/dashboard/finance/controlling', label: 'Controlling', icon: 'percent', subtabKeys: ['co_planning', 'activity_rates', 'allocations', 'overhead'] },
-  { href: '/dashboard/finance/costing', label: 'Costing & CO-PA', icon: 'chart', subtabKeys: ['product_costing', 'profit_centers', 'profitability'] },
+  { href: '/dashboard/finance/costing', label: 'Costing & Profitability', icon: 'chart', subtabKeys: ['product_costing', 'profit_centers', 'profitability'] },
   { href: '/dashboard/finance/settings', label: 'Settings', icon: 'file', subtabKeys: ['settings'] },
 ] as const
 

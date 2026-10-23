@@ -305,7 +305,7 @@ MODULES: dict[str, dict] = {
         # CO product costing (CK11N/CK24: approve = release to standard price), profit centres (KE51/KE5Z), CO-PA (KE30).
         ("product_costing", "Product Costing (cost estimates)", _with(DOC, "approve"), "Controlling"),
         ("profit_centers", "Profit Centres", CRUD, "Controlling"),
-        ("profitability", "Profitability (CO-PA)", REPORT, "Controlling"),
+        ("profitability", "Profitability", REPORT, "Controlling"),
         # CO (Finance › Controlling). approve = lock a plan / post or reverse a run.
         ("co_planning", "Cost Centre Planning", _with(CRUD, "approve", "export", "import"), "Controlling"),
         ("activity_rates", "Activity Types & Rates", CRUD, "Controlling"),

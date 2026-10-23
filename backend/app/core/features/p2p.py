@@ -77,9 +77,9 @@ register_features(
     _feature("catalog", "Vendor catalog", "subtab",
              {"view": "view", "create": "edit", "edit": "edit", "delete": "edit", "import": "import", "export": "export"},
              "The items a vendor supplies: add, change, remove, import and export catalog lines."),
-    _feature("info_records", "Info records & source list", "subtab",
+    _feature("info_records", "Item rates & approved vendors", "subtab",
              {"view": "view", "create": "edit", "edit": "edit", "delete": "delete"},
-             "Purchasing info records (vendor × item price agreements) and the approved source list."),
+             "Saved vendor rates per item (rate contracts, last PO and quoted rates) and the approved-vendor list."),
     _feature("prices", "Prices & rates", "sensitive", {"view": "view"}, _PRICES_HINT),
 )
 

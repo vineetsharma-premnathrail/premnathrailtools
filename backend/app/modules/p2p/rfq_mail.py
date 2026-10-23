@@ -1,13 +1,13 @@
 """The RFQ email a vendor receives (2026-10-22): what we need, how much, by
 when to quote, our late delivery clause and exactly what to put in the reply,
-so the buyer can record it as a line quotation. Sent from the portal mailbox
-with Reply-To = the buyer, so the vendor's reply lands with the buyer."""
+so the buyer can record it as a line quotation. Sent FROM the buyer's own
+Microsoft 365 mailbox (never the shared service mailbox), so it sits in their
+Sent Items and the vendor's reply lands straight in their inbox."""
 from datetime import date
 from html import escape
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.modules.main.models.user import User
 from app.modules.p2p.models.p2p_request import P2PRequest
 from app.modules.p2p.models.rfq import RFQ
@@ -94,12 +94,16 @@ async def send_invite(db: Session, rfq: RFQ, pr: P2PRequest, invite: RFQVendorIn
     if not invite.email:
         return False, (f"{invite.vendor_name} has no email in the vendor master — add it under Procurement › Vendors, "
                        "then use Resend.")
-    if not settings.SENDER_EMAIL:
-        return False, "Email isn't configured on the server (SENDER_EMAIL is empty) — ask the portal administrator."
+    if buyer is None or not (buyer.email or "").strip():
+        return False, ("The RFQ is sent from the buyer's own mailbox, but this user has no email in the portal — "
+                       "add it under Organization › Users, then use Resend.")
     subject, html = build_rfq_email(rfq, pr, buyer, contact_name, reminder)
-    reply_to = [(buyer.email, buyer.name or buyer.email)] if buyer and buyer.email else None
-    return await _send_graph_mail(settings.SENDER_EMAIL, subject, html, invite.email, invite.vendor_name,
-                                  sender_name=f"{COMPANY} — Purchase", reply_to=reply_to)
+    ok, err = await _send_graph_mail(buyer.email, subject, html, invite.email, invite.vendor_name,
+                                     sender_name=buyer.name or buyer.email)
+    if not ok and ("403" in err or "ErrorAccessDenied" in err or "404" in err):
+        err = (f"Microsoft 365 didn't let the portal send from {buyer.email} ({err}). Ask IT to allow the portal app "
+               "to send mail as this mailbox (Graph Mail.Send for the user), then use Resend.")
+    return ok, err
 
 
 def quote_due_default(db: Session) -> date:
