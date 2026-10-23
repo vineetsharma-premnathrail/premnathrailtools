@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permission_registry import can_access_module, can_feature
+from app.core.permission_registry import can_access_module, can_feature, can_view_tab
 from app.core.permissions import require_app_access, require_feature_action, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
@@ -181,7 +181,9 @@ async def order_book(product_id: int, open_only: bool = False, db: Session = Dep
                      user: User = Depends(require_feature_action("sales", "products", "order_book", "view"))):
     """Sales order lines of this product (VA05 by material). Values are
     Sales data, so the user also needs the Sales module."""
-    if not can_access_module(user, "sales"):
+    # Sales › Products tabs are under Sales too, so "any Sales tab" isn't enough —
+    # the order values need Sales Orders itself.
+    if not can_view_tab(user, "sales", "orders"):
         raise HTTPException(status_code=403, detail="The order book shows Sales order values — you need access to the Sales "
                                                     "module (Sales › Sales Orders) to see it. Ask an admin to add it to your role.")
     from app.modules.sales.models.order import SALES_ORDER_OPEN_STATUSES, SalesOrder, SalesOrderLine

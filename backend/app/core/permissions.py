@@ -3,7 +3,7 @@ from fastapi import Depends, HTTPException
 from app.modules.main.models.user import User
 from app.modules.main.routes.auth import get_current_user
 from app.core.permission_registry import MODULES, can_perform, can_view_tab, is_admin_user
-from app.core.permission_words import action_word
+from app.core.permission_words import action_word, module_word
 
 class PermissionDenied(HTTPException):
     """403 that carries the permission id it was about, so the refused-request
@@ -18,7 +18,7 @@ GRANT_HINT = "Ask an admin to add it to one of your roles (Organization › Role
 
 
 def _module_label(module_key: str) -> str:
-    return MODULES.get(module_key, {}).get("label", module_key)
+    return module_word(module_key)
 
 
 def _tab_label(module_key: str, subtab_key: str) -> str:

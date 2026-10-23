@@ -29,9 +29,13 @@ def action_word(action: str | None) -> str:
     return ACTION_LABELS.get(action or "", humanize(action))
 
 
+# App keys that aren't Permission Matrix modules of their own.
+_APP_WORDS = {"products": "Sales › Products", "purchase": "Procurement › Purchase Desk"}
+
+
 def module_word(module_key: str | None) -> str:
     from app.core.permission_registry import MODULES
-    return (MODULES.get(module_key or "") or {}).get("label") or humanize(module_key)
+    return (MODULES.get(module_key or "") or {}).get("label") or _APP_WORDS.get(module_key or "") or humanize(module_key)
 
 
 def tab_words(module_key: str, tab: str) -> str:

@@ -676,6 +676,11 @@ def legacy_access(apps, erp_permissions, grants) -> tuple[list[str], list[str]]:
     keep: set[str] = set()
     standard: list[str] = []
     for mk in sorted(set(apps or [])):
+        if mk == "products":
+            # The retired Products module is Sales › Products / Applications /
+            # Product Mapping now (PRODUCT_TABS) — that's what its users keep.
+            keep |= {g for g in standard_module_grants("sales") if g.split(":")[1].split(".", 1)[0] in PRODUCT_TABS}
+            continue
         if mk not in MODULES or mk in NON_APP_MODULES:
             continue
         mine = {g for g in old if g.startswith(f"{mk}:") and is_valid_grant(g)}
