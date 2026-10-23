@@ -555,7 +555,12 @@ async def get_meta(db: Session = Depends(get_db), user: User = Depends(_requeste
     return {
         "categories": [{"code": k, "label": v} for k, v in P2P_CATEGORIES.items()],
         "requirement_types": list(P2P_REQUIREMENT_TYPES),
-        "purposes": [{"code": k, "label": v} for k, v in P2P_PURPOSES.items()],
+        # Each purpose with the categories it offers and the pre-filled
+        # category / requirement type (p2p/purpose.py PURPOSE_FORM).
+        "purposes": [{"code": k, "label": v, "categories": list(pr_purpose.PURPOSE_FORM[k]["categories"]),
+                      "default_category": pr_purpose.PURPOSE_FORM[k]["category"],
+                      "default_requirement_type": pr_purpose.PURPOSE_FORM[k]["requirement_type"]}
+                     for k, v in P2P_PURPOSES.items()],
         # Pre-picked on a department running-cost requisition (the requester's
         # department's one active cost centre; None when unmapped / ambiguous).
         "my_cost_center_id": default_cost_center_for_department(db, user.department),
@@ -668,7 +673,7 @@ def _default_label(pr: P2PRequest) -> None:
         pr.project_label = P2P_PURPOSES.get(pr.purpose)
 
 
-def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool) -> list[tuple]:
+def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool, check_category: bool = True) -> list[tuple]:
     """Check a create/edit payload and return its lines as (payload line,
     Item Master row). A draft needs only a valid category and, per line it
     keeps, a real item and quantity — lines with no item picked yet are
@@ -704,6 +709,10 @@ def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool)
 
     if not draft and payload.purpose:
         problems = pr_purpose.header_problems(payload.purpose, payload.account_assignment, payload.project_label)
+        # The category can't change once submitted (it is in the number), so
+        # only a new / draft requisition's category is held to its purpose.
+        if check_category:
+            problems += [p for p in [pr_purpose.category_problem(payload.purpose, payload.category_code)] if p]
         if problems:
             raise HTTPException(status_code=400, detail=" ".join(problems))
     elif not draft:
@@ -802,7 +811,7 @@ async def edit_p2p_request(
     if not draft:
         # Submitting a draft is raising it; anything else is a resubmission.
         _ensure_pr_action(user, "create" if pr.status == "draft" else "submit")
-    lines = _validate_pr_payload(db, payload, draft=draft)
+    lines = _validate_pr_payload(db, payload, draft=draft, check_category=pr.status == "draft")
 
     if payload.category_code != pr.category_code:
         # The category is part of the PR number; once approvers have seen the
@@ -1948,6 +1957,7 @@ def _check_draft_complete(pr: P2PRequest) -> None:
     missing = []
     if pr.purpose:
         problems = pr_purpose.header_problems(pr.purpose, pr.account_assignment, pr.project_label)
+        problems += [p for p in [pr_purpose.category_problem(pr.purpose, pr.category_code)] if p]
         if problems:
             raise HTTPException(status_code=400, detail=f"{pr.p2p_number} can't be submitted yet — {' '.join(problems)} Click Edit to complete the draft.")
     else:

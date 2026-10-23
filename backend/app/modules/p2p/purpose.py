@@ -3,9 +3,11 @@
 The PR form asks "what is this purchase for?" first; the answer decides what
 it must be charged to, so every rupee lands on a real cost object:
 
-  customer_order   Order Project or its sales order (lines: vehicle / lot)
-  machine_project  an existing machine project; the charge is optional
-                   (work order, internal order, sales order, order project)
+  customer_order   production of an ordered machine: its Order Project (a
+                   sales order is accepted too — its project is derived);
+                   lines name their vehicle / lot
+  machine_project  service of a delivered machine (ERP project); the charge
+                   is optional (work order, internal order, sales order, order project)
   development      an internal order (the development job and its budget)
   department       a cost centre — the requester's department by default
   capital          an internal order (the asset job and its budget)
@@ -13,7 +15,11 @@ it must be charged to, so every rupee lands on a real cost object:
 
 Overhead purposes (department / capital / development / stock) are not bought
 for a customer project, so every line is Inhouse. Requisitions raised before
-this (purpose NULL) keep the old existing/new project rules."""
+this (purpose NULL) keep the old existing/new project rules.
+
+The purpose also narrows the PR category (what is bought, which decides the
+buyer) to the ones that make sense for it, and pre-fills the category and
+requirement type where one answer is the usual one (PURPOSE_FORM)."""
 from __future__ import annotations
 
 from app.modules.p2p.models.p2p_request import P2P_PURPOSES
@@ -32,8 +38,38 @@ _ALLOWED: dict[str, tuple] = {
     "stock": (None,),
 }
 
+# Per purpose: categories offered (in this order), the pre-filled category
+# (None = the requester picks) and the pre-filled requirement type. 'Others'
+# is never offered — it has no buyer and says nothing in reports.
+PURPOSE_FORM: dict[str, dict] = {
+    "customer_order": {"categories": ("RAW", "PNH", "ELE", "HWC", "MKT", "JOB"),
+                       "category": None, "requirement_type": "Material"},
+    "machine_project": {"categories": ("PNH", "ELE", "HWC", "MKT", "JOB", "SRV"),
+                        "category": None, "requirement_type": "Material + Service"},
+    "development": {"categories": ("RAW", "PNH", "ELE", "HWC", "MKT", "JOB", "SRV"),
+                    "category": None, "requirement_type": "Material"},
+    "department": {"categories": ("ADM", "HWC", "MKT", "SRV", "ELE"),
+                   "category": "ADM", "requirement_type": "Material"},
+    "capital": {"categories": ("CAP", "ELE", "PNH", "SRV"),
+                "category": "CAP", "requirement_type": "Capital Equipment"},
+    "stock": {"categories": ("HWC", "RAW", "PNH", "ELE", "MKT"),
+              "category": "HWC", "requirement_type": "Material"},
+}
+
+
+def category_problem(purpose: str | None, category_code: str | None) -> str | None:
+    """Why `category_code` doesn't fit the purpose (None when it does)."""
+    form = PURPOSE_FORM.get(purpose or "")
+    if form is None or category_code in form["categories"]:
+        return None
+    from app.modules.p2p.models.p2p_request import P2P_CATEGORIES
+    ok = ", ".join(P2P_CATEGORIES[c] for c in form["categories"])
+    return (f"Category {P2P_CATEGORIES.get(category_code or '', category_code or 'none')} doesn't fit a "
+            f"{P2P_PURPOSES[purpose].lower()} requisition — pick one of: {ok}.")
+
+
 _NEED = {
-    "customer_order": "the order project (or its sales order) this material is bought for",
+    "customer_order": "the order project of the machine being built",
     "development": "the internal order of the development job — ask Finance to open one in Finance › Masters › Internal orders if it isn't in the list",
     "department": "the cost centre of the department that uses it",
     "capital": "the internal order of the asset purchase — ask Finance to open one in Finance › Masters › Internal orders if it isn't in the list",

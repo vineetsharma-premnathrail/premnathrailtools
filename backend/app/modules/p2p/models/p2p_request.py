@@ -67,6 +67,9 @@ P2P_CATEGORIES: dict[str, str] = {
     # 2026-10-23: office / running-cost buying (housekeeping, AMC, repairs).
     "SRV": "Services",
     "ADM": "Office & Admin",
+    # Asset / capital purchases (machines, computers) — numbered P2P-CAP-.
+    "CAP": "Capital Equipment",
+    # Kept for requisitions raised before Purpose; never offered on a new one.
     "OTH": "Others",
 }
 
@@ -101,8 +104,9 @@ def resolve_auto_buyer_id(db, category_code: str) -> int | None:
 
 # Purpose of a requisition (2026-10-23) — the first question on the PR form.
 # It decides what the purchase must be charged to (p2p/purpose.py):
-#   customer_order   Order Project / sales order; lines name their vehicle / lot
-#   machine_project  an existing machine (service / production) project
+#   customer_order   production of an ordered machine — its Order Project;
+#                    lines name their vehicle / lot
+#   machine_project  service / repair of a delivered machine (ERP project)
 #   development      new product development — an internal order
 #   department       department running cost (office, housekeeping, small
 #                    tools, AMC) — the department's cost centre
@@ -110,8 +114,8 @@ def resolve_auto_buyer_id(db, category_code: str) -> int | None:
 #   stock            store stock refill — charged when Store issues it
 # NULL on requisitions raised before it (they keep project_type rules).
 P2P_PURPOSES: dict[str, str] = {
-    "customer_order": "Customer order",
-    "machine_project": "Machine / service project",
+    "customer_order": "Production (customer order)",
+    "machine_project": "Service (delivered machine)",
     "development": "New development",
     "department": "Department running cost",
     "capital": "Asset / capital purchase",

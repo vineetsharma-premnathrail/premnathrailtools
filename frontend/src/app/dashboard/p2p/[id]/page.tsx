@@ -110,7 +110,7 @@ const dangerBtn: React.CSSProperties = {
 
 // Purpose of the requisition (backend P2P_PURPOSES), shown in the header.
 const PURPOSE_LABELS: Record<string, string> = {
-  customer_order: 'Customer order', machine_project: 'Machine / service project', development: 'New development',
+  customer_order: 'Production (customer order)', machine_project: 'Service (delivered machine)', development: 'New development',
   department: 'Department running cost', capital: 'Asset / capital purchase', stock: 'Store stock refill',
 }
 

@@ -23,10 +23,11 @@ const PRIORITIES = ['low', 'medium', 'high']
 // pre-picked when `required`); `inhouseOnly` = overhead buying, never for a
 // customer project, so the lines have no Project/Inhouse or vehicle choice.
 const PURPOSE_RULES: Record<string, { kinds: string[]; required: boolean; inhouseOnly: boolean; hint: string }> = {
-  customer_order: { kinds: ['order_project', 'sales_order'], required: true, inhouseOnly: false,
-    hint: 'Material for a confirmed customer machine. Each line names the vehicle / lot it is bought for.' },
+  // The sales order is not offered: its Order Project is what gets charged anyway.
+  customer_order: { kinds: ['order_project'], required: true, inhouseOnly: false,
+    hint: 'Material to build a machine a customer has ordered (not yet delivered). Each line names the vehicle / lot it is for.' },
   machine_project: { kinds: ['work_order', 'internal_order', 'sales_order', 'order_project'], required: false, inhouseOnly: false,
-    hint: 'Work on an existing machine (service, repair, production). Pick the machine project; Charged To is optional.' },
+    hint: 'Spares or work for a machine already delivered to the customer: service, repair, warranty. Pick the machine; Charged To is optional.' },
   development: { kinds: ['internal_order'], required: true, inhouseOnly: true,
     hint: "New product development (R&D). Charged to the development job's internal order, which holds its budget." },
   department: { kinds: ['cost_center'], required: true, inhouseOnly: true,
@@ -82,10 +83,13 @@ export default function NewP2PRequestPage() {
       return next
     })
   const [projects, setProjects] = useState<{ id: number; label: string }[]>([])
-  const [purposes, setPurposes] = useState<{ code: string; label: string }[]>([])
+  // Each purpose with the categories it offers and its pre-filled category /
+  // requirement type (backend p2p/purpose.py PURPOSE_FORM).
+  const [purposes, setPurposes] = useState<{ code: string; label: string; categories: string[]; default_category: string | null; default_requirement_type: string | null }[]>([])
   const [myCostCenterId, setMyCostCenterId] = useState<number | null>(null)
   const [purpose, setPurpose] = useState('')
   const rule = PURPOSE_RULES[purpose]
+  const purposeMeta = purposes.find((p) => p.code === purpose)
 
   const [projectId, setProjectId] = useState('')
   // Account assignment (SAP ME51N): what the purchase is charged to — a real link.
@@ -186,9 +190,12 @@ export default function NewP2PRequestPage() {
         setCategoryCode(pr.category_code)
         {
           const a = pr as unknown as Record<string, unknown>
-          const kind = (a.account_assignment as string) || ''
+          let kind = (a.account_assignment as string) || ''
+          let fk = ACCOUNT_ASSIGNMENTS.find((x) => x.value === kind)?.fk
+          // Production is charged to the Order Project only — an older PR
+          // charged to the sales order is shown as its Order Project.
+          if (kind === 'sales_order' && pr.order_project_id) { kind = 'order_project'; fk = 'order_project_id' }
           setAcctKind(kind)
-          const fk = ACCOUNT_ASSIGNMENTS.find((x) => x.value === kind)?.fk
           setAcctId(fk && a[fk] ? String(a[fk]) : '')
           // Requisitions from before the Purpose question: infer it where the
           // charge makes it clear, otherwise the requester picks it.
@@ -244,6 +251,14 @@ export default function NewP2PRequestPage() {
     if (r?.inhouseOnly) {
       setItems((prev) => prev.map((it) => ({ ...it, project_inhouse: 'Inhouse', order_project_id: null, order_project_element_id: null })))
     }
+    // Category / requirement type follow the purpose — a category that still
+    // fits is kept, otherwise the purpose's usual one (or blank) is put in.
+    // A submitted requisition's category is fixed (it is in the number).
+    const pm = purposes.find((p) => p.code === value)
+    if (pm && (!editing || editing.status === 'draft')) {
+      setCategoryCode((cur) => (pm.categories.includes(cur) ? cur : pm.default_category || ''))
+    }
+    if (pm?.default_requirement_type) setRequirementType(pm.default_requirement_type)
   }
 
   const updateItem = (idx: number, field: keyof P2PRequestLineItemInput, value: string | number | null) => {
@@ -445,7 +460,10 @@ export default function NewP2PRequestPage() {
                 <label style={labelStyle}>Purchase Requisition Category <Req /></label>
                 <select data-tour="pr-new-category" style={inputStyle} value={categoryCode} onChange={(e) => setCategoryCode(e.target.value)}>
                   <option value="">Select category…</option>
-                  {categories.map((c) => <option key={c.code} value={c.code}>{c.label} ({c.code})</option>)}
+                  {/* Only the categories that fit the purpose (the current one stays visible on an older requisition). */}
+                  {categories.filter((c) => !purposeMeta ? c.code !== 'OTH' : purposeMeta.categories.includes(c.code) || c.code === categoryCode)
+                    .sort((a, b) => (purposeMeta ? purposeMeta.categories.indexOf(a.code) - purposeMeta.categories.indexOf(b.code) : 0))
+                    .map((c) => <option key={c.code} value={c.code}>{c.label} ({c.code})</option>)}
                 </select>
               </div>
               <div style={{ flex: '1 1 180px', minWidth: 160 }}>
