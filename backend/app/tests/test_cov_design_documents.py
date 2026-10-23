@@ -2,6 +2,7 @@
 revisions, segregation (author != checker != approver) incl. team roles,
 Design-head-only release, the customer approval gate, viewer limits,
 Permission Matrix 403s and real error messages."""
+from app.core.permission_words import place
 from datetime import date, timedelta
 
 import pytest
@@ -320,7 +321,7 @@ def test_permission_matrix_gates_register_tabs(client, db, team):
     boms_only = make_user(db, "cov.matrix@premnathrail.com", grants=["design:boms:view"])
     h = auth(boms_only)
     r = client.get(f"{API}/documents", headers=h)
-    assert r.status_code == 403 and "design:documents" in r.json()["detail"]
+    assert r.status_code == 403 and place("design:documents:view") in r.json()["detail"]
     assert client.get(f"{API}/dashboard", headers=h).status_code == 403
     assert client.get(f"{API}/change-notices", headers=h).status_code == 403
     assert client.get(f"{API}/reports/summary", headers=h).status_code == 403

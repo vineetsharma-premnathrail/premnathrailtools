@@ -1,6 +1,7 @@
 """Coverage tests for Production BOM & routing: draft → active → obsolete
 lifecycle, version rules, standard cost, line validation, real error
 messages and Permission Matrix enforcement on the BOM tab."""
+from app.core.permission_words import place
 from datetime import date
 
 import pytest
@@ -303,7 +304,7 @@ def test_bom_endpoints_need_the_production_app(client, db, ctx):
     h = auth(outsider)
     assert client.get(f"{API}/boms", headers=h).status_code == 403
     resp = _create(client, {**ctx, "h": h})
-    assert resp.status_code == 403 and "production" in resp.json()["detail"]
+    assert resp.status_code == 403 and "Production" in resp.json()["detail"]
 
 
 def test_bom_tab_and_action_matrix(client, db, ctx):
@@ -311,7 +312,7 @@ def test_bom_tab_and_action_matrix(client, db, ctx):
 
     wo_only = make_user(db, "wo.only@premnathrail.com", grants=["production:work_orders:view"])
     denied = client.get(f"{API}/boms", headers=auth(wo_only))
-    assert denied.status_code == 403 and "production:bom" in denied.json()["detail"]
+    assert denied.status_code == 403 and place("production:bom:view") in denied.json()["detail"]
 
     viewer = make_user(db, "bom.viewer@premnathrail.com", grants=["production:bom:view"])
     hv = auth(viewer)

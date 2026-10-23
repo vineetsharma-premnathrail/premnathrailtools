@@ -3,6 +3,7 @@ reservation / issue / return / finished-goods receipt, shop-floor time logs
 (good / scrap qty), planning net requirements, workstation capacity and
 master data, Permission Matrix on the floor tabs, and the real error
 messages returned on invalid transitions."""
+from app.core.permission_words import place
 from datetime import date, timedelta
 from itertools import count
 
@@ -720,7 +721,7 @@ def test_unauthenticated_requests_are_rejected(client):
 def test_tab_restriction_on_list_views(client, db, s, path, tab):
     wo_only = make_user(db, f"only.wo.{tab}@premnathrail.com", grants=["production:work_orders:view"])
     resp = client.get(f"{API}{path}", headers=auth(wo_only))
-    assert resp.status_code == 403 and f"production:{tab}" in resp.json()["detail"]
+    assert resp.status_code == 403 and place(f"production:{tab}:view") in resp.json()["detail"]
     allowed = make_user(db, f"has.{tab}@premnathrail.com", grants=[f"production:{tab}:view"])
     assert client.get(f"{API}{path}", headers=auth(allowed)).status_code == 200
 
@@ -753,7 +754,7 @@ def test_work_order_approve_action_gates_release_cancel_complete(client, db, s):
     for action, body in (("cancel", {"reason": "x"}), ("complete", None), ("close", None)):
         resp = client.post(f"{API}/work-orders/{wo['id']}/{action}", json=body, headers=he)
         # Feature gate (core/features/production.py): Work Orders › Complete, close & cancel.
-        assert resp.status_code == 403 and "production:work_orders.lifecycle:" in resp.json()["detail"], action
+        assert resp.status_code == 403 and place("production:work_orders.lifecycle:view") in resp.json()["detail"], action
     # Release goes through the central approval engine: without Approve the
     # editor submits it, the order stays a draft until an approver decides.
     resp = client.post(f"{API}/work-orders/{wo['id']}/release", headers=he)

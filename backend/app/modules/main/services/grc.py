@@ -34,7 +34,10 @@ def _table_ready(session) -> bool:
     if _TABLE_READY is None:
         import sqlalchemy as sa
         try:
-            _TABLE_READY = sa.inspect(session.get_bind()).has_table("access_validities")
+            # On the session's own connection: inspecting the engine checks out a
+            # second connection whose reset on return rolls back a shared one
+            # (single-connection pools), losing the caller's unsaved changes.
+            _TABLE_READY = sa.inspect(session.connection()).has_table("access_validities")
         except Exception:  # noqa: BLE001
             return False
     return _TABLE_READY
