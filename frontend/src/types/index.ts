@@ -1434,6 +1434,8 @@ export interface P2PRequest {
   project_label?: string
   /** 'existing' | 'new' — picks the manager-role approval sets. Absent on PRs from before the matrix (legacy heads flow). */
   project_type?: 'existing' | 'new'
+  /** What the purchase is for (2026-10-23): customer_order | machine_project | development | department | capital | stock. Null on older PRs. */
+  purpose?: string | null
   /** 'engine' = central approval engine (Organization › Approval Workflows, 2026-10-08);
    * 'settings' / null = older items finishing on the old Procurement approval path. */
   approval_scheme?: 'engine' | 'settings' | null

@@ -174,7 +174,8 @@ def default_cost_center_for_department(db: Session, department_name: str | None)
 
 def default_purchase_assignment(db: Session, lines: list[dict], po) -> None:
     """Purchase-invoice line defaults (before apply_account_assignment): the
-    PO's internal order, then the PR department's cost centre."""
+    PO's internal order, then the PR's own cost centre (a department
+    running-cost requisition), then the PR department's cost centre."""
     if po is None:
         return
     pr_dept_cc = None
@@ -182,7 +183,7 @@ def default_purchase_assignment(db: Session, lines: list[dict], po) -> None:
         from app.modules.p2p.models.p2p_request import P2PRequest
 
         pr = db.query(P2PRequest).filter(P2PRequest.id == po.p2p_request_id).first()
-        pr_dept_cc = default_cost_center_for_department(db, pr.department if pr else None)
+        pr_dept_cc = (getattr(pr, "cost_center_id", None) if pr else None) or             default_cost_center_for_department(db, pr.department if pr else None)
     for line in lines:
         if not line.get("internal_order_id") and getattr(po, "internal_order_id", None):
             line["internal_order_id"] = po.internal_order_id

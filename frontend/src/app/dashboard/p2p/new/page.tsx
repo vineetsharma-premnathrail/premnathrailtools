@@ -12,12 +12,30 @@ import { FormPage, SheetColumns, SheetSection, SheetIcon, FileDropZone, Optional
 import P2PNav from '@/components/p2p/P2PNav'
 import MessageDialog from '@/components/erp/MessageDialog'
 import { extractErrorMessages } from '@/lib/validation'
-import { P2PProjectType } from '@/lib/p2pRoles'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import OrderProjectPicker from '@/components/sales/OrderProjectPicker'
 
 const PRIORITIES = ['low', 'medium', 'high']
+
+// Purpose of the requisition (2026-10-23, backend p2p/purpose.py): decides what
+// it must be charged to. `kinds` = Charged To options offered (first one is
+// pre-picked when `required`); `inhouseOnly` = overhead buying, never for a
+// customer project, so the lines have no Project/Inhouse or vehicle choice.
+const PURPOSE_RULES: Record<string, { kinds: string[]; required: boolean; inhouseOnly: boolean; hint: string }> = {
+  customer_order: { kinds: ['order_project', 'sales_order'], required: true, inhouseOnly: false,
+    hint: 'Material for a confirmed customer machine. Each line names the vehicle / lot it is bought for.' },
+  machine_project: { kinds: ['work_order', 'internal_order', 'sales_order', 'order_project'], required: false, inhouseOnly: false,
+    hint: 'Work on an existing machine (service, repair, production). Pick the machine project; Charged To is optional.' },
+  development: { kinds: ['internal_order'], required: true, inhouseOnly: true,
+    hint: "New product development (R&D). Charged to the development job's internal order, which holds its budget." },
+  department: { kinds: ['cost_center'], required: true, inhouseOnly: true,
+    hint: 'Day-to-day running cost of a department: cleaning material, stationery, small tools, office repairs, AMC, housekeeping.' },
+  capital: { kinds: ['internal_order'], required: true, inhouseOnly: true,
+    hint: "Something the company owns and uses for years (machine, laptop, AC, welding set). Charged to the asset's internal order." },
+  stock: { kinds: [], required: false, inhouseOnly: true,
+    hint: 'Common items Store keeps in stock (fasteners, oil, gloves). Nothing is charged now; the cost goes to whoever Store issues it to.' },
+}
 
 // A line is an Item Master item (store_item_id). Name, part code, UOM and
 // category come from the master — shown read-only here and copied onto the
@@ -64,17 +82,16 @@ export default function NewP2PRequestPage() {
       return next
     })
   const [projects, setProjects] = useState<{ id: number; label: string }[]>([])
-
-  // '' until the requester picks (existing vs new project). Approvers no longer
-  // depend on it — they come from Procurement → Settings (2026-10-07).
-  const [projectType, setProjectType] = useState<'' | P2PProjectType>('')
+  const [purposes, setPurposes] = useState<{ code: string; label: string }[]>([])
+  const [myCostCenterId, setMyCostCenterId] = useState<number | null>(null)
+  const [purpose, setPurpose] = useState('')
+  const rule = PURPOSE_RULES[purpose]
 
   const [projectId, setProjectId] = useState('')
   // Account assignment (SAP ME51N): what the purchase is charged to — a real link.
   const [acctKind, setAcctKind] = useState('')
   const [acctId, setAcctId] = useState('')
   const [acctOptions, setAcctOptions] = useState<{ id: number; label: string }[]>([])
-  const [newProjectName, setNewProjectName] = useState('')
   const [categoryCode, setCategoryCode] = useState('')
   const [requiredDate, setRequiredDate] = useState('')
   const [requirementType, setRequirementType] = useState('')
@@ -142,6 +159,8 @@ export default function NewP2PRequestPage() {
         const [meta, projectList] = await Promise.all([p2pApi.getMeta(), p2pApi.listProjects()])
         setCategories(meta.categories)
         setRequirementTypes(meta.requirement_types)
+        setPurposes(meta.purposes || [])
+        setMyCostCenterId(meta.my_cost_center_id ?? null)
         setProjects(projectList)
       } catch (err) {
         setError(extractErrorMessages(err, 'Failed to load form options.'))
@@ -162,14 +181,8 @@ export default function NewP2PRequestPage() {
           return
         }
         setEditing(pr)
-        const ptype = (pr.project_type || '') as '' | P2PProjectType
-        setProjectType(ptype)
-        if (ptype === 'existing') {
-          const match = projects.find((p) => p.label === pr.project_label)
-          setProjectId(match ? String(match.id) : '')
-        } else if (ptype === 'new') {
-          setNewProjectName(pr.project_label || '')
-        }
+        const match = projects.find((p) => p.label === pr.project_label)
+        setProjectId(match ? String(match.id) : '')
         setCategoryCode(pr.category_code)
         {
           const a = pr as unknown as Record<string, unknown>
@@ -177,6 +190,10 @@ export default function NewP2PRequestPage() {
           setAcctKind(kind)
           const fk = ACCOUNT_ASSIGNMENTS.find((x) => x.value === kind)?.fk
           setAcctId(fk && a[fk] ? String(a[fk]) : '')
+          // Requisitions from before the Purpose question: infer it where the
+          // charge makes it clear, otherwise the requester picks it.
+          setPurpose(pr.purpose || (kind === 'order_project' || kind === 'sales_order' ? 'customer_order'
+            : kind === 'cost_center' ? 'department' : match ? 'machine_project' : ''))
         }
         setRequiredDate(pr.required_date || '')
         setRequirementType(pr.requirement_type || '')
@@ -216,10 +233,17 @@ export default function NewP2PRequestPage() {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, store_item_id: m ? m.id : null } : it)))
   }
 
-  const pickProjectType = (value: '' | P2PProjectType) => {
-    setProjectType(value)
-    if (value === 'existing') setNewProjectName('')
-    if (value === 'new') setProjectId('')
+  // A new purpose resets the charge to what that purpose takes (the
+  // requester's own cost centre for a department running cost).
+  const pickPurpose = (value: string) => {
+    setPurpose(value)
+    const r = PURPOSE_RULES[value]
+    if (value !== 'machine_project') setProjectId('')
+    setAcctKind(r?.required ? r.kinds[0] : '')
+    setAcctId(value === 'department' && myCostCenterId ? String(myCostCenterId) : '')
+    if (r?.inhouseOnly) {
+      setItems((prev) => prev.map((it) => ({ ...it, project_inhouse: 'Inhouse', order_project_id: null, order_project_element_id: null })))
+    }
   }
 
   const updateItem = (idx: number, field: keyof P2PRequestLineItemInput, value: string | number | null) => {
@@ -244,9 +268,14 @@ export default function NewP2PRequestPage() {
       const bad = items.findIndex((it) => it.store_item_id && !(Number(it.quantity) > 0))
       if (bad >= 0) { setError(`Line ${bad + 1}: quantity must be more than 0.`); return }
     } else {
-    if (!projectType) { setError('Please choose whether this requisition is for an existing project or a new project.'); return }
-    if (projectType === 'existing' && !projectId) { setError('Please pick the existing project this requisition is for.'); return }
-    if (projectType === 'new' && !newProjectName.trim()) { setError('Please give the new project\'s name.'); return }
+    if (!rule) { setError('Choose the purpose of this requisition: what is it being bought for?'); return }
+    if (purpose === 'machine_project' && !projectId) { setError('Pick the machine project this requisition is for.'); return }
+    if (acctKind && !acctId) {
+      setError(acctKind === 'internal_order'
+        ? "Pick the internal order this is charged to. If it isn't in the list, ask Finance to open one in Finance › Masters › Internal orders."
+        : `Pick the ${ACCOUNT_ASSIGNMENTS.find((a) => a.value === acctKind)?.label.toLowerCase()} this requisition is charged to.`)
+      return
+    }
     if (!categoryCode) { setError('Please select a Purchase Requisition category.'); return }
     for (let i = 0; i < items.length; i++) {
       const m = items[i].store_item_id ? masterById.get(items[i].store_item_id!) : undefined
@@ -254,7 +283,7 @@ export default function NewP2PRequestPage() {
         setError(`Line ${i + 1}: pick the item from the Item Master. If it's a new item, add it first in Store › Item Master, then click "refresh items".`)
         return
       }
-      if (!['Project', 'Inhouse'].includes(items[i].project_inhouse || '')) {
+      if (!rule.inhouseOnly && !['Project', 'Inhouse'].includes(items[i].project_inhouse || '')) {
         setError(`Line ${i + 1} (${m.item_code} ${m.item_name}): choose Project or Inhouse.`)
         return
       }
@@ -273,10 +302,10 @@ export default function NewP2PRequestPage() {
     try {
       const payload = {
         save_as_draft: asDraft,
-        project_type: projectType,
-        project_label: projectType === 'existing'
-          ? projects.find((p) => p.id === Number(projectId))?.label
-          : newProjectName.trim(),
+        purpose: purpose || null,
+        // Only a machine project names a project; for the rest the server
+        // fills the label from what it is charged to (or the purpose).
+        project_label: purpose === 'machine_project' ? projects.find((p) => p.id === Number(projectId))?.label : null,
         category_code: categoryCode,
         account_assignment: acctKind || null,
         ...Object.fromEntries(ACCOUNT_ASSIGNMENTS.map((x) => [x.fk, x.value === acctKind && acctId ? Number(acctId) : null])),
@@ -288,7 +317,7 @@ export default function NewP2PRequestPage() {
           id: it.id || undefined,
           store_item_id: it.store_item_id,
           quantity: Number(it.quantity),
-          project_inhouse: it.project_inhouse,
+          project_inhouse: rule?.inhouseOnly ? 'Inhouse' : it.project_inhouse,
           ship_to: it.ship_to || undefined,
           order_project_element_id: it.order_project_element_id || null,
         })),
@@ -368,40 +397,36 @@ export default function NewP2PRequestPage() {
 
       <SheetColumns
         left={<>
-          <SheetSection icon="building" title="Project & Charging">
+          <SheetSection icon="building" title="Purpose & Charging">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-              <div data-tour="pr-new-project-type" style={{ flex: '0 1 180px', minWidth: 160 }}>
-                <label style={labelStyle}>Project Type <Req /></label>
-                <select style={inputStyle} value={projectType} onChange={(e) => pickProjectType(e.target.value as '' | P2PProjectType)}>
-                  <option value="">Select…</option>
-                  <option value="existing">Existing project</option>
-                  <option value="new">New project</option>
+              <div data-tour="pr-new-purpose" style={{ flex: '0 1 250px', minWidth: 220 }}>
+                <label style={labelStyle}>Purpose <Req /></label>
+                <select style={inputStyle} value={purpose} onChange={(e) => pickPurpose(e.target.value)}>
+                  <option value="">What is this being bought for?</option>
+                  {purposes.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
                 </select>
               </div>
-              {projectType !== 'new' && (
+              {purpose === 'machine_project' && (
                 <div data-tour="pr-new-project" style={{ flex: '1 1 220px', minWidth: 200 }}>
-                  <label style={labelStyle}>Project{projectType === 'existing' && <> <Req /></>}</label>
+                  <label style={labelStyle}>Machine Project <Req /></label>
                   <SearchableSelect
                     value={projectId}
                     onChange={setProjectId}
                     options={projects.map((p) => ({ value: String(p.id), label: p.label }))}
-                    placeholder="Search existing project…"
+                    placeholder="Search machine project…"
                   />
                 </div>
               )}
-              {projectType === 'new' && (
-                <div data-tour="pr-new-project" style={{ flex: '1 1 220px', minWidth: 200 }}>
-                  <label style={labelStyle}>New Project Name <Req /></label>
-                  <input style={inputStyle} value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="Name of the new project…" />
-                </div>
-              )}
             </div>
+            {rule && <p data-tour="pr-new-purpose-hint" style={sheetHint}>{rule.hint}</p>}
+            {rule && rule.kinds.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
-              <div style={{ flex: '0 1 190px', minWidth: 170 }}>
-                <label style={labelStyle}>Charged To</label>
-                <select style={inputStyle} value={acctKind} onChange={(e) => { setAcctKind(e.target.value); setAcctId('') }}>
-                  <option value="">Not assigned</option>
-                  {ACCOUNT_ASSIGNMENTS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+              <div data-tour="pr-new-charged-to" style={{ flex: '0 1 190px', minWidth: 170 }}>
+                <label style={labelStyle}>Charged To{rule.required && <> <Req /></>}</label>
+                <select style={inputStyle} value={acctKind} disabled={rule.kinds.length === 1 && rule.required}
+                  onChange={(e) => { setAcctKind(e.target.value); setAcctId('') }}>
+                  {!rule.required && <option value="">Not charged</option>}
+                  {ACCOUNT_ASSIGNMENTS.filter((a) => rule.kinds.includes(a.value)).map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
                 </select>
               </div>
               {acctKind && (
@@ -412,6 +437,7 @@ export default function NewP2PRequestPage() {
                 </div>
               )}
             </div>
+            )}
           </SheetSection>
           <SheetSection icon="list" title="Request Details">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -466,7 +492,9 @@ export default function NewP2PRequestPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1900 }}>
               <thead>
                 <tr>
-                  {['SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'Qty *', 'Project/Inhouse *', 'Order Project (vehicle / lot)', 'Category', 'Ship To', ''].map((h) => (
+                  {['SL', 'Item (from Item Master) *', 'Make', 'Part Code', 'UOM', 'Qty *',
+                    // Overhead purposes buy nothing for a customer project — no Project/Inhouse or vehicle columns.
+                    ...(rule?.inhouseOnly ? [] : ['Project/Inhouse *', 'Order Project (vehicle / lot)']), 'Category', 'Ship To', ''].map((h) => (
                     <th key={h} style={th}>{h}</th>
                   ))}
                 </tr>
@@ -521,6 +549,7 @@ export default function NewP2PRequestPage() {
                     <td style={{ padding: '6px 8px', minWidth: 70 }}>
                       <input data-tour="pr-new-item-qty" type="number" style={inputStyle} value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
                     </td>
+                    {!rule?.inhouseOnly && (<>
                     <td style={{ padding: '6px 8px', minWidth: 130 }}>
                       <select data-tour="pr-new-item-projinhouse" style={inputStyle} value={item.project_inhouse} onChange={(e) => {
                         const v = e.target.value
@@ -548,6 +577,7 @@ export default function NewP2PRequestPage() {
                         placeholder={item.project_inhouse === 'Inhouse' ? 'Not for a project (Inhouse)' : 'Pick vehicle / lot…'}
                       />
                     </td>
+                    </>)}
                     <td data-tour="pr-new-item-category" style={readCell}>{m?.category || '—'}</td>
                     <td style={{ padding: '6px 8px', minWidth: 140 }}>
                       <input data-tour="pr-new-item-shipto" style={inputStyle} value={item.ship_to} onChange={(e) => updateItem(idx, 'ship_to', e.target.value)} />

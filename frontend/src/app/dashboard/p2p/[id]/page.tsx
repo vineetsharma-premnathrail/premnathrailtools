@@ -108,6 +108,12 @@ const dangerBtn: React.CSSProperties = {
   border: '1px solid rgba(220,38,38,0.25)', background: 'rgba(220,38,38,0.06)', color: '#b91c1c', cursor: 'pointer',
 }
 
+// Purpose of the requisition (backend P2P_PURPOSES), shown in the header.
+const PURPOSE_LABELS: Record<string, string> = {
+  customer_order: 'Customer order', machine_project: 'Machine / service project', development: 'New development',
+  department: 'Department running cost', capital: 'Asset / capital purchase', stock: 'Store stock refill',
+}
+
 export default function MyP2PRequestDetailPage() {
   // Deliberately NOT useRequireApp('p2p'): PR approvers are picked from the
   // whole user directory and usually lack the p2p app — being named on the
@@ -476,7 +482,7 @@ export default function MyP2PRequestDetailPage() {
               {status.label}
             </span>
           </div>
-          <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{pr.category_label || pr.category_code} · {pr.project_label || 'No project specified'}</p>
+          <p style={{ fontSize: 13, color: TEXT.secondary, margin: 0 }}>{pr.category_label || pr.category_code}{pr.purpose && PURPOSE_LABELS[pr.purpose] ? ` · ${PURPOSE_LABELS[pr.purpose]}` : ''} · {pr.project_label || 'No project specified'}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button data-tour="pr-detail-back" onClick={() => router.push(backHref)} type="button" style={secondaryBtnStyle}>

@@ -64,6 +64,9 @@ P2P_CATEGORIES: dict[str, str] = {
     "ELE": "Electrical",
     "HWC": "Hardware & Consumables",
     "JOB": "Job Work",
+    # 2026-10-23: office / running-cost buying (housekeeping, AMC, repairs).
+    "SRV": "Services",
+    "ADM": "Office & Admin",
     "OTH": "Others",
 }
 
@@ -95,6 +98,25 @@ def resolve_auto_buyer_id(db, category_code: str) -> int | None:
     from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
     buyer = db.query(User).filter(User.email == email).first()
     return buyer.id if buyer else None
+
+# Purpose of a requisition (2026-10-23) — the first question on the PR form.
+# It decides what the purchase must be charged to (p2p/purpose.py):
+#   customer_order   Order Project / sales order; lines name their vehicle / lot
+#   machine_project  an existing machine (service / production) project
+#   development      new product development — an internal order
+#   department       department running cost (office, housekeeping, small
+#                    tools, AMC) — the department's cost centre
+#   capital          asset / capital purchase — an internal order
+#   stock            store stock refill — charged when Store issues it
+# NULL on requisitions raised before it (they keep project_type rules).
+P2P_PURPOSES: dict[str, str] = {
+    "customer_order": "Customer order",
+    "machine_project": "Machine / service project",
+    "development": "New development",
+    "department": "Department running cost",
+    "capital": "Asset / capital purchase",
+    "stock": "Store stock refill",
+}
 
 P2P_REQUIREMENT_TYPES = ("Material", "Service", "Material + Service", "Capital Equipment", "Others")
 
@@ -206,6 +228,8 @@ class P2PRequest(Base, TimestampMixin):
     # 'existing' | 'new' — picks the approval role sets above. NULL on PRs
     # from before the manager-role matrix (legacy approval flow).
     project_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # One of P2P_PURPOSES — what the purchase is for (see p2p/purpose.py).
+    purpose: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # 'settings' = approvers from Procurement → Settings (SETTINGS_SCHEME); NULL = the older
     # requester-picked matrix / legacy flows, kept for requisitions raised before it.
     approval_scheme: Mapped[str | None] = mapped_column(String(20), nullable=True)

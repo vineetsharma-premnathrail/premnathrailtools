@@ -122,6 +122,10 @@ class P2PRequestCreate(BaseModel):
     # stage conditions. Approver names sent by older clients are ignored.
     # Optional only so a draft can be saved without it — submit 400s when blank.
     project_type: str | None = None
+    # What the purchase is for (P2P_PURPOSES, p2p/purpose.py) — decides what it
+    # must be charged to. Sent by the PR form since 2026-10-23; when set,
+    # project_type is derived from it.
+    purpose: str | None = None
     remarks: str | None = None
     items: list[P2PRequestItemPayload] = Field(default_factory=list)
     # True = keep as a private draft (no approval, light validation).
@@ -224,6 +228,7 @@ class P2PRequestResponse(BaseModel):
     order_project_number: str | None = None
     account_assignment_label: str | None = None
     project_type: str | None = None
+    purpose: str | None = None
     approval_scheme: str | None = None
     required_date: date | None = None
     requirement_type: str | None = None

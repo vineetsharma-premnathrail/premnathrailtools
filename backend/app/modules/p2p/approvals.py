@@ -47,7 +47,7 @@ from app.modules.organization.models.approval import ApprovalRequest, ApprovalRe
 from app.modules.organization.services import approval_engine as engine
 from app.modules.organization.services.approval_engine import StageDef, TransactionType, register_transaction
 from app.modules.p2p.models.p2p_request import (
-    ENGINE_SCHEME, P2P_CATEGORIES, P2P_PROJECT_TYPES, P2P_REQUEST_PRIORITIES, P2P_REQUIREMENT_TYPES, P2PRequest,
+    ENGINE_SCHEME, P2P_CATEGORIES, P2P_PROJECT_TYPES, P2P_PURPOSES, P2P_REQUEST_PRIORITIES, P2P_REQUIREMENT_TYPES, P2PRequest,
 )
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 
@@ -90,6 +90,7 @@ def _fire(db: Session, event: str, title: str, message: str, pr: P2PRequest, act
 
 _PR_CONTEXT_FIELDS = {
     "project_type": {"label": "Project type", "type": "choice", "choices": list(P2P_PROJECT_TYPES)},
+    "purpose": {"label": "Purpose", "type": "choice", "choices": list(P2P_PURPOSES)},
     "category_code": {"label": "Category", "type": "choice", "choices": list(P2P_CATEGORIES)},
     "priority": {"label": "Priority", "type": "choice", "choices": list(P2P_REQUEST_PRIORITIES)},
     "requirement_type": {"label": "Requirement type", "type": "choice", "choices": list(P2P_REQUIREMENT_TYPES)},
@@ -103,7 +104,7 @@ _PO_CONTEXT_FIELDS = {
 
 def _pr_context(pr: P2PRequest) -> dict:
     return {
-        "project_type": pr.project_type, "category_code": pr.category_code, "priority": pr.priority,
+        "project_type": pr.project_type, "purpose": pr.purpose, "category_code": pr.category_code, "priority": pr.priority,
         "requirement_type": pr.requirement_type, "department": pr.department,
     }
 

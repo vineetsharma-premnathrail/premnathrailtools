@@ -5,18 +5,32 @@ const config: TourConfig = {
   pageTitle: 'New Purchase Requisition',
   steps: [
     {
-      target: 'pr-new-project-type',
-      title: 'Project Type',
-      purpose: 'Whether this requisition is for an existing project or a new project. This choice decides who must approve the requisition and, later, which managers its Purchase Order goes to.',
+      target: 'pr-new-purpose',
+      title: 'Purpose',
+      purpose: 'What this purchase is for. It decides what the cost is charged to, so every rupee lands on a real order, department or job.',
       required: true,
-      whatToEnter: 'Pick "Existing project" or "New project".',
+      options: [
+        { value: 'Customer order', meaning: 'Material for a confirmed customer machine. Charged to its Order Project (or sales order); each line names the vehicle / lot.' },
+        { value: 'Machine / service project', meaning: 'Work on an existing machine: service, repair, production. Pick the machine project; Charged To is optional.' },
+        { value: 'New development', meaning: 'R&D / new product work. Charged to the development job’s internal order.' },
+        { value: 'Department running cost', meaning: 'Cleaning material, stationery, small tools, office repairs, AMC, housekeeping. Charged to your department’s cost centre (pre-filled).' },
+        { value: 'Asset / capital purchase', meaning: 'Things used for years: machine, laptop, AC, welding set. Charged to the asset’s internal order.' },
+        { value: 'Store stock refill', meaning: 'Common items Store keeps in stock. Nothing is charged now; the cost goes to whoever Store issues it to.' },
+      ],
+      why: 'Office and overhead costs are never tagged to a customer project. Finance spreads them over projects later; tagging them by hand makes project costs wrong.',
     },
     {
       target: 'pr-new-project',
-      title: 'Project',
-      purpose: 'Links this requisition to the project its spend belongs to.',
+      title: 'Machine Project',
+      purpose: 'Shown only for a Machine / service project purpose: the machine this purchase is for.',
       required: true,
-      whatToEnter: 'Existing project: search and pick it. New project: type the new project\'s name.',
+      whatToEnter: 'Search by machine number or model and pick it.',
+    },
+    {
+      target: 'pr-new-charged-to',
+      title: 'Charged To',
+      purpose: 'The record the cost is booked against: order project, sales order, work order, internal order or cost centre. Only the options that fit the purpose are offered.',
+      after: 'An internal order also goes onto the PO, so its budget shows the commitment in Finance › Controlling.',
     },
     {
       target: 'pr-new-category',
@@ -77,7 +91,7 @@ const config: TourConfig = {
     {
       target: 'pr-new-item-projinhouse',
       title: 'Project/Inhouse',
-      purpose: 'Marks whether this specific item is for a project or an inhouse/general requirement — independent of the Project field above, which applies to the whole requisition. Must be chosen for every line before the requisition can be submitted.',
+      purpose: 'Marks whether this specific item is for a project or an inhouse/general requirement — shown only for Customer order and Machine / service project purposes (overhead purposes are always Inhouse). Must be chosen for every line before the requisition can be submitted.',
       required: true,
       options: [
         { value: 'Project', meaning: 'This item is consumed against a specific project.' },

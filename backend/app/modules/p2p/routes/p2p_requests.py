@@ -16,8 +16,9 @@ from app.modules.erp.models.project import Project
 from app.modules.p2p.models.p2p_request import (
     P2PRequest, P2P_REQUEST_STATUSES, P2P_CATEGORIES, P2P_REQUIREMENT_TYPES, resolve_auto_buyer_id,
     PO_APPROVAL_ROLE_SETS, P2P_ROLE_FLAGS, P2P_ROLE_LABELS, P2P_PO_APPROVER_FLAGS, P2P_PROJECT_TYPES,
-    P2P_EDITABLE_STATUSES,
+    P2P_EDITABLE_STATUSES, P2P_PURPOSES,
 )
+from app.modules.p2p import purpose as pr_purpose
 from app.modules.p2p.models.p2p_request_approval import P2PRequestApproval
 from app.modules.p2p.models.p2p_request_po_approver import P2PRequestPOApprover
 from app.modules.p2p.item_link import item_category_for, item_snapshot, purchasable_item
@@ -545,14 +546,19 @@ def _check_po_approve_access(pr: P2PRequest, user: User) -> list[str]:
 
 
 @router.get("/meta")
-async def get_meta(db: Session = Depends(get_db), _user: User = Depends(_requester_or_purchase)):
+async def get_meta(db: Session = Depends(get_db), user: User = Depends(_requester_or_purchase)):
     # UOMs come from the Store item master's fixed list so a PR line's unit
     # matches store stock exactly — requesters usually lack the `store` app,
     # so the list is served here rather than from /store/items/meta.
     from app.modules.store.routes.uoms import uom_options
+    from app.modules.accounts.services.controlling import default_cost_center_for_department
     return {
         "categories": [{"code": k, "label": v} for k, v in P2P_CATEGORIES.items()],
         "requirement_types": list(P2P_REQUIREMENT_TYPES),
+        "purposes": [{"code": k, "label": v} for k, v in P2P_PURPOSES.items()],
+        # Pre-picked on a department running-cost requisition (the requester's
+        # department's one active cost centre; None when unmapped / ambiguous).
+        "my_cost_center_id": default_cost_center_for_department(db, user.department),
         "statuses": list(P2P_REQUEST_STATUSES),
         "uoms": uom_options(db),
     }
@@ -603,7 +609,8 @@ async def create_p2p_request(
         p2p_number=generate_p2p_number(db, payload.category_code),
         category_code=payload.category_code,
         project_label=payload.project_label,
-        project_type=payload.project_type,
+        purpose=payload.purpose,
+        project_type=pr_purpose.project_type_for(payload.purpose) if payload.purpose else payload.project_type,
         approval_scheme=ENGINE_SCHEME,
         required_date=payload.required_date,
         requirement_type=payload.requirement_type,
@@ -617,6 +624,7 @@ async def create_p2p_request(
         status="draft" if draft else "submitted",
     )
     _apply_account_assignment(db, pr, payload)
+    _default_label(pr)
     db.add(pr)
     db.flush()
 
@@ -652,6 +660,14 @@ async def create_p2p_request(
     return _to_response(db, pr, user=user)
 
 
+def _default_label(pr: P2PRequest) -> None:
+    """A requisition with no project still needs a display line in lists,
+    notifications and the PO ("FOR ..."): the charged record's name (filled by
+    the account assignment), else the purpose."""
+    if not (pr.project_label or "").strip() and pr.purpose:
+        pr.project_label = P2P_PURPOSES.get(pr.purpose)
+
+
 def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool) -> list[tuple]:
     """Check a create/edit payload and return its lines as (payload line,
     Item Master row). A draft needs only a valid category and, per line it
@@ -661,7 +677,14 @@ def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool)
         raise HTTPException(status_code=400, detail=f"Pick a valid Purchase Requisition category (got '{payload.category_code or 'none'}').")
     if payload.project_type and payload.project_type not in P2P_PROJECT_TYPES:
         raise HTTPException(status_code=400, detail="Project Type must be 'Existing project' or 'New project'.")
+    if payload.purpose and payload.purpose not in P2P_PURPOSES:
+        raise HTTPException(status_code=400, detail=f"Purpose must be one of: {', '.join(P2P_PURPOSES.values())}.")
     items = [i for i in payload.items if i.store_item_id] if draft else list(payload.items)
+    if payload.purpose in pr_purpose.INHOUSE_ONLY:
+        # Overhead buying is never for a customer project — every line is Inhouse.
+        for i in items:
+            i.project_inhouse = "Inhouse"
+            i.order_project_element_id = None
     if not draft and not items:
         raise HTTPException(status_code=400, detail="Add at least one item line before submitting the requisition.")
     # Every line is an Item Master item (2026-10-11 — never a typed name) and
@@ -679,7 +702,11 @@ def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool)
             raise HTTPException(status_code=400, detail=f"Line {idx} ({master.item_code} {master.item_name}): quantity must be more than 0.")
         lines.append((item, master))
 
-    if not draft:
+    if not draft and payload.purpose:
+        problems = pr_purpose.header_problems(payload.purpose, payload.account_assignment, payload.project_label)
+        if problems:
+            raise HTTPException(status_code=400, detail=" ".join(problems))
+    elif not draft:
         if not (payload.project_label or "").strip() and not getattr(payload, "account_assignment", None):
             raise HTTPException(status_code=400, detail="Project is required — pick the existing project, or give the new project's name.")
         if payload.project_type not in P2P_PROJECT_TYPES:
@@ -799,7 +826,9 @@ async def edit_p2p_request(
 
     pr.project_label = payload.project_label
     _apply_account_assignment(db, pr, payload)
-    pr.project_type = payload.project_type
+    pr.purpose = payload.purpose
+    pr.project_type = pr_purpose.project_type_for(payload.purpose) if payload.purpose else payload.project_type
+    _default_label(pr)
     pr.required_date = payload.required_date
     pr.requirement_type = payload.requirement_type
     pr.priority = payload.priority
@@ -1917,10 +1946,15 @@ def _check_draft_complete(pr: P2PRequest) -> None:
     """A draft is saved with whatever was filled in; before it goes for
     approval it must be as complete as a requisition raised directly."""
     missing = []
-    if not (pr.project_label or "").strip():
-        missing.append("the project")
-    if pr.project_type not in P2P_PROJECT_TYPES:
-        missing.append("the project type (existing / new)")
+    if pr.purpose:
+        problems = pr_purpose.header_problems(pr.purpose, pr.account_assignment, pr.project_label)
+        if problems:
+            raise HTTPException(status_code=400, detail=f"{pr.p2p_number} can't be submitted yet — {' '.join(problems)} Click Edit to complete the draft.")
+    else:
+        if not (pr.project_label or "").strip():
+            missing.append("the project")
+        if pr.project_type not in P2P_PROJECT_TYPES:
+            missing.append("the project type (existing / new)")
     if not pr.items:
         missing.append("at least one item line")
     for idx, item in enumerate(pr.items, start=1):
