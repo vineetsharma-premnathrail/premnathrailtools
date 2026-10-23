@@ -3826,6 +3826,8 @@ export interface P2PPurchaseOrder {
   /** Bumped on each draft edit — the managed Word PO uses it to know it is out of date. */
   revision?: number
   total_value?: number
+  /** Cost centre the PO is charged to — picked by Purchase (2026-10-23). */
+  cost_center_id?: number | null
   created_by_id?: number
   created_by_name?: string
   created_at?: string

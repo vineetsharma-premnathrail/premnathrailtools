@@ -9,7 +9,8 @@ it must be charged to, so every rupee lands on a real cost object:
   machine_project  service of a delivered machine (ERP project); the charge
                    is optional (work order, internal order, sales order, order project)
   development      an internal order (the development job and its budget)
-  department       a cost centre — the requester's department by default
+  department       nothing on the PR — Purchase picks the cost centre on the
+                   PO (the requester's department's by default, see below)
   capital          an internal order (the asset job and its budget)
   stock            nothing — store stock is charged when it is issued
 
@@ -22,7 +23,11 @@ buyer) to the ones that make sense for it, and pre-fills the category and
 requirement type where one answer is the usual one (PURPOSE_FORM)."""
 from __future__ import annotations
 
-from app.modules.p2p.models.p2p_request import P2P_PURPOSES
+from fastapi import HTTPException
+from sqlalchemy import event, func, select
+
+from app.modules.p2p.models.p2p_request import P2P_PURPOSES, P2PRequest
+from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
 
 # Purposes whose lines are never for a customer project.
 INHOUSE_ONLY = ("development", "department", "capital", "stock")
@@ -33,7 +38,8 @@ _ALLOWED: dict[str, tuple] = {
     "customer_order": ("order_project", "sales_order"),
     "machine_project": (None, "work_order", "internal_order", "sales_order", "order_project"),
     "development": ("internal_order",),
-    "department": ("cost_center",),
+    # Older requisitions carry a cost centre; new ones leave it to the PO.
+    "department": (None, "cost_center"),
     "capital": ("internal_order",),
     "stock": (None,),
 }
@@ -71,7 +77,6 @@ def category_problem(purpose: str | None, category_code: str | None) -> str | No
 _NEED = {
     "customer_order": "the order project of the machine being built",
     "development": "the internal order of the development job — ask Finance to open one in Finance › Masters › Internal orders if it isn't in the list",
-    "department": "the cost centre of the department that uses it",
     "capital": "the internal order of the asset purchase — ask Finance to open one in Finance › Masters › Internal orders if it isn't in the list",
 }
 
@@ -110,3 +115,52 @@ def header_problems(purpose: str | None, account_assignment: str | None, project
     if purpose == "machine_project" and not (project_label or "").strip():
         return ["Pick the machine project this requisition is for."]
     return []
+
+
+# ---------------------------------------------------------------- PO cost centre
+
+@event.listens_for(P2PPurchaseOrder, "before_insert")
+def _po_cost_center_from_pr(_mapper, connection, target: P2PPurchaseOrder) -> None:
+    """Every way a PO is made (RFQ draft, quotation award, direct) starts it
+    with a cost centre when its requisition is overhead: the PR's own one
+    (older requisitions), else — for a department running cost — the
+    requester's department's one active cost centre. Purchase can change it."""
+    if target.cost_center_id is not None or not target.p2p_request_id or target.internal_order_id:
+        return
+    row = connection.execute(
+        select(P2PRequest.cost_center_id, P2PRequest.purpose, P2PRequest.department)
+        .where(P2PRequest.id == target.p2p_request_id)).first()
+    if row is None:
+        return
+    if row[0]:
+        target.cost_center_id = row[0]
+    elif row[1] == "department" and (row[2] or "").strip():
+        from app.modules.organization.models.cost_center import CostCenter
+        from app.modules.organization.models.department import Department
+        ids = connection.execute(
+            select(CostCenter.id).join(Department, CostCenter.department_id == Department.id)
+            .where(func.lower(Department.name) == row[2].strip().lower(), CostCenter.status == "active")).all()
+        if len(ids) == 1:
+            target.cost_center_id = ids[0][0]
+
+
+def check_po_charge(db, pr: P2PRequest, po: P2PPurchaseOrder) -> None:
+    """400 when a department running-cost PO goes for approval with no cost
+    centre (an internal order also counts as a charge)."""
+    if pr.purpose == "department" and not po.cost_center_id and not po.internal_order_id:
+        raise HTTPException(status_code=400, detail=(
+            f"PO '{po.po_number}' is for a department running cost ({pr.department or 'no department'}) but has no cost "
+            "centre — pick the cost centre on the PO before sending it for approval. If the department has none, ask "
+            "Finance to set one up in Organization › Cost centres."))
+
+
+def check_cost_center(db, cost_center_id: int | None) -> None:
+    """400 unless the cost centre exists and is active."""
+    if not cost_center_id:
+        return
+    from app.modules.organization.models.cost_center import CostCenter
+    cc = db.get(CostCenter, cost_center_id)
+    if cc is None:
+        raise HTTPException(status_code=400, detail="That cost centre doesn't exist — pick it again from the list.")
+    if cc.status != "active":
+        raise HTTPException(status_code=400, detail=f"Cost centre {cc.code} — {cc.name} is {cc.status} — pick an active one.")

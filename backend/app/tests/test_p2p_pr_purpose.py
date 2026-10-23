@@ -1,11 +1,15 @@
 """Purpose of a purchase requisition (p2p/purpose.py, 2026-10-23): the purpose
 decides what the requisition must be charged to, overhead purposes make every
-line Inhouse, and the old existing/new project type stays filled."""
+line Inhouse, the old existing/new project type stays filled, and a department
+running cost's cost centre is set on the PO (not the PR)."""
 from app.modules.accounts.models.internal_order import InternalOrder
 from app.modules.organization.models.cost_center import CostCenter
-from app.tests.p2p_workflow_helpers import master_item, set_pr_workflow
+from app.modules.organization.models.department import Department
+from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+from app.tests.p2p_workflow_helpers import master_item, set_po_workflow, set_pr_workflow
 from app.tests.test_p2p_requests import (  # noqa: F401 — _sqlite_number_series is an autouse fixture
-    BASE, _create_payload, _pr_approvers, _requester, _sqlite_number_series, auth_header,
+    BASE, _approve_pr, _create_payload, _create_pr, _pr_approvers, _purchaser, _raise_po, _requester, _sqlite_number_series,
+    auth_header,
 )
 
 
@@ -17,27 +21,55 @@ def _post(client, db, requester, item, **over):
     return client.post(BASE, json=body, headers=auth_header(requester))
 
 
-def test_department_running_cost_needs_a_cost_centre_and_is_inhouse(client, db):
-    cc = CostCenter(code="CC-ADM", name="Administration", status="active")
-    db.add(cc)
-    db.commit()
+def test_department_running_cost_takes_no_cost_centre_and_is_inhouse(client, db):
     item = master_item(db, "Floor cleaner 5L", code="HK-FC-01")
     req = _requester(db, "purpose.req1@premnathrail.com")
 
+    # The cost centre is Purchase's job on the PO — the requisition needs none.
     r = _post(client, db, req, item, purpose="department")
-    assert r.status_code == 400 and "cost centre" in r.json()["detail"], r.text
+    assert r.status_code == 200, r.text
+    pr = r.json()
+    assert pr["purpose"] == "department" and pr["project_type"] == "existing"
+    assert pr["cost_center_id"] is None and pr["project_label"] == "Department running cost"
+    # Sent as 'Project', stored Inhouse: overhead isn't bought for a customer project.
+    assert pr["items"][0]["project_inhouse"] == "Inhouse"
+    assert pr["p2p_number"].startswith("P2P-ADM-")
 
     r = _post(client, db, req, item, purpose="department", account_assignment="internal_order", internal_order_id=1)
     assert r.status_code == 400 and "can't be charged to a internal order" in r.json()["detail"], r.text
 
-    r = _post(client, db, req, item, purpose="department", account_assignment="cost_center", cost_center_id=cc.id)
-    assert r.status_code == 200, r.text
-    pr = r.json()
-    assert pr["purpose"] == "department" and pr["project_type"] == "existing"
-    assert pr["cost_center_id"] == cc.id and pr["project_label"] == "CC-ADM — Administration"
-    # Sent as 'Project', stored Inhouse: overhead isn't bought for a customer project.
-    assert pr["items"][0]["project_inhouse"] == "Inhouse"
-    assert pr["p2p_number"].startswith("P2P-ADM-")
+
+def test_department_po_gets_the_department_cost_centre_and_needs_one(client, db):
+    dept = Department(name="Administration", code="ADMIN")
+    db.add(dept)
+    db.flush()
+    cc = CostCenter(code="CC-ADM", name="Administration", status="active", department_id=dept.id)
+    db.add(cc)
+    db.commit()
+    buyer = _purchaser(db, "purpose.buyer1@premnathrail.com")
+
+    # Requester's department has a cost centre -> the PO starts with it.
+    req = _requester(db, "purpose.req4@premnathrail.com")
+    req.department = "Administration"
+    db.commit()
+    pr = _create_pr(client, req, purpose="department", category_code="ADM", project_label=None, project_type=None,
+                    items=[{"item_name": "Floor cleaner", "quantity": 2, "unit": "pcs", "project_inhouse": "Inhouse"}])
+    _raise_po(client, db, pr, buyer, po_number="PO-ADM-1")
+    po = db.query(P2PPurchaseOrder).filter(P2PPurchaseOrder.po_number == "PO-ADM-1").one()
+    assert po.cost_center_id == cc.id
+
+    # No cost centre for the department -> the PO can't go for approval, and says why.
+    req2 = _requester(db, "purpose.req5@premnathrail.com")
+    req2.department = "Canteen"
+    db.commit()
+    pr2 = _create_pr(client, req2, purpose="department", category_code="ADM", project_label=None, project_type=None,
+                     items=[{"item_name": "Tea cups", "quantity": 20, "unit": "pcs", "project_inhouse": "Inhouse"}])
+    _approve_pr(client, pr2)
+    set_po_workflow(db, [u.id for u in pr2["_po_approvers"].values()], buyer)
+    r = client.post(f"{BASE}/{pr2['id']}/create-po", json={
+        "po_number": "PO-ADM-2", "item_pricing": [{"pr_item_id": i["id"], "unit_price": 10, "tax_rate": 18} for i in pr2["items"]],
+    }, headers=auth_header(buyer))
+    assert r.status_code == 400 and "has no cost centre" in r.json()["detail"] and "Canteen" in r.json()["detail"], r.text
 
 
 def test_capital_needs_internal_order_and_stock_takes_no_charge(client, db):

@@ -30,8 +30,9 @@ const PURPOSE_RULES: Record<string, { kinds: string[]; required: boolean; inhous
     hint: 'Spares or work for a machine already delivered to the customer: service, repair, warranty. Pick the machine; Charged To is optional.' },
   development: { kinds: ['internal_order'], required: true, inhouseOnly: true,
     hint: "New product development (R&D). Charged to the development job's internal order, which holds its budget." },
-  department: { kinds: ['cost_center'], required: true, inhouseOnly: true,
-    hint: 'Day-to-day running cost of a department: cleaning material, stationery, small tools, office repairs, AMC, housekeeping.' },
+  // The cost centre is picked by Purchase on the PO (your department's by default), not here.
+  department: { kinds: [], required: false, inhouseOnly: true,
+    hint: "Day-to-day running cost of a department: cleaning material, stationery, small tools, office repairs, AMC, housekeeping. Purchase charges it to your department's cost centre on the PO." },
   capital: { kinds: ['internal_order'], required: true, inhouseOnly: true,
     hint: "Something the company owns and uses for years (machine, laptop, AC, welding set). Charged to the asset's internal order." },
   stock: { kinds: [], required: false, inhouseOnly: true,
@@ -86,7 +87,6 @@ export default function NewP2PRequestPage() {
   // Each purpose with the categories it offers and its pre-filled category /
   // requirement type (backend p2p/purpose.py PURPOSE_FORM).
   const [purposes, setPurposes] = useState<{ code: string; label: string; categories: string[]; default_category: string | null; default_requirement_type: string | null }[]>([])
-  const [myCostCenterId, setMyCostCenterId] = useState<number | null>(null)
   const [purpose, setPurpose] = useState('')
   const rule = PURPOSE_RULES[purpose]
   const purposeMeta = purposes.find((p) => p.code === purpose)
@@ -164,7 +164,6 @@ export default function NewP2PRequestPage() {
         setCategories(meta.categories)
         setRequirementTypes(meta.requirement_types)
         setPurposes(meta.purposes || [])
-        setMyCostCenterId(meta.my_cost_center_id ?? null)
         setProjects(projectList)
       } catch (err) {
         setError(extractErrorMessages(err, 'Failed to load form options.'))
@@ -240,14 +239,13 @@ export default function NewP2PRequestPage() {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, store_item_id: m ? m.id : null } : it)))
   }
 
-  // A new purpose resets the charge to what that purpose takes (the
-  // requester's own cost centre for a department running cost).
+  // A new purpose resets the charge to what that purpose takes.
   const pickPurpose = (value: string) => {
     setPurpose(value)
     const r = PURPOSE_RULES[value]
     if (value !== 'machine_project') setProjectId('')
     setAcctKind(r?.required ? r.kinds[0] : '')
-    setAcctId(value === 'department' && myCostCenterId ? String(myCostCenterId) : '')
+    setAcctId('')
     if (r?.inhouseOnly) {
       setItems((prev) => prev.map((it) => ({ ...it, project_inhouse: 'Inhouse', order_project_id: null, order_project_element_id: null })))
     }

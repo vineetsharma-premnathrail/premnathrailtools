@@ -871,6 +871,9 @@ async def update_po_draft(
         raise HTTPException(status_code=409, detail="This PO draft is no longer editable")
 
     updates = payload.model_dump(exclude_unset=True, exclude={"items"})
+    if updates.get("cost_center_id"):
+        from app.modules.p2p.purpose import check_cost_center
+        check_cost_center(db, updates["cost_center_id"])
     # Any edit makes the managed Word PO out of date (it compares this revision).
     po.revision = (po.revision or 0) + 1
     for field, val in updates.items():

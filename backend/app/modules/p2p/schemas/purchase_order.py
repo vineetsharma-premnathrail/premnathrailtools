@@ -97,6 +97,8 @@ class P2PPurchaseOrderDraftUpdatePayload(BaseModel):
 
     expected_delivery: date | None = None
     delivery_terms: str | None = None
+    # Cost centre the PO is charged to (Purchase picks it; null clears it).
+    cost_center_id: int | None = None
     items: list[P2PPurchaseOrderItemPricingPayload] | None = None
 
 
@@ -117,6 +119,7 @@ class P2PPurchaseOrderResponse(BaseModel):
     revision: int = 0
     total_value: float | None = None
     internal_order_id: int | None = None
+    cost_center_id: int | None = None
     # ME21N / ME22N (2026-10-14).
     plant_branch_id: int | None = None
     ship_to_location_id: int | None = None

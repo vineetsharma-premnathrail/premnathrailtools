@@ -374,6 +374,8 @@ def submit_pr(db: Session, pr: P2PRequest, requester: User) -> ApprovalRequest:
 
 def submit_po(db: Session, pr: P2PRequest, po: P2PPurchaseOrder, submitter: User) -> ApprovalRequest:
     """Send a PO into approval (PR → po_raised, PO → issued). Flushes, never commits."""
+    from app.modules.p2p.purpose import check_po_charge
+    check_po_charge(db, pr, po)
     seed_workflows(db)
     pr.approval_scheme = ENGINE_SCHEME
     po.status = "issued"

@@ -68,6 +68,11 @@ class P2PPurchaseOrder(Base, TimestampMixin):
     # Its not-yet-invoiced value is the order's commitment
     # (accounts/services/controlling.py) and its invoice lines default to it.
     internal_order_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("internal_orders.id"), nullable=True, index=True)
+    # Cost centre the PO is charged to (2026-10-23) — set by Purchase on the
+    # PO, not by the requester: a department running-cost requisition's PO
+    # starts with the requester's department's cost centre (p2p/purpose.py)
+    # and can't go for approval without one. Invoice lines default to it.
+    cost_center_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("cost_centers.id"), nullable=True, index=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
     # The signed PO document — uploaded once while the PO is still a draft

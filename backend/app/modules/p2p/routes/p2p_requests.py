@@ -546,12 +546,11 @@ def _check_po_approve_access(pr: P2PRequest, user: User) -> list[str]:
 
 
 @router.get("/meta")
-async def get_meta(db: Session = Depends(get_db), user: User = Depends(_requester_or_purchase)):
+async def get_meta(db: Session = Depends(get_db), _user: User = Depends(_requester_or_purchase)):
     # UOMs come from the Store item master's fixed list so a PR line's unit
     # matches store stock exactly — requesters usually lack the `store` app,
     # so the list is served here rather than from /store/items/meta.
     from app.modules.store.routes.uoms import uom_options
-    from app.modules.accounts.services.controlling import default_cost_center_for_department
     return {
         "categories": [{"code": k, "label": v} for k, v in P2P_CATEGORIES.items()],
         "requirement_types": list(P2P_REQUIREMENT_TYPES),
@@ -561,9 +560,6 @@ async def get_meta(db: Session = Depends(get_db), user: User = Depends(_requeste
                       "default_category": pr_purpose.PURPOSE_FORM[k]["category"],
                       "default_requirement_type": pr_purpose.PURPOSE_FORM[k]["requirement_type"]}
                      for k, v in P2P_PURPOSES.items()],
-        # Pre-picked on a department running-cost requisition (the requester's
-        # department's one active cost centre; None when unmapped / ambiguous).
-        "my_cost_center_id": default_cost_center_for_department(db, user.department),
         "statuses": list(P2P_REQUEST_STATUSES),
         "uoms": uom_options(db),
     }

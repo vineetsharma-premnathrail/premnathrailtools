@@ -15,6 +15,8 @@ import { useCan } from '@/lib/permissions'
 import { p2pApi, purchaseOrdersApi, rfqApi } from '@/lib/api'
 import { P2PPurchaseOrder, P2PRequest, RFQ } from '@/types'
 import { mmQuotationsApi } from '@/lib/mmPurchasingApi'
+import { accountAssignmentApi } from '@/lib/mmLogisticsApi'
+import SearchableSelect from '@/components/erp/SearchableSelect'
 import POAmendmentPanel from '@/components/p2p/POAmendmentPanel'
 import { TEXT } from '@/lib/theme'
 import { secondaryBtnStyle } from '@/components/shared/ui'
@@ -58,6 +60,10 @@ export default function CreatePurchaseOrderPage() {
   const [prices, setPrices] = useState<Record<number, { unitPrice: string; taxRate: string }>>({})
   const [expected, setExpected] = useState('')
   const [deliveryTerms, setDeliveryTerms] = useState('')
+  // Cost centre the PO is charged to — Purchase picks it here (a department
+  // running-cost requisition's PO starts with the requester's department's one).
+  const [costCenterId, setCostCenterId] = useState('')
+  const [costCenters, setCostCenters] = useState<{ id: number; label: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -81,6 +87,10 @@ export default function CreatePurchaseOrderPage() {
         setLineDates(Object.fromEntries((draft.items as PoLine[]).map((i) => [i.id, i.delivery_date || ''])))
         setExpected(draft.expected_delivery || '')
         setDeliveryTerms(draft.delivery_terms || '')
+        setCostCenterId(draft.cost_center_id ? String(draft.cost_center_id) : '')
+        if (req.purpose === 'department' || draft.cost_center_id) {
+          setCostCenters((await accountAssignmentApi.options('cost_center')).options)
+        }
         // Prices are proposed by the server when the draft is made (awarded quote, else
         // the vendor + Item Master info record) — never matched by item name here.
         setPrices(Object.fromEntries(draft.items.map((i) => [i.id, {
@@ -113,9 +123,11 @@ export default function CreatePurchaseOrderPage() {
   const unpriced = (po?.items || []).filter((i) => !(Number(prices[i.id]?.unitPrice) > 0))
   const total = (po?.items || []).reduce((s, i) => s + i.quantity * (Number(prices[i.id]?.unitPrice) || 0) * (1 + (Number(prices[i.id]?.taxRate) || 0) / 100), 0)
 
+  const showCostCenter = !!po && (pr?.purpose === 'department' || !!po.cost_center_id)
   const draftPayload = () => ({
     expected_delivery: expected || null,
     delivery_terms: deliveryTerms.trim() || null,
+    ...(showCostCenter ? { cost_center_id: costCenterId ? Number(costCenterId) : null } : {}),
     items: (po?.items || []).map((i) => ({
       id: i.id,
       unit_price: prices[i.id]?.unitPrice !== '' ? Number(prices[i.id]?.unitPrice) : null,
@@ -201,6 +213,15 @@ export default function CreatePurchaseOrderPage() {
                       {!editable ? <div style={{ fontSize: 14, padding: '8px 0' }}>{po.delivery_terms || '—'}</div>
                         : <input value={deliveryTerms} onChange={(e) => setDeliveryTerms(e.target.value)} placeholder={rfq.payment_terms || 'e.g. 50% advance, balance on delivery'} style={inputStyle} />}
                     </div>
+                    {showCostCenter && (
+                      <div data-tour="po-new-cost-center" style={{ flex: '1 1 240px', maxWidth: 360 }}>
+                        <span style={label}>Cost centre {pr.purpose === 'department' && <Req />}</span>
+                        {!editable ? <div style={{ fontSize: 14, padding: '8px 0' }}>{costCenters.find((c) => c.id === po.cost_center_id)?.label || '—'}</div>
+                          : <SearchableSelect value={costCenterId} onChange={setCostCenterId}
+                              options={costCenters.map((c) => ({ value: String(c.id), label: c.label }))} placeholder="Search cost centre…" />}
+                        {editable && <p style={{ fontSize: 11.5, color: SHEET.MUTED, margin: '4px 0 0' }}>Department running cost of {pr.department || 'the requester'}: the department this purchase is charged to.</p>}
+                      </div>
+                    )}
                   </div>
                 )}
                 {!po && can('p2p', 'purchase_orders', 'create') && (

@@ -13,7 +13,7 @@ const config: TourConfig = {
         { value: 'Production (customer order)', meaning: 'Material to build a machine a customer has ordered, before delivery. Charged to its Order Project; each line names the vehicle / lot.' },
         { value: 'Service (delivered machine)', meaning: 'Spares or work for a machine already delivered: service, repair, warranty. Pick the machine; Charged To is optional.' },
         { value: 'New development', meaning: 'R&D / new product work. Charged to the development job’s internal order.' },
-        { value: 'Department running cost', meaning: 'Cleaning material, stationery, small tools, office repairs, AMC, housekeeping. Charged to your department’s cost centre (pre-filled).' },
+        { value: 'Department running cost', meaning: 'Cleaning material, stationery, small tools, office repairs, AMC, housekeeping. Purchase charges it to your department’s cost centre on the PO; you don’t pick one here.' },
         { value: 'Asset / capital purchase', meaning: 'Things used for years: machine, laptop, AC, welding set. Charged to the asset’s internal order.' },
         { value: 'Store stock refill', meaning: 'Common items Store keeps in stock. Nothing is charged now; the cost goes to whoever Store issues it to.' },
       ],
