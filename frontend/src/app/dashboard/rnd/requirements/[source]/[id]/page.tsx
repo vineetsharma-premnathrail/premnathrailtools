@@ -10,6 +10,7 @@ import { TEXT, GLASS, SHADOWS } from '@/lib/theme'
 import RndNav from '@/components/rnd/RndNav'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { useRecordId } from '@/lib/recordRef'
+import RequirementMovementTab from '@/components/crm/RequirementMovementTab'
 import RequirementDiscussionTab from '@/components/crm/RequirementDiscussionTab'
 import RequirementTasksTab from '@/components/rnd/RequirementTasksTab'
 import RequirementDocumentsTab from '@/components/rnd/RequirementDocumentsTab'
@@ -50,6 +51,9 @@ function Info({ label, value, wide }: { label: string; value: string | null | un
 
 const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14 }
 
+// An explicit ?tab= deep link (e.g. from a notification) always wins over the auto-jump.
+const hasTabParam = () => typeof window !== 'undefined' && !!TAB_PARAMS[new URLSearchParams(window.location.search).get('tab') || '']
+
 export default function RndRequirementDetailPage() {
   const { isAuthorized, isLoading, user } = useRequireApp('rnd')
   const { canFeature } = useCan()
@@ -72,7 +76,7 @@ export default function RndRequirementDetailPage() {
         setData(d)
         // An open request for me (or the whole R&D team) → land straight on the answer form.
         const latest = d.movements[d.movements.length - 1]?.rnd_request
-        if (openMovementIfMine && latest?.status === 'open' && (latest.assigned_to_id == null ? d.my_access.respond : latest.assigned_to_id === user?.id)) setTab('Requirement')
+        if (openMovementIfMine && !hasTabParam() && latest?.status === 'open' && (latest.assigned_to_id == null ? d.my_access.respond : latest.assigned_to_id === user?.id)) setTab('Requirement')
       })
       .catch((err) => setError(extractErrorMessages(err, 'Failed to load this requirement.')))
   }
@@ -103,6 +107,8 @@ export default function RndRequirementDetailPage() {
 
   const currentReq = data.movements[data.movements.length - 1]?.rnd_request ?? null
   const canRespond = data.my_access.respond && canFeature('rnd', 'requirements', 'crm_request', 'submit')
+  // The answer form: the head / Respond-right holders for team requests, the named engineer for older assigned ones.
+  const canAnswerCrm = canFeature('rnd', 'requirements', 'crm_request', 'submit') && (data.my_access.respond || (currentReq?.assigned_to_id != null && currentReq.assigned_to_id === user?.id))
   const visibleTabs = TABS.filter((t) => (t !== 'Access' || data.my_access.is_head) && (!TAB_FEATURE[t] || see(TAB_FEATURE[t] as string)))
   const shownTab = visibleTabs.includes(tab) ? tab : 'Requirement'
   const docAccess = {
@@ -188,6 +194,19 @@ export default function RndRequirementDetailPage() {
       {shownTab === 'Requirement' && (
         <>
           {see('projects') && <RequirementProjectsCard source={data.source} recordId={data.record_id} isHead={data.my_access.is_head} />}
+          {/* CRM's request, what was sent, and the "Respond to CRM" form (the answer marks the request Responded for CRM). */}
+          {see('crm_request') && data.movements.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <RequirementMovementTab
+                module={data.source}
+                recordId={data.record_id}
+                movements={data.movements}
+                responder={user ? { userId: user.id, isAdmin: user.role === 'admin', canRespond: canAnswerCrm } : undefined}
+                onChanged={() => load()}
+                latestOnly
+              />
+            </div>
+          )}
           {/* Only the Technical Offer button: first click opens the Word template, then a menu (edit / download / send). */}
           {see('technical_offers') && (
             <div style={{ marginBottom: 16 }}>

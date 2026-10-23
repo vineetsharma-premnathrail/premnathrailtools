@@ -555,6 +555,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
   const [showForm, setShowForm] = useState(false)
   // Revise opens the same full form, filled with this quotation; saving records a revision.
   const [revisingQuot, setRevisingQuot] = useState<QuotationItem | null>(null)
+  const [revisionSource, setRevisionSource] = useState<QuotationItem | null>(null)
   const todayIso = new Date().toLocaleDateString('en-CA') // local date, not UTC
   // R&D's released Technical Offers for this inquiry — the quotation quotes against one of them.
   const [technicalOffers, setTechnicalOffers] = useState<CrmTechnicalOfferOption[]>([])
@@ -720,17 +721,19 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     setAttemptedSave(false)
     setShowForm(false)
     setRevisingQuot(null)
+    setRevisionSource(null)
   }
 
-  const startRevise = (q: QuotationItem) => {
+  // asNew: a new quotation pre-filled from q (items + terms, fresh dates) - saved through the create flow.
+  const startRevise = (q: QuotationItem, asNew = false) => {
     const conditions = q.quote_conditions || ''
     const known = !conditions || (QUOTE_CONDITIONS as readonly string[]).includes(conditions)
     setForm({
-      quotation_type: q.quotation_type || 'Domestic', gst_type: q.gst_type || 'CGST_SGST', quote_date: q.quote_date || todayIso,
+      quotation_type: q.quotation_type || 'Domestic', gst_type: q.gst_type || 'CGST_SGST', quote_date: asNew ? todayIso : (q.quote_date || todayIso),
       client_name: q.client_name || '', client_contact_name: q.client_contact_name || '',
       client_contact_email: q.client_contact_email || '', client_contact_phone: q.client_contact_phone || '',
       technical_offer_id: q.technical_offer_id ? String(q.technical_offer_id) : '',
-      valid_until: q.valid_until || '', delivery_time: q.delivery_time || '', payment_terms: q.payment_terms || '', notes: q.notes || '',
+      valid_until: asNew ? addDaysIso(todayIso, QUOTE_VALIDITY_DAYS) : (q.valid_until || ''), delivery_time: q.delivery_time || '', payment_terms: q.payment_terms || '', notes: q.notes || '',
       discount: q.discount != null ? String(q.discount) : '', discount_type: q.discount_type || 'percent',
       quote_conditions: known ? conditions : 'Other/Custom', quote_conditions_custom: known ? '' : conditions,
       pricing_mode: q.pricing_mode || 'itemwise', price: q.price != null ? String(q.price) : '',
@@ -744,7 +747,8 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     setFormError('')
     setFieldErrors({})
     setAttemptedSave(false)
-    setRevisingQuot(q)
+    setRevisingQuot(asNew ? null : q)
+    setRevisionSource(asNew ? q : null)
     setShowForm(true)
   }
 
@@ -913,16 +917,18 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {(canCreateQuote || canModify) && (
         <div>
-          {canCreateQuote && <button onClick={() => { setFormError(''); setForm(emptyForm); setItems([{ ...emptyLineItem }]); setRevisingQuot(null); setShowForm(true) }} data-tour="quotation-create-btn" style={primaryBtnStyle}>+ Create Quote</button>}
+          {canCreateQuote && <button onClick={() => { setFormError(''); setForm(emptyForm); setItems([{ ...emptyLineItem }]); setRevisingQuot(null); setRevisionSource(null); setShowForm(true) }} data-tour="quotation-create-btn" style={primaryBtnStyle}>+ Create Quote</button>}
           {/* Create and Revise both open the form as a popup (FormSheet is portalled to body —
               the glass cards' backdrop-filter would clip a fixed overlay), so the saved
               quotation card is never shown side by side with an inline edit copy. */}
           {showForm && (
             <FormSheet tour="quot-form" icon={revisingQuot ? 'edit' : 'rupee'} onClose={cancelForm} busy={saving}
-              title={revisingQuot ? `Edit ${revisingQuot.quot_number || 'Quotation'}` : 'New Quotation'}
+              title={revisingQuot ? `Edit ${revisingQuot.quot_number || 'Quotation'}` : revisionSource ? 'New Quotation (revision)' : 'New Quotation'}
               subtitle={revisingQuot
                 ? `Saving updates this quotation as revision r${revisingQuot.revision_number + 1}; earlier versions stay available in its revision list.`
-                : `Price offer to ${org?.name || 'the customer'} for inquiry ${inquiry.universal_id}.`}
+                : revisionSource
+                  ? `Pre-filled from ${revisionSource.quot_number || 'the selected quotation'} (items and terms). Dates are reset; saving creates a new draft quotation that needs approval — ${revisionSource.quot_number || 'the original'} stays as it is.`
+                  : `Price offer to ${org?.name || 'the customer'} for inquiry ${inquiry.universal_id}.`}
               footer={<>
                 <button type="button" onClick={cancelForm} disabled={saving} data-tour="quot-cancel-btn" style={sheetBtn('secondary', SHEET.INK, saving)}>Cancel</button>
                 <button type="submit" form="quotation-form" data-tour="quot-save" disabled={saving} style={sheetBtn('primary', SHEET.BLUE, saving)}>
@@ -1177,7 +1183,7 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                 {q.valid_until && ` · Valid: ${q.valid_until}`}{q.submitted_date && ` · Submitted: ${q.submitted_date}`}
                 {seeQuotePrices && q.discount != null && ` · Discount: ${q.discount_type === 'flat' ? (q.quotation_type === 'Export' ? 'USD ' : 'INR ') : ''}${q.discount}${q.discount_type === 'flat' ? '' : '%'}`}
               </p>
-              <QuotationStatusBar inquiryId={inquiryId} quot={q} canModify={canModify} canSubmit={ownerOrAdmin && canFeature('crm', 'inquiries_tenders', 'quotations', 'submit')} onChanged={load} tour={qIdx === 0} />
+              <QuotationStatusBar inquiryId={inquiryId} quot={q} canModify={canModify} canSubmit={ownerOrAdmin && canFeature('crm', 'inquiries_tenders', 'quotations', 'submit')} canWork={canFeature('crm', 'inquiries_tenders', 'quotations', 'edit')} onChanged={load} tour={qIdx === 0} />
               {q.quote_conditions && <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>Conditions: {q.quote_conditions}</p>}
               {q.client_contact_name && (
                 <p style={{ fontSize: 12, color: '#57534e', margin: '2px 0 0' }}>
@@ -1256,7 +1262,13 @@ function QuotationsTab({ inquiryId, org, contact, inquiry }: { inquiryId: number
                 {downloadingId === q.id ? 'Generating…' : 'Download PDF'}
               </button>}
               {/* Finalised (approved and later) quotations are locked for everyone — a new offer is + Create Quote. */}
-              {canModify && ['draft', 'submitted'].includes(q.status || 'draft') && (
+              {canCreateQuote && q.status !== 'draft' && (
+                <button onClick={() => startRevise(q, true)} data-tour={qIdx === 0 ? 'quot-new-revision-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>
+                  Create revision from this quotation
+                </button>
+              )}
+              {/* Edit only while draft: a quotation awaiting approval must be withdrawn first (status bar), else the save is refused. */}
+              {canModify && (q.status || 'draft') === 'draft' && (
                 <button onClick={() => startRevise(q)} data-tour={qIdx === 0 ? 'quot-revise-btn' : undefined} style={{ ...secondaryBtnStyle, padding: '6px 12px', fontSize: 11.5 }}>
                   Edit
                 </button>

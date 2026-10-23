@@ -19,7 +19,22 @@ Not a native `type="date"` input. A text `<input>` + calendar icon, with a porta
 
 Props: `{ value, onChange, options: {value,label}[], placeholder? }`. Fake "select" trigger div that toggles a portaled (same body-portal + fixed-position pattern as DateField) dropdown with an `autoFocus` search input and a filtered option list. Single-value only, no native multi-select.
 
-**When to use which**: plain native `<select>` for short static enumerations (PR category, requirement type, priority — see `frontend/src/app/dashboard/p2p/new/page.tsx`); `SearchableSelect` for longer or dynamically-loaded lookup lists (e.g. picking a Project by label). Don't reach for `SearchableSelect` for a 3-4 option enum, and don't use a plain `<select>` for a list that can grow past what's comfortably scannable.
+**When to use which (rule, 2026-10-23)**: no native `<select>` in any form you create or edit. It draws the browser's own list (grey OS highlight, different font and height) and doesn't match `SearchableSelect` sitting next to it in the same row. Use:
+- `SearchableSelect` for every dropdown, short enums included (Charged To, Priority, Category).
+- A segmented toggle (two or three pill buttons) instead of a dropdown when there are only 2–3 fixed choices that the user flips often in a line row (e.g. Project / Inhouse).
+Existing native `<select>`s are converted when you touch that form. Don't leave a half-converted row.
+
+## Input / dropdown / section design rules (no repeat mistakes)
+
+Check every form, line-item grid and section against this list before you call it done:
+1. **Same height, one style.** Every input, dropdown, date field and toggle in a row uses the shared `inputStyle` (`components/shared/ui.tsx`, or the module's own `inputStyle`) and so has the same height, radius, border, padding and font size. Never mix a tall `SearchableSelect` with a short native control.
+2. **Nothing clipped.** No field cut off at the card edge (e.g. a "Ship To" input half-hidden) and no label wrapping to 2 lines. If a line grid has more columns than fit, drop or move the low-value columns (show them in the row's detail popup) before you accept a horizontal scrollbar. Required columns (item, qty, project) must always be visible without scrolling.
+3. **Read-only cells line up.** Values shown as text in a grid (Make, UOM, Category) are vertically centred with the inputs beside them. Use the same font size as the inputs and `—` for empty, never a blank cell.
+4. **Labels.** Every field has a label; a required field shows `*`. Placeholder text is a hint ("Pick vehicle / lot…"), never a substitute for the label. Column header case and style match the rest of the module.
+5. **Dependent fields.** A field that only matters for one choice (e.g. Order Project vehicle/lot only when the line is "Project") is hidden or disabled with a reason until that choice is made. Never leave it open and empty, looking required.
+6. **Dropdown lists.** Options are sorted (code/id ascending, see "Default row order"), have readable labels (`CODE — Name`) and an empty state that says what to do. Every popup is portaled to `body` (see DateField).
+7. **Sections.** Each section has one header row (icon + title on the left, its action button such as "+ Add Item" on the right) and the same padding and gap as its sibling sections. No stray empty boxes or dashed placeholders left on the page. Help text sits directly under the thing it explains.
+8. **Look before done.** Open the form at a normal laptop width (~1366px) and at the user's wide screen. Check rules 1–7 visually, not just in code.
 
 ## Multi-select with chips (approver-style picker)
 
@@ -98,3 +113,10 @@ Canonical 5-part shape (byte-identical sticky-header style confirmed in `P2PRequ
 5. Trailing empty-header (`''`) column with a "View" link: `<td onClick={(e) => e.stopPropagation()}><span onClick={() => router.push(...)}>View</span></td>` — `stopPropagation` avoids double-navigation since the row itself is already clickable; both intentionally do the same navigation.
 
 Loading/empty states are a single full-width `<td colSpan={N}>` row inside `<tbody>`, not a replacement for the whole table.
+
+## Default row order — code / id ascending
+
+Every table or list (list pages, line-item grids, master tables, dropdown option lists, exports) that shows a **code or id** (item code, document number, employee code, serial, `id`) is sorted **ascending by that code/id by default**: text codes A → Z, numbers 0 → max. Apply it in both places:
+- Backend list endpoint: `order_by(Model.code.asc())` (or `Model.id.asc()` when there's no code), so paging stays in the same order.
+- Frontend: if the page sorts client-side, the initial sort is the same column ascending. Sort codes naturally (`localeCompare(b, undefined, { numeric: true })`) so `ITEM-2` comes before `ITEM-10`.
+A user-clicked column sort can override it, but the default on load is always code/id ascending.

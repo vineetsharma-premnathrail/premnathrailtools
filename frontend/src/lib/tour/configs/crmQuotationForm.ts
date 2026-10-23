@@ -21,14 +21,15 @@ const config: TourConfig = {
     {
       target: 'quot-status-bar',
       title: 'Quotation status',
-      purpose: 'Every quotation follows Draft → Awaiting approval → Approved (→ Expired after Valid Until). The buttons here move it one step at a time.',
+      purpose: 'Every quotation follows Draft → Awaiting approval → Approved → Sent to customer → Accepted or Lost (Expired if Valid Until passes with no decision). The buttons here move it one step at a time.',
       options: [
         { value: 'Draft', meaning: 'Being prepared. "Submit for approval" sends it to the Sales Head (and a Director / Partner when the value or discount is above the Sales › Settings › Quotation approval limits).' },
         { value: 'Awaiting approval', meaning: 'Approvers see it in My Approvals. Withdraw it to change it; it cannot be revised while waiting.' },
-        { value: 'Approved', meaning: 'Released — ready to go to the customer. Sales raises the order from the newest approved quotation; after Valid Until it expires automatically.' },
-        { value: 'Sent to customer', meaning: 'With the customer. Sales raises the order from the newest sent quotation — its prices and terms are copied. After Valid Until it expires automatically.' },
+        { value: 'Approved', meaning: 'Released — click "Mark as sent to customer" once you have sent it, or "Customer rejected / lost" (a reason is required) if the customer declines. After Valid Until it expires automatically.' },
+        { value: 'Sent to customer', meaning: 'With the customer. Click "Customer accepted" (optional remarks) when they agree — Sales raises the order from the accepted quotation and copies its prices and terms — or "Customer rejected / lost" with the reason (price, delivery, competitor …).' },
+        { value: 'Accepted / Lost', meaning: 'The recorded customer outcome. Only an admin can correct it with "Reopen" (reason required); it goes back to Sent. Not possible once a sales order was raised from it.' },
       ],
-      why: 'Edit works only while a quotation is Draft (or awaiting approval). Once finalised it is locked for everyone, admins included — a new price or term is a new quotation (+ Create Quote).',
+      why: 'Only the quotation creator, the inquiry owner / BD owner or an admin can mark it sent, accepted or lost (and they need Quotations › Edit). Edit works only while a quotation is Draft — withdraw it from approval first. Once approved it is locked for everyone, admins included; a new price or term is a new quotation (Create revision from this quotation).',
     },
     {
       target: 'quot-download-pdf-btn',
@@ -38,8 +39,14 @@ const config: TourConfig = {
     {
       target: 'quot-revise-btn',
       title: 'Edit',
-      purpose: 'Opens the full quotation form in a popup, filled with this quotation — change anything: type, client, line items (add, edit, remove), pricing, discount, terms and notes.',
+      purpose: 'Shown while the quotation is Draft. Opens the full quotation form in a popup, filled with this quotation — change anything: type, client, line items (add, edit, remove), pricing, discount, terms and notes.',
       why: 'Each save adds a new revision number (r1, r2…) and keeps the old values in the revision history, so you can always show what was quoted when.',
+    },
+    {
+      target: 'quot-new-revision-btn',
+      title: 'Create revision from this quotation',
+      purpose: 'Shown on every quotation that is no longer a draft (awaiting approval, approved, sent, accepted, lost or expired). Opens the new-quotation form already filled with this quotation\'s items, prices and terms, with the quote date and Valid Until reset.',
+      why: 'A finalised quotation cannot be edited, so a changed offer is a new quotation. Saving creates a new draft that goes through approval; the original stays untouched for the record.',
     },
     {
       target: 'quotation-create-btn',

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import scope_filter
 from app.core.permission_registry import can_perform, is_admin_user
-from app.core.permissions import require_any_app_access, require_app_access, require_tab_access, require_tab_action
+from app.core.permissions import require_any_app_access, require_tab_access, require_tab_action
 from app.db.session import get_db
 from app.modules.main.models.user import User
 from app.modules.sales import order_projects as ops
@@ -21,9 +21,8 @@ from app.modules.sales.schemas.order_project import (
 from app.modules.sales.views import get_order, prices_hidden
 
 router = APIRouter(prefix="/sales/order-projects", tags=["Sales"])
-_SALES = Depends(require_app_access("sales"))
 # Departments that link their work to an order project (pickers).
-_LOOKUP_APPS = ("sales", "design", "p2p", "purchase", "store", "production", "quality")
+_LOOKUP_APPS = ("sales", "projects", "design", "p2p", "purchase", "store", "production", "quality")
 
 
 def _scoped_query(db: Session, user: User):
@@ -96,7 +95,6 @@ async def list_order_projects(
     q: str | None = None,
     limit: int = Query(500, ge=1, le=2000),
     db: Session = Depends(get_db),
-    _app: User = _SALES,
     user: User = Depends(require_tab_access("projects", "order_projects")),
 ):
     query = _scoped_query(db, user).options(selectinload(OrderProject.elements))
@@ -167,7 +165,6 @@ async def lookup_order_projects(
 @router.post("/backfill")
 async def backfill_order_projects(
     db: Session = Depends(get_db),
-    _app: User = _SALES,
     user: User = Depends(require_tab_action("projects", "order_projects", "edit")),
 ):
     if not is_admin_user(user):
@@ -182,7 +179,6 @@ async def backfill_order_projects(
 async def get_order_project(
     project_id: int,
     db: Session = Depends(get_db),
-    _app: User = _SALES,
     user: User = Depends(require_tab_access("projects", "order_projects")),
 ):
     project, so = _load(db, project_id, user)
@@ -197,7 +193,6 @@ async def update_order_project(
     project_id: int,
     payload: OrderProjectUpdate,
     db: Session = Depends(get_db),
-    _app: User = _SALES,
     user: User = Depends(require_tab_action("projects", "order_projects", "edit")),
 ):
     project, so = _load(db, project_id, user)

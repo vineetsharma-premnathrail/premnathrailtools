@@ -1197,6 +1197,10 @@ export interface QuotationStatusView {
   approval_stage: string | null
   approval_waiting_on: string[]
   can_decide: boolean
+  /** Creator / inquiry owner / BD owner / admin — may record sent, accepted, lost. */
+  can_work?: boolean
+  /** Admin only — corrects a recorded accepted / lost outcome. */
+  can_reopen?: boolean
   approval_request_id: number | null
 }
 

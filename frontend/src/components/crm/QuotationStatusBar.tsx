@@ -22,15 +22,17 @@ const STATUS_HEX: Record<string, string> = {
 }
 const small: React.CSSProperties = { padding: '5px 11px', fontSize: 11.5 }
 
-type Prompt = { action: QuotationAction; title: string; message: string; placeholder: string; label: string; required: boolean; danger: boolean }
+type Prompt = { action: QuotationAction; title: string; message: string; placeholder: string; label: string; required: boolean; danger: boolean; icon?: 'undo' | 'check' | 'x' }
 
-export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubmit = canModify, onChanged, tour }: {
+export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubmit = canModify, canWork = false, onChanged, tour }: {
   inquiryId: number
   quot: QuotationItem
   /** Inquiries & Tenders › Quotations › Edit (default for canSubmit). */
   canModify: boolean
   /** Submit for approval / withdraw (Inquiries & Tenders › Quotations › Submit). */
   canSubmit?: boolean
+  /** Inquiries & Tenders > Quotations > Edit - needed for send / accepted / lost / reopen (the server also checks creator / owner / admin). */
+  canWork?: boolean
   onChanged: () => void
   tour?: boolean
 }) {
@@ -56,7 +58,8 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
       onChanged()
       return true
     } catch (e) {
-      const msg = extractErrorMessages(e, `Couldn't ${action} quotation ${quot.quot_number || ''}.`)
+      const verb: Record<string, string> = { send: 'mark as sent', accept: 'record as accepted', lost: 'mark as lost', reopen: 'reopen', withdraw: 'withdraw', submit: 'submit' }
+      const msg = extractErrorMessages(e, `Couldn't ${verb[action] || action} quotation ${quot.quot_number || ''}. Reload the inquiry and try again; if it persists, check your connection.`)
       if (inPopup) setPromptError(msg)
       else setError(msg)
       return false
@@ -67,10 +70,12 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
   const submitPrompt = async () => {
     if (!prompt) return
     const v = reason.trim()
-    if (prompt.required && !v) { setPromptError(`Enter the reason — it is saved on the quotation and shown to the creator.`); return }
+    if (prompt.required && !v) { setPromptError(prompt.action === 'lost' ? "Enter why the customer didn't take this quotation (price, delivery, competitor …) — it is saved on the quotation." : 'Enter the reason — it is saved on the quotation and shown to the creator.'); return }
     if (await run(prompt.action, v || undefined, true)) setPrompt(null)
   }
 
+  // Server rule (_ensure_actor): quotation creator, inquiry owner / BD owner or admin, plus the Edit permission.
+  const mayWork = canWork && view?.can_work !== false
   const hex = STATUS_HEX[status] || '#64748B'
   const btn = (label: string, onClick: () => void, style: React.CSSProperties = secondaryBtnStyle, tourId?: string) => (
     <button type="button" disabled={busy} onClick={onClick} data-tour={tour ? tourId : undefined} style={{ ...style, ...small, opacity: busy ? 0.6 : 1 }}>{label}</button>
@@ -105,23 +110,28 @@ export default function QuotationStatusBar({ inquiryId, quot, canModify, canSubm
             {btn('Reject', () => openPrompt({ action: 'reject', title: 'Reject this quotation', message: 'The quotation goes back to draft with your reason.', placeholder: 'Reason', label: 'Reject', required: true, danger: true }), dangerBtnStyle)}
           </>
         )}
+        {mayWork && status === 'approved' && btn('Mark as sent to customer', () => run('send'), primaryBtnStyle, 'quot-send-btn')}
+        {mayWork && status === 'sent' && btn('Customer accepted', () => openPrompt({ action: 'accept', title: 'Customer accepted this quotation', message: 'Any remarks from the customer (optional).', placeholder: 'e.g. PO to follow by Friday', label: 'Record acceptance', required: false, danger: false, icon: 'check' }), primaryBtnStyle, 'quot-accept-btn')}
+        {mayWork && (status === 'approved' || status === 'sent') && btn('Customer rejected / lost', () => openPrompt({ action: 'lost', title: 'Customer did not take this quotation', message: "Why didn't the customer take it?", placeholder: 'e.g. Price high — competitor quoted less', label: 'Mark as lost', required: true, danger: true }), dangerBtnStyle, 'quot-lost-btn')}
+        {view?.can_reopen && canWork && (status === 'accepted' || status === 'lost') && btn('Reopen', () => openPrompt({ action: 'reopen', title: 'Reopen this quotation', message: 'Why is the recorded outcome being corrected? The quotation goes back to Sent.', placeholder: 'Reason', label: 'Reopen', required: true, danger: false }), secondaryBtnStyle, 'quot-reopen-btn')}
       </div>
       {quot.status_comment && ['draft', 'lost', 'accepted'].includes(status) && (
         <div style={{ fontSize: 11.5, color: '#57534e', marginTop: 4 }}>{quot.status_comment}</div>
       )}
-      {status === 'expired' && <div style={{ fontSize: 11.5, color: '#78716c', marginTop: 4 }}>Validity ended without a decision — use + Create Quote to offer it again (a finalised quotation can't be edited).</div>}
+      {status === 'approved' && !mayWork && <div style={{ fontSize: 11.5, color: '#78716c', marginTop: 4 }}>Approved — the quotation&apos;s creator or the inquiry owner marks it as sent to the customer.</div>}
+      {status === 'expired' && <div style={{ fontSize: 11.5, color: '#78716c', marginTop: 4 }}>Validity ended without a decision — use &quot;Create revision from this quotation&quot; to offer it again (a finalised quotation can&apos;t be edited).</div>}
       {error && (
         <div style={{ padding: '10px 14px', marginTop: 8, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>
           {Array.isArray(error) ? error.map((m, i) => <div key={i}>{m}</div>) : error}
         </div>
       )}
       {prompt && (
-        <FormSheet width={560} icon={prompt.danger ? 'alert' : 'undo'} iconColor={prompt.danger ? '#dc2626' : SHEET.BLUE} title={prompt.title}
+        <FormSheet width={560} icon={prompt.danger ? 'alert' : (prompt.icon || 'undo')} iconColor={prompt.danger ? '#dc2626' : SHEET.BLUE} title={prompt.title}
           subtitle={`Quotation ${quot.quot_number || ''}${quot.revision_number ? ` · Rev ${quot.revision_number}` : ''}`} onClose={() => setPrompt(null)} busy={busy}
           footer={<>
             <button type="button" onClick={() => setPrompt(null)} disabled={busy} style={sheetBtn('secondary', SHEET.INK, busy)}>Cancel</button>
             <button type="button" onClick={submitPrompt} disabled={busy} style={sheetBtn('primary', prompt.danger ? '#dc2626' : SHEET.BLUE, busy)}>
-              <SheetIcon name={prompt.danger ? 'x' : 'undo'} size={16} />{busy ? 'Saving…' : prompt.label}
+              <SheetIcon name={prompt.danger ? 'x' : (prompt.icon || 'undo')} size={16} />{busy ? 'Saving…' : prompt.label}
             </button>
           </>}>
           <div style={{ padding: '20px 24px' }}>

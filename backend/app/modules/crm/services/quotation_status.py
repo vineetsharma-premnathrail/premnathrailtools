@@ -262,7 +262,7 @@ def submit(db: Session, quot: Quotation, inquiry: Inquiry, user: User, backgroun
     if not quot.quote_date:
         problems.append("Quote Date is empty")
     if quot.valid_until and quot.valid_until < date.today():
-        problems.append(f"Valid Until ({quot.valid_until.strftime('%d-%m-%Y')}) is already past — revise the validity")
+        problems.append(f"Valid Until ({quot.valid_until.strftime('%d-%m-%Y')}) is already past — edit the quotation and set a later date")
     if problems:
         raise HTTPException(status_code=422, detail=f"Can't submit quotation {quot.quot_number}: " + "; ".join(problems) + ".")
     rank, why = approval_rank(db, quot)
@@ -328,7 +328,8 @@ def send(db: Session, quot: Quotation, inquiry: Inquiry, user: User, sent_on: da
     if quot.valid_until < sent_on:
         raise HTTPException(status_code=422, detail=(
             f"Quotation {quot.quot_number} is valid only until {quot.valid_until.strftime('%d-%m-%Y')}, before the send date. "
-            f"Revise the Valid Until date (the revision needs approval again)."))
+            f"This quotation is already approved, so its Valid Until can't be edited — use 'Create revision from this quotation' on the inquiry "
+            f"to offer it again with a new Valid Until (the new quotation needs approval)."))
     quot.sent_at, quot.sent_by_id = now_utc(), user.id
     quot.submitted_date = quot.submitted_date or sent_on
     _set_status(db, quot, "sent", user, f"{_name(user)} sent quotation {quot.quot_number} to the customer "
@@ -418,7 +419,7 @@ def expire_due(db: Session, today: date | None = None) -> int:
                                             f"{q.valid_until.strftime('%d-%m-%Y')} without a customer decision.")
         _event(db, "quotation_expired", q, f"Quotation {q.quot_number} expired",
                f"Quotation {q.quot_number}'s validity ended on {q.valid_until.strftime('%d-%m-%Y')} without a customer decision. "
-               "Revise it into a new offer, or record the outcome.", None)
+               "Use 'Create revision from this quotation' on the inquiry to offer it again, or record the outcome.", None)
     if rows:
         db.flush()
     return len(rows)
@@ -437,7 +438,7 @@ def remind_expiring(db: Session, today: date | None = None) -> int:
     for q in rows:
         _event(db, "quotation_expiring", q, f"Quotation {q.quot_number} valid only till {due.strftime('%d-%m-%Y')}",
                f"Quotation {q.quot_number} ({STATUS_LABEL.get(q.status, q.status)}) expires in {EXPIRING_DAYS} days — follow up "
-               "with the customer for a decision, or revise the validity.", None)
+               "with the customer for a decision, or create a revision with a later validity.", None)
     return len(rows)
 
 
@@ -455,7 +456,12 @@ def status_view(db: Session, quot: Quotation, user: User | None = None) -> dict:
         went, stage = True, (pending[0].stage_name if pending else None)
         who = [s.approver.name or s.approver.email for s in pending if s.approver]
     can_decide = bool(user and req is not None and req.status == "pending" and engine.can_act_on_entity(db, user, APPROVAL_ENTITY, quot.id))
-    return {"status": quot.status, "status_label": STATUS_LABEL.get(quot.status, quot.status),
+    # Same rule as _ensure_actor: who may record the send / customer outcome (the route also needs the Edit permission).
+    inq = db.get(Inquiry, quot.inquiry_id)
+    can_work = bool(user and (user.role == "admin" or user.id in (quot.created_by_id, inq.created_by_id if inq else None,
+                                                                  inq.bd_owner_id if inq else None)))
+    return {"status": quot.status, "can_work": can_work, "can_reopen": bool(user and user.role == "admin"),
+            "status_label": STATUS_LABEL.get(quot.status, quot.status),
             "gross_value": amt["gross"], "discount_percent": amt["discount_percent"], "net_value": amt["net"],
             "approval_rank": rank, "approval_label": RANK_LABEL.get(rank) if rank is not None else None, "approval_reasons": why,
             "approval_pending": went, "approval_stage": stage, "approval_waiting_on": who, "can_decide": can_decide,

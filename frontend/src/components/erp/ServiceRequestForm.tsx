@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { MinusCircle, Warning } from '@phosphor-icons/react'
 import { useAuth } from '@/hooks/useAuth'
-import { erpApi } from '@/lib/api'
+import { erpApi, usersApi } from '@/lib/api'
+import { useAssigneeFilter } from '@/hooks/useAssigneeFilter'
 import { Project, ServiceRequest } from '@/types'
 import DateField from './DateField'
 import SearchableSelect from './SearchableSelect'
@@ -123,9 +124,19 @@ export default function ServiceRequestForm({
   // Bring a new error banner into view — the submit button sits in the sticky footer.
   useEffect(() => { if (error) errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [error])
 
-  // Legacy behavior: the assignee is always auto-filled with the creator's name — there's
-  // no picker anywhere in the UI, so we don't invent one here either.
-  const assignedToName = initial?.assigned_to_name || user?.name || ''
+  // Engineer picker: the user directory narrowed by the role's "Assign to" rule
+  // (Role & Permissions › Service Requests › Service visits) — the server refuses others on save.
+  // Your own name and the SR's current engineer always stay listed.
+  const [engineerId, setEngineerId] = useState<string>(initial?.assigned_service_person_id ? String(initial.assigned_service_person_id) : '')
+  const [people, setPeople] = useState<{ value: string; label: string }[]>([])
+  const allowEngineer = useAssigneeFilter('erp:service_requests.visits')
+  const engineerOpts = [
+    { value: '', label: '— Not assigned yet —' },
+    ...people.filter((o) => allowEngineer(Number(o.value)) || o.value === String(user?.id ?? '') || o.value === engineerId),
+  ]
+  useEffect(() => {
+    usersApi.directory().then((list) => setPeople(list.map((u) => ({ value: String(u.id), label: u.name || u.email })))).catch(() => setPeople([]))
+  }, [])
 
   useEffect(() => {
     erpApi.listProjects({ limit: 5000 }).then(setProjects).catch(() => setError('Failed to load machines'))
@@ -188,7 +199,8 @@ export default function ServiceRequestForm({
         ...rest,
         issue_description,
         project_id: Number(form.project_id),
-        assigned_to_name: assignedToName,
+        // The server derives the engineer's name from the user record.
+        assigned_service_person_id: engineerId ? Number(engineerId) : null,
       }
       if (!initial && overrideCharge && warranty) {
         if (!chargeReason.trim()) {
@@ -204,9 +216,13 @@ export default function ServiceRequestForm({
       // exclude_unset=True actually clears it instead of silently no-op'ing.
       if (!initial) {
         Object.keys(payload).forEach((k) => {
-          if (payload[k] === '') delete payload[k]
+          if (payload[k] === '' || payload[k] === null) delete payload[k]
         })
       } else {
+        // Untouched empty text boxes aren't edits — leave them out so no junk audit lines are written.
+        Object.keys(payload).forEach((k) => {
+          if (payload[k] === '' && !(initial as Record<string, unknown>)[k]) delete payload[k]
+        })
         // Date fields are `date | None` on the backend — "" is a 422, so a cleared date is sent as null.
         for (const k of ['expected_date_to_attend', 'expected_completion_date']) {
           if (payload[k] === '') payload[k] = null
@@ -364,7 +380,10 @@ export default function ServiceRequestForm({
           right={<>
             <SheetSection icon="calendar" title="Assignment & Schedule">
               <label style={sheetLabel}>Assign To Engineer</label>
-              <input value={assignedToName} disabled style={{ ...sheetInput, background: SHEET.SOFT, color: SHEET.MUTED }} data-tour="erp-srf-assignee" />
+              <div data-tour="erp-srf-assignee">
+                <SearchableSelect value={engineerId} onChange={setEngineerId} options={engineerOpts} placeholder="Pick an engineer" />
+              </div>
+              <p style={sheetHint}>The engineer is told about the job and can then plan visits, record the root cause, spares and files on it.</p>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 14 }}>
                 <div data-tour="erp-srf-attend-date" style={{ flex: '1 1 140px' }}>
                   <label style={sheetLabel}>Expected Attend Date</label>

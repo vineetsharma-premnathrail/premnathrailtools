@@ -26,7 +26,7 @@ import { SERVICE_TYPES } from '@/components/erp/serviceTypes'
 import { recordPath, useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
 import { IssueSpareDialog, ReturnSpareDialog } from '@/components/erp/SrSpareDialogs'
-import { SlaBadge } from '@/components/erp/ServiceVisitsTab'
+import ServiceVisitsTab, { SlaBadge } from '@/components/erp/ServiceVisitsTab'
 import ContractChip from '@/components/erp/ContractChip'
 import { SERVICE_BILLING_ENABLED } from '@/lib/features'
 import { FormSheet, SHEET, SheetIcon, SheetSection, Optional, Req, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
@@ -57,10 +57,10 @@ const CANCELLED_STEP = { key: 'cancelled', label: 'Cancelled' }
 // SR to any other status, needs a reason.
 const needsStatusReason = (from: string, to: string | null) =>
   !!to && to !== from && (to === 'cancelled' || from === 'closed' || from === 'cancelled')
-const TABS = ['Overview', 'Diagnostics & RCA', 'Materials', 'Attachments', 'Audit Trail'] as const
+const TABS = ['Overview', 'Visits', 'Diagnostics & RCA', 'Materials', 'Attachments', 'Audit Trail'] as const
 // Feature (erp:service_requests.<key>:view) each SR sub-tab needs — core/features/erp.py.
 const TAB_FEATURE: Partial<Record<typeof TABS[number], string>> = {
-  'Diagnostics & RCA': 'rca', Materials: 'materials', Attachments: 'attachments', 'Audit Trail': 'audit_trail',
+  Visits: 'visits', 'Diagnostics & RCA': 'rca', Materials: 'materials', Attachments: 'attachments', 'Audit Trail': 'audit_trail',
 }
 
 export default function ServiceRequestDetailPage() {
@@ -103,9 +103,11 @@ export default function ServiceRequestDetailPage() {
   }, [isAuthorized, srId])
 
   // Mirrors the backend's `_can_edit`/`_can_delete` in service_requests.py —
-  // admins always pass, everyone else must both own the SR and hold the
+  // admins always pass, the assigned engineer passes (each tab still checks its
+  // own feature permission), everyone else must both own the SR and hold the
   // matching granular permission.
-  const canEdit = !!sr && !!user && (user.role === 'admin' || (sr.created_by_id === user.id && hasErpPermission(user, 'sr_edit')))
+  const isEngineer = !!sr && !!user && !!sr.assigned_service_person_id && sr.assigned_service_person_id === user.id
+  const canEdit = !!sr && !!user && (user.role === 'admin' || isEngineer || (sr.created_by_id === user.id && hasErpPermission(user, 'sr_edit')))
   const { canDelete: canDeleteOwn, canFeature } = useCan()
   const feat = (key: string, action: PermissionAction = 'view') => canFeature('erp', 'service_requests', key, action)
   const visibleTabs = TABS.filter((t) => !TAB_FEATURE[t] || feat(TAB_FEATURE[t]!))
@@ -219,6 +221,7 @@ export default function ServiceRequestDetailPage() {
 
       {tab === 'Overview' && <OverviewTab sr={sr} project={project} projectError={projectError} canModify={canEdit} onPatch={patch} onRequestStatus={setPendingStatus}
         showCharges={showCharges} invoiceView={feat('invoice')} invoiceCreate={feat('invoice', 'create')} />}
+      {tab === 'Visits' && <ServiceVisitsTab srId={sr.id} srStatus={sr.status} assignedId={sr.assigned_service_person_id ?? null} onChanged={load} />}
       {tab === 'Diagnostics & RCA' && <RcaTab sr={sr} canModify={canEdit && !sr.is_locked && feat('rca', 'edit')} onPatch={patch} />}
       {tab === 'Materials' && <MaterialsTab srId={sr.id} canEdit={canEdit && !sr.is_locked && feat('materials', 'edit')}
         canAdd={canEdit && !sr.is_locked && feat('materials', 'create')} canDelete={canEdit && !sr.is_locked && feat('materials', 'delete')}

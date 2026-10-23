@@ -267,7 +267,7 @@ async def update_quotation(inquiry_id: int, quot_id: int, payload: QuotationUpda
     if not tracking_only and quot.status not in ("draft", "submitted"):
         raise HTTPException(status_code=409, detail=(
             f"Quotation {quot.quot_number} is finalised ({quot.status}) and can't be edited by anyone. "
-            "To offer different prices or terms, use + Create Quote on this inquiry."))
+            "To offer different prices or terms, use 'Create revision from this quotation' (or + Create Quote) on this inquiry."))
     if not _can_modify(quot, user) and not (tracking_only and inquiry.created_by_id == user.id):
         if tracking_only:
             detail = (f"Only the inquiry owner, the quotation's creator or an admin can record the customer response — "

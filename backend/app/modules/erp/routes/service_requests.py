@@ -8,7 +8,8 @@ from app.core.permissions import (
     ensure_can_delete, ensure_feature_action, ensure_tab_action, has_erp_permission, require_app_access,
     require_feature_action, require_tab_access,
 )
-from app.core.permission_registry import is_admin_user
+from app.core.permission_registry import can_access_module, is_admin_user
+from app.core import assignee_rules
 from app.db.session import SessionLocal, get_db
 from app.modules.main.models.user import User
 from app.modules.main.models.audit_log import AuditLog
@@ -265,13 +266,52 @@ _SR_POST_CLOSE_EDITABLE = frozenset({
 
 
 def _can_edit(sr: ServiceRequest, user: User) -> bool:
-    """Admins always pass. Everyone else must both own the SR (be its creator)
-    and hold Service Requests › Edit in the Permission Matrix. Removing a
-    child line (material, photo, attachment) is part of editing the SR, so it
-    is decided here too — deleting the SR itself goes through ensure_can_delete."""
+    """Admins always pass. The SR's assigned engineer passes too (they do the
+    work, so they must be able to record RCA, materials and files — each
+    route still checks its own feature permission). Everyone else must both
+    own the SR (be its creator) and hold Service Requests › Edit in the
+    Permission Matrix. Removing a child line (material, photo, attachment) is
+    part of editing the SR, so it is decided here too — deleting the SR itself
+    goes through ensure_can_delete."""
     if is_admin_user(user):
         return True
+    if sr.assigned_service_person_id and sr.assigned_service_person_id == user.id:
+        return True
     return sr.created_by_id == user.id and has_erp_permission(user, "sr_edit")
+
+
+# Role "Assign to" rule for the engineer — same rule as the visit's engineer
+# (core/assignee_rules.PICKERS, declared in core/features/erp.py).
+_ENGINEER_RULE_KEY = "erp:service_requests.visits"
+
+
+def _apply_engineer(db: Session, user: User, values: dict) -> None:
+    """Validate `assigned_service_person_id` in a create / update payload and
+    derive `assigned_to_name` from the user record (never trust a typed name).
+    Clearing the engineer clears the name too."""
+    if "assigned_service_person_id" not in values:
+        values.pop("assigned_to_name", None)
+        return
+    eng_id = values["assigned_service_person_id"]
+    if not eng_id:
+        values["assigned_service_person_id"] = None
+        values["assigned_to_name"] = None
+        return
+    eng = db.query(User).filter(User.id == eng_id).first()
+    if not eng or not eng.is_active:
+        raise HTTPException(
+            status_code=422,
+            detail=f"The selected engineer (user #{eng_id}) was not found or is inactive — pick another engineer from the list.",
+        )
+    if not can_access_module(eng, "erp"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{eng.name or eng.email} has no access to the Service module, so can't be assigned the job. "
+                   "Pick another engineer, or ask an admin to give them Service access in Users & Roles.",
+        )
+    if eng.id != user.id:
+        assignee_rules.ensure_allowed(db, user, _ENGINEER_RULE_KEY, eng)
+    values["assigned_to_name"] = eng.name or eng.email
 
 
 def _sr_details(sr: ServiceRequest, project: Project | None, user: User) -> list[tuple[str, str]]:
@@ -463,6 +503,7 @@ async def create_service_request(
     sr_number = _generate_sr_number(db)
     values = data.model_dump()
     chargeable, chargeable_reason = values.pop("is_chargeable", None), values.pop("chargeable_reason", None)
+    _apply_engineer(db, user, values)  # active + permitted engineer; name comes from the user record
     sr = ServiceRequest(
         request_number=sr_number,
         created_by_id=user.id,
@@ -477,6 +518,8 @@ async def create_service_request(
     # SLA clock from the covering contract's hours, else the priority's coded profile.
     from app.modules.erp import sla as sr_sla
     sr_sla.apply_profile(sr)
+    # An SR raised already Assigned / In Progress counts as responded to now.
+    sr_sla.on_status_change(sr, "open", sr.status)
 
     _write_audit(db, sr.id, "created", user, request, summary=f"Service request {sr.request_number} created by {user.name or user.email}. "
                  f"Machine {sr_warranty.WARRANTY_LABELS.get(sr.warranty_status, sr.warranty_status).lower()}; "
@@ -628,6 +671,16 @@ async def update_service_request(
 
     changes = data.model_dump(exclude_unset=True)
     old_engineer = sr.assigned_service_person_id
+    if "assigned_service_person_id" in changes and (changes["assigned_service_person_id"] or None) == old_engineer:
+        changes.pop("assigned_service_person_id")  # unchanged — no re-check, no noise
+        changes.pop("assigned_to_name", None)
+    else:
+        _apply_engineer(db, user, changes)
+    # The form sends "" for an untouched text box; treat that as "no change from nothing"
+    # so edits don't write "— → ''" audit lines.
+    for k in list(changes):
+        if changes[k] == "" and not getattr(sr, k, None) and k != "status_reason":
+            changes.pop(k)
     # Charges need the sensitive switch; RCA text needs the Diagnostics & RCA › Edit feature.
     sr_sensitive.ensure_may_change(user, changes, sr, ("service_cost", "transport_cost", "accommodation_cost", "miscellaneous_cost"))
     if any(k in changes and (changes[k] or None) != (getattr(sr, k) or None) for k in ("root_cause", "resolution_description", "preventive_actions")):
