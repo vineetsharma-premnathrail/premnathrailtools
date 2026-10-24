@@ -31,7 +31,7 @@ from types import SimpleNamespace
 from typing import Any, Callable
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_
+from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.permission_registry import MODULES, can_feature, can_perform, holds_deliberately, is_admin_user
@@ -438,14 +438,59 @@ def _holds(conditions: list, context: dict) -> bool:
     return True
 
 
+def _decision_where(tt: TransactionType) -> str:
+    """'Sales › Inquiries › Quotations' — where the Approve permission of a type lives, in words."""
+    feat = MODULES[tt.module_key].get("features", {}).get(tt.subtab_key, {}).get(tt.feature_key or "")
+    return (f"{MODULES[tt.module_key]['label']} › {MODULES[tt.module_key]['subtabs'][tt.subtab_key]}"
+            f"{' › ' + feat['label'] if feat else ''}")
+
+
+def _split_by_permission(db: Session, ids: list[int], tt: TransactionType | None, users: dict | None = None) -> tuple[list[int], list[int]]:
+    """(who may approve, who may not): a workflow that requires the Approve
+    permission can only be decided by holders, so a named approver without it
+    would leave the document stuck. `users` is an optional id -> User cache."""
+    if tt is None or not ids:
+        return list(ids), []
+    cache = users if users is not None else {}
+    missing = [i for i in ids if i not in cache]
+    if missing:
+        cache.update({u.id: u for u in db.query(User).filter(User.id.in_(missing)).all()})
+    ok, lacking = [], []
+    for i in ids:
+        u = cache.get(i)
+        (ok if u is not None and _can_decide(u, tt, "approve") else lacking).append(i)
+    return ok, lacking
+
+
+def _lacking_permission_reason(db: Session, lacking: list[int], tt: TransactionType) -> str:
+    names = sorted(n for (n,) in db.query(User.name).filter(User.id.in_(lacking)).all() if n)
+    shown = ", ".join(names[:_SAMPLE_NAMES]) + (f" and {len(names) - _SAMPLE_NAMES} more" if len(names) > _SAMPLE_NAMES else "")
+    who = shown or "The approver"
+    sentence = (f"{who} is set as approver but doesn't hold Approve on {_decision_where(tt)}" if len(names) <= 1
+                else f"{who} are set as approvers but don't hold Approve on {_decision_where(tt)}")
+    return f"{sentence}; give the role that permission (Organization › Role & Permissions) or pick someone else."
+
+
 def plan_stages(db: Session, wf: ApprovalWorkflow, *, requester: User | None, branch_id: int | None, context: dict,
-                exclude_user_ids: list[int] | None = None) -> list[dict]:
+                exclude_user_ids: list[int] | None = None, tt: TransactionType | None = None,
+                require_permission: bool | None = None, users: dict | None = None) -> list[dict]:
     """Which stages apply and who approves each — used by submit and preview.
     Four-eyes (allow_self_approval off) removes the requester and everyone in
-    `exclude_user_ids` (e.g. who prepared / owns the document)."""
+    `exclude_user_ids` (e.g. who prepared / owns the document). When the
+    workflow requires the Approve permission, approvers without it are dropped
+    from a stage that has someone who holds it (they could never decide). If
+    NOBODY of the stage holds it the approvers stay (an admin can still stand
+    in, and giving the role the permission unsticks it) but the entry carries a
+    `warning` saying who lacks what — preview and the setup check show it."""
     barred = set(exclude_user_ids or [])
     if requester is not None:
         barred.add(requester.id)
+    if tt is None:
+        tt = _TYPES.get(getattr(wf, "key", None) or "")
+    if require_permission is None:
+        require_permission = bool(getattr(wf, "require_permission", True))
+    if not require_permission:
+        tt = None
     plan = []
     for st in wf.stages:
         if not _holds(st.conditions, context):
@@ -456,6 +501,7 @@ def plan_stages(db: Session, wf: ApprovalWorkflow, *, requester: User | None, br
         # "Same plant only": keep approvers whose plant is the document's plant
         # (else the requester's) — e.g. each plant's maintenance planners.
         plant = branch_id or getattr(requester, "branch_id", None)
+        stuck: list[int] = []  # approvers kept although they lack Approve, because nobody in their group has it
         for g, ids in enumerate(groups):
             if cfg.get("same_plant") and plant and ids:
                 local = {u.id for u in db.query(User.id).filter(User.id.in_(ids), User.branch_id == plant).all()}
@@ -465,22 +511,30 @@ def plan_stages(db: Session, wf: ApprovalWorkflow, *, requester: User | None, br
             before = ids
             if not wf.allow_self_approval:
                 ids = [i for i in ids if i not in barred]
-            groups[g] = ids
             if g == 0:
                 only_barred = bool(before) and not ids
+            holders, no_perm = _split_by_permission(db, ids, tt, users)
+            if holders:
+                ids = holders
+            else:
+                stuck += no_perm
+            groups[g] = ids
         ids, also = groups
         if not ids:
             ids, also = also, []
         also = [i for i in also if i not in ids]
+        warning = None
         if ids:
             problem = None
+            if stuck and all(i in stuck for i in ids + also):
+                warning = _lacking_permission_reason(db, list(dict.fromkeys(i for i in ids + also if i in stuck)), tt)
         elif only_barred:
             names = ", ".join(sorted(u.name for u in db.query(User.name).filter(User.id.in_(barred)).all())) or "the requester"
             problem = (f"the only person who matches this stage is {names}, who can't approve their own document "
                        "(four-eyes). Add another approver for this stage, or have someone else submit it.")
         else:
             problem = _no_approver_reason(db, st, requester, branch_id, context)
-        plan.append({"stage": st, "approver_ids": ids, "also_ids": also, "problem": problem})
+        plan.append({"stage": st, "approver_ids": ids, "also_ids": also, "problem": problem, "warning": warning})
     return plan
 
 
@@ -502,13 +556,22 @@ def _delegations_from(db: Session, delegator_id: int | None, wf_key: str, module
     )
 
 
-def _via(db: Session, user: User, step: ApprovalRequestStep, req: ApprovalRequest) -> str | None:
+def _via(db: Session, user: User, step: ApprovalRequestStep, req: ApprovalRequest, cache: dict | None = None) -> str | None:
+    """How `user` may act on `step`. `cache` (one per list call) remembers the
+    delegations already looked up so a long inbox doesn't re-query per step."""
     if step.approver_id == user.id:
         return "direct"
     if user.id in (step.escalated_to_ids or []):
         # Before escalation, this list holds the stage's "also allowed" holders.
         return "escalation" if step.escalated_at else "authority"
-    if any(d.delegate_id == user.id for d in _delegations_from(db, step.approver_id, req.workflow_key, req.module_key)):
+    if cache is None:
+        delegations = _delegations_from(db, step.approver_id, req.workflow_key, req.module_key)
+    else:
+        k = (step.approver_id, req.workflow_key, req.module_key)
+        if k not in cache.setdefault("deleg", {}):
+            cache["deleg"][k] = _delegations_from(db, step.approver_id, req.workflow_key, req.module_key)
+        delegations = cache["deleg"][k]
+    if any(d.delegate_id == user.id for d in delegations):
         return "delegation"
     return None
 
@@ -597,6 +660,11 @@ def submit(db: Session, key: str, *, entity_id: int, requester: User, title: str
         raise HTTPException(status_code=409, detail=f"{reference or title} is already waiting for approval — "
                                                     "cancel that request first if you need to change it.")
     ctx = {**(context or {}), "amount": amount}
+    # Set BEFORE the request copies the context: decide() reads it back to stop
+    # whoever prepared / owns the document from approving it (four-eyes).
+    excluded = sorted({i for i in (exclude_user_ids or []) if i})
+    if excluded:
+        ctx["_excluded_user_ids"] = excluded
     revision = db.query(func.count(ApprovalRequest.id)).filter(
         ApprovalRequest.entity_type == tt.entity_type, ApprovalRequest.entity_id == entity_id).scalar() or 0
     req = ApprovalRequest(
@@ -604,9 +672,6 @@ def submit(db: Session, key: str, *, entity_id: int, requester: User, title: str
         title=title[:300], reference=reference, amount=amount, context=json.loads(json.dumps(ctx, default=str)),
         requester_id=requester.id, branch_id=branch_id, status="pending", revision=revision + 1, submitted_at=_now(),
     )
-    excluded = sorted({i for i in (exclude_user_ids or []) if i})
-    if excluded:
-        ctx["_excluded_user_ids"] = excluded
     plan = plan_stages(db, wf, requester=requester, branch_id=branch_id, context=ctx,
                        exclude_user_ids=excluded) if wf.is_active else []
     problems = [f"Stage '{p['stage'].name}': {p['problem']}" for p in plan if p["problem"] and not p["stage"].skip_if_no_approver]
@@ -825,7 +890,22 @@ def step_out(s: ApprovalRequestStep) -> dict:
     }
 
 
-def request_out(db: Session, req: ApprovalRequest, user: User | None = None) -> dict:
+def _holds_approve(db: Session, user: User, req: ApprovalRequest, tt: TransactionType | None, cache: dict | None) -> bool:
+    """The permission half of `decide`: when the type's workflow requires it,
+    the approver must hold Approve on the tab (else decide() answers 403)."""
+    if tt is None:
+        return True
+    cache = cache if cache is not None else {}
+    perm = cache.setdefault("perm", {})
+    if req.workflow_key not in perm:
+        wf = db.query(ApprovalWorkflow.require_permission).filter(ApprovalWorkflow.key == req.workflow_key).first()
+        # No stored workflow yet = the type's own default, as ensure_workflow would create it.
+        required = bool(wf[0]) if wf is not None else tt.require_permission
+        perm[req.workflow_key] = (not required) or _can_decide(user, tt, "approve")
+    return perm[req.workflow_key]
+
+
+def request_out(db: Session, req: ApprovalRequest, user: User | None = None, cache: dict | None = None) -> dict:
     from app.core.record_ref import encode_ref
 
     tt = _TYPES.get(req.workflow_key)
@@ -844,32 +924,55 @@ def request_out(db: Session, req: ApprovalRequest, user: User | None = None) -> 
     if user is not None and req.status == "pending":
         for s in req.steps:
             if s.sequence == req.current_sequence and s.status == "pending":
-                via = _via(db, user, s, req)
-                if via:
+                via = _via(db, user, s, req, cache)
+                if via and _holds_approve(db, user, req, tt, cache):
                     out["can_decide"] = True
                     out["acting_for"] = None if via == "direct" else (s.approver.name if s.approver else None)
                     break
-        out["can_stand_in"] = is_admin_user(user) and not out["can_decide"]
-        out["can_cancel"] = req.requester_id == user.id or is_admin_user(user) or (
-            tt is not None and can_perform(user, tt.module_key, tt.subtab_key, "cancel"))
+        # Admin-ness and the per-type Cancel permission are the same for every
+        # row of one user, so a list call asks once, not once per row.
+        memo = cache.setdefault("user", {}) if cache is not None else {}
+        if "admin" not in memo:
+            memo["admin"] = is_admin_user(user)
+        out["can_stand_in"] = memo["admin"] and not out["can_decide"]
+        can_cancel_type = False
+        if tt is not None:
+            k = ("cancel", tt.module_key, tt.subtab_key)
+            if k not in memo:
+                memo[k] = can_perform(user, tt.module_key, tt.subtab_key, "cancel")
+            can_cancel_type = memo[k]
+        out["can_cancel"] = req.requester_id == user.id or memo["admin"] or can_cancel_type
     return out
 
 
 def entity_status(db: Session, entity_type: str, entity_id: int, user: User | None = None) -> dict:
     reqs = (
-        db.query(ApprovalRequest)
+        db.query(ApprovalRequest).options(*_load())
         .filter(ApprovalRequest.entity_type == entity_type, ApprovalRequest.entity_id == entity_id)
         .order_by(ApprovalRequest.id.desc())
         .all()
     )
+    cache: dict = {}
     return {
-        "current": request_out(db, reqs[0], user) if reqs else None,
-        "history": [request_out(db, r) for r in reqs[1:]],
+        "current": request_out(db, reqs[0], user, cache) if reqs else None,
+        "history": [request_out(db, r, None, cache) for r in reqs[1:]],
     }
 
 
+# Everything request_out touches, loaded in a fixed number of queries.
+def _load():
+    # A function, not a module constant: building the options at import would
+    # configure every mapper before all models are imported.
+    return (
+        selectinload(ApprovalRequest.requester),
+        selectinload(ApprovalRequest.steps).selectinload(ApprovalRequestStep.approver),
+        selectinload(ApprovalRequest.steps).selectinload(ApprovalRequestStep.decided_by),
+    )
+
+
 def inbox(db: Session, user: User) -> list[dict]:
-    """Every pending request the user can act on now — as approver, delegate or escalation target."""
+    """Every pending request the user can act on now — as approver, delegate or
+    escalation target (and, where the workflow requires it, holding Approve)."""
     today = date.today()
     delegators = {
         d.delegator_id: d for d in db.query(ApprovalDelegation).filter(
@@ -877,6 +980,10 @@ def inbox(db: Session, user: User) -> list[dict]:
             ApprovalDelegation.start_date <= today, ApprovalDelegation.end_date >= today,
         ).all()
     }
+    # Same three doors as _via(): approver, a delegator's slot, or listed in the
+    # step's also-allowed / escalation list. That list is JSON, so match the id
+    # in its text — a superset (id 1 also matches 12) that _via() then settles exactly.
+    listed = cast(ApprovalRequestStep.escalated_to_ids, String).like(f"%{user.id}%")
     # De-duplicate on the id only: Postgres can't DISTINCT whole rows that
     # hold JSON columns (context, escalation_config).
     candidate_ids = (
@@ -889,18 +996,19 @@ def inbox(db: Session, user: User) -> list[dict]:
         .filter(or_(
             ApprovalRequestStep.approver_id == user.id,
             ApprovalRequestStep.approver_id.in_(list(delegators) or [-1]),
-            ApprovalRequestStep.escalated_to_ids.isnot(None),
+            listed,
         ))
         .distinct()
     )
     candidates = (
-        db.query(ApprovalRequest).filter(ApprovalRequest.id.in_(candidate_ids))
+        db.query(ApprovalRequest).options(*_load()).filter(ApprovalRequest.id.in_(candidate_ids))
         .order_by(ApprovalRequest.submitted_at)
         .all()
     )
+    cache: dict = {}
     out = []
     for req in candidates:
-        row = request_out(db, req, user)
+        row = request_out(db, req, user, cache)
         if row["can_decide"]:
             out.append(row)
     return out
@@ -908,17 +1016,19 @@ def inbox(db: Session, user: User) -> list[dict]:
 
 def my_requests(db: Session, user: User, limit: int = 100) -> list[dict]:
     rows = (
-        db.query(ApprovalRequest).filter(ApprovalRequest.requester_id == user.id)
+        db.query(ApprovalRequest).options(*_load()).filter(ApprovalRequest.requester_id == user.id)
         .order_by(ApprovalRequest.id.desc()).limit(limit).all()
     )
-    return [request_out(db, r, user) for r in rows]
+    cache: dict = {}
+    return [request_out(db, r, user, cache) for r in rows]
 
 
 def decided_by_me(db: Session, user: User, limit: int = 100) -> list[dict]:
     ids = [r[0] for r in db.query(ApprovalRequestStep.request_id).filter(ApprovalRequestStep.decided_by_id == user.id)
            .order_by(ApprovalRequestStep.decided_at.desc()).limit(limit).all()]
-    rows = db.query(ApprovalRequest).filter(ApprovalRequest.id.in_(ids or [-1])).order_by(ApprovalRequest.id.desc()).all()
-    return [request_out(db, r, user) for r in rows]
+    rows = db.query(ApprovalRequest).options(*_load()).filter(ApprovalRequest.id.in_(ids or [-1])).order_by(ApprovalRequest.id.desc()).all()
+    cache: dict = {}
+    return [request_out(db, r, user, cache) for r in rows]
 
 
 def preview(db: Session, key: str, *, requester: User, context: dict, branch_id: int | None,
@@ -931,13 +1041,17 @@ def preview(db: Session, key: str, *, requester: User, context: dict, branch_id:
         if draft.get("is_active") is False:
             return []
         rows = _stage_rows(get_type(key), draft.get("stages") or [])  # validates; never added to the session
-        wf = SimpleNamespace(stages=rows, allow_self_approval=bool(draft.get("allow_self_approval")))
+        saved = ensure_workflow(db, key)
+        req_perm = draft.get("require_permission")
+        wf = SimpleNamespace(stages=rows, allow_self_approval=bool(draft.get("allow_self_approval")), key=key,
+                             require_permission=saved.require_permission if req_perm is None else bool(req_perm))
     names = {u.id: u.name for u in db.query(User.id, User.name).all()}
     return [{
         "sequence": p["stage"].sequence, "name": p["stage"].name, "approval_mode": p["stage"].approval_mode,
         "approvers": [{"id": i, "name": names.get(i)} for i in p["approver_ids"]],
         "also": [{"id": i, "name": names.get(i)} for i in p.get("also_ids") or []],
-        "problem": p["problem"], "skipped": not p["approver_ids"] and p["stage"].skip_if_no_approver,
+        "problem": p["problem"], "warning": p.get("warning"),
+        "skipped": not p["approver_ids"] and p["stage"].skip_if_no_approver,
     } for p in plan_stages(db, wf, requester=requester, branch_id=branch_id, context=context)]
 
 
@@ -972,21 +1086,33 @@ def check_workflow(db: Session, key: str, payload: dict) -> dict:
 
     users = [u for u in db.query(User).filter(User.is_active.is_(True)).order_by(User.name).all()
              if is_admin_user(u) or tt.module_key in (u.get_apps() or [])]
+    req_perm = payload.get("require_permission")
+    if req_perm is None:
+        req_perm = ensure_workflow(db, key).require_permission
+    perm_tt = tt if req_perm else None
+    people: dict[int, User] = {u.id: u for u in users}  # id -> User, grown on demand by _split_by_permission
     stage_out = []
     for idx, st in enumerate(rows):
         cfg = st.rule_config or {}
         refused: dict[str, list[str]] = {}
+        stuck_people: dict[str, list[str]] = {}
         approver_counts: list[int] = []
         if st.approver_rule != "record_field":  # chosen on each document — nothing to check up front
             for u in users:
-                ids = _resolve(db, st.approver_rule, cfg, requester=u, branch_id=None, context={}) + _also_ids(db, cfg)
+                resolved = _resolve(db, st.approver_rule, cfg, requester=u, branch_id=None, context={})
+                ids = resolved + _also_ids(db, cfg)
                 if not allow_self:
                     ids = [i for i in ids if i != u.id]
+                ids = list(dict.fromkeys(ids))
+                holders, no_perm = _split_by_permission(db, ids, perm_tt, people)
                 if ids:
-                    approver_counts.append(len(set(ids)))
+                    approver_counts.append(len(set(holders or ids)))
+                    if not holders:
+                        # Approvers exist but none may approve: the document would wait on them.
+                        stuck_people.setdefault(_lacking_permission_reason(db, no_perm, tt), []).append(u.name or u.email)
                     continue
                 reason = _no_approver_reason(db, st, u, None)
-                if not allow_self and _resolve(db, st.approver_rule, cfg, requester=u, branch_id=None, context={}) == [u.id]:
+                if not allow_self and resolved == [u.id]:
                     reason = "They are the only approver of this stage for their own documents (four-eyes) — add a second approver."
                 refused.setdefault(reason, []).append(u.name or u.email)
         label = f"Stage {idx + 1} '{st.name}'"
@@ -997,6 +1123,9 @@ def check_workflow(db: Session, key: str, payload: dict) -> dict:
                                f"less. Reason: {reason}", idx)
             else:
                 add("error", f"{label}: {len(names)} people ({sample}) couldn't submit — {reason}", idx)
+        for reason, names in sorted(stuck_people.items(), key=lambda kv: -len(kv[1])):
+            sample = ", ".join(names[:_SAMPLE_NAMES]) + (f" and {len(names) - _SAMPLE_NAMES} more" if len(names) > _SAMPLE_NAMES else "")
+            add("error", f"{label}: documents of {len(names)} people ({sample}) would get stuck — {reason}", idx)
         if st.approval_mode == "all" and approver_counts and max(approver_counts) > 3:
             add("warning", f"{label}: up to {max(approver_counts)} people must ALL approve. One absence holds every "
                            "document — use 'Any one of them approves' unless each person checks something different.", idx)
