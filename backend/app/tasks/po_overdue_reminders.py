@@ -3,8 +3,13 @@
 Runs once a day (wired up in app/main.py) and notifies the buyer assigned to
 the PO's originating PR — falling back to the PO's own creator for an ad-hoc
 PO raised with no linked PR — for every PO whose vendor-promised
-expected_delivery has passed with no goods receipt yet (status still
-issued/acknowledged/partially_fulfilled, not fulfilled/cancelled/draft).
+expected_delivery has passed while goods are still to come.
+
+Only a PO that is released (final approval given), whose requisition is still
+open and which still has a balance is chased (p2p/po_tracking.reminder_pos).
+A PO still in approval (its status is "issued" from the moment it is sent for
+approval), a short-closed or closed PO (the balance is written off), a PO
+received in full, a cancelled one and a draft are never chased.
 Fires again every day it remains overdue, same dedup-per-day shape as
 app/tasks/followup_reminders.py."""
 import asyncio
@@ -12,19 +17,19 @@ import logging
 from datetime import date
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.modules.main.models.user import User
 from app.modules.main.models.notification import Notification
 from app.modules.p2p.models.purchase_order import P2PPurchaseOrder
+from app.modules.p2p.po_tracking import reminder_pos
 from app.utils.notifications import notify_user
 from app.utils.email import send_po_overdue_email
 
 logger = logging.getLogger(__name__)
 
 OVERDUE = "po_overdue"
-_OVERDUE_STATUSES = ("issued", "acknowledged", "partially_fulfilled")
 
 
 def _resolve_buyer_id(po: P2PPurchaseOrder) -> int | None:
@@ -47,24 +52,17 @@ def _send_po_overdue_reminders(db: Session) -> None:
     """Pure logic over an already-open session — kept separate from session
     management so tests can call this directly against an isolated test DB."""
     today = date.today()
-    pos = db.query(P2PPurchaseOrder).options(
-        selectinload(P2PPurchaseOrder.p2p_request)
-    ).filter(
-        P2PPurchaseOrder.status.in_(_OVERDUE_STATUSES),
-        P2PPurchaseOrder.expected_delivery.is_not(None),
-        P2PPurchaseOrder.expected_delivery < today,
-    ).all()
+    pos = reminder_pos(db, today)
 
     from app.modules.p2p import notify as p2p_notify
 
-    for po in pos:
+    for po, days_overdue in pos:
         buyer_id = _resolve_buyer_id(po)
         # Role event (Procurement › PO delivery overdue) — once per PO, bell / Teams.
-        p2p_notify.po_delivery_overdue(db, po, (today - po.expected_delivery).days, buyer_id)
+        p2p_notify.po_delivery_overdue(db, po, days_overdue, buyer_id)
         if not buyer_id or _already_sent_today(db, buyer_id, po.id):
             continue
 
-        days_overdue = (today - po.expected_delivery).days
         day_word = "day" if days_overdue == 1 else "days"
         notify_user(
             db, user_id=buyer_id,

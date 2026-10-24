@@ -32,6 +32,7 @@ from typing import Any, Callable
 
 from fastapi import HTTPException
 from sqlalchemy import String, cast, func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.permission_registry import MODULES, can_feature, can_perform, holds_deliberately, is_admin_user
@@ -235,8 +236,18 @@ def ensure_workflow(db: Session, key: str) -> ApprovalWorkflow:
             distinct_approvers=tt.distinct_approvers, require_permission=tt.require_permission,
         )
         wf.stages = _stage_rows(tt, [s.__dict__ for s in tt.default_stages])
-        db.add(wf)
-        db.flush()
+        try:
+            # Savepoint: two first-ever requests at the same moment both try to
+            # create the type's row (key is unique). The loser must not fail —
+            # nor roll back the caller's work — it just reads the winner's row.
+            with db.begin_nested():
+                db.add(wf)
+                db.flush()
+        except IntegrityError:
+            existing = db.query(ApprovalWorkflow).filter(ApprovalWorkflow.key == key).first()
+            if existing is None:
+                raise
+            return existing
     return wf
 
 
@@ -650,6 +661,11 @@ def submit(db: Session, key: str, *, entity_id: int, requester: User, title: str
     stage applies, the request is approved at once (on_decided fires)."""
     tt = get_type(key)
     wf = ensure_workflow(db, key)
+    # One live request per document: two submits of the same document at the
+    # same moment would both see "nothing pending". Taking the type's workflow
+    # row lock first makes the second wait for the first one's commit, then
+    # find its pending request below (409).
+    db.query(ApprovalWorkflow.id).filter(ApprovalWorkflow.id == wf.id).with_for_update().first()
     pending = (
         db.query(ApprovalRequest)
         .filter(ApprovalRequest.entity_type == tt.entity_type, ApprovalRequest.entity_id == entity_id,
@@ -858,6 +874,8 @@ def reassign_pending(db: Session, from_user_id: int, to_user_id: int, actor: Use
                 or_(ApprovalRequest.requester_id.is_(None), ApprovalRequest.requester_id != to_user_id))
         .all()
     )
+    # Nor to someone barred as the document's preparer / owner (decide() would refuse them).
+    steps = [st for st in steps if to_user_id not in ((st.request.context or {}).get("_excluded_user_ids") or [])]
     for step in steps:
         step.approver_id = to_user_id
         req = step.request
@@ -1060,22 +1078,56 @@ def preview(db: Session, key: str, *, requester: User, context: dict, branch_id:
 _SAMPLE_NAMES = 3
 
 
-def check_workflow(db: Session, key: str, payload: dict) -> dict:
+def _named_ids(stage: Any) -> set[int]:
+    """Users a stage names directly: its approvers and its escalation contacts."""
+    g = (lambda k: stage.get(k)) if isinstance(stage, dict) else (lambda k: getattr(stage, k, None))
+    ids: set[int] = set()
+    if g("approver_rule") == "specific_users":
+        ids |= {i for i in ((g("rule_config") or {}).get("user_ids") or []) if isinstance(i, int)}
+    if g("escalation_rule") == "specific_users" and g("escalate_after_hours"):
+        ids |= {i for i in ((g("escalation_config") or {}).get("user_ids") or []) if isinstance(i, int)}
+    return ids
+
+
+def newly_named_by(db: Session, key: str, payload: dict, actor: User | None) -> list[int]:
+    """Stage indexes (0-based) where `actor` names themselves as an approver or
+    escalation contact although the saved workflow didn't — editing a workflow
+    to approve your own documents defeats the separation it exists for."""
+    if actor is None:
+        return []
+    already: set[int] = set()
+    for st in ensure_workflow(db, key).stages:
+        already |= _named_ids(st)
+    if actor.id in already:
+        return []
+    return [i for i, st in enumerate(payload.get("stages") or []) if actor.id in _named_ids(st)]
+
+
+def check_workflow(db: Session, key: str, payload: dict, actor: User | None = None) -> dict:
     """Dry-run a (possibly unsaved) workflow against every active user who can
     raise this document, without changing anything. Returns issues ranked
     error > warning > info, each tied to a stage (index) or the whole flow:
       error   — some people's documents would be refused (nobody to approve);
       warning — a control is weak (self-approval, a stage everyone skips, a
                 big 'every one must approve' group, no stage always applies);
-      info    — good practice not in use (escalation, distinct approvers)."""
+      info    — good practice not in use (escalation, distinct approvers).
+    An issue with `blocking: True` is a mistake in the workflow itself (nobody at
+    all could submit, a stage nobody can ever pass, the editor naming
+    themselves) — saving is refused until it is fixed. Other errors depend on
+    people's setup (one person has no manager) and may be saved knowingly."""
     tt = get_type(key)
     rows = _stage_rows(tt, payload.get("stages") or [])  # validates; never added to the session
     allow_self = bool(payload.get("allow_self_approval"))
     active = payload.get("is_active", True) is not False
     issues: list[dict] = []
 
-    def add(level: str, message: str, stage: int | None = None):
-        issues.append({"level": level, "stage": stage, "message": message})
+    def add(level: str, message: str, stage: int | None = None, blocking: bool = False):
+        issues.append({"level": level, "stage": stage, "message": message, "blocking": blocking})
+
+    for idx in newly_named_by(db, key, payload, actor):
+        add("error", f"Stage {idx + 1}: you named yourself as an approver (or escalation contact) of a workflow you are editing. "
+                     "Nobody approves under rules they wrote for themselves — remove yourself and ask another workflow "
+                     "editor or an admin to add you.", idx, blocking=True)
 
     if not active:
         add("warning", "Approval is switched off — every document is approved the moment it is submitted.")
@@ -1092,8 +1144,11 @@ def check_workflow(db: Session, key: str, payload: dict) -> dict:
     perm_tt = tt if req_perm else None
     people: dict[int, User] = {u.id: u for u in users}  # id -> User, grown on demand by _split_by_permission
     stage_out = []
+    stage_sets: list[dict[int, set[int]]] = []  # per stage: requester id -> who could approve it
     for idx, st in enumerate(rows):
         cfg = st.rule_config or {}
+        sets_here: dict[int, set[int]] = {}
+        stage_sets.append(sets_here)
         refused: dict[str, list[str]] = {}
         stuck_people: dict[str, list[str]] = {}
         approver_counts: list[int] = []
@@ -1106,6 +1161,7 @@ def check_workflow(db: Session, key: str, payload: dict) -> dict:
                 ids = list(dict.fromkeys(ids))
                 holders, no_perm = _split_by_permission(db, ids, perm_tt, people)
                 if ids:
+                    sets_here[u.id] = set(holders or ids)
                     approver_counts.append(len(set(holders or ids)))
                     if not holders:
                         # Approvers exist but none may approve: the document would wait on them.
@@ -1122,10 +1178,12 @@ def check_workflow(db: Session, key: str, payload: dict) -> dict:
                 add("warning", f"{label} is skipped for {len(names)} people ({sample}) — their documents get one approval "
                                f"less. Reason: {reason}", idx)
             else:
-                add("error", f"{label}: {len(names)} people ({sample}) couldn't submit — {reason}", idx)
+                add("error", f"{label}: {len(names)} people ({sample}) couldn't submit — {reason}", idx,
+                    blocking=len(names) >= len(users))
         for reason, names in sorted(stuck_people.items(), key=lambda kv: -len(kv[1])):
             sample = ", ".join(names[:_SAMPLE_NAMES]) + (f" and {len(names) - _SAMPLE_NAMES} more" if len(names) > _SAMPLE_NAMES else "")
-            add("error", f"{label}: documents of {len(names)} people ({sample}) would get stuck — {reason}", idx)
+            add("error", f"{label}: documents of {len(names)} people ({sample}) would get stuck — {reason}", idx,
+                blocking=len(names) >= len(users))
         if st.approval_mode == "all" and approver_counts and max(approver_counts) > 3:
             add("warning", f"{label}: up to {max(approver_counts)} people must ALL approve. One absence holds every "
                            "document — use 'Any one of them approves' unless each person checks something different.", idx)
@@ -1138,6 +1196,32 @@ def check_workflow(db: Session, key: str, payload: dict) -> dict:
                           "skipped_for": sum(len(v) for v in refused.values()) if st.skip_if_no_approver else 0,
                           "max_approvers": max(approver_counts) if approver_counts else 0})
 
+    if payload.get("distinct_approvers") and len(rows) > 1:
+        # "Different person per stage": whoever approved an earlier stage can't
+        # approve a later one. If everyone who could approve a later stage must
+        # already have approved an earlier one ('every one must approve', or a
+        # single approver), the document can never pass it.
+        for idx in range(1, len(rows)):
+            hit: list[int] = []
+            for u in users:
+                forced: set[int] = set()
+                for j in range(idx):
+                    sj = stage_sets[j].get(u.id)
+                    if sj and (rows[j].approval_mode == "all" or len(sj) == 1):
+                        forced |= sj
+                si = stage_sets[idx].get(u.id)
+                if si and forced and si <= forced:
+                    hit.append(u.id)
+            if not hit:
+                continue
+            always = not any(rows[j].conditions for j in range(idx + 1))
+            sample = ", ".join(sorted(people[i].name or people[i].email for i in hit)[:_SAMPLE_NAMES])
+            more = f" and {len(hit) - _SAMPLE_NAMES} more" if len(hit) > _SAMPLE_NAMES else ""
+            text = (f"Stage {idx + 1} '{rows[idx].name}' can never be passed for {len(hit)} people ({sample}{more}): everyone who "
+                    "could approve it has to approve an earlier stage first, and 'Different person per stage' stops them "
+                    "approving twice. Give this stage a different approver, switch the earlier stage to 'Any one of them "
+                    "approves', or switch off 'Different person per stage'.")
+            add("error" if always else "warning", text, idx, blocking=always and len(hit) >= len(users))
     if allow_self:
         add("warning", "The requester may approve their own document — that removes the four-eyes check. Switch it off "
                        "unless the business has accepted that risk.")
@@ -1322,7 +1406,11 @@ def escalate_overdue(db: Session) -> int:
     )
     for step in steps:
         req = step.request
-        targets = [t for t in _escalation_targets(db, step, req) if t not in (step.approver_id, req.requester_id)]
+        # Never escalate to someone the four-eyes rule bars (the requester, or
+        # whoever prepared / owns the document): they would see it in My
+        # Approvals but every decision would be refused.
+        barred = {step.approver_id, req.requester_id, *((req.context or {}).get("_excluded_user_ids") or [])}
+        targets = [t for t in _escalation_targets(db, step, req) if t not in barred]
         step.escalated_at = now
         step.escalated_to_ids = sorted(set(step.escalated_to_ids or []) | set(targets))
         late = step.approver.name if step.approver else "the approver"

@@ -28,6 +28,7 @@ from app.modules.accounts.models.vendor import GST_REGISTRATION_TYPES, VENDOR_ST
 from app.modules.accounts.models.vendor_catalog_item import VendorCatalogItem
 from app.modules.accounts.models.vendor_document import VENDOR_DOC_TYPES, VendorDocument
 from app.modules.accounts.routes.vendors import _clean_tax_fields, check_msme
+from app.modules.accounts.services.vendor_referral import REFERRAL_FIELDS, clean_referral, vendor_people
 from app.modules.erp.importing import (
     check_date_range, check_rows, csv_template, in_range, ist_date, norm_key, parse_export_ids, parse_number,
     norm_header, read_rows, text, xlsx_response,
@@ -90,6 +91,11 @@ class VendorPayload(BaseModel):
     udyam_number: str | None = None
     msme_activity: str | None = None
     msme_valid_from: date | None = None
+    # Who referred the vendor (accounts/services/vendor_referral.py).
+    referral_type: str | None = None  # employee / external / direct
+    referred_by_user_id: int | None = None
+    referred_by_name: str | None = None
+    referred_by_phone: str | None = None
 
 
 class CatalogItemPayload(BaseModel):
@@ -135,8 +141,11 @@ def _get(db: Session, vendor_id: int) -> Vendor:
     return v
 
 
-def _row(v: Vendor, docs: int = 0, items: int = 0) -> dict:
+def _row(v: Vendor, docs: int = 0, items: int = 0, people: dict | None = None) -> dict:
     return {
+        **(people or {"created_by_name": None, "referred_by_user_name": None, "referred_by_label": None}),
+        "created_by_id": v.created_by_id, "referral_type": v.referral_type, "referred_by_user_id": v.referred_by_user_id,
+        "referred_by_name": v.referred_by_name, "referred_by_phone": v.referred_by_phone,
         "id": v.id, "code": v.code, "name": v.name, "contact_name": v.contact_name, "contact_phone": v.contact_phone,
         "contact_email": v.contact_email, "address": v.address, "city": v.city, "state": v.state, "pin_code": v.pin_code,
         "gstin": v.gstin, "pan": v.pan, "gst_registration_type": v.gst_registration_type, "website": v.website,
@@ -158,7 +167,7 @@ def _counts(db: Session, ids: list[int]) -> tuple[dict, dict]:
     return docs, items
 
 
-def _clean(data: dict, *, creating: bool) -> dict:
+def _clean(data: dict, *, creating: bool, db: Session | None = None, current: Vendor | None = None) -> dict:
     for k, v in list(data.items()):
         if isinstance(v, str):
             data[k] = v.strip() or None
@@ -169,7 +178,22 @@ def _clean(data: dict, *, creating: bool) -> dict:
         raise HTTPException(status_code=422, detail=f"Status must be one of: {', '.join(VENDOR_STATUSES)}.")
     if creating and not data.get("gst_registration_type"):
         data["gst_registration_type"] = "regular" if data.get("gstin") else "unregistered"
+    if db is not None:
+        clean_referral(db, data, current)
     return _clean_tax_fields(data)
+
+
+def _import_referral(db: Session, raw: str | None) -> dict:
+    """'Referred By' cell: blank = not recorded; 'Direct' = nobody; an active
+    employee's email = that employee; anything else = an external referrer."""
+    if not raw:
+        return {}
+    if raw.strip().lower() in ("direct", "none", "no referral"):
+        return {"referral_type": "direct"}
+    u = db.query(User).filter(func.lower(User.email) == raw.strip().lower(), User.is_active == True).first()  # noqa: E712
+    if u:
+        return {"referral_type": "employee", "referred_by_user_id": u.id}
+    return {"referral_type": "external", "referred_by_name": raw.strip()}
 
 
 def _dup_check(db: Session, data: dict, exclude_id: int | None = None) -> None:
@@ -211,7 +235,8 @@ def list_vendors(
                          Vendor.contact_name.ilike(like)))
     vendors = q.order_by(Vendor.name).all()
     docs, items = _counts(db, [v.id for v in vendors])
-    return [_row(v, docs.get(v.id, 0), items.get(v.id, 0)) for v in vendors]
+    people = vendor_people(db, vendors)
+    return [_row(v, docs.get(v.id, 0), items.get(v.id, 0), people[v.id]) for v in vendors]
 
 
 @router.get("/for-item")
@@ -234,7 +259,7 @@ def vendors_for_item(store_item_id: int = Query(...), db: Session = Depends(get_
 
 @router.post("", status_code=201)
 def create_vendor(payload: VendorPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db), user: User = Depends(_create)):
-    data = _clean(payload.model_dump(exclude_unset=True), creating=True)
+    data = _clean(payload.model_dump(exclude_unset=True), creating=True, db=db)
     data["code"] = data.get("code") or _next_code(db)
     data["status"] = data.get("status") or "active"
     _dup_check(db, data)
@@ -249,7 +274,7 @@ def create_vendor(payload: VendorPayload, background_tasks: BackgroundTasks, db:
                ("Contact", " · ".join(x for x in (v.contact_name, v.contact_phone) if x)), ("Added by", user.name or user.email)])
     db.commit()
     db.refresh(v)
-    return _row(v)
+    return _row(v, people=vendor_people(db, [v])[v.id])
 
 
 @router.get("/export")
@@ -273,11 +298,13 @@ def export_vendors(
                              Vendor.contact_name.ilike(like)))
         vendors = [v for v in q.order_by(Vendor.name).all() if in_range(ist_date(v.created_at), date_from, date_to)]
     docs, items = _counts(db, [v.id for v in vendors])
+    people = vendor_people(db, vendors)
     headers = ["Code", "Company", "Contact Person", "Phone", "Email", "Address", "City", "State", "PIN", "GSTIN", "PAN",
-               "GST Registration", "Website", "Status", "Catalog Items", "Documents", "Terms & Conditions", "Added On"]
+               "GST Registration", "Website", "Status", "Catalog Items", "Documents", "Terms & Conditions", "Added On", "Added By", "Referred By"]
     rows = [[v.code, v.name, v.contact_name or "", v.contact_phone or "", v.contact_email or "", v.address or "", v.city or "",
              v.state or "", v.pin_code or "", v.gstin or "", v.pan or "", v.gst_registration_type or "", v.website or "",
-             v.status, items.get(v.id, 0), docs.get(v.id, 0), v.terms_conditions or "", ist_date(v.created_at) or ""] for v in vendors]
+             v.status, items.get(v.id, 0), docs.get(v.id, 0), v.terms_conditions or "", ist_date(v.created_at) or "",
+             people[v.id]["created_by_name"] or "", people[v.id]["referred_by_label"] or ""] for v in vendors]
     return xlsx_response("Vendors", headers, rows, "vendors.xlsx")
 
 
@@ -285,13 +312,14 @@ VENDOR_IMPORT_COLUMNS = [
     ("company_name", "Company Name *"), ("contact_person", "Contact Person"), ("phone", "Phone"), ("email", "Email"),
     ("address", "Address"), ("city", "City"), ("state", "State"), ("pin_code", "PIN"), ("gstin", "GSTIN"),
     ("website", "Website"), ("terms_conditions", "Terms & Conditions"),
+    ("referred_by", "Referred By"),
 ]
 
 
 @router.get("/import/template")
 def vendor_import_template(_user: User = Depends(_import)):
     return csv_template(VENDOR_IMPORT_COLUMNS, [["Shree Hydraulics Pvt Ltd", "Rakesh Jain", "9876543210", "sales@shreehyd.in",
-                                                 "Plot 12, MIDC", "Pune", "Maharashtra", "411019", "", "shreehyd.in", "30 days credit"]],
+                                                 "Plot 12, MIDC", "Pune", "Maharashtra", "411019", "", "shreehyd.in", "30 days credit", "Direct"]],
                         "vendor_import_template.csv")
 
 
@@ -313,11 +341,12 @@ async def import_vendors(file: UploadFile = File(...), db: Session = Depends(get
                 "contact_email": text(r, "email"), "address": text(r, "address"), "city": text(r, "city"),
                 "state": text(r, "state"), "pin_code": text(r, "pin_code"), "gstin": text(r, "gstin"),
                 "website": text(r, "website"), "terms_conditions": text(r, "terms_conditions")}
+        data.update(_import_referral(db, text(r, "referred_by")))
         if norm_key(name) in existing_names or (data["gstin"] and data["gstin"].upper() in existing_gst):
             existing.append(name)
             continue
         try:
-            data = _clean(data, creating=True)
+            data = _clean(data, creating=True, db=db)
         except HTTPException as e:
             errors.append({"row": n, "reason": f"{name}: {e.detail}"})
             continue
@@ -339,13 +368,13 @@ async def import_vendors(file: UploadFile = File(...), db: Session = Depends(get
 def get_vendor(vendor_id: int, db: Session = Depends(get_db), _user: User = Depends(_lookup)):
     v = _get(db, vendor_id)
     docs, items = _counts(db, [v.id])
-    return _row(v, docs.get(v.id, 0), items.get(v.id, 0))
+    return _row(v, docs.get(v.id, 0), items.get(v.id, 0), vendor_people(db, [v])[v.id])
 
 
 @router.patch("/{vendor_id}")
 def update_vendor(vendor_id: int, payload: VendorPayload, db: Session = Depends(get_db), user: User = Depends(_edit)):
     v = _get(db, vendor_id)
-    data = _clean(payload.model_dump(exclude_unset=True), creating=False)
+    data = _clean(payload.model_dump(exclude_unset=True), creating=False, db=db, current=v)
     if "code" in data and not data["code"]:
         raise HTTPException(status_code=422, detail="Vendor code can't be blank.")
     _dup_check(db, data, exclude_id=v.id)
@@ -354,10 +383,11 @@ def update_vendor(vendor_id: int, payload: VendorPayload, db: Session = Depends(
         setattr(v, k, val)
     check_msme(v)
     if changed:
-        _audit(db, v.id, "updated", user, f"{user.name or user.email} updated vendor {v.name}: {', '.join(changed)}.")
+        shown = list(dict.fromkeys("referred by" if k in REFERRAL_FIELDS else k for k in changed))
+        _audit(db, v.id, "updated", user, f"{user.name or user.email} updated vendor {v.name}: {', '.join(shown)}.")
     db.commit()
     docs, items = _counts(db, [v.id])
-    return _row(v, docs.get(v.id, 0), items.get(v.id, 0))
+    return _row(v, docs.get(v.id, 0), items.get(v.id, 0), vendor_people(db, [v])[v.id])
 
 
 # ---------------------------------------------------------------- documents

@@ -10,15 +10,15 @@ const config: TourConfig = {
       purpose: 'What this purchase is for. It decides what the cost is charged to, so every rupee lands on a real order, department or job.',
       required: true,
       options: [
-        { value: 'Production (customer order)', meaning: 'Material to build a machine a customer has ordered, before delivery. Charged to its Order Project; each line names the vehicle / lot.' },
-        { value: 'Service (delivered machine)', meaning: 'Spares or work for a machine already delivered: service, repair, warranty. Pick the machine; Charged To is optional.' },
+        { value: 'Production (customer order)', meaning: 'Material to build a machine a customer has ordered, before delivery. Charged to its Order Project; every line is for that project (no vehicle / lot per line).' },
+        { value: 'Service (delivered machine)', meaning: 'Spares or work for a machine already delivered: service, repair, warranty. Pick the machine; every line is for it. Charged To is optional.' },
         { value: 'New development', meaning: 'R&D / new product work. Charged to the development job’s internal order.' },
         { value: 'Department running cost', meaning: 'Cleaning material, stationery, small tools, office repairs, AMC, housekeeping. Purchase charges it to your department’s cost centre on the PO; you don’t pick one here.' },
         { value: 'Asset / capital purchase', meaning: 'Things used for years: machine, laptop, AC, welding set. Charged to the asset’s internal order.' },
         { value: 'Store stock refill', meaning: 'Common items Store keeps in stock. Nothing is charged now; the cost goes to whoever Store issues it to.' },
       ],
       why: 'Office and overhead costs are never tagged to a customer project. Finance spreads them over projects later; tagging them by hand makes project costs wrong.',
-      after: 'The purpose also narrows the Category list to what fits it and pre-fills Category and Requirement Type where there is a usual answer (e.g. Asset → Capital Equipment). You can still change them.',
+      after: 'The purpose also narrows the Category and Requirement Type lists to what fits it and pre-fills them where there is a usual answer (e.g. Asset → Capital Equipment). A field with only one possible answer is filled in and shown as Fixed. What each purpose offers is set by an admin in Procurement › Settings › Purpose rules.',
     },
     {
       target: 'pr-new-project',
@@ -30,13 +30,13 @@ const config: TourConfig = {
     {
       target: 'pr-new-charged-to',
       title: 'Charged To',
-      purpose: 'The record the cost is booked against: order project, sales order, work order, internal order or cost centre. Only the options that fit the purpose are offered.',
+      purpose: 'The record the cost is booked against: order project, sales order, work order, internal order or cost centre. Only the options that fit the purpose are offered. When the purpose has just one possible answer (e.g. Production → Order project) it is shown as a fixed value marked "Fixed" instead of a dropdown, and you only pick the record next to it.',
       after: 'An internal order also goes onto the PO, so its budget shows the commitment in Finance › Controlling.',
     },
     {
       target: 'pr-new-category',
       title: 'Purchase Requisition Category',
-      purpose: 'What kind of items are bought. It decides the buyer the requisition goes to and is part of its number (P2P-ELE-…). Only the categories that fit the purpose are listed; some purposes pre-fill it (Department running cost → Office & Admin, Asset → Capital Equipment, Store stock → Hardware & Consumables).',
+      purpose: 'What kind of items are bought. It decides the buyer the requisition goes to and is part of its number (P2P-ELE-…). Only the categories that fit the purpose are listed; some purposes pre-fill it (Department running cost → Office & Admin, Asset → Capital Equipment, Store stock → Hardware & Consumables). If the purpose allows just one category — or the Purpose rules lock it — it is shown as a read-only value marked Fixed.',
       required: true,
       after: 'Must be selected before this requisition can be submitted.',
     },
@@ -49,7 +49,7 @@ const config: TourConfig = {
     {
       target: 'pr-new-requirement-type',
       title: 'Requirement Type',
-      purpose: 'Further classifies the nature of this requirement (e.g. capital, consumable, service).',
+      purpose: 'Further classifies the nature of this requirement (e.g. capital, consumable, service). Only the types the purpose allows are listed; with one allowed type (or when locked in Purpose rules) it is filled in and shown as Fixed.',
       required: false,
     },
     {
@@ -60,7 +60,7 @@ const config: TourConfig = {
     {
       target: 'pr-new-item-name',
       title: 'Item (from Item Master)',
-      purpose: 'Pick what you need from the Store Item Master — search by item code, name or part number. The line is tied to that item, so the PO, the GRN and the stock posting all use the same item.',
+      purpose: 'Pick what you need from the Store Item Master — search by item code, name or part number. The line is tied to that item, so the PO, the GRN and the stock posting all use the same item. Once a Purpose is chosen, the Item Type list and the items offered are narrowed to the types that purpose buys (e.g. an asset purchase offers assets, tools and services; a store stock refill offers no assets or services); if only one type fits it is pre-selected. Lines have no Project / Inhouse or vehicle choice: every line is for the project named in the header, or Inhouse for overhead purposes. Submitting with an item of a type the purpose does not buy is stopped on the form with the line named. Changing the Purpose re-filters, and a line already holding an item of a type the new purpose does not buy is flagged with an amber warning rather than removed.',
       required: true,
       validExample: 'RM-00012 — Ball Bearing 6205-2RS',
       why: 'Every purchase line must be an Item Master item — that is how the received goods land in the right stock item at the PO price. A new item is added in Store › Item Master first (link below the table), then picked here.',
@@ -88,16 +88,6 @@ const config: TourConfig = {
       title: 'Qty',
       purpose: 'How many units of this item are needed.',
       whatToEnter: 'A positive number. Defaults to 1.',
-    },
-    {
-      target: 'pr-new-item-projinhouse',
-      title: 'Project/Inhouse',
-      purpose: 'Marks whether this specific item is for a project or an inhouse/general requirement — shown only for Customer order and Machine / service project purposes (overhead purposes are always Inhouse). Must be chosen for every line before the requisition can be submitted.',
-      required: true,
-      options: [
-        { value: 'Project', meaning: 'This item is consumed against a specific project.' },
-        { value: 'Inhouse', meaning: 'This item is for general/inhouse use, not tied to a project.' },
-      ],
     },
     {
       target: 'pr-new-item-category',
@@ -160,7 +150,7 @@ const config: TourConfig = {
     {
       target: 'pr-new-submit',
       title: 'Submit Purchase Requisition',
-      purpose: 'Validates the category and item list, then submits this requisition into the approval chain.',
+      purpose: 'Checks the purpose rules (category, requirement type, item types), the charge and the item list, then submits this requisition into the approval chain.',
       after: 'On success you land on this requisition\'s own detail page, showing its Submitted status and approval progress.',
     },
     {

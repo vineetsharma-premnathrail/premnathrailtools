@@ -10,6 +10,7 @@ import { p2pApi, rfqApi, purchaseOrdersApi, storeApi } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { P2PRequest, RFQ, P2PPurchaseOrder, P2PRequestItemStockCheck, StoreItem } from '@/types'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import Select from '@/components/shared/Select'
 import { TEXT, GLASS, SHADOWS, GRADIENTS, BORDER } from '@/lib/theme'
 import DateField from '@/components/erp/DateField'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
@@ -127,6 +128,8 @@ export default function MyP2PRequestDetailPage() {
   const fromPoApproval = searchParams.get('from') === 'po-approval'
   const { id: resolvedPrId, error: linkError } = useRecordId(params.id as string)
   const prId = resolvedPrId ?? 0
+  // PO Tracking / PO notifications open ONE purchase order of a split requisition: ?po=<signed ref>.
+  const { id: wantedPoId } = useRecordId(searchParams.get('po'))
 
   const [pr, setPr] = useState<P2PRequestDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -145,7 +148,12 @@ export default function MyP2PRequestDetailPage() {
   const [editRemarks, setEditRemarks] = useState('')
 
   const [rfq, setRfq] = useState<RFQ | null>(null)
-  const [po, setPo] = useState<P2PPurchaseOrder | null>(null)
+  const [loadedPo, setPo] = useState<P2PPurchaseOrder | null>(null)
+  // Every live PO of this requisition (a split requisition has several) — `po` is the one shown:
+  // the one picked here, else the one the link names (?po=), else the newest.
+  const [allPos, setAllPos] = useState<P2PPurchaseOrder[]>([])
+  const [pickedPoId, setPickedPoId] = useState<number | null>(null)
+  const po = allPos.find((x) => x.id === (pickedPoId ?? wantedPoId)) ?? loadedPo
 
   const [stockCheckLoading, setStockCheckLoading] = useState<Record<number, boolean>>({})
   const [stockCheckErrors, setStockCheckErrors] = useState<Record<number, string>>({})
@@ -221,6 +229,8 @@ export default function MyP2PRequestDetailPage() {
       setRfq(rfqList[0] || null)
       // Approvers without the Purchase app get a 403 on the PO list — fall
       // back to the PO the PR itself carries so they see what they sign.
+      const live = (poList as P2PPurchaseOrder[]).filter((x) => x.status !== 'cancelled')
+      setAllPos(live)
       setPo(poList[0] || data.purchase_order || null)
     } catch (err) {
       setError(extractErrorMessages(err, 'Purchase requisition not found, or you do not have access to it.').join(' '))
@@ -561,11 +571,11 @@ export default function MyP2PRequestDetailPage() {
                 </div>
                 <div style={{ flex: '0 1 130px' }}>
                   <label style={sheetLabel}>Priority</label>
-                  <select style={sheetInput} value={editPriority} onChange={(e) => setEditPriority(e.target.value)}>
+                  <Select style={sheetInput} value={editPriority} onChange={(e) => setEditPriority(e.target.value)}>
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
                     <option value="high">High</option>
-                  </select>
+                  </Select>
                 </div>
               </div>
             </SheetSection>
@@ -596,6 +606,17 @@ export default function MyP2PRequestDetailPage() {
       {po && seePoBlock && (
         <div data-tour="pr-detail-po-info" style={sectionStyle}>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: TEXT.heading, margin: '0 0 14px' }}>Purchase Order</h2>
+          {allPos.length > 1 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+              <span style={{ fontSize: 12, color: TEXT.muted }}>This requisition has {allPos.length} purchase orders:</span>
+              {allPos.map((x) => (
+                <button key={x.id} type="button" onClick={() => setPickedPoId(x.id)}
+                  style={{ ...secondaryBtnStyle, padding: '5px 12px', fontSize: 12, background: x.id === po.id ? 'rgba(255,122,69,0.12)' : undefined, color: x.id === po.id ? '#c2410c' : undefined }}>
+                  {x.po_number}{x.vendor_name ? ` · ${x.vendor_name}` : ''}
+                </button>
+              ))}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 14 }}>
             <InfoRow label="PO Number" value={po.po_number} />
             <InfoRow label="Vendor" value={po.vendor_name || '—'} />
@@ -971,16 +992,16 @@ export default function MyP2PRequestDetailPage() {
                                   <>
                                     <div>
                                       <label style={{ ...labelStyle, marginBottom: 4 }}>Issue From</label>
-                                      <select
+                                      <Select
                                         data-tour="pr-detail-issue-from"
                                         value={selectedLocId ?? ''}
                                         onChange={(e) => setIssueLocByItem((prev) => ({ ...prev, [it.id]: e.target.value }))}
-                                        style={{ ...inputStyle, width: 'auto', minWidth: 180, padding: '7px 10px' }}
+                                        style={{ ...inputStyle, width: 'auto', minWidth: 180 }}
                                       >
                                         {locs.map((l) => (
                                           <option key={l.location_id!} value={l.location_id!}>{l.location_name || `Location ${l.location_id}`} — {l.available_qty} available</option>
                                         ))}
-                                      </select>
+                                      </Select>
                                     </div>
                                     <div>
                                       <label style={{ ...labelStyle, marginBottom: 4 }}>Issue Qty</label>

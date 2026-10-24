@@ -2,7 +2,7 @@
 
 // A purchase order's approval (central approval engine, entity p2p_purchase_order)
 // links here with the PO id — the PO is approved on its requisition's page, so
-// look the requisition up and go there.
+// look the requisition up and go there, naming this PO (a split requisition has several).
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { p2pApi } from '@/lib/api'
@@ -20,7 +20,7 @@ export default function PurchaseOrderRedirect() {
   useEffect(() => {
     if (!poId) return
     p2pApi.getByPo(poId)
-      .then((pr: { id: number }) => router.replace(`${recordPath('/dashboard/p2p', pr)}?from=po-approval`))
+      .then((pr: { id: number }) => router.replace(`${recordPath('/dashboard/p2p', pr)}?from=po-approval&po=${encodeURIComponent(params?.id as string)}`))
       .catch((err) => setError(extractErrorMessages(err, `Purchase order #${poId} could not be opened.`).join(' ')))
   }, [poId, router])
 

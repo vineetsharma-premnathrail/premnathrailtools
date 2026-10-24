@@ -20,7 +20,7 @@ const config: TourConfig = {
     {
       target: 'fin-vendors-table',
       title: 'Vendor list',
-      purpose: 'Code, name, GST type, GSTIN, city/state, payment days and status.',
+      purpose: 'Code, name, GST type, GSTIN, city/state, payment days, who referred the vendor, who created it (recorded automatically; a dash for older vendors) and status.',
       options: [
         { value: 'Active', meaning: 'Can be billed and paid.' },
         { value: 'Inactive', meaning: 'Not used any more.' },

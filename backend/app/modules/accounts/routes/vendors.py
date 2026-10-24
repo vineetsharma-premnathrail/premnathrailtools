@@ -8,6 +8,8 @@ from app.modules.main.models.user import User
 from app.modules.accounts.models.gl_account import GLAccount
 from app.modules.accounts.models.vendor import Vendor, GST_REGISTRATION_TYPES
 from app.modules.accounts.services.gst import validate_gstin
+from app.modules.accounts.routes._common import write_audit
+from app.modules.accounts.services.vendor_referral import REFERRAL_FIELDS, clean_referral, vendor_people
 from app.modules.accounts.schemas.vendor import VendorCreate, VendorUpdate, VendorResponse
 
 router = APIRouter(prefix="/accounts/vendors", tags=["Accounts"])
@@ -72,9 +74,10 @@ def _ensure_bank_change_allowed(user: User, data: dict, vendor: Vendor | None) -
         ensure_feature_action(user, "accounts", "vendors", "bank_details", "edit" if vendor else "create")
 
 
-def _to_response(v: Vendor, db: Session, user: User | None = None) -> VendorResponse:
+def _to_response(v: Vendor, db: Session, user: User | None = None, people: dict | None = None) -> VendorResponse:
     gl = db.query(GLAccount).filter(GLAccount.id == v.gl_reconciliation_account_id).first() if v.gl_reconciliation_account_id else None
     update = {"gl_reconciliation_account_code": gl.code if gl else None}
+    update.update(people if people is not None else vendor_people(db, [v])[v.id])
     if _hide_bank_details(user):
         update.update({f: None for f in BANK_FIELDS})
     return VendorResponse.model_validate(v).model_copy(update=update)
@@ -96,7 +99,8 @@ async def list_vendors(
         like = f"%{search}%"
         query = query.filter((Vendor.code.ilike(like)) | (Vendor.name.ilike(like)))
     vendors = query.order_by(Vendor.name.asc()).all()
-    return [_to_response(v, db, user) for v in vendors]
+    people = vendor_people(db, vendors)
+    return [_to_response(v, db, user, people[v.id]) for v in vendors]
 
 
 @router.post("", response_model=VendorResponse, status_code=201)
@@ -108,12 +112,15 @@ async def create_vendor(
     if db.query(Vendor).filter(Vendor.code == payload.code).first():
         raise HTTPException(status_code=409, detail=f"Vendor code '{payload.code}' already exists")
     data = payload.model_dump()
+    clean_referral(db, data)
     _ensure_bank_change_allowed(user, data, None)
     if not data.get("gst_registration_type"):
         data["gst_registration_type"] = "regular" if data.get("gstin") else "unregistered"
     vendor = Vendor(**_clean_tax_fields(data), created_by_id=user.id)
     check_msme(vendor)
     db.add(vendor)
+    db.flush()
+    write_audit(db, "vendor", vendor.id, "created", user, f"Vendor {vendor.name} ({vendor.code}) added by {user.name or user.email}.")
     db.commit()
     db.refresh(vendor)
     return _to_response(vendor, db, user)
@@ -134,9 +141,17 @@ async def update_vendor(
             raise HTTPException(status_code=409, detail=f"Vendor code '{payload.code}' already exists")
     changes = payload.model_dump(exclude_unset=True)
     _ensure_bank_change_allowed(user, changes, vendor)
-    for field, value in _clean_tax_fields(changes).items():
+    clean_referral(db, changes, vendor)
+    changes = _clean_tax_fields(changes)
+    changed = [f for f, value in changes.items() if getattr(vendor, f, None) != value]
+    for field, value in changes.items():
         setattr(vendor, field, value)
     check_msme(vendor)
+    if changed:
+        # Field names only — bank account numbers never go into the log.
+        shown = [("bank details" if f in BANK_FIELDS else "referred by" if f in REFERRAL_FIELDS else f) for f in changed]
+        write_audit(db, "vendor", vendor.id, "updated", user,
+                    f"{user.name or user.email} updated vendor {vendor.name}: {', '.join(dict.fromkeys(shown))}.")
     db.commit()
     db.refresh(vendor)
     return _to_response(vendor, db, user)

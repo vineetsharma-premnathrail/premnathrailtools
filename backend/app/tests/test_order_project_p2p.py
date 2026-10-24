@@ -43,22 +43,24 @@ def test_so_charged_pr_needs_element_per_project_line(client, db):
     tool = master_item(db, "Torque wrench", code="TL-TW-01")
     requester = _requester(db, "op.req1@premnathrail.com")
 
-    # Project line without a vehicle -> 422 naming the line.
+    # 2026-10-24: a Project line no longer has to name a vehicle - it is tied to
+    # the order project in scope (several vehicles -> no element, project link kept).
     r = _post_pr(client, db, requester, account_assignment="sales_order", sales_order_id=so["id"],
                  items=[{"store_item_id": item.id, "quantity": 4, "project_inhouse": "Project"}])
-    assert r.status_code == 422, r.text
-    assert "Line 1 (RM-AXB-01 Axle bearing)" in r.json()["detail"] and project.op_number in r.json()["detail"]
+    assert r.status_code == 200, r.text
+    ln = r.json()["items"][0]
+    assert ln["order_project_id"] == project.id and ln["order_project_element_id"] is None
 
-    # A draft may leave it blank; submitting it then refuses.
+    # A draft with no vehicle submits fine too.
     r = _post_pr(client, db, requester, account_assignment="sales_order", sales_order_id=so["id"], save_as_draft=True,
                  items=[{"store_item_id": item.id, "quantity": 4, "project_inhouse": "Project"}])
     assert r.status_code == 200, r.text
     draft = r.json()
     assert draft["order_project_id"] == project.id and draft["items"][0]["order_project_element_id"] is None
     r = client.post(f"{BASE}/{draft['id']}/submit", headers=auth_header(requester))
-    assert r.status_code == 422 and "pick the vehicle / lot" in r.json()["detail"]
+    assert r.status_code == 200, r.text
 
-    # Each line its own vehicle; an Inhouse line needs none.
+    # A vehicle a line already carries (older requisitions) is kept; an Inhouse line needs none.
     r = _post_pr(client, db, requester, account_assignment="sales_order", sales_order_id=so["id"], items=[
         {"store_item_id": item.id, "quantity": 2, "project_inhouse": "Project", "order_project_element_id": els[0].id},
         {"store_item_id": item.id, "quantity": 2, "project_inhouse": "Project", "order_project_element_id": els[1].id},
@@ -78,9 +80,10 @@ def test_so_charged_pr_needs_element_per_project_line(client, db):
     got = client.get(BASE, params={"order_project_element_id": els[1].id}, headers=auth_header(buyer)).json()
     assert [p["id"] for p in got] == [pr["id"]]
     got = client.get(BASE, params={"order_project_id": project.id}, headers=auth_header(buyer)).json()
-    assert {p["id"] for p in got} == {pr["id"]}  # drafts stay private to the requester
+    # the two earlier (vehicle-less) submitted PRs are on the project too
+    assert {p["id"] for p in got} == {1, 2, pr["id"]}
     got = client.get(BASE, params={"order_project_id": project.id}, headers=auth_header(requester)).json()
-    assert {p["id"] for p in got} == {pr["id"], draft["id"]}
+    assert {p["id"] for p in got} == {1, draft["id"], pr["id"]}
 
 
 def test_bad_element_picks_are_refused_with_the_reason(client, db):

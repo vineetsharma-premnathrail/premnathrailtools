@@ -30,6 +30,10 @@ class VendorCreate(BaseModel):
     msme_activity: str | None = None
     msme_valid_from: date | None = None
     terms_conditions: str | None = None
+    referral_type: str | None = None  # employee / external / direct
+    referred_by_user_id: int | None = None
+    referred_by_name: str | None = None
+    referred_by_phone: str | None = None
     status: str = "active"
 
 
@@ -61,6 +65,10 @@ class VendorUpdate(BaseModel):
     msme_activity: str | None = None
     msme_valid_from: date | None = None
     terms_conditions: str | None = None
+    referral_type: str | None = None  # employee / external / direct
+    referred_by_user_id: int | None = None
+    referred_by_name: str | None = None
+    referred_by_phone: str | None = None
     status: str | None = None
 
 
@@ -98,5 +106,12 @@ class VendorResponse(BaseModel):
     terms_conditions: str | None = None
     status: str
     created_by_id: int | None = None
+    created_by_name: str | None = None
+    referral_type: str | None = None
+    referred_by_user_id: int | None = None
+    referred_by_user_name: str | None = None
+    referred_by_name: str | None = None
+    referred_by_phone: str | None = None
+    referred_by_label: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None

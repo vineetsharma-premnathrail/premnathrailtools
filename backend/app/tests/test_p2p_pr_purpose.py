@@ -172,3 +172,32 @@ def test_project_manager_stage_only_for_production_and_names_the_projects_manage
                     headers=auth_header(req))
     assert r.status_code == 200, r.text
     assert stages(r.json()["id"]) == [("Department head", head.id), ("Purchase Head", purchase_head.id)]
+
+
+def test_category_buyer_comes_from_procurement_settings(client, db):
+    """Procurement › Settings › Buyer for each requisition category: the picked
+    buyer gets new requisitions; blank keeps the standard (email) buyer."""
+    from app.modules.main.models.module_setting import ModuleSetting
+    from app.modules.p2p.models.p2p_request import resolve_auto_buyer_id
+    from app.tests.test_p2p_requests import make_user
+
+    standard = make_user(db, "manish.kumar@premnathrail.com", assigned_apps=("p2p",))
+    assert resolve_auto_buyer_id(db, "ELE") == standard.id
+    assert resolve_auto_buyer_id(db, "SRV") is None  # no standard buyer for Services
+
+    picked = make_user(db, "purpose.buyer.srv@premnathrail.com", assigned_apps=("p2p",))
+    db.add(ModuleSetting(module_key="p2p", key="buyer_srv", value=picked.id))
+    db.add(ModuleSetting(module_key="p2p", key="buyer_ele", value=picked.id))
+    db.commit()
+    assert resolve_auto_buyer_id(db, "SRV") == picked.id
+    assert resolve_auto_buyer_id(db, "ELE") == picked.id
+
+    # A picked buyer who has left falls back to the standard one.
+    picked.is_active = False
+    db.commit()
+    assert resolve_auto_buyer_id(db, "ELE") == standard.id
+
+    # The settings screen offers one buyer per category.
+    admin = make_user(db, "purpose.admin@premnathrail.com", role="admin")
+    keys = set(client.get("/api/v1/p2p/settings", headers=auth_header(admin)).json()["values"])
+    assert {"buyer_ele", "buyer_srv", "buyer_cap", "buyer_adm"} <= keys

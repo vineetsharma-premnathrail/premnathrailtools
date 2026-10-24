@@ -14,6 +14,7 @@ import ImportDialog from '@/components/shared/ImportDialog'
 import VendorFormDialog from '@/components/p2p/VendorFormDialog'
 import { extractErrorMessages } from '@/lib/validation'
 import { recordPath } from '@/lib/recordRef'
+import Select from '@/components/shared/Select'
 
 const STATUS_HEX: Record<string, string> = { active: '#16a34a', inactive: '#78716c', blocked: '#dc2626' }
 const th: React.CSSProperties = { position: 'sticky', top: 0, background: '#fdf1e6', zIndex: 1, textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, letterSpacing: '.05em', textTransform: 'uppercase', color: '#a8a29e', whiteSpace: 'nowrap' }
@@ -76,22 +77,22 @@ export default function VendorsPage() {
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, code, GSTIN, city, contact…" style={{ ...inputStyle, flex: '1 1 280px', maxWidth: 420 }} />
-        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
+        <Select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inputStyle, width: 160 }}>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
           <option value="blocked">Blocked</option>
           <option value="">All statuses</option>
-        </select>
+        </Select>
       </div>
 
       {error && <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
 
       <div style={{ borderRadius: 18, background: GLASS.card, backdropFilter: GLASS.blur, WebkitBackdropFilter: GLASS.blur, border: `1px solid ${GLASS.border}`, boxShadow: SHADOWS.glass(), overflow: 'auto', maxHeight: 'calc(100vh - 320px)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-          <thead><tr>{['Code', 'Company', 'Contact', 'City', 'GSTIN', 'Catalog', 'Docs', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
+          <thead><tr>{['Code', 'Company', 'Contact', 'City', 'GSTIN', 'Referred by', 'Created by', 'Catalog', 'Docs', 'Status', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>Loading…</td></tr>}
-            {!loading && shown.length === 0 && <tr><td colSpan={9} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>{vendors.length ? 'No vendor matches the search.' : 'No vendors yet — add one or import a list.'}</td></tr>}
+            {loading && <tr><td colSpan={11} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>Loading…</td></tr>}
+            {!loading && shown.length === 0 && <tr><td colSpan={11} style={{ ...td, textAlign: 'center', color: '#a8a29e' }}>{vendors.length ? 'No vendor matches the search.' : 'No vendors yet — add one or import a list.'}</td></tr>}
             {shown.map((v) => (
               <tr key={v.id} onClick={() => router.push(recordPath('/dashboard/p2p/vendors', v))} style={{ cursor: 'pointer' }}>
                 <td style={{ ...td, fontWeight: 600, color: '#FF7A45', whiteSpace: 'nowrap' }}>{v.code}</td>
@@ -99,6 +100,8 @@ export default function VendorsPage() {
                 <td style={td}>{[v.contact_name, v.contact_phone].filter(Boolean).join(' · ') || '—'}</td>
                 <td style={td}>{v.city || '—'}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{v.gstin || '—'}</td>
+                <td style={td}>{v.referred_by_label || '—'}</td>
+                <td style={td}>{v.created_by_name || '—'}</td>
                 <td style={td}>{v.catalog_count}</td>
                 <td style={td}>{v.document_count}</td>
                 <td style={td}><span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 9999, background: `${STATUS_HEX[v.status] || '#78716c'}1a`, color: STATUS_HEX[v.status] || '#78716c', textTransform: 'capitalize' }}>{v.status}</span></td>

@@ -6,17 +6,19 @@ Production and the project 360 page can see what was bought for which
 vehicle.
 
 Where the link lives
-  PR line   order_project_id + order_project_element_id — picked per line
-            (each line can be for a different vehicle). The PR header's
+  PR line   order_project_id (+ order_project_element_id when it is known).
+            Since 2026-10-24 the form has no per-line vehicle picker: the
+            element is derived (work order's, or the project's only live
+            vehicle); older requisitions keep the vehicle they were given. The PR header's
             order_project_id is the project in scope: set by the 'order_project'
             account assignment, or derived from a 'sales_order' assignment
             whose order has a project (p2p/account_assignment.py).
   PO line   copied from the PR line it orders (pr_item_id) when it is inserted.
   GRN line  copied from the PO line it receives, so Store can tag the stock.
 
-Rule (owner decision: project-wise purchase is mandatory for RRV project
-items) — on submit, every 'Project' line of a PR whose header is charged to
-an order with an Order Project needs its element; 422 naming the line.
+Rule (changed 2026-10-24: one project per machine) — a 'Project' line of a PR
+charged to an order with an Order Project is tied to that project; the element
+is no longer mandatory.
 'Inhouse' lines are not project items and never carry one. The element is
 filled automatically when it can be derived:
   * the line names it (the PR form's Order Project picker, MRP / shortage
@@ -114,13 +116,15 @@ def link_pr_lines(db: Session, pr: P2PRequest, rows: list[tuple], *, draft: bool
                 raise HTTPException(status_code=e.status_code, detail=f"{name}: {e.detail}")
         elif not inhouse:
             el = wo_el or single
-        if el is None and scope is not None and not draft and not inhouse:
-            raise HTTPException(status_code=422, detail=(
-                f"{name}: pick the vehicle / lot of {scope.op_number} this item is bought for — project-wise purchase "
-                f"is mandatory for order project items. Use the Order Project picker on the line, or mark the line "
-                f"Inhouse if it isn't for the project."))
-        row.order_project_id = el.order_project_id if el is not None else None
-        row.order_project_element_id = el.id if el is not None else None
+        # 2026-10-24: one project per machine - a line no longer has to name its
+        # vehicle / lot. With no element to derive (a project with several live
+        # vehicles) the line is still tied to the PROJECT in scope, so PO / GRN /
+        # reports keep the project link; only the per-vehicle split is not known.
+        if el is not None:
+            row.order_project_id, row.order_project_element_id = el.order_project_id, el.id
+        else:
+            row.order_project_id = scope.id if scope is not None and not inhouse else None
+            row.order_project_element_id = None
 
 
 def check_saved_pr(db: Session, pr: P2PRequest) -> None:
@@ -143,7 +147,7 @@ def _po_line_from_pr_line(_mapper, connection, target: P2PPurchaseOrderItem) -> 
         row = connection.execute(
             select(P2PRequestItem.order_project_id, P2PRequestItem.order_project_element_id)
             .where(P2PRequestItem.id == target.pr_item_id)).first()
-        if row is not None and row[1] is not None:
+        if row is not None and (row[0] is not None or row[1] is not None):
             target.order_project_id, target.order_project_element_id = row[0], row[1]
 
 
@@ -153,7 +157,7 @@ def _grn_line_from_po_line(_mapper, connection, target: P2PGoodsReceiptItem) -> 
         row = connection.execute(
             select(P2PPurchaseOrderItem.order_project_id, P2PPurchaseOrderItem.order_project_element_id)
             .where(P2PPurchaseOrderItem.id == target.po_item_id)).first()
-        if row is not None and row[1] is not None:
+        if row is not None and (row[0] is not None or row[1] is not None):
             target.order_project_id, target.order_project_element_id = row[0], row[1]
 
 

@@ -2163,6 +2163,14 @@ export interface Vendor {
   default_expense_gl_account_id?: number | null
   status: string
   created_by_id?: number | null
+  created_by_name?: string | null
+  referral_type?: 'employee' | 'external' | 'direct' | null
+  referred_by_user_id?: number | null
+  referred_by_user_name?: string | null
+  referred_by_name?: string | null
+  referred_by_phone?: string | null
+  /** Display text: employee name / external name (phone) / "Direct (no referral)"; null = not recorded. */
+  referred_by_label?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -9907,6 +9915,15 @@ export interface ProcurementVendor {
   website?: string | null
   terms_conditions?: string | null
   status: string
+  created_by_id?: number | null
+  created_by_name?: string | null
+  referral_type?: 'employee' | 'external' | 'direct' | null
+  referred_by_user_id?: number | null
+  referred_by_user_name?: string | null
+  referred_by_name?: string | null
+  referred_by_phone?: string | null
+  /** Display text: employee name / external name (phone) / "Direct (no referral)"; null = not recorded. */
+  referred_by_label?: string | null
   created_at?: string | null
   document_count: number
   catalog_count: number
@@ -10140,7 +10157,7 @@ export interface ApprovalWorkflowDef {
 
 /** POST /organization/workflows/{key}/check — setup problems before saving. */
 export interface ApprovalWorkflowCheck {
-  issues: { level: 'error' | 'warning' | 'info'; stage: number | null; message: string }[]
+  issues: { level: 'error' | 'warning' | 'info'; stage: number | null; message: string; blocking?: boolean }[]
   checked_users: number
   stages: { index: number; name: string; refused: number; skipped_for: number; max_approvers: number }[]
 }
@@ -10347,4 +10364,62 @@ export interface OrderProjectLookupItem {
   customer_name: string | null
   so_number: string | null
   display: string
+}
+
+// ---------------------------------------------------------------------------
+// Procurement › Settings › Purpose rules (backend p2p/purpose.py, routes/purpose_rules.py)
+// ---------------------------------------------------------------------------
+
+export interface PurposeRules {
+  categories: string[]
+  default_category: string | null
+  lock_category: boolean
+  requirement_types: string[]
+  default_requirement_type: string | null
+  lock_requirement_type: boolean
+  item_types: string[]
+  charged_to_kinds: string[]
+  charged_required: boolean
+  line_project_mode: 'inherit' | 'inhouse'
+}
+
+export interface PurposeRulesRow {
+  code: string
+  label: string
+  rules: PurposeRules
+  defaults: PurposeRules
+  is_default: boolean
+  form: { category: string | null; category_locked: boolean; requirement_type: string | null; requirement_type_locked: boolean }
+  charged_to_options: { value: string; label: string }[]
+  updated_by_name: string | null
+  updated_at: string | null
+}
+
+export interface PurposeRulesPayload {
+  purposes: PurposeRulesRow[]
+  options: {
+    categories: { value: string; label: string }[]
+    requirement_types: { value: string; label: string }[]
+    item_types: { value: string; label: string }[]
+    line_project_modes: { value: string; label: string }[]
+  }
+  can_edit: boolean
+  editors_note: string
+}
+
+/** One purpose as /p2p/requests/meta serves it to the PR form (rules already resolved). */
+export interface P2PPurposeMeta {
+  code: string
+  label: string
+  categories: string[]
+  default_category: string | null
+  category_locked: boolean
+  requirement_types: string[]
+  default_requirement_type: string | null
+  requirement_type_locked: boolean
+  item_types: string[]
+  charged_to_kinds: string[]
+  charged_required: boolean
+  line_project_mode: 'inherit' | 'inhouse'
+  inhouse_only: boolean
 }

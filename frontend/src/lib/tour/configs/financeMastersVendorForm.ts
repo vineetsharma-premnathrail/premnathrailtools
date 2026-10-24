@@ -87,6 +87,18 @@ export const VENDOR_FORM_STEPS: TourStep[] = [
     validExample: 'accounts@vendor.com',
   },
   {
+    target: 'fin-vendors-referred-by',
+    title: 'Referred by',
+    required: true,
+    whatToEnter: 'Who brought this vendor to us. Search and pick the employee, or choose External / other (then type the person or company name, phone optional), or Direct (no referral) when nobody referred them.',
+    options: [
+      { value: 'Employee', meaning: 'A colleague recommended the vendor — pick them from the list.' },
+      { value: 'External / other', meaning: 'Someone outside the company referred them — name or company is required.' },
+      { value: 'Direct (no referral)', meaning: 'We found or approached the vendor ourselves.' },
+    ],
+    why: 'Onboarding control: Finance and audit can see who vouched for a vendor. Who created the vendor is recorded automatically and cannot be typed. Vendors added before this field show a dash.',
+  },
+  {
     target: 'fin-vendors-bank-name',
     title: 'Bank name',
     purpose: 'Vendor\'s bank — used when making NEFT/RTGS payments.',

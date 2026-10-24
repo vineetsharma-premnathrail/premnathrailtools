@@ -5,6 +5,7 @@
  *  groups + ledgers), ledger settings for automatic postings, GST rates,
  *  bank & cash accounts, vendors, internal orders and the one-time
  *  opening-balance voucher. One component per sub-tab below. */
+import Select from '@/components/shared/Select'
 import React, { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRequireApp } from '@/hooks/useAuth'
@@ -19,6 +20,7 @@ import FinanceNav from '@/components/finance/FinanceNav'
 import ConfirmDialog from '@/components/erp/ConfirmDialog'
 import ReasonSheet from '@/components/shared/ReasonSheet'
 import SearchableSelect from '@/components/erp/SearchableSelect'
+import VendorReferralSection, { EMPTY_REFERRAL, referralError, referralFromVendor, referralPayload, type ReferralValue } from '@/components/shared/VendorReferral'
 import DateField from '@/components/erp/DateField'
 import {
   inputStyle, sectionStyle, primaryBtnStyle, secondaryBtnStyle, linkBtnStyle, dangerLinkStyle, thStyle, tdStyle, numTd, numTh,
@@ -363,19 +365,19 @@ function AccountGroupsSection() {
             <SheetSection icon="doc" title="Reporting">
               <div style={sheetRow}>
                 <SF label="Schedule III head" style={growW(240, 380)} tour="fin-groups-schedule">
-                  <select style={sheetInput} value={form.schedule_iii_head} disabled={!!editing?.is_system}
+                  <Select style={sheetInput} value={form.schedule_iii_head} disabled={!!editing?.is_system}
                     onChange={(e) => setForm((f) => ({ ...f, schedule_iii_head: e.target.value }))}>
                     {!editing && <option value="">Same as parent{parent ? ` (${heads[parent.schedule_iii_head] || parent.schedule_iii_head})` : ''}</option>}
                     {headOptions.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-                  </select>
+                  </Select>
                 </SF>
                 {!editing && (
                   <SF label="Affects gross profit" style={fixedW(180)} tour="fin-groups-gross-profit">
-                    <select style={sheetInput} value={form.affects_gross_profit} onChange={(e) => setForm((f) => ({ ...f, affects_gross_profit: e.target.value }))}>
+                    <Select style={sheetInput} value={form.affects_gross_profit} onChange={(e) => setForm((f) => ({ ...f, affects_gross_profit: e.target.value }))}>
                       <option value="inherit">Same as parent{parent ? ` (${parent.affects_gross_profit ? 'Yes' : 'No'})` : ''}</option>
                       <option value="yes">Yes</option>
                       <option value="no">No</option>
-                    </select>
+                    </Select>
                   </SF>
                 )}
                 <SF label="Sequence" style={fixedW(100)} tour="fin-groups-sequence">
@@ -580,10 +582,10 @@ function LedgersSection({ onGoOpening }: { onGoOpening: () => void }) {
                     <input style={sheetInput} value={form.account_sub_type} onChange={(e) => setForm((f) => ({ ...f, account_sub_type: e.target.value }))} />
                   </SF>
                   <SF label="Status" style={fixedW(140)} tour="fin-ledgers-status">
-                    <select style={sheetInput} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
+                    <Select style={sheetInput} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
                       <option value="active">Active</option>
                       <option value="inactive">Inactive</option>
-                    </select>
+                    </Select>
                   </SF>
                 </div>
               </SheetSection>
@@ -595,26 +597,26 @@ function LedgersSection({ onGoOpening }: { onGoOpening: () => void }) {
             right={<>
               <SheetSection icon="gear" title="Posting behaviour">
                 <SF label="Posting" style={{ marginBottom: 12 }} tour="fin-ledgers-posting">
-                  <select style={sheetInput} value={form.is_posting_account ? '1' : '0'} onChange={(e) => setForm((f) => ({ ...f, is_posting_account: e.target.value === '1' }))}>
+                  <Select style={sheetInput} value={form.is_posting_account ? '1' : '0'} onChange={(e) => setForm((f) => ({ ...f, is_posting_account: e.target.value === '1' }))}>
                     <option value="1">Yes — vouchers post here</option>
                     <option value="0">No — header only</option>
-                  </select>
+                  </Select>
                 </SF>
                 <SF label="Control account" tour="fin-ledgers-control">
-                  <select style={sheetInput} value={form.is_control_account ? '1' : '0'} onChange={(e) => setForm((f) => ({ ...f, is_control_account: e.target.value === '1' }))}>
+                  <Select style={sheetInput} value={form.is_control_account ? '1' : '0'} onChange={(e) => setForm((f) => ({ ...f, is_control_account: e.target.value === '1' }))}>
                     <option value="0">No</option>
                     <option value="1">Yes — sum of a party sub-ledger</option>
-                  </select>
+                  </Select>
                 </SF>
               </SheetSection>
               {isPl && (
                 <SheetSection icon="building" title="Cost object">
                   <SF label="Cost object required" style={{ marginBottom: 12 }} tour="fin-ledgers-cost-object">
-                    <select style={sheetInput} value={form.cost_object_required} onChange={(e) => setForm((f) => ({ ...f, cost_object_required: e.target.value }))}>
+                    <Select style={sheetInput} value={form.cost_object_required} onChange={(e) => setForm((f) => ({ ...f, cost_object_required: e.target.value }))}>
                       {!editingId && <option value="">Auto — overheads need one</option>}
                       <option value="1">Yes — cost centre or order</option>
                       <option value="0">No</option>
-                    </select>
+                    </Select>
                   </SF>
                   <SF label="Default cost centre" opt tour="fin-ledgers-default-cc">
                     <SearchableSelect value={form.default_cost_center_id} onChange={(v: string) => setForm((f) => ({ ...f, default_cost_center_id: v }))}
@@ -636,11 +638,11 @@ function LedgersSection({ onGoOpening }: { onGoOpening: () => void }) {
           <SearchableSelect value={groupFilter} onChange={setGroupFilter} options={[{ value: '', label: 'All groups' }, ...groupOptions]} placeholder="All groups" />
         </Field>
         <Field label="Status" style={fixedW(130)} tour="fin-ledgers-status-filter">
-          <select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <Select style={inputStyle} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
-          </select>
+          </Select>
         </Field>
         <span style={{ ...mutedText, paddingBottom: 10 }}>{visible.length} of {accounts.length} ledgers</span>
       </div>
@@ -845,10 +847,10 @@ function GSTRatesSection({ canManage }: { canManage: boolean }) {
                   <input type="number" min={0} max={100} step="any" style={sheetInput} value={form.rate} autoFocus onChange={(e) => setForm((f) => ({ ...f, rate: e.target.value }))} />
                 </SF>
                 <SF label="Status" style={fixedW(140)} tour="fin-gst-status">
-                  <select style={sheetInput} value={form.is_active ? '1' : '0'} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.value === '1' }))}>
+                  <Select style={sheetInput} value={form.is_active ? '1' : '0'} onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.value === '1' }))}>
                     <option value="1">Active</option>
                     <option value="0">Inactive</option>
-                  </select>
+                  </Select>
                 </SF>
               </div>
               <SF label="Description" opt tour="fin-gst-description">
@@ -1008,10 +1010,10 @@ function BankCashSection({ onGoOpening }: { onGoOpening: () => void }) {
               <SheetSection icon="building" title="Account">
                 <div style={sheetRow}>
                   <SF label="Kind" style={fixedW(120)} tour="fin-bank-kind">
-                    <select style={sheetInput} value={form.account_kind} onChange={(e) => setForm((f) => ({ ...f, account_kind: e.target.value as 'bank' | 'cash', gl_account_id: '' }))}>
+                    <Select style={sheetInput} value={form.account_kind} onChange={(e) => setForm((f) => ({ ...f, account_kind: e.target.value as 'bank' | 'cash', gl_account_id: '' }))}>
                       <option value="bank">Bank</option>
                       <option value="cash">Cash</option>
-                    </select>
+                    </Select>
                   </SF>
                   <SF label={isBank ? 'Bank name' : 'Account name'} req style={growW(220, 340)} tour="fin-bank-name">
                     <input style={sheetInput} value={form.bank_name} placeholder={isBank ? 'e.g. HDFC Bank' : 'e.g. Head Office Cash'} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value }))} />
@@ -1045,11 +1047,11 @@ function BankCashSection({ onGoOpening }: { onGoOpening: () => void }) {
                   <SearchableSelect value={form.gl_account_id} onChange={(v: string) => setForm((f) => ({ ...f, gl_account_id: v }))} options={ledgerOpts} placeholder="Pick ledger" />
                 </SF>
                 <SF label="Status" style={fixedW(150)} tour="fin-bank-status">
-                  <select style={sheetInput} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
+                  <Select style={sheetInput} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                     <option value="closed">Closed</option>
-                  </select>
+                  </Select>
                 </SF>
                 <p style={sheetHint}>
                   Opening balances go in once through the{' '}
@@ -1101,6 +1103,8 @@ const GST_REG_LABELS: Record<string, string> = {
   regular: 'Regular', composition: 'Composition', unregistered: 'Unregistered', overseas: 'Overseas (import)', sez: 'SEZ',
 }
 
+const VENDOR_STATUS_OPTS = [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'blocked', label: 'Blocked' }]
+
 function emptyVendor() {
   return {
     code: '', name: '', gst_registration_type: 'regular', gstin: '', pan: '', address: '', city: '', state: '', pin_code: '',
@@ -1126,6 +1130,8 @@ function VendorsSection() {
   const [formOpen, setFormOpen] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyVendor())
+  const [referral, setReferral] = useState<ReferralValue>(EMPTY_REFERRAL)
+  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
   const [saving, setSaving] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Vendor | null>(null)
 
@@ -1153,9 +1159,11 @@ function VendorsSection() {
   const set = (k: keyof ReturnType<typeof emptyVendor>) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
 
-  const close = () => { setFormOpen(false); setEditingId(null); setForm(emptyVendor()) }
+  const close = () => { setFormOpen(false); setEditingId(null); setEditingVendor(null); setReferral(EMPTY_REFERRAL); setForm(emptyVendor()) }
   const startEdit = (v: Vendor) => {
     setEditingId(v.id)
+    setEditingVendor(v)
+    setReferral(referralFromVendor(v))
     setBankWritable(canFeature('accounts', 'vendors', 'bank_details', 'edit'))
     setForm({
       code: v.code, name: v.name, gst_registration_type: v.gst_registration_type || (v.gstin ? 'regular' : 'unregistered'),
@@ -1172,6 +1180,9 @@ function VendorsSection() {
     e.preventDefault()
     setError([])
     if (!form.code.trim() || !form.name.trim()) { setError(['Vendor code and name are required.']); return }
+    // Required for a new vendor; an older vendor with nothing recorded can be saved without it.
+    const refErr = referralError(referral, !editingVendor || !!editingVendor.referral_type)
+    if (refErr) { setError([refErr]); return }
     setSaving(true)
     try {
       const payload = {
@@ -1185,6 +1196,7 @@ function VendorsSection() {
         } : {}),
         credit_limit: num(form.credit_limit), payment_days: num(form.payment_days),
         default_expense_gl_account_id: form.default_expense_gl_account_id ? Number(form.default_expense_gl_account_id) : null, status: form.status,
+        ...referralPayload(referral),
       }
       if (editingId) await accountsApi.updateVendor(editingId, payload)
       else await accountsApi.createVendor(payload)
@@ -1213,7 +1225,7 @@ function VendorsSection() {
 
   return (
     <div style={sectionStyle} data-tour="fin-masters-vendors">
-      <SectionHeader title="Vendors" action={canCreate && <button type="button" data-tour="fin-vendors-new-btn" style={primaryBtnStyle} onClick={() => { setEditingId(null); setForm(emptyVendor()); setBankWritable(canFeature('accounts', 'vendors', 'bank_details', 'create')); setFormOpen(true) }}>+ New Vendor</button>} />
+      <SectionHeader title="Vendors" action={canCreate && <button type="button" data-tour="fin-vendors-new-btn" style={primaryBtnStyle} onClick={() => { setEditingId(null); setEditingVendor(null); setReferral(EMPTY_REFERRAL); setForm(emptyVendor()); setBankWritable(canFeature('accounts', 'vendors', 'bank_details', 'create')); setFormOpen(true) }}>+ New Vendor</button>} />
       {!formOpen && <ErrorBanner error={error} />}
       <ConfirmDialog open={!!deleteTarget} title="Delete this vendor?" message={`Delete "${deleteTarget?.name}"? A vendor with invoices or ledger entries can't be deleted — set it to inactive or blocked instead.`} onConfirm={doDelete} onCancel={() => setDeleteTarget(null)} />
 
@@ -1229,20 +1241,15 @@ function VendorsSection() {
                   <SF label="Code" req style={fixedW(130)} tour="fin-vendors-code"><input style={sheetInput} value={form.code} onChange={set('code')} /></SF>
                   <SF label="Name" req style={growW(240, 380)} tour="fin-vendors-name"><input style={sheetInput} value={form.name} onChange={set('name')} /></SF>
                 </div>
-                <SF label="Status" style={fixedW(150)} tour="fin-vendors-status">
-                  <select style={sheetInput} value={form.status} onChange={set('status')}>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="blocked">Blocked</option>
-                  </select>
+                <SF label="Status" style={fixedW(170)} tour="fin-vendors-status">
+                  <SearchableSelect value={form.status} onChange={(v: string) => setForm((f) => ({ ...f, status: v }))} options={VENDOR_STATUS_OPTS} placeholder="Status" />
                 </SF>
               </SheetSection>
               <SheetSection icon="shield" title="GST & PAN">
                 <div style={sheetRow}>
                   <SF label="GST registration" style={fixedW(180)} tour="fin-vendors-gst-type">
-                    <select style={sheetInput} value={form.gst_registration_type} onChange={set('gst_registration_type')}>
-                      {Object.entries(GST_REG_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                    </select>
+                    <SearchableSelect value={form.gst_registration_type} onChange={(v: string) => setForm((f) => ({ ...f, gst_registration_type: v }))}
+                      options={Object.entries(GST_REG_LABELS).map(([k, l]) => ({ value: k, label: l }))} placeholder="GST registration" />
                   </SF>
                   <SF label="GSTIN" req={needsGstin} style={fixedW(200)} tour="fin-vendors-gstin">
                     <input style={sheetInput} value={form.gstin} maxLength={15} onChange={(e) => setForm((f) => ({ ...f, gstin: e.target.value.toUpperCase() }))} placeholder="15 characters" />
@@ -1275,6 +1282,13 @@ function VendorsSection() {
                   <SF label="Email" style={growW(180, 300)} tour="fin-vendors-contact-email"><input style={sheetInput} value={form.contact_email} onChange={set('contact_email')} /></SF>
                 </div>
               </SheetSection>
+              <VendorReferralSection value={referral} onChange={setReferral} required={!editingVendor || !!editingVendor.referral_type} tour="fin-vendors-referred-by"
+                current={editingVendor?.referred_by_user_id ? { id: editingVendor.referred_by_user_id, name: editingVendor.referred_by_user_name || 'Former employee' } : null} />
+              {editingVendor && (
+                <SheetSection icon="clock" title="Record">
+                  <p style={{ ...sheetHint, margin: 0 }}>Created by {editingVendor.created_by_name || '—'}{editingVendor.created_at ? ` on ${new Date(editingVendor.created_at).toLocaleDateString('en-GB')}` : ''}</p>
+                </SheetSection>
+              )}
               {seeBank && (
               <SheetSection icon="rupee" title="Bank details" extra={<Optional />}>
                 <div style={sheetRow}>
@@ -1310,15 +1324,15 @@ function VendorsSection() {
         </Field>
       </div>
 
-      <TableWrap minWidth={1000} tour="fin-vendors-table">
+      <TableWrap minWidth={1200} tour="fin-vendors-table">
         <thead>
           <tr>
             <th style={thStyle}>Code</th><th style={thStyle}>Name</th><th style={thStyle}>GST type</th><th style={thStyle}>GSTIN</th>
-            <th style={thStyle}>City / State</th><th style={numTh}>Payment days</th><th style={thStyle}>Status</th><th style={thStyle}></th>
+            <th style={thStyle}>City / State</th><th style={numTh}>Payment days</th><th style={thStyle}>Referred by</th><th style={thStyle}>Created by</th><th style={thStyle}>Status</th><th style={thStyle}></th>
           </tr>
         </thead>
         <tbody>
-          {loading ? <EmptyRow colSpan={8} text="Loading…" /> : visible.length === 0 ? <EmptyRow colSpan={8} text={vendors.length ? 'No vendors match.' : 'No vendors yet.'} /> :
+          {loading ? <EmptyRow colSpan={10} text="Loading…" /> : visible.length === 0 ? <EmptyRow colSpan={10} text={vendors.length ? 'No vendors match.' : 'No vendors yet.'} /> :
             visible.map((v) => (
               <tr key={v.id}>
                 <td style={{ ...tdStyle, fontWeight: 600 }}>{v.code}</td>
@@ -1327,6 +1341,8 @@ function VendorsSection() {
                 <td style={{ ...tdStyle, fontFamily: 'monospace' }}>{v.gstin || '—'}</td>
                 <td style={tdStyle}>{[v.city, v.state].filter(Boolean).join(', ') || '—'}</td>
                 <td style={numTd}>{v.payment_days ?? '—'}</td>
+                <td style={tdStyle}>{v.referred_by_label || '—'}</td>
+                <td style={tdStyle} title={v.created_at ? new Date(v.created_at).toLocaleDateString('en-GB') : undefined}>{v.created_by_name || '—'}</td>
                 <td style={tdStyle}><StatusPill status={v.status} colors={STATUS_HEX} labels={STATUS_LABELS} /></td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                   <div style={{ display: 'flex', gap: 10 }}>
@@ -1477,19 +1493,19 @@ function InternalOrdersSection() {
                 </div>
                 <div style={sheetRow}>
                   <SF label="Order type" style={fixedW(160)} tour="fin-io-type">
-                    <select style={sheetInput} value={form.order_type} onChange={(e) => setForm((f) => ({ ...f, order_type: e.target.value }))}>
+                    <Select style={sheetInput} value={form.order_type} onChange={(e) => setForm((f) => ({ ...f, order_type: e.target.value }))}>
                       <option value="capital">Capital</option>
                       <option value="maintenance">Maintenance</option>
                       <option value="it">IT</option>
                       <option value="training">Training</option>
-                    </select>
+                    </Select>
                   </SF>
                   {!editingId && (
                     <SF label="Status" style={fixedW(160)} tour="fin-io-status">
-                      <select style={sheetInput} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
+                      <Select style={sheetInput} value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
                         <option value="open">Open</option>
                         <option value="in_progress">In Progress</option>
-                      </select>
+                      </Select>
                     </SF>
                   )}
                 </div>
@@ -1508,10 +1524,10 @@ function InternalOrdersSection() {
               <SheetSection icon="rupee" title="Budget & cost center">
                 <SF label="Budget (₹)" style={{ ...fixedW(160), marginBottom: 12 }} tour="fin-io-budget"><input type="number" min={0} style={sheetInput} value={form.budgeted_amount} onChange={(e) => setForm((f) => ({ ...f, budgeted_amount: e.target.value }))} /></SF>
                 <SF label="Cost center" tour="fin-io-cost-center">
-                  <select style={sheetInput} value={form.cost_center_id} onChange={(e) => setForm((f) => ({ ...f, cost_center_id: e.target.value }))}>
+                  <Select style={sheetInput} value={form.cost_center_id} onChange={(e) => setForm((f) => ({ ...f, cost_center_id: e.target.value }))}>
                     <option value="">— None —</option>
                     {costCenters.map((cc) => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
-                  </select>
+                  </Select>
                 </SF>
                 <p style={sheetHint}>Independent of the department&apos;s cost center — the order tracks one job, the cost center tracks who spends.</p>
               </SheetSection>

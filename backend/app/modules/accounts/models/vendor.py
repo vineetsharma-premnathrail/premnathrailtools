@@ -6,6 +6,7 @@ from app.db.base import Base
 from app.db.mixins import TimestampMixin
 from app.modules.accounts.models._types import Money, Percent
 
+REFERRAL_TYPES = ("employee", "external", "direct")
 VENDOR_STATUSES = ("active", "inactive", "blocked")
 GST_REGISTRATION_TYPES = ("regular", "composition", "unregistered", "overseas", "sez")
 
@@ -67,3 +68,12 @@ class Vendor(Base, TimestampMixin):
     website: Mapped[str | None] = mapped_column(String(255), nullable=True)
     terms_conditions: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # Who brought this vendor to us (2026-10-24). `referral_type` is employee
+    # (referred_by_user_id), external (referred_by_name [+ phone]) or direct
+    # (nobody referred). NULL = vendors added before this field existed.
+    # created_by_id above is the auto-captured creator (never client-supplied).
+    referral_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    referred_by_user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    referred_by_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    referred_by_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)

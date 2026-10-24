@@ -551,14 +551,22 @@ async def get_meta(db: Session = Depends(get_db), _user: User = Depends(_request
     # matches store stock exactly — requesters usually lack the `store` app,
     # so the list is served here rather than from /store/items/meta.
     from app.modules.store.routes.uoms import uom_options
+    rules = pr_purpose.resolve_purpose_rules(db)  # defaults + Procurement › Settings › Purpose rules
     return {
         "categories": [{"code": k, "label": v} for k, v in P2P_CATEGORIES.items()],
         "requirement_types": list(P2P_REQUIREMENT_TYPES),
         # Each purpose with the categories it offers and the pre-filled
         # category / requirement type (p2p/purpose.py PURPOSE_FORM).
-        "purposes": [{"code": k, "label": v, "categories": list(pr_purpose.PURPOSE_FORM[k]["categories"]),
-                      "default_category": pr_purpose.PURPOSE_FORM[k]["category"],
-                      "default_requirement_type": pr_purpose.PURPOSE_FORM[k]["requirement_type"]}
+        "purposes": [{"code": k, "label": v, "categories": list(rules[k]["categories"]),
+                      "default_category": rules[k]["category"], "category_locked": rules[k]["category_locked"],
+                      "requirement_types": list(rules[k]["requirement_types"]),
+                      "default_requirement_type": rules[k]["requirement_type"],
+                      "requirement_type_locked": rules[k]["requirement_type_locked"],
+                      "item_types": list(rules[k]["item_types"]),
+                      "charged_to_kinds": list(rules[k]["charged_to_kinds"]),
+                      "charged_required": rules[k]["charged_required"],
+                      "line_project_mode": rules[k]["line_project_mode"],
+                      "inhouse_only": rules[k]["inhouse_only"]}
                      for k, v in P2P_PURPOSES.items()],
         "statuses": list(P2P_REQUEST_STATUSES),
         "uoms": uom_options(db),
@@ -681,11 +689,10 @@ def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool,
     if payload.purpose and payload.purpose not in P2P_PURPOSES:
         raise HTTPException(status_code=400, detail=f"Purpose must be one of: {', '.join(P2P_PURPOSES.values())}.")
     items = [i for i in payload.items if i.store_item_id] if draft else list(payload.items)
-    if payload.purpose in pr_purpose.INHOUSE_ONLY:
-        # Overhead buying is never for a customer project — every line is Inhouse.
-        for i in items:
-            i.project_inhouse = "Inhouse"
-            i.order_project_element_id = None
+    # What the lines say about their project follows the purpose's line project
+    # mode (Procurement › Settings › Purpose rules): overhead = every line
+    # Inhouse, service = every line belongs to the header's machine project.
+    pr_purpose.apply_line_project_mode(db, payload.purpose, items)
     if not draft and not items:
         raise HTTPException(status_code=400, detail="Add at least one item line before submitting the requisition.")
     # Every line is an Item Master item (2026-10-11 — never a typed name) and
@@ -703,12 +710,20 @@ def _validate_pr_payload(db: Session, payload: P2PRequestCreate, *, draft: bool,
             raise HTTPException(status_code=400, detail=f"Line {idx} ({master.item_code} {master.item_name}): quantity must be more than 0.")
         lines.append((item, master))
 
+    if not draft and payload.purpose and check_category:
+        # A new (or draft being submitted) requisition's item types must fit its
+        # purpose; older / already-submitted ones are not re-judged.
+        for idx, (_line, master) in enumerate(lines, start=1):
+            why = pr_purpose.item_type_problem(payload.purpose, f"Line {idx}", master.item_code, master.item_name, master.item_type, db=db)
+            if why:
+                raise HTTPException(status_code=422, detail=why)
     if not draft and payload.purpose:
-        problems = pr_purpose.header_problems(payload.purpose, payload.account_assignment, payload.project_label)
+        problems = pr_purpose.header_problems(payload.purpose, payload.account_assignment, payload.project_label, db=db)
         # The category can't change once submitted (it is in the number), so
         # only a new / draft requisition's category is held to its purpose.
         if check_category:
-            problems += [p for p in [pr_purpose.category_problem(payload.purpose, payload.category_code)] if p]
+            problems += [p for p in [pr_purpose.category_problem(payload.purpose, payload.category_code, db=db),
+                                     pr_purpose.requirement_type_problem(payload.purpose, payload.requirement_type, db=db)] if p]
         if problems:
             raise HTTPException(status_code=400, detail=" ".join(problems))
     elif not draft:
@@ -1947,13 +1962,13 @@ async def request_quotations(
     return _to_response(db, pr, user=user)
 
 
-def _check_draft_complete(pr: P2PRequest) -> None:
+def _check_draft_complete(pr: P2PRequest, db: Session) -> None:
     """A draft is saved with whatever was filled in; before it goes for
     approval it must be as complete as a requisition raised directly."""
     missing = []
     if pr.purpose:
-        problems = pr_purpose.header_problems(pr.purpose, pr.account_assignment, pr.project_label)
-        problems += [p for p in [pr_purpose.category_problem(pr.purpose, pr.category_code)] if p]
+        problems = pr_purpose.header_problems(pr.purpose, pr.account_assignment, pr.project_label, db=db)
+        problems += [p for p in [pr_purpose.category_problem(pr.purpose, pr.category_code, db=db)] if p]
         if problems:
             raise HTTPException(status_code=400, detail=f"{pr.p2p_number} can't be submitted yet — {' '.join(problems)} Click Edit to complete the draft.")
     else:
@@ -1990,7 +2005,7 @@ async def resubmit_p2p_request(
         raise HTTPException(status_code=409, detail=f"Only a draft, or a requisition returned for changes, can be submitted (current status: {pr.status.replace('_', ' ')}).")
     old_status = pr.status
     if old_status == "draft":
-        _check_draft_complete(pr)
+        _check_draft_complete(pr, db)
     order_project_links.check_saved_pr(db, pr)
     requester = db.get(User, pr.requested_by_id) if pr.requested_by_id else None
     p2p_approvals.submit_pr(db, pr, requester or user)

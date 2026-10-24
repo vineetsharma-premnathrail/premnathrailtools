@@ -8,6 +8,8 @@ import { vendorsApi } from '@/lib/api'
 import { ProcurementVendor } from '@/types'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { extractErrorMessages } from '@/lib/validation'
+import SearchableSelect from '@/components/erp/SearchableSelect'
+import VendorReferralSection, { referralError, referralFromVendor, referralPayload } from '@/components/shared/VendorReferral'
 import { FormSheet, SheetColumns, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel, sheetHint } from '@/components/shared/FormSheet'
 
 type FieldKey = 'name' | 'contact_name' | 'contact_phone' | 'contact_email' | 'address' | 'city' | 'state' | 'pin_code' | 'gstin' | 'website'
@@ -29,6 +31,10 @@ const SECTIONS: { icon: 'building' | 'user' | 'tag'; title: string; keys: FieldK
   { icon: 'tag', title: 'Address & Tax', keys: ['address', 'city', 'state', 'pin_code', 'gstin', 'website'] },
 ]
 
+const STATUS_OPTS = [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'blocked', label: 'Blocked' }]
+const MSME_CAT_OPTS = [{ value: '', label: 'Not an MSME' }, { value: 'micro', label: 'Micro' }, { value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }]
+const MSME_ACT_OPTS = [{ value: '', label: '—' }, { value: 'manufacturing', label: 'Manufacturing' }, { value: 'services', label: 'Services' }, { value: 'trader', label: 'Trader' }]
+
 const ErrorBox = ({ error }: { error: string }) => error
   ? <div style={{ padding: '10px 14px', marginBottom: 16, borderRadius: 10, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: '#b91c1c', fontSize: 13 }}>{error}</div>
   : null
@@ -49,6 +55,7 @@ export default function VendorFormDialog({ vendor, onClose, onSaved }: {
     out.payment_days = m.payment_days != null ? String(m.payment_days) : ''
     return out
   })
+  const [referral, setReferral] = useState(() => referralFromVendor(vendor))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const close = () => { if (!saving) onClose() }
@@ -57,6 +64,9 @@ export default function VendorFormDialog({ vendor, onClose, onSaved }: {
 
   const save = async () => {
     if (!form.name.trim()) { setError('Company name is required.'); return }
+    // Required for a new vendor; an older vendor with nothing recorded can be edited without it.
+    const refErr = referralError(referral, !vendor || !!vendor.referral_type)
+    if (refErr) { setError(refErr); return }
     setSaving(true)
     setError('')
     try {
@@ -64,6 +74,7 @@ export default function VendorFormDialog({ vendor, onClose, onSaved }: {
       for (const [k, v] of Object.entries(form)) payload[k] = v.trim() || null
       payload.status = form.status
       payload.payment_days = form.payment_days.trim() === '' ? null : Number(form.payment_days)
+      Object.assign(payload, referralPayload(referral))
       onSaved(vendor ? await vendorsApi.update(vendor.id, payload) : await vendorsApi.create(payload))
     } catch (err) {
       setError(extractErrorMessages(err, 'Could not save the vendor — try again.').join(' '))
@@ -98,31 +109,24 @@ export default function VendorFormDialog({ vendor, onClose, onSaved }: {
         </>}
         right={<>
           <SheetSection icon="flag" title="Status">
-            <select value={form.status} onChange={(e) => set('status', e.target.value)} style={sheetInput}>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="blocked">Blocked</option>
-            </select>
+            <SearchableSelect value={form.status} onChange={(v: string) => set('status', v)} options={STATUS_OPTS} placeholder="Status" />
           </SheetSection>
+          <VendorReferralSection value={referral} onChange={setReferral} required={!vendor || !!vendor.referral_type} tour="vendor-form-referred-by"
+            current={vendor?.referred_by_user_id ? { id: vendor.referred_by_user_id, name: vendor.referred_by_user_name || 'Former employee' } : null} />
+          {vendor && (
+            <SheetSection icon="clock" title="Record">
+              <p style={{ ...sheetHint, margin: 0 }}>Created by {vendor.created_by_name || '—'}{vendor.created_at ? ` on ${new Date(vendor.created_at).toLocaleDateString('en-GB')}` : ''}</p>
+            </SheetSection>
+          )}
           <SheetSection icon="shield" title="MSME & Payment">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
               <div style={{ flex: '1 1 130px' }}>
                 <label style={sheetLabel}>MSME category</label>
-                <select value={form.msme_category} onChange={(e) => set('msme_category', e.target.value)} style={sheetInput}>
-                  <option value="">Not an MSME</option>
-                  <option value="micro">Micro</option>
-                  <option value="small">Small</option>
-                  <option value="medium">Medium</option>
-                </select>
+                <SearchableSelect value={form.msme_category} onChange={(v: string) => set('msme_category', v)} options={MSME_CAT_OPTS} placeholder="Not an MSME" />
               </div>
               <div style={{ flex: '1 1 130px' }}>
                 <label style={sheetLabel}>MSME activity</label>
-                <select value={form.msme_activity} onChange={(e) => set('msme_activity', e.target.value)} style={sheetInput}>
-                  <option value="">—</option>
-                  <option value="manufacturing">Manufacturing</option>
-                  <option value="services">Services</option>
-                  <option value="trader">Trader</option>
-                </select>
+                <SearchableSelect value={form.msme_activity} onChange={(v: string) => set('msme_activity', v)} options={MSME_ACT_OPTS} placeholder="—" />
               </div>
               <div style={{ flex: '1 1 180px' }}>
                 <label style={sheetLabel}>Udyam registration no.</label>

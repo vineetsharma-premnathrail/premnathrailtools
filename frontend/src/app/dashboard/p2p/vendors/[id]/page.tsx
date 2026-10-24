@@ -16,6 +16,7 @@ import { formatDateTime } from '@/lib/format'
 import { extractErrorMessages } from '@/lib/validation'
 import { useRecordId } from '@/lib/recordRef'
 import InvalidRecordLink from '@/components/erp/InvalidRecordLink'
+import Select from '@/components/shared/Select'
 import { FormSheet, SheetSection, SheetIcon, Req, SHEET, sheetBtn, sheetInput, sheetLabel } from '@/components/shared/FormSheet'
 
 const card: React.CSSProperties = {
@@ -153,6 +154,8 @@ export default function VendorDetailPage() {
             <Info label="GSTIN" value={vendor.gstin} />
             <Info label="Website" value={vendor.website} />
             <Info label="Status" value={vendor.status} />
+            <Info label="Referred by" value={vendor.referred_by_label} />
+            <Info label="Created by" value={vendor.created_by_name ? `${vendor.created_by_name}${vendor.created_at ? ` · ${formatDateTime(vendor.created_at)}` : ''}` : null} />
             {(() => {
               const m = vendor as unknown as { msme_category?: string | null; udyam_number?: string | null; payment_days?: number | null }
               return m.msme_category ? <Info label="MSME" value={`${m.msme_category[0].toUpperCase()}${m.msme_category.slice(1)} · ${m.udyam_number || '—'} · pay within ${Math.min(m.payment_days ?? 15, 45)} days`} /> : null
@@ -168,9 +171,9 @@ export default function VendorDetailPage() {
           <h2 style={h2}>Documents</h2>
           <span style={{ fontSize: 12, color: TEXT.muted }}>Catalog PDF, GST certificate, PAN, MSME, cancelled cheque…</span>
           {canEditVendor && canFeature('p2p', 'vendors', 'documents', 'create') && <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-            <select value={docType} onChange={(e) => setDocType(e.target.value)} style={{ ...inputStyle, width: 'auto' }}>
+            <Select value={docType} onChange={(e) => setDocType(e.target.value)} style={{ ...inputStyle, width: 200 }}>
               {docTypes.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
-            </select>
+            </Select>
             <label style={{ ...secondaryBtnStyle, cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.6 : 1 }}>
               {uploading ? 'Uploading…' : '📎 Upload'}
               <input type="file" multiple hidden disabled={uploading} onChange={(e) => { upload(Array.from(e.target.files || [])); e.target.value = '' }} />
@@ -178,7 +181,8 @@ export default function VendorDetailPage() {
           </div>}
         </div>
         {docs.length === 0 ? <p style={{ fontSize: 13, color: TEXT.muted, margin: 0 }}>No documents yet.</p> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
             <thead><tr>{['File', 'Type', 'Uploaded by', 'On', ''].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>
               {docs.map((d) => (
@@ -193,6 +197,7 @@ export default function VendorDetailPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
       )}

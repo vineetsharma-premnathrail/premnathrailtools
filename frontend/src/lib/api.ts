@@ -1233,6 +1233,10 @@ export const p2pApi = {
   getSettings: async (): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.get('/p2p/settings'); return data },
   saveSettings: async (values: Record<string, unknown>): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.put('/p2p/settings', { values }); return data },
   resetSetting: async (key: string): Promise<import('@/types').SettingsPayload> => { const { data } = await apiClient.post(`/p2p/settings/reset/${key}`); return data },
+  // Procurement › Settings › Purpose rules (what the PR form offers / locks per purpose)
+  getPurposeRules: async (): Promise<import('@/types').PurposeRulesPayload> => { const { data } = await apiClient.get('/p2p/purpose-rules'); return data },
+  savePurposeRules: async (purpose: string, rules: import('@/types').PurposeRules): Promise<import('@/types').PurposeRulesPayload> => { const { data } = await apiClient.put(`/p2p/purpose-rules/${purpose}`, { rules }); return data },
+  resetPurposeRules: async (purpose: string): Promise<import('@/types').PurposeRulesPayload> => { const { data } = await apiClient.post(`/p2p/purpose-rules/${purpose}/reset`); return data },
   approvalFlow: async (): Promise<import('@/types').P2PApprovalFlow> => { const { data } = await apiClient.get('/p2p/approval-flow'); return data },
   // Requisition Excel export / CSV import
   exportRequisitions: async (params: Record<string, string | undefined> = {}): Promise<Blob> => {
@@ -1871,6 +1875,9 @@ export const poReportsApi = {
   exportOpenItems: async (params: Record<string, unknown> = {}) =>
     (await apiClient.get('/p2p/po-reports/open-items/export', { params, responseType: 'blob' })).data as Blob,
   history: async (poId: number) => (await apiClient.get(`/p2p/po-reports/${poId}/history`)).data,
+  /** PO Tracking: every PO with its true lifecycle stage; filtered, sorted and paged on the server. */
+  tracking: async (params: Record<string, unknown> = {}) => (await apiClient.get('/p2p/po-reports/tracking', { params })).data,
+  trackingFilters: async () => (await apiClient.get('/p2p/po-reports/tracking/filters')).data as { vendors: { id: number; name: string }[]; buyers: { id: number; name: string }[] },
 }
 
 /** Physical stock count: freeze → count (blind) → submit → Store Manager approval. */

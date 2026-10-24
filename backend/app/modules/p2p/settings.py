@@ -10,6 +10,7 @@ and the notification rules (app/core/notify_rules.py)."""
 from app.core.notify_rules import notification_groups, notification_specs, validate_notification_rules
 from app.core.settings_framework import ModuleSettingsDef, SettingSpec, register_module_settings, get_setting as _get
 from app.modules.main.models.user import AVAILABLE_APPS
+from app.modules.p2p.models.p2p_request import P2P_CATEGORIES, P2P_CATEGORY_AUTO_BUYERS
 
 # Notification recipients may come from any department.
 _ANY_MODULE = tuple(sorted(AVAILABLE_APPS))
@@ -28,6 +29,7 @@ P2P_SETTING_GROUPS = {
     "terms": "Company terms & conditions",
     "invoice_match": "Invoice match tolerances (3-way match per PO line)",
     "rfq": "RFQ by email",
+    "buyers": "Buyer for each requisition category",
     **notification_groups(NOTIFY_EVENTS),
 }
 
@@ -64,6 +66,15 @@ _SPECS = [
     SettingSpec("rfq_auto_reminder", "rfq", "Remind vendors a day before the quote-by date", "bool", True,
                 help="Every morning the portal re-sends the RFQ to vendors who haven't quoted and whose quote-by date is "
                      "tomorrow. When the date passes, the buyer is told how many quotes came in."),
+    # The buyer a new requisition goes to, by its category (2026-10-23) — was
+    # fixed in code (P2P_CATEGORY_AUTO_BUYERS), which stays the fallback for a
+    # category left blank here.
+    *(SettingSpec(f"buyer_{code.lower()}", "buyers", f"{label} ({code})", "user", None, user_apps=("p2p", "purchase"),
+                  help=(f"New {label} requisitions are assigned to this buyer. Blank = the standard buyer "
+                        f"({P2P_CATEGORY_AUTO_BUYERS[code]})." if code in P2P_CATEGORY_AUTO_BUYERS
+                        else f"New {label} requisitions are assigned to this buyer. Blank = no buyer — "
+                             "Purchase picks one on the requisition."))
+      for code, label in P2P_CATEGORIES.items()),
     *notification_specs(NOTIFY_EVENTS, user_apps={e: _ANY_MODULE for e in NOTIFY_EVENTS}),
 ]
 

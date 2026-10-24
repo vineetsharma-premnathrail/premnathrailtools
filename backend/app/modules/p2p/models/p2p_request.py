@@ -91,14 +91,21 @@ P2P_CATEGORY_AUTO_BUYERS: dict[str, str] = {
 
 
 def resolve_auto_buyer_id(db, category_code: str) -> int | None:
-    """Look up the auto-assigned buyer's current user id by email. Returns
-    None (no buyer auto-assigned, PR still creates fine) if the category has
-    no mapping or that email doesn't match any user, rather than letting a
-    stale id 500 the whole PR creation."""
+    """The buyer a new requisition of this category goes to: the one picked in
+    Procurement › Settings › Buyer for each requisition category (2026-10-23),
+    else the standard buyer above (looked up by email). None — no buyer
+    auto-assigned, the PR still creates fine — when neither is an active user,
+    rather than letting a stale id 500 the whole PR creation."""
+    from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
+    from app.modules.p2p.settings import get_setting
+    picked = get_setting(db, f"buyer_{(category_code or '').lower()}") if category_code in P2P_CATEGORIES else None
+    if picked:
+        buyer = db.query(User).filter(User.id == int(picked), User.is_active.is_(True)).first()
+        if buyer:
+            return buyer.id
     email = P2P_CATEGORY_AUTO_BUYERS.get(category_code)
     if not email:
         return None
-    from app.modules.main.models.user import User  # local import avoids a cross-module cycle at startup
     buyer = db.query(User).filter(User.email == email).first()
     return buyer.id if buyer else None
 

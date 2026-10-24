@@ -321,6 +321,7 @@ from app.modules.accounts.routes import msme as accounts_msme_routes
 from app.modules.p2p.routes import mis as p2p_mis_routes
 from app.modules.p2p.routes import vendors as p2p_vendors_routes
 from app.modules.p2p.routes import settings as p2p_settings_routes
+from app.modules.p2p.routes import purpose_rules as p2p_purpose_rules_routes
 from app.modules.quality.routes import standards as quality_standards_routes
 from app.modules.quality.routes import inspection_plans as quality_inspection_plans_routes
 from app.modules.quality.routes import inspections as quality_inspections_routes
@@ -624,6 +625,7 @@ app.include_router(p2p_mis_routes.router, prefix="/api/v1")
 app.include_router(p2p_vendors_routes.router, prefix="/api/v1")
 app.include_router(p2p_settings_routes.router, prefix="/api/v1")
 app.include_router(p2p_settings_routes.flow_router, prefix="/api/v1")
+app.include_router(p2p_purpose_rules_routes.router, prefix="/api/v1")
 app.include_router(quality_standards_routes.router, prefix="/api/v1")
 app.include_router(quality_inspection_plans_routes.router, prefix="/api/v1")
 app.include_router(quality_inspections_routes.router, prefix="/api/v1")

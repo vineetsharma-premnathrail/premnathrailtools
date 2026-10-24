@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import scoped_models
-from app.core.permission_registry import MODULES
+from app.core.permission_registry import MODULES, is_admin_user
 from app.core.permissions import require_feature_action, require_tab_action
 from app.core.notification_events import notify_event
 from app.db.session import get_db
@@ -71,6 +71,31 @@ def _type_out(tt: engine.TransactionType) -> dict:
     }
 
 
+_FLAGS = {
+    "is_active": "Approval required",
+    "allow_self_approval": "Requester may approve own document",
+    "distinct_approvers": "Different person per stage",
+    "require_permission": "Approver also needs the Approve permission",
+}
+
+
+def _ensure_may_change_flags(db: Session, key: str, new: dict, actor: User) -> None:
+    """Switching approval off, letting people approve their own document, or
+    dropping the separate-person / permission rules removes a control, so only
+    an admin may do it. A workflow editor still edits stages and keeps the
+    flags as they are."""
+    if is_admin_user(actor):
+        return
+    wf = engine.ensure_workflow(db, key)
+    changed = [label for flag, label in _FLAGS.items() if new.get(flag) is not None and bool(new[flag]) != bool(getattr(wf, flag))]
+    if changed:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Only an admin can change {', '.join(f'“{c}”' for c in changed)} — these switches remove approval controls. "
+                   "Leave them as they are and save the stages, or ask an admin to change them.",
+        )
+
+
 def _tell_changed(db: Session, background_tasks: BackgroundTasks, key: str, actor: User, what: str) -> None:
     """organization.workflow_changed (core/events/organization.py)."""
     tt = engine.get_type(key)
@@ -108,7 +133,9 @@ async def list_workflows(db: Session = Depends(get_db), _user: User = Depends(_c
         out.append({
             **_type_out(tt),
             "is_active": wf.is_active if wf else True,
-            "customised": wf is not None,
+            # A row also exists for a type that was only opened or submitted once
+            # (created from the defaults); it is customised only once someone saved it.
+            "customised": wf is not None and wf.updated_by_id is not None,
             "stage_names": [s.name for s in stages] if stages is not None else [s.name for s in tt.default_stages],
             "updated_at": wf.updated_at if wf else None,
         })
@@ -130,6 +157,13 @@ async def save_workflow(key: str, payload: WorkflowPayload, background_tasks: Ba
         raise HTTPException(status_code=422, detail="Add at least one stage — or switch the workflow off if this "
                                                     "transaction should not need approval.")
     data = payload.model_dump()
+    _ensure_may_change_flags(db, key, data, actor)
+    # The same check the editor shows, run again here so a workflow with a real
+    # mistake (nobody could submit, a stage nobody can pass, the editor naming
+    # themselves) is refused even if the page's check was stale or unavailable.
+    blocking = [i["message"] for i in engine.check_workflow(db, key, data, actor)["issues"] if i.get("blocking")]
+    if blocking:
+        raise HTTPException(status_code=422, detail="Not saved — " + " ".join(blocking))
     wf = engine.save_workflow(db, key, data, actor)
     _tell_changed(db, background_tasks, key, actor, "saved with new settings" if wf.is_active else "switched off (no approval needed)")
     db.commit()
@@ -139,6 +173,10 @@ async def save_workflow(key: str, payload: WorkflowPayload, background_tasks: Ba
 @router.post("/{key}/reset")
 async def reset_workflow(key: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
                          actor: User = Depends(require_feature_action("organization", "workflows", "reset", "edit"))):
+    tt = engine.get_type(key)
+    _ensure_may_change_flags(db, key, {"is_active": True, "allow_self_approval": tt.allow_self_approval,
+                                       "distinct_approvers": tt.distinct_approvers,
+                                       "require_permission": tt.require_permission}, actor)
     wf = engine.reset_workflow(db, key, actor)
     _tell_changed(db, background_tasks, key, actor, "reset to the module default")
     db.commit()
@@ -159,10 +197,10 @@ async def preview_workflow(key: str, payload: PreviewPayload, db: Session = Depe
 
 @router.post("/{key}/check")
 async def check_workflow(key: str, payload: WorkflowPayload, db: Session = Depends(get_db),
-                         _user: User = Depends(require_feature_action("organization", "workflows", "simulate", "view"))):
+                         user: User = Depends(require_feature_action("organization", "workflows", "simulate", "view"))):
     """Dry-run the workflow as edited (not yet saved) against everyone who can
     raise this document: who would be refused, and weak controls."""
-    out = engine.check_workflow(db, key, payload.model_dump())
+    out = engine.check_workflow(db, key, payload.model_dump(), user)
     db.rollback()
     return out
 

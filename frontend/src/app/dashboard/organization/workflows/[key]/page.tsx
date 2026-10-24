@@ -1,5 +1,6 @@
 'use client'
 
+import Select from '@/components/shared/Select'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useRequireOrgTab } from '@/app/dashboard/organization/_lib/useRequireOrgTab'
@@ -83,7 +84,9 @@ function Step({ n, icon, title, help, children }: { n: number; icon: SheetIconNa
 
 export default function WorkflowEditorPage() {
   const { isAuthorized, isLoading } = useRequireOrgTab('workflows')
-  const { can, canFeature } = useCan()
+  const { can, canFeature, user: me } = useCan()
+  // Switches that remove an approval control are admin-only (the server refuses anyone else).
+  const isAdminUser = !!me && (me.role === 'admin' || !!(me as { is_azure_admin?: boolean }).is_azure_admin)
   // Workflow features (core/features/organization.py): check & preview, reset, change history.
   const maySimulate = canFeature('organization', 'workflows', 'simulate', 'view')
   const mayReset = canFeature('organization', 'workflows', 'reset', 'edit')
@@ -98,7 +101,8 @@ export default function WorkflowEditorPage() {
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
   const [askReset, setAskReset] = useState(false)
-  const [askSaveAnyway, setAskSaveAnyway] = useState(false)
+  const [saveConfirm, setSaveConfirm] = useState<{ title: string; message: string; label: string } | null>(null)
+  const [blockers, setBlockers] = useState<string[]>([])
   const [pvUser, setPvUser] = useState<number[]>([])
   const [pvCtx, setPvCtx] = useState<Record<string, string>>({})
   const [preview, setPreview] = useState<Preview | null>(null)
@@ -162,12 +166,14 @@ export default function WorkflowEditorPage() {
 
   const doSave = async () => {
     if (!wf) return
-    setAskSaveAnyway(false)
+    setSaveConfirm(null)
     setSaving(true); setError('')
     try {
       const out = await approvalsApi.saveWorkflow(key, payloadOf(wf))
       setWf(out.workflow)
       setHistory(null)
+      setPreview(null)
+      setCheckError('')
       setNotice('Workflow saved. It applies to documents submitted from now on; documents already waiting keep their approvers.')
     } catch (e) {
       setError(extractErrorMessages(e, 'Could not save the workflow.').join(' '))
@@ -175,13 +181,45 @@ export default function WorkflowEditorPage() {
       setSaving(false)
     }
   }
-  const save = () => (totalErrors > 0 ? setAskSaveAnyway(true) : doSave())
+  // Save first runs the setup check on what is on screen NOW (not the debounced
+  // result, which can be a moment old): mistakes in the workflow itself stop the
+  // save; people-dependent errors and weak controls ask for a confirmation.
+  const save = async () => {
+    if (!wf) return
+    if (!maySimulate) { doSave(); return }
+    setSaving(true); setError('')
+    let result: ApprovalWorkflowCheck
+    try {
+      result = await approvalsApi.checkWorkflow(key, payloadOf(wf))
+      setCheck(result); setCheckError('')
+    } catch (e) {
+      setSaving(false)
+      setError(extractErrorMessages(e, 'The setup could not be checked, so nothing was saved.').join(' '))
+      return
+    }
+    setSaving(false)
+    const block = result.issues.filter((x) => x.blocking)
+    if (block.length) { setBlockers(block.map((x) => x.message)); return }
+    const errors = result.issues.filter((x) => x.level === 'error')
+    const warnings = result.issues.filter((x) => x.level === 'warning')
+    if (errors.length) {
+      setSaveConfirm({ title: 'Save with problems?', label: 'Save anyway',
+        message: `The setup check found ${errors.length} problem(s) marked "Must fix" — the people listed there would be refused when they submit. Fix them first (see section 3), or save anyway if you are fixing the people's setup next.` })
+    } else if (warnings.length) {
+      setSaveConfirm({ title: 'Save with weak controls?', label: 'Save anyway',
+        message: `The setup check raised ${warnings.length} warning(s), e.g. "${warnings[0].message.slice(0, 160)}${warnings[0].message.length > 160 ? '…' : ''}" Save anyway, or review section 3 first?` })
+    } else {
+      doSave()
+    }
+  }
   const reset = async () => {
     setAskReset(false)
     try {
       const out = await approvalsApi.resetWorkflow(key)
       setWf(out.workflow)
       setHistory(null)
+      setPreview(null)
+      setCheckError('')
       setNotice('Workflow reset to the module default.')
     } catch (e) {
       setError(extractErrorMessages(e, 'Could not reset the workflow.').join(' '))
@@ -326,9 +364,10 @@ export default function WorkflowEditorPage() {
       <ConfirmDialog open={askReset} danger={false} title="Reset to default" confirmLabel="Reset"
         message="Replace these stages with the module's built-in default? Documents already waiting are not affected."
         onConfirm={reset} onCancel={() => setAskReset(false)} />
-      <ConfirmDialog open={askSaveAnyway} title="Save with problems?" confirmLabel="Save anyway"
-        message={`The setup check found ${totalErrors} problem(s) marked "Must fix" — the people listed there would be refused when they submit. Fix them first (see section 3), or save anyway if you are fixing the people's setup next.`}
-        onConfirm={doSave} onCancel={() => setAskSaveAnyway(false)} />
+      <MessageDialog open={blockers.length > 0} variant="error" title="Not saved — fix these first"
+        message={[...blockers, 'Nothing was saved. Fix the stage(s) marked in section 3, then save again.']} onClose={() => setBlockers([])} />
+      <ConfirmDialog open={!!saveConfirm} title={saveConfirm?.title || ''} confirmLabel={saveConfirm?.label || 'Save'}
+        message={saveConfirm?.message || ''} onConfirm={doSave} onCancel={() => setSaveConfirm(null)} />
 
       {wf && meta && type && (
         <div style={{ padding: '20px 24px' }}>
@@ -377,12 +416,13 @@ export default function WorkflowEditorPage() {
               ] as const).map(([k, label, help]) => (
                 <div key={k} style={{ flex: '1 1 220px', maxWidth: 320 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: TEXT.heading, fontWeight: 600 }}>
-                    <Checkbox checked={!!wf[k]} disabled={readOnly} onChange={() => setWf({ ...wf, [k]: !wf[k] })} /> {label}
+                    <Checkbox checked={!!wf[k]} disabled={readOnly || !isAdminUser} onChange={() => setWf({ ...wf, [k]: !wf[k] })} /> {label}
                   </span>
                   <p style={hint}>{help}</p>
                 </div>
               ))}
             </div>
+            {!readOnly && !isAdminUser && <p style={{ ...hint, marginTop: 14 }}>These switches remove approval controls, so only an admin can change them. You can edit the stages below.</p>}
             <p style={{ ...hint, marginTop: 14 }}>
               An approver going on leave sets a delegate in{' '}
               <a href="/dashboard/organization/delegations" style={{ color: '#FF6A2A', fontWeight: 600 }}>Organization › Delegations</a>
@@ -396,10 +436,10 @@ export default function WorkflowEditorPage() {
             <div style={{ ...cardStyle, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
               <div style={{ flex: '1 1 300px', maxWidth: 400 }}>
                 <Field label="Start from a template (optional)">
-                  <select style={inputStyle} value={tplId} onChange={(e) => setTplId(e.target.value)}>
+                  <Select style={inputStyle} value={tplId} onChange={(e) => setTplId(e.target.value)}>
                     <option value="">Pick a template…</option>
                     {TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                  </select>
+                  </Select>
                 </Field>
               </div>
               {template?.needsAmount && (
@@ -434,17 +474,17 @@ export default function WorkflowEditorPage() {
                 </div>
                 <div style={{ flex: '1 1 260px', maxWidth: 340 }}>
                   <Field label="Approver">
-                    <select style={inputStyle} disabled={readOnly} value={s.approver_rule} onChange={(e) => setStage(i, { approver_rule: e.target.value, rule_config: {} })}>
+                    <Select style={inputStyle} disabled={readOnly} value={s.approver_rule} onChange={(e) => setStage(i, { approver_rule: e.target.value, rule_config: {} })}>
                       {Object.entries(meta.approver_rules).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
+                    </Select>
                   </Field>
                 </div>
                 <div style={{ flex: '0 1 220px', minWidth: 200 }}>
                   <Field label="When several people match">
-                    <select style={inputStyle} disabled={readOnly} value={s.approval_mode} onChange={(e) => setStage(i, { approval_mode: e.target.value as 'any' | 'all' })}>
+                    <Select style={inputStyle} disabled={readOnly} value={s.approval_mode} onChange={(e) => setStage(i, { approval_mode: e.target.value as 'any' | 'all' })}>
                       <option value="any">Any one of them approves</option>
                       <option value="all">Every one must approve</option>
-                    </select>
+                    </Select>
                   </Field>
                 </div>
               </div>
@@ -455,43 +495,43 @@ export default function WorkflowEditorPage() {
                 )}
                 {s.approver_rule === 'role' && (
                   <Field label="Role">
-                    <select style={inputStyle} disabled={readOnly} value={s.rule_config.role_id || ''} onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, role_id: Number(e.target.value) } })}>
+                    <Select style={inputStyle} disabled={readOnly} value={s.rule_config.role_id || ''} onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, role_id: Number(e.target.value) } })}>
                       <option value="">Pick a role…</option>
                       {meta.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                    </select>
+                    </Select>
                   </Field>
                 )}
                 {s.approver_rule === 'permission' && (
                   <Field label="Permission">
-                    <select style={inputStyle} disabled={readOnly} value={s.rule_config.permission || ''} onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, permission: e.target.value } })}>
+                    <Select style={inputStyle} disabled={readOnly} value={s.rule_config.permission || ''} onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, permission: e.target.value } })}>
                       <option value="">Pick a permission…</option>
                       {meta.approval_permission_options ? permGroups() : meta.approval_permissions.map((p) => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                    </Select>
                   </Field>
                 )}
                 {s.approver_rule === 'user_flag' && (
                   <Field label="Approval flag">
-                    <select style={inputStyle} disabled={readOnly} value={s.rule_config.flag || ''} onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, flag: e.target.value } })}>
+                    <Select style={inputStyle} disabled={readOnly} value={s.rule_config.flag || ''} onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, flag: e.target.value } })}>
                       <option value="">Pick a flag…</option>
                       {Object.entries(meta.approver_flags).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
+                    </Select>
                   </Field>
                 )}
                 {s.approver_rule === 'record_field' && (
                   <Field label="Person on the document">
-                    <select style={inputStyle} disabled={readOnly} value={s.rule_config.field || ''} onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, field: e.target.value } })}>
+                    <Select style={inputStyle} disabled={readOnly} value={s.rule_config.field || ''} onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, field: e.target.value } })}>
                       <option value="">{userFields.length ? 'Pick…' : 'This document names no people'}</option>
                       {userFields.map(([k, f]) => <option key={k} value={k}>{f.label}</option>)}
-                    </select>
+                    </Select>
                   </Field>
                 )}
                 <div style={{ marginTop: 8 }}>
                   <Field label="Also allow holders of (optional)">
-                    <select style={inputStyle} disabled={readOnly} value={s.rule_config.plus_permission || ''}
+                    <Select style={inputStyle} disabled={readOnly} value={s.rule_config.plus_permission || ''}
                       onChange={(e) => setStage(i, { rule_config: { ...s.rule_config, plus_permission: e.target.value || undefined } })}>
                       <option value="">Nobody else</option>
                       {meta.approval_permission_options ? permGroups() : meta.approval_permissions.map((p) => <option key={p} value={p}>{p}</option>)}
-                    </select>
+                    </Select>
                   </Field>
                 </div>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: TEXT.heading, marginTop: 8 }}>
@@ -509,23 +549,23 @@ export default function WorkflowEditorPage() {
                   return (
                     <div key={ci} style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
                       {ci > 0 && <span style={{ fontSize: 11.5, fontWeight: 700, color: TEXT.muted }}>AND</span>}
-                      <select style={{ ...inputStyle, width: 200 }} disabled={readOnly} value={c.field}
+                      <Select style={{ ...inputStyle, width: 200 }} disabled={readOnly} value={c.field}
                         onChange={(e) => setStage(i, { conditions: s.conditions.map((x, j) => (j === ci ? { ...x, field: e.target.value, value: '' } : x)) })}>
                         {fields.map(([k, fd]) => <option key={k} value={k}>{fd.label}</option>)}
-                      </select>
-                      <select style={{ ...inputStyle, width: 150 }} disabled={readOnly} value={c.op}
+                      </Select>
+                      <Select style={{ ...inputStyle, width: 150 }} disabled={readOnly} value={c.op}
                         onChange={(e) => setStage(i, { conditions: s.conditions.map((x, j) => (j === ci ? { ...x, op: e.target.value } : x)) })}>
                         {Object.entries(meta.condition_ops)
                           .filter(([v]) => (['gt', 'gte', 'lt', 'lte'].includes(v) ? f?.type === 'number' : ['true', 'false'].includes(v) ? f?.type === 'bool' : f?.type !== 'bool'))
                           .map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                      </select>
+                      </Select>
                       {c.op !== 'true' && c.op !== 'false' && (
                         f?.choices?.length && (c.op === 'eq' || c.op === 'ne') ? (
-                          <select style={{ ...inputStyle, width: 180 }} disabled={readOnly} value={String(c.value ?? '')}
+                          <Select style={{ ...inputStyle, width: 180 }} disabled={readOnly} value={String(c.value ?? '')}
                             onChange={(e) => setStage(i, { conditions: s.conditions.map((x, j) => (j === ci ? { ...x, value: e.target.value } : x)) })}>
                             <option value="">Pick…</option>
                             {f.choices.map((ch) => <option key={ch} value={ch}>{f.choice_labels?.[ch] || ch}</option>)}
-                          </select>
+                          </Select>
                         ) : f?.choices?.length ? (
                           // "is one of" / "is not one of" on a choice field: tick the values (shown in words).
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 520 }}>
@@ -581,9 +621,9 @@ export default function WorkflowEditorPage() {
                   {s.escalate_after_hours ? (
                     <div style={{ width: 260 }}>
                       <Field label="Escalate to">
-                        <select style={inputStyle} disabled={readOnly} value={s.escalation_rule || ''} onChange={(e) => setStage(i, { escalation_rule: e.target.value })}>
+                        <Select style={inputStyle} disabled={readOnly} value={s.escalation_rule || ''} onChange={(e) => setStage(i, { escalation_rule: e.target.value })}>
                           {Object.entries(meta.escalation_rules).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                        </select>
+                        </Select>
                       </Field>
                     </div>
                   ) : null}
@@ -642,13 +682,13 @@ export default function WorkflowEditorPage() {
                 <div key={k} style={{ width: 170 }}>
                   <Field label={f.label}>
                     {f.type === 'bool' ? (
-                      <select style={inputStyle} value={pvCtx[k] || ''} onChange={(e) => setPvCtx({ ...pvCtx, [k]: e.target.value })}>
+                      <Select style={inputStyle} value={pvCtx[k] || ''} onChange={(e) => setPvCtx({ ...pvCtx, [k]: e.target.value })}>
                         <option value="">—</option><option value="true">Yes</option><option value="false">No</option>
-                      </select>
+                      </Select>
                     ) : f.choices?.length ? (
-                      <select style={inputStyle} value={pvCtx[k] || ''} onChange={(e) => setPvCtx({ ...pvCtx, [k]: e.target.value })}>
+                      <Select style={inputStyle} value={pvCtx[k] || ''} onChange={(e) => setPvCtx({ ...pvCtx, [k]: e.target.value })}>
                         <option value="">—</option>{f.choices.map((c) => <option key={c} value={c}>{f.choice_labels?.[c] || c}</option>)}
-                      </select>
+                      </Select>
                     ) : (
                       <input style={inputStyle} type={f.type === 'number' ? 'number' : 'text'} value={pvCtx[k] || ''} onChange={(e) => setPvCtx({ ...pvCtx, [k]: e.target.value })} />
                     )}
